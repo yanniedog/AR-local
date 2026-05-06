@@ -117,6 +117,7 @@ def make_handler(exports_root: Path, site_root: Path):
             if path in (
                 "/assets/app.js",
                 "/assets/ar-bank-brand.js",
+                "/assets/ar-ribbon-canonical-tiers.js",
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/cdr-ribbon-map.js",
