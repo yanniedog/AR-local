@@ -136,9 +136,22 @@
     if (!state.banks || state.sector !== 'banks' || !window.LocalCdrBrand) { wrap.hidden = true; return; }
     const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
     const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort(), label = state.section === 'TD' ? 'Term Deposit' : state.section;
-    wrap.hidden = false; child(wrap, 'span', 'local-selected-logos-title', `${label} providers`);
+    wrap.hidden = false;
+    child(wrap, 'span', 'local-selected-logos-title', `${label} providers — click a logo to filter`);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
-    providers.forEach((provider) => window.LocalCdrBrand.appendProviderBadge(rail, provider, false));
+    const providerQuery = $('provider').value.trim().toLowerCase();
+    providers.forEach((provider) => {
+      const btn = child(rail, 'button', 'local-provider-logo-btn');
+      btn.type = 'button';
+      btn.dataset.providerPick = provider;
+      btn.title = 'Show products for ' + provider + ' only (click again to clear)';
+      if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
+      const sample = rows.find((r) => r.provider === provider);
+      window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
+        slugCandidates: sample ? window.LocalCdrBrand.iconSlugCandidatesForRate(sample) : undefined,
+        logoOnly: true,
+      });
+    });
   }
 
   function updateHero(rows, items) {
@@ -199,11 +212,13 @@
     renderTable(rows);
     window.LocalCdrChart.draw($('chart'), items, state.sector);
     $('chart-status').textContent = `${num(rows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
+    renderSelectedLogos();
   }
 
   async function loadSection(section) {
     if (state.section !== section) {
       state.hierarchyPath = '';
+      $('provider').value = '';
     }
     state.section = section;
     state.sector = section === 'Energy' ? 'energy' : 'banks';
@@ -216,7 +231,6 @@
     if (!state[state.sector]) state[state.sector] = await getJson(`/api/${state.sector}?date=${state.manifest.run_date}`);
     setupFilters();
     renderSectionCards();
-    renderSelectedLogos();
     render();
     setLastRefreshed();
   }
@@ -227,6 +241,17 @@
     $('sectionCards').addEventListener('click', (event) => {
       const card = event.target.closest('[data-section-card]');
       if (card) loadSection(card.dataset.sectionCard);
+    });
+    $('selectedLogos').addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-provider-pick]');
+      if (!btn) return;
+      const pick = btn.dataset.providerPick || '';
+      const input = $('provider');
+      const cur = input.value.trim();
+      if (cur && pick.toLowerCase() === cur.toLowerCase()) input.value = '';
+      else input.value = pick;
+      state.hierarchyPath = '';
+      render();
     });
     $('hierarchy').addEventListener('click', (event) => {
       const action = event.target.closest('[data-local-hierarchy-action]');

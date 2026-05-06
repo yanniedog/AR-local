@@ -126,6 +126,85 @@
   height: 28px;
 }
 
+.ar-local-cdr button.local-provider-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  vertical-align: middle;
+  line-height: 0;
+}
+
+.ar-local-cdr button.local-provider-logo-btn:hover {
+  border-color: color-mix(in srgb, var(--ar-line-strong) 70%, transparent);
+  background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
+}
+
+.ar-local-cdr button.local-provider-logo-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ar-text-muted) 80%, transparent);
+  outline-offset: 2px;
+}
+
+.ar-local-cdr button.local-provider-logo-btn.is-selected {
+  border-color: color-mix(in srgb, var(--ar-line-strong) 92%, transparent);
+  background: color-mix(in srgb, var(--ar-surface-2) 55%, transparent);
+}
+
+.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
+  display: none !important;
+}
+
+.ar-local-cdr .local-bank-badge--logo-only {
+  width: 28px;
+  min-width: 28px;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-brand {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-logo-wrap {
+  width: 22px;
+  height: 22px;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-logo {
+  width: 22px;
+  height: 22px;
+  max-height: 22px;
+  object-fit: contain;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-fallback {
+  font-size: 0.65rem;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ar-local-cdr .local-hierarchy-leaf-meta {
+  font-size: 0.68rem;
+  color: var(--ar-text-muted);
+  line-height: 1.25;
+}
+
 .ar-local-cdr .local-filter-strip {
   display: grid;
   grid-template-columns: minmax(150px, 0.75fr) minmax(180px, 1fr) minmax(220px, 1.3fr);

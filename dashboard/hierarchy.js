@@ -64,46 +64,40 @@
     return PALETTE[hashText(row && row.provider) % PALETTE.length];
   }
 
-  function fieldLabel(field) {
-    const labels = { provider: 'Provider', loan_purpose: 'Purpose', category: 'Category', term: 'Term', rate_type: 'Rate type', repayment_type: 'Repayment', product_name: 'Product' };
-    return labels[field] || field;
+  function collectRowsUnder(node) {
+    if (!node || node.kind === 'empty') return [];
+    if (node.kind === 'leaves') return node.rows.slice();
+    return node.groups.flatMap((g) => collectRowsUnder(g.child));
   }
 
-  function tierFields(section) {
-    if (section === 'Mortgage') return ['loan_purpose', 'rate_type', 'repayment_type', 'provider', 'product_name'];
-    if (section === 'TD') return ['term', 'provider', 'product_name', 'rate_type'];
-    return ['category', 'provider', 'product_name', 'rate_type'];
-  }
-
-  function tierValue(row, field) {
-    const value = field === 'provider' ? row.provider
-      : field === 'term' ? (row.term || row.application_frequency)
-        : row[field];
-    return String(value || 'Other').replace(/\s+/g, ' ').trim() || 'Other';
-  }
-
-  function buildTree(rows, fields, index, descending) {
-    if (!rows.length) return { kind: 'empty', rows: [] };
-    if (index >= fields.length) return { kind: 'leaves', rows };
-    const field = fields[index];
-    const grouped = new Map();
-    rows.forEach((row) => {
-      const value = tierValue(row, field);
-      if (!grouped.has(value)) grouped.set(value, []);
-      grouped.get(value).push(row);
+  /** Adapt AustralianRates ribbon tier tree to this panel's shape (groups carry rows + best rate). */
+  function annotateRibbonBranch(node, descending) {
+    if (!node || node.kind === 'empty') return { kind: 'empty', rows: [] };
+    if (node.kind === 'leaves') {
+      const rows = node.products.map((p) => p.__cdrRate).filter(Boolean);
+      return { kind: 'leaves', rows };
+    }
+    const field = node.field;
+    const groups = node.groups.map((g) => {
+      const child = annotateRibbonBranch(g.child, descending);
+      const rows = collectRowsUnder(child);
+      return {
+        label: g.label,
+        rows,
+        best: bestRate(rows, descending),
+        child,
+      };
     });
-    const groups = [...grouped.entries()].map(([label, groupRows]) => ({
-      label,
-      rows: groupRows,
-      best: bestRate(groupRows, descending),
-      child: buildTree(groupRows, fields, index + 1, descending),
-    })).sort((a, b) => {
-      if (a.best == null && b.best == null) return a.label.localeCompare(b.label);
-      if (a.best == null) return 1;
-      if (b.best == null) return -1;
-      return descending ? b.best - a.best : a.best - b.best;
-    });
+    const rows = groups.flatMap((g) => g.rows);
     return { kind: 'branch', field, groups, rows };
+  }
+
+  function formatBranchLabel(field, label, mode) {
+    const ribbon = window.AR && window.AR.ribbon;
+    if (ribbon && ribbon.ribbonCompactBranchLabel) {
+      return ribbon.ribbonCompactBranchLabel(field, label, mode || 'branch');
+    }
+    return String(label || '');
   }
 
   function prunePath(tree, activePath) {
@@ -137,11 +131,6 @@
     return Number(active.slice(path.length + 1).split('>')[0]);
   }
 
-  function formatLabel(field, label) {
-    if (field === 'provider') return label;
-    return fieldLabel(field) + ': ' + label;
-  }
-
   function renderRateRange(parent, rows, best, descending) {
     const mm = minMax(rows);
     if (mm.min == null) return;
@@ -165,15 +154,18 @@
     root.dataset.localHierarchyPath = '';
     let node = tree;
     let path = '';
-    String(activePath || '').split('>').filter(Boolean).forEach((part, index) => {
+    const pathParts = String(activePath || '').split('>').filter(Boolean);
+    pathParts.forEach((part, index) => {
       const groupIndex = Number(part);
       if (!node || node.kind !== 'branch' || !node.groups[groupIndex]) return;
       const group = node.groups[groupIndex];
       path = path ? path + '>' + groupIndex : String(groupIndex);
       child(bar, 'span', 'ar-report-underchart-tree-crumb-sep', '>');
-      const crumb = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (index === String(activePath).split('>').length - 1 ? ' is-current' : ''), formatLabel(node.field, group.label));
+      const crumbText = formatBranchLabel(node.field, group.label, 'crumb');
+      const crumbTitle = formatBranchLabel(node.field, group.label, 'branch');
+      const crumb = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (index === pathParts.length - 1 ? ' is-current' : ''), crumbText);
       crumb.type = 'button';
-      crumb.title = formatLabel(node.field, group.label);
+      crumb.title = crumbTitle;
       crumb.dataset.localHierarchyAction = 'crumb';
       crumb.dataset.localHierarchyPath = path;
       node = group.child;
@@ -185,9 +177,20 @@
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
     const dot = child(rateRow, 'span', 'ar-report-infobox-tsw');
     dot.style.setProperty('--ar-swatch-color', swatch(row));
-    const label = child(rateRow, 'span', 'ar-report-infobox-tlabel');
-    const bits = [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose].filter(Boolean);
-    child(label, 'span', 'ar-ribbon-tleaf-product', bits.join(' - ') || 'Rate');
+    const label = child(rateRow, 'span', 'ar-report-infobox-tlabel local-hierarchy-leaf-label');
+    const metaBits = [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose].filter(Boolean);
+    if (window.LocalCdrBrand && row.provider) {
+      const brandSlot = child(label, 'span', 'local-hierarchy-leaf-brand');
+      window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {
+        slugCandidates: window.LocalCdrBrand.iconSlugCandidatesForRate(row),
+        logoOnly: true,
+      });
+    }
+    const textCol = child(label, 'span', 'local-hierarchy-leaf-text');
+    child(textCol, 'span', 'ar-ribbon-tleaf-product', row.product_name || metaBits.join(' - ') || 'Rate');
+    if (row.product_name && metaBits.length) {
+      child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
+    }
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
     renderRateRange(rate, [row], best, descending);
   }
@@ -202,16 +205,12 @@
     row.setAttribute('data-ribbon-tree-path', path);
     row.setAttribute('role', 'button');
     row.setAttribute('aria-expanded', expanded ? 'v' : '>');
-    row.setAttribute('aria-label', (expanded ? 'v' : '>') + formatLabel(node.field, group.label));
+    row.setAttribute('aria-label', (expanded ? 'v' : '>') + formatBranchLabel(node.field, group.label, 'branch'));
     row.tabIndex = 0;
     child(row, 'span', 'ar-report-infobox-twist', expanded ? 'v' : '>');
     const label = child(row, 'span', 'ar-report-infobox-tlabel');
-    if (node.field === 'provider' && window.LocalCdrBrand) {
-      window.LocalCdrBrand.appendProviderBadge(label, group.label, true);
-    } else {
-      label.textContent = formatLabel(node.field, group.label);
-      label.title = formatLabel(node.field, group.label);
-    }
+    label.textContent = formatBranchLabel(node.field, group.label, 'branch');
+    label.title = formatBranchLabel(node.field, group.label, 'branch');
     const rate = child(row, 'span', 'ar-report-infobox-trate');
     renderRateRange(rate, group.rows, state.globalBest, state.descending);
   }
@@ -265,7 +264,15 @@
     if (!panel) return;
     state.rows = visible;
     state.globalBest = bestRate(visible, state.descending);
-    const tree = buildTree(visible, tierFields(state.section), 0, state.descending);
+    const ribbon = window.AR && window.AR.ribbon;
+    let tree = { kind: 'empty', rows: [] };
+    if (ribbon && ribbon.buildRibbonTierTree && ribbon.ribbonTierFieldsForSection && window.LocalCdrRibbonMap) {
+      const slug = window.LocalCdrRibbonMap.sectionSlug(state.section);
+      const tierFields = ribbon.ribbonTierFieldsForSection(slug);
+      const products = window.LocalCdrRibbonMap.toRibbonProducts(visible, state.section);
+      const ribbonRoot = ribbon.buildRibbonTierTree(products, tierFields, 0);
+      tree = annotateRibbonBranch(ribbonRoot, state.descending);
+    }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     if (!visible.length || tree.kind === 'empty') {
       panel.show({

@@ -15,8 +15,34 @@ from urllib.parse import parse_qs, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
-SITE_ROOT = BASE_DIR.parent / "site"
-BANK_ASSETS_ROOT = SITE_ROOT / "assets" / "banks"
+
+
+def resolve_site_root(explicit: Path | None) -> Path:
+    """Locate AustralianRates public shell assets (foundation.css, theme.js, …)."""
+    if explicit is not None:
+        root = explicit.expanduser().resolve()
+        marker = root / "foundation.css"
+        if not marker.is_file():
+            raise SystemExit(
+                f"--site-root {root} is invalid: missing {marker.name}. "
+                "Use the `site` folder from the AustralianRates repo."
+            )
+        return root
+    candidates = [
+        BASE_DIR / "site",
+        BASE_DIR.parent / "australianrates" / "site",
+        BASE_DIR.parent / "site",
+    ]
+    for cand in candidates:
+        root = cand.resolve()
+        if (root / "foundation.css").is_file():
+            return root
+    listed = ", ".join(str(c) for c in candidates)
+    raise SystemExit(
+        "Could not find AustralianRates site static files (foundation.css). "
+        f"Tried: {listed}. Clone australianrates beside AR-local, copy its "
+        "`site` folder into AR-local, or pass --site-root PATH_TO_SITE."
+    )
 
 
 class CachedFiles:
@@ -46,10 +72,11 @@ class LocalDashboardServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def make_handler(exports_root: Path):
+def make_handler(exports_root: Path, site_root: Path):
+    bank_assets_root = site_root / "assets" / "banks"
     artifact_cache = CachedFiles(exports_root)
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
-    site_cache = CachedFiles(SITE_ROOT)
+    site_cache = CachedFiles(site_root)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
@@ -73,19 +100,27 @@ def make_handler(exports_root: Path):
                 return dashboard_cache.read(DASHBOARD_ROOT / "index.html"), "text/html; charset=utf-8"
             if path == "/assets/app.css":
                 return dashboard_cache.read(DASHBOARD_ROOT / "app.css"), "text/css; charset=utf-8"
-            if path in ("/assets/app.js", "/assets/chart.js", "/assets/hierarchy.js", "/assets/local-brand.js", "/assets/utils.js"):
+            if path in (
+                "/assets/app.js",
+                "/assets/chart.js",
+                "/assets/hierarchy.js",
+                "/assets/cdr-ribbon-map.js",
+                "/assets/local-brand.js",
+                "/assets/utils.js",
+            ):
                 return dashboard_cache.read(DASHBOARD_ROOT / path.removeprefix("/assets/")), "application/javascript; charset=utf-8"
             if path == "/assets/branding/ar-mark.svg":
-                return site_cache.read(SITE_ROOT / "assets" / "branding" / "ar-mark.svg"), "image/svg+xml"
+                return site_cache.read(site_root / "assets" / "branding" / "ar-mark.svg"), "image/svg+xml"
             if path.startswith("/assets/banks/"):
-                target = (SITE_ROOT / path.removeprefix("/")).resolve()
-                bank_root = BANK_ASSETS_ROOT.resolve()
+                target = (site_root / path.removeprefix("/")).resolve()
+                bank_root = bank_assets_root.resolve()
                 if bank_root not in target.parents and target != bank_root:
                     raise FileNotFoundError(path)
                 return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             if path.startswith("/site/"):
-                target = (SITE_ROOT / path.removeprefix("/site/")).resolve()
-                if SITE_ROOT.resolve() not in target.parents and target != SITE_ROOT.resolve():
+                target = (site_root / path.removeprefix("/site/")).resolve()
+                site_resolved = site_root.resolve()
+                if site_resolved not in target.parents and target != site_resolved:
                     raise FileNotFoundError(path)
                 return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             if path == "/api/latest":
@@ -108,6 +143,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default="auto", help="Port number or 'auto' (default: auto from 8800)")
     parser.add_argument("--port-file", type=Path, help="Optional JSON file to write the selected dashboard URL to.")
+    parser.add_argument(
+        "--site-root",
+        type=Path,
+        default=None,
+        help="Path to AustralianRates `site` folder (default: auto-detect beside this repo).",
+    )
     return parser.parse_args()
 
 
@@ -132,7 +173,9 @@ def create_server(host: str, value: str, handler):
 
 def main() -> int:
     args = parse_args()
-    server, port = create_server(args.host, str(args.port), make_handler(args.exports))
+    site_root = resolve_site_root(args.site_root)
+    print(f"Site static root: {site_root}")
+    server, port = create_server(args.host, str(args.port), make_handler(args.exports, site_root))
     url = dashboard_url(args.host, port)
     if args.port_file:
         args.port_file.write_text(json.dumps({"host": args.host, "port": port, "url": url}), encoding="utf-8")
