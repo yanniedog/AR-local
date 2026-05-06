@@ -26,9 +26,16 @@ _BOUND_SINGLE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
 
 
 def _lower_join(*parts: Any) -> str:
-    bits = []
+    """Lowercase phrase from joined non-empty trimmed string parts.
+
+    None is skipped; booleans are skipped (ribbon hints should be strings — use
+    literal "true"/"false" if needed). Numeric 0 becomes "0"; we do not apply
+    Python truthiness on non-bools so emptiness is only from str(p).strip().
+    """
+
+    bits: List[str] = []
     for p in parts:
-        if p is None:
+        if p is None or isinstance(p, bool):
             continue
         s = str(p).strip()
         if s:
@@ -306,8 +313,8 @@ def normalize_interest_payment(
         return "annually"
     if fq is not None and fq >= 12:
         return "annually"
-    # Parity with dashboard/cdr-ribbon-map.js normalizeInterestPayment: P6M → 6 is grouped as monthly
-    # (semi-annual is not its own facet there). Change both TS/JS and Python together if cadence enums split.
+    # Parity with dashboard/cdr-ribbon-map.js normalizeInterestPayment: fq==6 (P6M) → monthly here.
+    # Canonical rules live in this module; mirror changes in JS when adjusting cadence buckets.
     if "monthly" in t or (fq is not None and (fq == 1 or fq == 6)):
         return "monthly"
     if "at maturity" in t:
@@ -320,7 +327,7 @@ def _num_or_empty(val: Optional[float]) -> str:
         return ""
     nearest = round(val)
     # Never rstrip("0") on integer-form strings: "100".rstrip("0") → "10".
-    if abs(val - nearest) < 1e-9:
+    if math.isclose(val, nearest, rel_tol=1e-9, abs_tol=1e-12):
         return str(int(nearest))
     text = f"{val:.12g}".rstrip("0").rstrip(".")
     return text or "0"
