@@ -1,0 +1,11 @@
+{
+  "name": "ar-local",
+  "private": true,
+  "description": "Local CDR ingest + dashboard (workflow parity with AustralianRates; no Cloudflare)",
+  "scripts": {
+    "wait-for-bots": "node wait_for_bots.mjs",
+    "ship:closeout:strict": "python ship_closeout_strict.py",
+    "verify:local": "python verify_local.py",
+    "git:graph-hygiene": "git fetch origin --prune"
+  }
+}

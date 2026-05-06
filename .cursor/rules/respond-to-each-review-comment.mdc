@@ -1,0 +1,26 @@
+---
+description: "Mandatory thread closure: enumerate every CI/review finding, judge merits, reply in-thread before merge"
+alwaysApply: true
+---
+
+# Respond to each piece of feedback before merge
+
+Full bot reply standard matches Australian Rates: **`WORKFLOW.md`** step 6 and **`git-pr-workflow-default.mdc`**.
+
+## What counts as feedback
+
+- Required workflow failures (tests, lint, CI).
+- Inline comments and reviews from humans.
+- Bot comments: Gemini Code Assist, Codex connector, Copilot, CodeRabbit, Sourcery, Greptile, security scanners.
+
+## Mandatory per finding
+
+1. Enumerate distinct threads (merge verbatim duplicates into one reply).
+2. Judge: implement / defer / decline (with reason — not silence).
+3. Reply in-thread on GitHub. If unavailable: `## Feedback responses` section in PR body.
+
+## Do not
+
+- Claim "no actionable feedback" from a top-level summary without checking all inline file-level threads.
+- Dismiss any bot as "non-blocking noise" without per-item resolution.
+- Merge with identified threads unaddressed and un-declined.

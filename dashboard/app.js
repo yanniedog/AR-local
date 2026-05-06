@@ -148,8 +148,8 @@
       if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
       const sample = rows.find((r) => r.provider === provider);
       window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
-        slugCandidates: sample ? window.LocalCdrBrand.iconSlugCandidatesForRate(sample) : undefined,
         logoOnly: true,
+        rateRow: sample,
       });
     });
   }

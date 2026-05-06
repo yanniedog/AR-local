@@ -1,0 +1,28 @@
+---
+description: "Multiagent workflow (fresh branch, conflict-aware merges, CI feedback) + modular code (~800 LOC soft / ~1000 hard)"
+alwaysApply: true
+---
+
+# Multiagent Workflow and Modular Code (Always Follow)
+
+Same concurrency expectations as Australian Rates. Every chat MUST adhere without being asked.
+
+## Multiagent Workflow (mandatory)
+
+Git branching, PR checks, and wait gate: **`WORKFLOW.md`** and **`git-pr-workflow-default.mdc`**. Additionally:
+
+1. **Fresh branch, distinctive slug** — Never push routine work straight to **`main`** unless the user ordered a **`main` hotfix**. Base on **`origin/main`**. One branch per task; never reuse another agent's in-flight branch. Include topic + short nonce (e.g. `-kj1`) when generic.
+2. **Clashes** — Before merge: `git fetch origin && git diff origin/main...HEAD --stat`; merge/rebase **`origin/main`** if needed. Scan overlaps with other **`agent/*`** / **`feat/*`** / **`fix/*`** branches; note clashes in the PR body. If branch name collides, move to **`agent/<slug>-v2`** from **`origin/main`** and reapply.
+3. **CI + reviews** — Fix failures on the **same** PR (**@mention** after pushes). **Green CI ≠ merge-ready**: complete wait gate + **in-thread** replies unless bot closeout **waived in writing**.
+4. **Local closeout after merge** — **`every-chat-commit-verify-local.mdc`**: restart dashboard as needed, **`npm run verify:local`**, Browser MCP when validating UI. No Cloudflare deploy wait.
+5. **Graph hygiene** — After merge: **`npm run git:graph-hygiene`**; delete local topic branch when safe.
+
+## Modular Code (mandatory)
+
+- **Hard ceiling: ~1000 lines per file.** At or above this, split before adding more code.
+- **Soft target: ~800 lines or less.** When crossing ~800 LOC with non-trivial edits, plan a split in the same PR or document follow-up.
+- **Also cap functions ~50 lines** and avoid duplicated logic in 3+ places (extract shared helpers).
+- Split along **natural seams** (ingest stage, export format, dashboard module, server routing). Preserve behaviour unless the task asks otherwise.
+- **Exemptions:** `requirements.txt`, `.env*`, generated outputs under `runs/` (ignored), lockfiles, third-party vendored drops.
+
+These rules apply in **every chat** unless explicitly waived for a one-off experiment.

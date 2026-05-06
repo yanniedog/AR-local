@@ -1,0 +1,24 @@
+---
+description: "Hard rule: every chat with repo changes — commit, PR, full ship bar, local dashboard, verify:local (no Cloudflare)"
+alwaysApply: true
+---
+
+# Every Chat: Commit → Full Ship Bar → Local Verify
+
+For every conversation with repo changes, complete the full ship bar before claiming done.
+
+**Waiver:** only if the user explicitly instructs you not to commit, push, or run local verification for that task.
+
+## Required sequence (no shortcuts)
+
+1. **Commit + push** on a topic branch (see **`WORKFLOW.md`** steps 1–3).
+2. **PR to `main`** — fix-ups on the same PR.
+3. **CI** — fix forward until checks pass.
+4. **Wait gate + thread closure** — **`WORKFLOW.md`** steps 5–6; urgency never waives this.
+5. **Merge** — only after 4+ complete.
+6. **Local server confirmed** — dashboard reflects merged `main` (**`WORKFLOW.md`** step 8).
+7. **Local verify** — **`npm run verify:local -- --base-url=<dashboard-url>/`**; report exit code. Use Browser MCP when the user requires UI proof.
+
+**There is no Cloudflare deploy** for this repo; do not wait on Workers/Pages.
+
+Full detail: **`WORKFLOW.md`**. Closeout: **`npm run ship:closeout:strict && npm run wait-for-bots`**.

@@ -1,3 +1,31 @@
+/*
+ * Bank badges pull `.bank-badge-logo-wrap` from foundation.css (near-white tile).
+ * On dark shells + showcase teal radial washes that reads as mint; force opaque neutrals.
+ */
+body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-logo-wrap,
+body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-logo-wrap,
+body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
+  background: color-mix(in srgb, var(--ar-surface-3) 94%, var(--ar-text) 6%) !important;
+  box-shadow: inset 0 0 0 1px var(--ar-line) !important;
+  mix-blend-mode: normal;
+  isolation: isolate;
+}
+
+body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-fallback,
+body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-fallback,
+body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-fallback,
+body.ar-public.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-fallback {
+  color: var(--ar-text-soft) !important;
+  background: transparent !important;
+  text-shadow: none !important;
+}
+
+body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+}
+
 .ar-local-cdr .site-header-segment {
   justify-content: center;
 }
@@ -124,6 +152,16 @@
 .ar-local-cdr .local-section-logo-rail-full .bank-badge-logo-wrap {
   width: 28px;
   height: 28px;
+}
+
+.ar-local-cdr .local-section-logo-rail .bank-badge-logo,
+.ar-local-cdr .local-provider-logo-btn .bank-badge-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .ar-local-cdr button.local-provider-logo-btn {

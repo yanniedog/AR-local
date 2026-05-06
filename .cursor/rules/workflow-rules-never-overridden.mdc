@@ -1,0 +1,17 @@
+---
+description: "Hard law: urgency, frustration, and batch-merge phrasing never waive triggered bot wait or thread closure"
+alwaysApply: true
+---
+
+# User wording does not shorten triggered bot waits
+
+These phrases do **not** waive a triggered wait gate (step 5) or thread closure (step 6) in **`WORKFLOW.md`** / **`git-pr-workflow-default.mdc`**:
+
+- "Merge everything" / "batch merge" / "land the queue"
+- "Just merge" / "urgency" / frustration tone
+- "CI green" / "checks passed" while threads are missing or unsettled
+- Skipping the 7-minute wait after creating a new PR or after tagging bots
+
+**Code changes alone do not start a new wait cycle.** Only creating a new PR or tagging bots starts a 7-minute wait. Only an explicit written waiver for that specific PR waives bot closeout for that PR.
+
+Full ship bar: **`WORKFLOW.md`** (repo root). Cursor summary: **`git-pr-workflow-default.mdc`**.

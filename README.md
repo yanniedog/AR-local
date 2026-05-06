@@ -2,6 +2,8 @@
 
 Real public CDR product-reference ingest for local analysis.
 
+Agent workflow (Git/PR/bots/local verify — aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
+
 ## Easiest Start
 
 Double-click:

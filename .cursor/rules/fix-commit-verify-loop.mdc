@@ -1,0 +1,19 @@
+---
+description: "Fix-commit-verify loop: fix → commit → PR → merge → local server → verify:local — loop until green"
+alwaysApply: true
+---
+
+# Fix-Commit-Verify Loop
+
+When fixing dashboard or ingest issues, loop until **`npm run verify:local`** passes:
+
+1. Fix on the topic branch.
+2. Commit + push; complete the full ship bar (**`WORKFLOW.md`** steps 4–9).
+3. After merge: restart local dashboard if needed, then **`npm run verify:local -- --base-url=<dashboard-url>/`**.
+4. If exit non-zero: fix, restart server, re-run. Repeat until exit **0**.
+
+Never ask the user to run reproduction steps — perform verification autonomously when the environment allows.
+
+Do not consider the task done until local verification exits **0** or the user explicitly waives it.
+
+There is **no Cloudflare redeploy** step between fix and verify.

@@ -1,0 +1,15 @@
+---
+description: "When debugging ingest/dashboard — use verify_local, server output, and fresh run artifacts"
+alwaysApply: true
+---
+
+# Automated local debugging (AR-local)
+
+When something fails during ingest, export rebuild, or dashboard bring-up:
+
+1. Run **`npm run verify:local -- --base-url=<dashboard-url>/`** after the server is up; treat non-zero exit as hard signal before declaring UI fixes done.
+2. Re-read **`cdr_dashboard_server.py`** stdout (Site static root line, port, request errors) and Python tracebacks from **`cdr_daily.py`** / **`cdr_outputs.py`** as primary evidence.
+3. Inspect **fresh** outputs under **`runs/<date>/_exports/`** (and **`dashboard-cache/`**) rather than assuming cached JSON shapes.
+4. If **`frequent_errors.txt`** exists in the repo root, scan it for known recurring failures before reassuring that scripts are fine.
+
+Do not substitute **www.australianrates.com** production logs for AR-local debugging — this repo does not deploy there.

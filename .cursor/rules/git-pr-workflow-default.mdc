@@ -1,0 +1,37 @@
+---
+description: "Ship bar for AR-local — same Git/PR/bot rules as AustralianRates; steps 8–9 are local dashboard + verify:local (no Cloudflare)"
+alwaysApply: true
+---
+
+# Ship Bar: AR-local (Cursor summary)
+
+**Authoritative copy with every step written out:** **`WORKFLOW.md`** at the repo root. Read it in full before shipping. This file states the same bar at a high level so Cursor always loads it.
+
+Every repo change follows: `agent/<slug>` branch → PR to `main` → CI → wait gate → feedback synthesis → thread closure → merge → **local dashboard** → **`npm run verify:local`**.
+
+**There is no Cloudflare deploy** and **production URL verification does not apply** to this repository.
+
+## Steps (mirror Australian Rates except 8–9)
+
+1. Branch from fresh `main` (`git fetch`, `checkout -b agent/<slug>`).
+2. Commit and push on the topic branch only.
+3. One PR to `main`; fix-ups stay on the same branch.
+4. CI green (`gh pr checks <n> --watch`).
+5. **`npm run wait-for-bots`** after creating a PR; exit 2 means wait. Same 7-minute rule after tagging bots. Code pushes alone do not restart the wait.
+5b. Synthesize all threads → post `## Feedback plan` → then one push → in-thread replies.
+6. Thread closure on every substantive thread before merge.
+7. Merge (`gh pr merge --squash`) only after 5–6.
+8. **Local:** restart/reload **`cdr_dashboard_server.py`** (or your launcher) so `main` is what runs; confirm **`site`** / **`--site-root`** as needed.
+9. **Local:** **`npm run verify:local -- --base-url=<printed-dashboard-url>/`**; use Browser MCP when validating UI. Exit code must be **0**.
+
+## Closeout (before claiming done on a topic branch)
+
+```sh
+npm run ship:closeout:strict && npm run wait-for-bots
+```
+
+## Forbidden completions
+
+While an open PR exists and you can merge: do not say "done", "shipped", "CI green so we're good", "merge-ready", or "handing off the PR" without completing steps 5b–6.
+
+Exceptions and after-merge cleanup: see **`WORKFLOW.md`**.

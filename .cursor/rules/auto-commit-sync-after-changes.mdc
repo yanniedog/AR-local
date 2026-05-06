@@ -1,0 +1,15 @@
+---
+description: "After making changes in this chat, commit and sync (push) automatically; then complete the full ship bar"
+alwaysApply: true
+---
+
+# Auto Commit and Sync After Changes
+
+After any code or config change: commit on a topic branch, push, open/update PR to `main`, and complete the full ship bar.
+
+1. Branch: `git checkout -b agent/<slug>` from fresh `origin/main` (unless already on a topic branch or user ordered `main` hotfix).
+2. Stage and commit: `git add <paths> && git commit -m "<description>"`.
+3. Push: `git push -u origin HEAD`.
+4. Complete the full ship bar: **`WORKFLOW.md`** (wait gate → synthesis → thread closure → merge → local dashboard → **`verify:local`**).
+
+Do not leave uncommitted or unpushed changes unless the user explicitly asks to stop before syncing.
