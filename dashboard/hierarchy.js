@@ -182,8 +182,8 @@
     if (window.LocalCdrBrand && row.provider) {
       const brandSlot = child(label, 'span', 'local-hierarchy-leaf-brand');
       window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {
-        slugCandidates: window.LocalCdrBrand.iconSlugCandidatesForRate(row),
         logoOnly: true,
+        rateRow: row,
       });
     }
     const textCol = child(label, 'span', 'local-hierarchy-leaf-text');

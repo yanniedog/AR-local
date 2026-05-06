@@ -147,10 +147,10 @@
       btn.title = 'Show products for ' + provider + ' only (click again to clear)';
       if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
       const sample = rows.find((r) => r.provider === provider);
-      window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
-        slugCandidates: sample ? window.LocalCdrBrand.iconSlugCandidatesForRate(sample) : undefined,
-        logoOnly: true,
-      });
+    window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
+      logoOnly: true,
+      rateRow: sample,
+    });
     });
   }
 
