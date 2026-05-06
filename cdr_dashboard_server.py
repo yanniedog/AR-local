@@ -34,14 +34,18 @@ def resolve_site_root(explicit: Path | None) -> Path:
         BASE_DIR.parent / "site",
     ]
 
-    def bank_png_count(root: Path) -> int:
+    bank_icon_suffixes = (".png", ".webp", ".svg")
+
+    def bank_icon_file_count(root: Path) -> int:
         banks = root / "assets" / "banks"
         if not banks.is_dir():
             return 0
-        return sum(1 for p in banks.glob("*.png") if p.is_file())
+        return sum(
+            sum(1 for p in banks.glob(f"*{suf}") if p.is_file()) for suf in bank_icon_suffixes
+        )
 
     resolved = [c.resolve() for c in candidates]
-    with_banks = [r for r in resolved if (r / "foundation.css").is_file() and bank_png_count(r) > 0]
+    with_banks = [r for r in resolved if (r / "foundation.css").is_file() and bank_icon_file_count(r) > 0]
     if with_banks:
         return with_banks[0]
     for root in resolved:

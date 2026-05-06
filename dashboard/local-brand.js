@@ -3,6 +3,10 @@
 
   /** Matches filenames under AustralianRates `site/assets/banks/` (png/webp/svg). */
   const ICON_EXTENSIONS = ['.png', '.webp', '.svg'];
+  const ICON_EXTENSION_RE = new RegExp(
+    '(' + ICON_EXTENSIONS.map((ext) => ext.replace('.', '\\.')).join('|') + ')$',
+    'i',
+  );
   const LOCAL_BANK_BASE = '/assets/banks/';
   const CDN_BANK_BASE = 'https://www.australianrates.com.au/assets/banks/';
 
@@ -137,19 +141,23 @@
     const u = String(url || '').trim();
     if (!u) return '';
     const seg = u.split('?')[0].split('/').pop() || '';
-    return seg.replace(/\.(png|webp|svg)$/i, '');
+    return seg.replace(ICON_EXTENSION_RE, '');
+  }
+
+  /** True on typical local dashboard hosts: try CDN bank URLs before same-origin /assets/banks/. */
+  function preferBankCdnFirst() {
+    try {
+      const h = window.location.hostname || '';
+      return h === '127.0.0.1' || h === 'localhost' || h === '[::1]';
+    } catch (_e) {
+      return false;
+    }
   }
 
   function logoUrlsFromSlugs(slugs) {
     const urls = [];
     const seen = new Set();
-    let remoteFirst = false;
-    try {
-      const h = window.location.hostname || '';
-      remoteFirst = h === '127.0.0.1' || h === 'localhost' || h === '[::1]';
-    } catch (_e) {
-      remoteFirst = false;
-    }
+    const remoteFirst = preferBankCdnFirst();
     slugs.forEach((slug) => {
       ICON_EXTENSIONS.forEach((ext) => {
         const local = LOCAL_BANK_BASE + slug + ext;
@@ -191,13 +199,7 @@
       seen.add(u);
       urls.push(u);
     };
-    let remoteFirst = false;
-    try {
-      const h = window.location.hostname || '';
-      remoteFirst = h === '127.0.0.1' || h === 'localhost' || h === '[::1]';
-    } catch (_e) {
-      remoteFirst = false;
-    }
+    const remoteFirst = preferBankCdnFirst();
     if (remoteFirst && metaIcon) {
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
       pushUrl(metaIcon);
