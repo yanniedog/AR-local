@@ -327,9 +327,12 @@ def _num_or_empty(val: Optional[float]) -> str:
         return ""
     nearest = round(val)
     # Never rstrip("0") on integer-form strings: "100".rstrip("0") → "10".
-    if math.isclose(val, nearest, rel_tol=1e-9, abs_tol=1e-12):
+    # abs_tol only — rel_tol allows O(magnitude) slack and mis-formats large non-integers (PR #5 review).
+    if math.isclose(val, nearest, rel_tol=0.0, abs_tol=1e-9):
         return str(int(nearest))
-    text = f"{val:.12g}".rstrip("0").rstrip(".")
+    text = f"{val:.12g}"
+    if "e" not in text.lower():
+        text = text.rstrip("0").rstrip(".")
     return text or "0"
 
 
