@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Local CDR Dashboard | AustralianRates</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/branding/ar-mark.svg">
+  <script>try { if (!localStorage.getItem('ar-theme')) localStorage.setItem('ar-theme', 'dark'); } catch (_e) {}</script>
+  <script src="/site/theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/site/foundation.css">
+  <link rel="stylesheet" href="/site/public-shell.css">
+  <link rel="stylesheet" href="/site/public-results.css">
+  <link rel="stylesheet" href="/site/public-analysis.css">
+  <link rel="stylesheet" href="/site/public-showcase.css">
+  <link rel="stylesheet" href="/site/public-showcase-hero.css">
+  <link rel="stylesheet" href="/site/public-showcase-workspace.css">
+  <link rel="stylesheet" href="/site/responsive.css">
+  <link rel="stylesheet" href="/site/public-polish.css">
+  <link rel="stylesheet" href="/site/public-modern.css">
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="ar-public ar-section-home-loans ar-local-cdr" data-ar-section="home-loans">
+  <a href="#main-content" class="skip-link">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <h1 class="site-brand"><a href="/"><img src="/assets/branding/ar-mark.svg" alt="" class="site-brand-inline-logo">AustralianRates</a></h1>
+      <nav class="site-header-segment" aria-label="Local CDR sections">
+        <button class="site-header-segment-link is-active" type="button" data-section="Mortgage">Mortgage</button>
+        <button class="site-header-segment-link" type="button" data-section="Savings">Savings</button>
+        <button class="site-header-segment-link" type="button" data-section="TD">Term Deposits</button>
+        <button class="site-header-segment-link" type="button" data-section="Energy">Energy</button>
+      </nav>
+      <div class="site-header-actions">
+        <button class="site-action-btn site-action-theme" type="button" data-theme-toggle data-theme-label="Theme" aria-label="Theme">Theme</button>
+        <a id="jsonLink" class="buttonish secondary site-action-help" href="#">JSON</a>
+        <a id="xlsxLink" class="buttonish secondary site-action-help" href="#">XLSX</a>
+      </div>
+    </div>
+  </header>
+  <div class="bg-layer" aria-hidden="true"></div>
+  <main class="shell shell-public" id="main-content" tabindex="-1">
+    <section class="panel market-intro" aria-label="Page introduction">
+      <div class="market-intro-head">
+        <div class="market-intro-copy">
+          <p class="eyebrow">Local CDR data - generated artifacts</p>
+          <h1 class="market-intro-title" id="page-title">Home loan rates, tracked.</h1>
+        </div>
+      </div>
+      <div class="market-intro-body">
+        <div class="market-intro-live-grid">
+          <span class="market-intro-live-card market-intro-live-card-updated"><span class="market-intro-live-label">Run</span><strong id="hero-run">...</strong></span>
+          <span class="market-intro-live-card"><span class="market-intro-live-label" id="hero-leader-label">Lowest rate</span><strong id="hero-leader">...</strong></span>
+          <span class="market-intro-live-card"><span class="market-intro-live-label">Rows</span><strong id="hero-rows">...</strong></span>
+        </div>
+        <div id="sectionCards" class="local-section-cards" aria-label="Banking sections"></div>
+        <div id="selectedLogos" class="local-selected-logos" aria-label="Selected section providers"></div>
+      </div>
+    </section>
+    <section class="market-terminal" aria-label="Local CDR workspace">
+      <section class="terminal-column terminal-column-center">
+        <section class="panel terminal-panel terminal-workspace-panel" id="workspace">
+          <div class="workspace-nav-row">
+            <nav class="workspace-tab-nav" role="tablist" aria-label="Local CDR views">
+              <button id="tab-chart" class="tab-btn chip-btn secondary active" role="tab" aria-selected="true" aria-controls="panel-chart" type="button">Chart</button>
+            </nav>
+            <div class="workspace-nav-actions" role="toolbar" aria-label="Workspace actions">
+              <button type="button" id="refresh-page-btn" class="secondary small">Refresh</button>
+              <span id="last-refreshed" class="hint"></span>
+            </div>
+          </div>
+          <div class="local-filter-strip" aria-label="Filters">
+            <label class="terminal-field"><span class="terminal-field-label">Dataset</span><select id="dataset"></select></label>
+            <label class="terminal-field"><span class="terminal-field-label">Provider</span><input id="provider" placeholder="all providers"></label>
+            <label class="terminal-field local-search-field"><span class="terminal-field-label">Search</span><input id="query" placeholder="product or plan"></label>
+          </div>
+          <section id="panel-chart" class="tab-panel active" role="tabpanel" aria-labelledby="tab-chart">
+            <div class="chart-block">
+              <div class="chart-figure">
+                <div class="chart-toolbar">
+                  <div class="chart-toolbar-stack">
+                    <div class="chart-question-row" role="group" aria-label="Chart focus">
+                      <button type="button" class="chart-preset chip-btn secondary is-active" id="chart-focus">Highest rates</button>
+                      <button type="button" class="chart-preset chip-btn secondary" id="chart-toggle-sort">Lowest first</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="chart-workspace">
+                  <div class="terminal-chart-surface">
+                    <canvas id="chart" class="terminal-chart-output" aria-label="Interactive chart"></canvas>
+                  </div>
+                  <div class="chart-workspace-resizer" role="separator" aria-hidden="true"></div>
+                  <aside id="chart-side-panel" class="chart-side-panel" aria-label="Visible rows">
+                    <div id="hierarchy" class="chart-selection-rail"></div>
+                  </aside>
+                </div>
+              </div>
+              <footer class="chart-footer" aria-label="Chart overview">
+                <div class="terminal-stat-grid chart-footer-stats" id="stats"></div>
+              </footer>
+              <p id="chart-status" class="hint">Loading local CDR data</p>
+            </div>
+          </section>
+          <section class="panel terminal-subpanel local-table-panel" aria-label="Visible data" hidden>
+            <div class="terminal-panel-head"><h2 class="terminal-panel-title">Visible data</h2><span id="table-count" class="hint"></span></div>
+            <div class="local-table-wrap">
+              <table id="table"></table>
+            </div>
+          </section>
+        </section>
+      </section>
+    </section>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span class="site-footer-meta"><span class="site-footer-dot" aria-hidden="true"></span>AustralianRates - Local CDR data</span>
+      <nav class="site-footer-nav" aria-label="Exports"><a id="footerJsonLink" href="#">JSON</a><a id="footerXlsxLink" href="#">XLSX</a></nav>
+    </div>
+  </footer>
+  <script src="/site/ar-bank-brand.js"></script>
+  <script src="/site/ar-chart-report-plot-hierarchy-panel.js"></script>
+  <script src="/assets/local-brand.js"></script>
+  <script src="/assets/utils.js"></script>
+  <script src="/assets/chart.js"></script>
+  <script src="/assets/hierarchy.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

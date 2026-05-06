@@ -1,0 +1,339 @@
+.ar-local-cdr .site-header-segment {
+  justify-content: center;
+}
+
+.ar-local-cdr button.site-header-segment-link {
+  border: 0;
+  background: transparent !important;
+  color: var(--ar-text-soft) !important;
+  box-shadow: none;
+}
+
+.ar-local-cdr button.site-header-segment-link:hover {
+  color: var(--ar-text);
+  background: color-mix(in srgb, var(--ar-surface-2) 88%, transparent);
+}
+
+.ar-local-cdr button.site-header-segment-link.is-active {
+  border: 1px solid color-mix(in srgb, var(--ar-line-strong) 90%, transparent);
+  background: color-mix(in srgb, var(--ar-surface) 80%, transparent) !important;
+  color: var(--ar-text) !important;
+}
+
+.ar-local-cdr .site-header-actions .buttonish {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.ar-local-cdr .site-action-theme {
+  border: 1px solid var(--ar-line);
+  background: var(--ar-surface-2);
+  color: var(--ar-text);
+}
+
+.ar-local-cdr .local-section-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ar-local-cdr .local-section-card {
+  display: grid;
+  min-height: 86px;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ar-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ar-surface-2) 78%, var(--ar-surface));
+  color: var(--ar-text);
+  text-align: left;
+  box-shadow: none;
+}
+
+.ar-local-cdr .local-section-card:hover,
+.ar-local-cdr .local-section-card.is-active {
+  border-color: color-mix(in srgb, var(--ar-line-strong) 82%, var(--ar-line));
+  background: color-mix(in srgb, var(--ar-surface-2) 58%, #111827) !important;
+}
+
+.ar-local-cdr .local-section-card-head {
+  display: grid;
+  gap: 3px;
+}
+
+.ar-local-cdr .local-section-kicker,
+.ar-local-cdr .local-section-card-meta {
+  color: var(--ar-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ar-local-cdr .local-section-card strong {
+  color: var(--ar-text);
+  font-size: 0.98rem;
+}
+
+.ar-local-cdr .local-section-logo-rail {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 6px;
+  overflow: visible;
+}
+
+.ar-local-cdr .local-section-logo-rail .bank-badge {
+  width: 24px;
+  min-width: 24px;
+}
+
+.ar-local-cdr .local-section-logo-rail .bank-badge-copy {
+  display: none;
+}
+
+.ar-local-cdr .local-section-logo-rail .bank-badge-logo-wrap {
+  width: 24px;
+  height: 24px;
+}
+
+.ar-local-cdr .local-selected-logos {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ar-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ar-surface-2) 76%, var(--ar-surface));
+}
+
+.ar-local-cdr .local-selected-logos[hidden] {
+  display: none;
+}
+
+.ar-local-cdr .local-selected-logos-title {
+  color: var(--ar-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ar-local-cdr .local-section-logo-rail-full .bank-badge {
+  width: 28px;
+  min-width: 28px;
+}
+
+.ar-local-cdr .local-section-logo-rail-full .bank-badge-logo-wrap {
+  width: 28px;
+  height: 28px;
+}
+
+.ar-local-cdr .local-filter-strip {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.75fr) minmax(180px, 1fr) minmax(220px, 1.3fr);
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.ar-local-cdr .local-filter-strip input,
+.ar-local-cdr .local-filter-strip select {
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid var(--ar-line);
+  border-radius: var(--ar-radius-1);
+  background: var(--ar-surface-2);
+  color: var(--ar-text);
+  padding: 0 12px;
+}
+
+.ar-local-cdr .chart-figure {
+  overflow: hidden;
+}
+
+.ar-local-cdr .chart-workspace {
+  min-height: 520px;
+}
+
+.ar-local-cdr .terminal-chart-surface {
+  min-height: 520px;
+}
+
+.ar-local-cdr #chart {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+}
+
+.ar-local-cdr .local-table-panel {
+  margin-top: 14px;
+}
+
+.ar-local-cdr .local-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--ar-line);
+  border-radius: 8px;
+}
+
+.ar-local-cdr #hierarchy[hidden],
+.ar-local-cdr #table[hidden] {
+  display: none;
+}
+
+.ar-local-cdr #hierarchy {
+  min-height: 0;
+  height: 100%;
+  padding: 10px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-underchart-tree {
+  display: flex;
+  height: 100%;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--ar-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ar-surface-2) 76%, var(--ar-surface));
+}
+
+.ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+  padding: 6px 6px 10px 8px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trow {
+  min-height: 30px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge {
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-logo-wrap {
+  width: 24px;
+  height: 24px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-copy {
+  min-width: 0;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-label,
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-sub {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ar-local-cdr table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.ar-local-cdr th,
+.ar-local-cdr td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ar-line);
+  text-align: left;
+  max-width: 460px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ar-local-cdr th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ar-surface-3);
+  color: var(--ar-text-soft);
+}
+
+.ar-local-cdr td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ar-local-cdr .local-tree-row {
+  background: var(--ar-surface);
+}
+
+.ar-local-cdr .local-provider-row {
+  background: color-mix(in srgb, var(--ar-section-soft) 72%, var(--ar-surface));
+}
+
+.ar-local-cdr .local-product-row {
+  background: color-mix(in srgb, var(--ar-surface-2) 88%, transparent);
+}
+
+.ar-local-cdr .local-rate-row {
+  color: var(--ar-text-soft);
+}
+
+.ar-local-cdr .local-tree-primary {
+  min-width: 260px;
+}
+
+.ar-local-cdr .local-tree-level-product {
+  padding-left: 34px;
+}
+
+.ar-local-cdr .local-tree-level-rate {
+  padding-left: 62px;
+}
+
+.ar-local-cdr .local-tree-toggle {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin-right: 8px;
+  place-items: center;
+  border: 1px solid var(--ar-line);
+  border-radius: 8px;
+  background: var(--ar-surface-2);
+  color: var(--ar-text-soft);
+  font-size: 0.72rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.ar-local-cdr .local-bank-badge {
+  vertical-align: middle;
+}
+
+.ar-local-cdr .local-product-name {
+  color: var(--ar-text);
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .ar-local-cdr .local-table-wrap {
+  background: color-mix(in srgb, var(--ar-surface) 82%, #020617);
+}
+
+:root[data-theme="dark"] .ar-local-cdr th {
+  background: color-mix(in srgb, var(--ar-surface-3) 88%, #020617);
+}
+
+@media (max-width: 900px) {
+  .ar-local-cdr .site-header-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .ar-local-cdr .site-header-actions {
+    justify-self: stretch;
+  }
+
+  .ar-local-cdr .local-filter-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .ar-local-cdr .local-section-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .ar-local-cdr .chart-workspace,
+  .ar-local-cdr .terminal-chart-surface,
+  .ar-local-cdr #chart {
+    min-height: 360px;
+  }
+}

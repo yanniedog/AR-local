@@ -1,0 +1,10 @@
+# Ingest output (large); keep only scripts in git
+runs/
+tmp_smoke_out/
+__pycache__/
+.daily-state/
+*.pyc
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
