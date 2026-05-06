@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Mapping, Optional
 from cdr_clean_export import parse_banks_run, parse_energy_run, summary_counts, utc_now
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json", "energy_counts_json"],
@@ -43,6 +43,18 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "repayment_type",
         "loan_purpose",
         "term",
+        "ribbon_normalized",
+        "security_purpose",
+        "ribbon_repayment_type",
+        "lvr_tier",
+        "ribbon_rate_structure",
+        "account_type",
+        "ribbon_deposit_kind",
+        "balance_min",
+        "balance_max",
+        "term_months",
+        "interest_payment",
+        "feature_set",
         "details_json",
     ],
     "bank_items": [
@@ -98,7 +110,16 @@ def write_json(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def row_for_columns(row: Mapping[str, Any], columns: List[str]) -> List[Any]:
-    return [row.get(col, "") for col in columns]
+    out: List[Any] = []
+    for col in columns:
+        val = row.get(col, "")
+        if col == "ribbon_normalized":
+            if val is True:
+                val = "1"
+            elif val is False:
+                val = ""
+        out.append(val)
+    return out
 
 
 def ensure_db(con: sqlite3.Connection) -> None:
@@ -146,6 +167,18 @@ def ensure_db(con: sqlite3.Connection) -> None:
           repayment_type TEXT,
           loan_purpose TEXT,
           term TEXT,
+          ribbon_normalized TEXT,
+          security_purpose TEXT,
+          ribbon_repayment_type TEXT,
+          lvr_tier TEXT,
+          ribbon_rate_structure TEXT,
+          account_type TEXT,
+          ribbon_deposit_kind TEXT,
+          balance_min TEXT,
+          balance_max TEXT,
+          term_months TEXT,
+          interest_payment TEXT,
+          feature_set TEXT,
           details_json TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS bank_items (

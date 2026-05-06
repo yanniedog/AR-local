@@ -288,6 +288,55 @@
     };
   }
 
+  function parseBalance(value) {
+    if (value === undefined || value === null || value === '') return null;
+    var n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function isRibbonNormalized(rateRow) {
+    return rateRow.ribbon_normalized === true || rateRow.ribbon_normalized === '1';
+  }
+
+  function ribbonRowFromFlat(rateRow, section) {
+    var bMin = parseBalance(rateRow.balance_min);
+    var bMax = parseBalance(rateRow.balance_max);
+    if (section === 'Mortgage') {
+      return {
+        security_purpose: rateRow.security_purpose,
+        repayment_type: rateRow.ribbon_repayment_type,
+        rate_structure: rateRow.ribbon_rate_structure,
+        lvr_tier: rateRow.lvr_tier,
+        feature_set: rateRow.feature_set,
+        product_name: trimProduct(rateRow.product_name),
+        product_id: String(rateRow.product_id || ''),
+      };
+    }
+    if (section === 'Savings') {
+      return {
+        account_type: rateRow.account_type,
+        rate_type: rateRow.ribbon_deposit_kind,
+        min_balance: bMin,
+        max_balance: bMax,
+        feature_set: rateRow.feature_set,
+        product_name: trimProduct(rateRow.product_name),
+        product_id: String(rateRow.product_id || ''),
+      };
+    }
+    var tm = Number(rateRow.term_months);
+    if (!Number.isFinite(tm) || tm < 1) tm = 12;
+    return {
+      term_months: tm,
+      min_balance: bMin,
+      max_balance: bMax,
+      interest_payment: rateRow.interest_payment,
+      rate_structure: rateRow.ribbon_rate_structure,
+      feature_set: rateRow.feature_set,
+      product_name: trimProduct(rateRow.product_name),
+      product_id: String(rateRow.product_id || ''),
+    };
+  }
+
   function sectionSlug(section) {
     if (section === 'Savings') return 'savings';
     if (section === 'TD') return 'term-deposits';
@@ -317,8 +366,9 @@
     for (var i = 0; i < rateRows.length; i += 1) {
       var rateRow = rateRows[i];
       var item = parseJson(rateRow.details_json, {});
-      var ribbonRow =
-        section === 'Mortgage'
+      var ribbonRow = isRibbonNormalized(rateRow)
+        ? ribbonRowFromFlat(rateRow, section)
+        : section === 'Mortgage'
           ? mortgageRibbonRow(rateRow, item)
           : section === 'Savings'
             ? savingsRibbonRow(rateRow, item)
