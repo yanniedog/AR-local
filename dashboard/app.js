@@ -133,9 +133,21 @@
   function renderSelectedLogos() {
     const wrap = $('selectedLogos');
     clear(wrap);
-    if (!state.banks || state.sector !== 'banks' || !window.LocalCdrBrand) { wrap.hidden = true; return; }
-    const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
-    const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort(), label = state.section === 'TD' ? 'Term Deposit' : state.section;
+    if (!window.LocalCdrBrand) { wrap.hidden = true; return; }
+
+    let providers, label;
+    if (state.sector === 'banks' && state.banks) {
+      const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+      providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
+      label = state.section === 'TD' ? 'Term Deposit' : state.section;
+    } else if (state.sector === 'energy' && state.energy) {
+      providers = [...new Set(state.energy.plans.map((row) => row.provider).filter(Boolean))].sort();
+      label = 'Energy';
+    } else {
+      wrap.hidden = true;
+      return;
+    }
+
     wrap.hidden = false;
     child(wrap, 'span', 'local-selected-logos-title', `${label} providers — click a logo to filter`);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
@@ -146,7 +158,9 @@
       btn.dataset.providerPick = provider;
       btn.title = 'Show products for ' + provider + ' only (click again to clear)';
       if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
-      const sample = rows.find((r) => r.provider === provider);
+      const sample = state.sector === 'banks'
+        ? state.banks.rates.find((r) => r.provider === provider)
+        : undefined;
       window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
         logoOnly: true,
         rateRow: sample,

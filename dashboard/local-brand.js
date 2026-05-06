@@ -16,6 +16,130 @@
     { re: /\brams\b/i, slugs: ['westpac-banking-corporation'] },
   ];
 
+  /**
+   * Domain lookup for Australian energy retailers. Used to fetch a Clearbit
+   * logo when no local/CDN asset exists. Only populated for well-known
+   * retailers to avoid spurious lookups for obscure providers.
+   */
+  const ENERGY_DOMAINS = {
+    'agl': 'agl.com.au',
+    'origin energy': 'originenergy.com.au',
+    'energyaustralia': 'energyaustralia.com.au',
+    'alinta energy': 'alintaenergy.com.au',
+    'red energy': 'redenergy.com.au',
+    'lumo energy': 'lumoenergy.com.au',
+    'momentum energy': 'momentum.com.au',
+    'dodo power & gas': 'dodo.com',
+    'dodo': 'dodo.com',
+    'engie': 'engie.com.au',
+    'amber': 'amber.com.au',
+    'powershop': 'powershop.com.au',
+    'actewagl': 'actewagl.com.au',
+    'aurora energy': 'auroraenergy.com.au',
+    'ergon energy': 'ergon.com.au',
+    'ergon energy retail': 'ergon.com.au',
+    'simply energy': 'simplyenergy.com.au',
+    'tango energy': 'tangoenergy.com',
+    'sumo power': 'sumo.com.au',
+    'diamond energy': 'diamondenergy.com.au',
+    'nectr': 'nectr.com.au',
+    'real utilities': 'realutilities.com.au',
+    'kogan energy': 'kogan.com',
+    'ovo energy': 'ovoenergy.com.au',
+    'flow power': 'flowpower.com.au',
+    'globird energy': 'globirdenergy.com.au',
+    'globierd energy': 'globirdenergy.com.au',
+    'zen energy': 'zenenergy.com.au',
+    '1st energy': '1stenergy.com.au',
+    'racv': 'racv.com.au',
+    'arcline by racv': 'racv.com.au',
+    'blue nrg': 'bluenrg.com.au',
+    'covau': 'covau.com.au',
+    'future x power': 'futurexpower.com.au',
+    'energy locals': 'energylocals.com.au',
+    'energy locals urban': 'energylocals.com.au',
+    'solstice energy': 'solsticeenergy.com.au',
+    'radian energy': 'radianenergy.com.au',
+    'raa energy': 'raa.com.au',
+    'flipped energy': 'flippedenergy.com.au',
+    'gee energy': 'geeenergy.com.au',
+    'next business energy': 'nextbusinessenergy.com.au',
+    'myob powered by ovo': 'myob.com',
+    'io energy': 'ioenergy.com.au',
+    'perpetual energy': 'perpetualenergy.com.au',
+    'erc energy': 'ercenergy.com.au',
+  };
+
+  /**
+   * Additional domain lookup for bank providers that aren't covered by the
+   * australianrates CDN logo pack. Clearbit is tried as a final fallback.
+   */
+  const BANK_DOMAINS = {
+    'arab bank australia': 'arabbank.com.au',
+    'alex.bank': 'alexbank.com',
+    'alex bank': 'alexbank.com',
+    'bank australia': 'bankaust.com.au',
+    'bank first': 'bankfirst.com.au',
+    'bank of china': 'boc.cn',
+    'bank of sydney': 'bankofsydney.com.au',
+    'bank of us': 'bankofus.com.au',
+    'auswide bank': 'auswidebank.com.au',
+    'border bank': 'borderbank.com.au',
+    'cairns bank': 'cairnsbank.com.au',
+    'credit union sa': 'creditunionsa.com.au',
+    'darling downs bank': 'darlingsbank.com.au',
+    'defence bank': 'defencebank.com.au',
+    'family first': 'familyfirst.com.au',
+    'greater bank': 'greater.com.au',
+    'hume bank': 'humebank.com.au',
+    'imb bank': 'imb.com.au',
+    'judo bank': 'judo.bank',
+    'liberty financial': 'liberty.com.au',
+    'move bank': 'movebank.com.au',
+    'mystate bank': 'mystate.com.au',
+    'people first bank': 'peoplefirstbank.com.au',
+    'police bank': 'policebank.com.au',
+    'qudos bank': 'qudosbank.com.au',
+    'racq bank': 'racq.com.au',
+    'south west credit union': 'swcu.com.au',
+    'southern cross credit union': 'southerncross.com.au',
+    'the capricornian': 'capricornian.com.au',
+    'transport mutual credit union': 'tmcu.com.au',
+    'unity bank': 'unitybank.com.au',
+    'up': 'up.com.au',
+    'unibank': 'unibank.com.au',
+    'victoria teachers mutual bank': 'victeach.com.au',
+    'banksa': 'banksa.com.au',
+    'boq specialist': 'boqspecialist.com.au',
+    'bnk bank': 'bnkbank.com.au',
+    'afg home loans': 'afgonline.com.au',
+    'aussie home loans': 'aussie.com.au',
+    'aussie elevate': 'aussie.com.au',
+    'aussie': 'aussie.com.au',
+    'amp - my amp': 'amp.com.au',
+    'amp bank go': 'amp.com.au',
+    'anz plus': 'anz.com.au',
+    'australian military bank': 'australianmilitarybank.com.au',
+    'australian mutual bank': 'australianmutual.bank',
+    'bank of melbourne': 'bankofmelbourne.com.au',
+    'pepper money': 'peppermoney.com.au',
+    'firstmac': 'firstmac.com.au',
+    'mecu': 'bankaust.com.au',
+  };
+
+  /** Clearbit Logo API — used as last resort when no local/CDN icon is found. */
+  function clearbitUrl(domain) {
+    return 'https://logo.clearbit.com/' + domain + '?size=64';
+  }
+
+  /** Look up the Clearbit URL for a given provider label (energy or bank). */
+  function clearbitUrlForProvider(label) {
+    const key = String(label || '').trim().toLowerCase();
+    const domain = ENERGY_DOMAINS[key] || BANK_DOMAINS[key];
+    if (domain) return clearbitUrl(domain);
+    return '';
+  }
+
   function child(parent, tagName, className, text) {
     const element = document.createElement(tagName);
     if (className) element.className = className;
@@ -190,7 +314,7 @@
       .toUpperCase();
   }
 
-  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider) {
+  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider, clearbitFallback) {
     while (logoWrap.firstChild) logoWrap.removeChild(logoWrap.firstChild);
     const urls = [];
     const seen = new Set();
@@ -208,6 +332,7 @@
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
+    if (clearbitFallback) pushUrl(clearbitFallback);
 
     if (!urls.length) {
       child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
@@ -266,13 +391,14 @@
       const seen = new Set(slugBasenames);
       if (!seen.has(iconSlug)) slugBasenames = [iconSlug].concat(slugBasenames);
     }
+    const clearbitFallback = clearbitUrlForProvider(provider);
     const classes = ['bank-badge', 'local-bank-badge'];
     if (opts.logoOnly) classes.push('local-bank-badge--logo-only');
     const badge = child(parent, 'span', classes.join(' '));
     badge.title = provider || meta.name;
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
-    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider);
+    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, clearbitFallback);
     const copy = child(badge, 'span', 'bank-badge-copy');
     child(copy, 'span', 'bank-badge-label', meta.short || provider || '-');
     if (showName) child(copy, 'span', 'bank-badge-sub', provider || meta.name);
