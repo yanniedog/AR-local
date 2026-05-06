@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from cdr_ribbon_normalize import ribbon_columns_for_bank_rate_row
+
 NOISE_KEYS = {
     "links",
     "meta",
@@ -173,24 +175,29 @@ def append_bank_details(
         divisor = rate_divisor(items, family)
         for idx, item in enumerate(items, 1):
             cleaned = clean_value(item)
-            dataset["rates"].append(
-                {
-                    **base,
-                    "rate_family": family,
-                    "rate_index": idx,
-                    "rate": normalized_rate_text(item.get("rate"), divisor, family),
-                    "comparison_rate": normalized_rate_text(item.get("comparisonRate"), divisor, family),
-                    "rate_type": text(item.get("depositRateType") or item.get("lendingRateType")),
-                    "application_type": text(item.get("applicationType")),
-                    "application_frequency": text(item.get("applicationFrequency")),
-                    "calculation_frequency": text(item.get("calculationFrequency")),
-                    "repayment_type": text(item.get("repaymentType")),
-                    "loan_purpose": text(item.get("loanPurpose")),
-                    "term": text(item.get("additionalValue")),
-                    "tiers": json.dumps(cleaned.get("tiers", []), ensure_ascii=False),
-                    "details_json": json.dumps(cleaned, ensure_ascii=False, sort_keys=True),
-                }
+            rate_row = {
+                **base,
+                "rate_family": family,
+                "rate_index": idx,
+                "rate": normalized_rate_text(item.get("rate"), divisor, family),
+                "comparison_rate": normalized_rate_text(item.get("comparisonRate"), divisor, family),
+                "rate_type": text(item.get("depositRateType") or item.get("lendingRateType")),
+                "application_type": text(item.get("applicationType")),
+                "application_frequency": text(item.get("applicationFrequency")),
+                "calculation_frequency": text(item.get("calculationFrequency")),
+                "repayment_type": text(item.get("repaymentType")),
+                "loan_purpose": text(item.get("loanPurpose")),
+                "term": text(item.get("additionalValue")),
+                "details_json": "{}",
+            }
+            ribbons = ribbon_columns_for_bank_rate_row(
+                base.get("dataset") or "",
+                family,
+                rate_row,
+                cleaned,
             )
+            rate_row.update(ribbons)
+            dataset["rates"].append(rate_row)
 
     for sheet, key, label_key in (
         ("fees", "fees", "feeType"),
