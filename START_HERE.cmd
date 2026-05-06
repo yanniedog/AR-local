@@ -1,5 +1,6 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0START_HERE.ps1"
+python "%~dp0start_here.py" --action menu
+if errorlevel 1 py -3 "%~dp0start_here.py" --action menu
 if errorlevel 1 pause

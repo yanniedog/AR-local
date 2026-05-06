@@ -1,6 +1,7 @@
 param(
   [string]$TaskName = "AustralianRates-Local-CDR-Ingest",
-  [string]$At = "03:15",
+  # Local wall time for Task Scheduler. For 20:00 UTC, use start_here.py (option 5) so the time is TZ-adjusted.
+  [string]$At = "20:00",
   [string]$ExtraArgs = "--workers 8"
 )
 
