@@ -33,8 +33,22 @@ def resolve_site_root(explicit: Path | None) -> Path:
         BASE_DIR.parent / "australianrates" / "site",
         BASE_DIR.parent / "site",
     ]
-    for cand in candidates:
-        root = cand.resolve()
+
+    bank_icon_suffixes = (".png", ".webp", ".svg")
+
+    def bank_icon_file_count(root: Path) -> int:
+        banks = root / "assets" / "banks"
+        if not banks.is_dir():
+            return 0
+        return sum(
+            sum(1 for p in banks.glob(f"*{suf}") if p.is_file()) for suf in bank_icon_suffixes
+        )
+
+    resolved = [c.resolve() for c in candidates]
+    with_banks = [r for r in resolved if (r / "foundation.css").is_file() and bank_icon_file_count(r) > 0]
+    if with_banks:
+        return with_banks[0]
+    for root in resolved:
         if (root / "foundation.css").is_file():
             return root
     listed = ", ".join(str(c) for c in candidates)
@@ -102,6 +116,7 @@ def make_handler(exports_root: Path, site_root: Path):
                 return dashboard_cache.read(DASHBOARD_ROOT / "app.css"), "text/css; charset=utf-8"
             if path in (
                 "/assets/app.js",
+                "/assets/ar-bank-brand.js",
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/cdr-ribbon-map.js",
