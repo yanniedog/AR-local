@@ -25,8 +25,15 @@ _BOUND_GE = re.compile(r"(?:>=|over|above|from)\s*(\d{1,3}(?:\.\d+)?)\s*%?")
 _BOUND_SINGLE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
 
 
-def _lower_join(*parts: str) -> str:
-    return " ".join(p.strip() for p in parts if p and str(p).strip()).lower()
+def _lower_join(*parts: Any) -> str:
+    bits = []
+    for p in parts:
+        if p is None:
+            continue
+        s = str(p).strip()
+        if s:
+            bits.append(s)
+    return " ".join(bits).lower()
 
 
 def _lower(text: Any) -> str:
@@ -60,10 +67,12 @@ def parse_term_months(duration: Any) -> Optional[float]:
     if ym:
         return float(ym.group(1)) * 12
 
-    if t and re.fullmatch(r"[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?", t):
+    try:
         num = float(t)
-        if math.isfinite(num) and 0 < num <= 1200:
-            return num
+    except ValueError:
+        return None
+    if math.isfinite(num) and 0 < num <= 1200:
+        return num
 
     return None
 
@@ -297,6 +306,8 @@ def normalize_interest_payment(
         return "annually"
     if fq is not None and fq >= 12:
         return "annually"
+    # Parity with dashboard/cdr-ribbon-map.js normalizeInterestPayment: P6M → 6 is grouped as monthly
+    # (semi-annual is not its own facet there). Change both TS/JS and Python together if cadence enums split.
     if "monthly" in t or (fq is not None and (fq == 1 or fq == 6)):
         return "monthly"
     if "at maturity" in t:
@@ -307,6 +318,10 @@ def normalize_interest_payment(
 def _num_or_empty(val: Optional[float]) -> str:
     if val is None or not math.isfinite(val):
         return ""
+    nearest = round(val)
+    # Never rstrip("0") on integer-form strings: "100".rstrip("0") → "10".
+    if abs(val - nearest) < 1e-9:
+        return str(int(nearest))
     text = f"{val:.12g}".rstrip("0").rstrip(".")
     return text or "0"
 
@@ -314,7 +329,7 @@ def _num_or_empty(val: Optional[float]) -> str:
 def ribbon_columns_for_bank_rate_row(
     dataset: str,
     rate_family: str,
-    flat_base: Mapping[str, str],
+    flat_base: Mapping[str, Any],
     cleaned_item: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Return discrete ribbon-aligned columns merged into export bank rate rows."""

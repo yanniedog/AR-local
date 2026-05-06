@@ -215,6 +215,8 @@
     if (t.includes('quarterly') || t.includes('quarter')) return 'quarterly';
     if (t.includes('annual') || t.includes('yearly')) return 'annually';
     if (frequencyMonths != null && frequencyMonths >= 12) return 'annually';
+    // Semi-annual (P6M → 6) is grouped here as monthly to match longstanding ribbon behaviour.
+    // If payment cadence needs its own facet, introduce e.g. semi_annual here and mirror in cdr_ribbon_normalize.py.
     if (t.includes('monthly') || (frequencyMonths != null && (frequencyMonths === 1 || frequencyMonths === 6))) return 'monthly';
     if (t.includes('at maturity')) return 'at_maturity';
     return 'at_maturity';
