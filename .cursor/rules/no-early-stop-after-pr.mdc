@@ -1,0 +1,22 @@
+---
+description: "Hard guard: do not stop after PR/CI — run ship:closeout:strict; exit 2 means continue the full ship bar"
+alwaysApply: true
+---
+
+# No early stop after PR or CI green
+
+Before ending any turn on a shipping task:
+
+```sh
+npm run ship:closeout:strict && npm run wait-for-bots
+```
+
+from repo root.
+
+- **Exit 0** — clear to stop (for these guards).
+- **`ship:closeout:strict` exit 2** — open PR exists; continue **`WORKFLOW.md`** steps 5–9.
+- **`wait-for-bots` exit 2** — < 7 min since PR creation; wait and re-sweep.
+
+**Never** end with "done", "shipped", "PR opened", "CI green so we're good", or "handing off the PR" while an open PR exists and you have merge ability.
+
+Full ship bar: **`WORKFLOW.md`**.

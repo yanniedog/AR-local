@@ -1,0 +1,10 @@
+---
+description: "Bot reply requirement for Gemini, Codex, and similar automated reviewers — reply in-thread before merge"
+alwaysApply: true
+---
+
+# PR review bot replies
+
+Same standard as Australian Rates: **`WORKFLOW.md`** step 6.
+
+**Summary:** for every substantive thread from automated reviewers — reply in-thread before merge: implemented (+ SHA) / deferred (reason) / declined (reason). Do not merge with unanswered threads. Green CI alone does not replace thread closure.

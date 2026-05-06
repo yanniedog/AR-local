@@ -1,0 +1,11 @@
+---
+description: Data-first presentation rule
+alwaysApply: true
+---
+
+This project is data-first.
+
+- Prefer dense tables, compact controls, terse labels, and direct values.
+- Default to one-line rows and linear parameter layouts for operational or analytical data.
+- Do not add descriptive paragraphs, explanatory subtitles, marketing copy, embellished helper text, or verbose narrative unless explicitly requested.
+- When uncertain, remove words and surface the data.

@@ -1,0 +1,37 @@
+---
+description: "Local hosting model: dashboard server + AustralianRates site assets on disk — no Cloudflare"
+alwaysApply: true
+---
+
+# AR-local configuration
+
+Python ingest and export scripts plus a **local HTTP dashboard** (`cdr_dashboard_server.py`, `dashboard/`). No Cloudflare Workers or Pages in this repo.
+
+## Hosting model
+
+- **Dashboard:** `python cdr_dashboard_server.py --exports <runs/<date>/_exports>` (see README).
+- **Shell assets:** `/site/*` is served from the AustralianRates **`site`** directory (auto-detected beside this repo or via **`--site-root`**). Prefer a tree that contains **`assets/banks/*.png`** when multiple candidates exist.
+- **Bundled:** **`/assets/ar-bank-brand.js`** is served from **`dashboard/ar-bank-brand.js`** so brand icons resolve without a working **`/site/ar-bank-brand.js`**.
+
+## Repo commands
+
+| Purpose | Command |
+|--------|---------|
+| Local dashboard smoke | `npm run verify:local -- --base-url=<url>/` |
+| Bot wait | `npm run wait-for-bots` |
+| Open PR closeout guard | `npm run ship:closeout:strict` |
+
+## Verification checklist
+
+- HTTP smoke passes (**`verify:local`**).
+- No unexpected console errors on the dashboard when exercising changed UI (Browser MCP when requested).
+- Critical flows: index loads, **`/api/latest`** returns JSON for the configured exports path.
+
+## Fix-restart-retry
+
+If checks fail: fix, restart the dashboard server if Python or static files changed, re-run **`verify:local`**.
+
+## Code quality (aligned with Australian Rates)
+
+- Soft target **~800 LOC** per file, hard ceiling **~1000 LOC**; split along natural seams when practical.
+- Cap functions around **~50 lines** where reasonable; avoid duplicating the same logic in 3+ places.

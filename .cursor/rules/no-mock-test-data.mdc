@@ -1,0 +1,19 @@
+---
+description: "No mock or fabricated CDR data — use real ingest outputs and artifacts"
+alwaysApply: true
+---
+
+# Real Data Only (AR-local)
+
+## Philosophy
+
+Validation should reflect **real CDR shapes** and **real generated artifacts**. Fabricated rows or fake exports can pass while real ingest fails.
+
+## Rule
+
+- **Do not** invent rate rows, provider lists, or JSON/XLSX content as substitutes for running ingest or using existing **`runs/<date>/_exports/`** output.
+- **Do** use exports produced by **`cdr_daily.py`** / **`cdr_outputs.py`** (or fixtures captured from real runs if you add tests later).
+- **Pure helpers** (string slugify, path parsing) may use tiny literal inputs.
+- **Dashboard work:** point **`--exports`** at a real **`dashboard-cache`** tree so **`/api/latest`** and charts reflect actual data.
+
+See **`AGENTS.md`** (Project philosophy: real data only).
