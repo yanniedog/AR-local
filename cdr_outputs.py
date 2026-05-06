@@ -347,10 +347,11 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
         "rates": banks["rates"],
         "counts": summary_counts(banks),
     }
+    # Dashboard only reads `plans` (see dashboard/app.js). Omit heavy nested lists
+    # (e.g. charges) so /api/energy stays bounded; full detail remains in energy-<date>.json.
     energy_cache = {
         "run_date": run_date,
         "plans": energy["plans"],
-        "charges": energy["charges"],
         "counts": summary_counts(energy),
     }
     manifest = {
