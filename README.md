@@ -33,10 +33,13 @@ shows a short header. Menu:
 0. Exit
 ```
 
-Schedule option 5: on Windows it registers a Task Scheduler job at the **local**
-time that matches **20:00 UTC** each day. On Linux/Pi it installs a **user**
-crontab block with `CRON_TZ=UTC` and `20:00` daily, running `cdr_daily.py
---workers 8` from this repo.
+Schedule option 5: on Windows it registers a Task Scheduler job with a **UTC
+calendar trigger** at **20:00 UTC** (DST-stable via XML). On Linux/Pi it installs a **user**
+crontab block with `CRON_TZ=UTC` and `20:00` daily, running `cdr_daily.py`
+with the shared worker count from `ar_local_launcher_constants.py`.
+
+`START_HERE.cmd` only falls back to `py -3` when `python` is missing (**errorlevel
+9009**), not when `start_here.py` exits with an error.
 
 Boot option 8: installs a **systemd user** oneshot unit that runs `cdr_daily.py`
 on boot. Ingest is skipped for the current local day if `.daily-state/<date>.done.json`
@@ -56,7 +59,8 @@ from every discovered provider. Later runs resume and skip completed detail
 files.
 
 Database summary (menu 7) uses `runs/<latest>/_exports/local-cdr.sqlite` by
-default; override with env `AR_LOCAL_DB` if needed.
+default; override with env `AR_LOCAL_DB` if needed. `PRAGMA quick_check` is **skipped**
+by default (large DBs); set `AR_LOCAL_DB_QUICK_CHECK=1` or `DB_QUICK_CHECK=1` to run it.
 
 ## One-Click Shortcuts
 

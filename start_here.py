@@ -3,32 +3,42 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import webbrowser
-import shlex
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-from zoneinfo import ZoneInfo
+from typing import Any, Dict, List, Optional, Tuple
 import sqlite3
 import urllib.error
 import urllib.request
 
+from ar_local_git import git_compare_upstream, git_pull_ff_only
+from ar_local_launcher_constants import (
+    CRON_BEGIN,
+    CRON_END,
+    DAILY_WORKER_COUNT,
+    ENV_DB_QUICK_CHECK,
+    ENV_DB_QUICK_CHECK_ALT,
+    INGEST_EXTRA_ARGS,
+    SCHEDULE_UTC_HOUR,
+    SCHEDULE_UTC_MINUTE,
+    SYSTEMD_UNIT_NAME,
+    TASK_NAME,
+)
 from ar_local_platform import HostKind, host_kind, platform_label
+from ar_local_subprocess import run_checked
 
 REPO_ROOT = Path(__file__).resolve().parent
 RUNS_DIR = REPO_ROOT / "runs"
-CRON_BEGIN = "# BEGIN AR-local CDR"
-CRON_END = "# END AR-local CDR"
-TASK_NAME = "AustralianRates-Local-CDR-Ingest"
-SYSTEMD_UNIT_NAME = "ar-local-boot-ingest.service"
 STATE_DIR = REPO_ROOT / ".daily-state"
 DB_STATS_SNAPSHOT = STATE_DIR / "last_db_stats.json"
 
@@ -45,32 +55,6 @@ def resolve_python_argv() -> List[str]:
         return [launcher, "-3"]
     print("Python was not found. Install Python 3.10+ or add it to PATH.", file=sys.stderr)
     raise SystemExit(1)
-
-
-def run_checked(
-    argv: Sequence[str],
-    *,
-    cwd: Optional[Path] = None,
-    env: Optional[Dict[str, str]] = None,
-) -> None:
-    merged = os.environ.copy()
-    if env:
-        merged.update(env)
-    r = subprocess.run(list(argv), cwd=str(cwd) if cwd else None, env=merged)
-    if r.returncode != 0:
-        raise SystemExit(r.returncode)
-
-
-def run_capture(argv: Sequence[str], cwd: Optional[Path] = None) -> str:
-    r = subprocess.run(
-        list(argv),
-        cwd=str(cwd) if cwd else None,
-        capture_output=True,
-        text=True,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip() or r.stdout.strip() or f"exit {r.returncode}")
-    return (r.stdout or "").strip()
 
 
 def latest_run_date() -> Optional[str]:
@@ -95,7 +79,7 @@ def require_latest_run_date() -> str:
 
 def invoke_daily(force: bool) -> None:
     py = resolve_python_argv()
-    args = [*py, str(REPO_ROOT / "cdr_daily.py"), "--workers", "8"]
+    args = [*py, str(REPO_ROOT / "cdr_daily.py"), "--workers", str(DAILY_WORKER_COUNT)]
     if force:
         args.append("--force")
     run_checked(args, cwd=REPO_ROOT)
@@ -133,6 +117,7 @@ def open_dashboard() -> None:
         creationflags=creationflags,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        shell=False,
     )
     deadline = time.time() + 30.0
     url: Optional[str] = None
@@ -150,7 +135,8 @@ def open_dashboard() -> None:
                 if url:
                     health = url.rstrip("/") + "/api/latest"
                     try:
-                        urllib.request.urlopen(health, timeout=2)
+                        with urllib.request.urlopen(health, timeout=2):
+                            pass
                         webbrowser.open(url)
                         print(f"\nDashboard opened: {url}\nServer process: {proc.pid}\n")
                         return
@@ -164,141 +150,15 @@ def open_dashboard() -> None:
         port_file.unlink(missing_ok=True)
 
 
-def _git(argv: List[str]) -> str:
-    return run_capture(["git", *argv], cwd=REPO_ROOT)
-
-
-def git_prep_fetch() -> Tuple[bool, str]:
-    try:
-        _git(["rev-parse", "--git-dir"])
-    except RuntimeError:
-        return False, "Not a git checkout."
-    try:
-        _git(["remote", "get-url", "origin"])
-    except RuntimeError:
-        return False, "No git remote 'origin'."
-    try:
-        proc = subprocess.run(
-            ["git", "fetch", "origin"],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            msg = (proc.stderr or proc.stdout or "git fetch failed").strip()
-            return False, msg
-    except OSError as e:
-        return False, f"git fetch failed: {e}"
-    return True, ""
-
-
-def git_status_dirty() -> bool:
-    try:
-        out = _git(["status", "--porcelain"])
-    except RuntimeError:
-        return True
-    return bool(out.strip())
-
-
-def git_default_remote_ref() -> Optional[str]:
-    try:
-        sym = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
-        if sym.startswith("refs/remotes/"):
-            return sym.split("refs/remotes/", 1)[1]
-    except RuntimeError:
-        pass
-    for candidate in ("origin/main", "origin/master"):
-        try:
-            subprocess.run(
-                ["git", "rev-parse", candidate],
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                check=True,
-            )
-            return candidate
-        except subprocess.CalledProcessError:
-            continue
-    return None
-
-
-def git_compare_upstream() -> Tuple[Optional[int], Optional[str], str]:
-    """Returns (commits_behind, upstream_ref, message)."""
-    ok, err = git_prep_fetch()
-    if not ok:
-        return None, None, err
-    upstream: Optional[str] = None
-    try:
-        upstream = _git(["rev-parse", "--abbrev-ref", "@{upstream}"])
-    except RuntimeError:
-        pass
-    if not upstream or upstream == "HEAD":
-        ref = git_default_remote_ref()
-        if not ref:
-            return None, None, "Cannot determine origin default branch."
-        upstream = ref
-    try:
-        behind_txt = _git(["rev-list", "--count", f"HEAD..{upstream}"])
-        ahead_txt = _git(["rev-list", "--count", f"{upstream}..HEAD"])
-        behind = int(behind_txt)
-        ahead = int(ahead_txt)
-    except (RuntimeError, ValueError) as e:
-        return None, upstream, str(e)
-    if behind == 0 and ahead == 0:
-        return 0, upstream, f"Up to date with {upstream}."
-    if behind > 0 and ahead == 0:
-        return behind, upstream, f"Update available: {behind} commit(s) behind {upstream}."
-    if ahead > 0 and behind == 0:
-        return 0, upstream, f"Local branch is {ahead} commit(s) ahead of {upstream} (no pull needed)."
-    return (
-        behind,
-        upstream,
-        f"Diverged: {behind} behind, {ahead} ahead of {upstream}. git pull --ff-only may fail.",
-    )
-
-
-def git_pull_ff_only() -> None:
-    if git_status_dirty():
-        print("Working tree is dirty. Commit or stash before updating.", file=sys.stderr)
-        raise SystemExit(1)
-    upstream: Optional[str] = None
-    try:
-        upstream = _git(["rev-parse", "--abbrev-ref", "@{upstream}"])
-    except RuntimeError:
-        upstream = None
-    if not upstream or upstream == "HEAD":
-        ref = git_default_remote_ref()
-        if not ref:
-            print("No upstream branch; set branch tracking or pull manually.", file=sys.stderr)
-            raise SystemExit(1)
-        run_checked(["git", "pull", "--ff-only", "origin", ref.split("/", 1)[-1]], cwd=REPO_ROOT)
-        return
-    run_checked(["git", "pull", "--ff-only"], cwd=REPO_ROOT)
-
-
-def utc_daily_to_local_scheduler_time(hour_utc: int, minute_utc: int) -> str:
-    utc = ZoneInfo("UTC")
-    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
-    now_utc = datetime.now(utc)
-    dt_utc = datetime(
-        now_utc.year,
-        now_utc.month,
-        now_utc.day,
-        hour_utc,
-        minute_utc,
-        0,
-        tzinfo=utc,
-    )
-    dt_local = dt_utc.astimezone(local_tz)
-    return dt_local.strftime("%H:%M")
-
-
-def install_windows_scheduled_task(hour_utc: int = 20, minute_utc: int = 0) -> None:
-    local_hhmm = utc_daily_to_local_scheduler_time(hour_utc, minute_utc)
+def install_windows_scheduled_task(
+    hour_utc: int = SCHEDULE_UTC_HOUR,
+    minute_utc: int = SCHEDULE_UTC_MINUTE,
+) -> None:
     ps1 = REPO_ROOT / "install_daily_task.ps1"
     if not ps1.is_file():
         print("install_daily_task.ps1 missing.", file=sys.stderr)
         raise SystemExit(1)
+    utc_at = f"{hour_utc:02d}:{minute_utc:02d}"
     run_checked(
         [
             "powershell",
@@ -307,16 +167,17 @@ def install_windows_scheduled_task(hour_utc: int = 20, minute_utc: int = 0) -> N
             "Bypass",
             "-File",
             str(ps1),
-            "-At",
-            local_hhmm,
+            "-RunAtUtc",
+            "-UtcAt",
+            utc_at,
             "-ExtraArgs",
-            "--workers 8",
+            INGEST_EXTRA_ARGS,
         ],
         cwd=REPO_ROOT,
     )
     print(
         f"Registered Windows scheduled task '{TASK_NAME}' "
-        f"daily at {local_hhmm} local time (20:00 UTC equivalent)."
+        f"daily at {utc_at} UTC (Task Scheduler XML; DST-stable)."
     )
 
 
@@ -324,12 +185,15 @@ def _cron_block(py: str, repo: Path) -> List[str]:
     repo_q = shlex.quote(str(repo))
     py_q = shlex.quote(py)
     script_q = shlex.quote(str(repo / "cdr_daily.py"))
-    line = f"0 20 * * * cd {repo_q} && {py_q} {script_q} --workers 8"
+    line = (
+        f"{SCHEDULE_UTC_MINUTE} {SCHEDULE_UTC_HOUR} * * * cd {repo_q} && "
+        f"{py_q} {script_q} --workers {DAILY_WORKER_COUNT}"
+    )
     return [CRON_BEGIN, "CRON_TZ=UTC", line, CRON_END]
 
 
 def read_user_crontab_raw() -> str:
-    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True, shell=False)
     if r.returncode != 0:
         err = (r.stderr or "").lower()
         out = (r.stdout or "").lower()
@@ -340,11 +204,8 @@ def read_user_crontab_raw() -> str:
 
 
 def write_user_crontab_raw(content: str) -> None:
-    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-    assert proc.stdin
-    proc.stdin.write(content)
-    proc.stdin.close()
-    if proc.wait() != 0:
+    r = subprocess.run(["crontab", "-"], input=content, text=True, shell=False)
+    if r.returncode != 0:
         raise RuntimeError("crontab install failed")
 
 
@@ -372,7 +233,7 @@ def install_linux_cron() -> None:
     py = resolve_python_argv()[0]
     block = _cron_block(py, REPO_ROOT)
     merge_crontab_block(block)
-    print("Installed user crontab block (20:00 UTC daily):")
+    print(f"Installed user crontab block ({SCHEDULE_UTC_HOUR:02d}:{SCHEDULE_UTC_MINUTE:02d} UTC daily):")
     for ln in block:
         print(f"  {ln}")
 
@@ -435,7 +296,10 @@ def write_boot_systemd_unit() -> None:
     py = resolve_python_argv()[0]
     script = REPO_ROOT / "cdr_daily.py"
     wd = _systemd_exec_word(REPO_ROOT)
-    exec_line = f"{_systemd_exec_word(Path(py))} {_systemd_exec_word(script)} --workers 8"
+    exec_line = (
+        f"{_systemd_exec_word(Path(py))} {_systemd_exec_word(script)} "
+        f"--workers {DAILY_WORKER_COUNT}"
+    )
     unit = f"""[Unit]
 Description=AR-local CDR daily ingest on boot (skips if today already done)
 After=network-online.target
@@ -482,6 +346,7 @@ def disable_boot_ingest() -> None:
         ["systemctl", "--user", "disable", SYSTEMD_UNIT_NAME, "--now"],
         capture_output=True,
         text=True,
+        shell=False,
     )
     if r.returncode != 0 and r.stderr:
         print(r.stderr.strip(), file=sys.stderr)
@@ -498,6 +363,7 @@ def status_boot_ingest() -> None:
         ["systemctl", "--user", "is-enabled", SYSTEMD_UNIT_NAME],
         capture_output=True,
         text=True,
+        shell=False,
     )
     print(f"enabled: {(r.stdout or '').strip() or r.stderr.strip()}")
 
@@ -507,6 +373,14 @@ def default_db_path() -> Path:
     if not d:
         raise RuntimeError("No runs folder.")
     return RUNS_DIR / d / "_exports" / "local-cdr.sqlite"
+
+
+def _env_wants_db_quick_check() -> bool:
+    for key in (ENV_DB_QUICK_CHECK, ENV_DB_QUICK_CHECK_ALT):
+        v = os.environ.get(key, "").strip().lower()
+        if v in ("1", "true", "yes", "y"):
+            return True
+    return False
 
 
 def collect_db_stats(db_path: Path) -> Dict[str, Any]:
@@ -522,7 +396,7 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
         total_bytes += shm.stat().st_size
 
     now = datetime.now(timezone.utc)
-    with sqlite3.connect(str(db_path)) as con:
+    with contextlib.closing(sqlite3.connect(str(db_path))) as con:
         con.row_factory = sqlite3.Row
         cur = con.execute("SELECT MAX(run_date) AS d FROM runs")
         row = cur.fetchone()
@@ -592,8 +466,11 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
         page_size = int(con.execute("PRAGMA page_size").fetchone()[0])
         freelist = int(con.execute("PRAGMA freelist_count").fetchone()[0])
         journal_mode = str(con.execute("PRAGMA journal_mode").fetchone()[0])
-        qck = con.execute("PRAGMA quick_check").fetchone()
-        integrity = str(qck[0]) if qck else "unknown"
+        if _env_wants_db_quick_check():
+            qck = con.execute("PRAGMA quick_check").fetchone()
+            integrity = str(qck[0]) if qck else "unknown"
+        else:
+            integrity = "skipped (set AR_LOCAL_DB_QUICK_CHECK=1 or DB_QUICK_CHECK=1 to run)"
 
     wal_size = wal.stat().st_size if wal.is_file() else 0
     db_mtime = datetime.fromtimestamp(db_path.stat().st_mtime, tz=timezone.utc)
@@ -617,8 +494,6 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     DB_STATS_SNAPSHOT.write_text(json.dumps(snap, indent=2), encoding="utf-8")
 
-    delta_bytes: Optional[int] = None
-    delta_pages: Optional[int] = None
     delta_note = "N/A (first snapshot)"
     if prev_snap:
         try:
@@ -627,7 +502,10 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
             if age > 0 and age <= 86400:
                 delta_bytes = total_bytes - int(prev_snap.get("total_bytes_on_disk", 0))
                 delta_pages = page_count - int(prev_snap.get("page_count", 0))
-                delta_note = f"Since last menu view ({age / 3600:.1f}h): Δ bytes on disk {delta_bytes:+d}, Δ pages {delta_pages:+d} (approx, not OS I/O)"
+                delta_note = (
+                    f"Since last menu view ({age / 3600:.1f}h): "
+                    f"delta bytes on disk {delta_bytes:+d}, delta pages {delta_pages:+d} (approx, not OS I/O)"
+                )
             else:
                 delta_note = "Previous snapshot older than 24h; showing deltas would be misleading."
         except (KeyError, ValueError, TypeError):
@@ -683,13 +561,13 @@ def print_db_summary() -> None:
 
 
 def menu_git_update() -> None:
-    behind, _up, msg = git_compare_upstream()
+    behind, _up, msg = git_compare_upstream(REPO_ROOT)
     print(msg)
     if behind is None or behind == 0:
         return
     a = input("Pull latest with git pull --ff-only? [y/N]: ").strip().lower()
     if a == "y":
-        git_pull_ff_only()
+        git_pull_ff_only(REPO_ROOT)
         print("Update complete.")
 
 
@@ -771,7 +649,6 @@ def interactive_menu() -> None:
 
 
 def boot_ingest_main() -> None:
-    """Oneshot for systemd: same as cdr_daily without --force."""
     invoke_daily(False)
 
 
@@ -806,7 +683,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif act == "schedule":
         menu_schedule()
     elif act == "git-status":
-        behind, _up, msg = git_compare_upstream()
+        behind, _up, msg = git_compare_upstream(REPO_ROOT)
         print(msg)
         if behind:
             print(f"(commits behind: {behind})")
