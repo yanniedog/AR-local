@@ -14,6 +14,7 @@ Usage:
   python cdr_full_ingest.py --holders commbank --max-pages 2 --max-products 50
   python cdr_full_ingest.py --no-energy
   python cdr_full_ingest.py --no-banks --holders origin
+  python cdr_full_ingest.py --energy-lite
   python cdr_full_ingest.py --workers 16
   python cdr_outputs.py runs/2026-05-06
   python cdr_dashboard_server.py --exports runs/2026-05-06/_exports

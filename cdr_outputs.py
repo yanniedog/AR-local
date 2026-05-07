@@ -373,11 +373,17 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
     write_json(out_dir / "dashboard-cache" / "latest.json", manifest)
 
 
-def build_outputs(run_root: Path, out_dir: Optional[Path] = None, db_path: Optional[Path] = None) -> Dict[str, Any]:
+def build_outputs(
+    run_root: Path,
+    out_dir: Optional[Path] = None,
+    db_path: Optional[Path] = None,
+    *,
+    energy_slim: bool = False,
+) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
     banks = parse_banks_run(run_root)
-    energy = parse_energy_run(run_root)
+    energy = parse_energy_run(run_root, energy_slim=energy_slim)
     write_json(out_dir / f"banks-{run_date}.json", banks)
     write_json(out_dir / f"energy-{run_date}.json", energy)
     write_sector_workbooks(out_dir, run_date, banks, energy)
@@ -391,12 +397,22 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("run_root", type=Path, help="Run date folder, e.g. runs/2026-05-06")
     parser.add_argument("--out", type=Path, default=None, help="Export folder (default: <run>/_exports)")
     parser.add_argument("--db", type=Path, default=None, help="SQLite path (default: <out>/local-cdr.sqlite)")
+    parser.add_argument(
+        "--energy-slim",
+        action="store_true",
+        help="Energy: trim plan details_json and omit contracts/charges/fees rows (XLSX + SQLite + JSON).",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
-    result = build_outputs(args.run_root.expanduser().resolve(), args.out, args.db)
+    result = build_outputs(
+        args.run_root.expanduser().resolve(),
+        args.out,
+        args.db,
+        energy_slim=bool(args.energy_slim),
+    )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 

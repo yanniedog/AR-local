@@ -243,6 +243,21 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
     return dataset
 
 
+# Dropped for slim exports / ``--energy-slim`` (tariffs, fees breakdown, etc.).
+ENERGY_SLIM_OMIT_KEYS = frozenset(
+    {
+        "electricityContract",
+        "gasContract",
+        "dualFuelContract",
+        "fees",
+    },
+)
+
+
+def slim_energy_plan_record(rec: Mapping[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in rec.items() if k not in ENERGY_SLIM_OMIT_KEYS}
+
+
 def energy_base_row(path: Path, energy_root: Path, rec: Mapping[str, Any]) -> Dict[str, str]:
     rel = path.relative_to(energy_root)
     parts = rel.parts
@@ -323,7 +338,7 @@ def add_nested_energy_rows(
                 )
 
 
-def parse_energy_run(run_root: Path) -> Dict[str, Any]:
+def parse_energy_run(run_root: Path, *, energy_slim: bool = False) -> Dict[str, Any]:
     energy_root = run_root / "energy"
     dataset: Dict[str, Any] = {
         "generated_at": utc_now(),
@@ -340,8 +355,10 @@ def parse_energy_run(run_root: Path) -> Dict[str, Any]:
     for path in sorted(energy_root.rglob("plan-detail.json")):
         rec = inner_record(load_json(path))
         base = energy_base_row(path, energy_root, rec)
-        dataset["plans"].append({**base, "details_json": detail_json(rec)})
-        append_energy_details(dataset, base, rec)
+        store_rec = slim_energy_plan_record(rec) if energy_slim else rec
+        dataset["plans"].append({**base, "details_json": detail_json(store_rec)})
+        if not energy_slim:
+            append_energy_details(dataset, base, rec)
     return dataset
 
 

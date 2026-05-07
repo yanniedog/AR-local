@@ -227,11 +227,16 @@ def ingest_energy_brand(
     max_retries: int,
     max_pages: Optional[int],
     max_products: Optional[int],
+    energy_lite: bool,
     provider_dir_name: str,
     log: Callable[[str], None],
     failure_lock: Optional[threading.Lock] = None,
 ) -> None:
-    """Ingest one energy retailer's generic plans (CDS ``.../energy/plans``)."""
+    """Ingest one energy retailer's generic plans (CDS ``.../energy/plans``).
+
+    When ``energy_lite`` is True, each paginated list row is written as the plan payload
+    (no per-plan GET). That matches the local dashboard's plan-level columns only.
+    """
     endpoint_url = brand["endpoint_url"]
     holders_root = date_root / "_holders" / provider_dir_name
     holders_root.mkdir(parents=True, exist_ok=True)
@@ -247,6 +252,8 @@ def ingest_energy_brand(
     visited: Set[str] = set()
     pages = 0
     plans_seen = 0
+    details_fetched = 0
+    stopped_for_max_products = False
 
     while url:
         if url in visited:
@@ -281,7 +288,8 @@ def ingest_energy_brand(
         for plan in plans:
             if max_products is not None and plans_seen >= max_products:
                 log(f"max-products reached for {provider_dir_name}")
-                return
+                stopped_for_max_products = True
+                break
             plans_seen += 1
 
             if not is_record(plan):
@@ -311,42 +319,73 @@ def ingest_energy_brand(
             if resume and detail_path.exists() and detail_path.stat().st_size > 0:
                 continue
 
-            time.sleep(sleep_ms / 1000.0)
-            detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-            detail_res = fetch_cdr_json(
-                detail_url,
-                timeout=timeout,
-                max_retries=max_retries,
-                sleep_ms=sleep_ms,
-            )
-
-            parsed_detail = detail_res.data
-            ok = (
-                detail_res.ok
-                and parsed_detail is not None
-                and not has_cdr_errors(parsed_detail)
-            )
-            if ok:
-                detail_path.write_text(detail_res.text, encoding="utf-8")
-            else:
-                append_failure(
-                    date_root,
-                    {
-                        "phase": "energy_plan_detail",
-                        "provider": provider_dir_name,
-                        "plan_id": pid,
-                        "status": detail_res.status,
-                        "snippet": (detail_res.text or "")[:500],
-                    },
-                    lock=failure_lock,
+            if energy_lite:
+                # List response only — matches local dashboard columns; skips tariffs/fees payloads.
+                envelope = {"data": plan} if isinstance(plan, dict) else {"data": {}}
+                detail_path.write_text(
+                    json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
+                    encoding="utf-8",
                 )
-                err_path = leaf / "plan-detail.error.txt"
-                err_path.write_text(detail_res.text or "", encoding="utf-8")
+            else:
+                time.sleep(sleep_ms / 1000.0)
+                detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
+                detail_res = fetch_cdr_json(
+                    detail_url,
+                    timeout=timeout,
+                    max_retries=max_retries,
+                    sleep_ms=sleep_ms,
+                )
+
+                parsed_detail = detail_res.data
+                ok = (
+                    detail_res.ok
+                    and parsed_detail is not None
+                    and not has_cdr_errors(parsed_detail)
+                )
+                if ok:
+                    detail_path.write_text(detail_res.text, encoding="utf-8")
+                else:
+                    append_failure(
+                        date_root,
+                        {
+                            "phase": "energy_plan_detail",
+                            "provider": provider_dir_name,
+                            "plan_id": pid,
+                            "status": detail_res.status,
+                            "snippet": (detail_res.text or "")[:500],
+                        },
+                        lock=failure_lock,
+                    )
+                    err_path = leaf / "plan-detail.error.txt"
+                    err_path.write_text(detail_res.text or "", encoding="utf-8")
+
+            details_fetched += 1
+            if details_fetched % 100 == 0:
+                label = "plans stored (index-only)" if energy_lite else "plan-detail requests completed"
+                log(
+                    f"[energy] {provider_dir_name}: {label} "
+                    f"{details_fetched} (index plans seen {plans_seen})",
+                )
+
+        if stopped_for_max_products:
+            break
+
+        lite_tail = "plans stored so far" if energy_lite else "detail fetches so far"
+        log(
+            f"[energy] {provider_dir_name}: index page {pages} done "
+            f"({len(plans)} plans on page; {details_fetched} {lite_tail})",
+        )
 
         nxt = next_link(parsed, url)
         url = nxt
 
-
+    cap_note = "; capped by --max-products" if stopped_for_max_products else ""
+    done_label = "plan records stored (index-only)" if energy_lite else "plan-detail fetches"
+    log(
+        f"[energy] {provider_dir_name}: holder complete "
+        f"({details_fetched} {done_label}, {plans_seen} index plan rows seen)"
+        f"{cap_note}",
+    )
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     default_out = here / "runs"
@@ -416,6 +455,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=8,
         metavar="N",
         help="Parallel holder ingests (default: 8). Use 1 for strictly serial per-holder runs.",
+    )
+    p.add_argument(
+        "--energy-lite",
+        action="store_true",
+        help=(
+            "Energy sector: persist each plan from the paginated index only (no per-plan GET). "
+            "Faster and smaller on disk; no contract/tariff/fee granularity. Pair exports with slimming "
+            "(see cdr_outputs --energy-slim or cdr_daily --energy-lite)."
+        ),
     )
     return p.parse_args(argv)
 
@@ -637,6 +685,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_retries=args.max_retries,
                 max_pages=args.max_pages,
                 max_products=args.max_products,
+                energy_lite=bool(args.energy_lite),
                 provider_dir_name=prov_dir,
                 log=log_threadsafe,
                 failure_lock=failure_lock,

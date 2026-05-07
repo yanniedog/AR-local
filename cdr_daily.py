@@ -37,7 +37,10 @@ def marker_path(state_dir: Path, date: str) -> Path:
     return state_dir / f"{date}.done.json"
 
 
-def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> None:
+def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str], energy_lite: bool) -> None:
+    cmd_extra = list(extra)
+    if energy_lite and "--energy-lite" not in cmd_extra:
+        cmd_extra.append("--energy-lite")
     cmd = [
         sys.executable,
         str(script_dir / "cdr_full_ingest.py"),
@@ -46,7 +49,7 @@ def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> 
         "--date",
         date,
         "--resume",
-        *extra,
+        *cmd_extra,
     ]
     # Intentionally pass a list with shell=False; extra args are local CLI passthrough.
     subprocess.run(cmd, cwd=script_dir, check=True, shell=False)
@@ -69,6 +72,7 @@ def run_once(args: argparse.Namespace) -> bool:
         print(f"Already completed local CDR daily run for {date}: {marker}")
         return False
 
+    energy_lite = bool(getattr(args, "energy_lite", False))
     use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
     if use_ram_stage:
         ram_root = args.ram_root.expanduser().resolve()
@@ -76,8 +80,8 @@ def run_once(args: argparse.Namespace) -> bool:
         staged_exports = ram_root / "exports" / date / "_exports"
         prepare_empty_dir(ram_root / "runs" / date)
         prepare_empty_dir(staged_exports)
-        run_ingest(script_dir, staged_runs, date, [*sector_ingest_args(args), *args.ingest_arg])
-        result = build_outputs(staged_runs / date, staged_exports, args.db)
+        run_ingest(script_dir, staged_runs, date, [*sector_ingest_args(args), *args.ingest_arg], energy_lite=energy_lite)
+        result = build_outputs(staged_runs / date, staged_exports, args.db, energy_slim=energy_lite)
         persistent_export_root = (
             args.exports.expanduser().resolve()
             if args.exports
@@ -91,13 +95,13 @@ def run_once(args: argparse.Namespace) -> bool:
             shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
-        run_ingest(script_dir, persistent_runs_root, date, [*sector_ingest_args(args), *args.ingest_arg])
+        run_ingest(script_dir, persistent_runs_root, date, [*sector_ingest_args(args), *args.ingest_arg], energy_lite=energy_lite)
         export_root = (
             args.exports.expanduser().resolve()
             if args.exports
             else persistent_runs_root / date / "_exports"
         )
-        result = build_outputs(persistent_runs_root / date, export_root, args.db)
+        result = build_outputs(persistent_runs_root / date, export_root, args.db, energy_slim=energy_lite)
         result["ram_staged"] = False
 
     marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -116,6 +120,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Ignore daily completion marker")
     parser.add_argument("--banks-only", action="store_true", help="Ingest banking products only.")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
+    parser.add_argument(
+        "--energy-lite",
+        action="store_true",
+        help="Energy: index rows only at ingest + slim exports (no per-plan detail GET; no tariff sheets).",
+    )
     parser.add_argument(
         "--ram-stage",
         action="store_true",
