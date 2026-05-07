@@ -136,11 +136,11 @@
     if (!window.LocalCdrBrand) { wrap.hidden = true; return; }
 
     let providers, label;
-    if (state.sector === 'banks' && state.banks) {
+    if (state.sector === 'banks' && state.banks && state.banks.rates) {
       const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
       providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
       label = state.section === 'TD' ? 'Term Deposit' : state.section;
-    } else if (state.sector === 'energy' && state.energy) {
+    } else if (state.sector === 'energy' && state.energy && state.energy.plans) {
       providers = [...new Set(state.energy.plans.map((row) => row.provider).filter(Boolean))].sort();
       label = 'Energy';
     } else {
@@ -158,7 +158,7 @@
       btn.dataset.providerPick = provider;
       btn.title = 'Show products for ' + provider + ' only (click again to clear)';
       if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
-      const sample = state.sector === 'banks'
+      const sample = state.sector === 'banks' && state.banks && state.banks.rates
         ? state.banks.rates.find((r) => r.provider === provider)
         : undefined;
       window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {

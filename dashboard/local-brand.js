@@ -48,7 +48,6 @@
     'ovo energy': 'ovoenergy.com.au',
     'flow power': 'flowpower.com.au',
     'globird energy': 'globirdenergy.com.au',
-    'globierd energy': 'globirdenergy.com.au',
     'zen energy': 'zenenergy.com.au',
     '1st energy': '1stenergy.com.au',
     'racv': 'racv.com.au',
