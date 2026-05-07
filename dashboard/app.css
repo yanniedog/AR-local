@@ -1,23 +1,80 @@
 /*
- * Bank badges pull `.bank-badge-logo-wrap` from foundation.css (near-white tile).
- * On dark shells + showcase teal radial washes that reads as mint; force opaque neutrals.
+ * Local CDR dashboard overrides.
+ *
+ * Green/teal elimination: public-showcase.css sets --ar-accent to #66f6cf
+ * (teal) in dark mode, and public-polish.css introduces section-specific
+ * greens via --ar-section-accent / --ar-section-glow. These are neutralised
+ * here with blue equivalents so nothing renders green on the local dashboard.
+ *
+ * Logo wraps: foundation.css uses a near-white tile. The original workaround
+ * (dark tile) masked teal bleed-through but made logos unreadable. Now that
+ * the accent is neutralised, wraps revert to opaque white so bank logos
+ * (designed for light backgrounds) render clearly.
  */
+
+body.ar-public.ar-local-cdr {
+  /* Local palette tokens (keeps hex values in one place for this override file). */
+  --ar-local-blue: #60a5fa;
+  --ar-local-blue-strong: #3b82f6;
+  --ar-local-blue-soft: rgba(96, 165, 250, 0.11);
+  --ar-local-section-fill: rgba(59, 130, 246, 0.12);
+  --ar-local-section-tint: rgba(59, 130, 246, 0.10);
+  --ar-local-section-glow: rgba(59, 130, 246, 0.18);
+  --ar-local-logo-tile: rgba(255, 255, 255, 0.97);
+  --ar-local-logo-tile-border: rgba(0, 0, 0, 0.07);
+  --ar-local-fallback-ink: #1e293b;
+  --ar-local-card-active-mix: #111827;
+  --ar-local-showcase-spark: #60a5fa;
+  --ar-local-showcase-glow: rgba(96, 165, 250, 0.14);
+}
+
+/* ── Teal/green accent neutralisation (dark mode) ─────────────────────── */
+
+:root[data-theme="dark"] body.ar-public.ar-local-cdr {
+  --ar-accent: var(--ar-local-blue);
+  --ar-accent-hover: var(--ar-local-blue-strong);
+  --ar-accent-soft: var(--ar-local-blue-soft);
+}
+
+/* Savings and Energy sections carry a green/teal section accent — replace  */
+/* with the same blue used by the home-loans section.                        */
+body.ar-local-cdr.ar-section-savings,
+body.ar-local-cdr.ar-section-economic-data {
+  --ar-section-accent: var(--ar-local-blue-strong);
+  --ar-section-accent-soft: var(--ar-local-section-fill);
+  --ar-section-soft: var(--ar-local-section-tint);
+  --ar-section-glow: var(--ar-local-section-glow);
+}
+
+/* Showcase-spark / glow (used by bg-layer gradients) — keep neutral blue. */
+body.ar-local-cdr {
+  --ar-showcase-spark: var(--ar-local-showcase-spark);
+  --ar-showcase-glow: var(--ar-local-showcase-glow);
+}
+
+/* Hide bg-layer: extra element in selector beats public-polish without !important where possible. */
+html body.ar-public.ar-local-cdr .bg-layer {
+  display: none;
+}
+
+/* ── Logo-wrap: opaque white so bank/energy logos render correctly ────── */
+
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-logo-wrap,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-logo-wrap,
 body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
-  background: color-mix(in srgb, var(--ar-surface-3) 94%, var(--ar-text) 6%) !important;
-  box-shadow: inset 0 0 0 1px var(--ar-line) !important;
-  mix-blend-mode: normal;
-  isolation: isolate;
+  background: var(--ar-local-logo-tile);
+  box-shadow: inset 0 0 0 1px var(--ar-local-logo-tile-border);
 }
 
+/* Fallback abbreviations sit on a white tile — use dark ink, not light-on- */
+/* dark.                                                                       */
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-fallback {
-  color: var(--ar-text-soft) !important;
-  background: transparent !important;
-  text-shadow: none !important;
+  color: var(--ar-local-fallback-ink);
+  background: transparent;
+  text-shadow: none;
 }
 
 body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
@@ -26,14 +83,16 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   letter-spacing: 0.02em;
 }
 
+/* ── Header nav ────────────────────────────────────────────────────────── */
+
 .ar-local-cdr .site-header-segment {
   justify-content: center;
 }
 
 .ar-local-cdr button.site-header-segment-link {
   border: 0;
-  background: transparent !important;
-  color: var(--ar-text-soft) !important;
+  background: transparent;
+  color: var(--ar-text-soft);
   box-shadow: none;
 }
 
@@ -44,8 +103,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
 
 .ar-local-cdr button.site-header-segment-link.is-active {
   border: 1px solid color-mix(in srgb, var(--ar-line-strong) 90%, transparent);
-  background: color-mix(in srgb, var(--ar-surface) 80%, transparent) !important;
-  color: var(--ar-text) !important;
+  background: color-mix(in srgb, var(--ar-surface) 80%, transparent);
+  color: var(--ar-text);
 }
 
 .ar-local-cdr .site-header-actions .buttonish {
@@ -58,6 +117,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   background: var(--ar-surface-2);
   color: var(--ar-text);
 }
+
+/* ── Section cards ─────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-section-cards {
   display: grid;
@@ -82,7 +143,7 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
 .ar-local-cdr .local-section-card:hover,
 .ar-local-cdr .local-section-card.is-active {
   border-color: color-mix(in srgb, var(--ar-line-strong) 82%, var(--ar-line));
-  background: color-mix(in srgb, var(--ar-surface-2) 58%, #111827) !important;
+  background: color-mix(in srgb, var(--ar-surface-2) 58%, var(--ar-local-card-active-mix));
 }
 
 .ar-local-cdr .local-section-card-head {
@@ -101,6 +162,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   color: var(--ar-text);
   font-size: 0.98rem;
 }
+
+/* ── Logo rail ─────────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-section-logo-rail {
   display: flex;
@@ -194,14 +257,16 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   background: color-mix(in srgb, var(--ar-surface-2) 55%, transparent);
 }
 
-.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
-  display: none !important;
+body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
+  display: none;
 }
 
 .ar-local-cdr .local-bank-badge--logo-only {
   width: 28px;
   min-width: 28px;
 }
+
+/* ── Hierarchy leaf ─────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-hierarchy-leaf-label {
   display: flex;
@@ -243,6 +308,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   line-height: 1.25;
 }
 
+/* ── Filters ────────────────────────────────────────────────────────────── */
+
 .ar-local-cdr .local-filter-strip {
   display: grid;
   grid-template-columns: minmax(150px, 0.75fr) minmax(180px, 1fr) minmax(220px, 1.3fr);
@@ -261,6 +328,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   padding: 0 12px;
 }
 
+/* ── Chart ──────────────────────────────────────────────────────────────── */
+
 .ar-local-cdr .chart-figure {
   overflow: hidden;
 }
@@ -278,6 +347,8 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   height: 100%;
   min-height: 520px;
 }
+
+/* ── Table ──────────────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-table-panel {
   margin-top: 14px;
