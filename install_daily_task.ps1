@@ -11,12 +11,19 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-  throw "python not found on PATH."
+$PythonExe = $null
+$PyPrefixArgs = ""
+if (Get-Command python -ErrorAction SilentlyContinue) {
+  $PythonExe = (Get-Command python).Source
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+  $PythonExe = (Get-Command py).Source
+  $PyPrefixArgs = "-3 "
+} else {
+  throw "Neither python nor py launcher found on PATH."
 }
-$Python = (Get-Command python).Source
+
 $Daily = Join-Path $ScriptDir "cdr_daily.py"
-$Argument = "`"$Daily`" $ExtraArgs"
+$Argument = if ($PyPrefixArgs) { "${PyPrefixArgs}`"$Daily`" $ExtraArgs" } else { "`"$Daily`" $ExtraArgs" }
 
 if ($RunAtUtc) {
   $parts = $UtcAt -split ':'
@@ -27,7 +34,7 @@ if ($RunAtUtc) {
   $um = [int]$parts[1]
   $startBoundary = "2000-01-01T{0:D2}:{1:D2}:00Z" -f $uh, $um
 
-  $escapedCmd = [System.Security.SecurityElement]::Escape($Python)
+  $escapedCmd = [System.Security.SecurityElement]::Escape($PythonExe)
   $escapedArg = [System.Security.SecurityElement]::Escape($Argument)
   $escapedWd = [System.Security.SecurityElement]::Escape($ScriptDir)
 
@@ -77,7 +84,7 @@ if ($RunAtUtc) {
   return
 }
 
-$Action = New-ScheduledTaskAction -Execute $Python -Argument $Argument -WorkingDirectory $ScriptDir
+$Action = New-ScheduledTaskAction -Execute $PythonExe -Argument $Argument -WorkingDirectory $ScriptDir
 $Trigger = New-ScheduledTaskTrigger -Daily -At $At
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 8)
 

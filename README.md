@@ -112,7 +112,8 @@ python .\cdr_dashboard_server.py --exports .\runs\2026-05-06\_exports
 ```
 
 Install the daily scheduled task (local clock time; for 20:00 UTC on Windows,
-prefer menu option 5 in `start_here.py`):
+prefer menu option 5 in `start_here.py`). The script uses `python` when on PATH,
+otherwise the Windows `py -3` launcher (same as `start_here.py`).
 
 ```powershell
 .\install_daily_task.ps1 -At "20:00" -ExtraArgs "--workers 8"
