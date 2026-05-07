@@ -457,14 +457,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Parallel holder ingests (default: 8). Use 1 for strictly serial per-holder runs.",
     )
     p.add_argument(
-        "--energy-lite",
+        "--energy-full-detail",
         action="store_true",
         help=(
-            "Energy sector: persist each plan from the paginated index only (no per-plan GET). "
-            "Faster and smaller on disk; no contract/tariff/fee granularity. Pair exports with slimming "
-            "(see cdr_outputs --energy-slim or cdr_daily --energy-lite)."
+            "Energy sector: GET each plan's detail payload (slow, large). "
+            "Default is index-row only plus slim exports downstream."
         ),
     )
+    p.add_argument("--energy-lite", action="store_true", help=argparse.SUPPRESS)
     return p.parse_args(argv)
 
 
@@ -685,7 +685,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_retries=args.max_retries,
                 max_pages=args.max_pages,
                 max_products=args.max_products,
-                energy_lite=bool(args.energy_lite),
+                energy_lite=not bool(args.energy_full_detail),
                 provider_dir_name=prov_dir,
                 log=log_threadsafe,
                 failure_lock=failure_lock,

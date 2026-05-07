@@ -243,7 +243,7 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
     return dataset
 
 
-# Dropped for slim exports / ``--energy-slim`` (tariffs, fees breakdown, etc.).
+# Dropped when ``energy_slim`` is True (default; use ``--energy-full-detail`` export for granular rows).
 ENERGY_SLIM_OMIT_KEYS = frozenset(
     {
         "electricityContract",
@@ -338,7 +338,7 @@ def add_nested_energy_rows(
                 )
 
 
-def parse_energy_run(run_root: Path, *, energy_slim: bool = False) -> Dict[str, Any]:
+def parse_energy_run(run_root: Path, *, energy_slim: bool = True) -> Dict[str, Any]:
     energy_root = run_root / "energy"
     dataset: Dict[str, Any] = {
         "generated_at": utc_now(),

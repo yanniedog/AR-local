@@ -378,7 +378,7 @@ def build_outputs(
     out_dir: Optional[Path] = None,
     db_path: Optional[Path] = None,
     *,
-    energy_slim: bool = False,
+    energy_slim: bool = True,
 ) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
@@ -398,10 +398,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=None, help="Export folder (default: <run>/_exports)")
     parser.add_argument("--db", type=Path, default=None, help="SQLite path (default: <out>/local-cdr.sqlite)")
     parser.add_argument(
-        "--energy-slim",
+        "--energy-full-detail",
         action="store_true",
-        help="Energy: trim plan details_json and omit contracts/charges/fees rows (XLSX + SQLite + JSON).",
+        help="Energy: keep contracts/charges/fees and full plan details_json (slow / large DB). Default is slim.",
     )
+    parser.add_argument("--energy-lite", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -411,7 +412,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.run_root.expanduser().resolve(),
         args.out,
         args.db,
-        energy_slim=bool(args.energy_slim),
+        energy_slim=not bool(args.energy_full_detail),
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
