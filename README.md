@@ -12,20 +12,55 @@ Double-click:
 START_HERE.cmd
 ```
 
-That opens a menu:
+Or from a terminal (Windows, Linux, Raspberry Pi):
+
+```powershell
+python .\start_here.py
+```
+
+The launcher detects the host (Windows PC vs Raspberry Pi vs other Linux) and
+shows a short header. Menu:
 
 ```text
 1. Run/update today's CDR data
 2. Force rerun today's CDR data
 3. Rebuild Excel/JSON/SQLite for latest run
 4. Open dashboard
-5. Install daily scheduled task
+5. Install or adjust daily schedule (20:00 UTC)
+6. Check GitHub / git: update available and pull
+7. Show database summary
+8. Boot ingest service (systemd user): enable / disable / status  [Linux/Pi when systemd is available]
 0. Exit
+```
+
+Schedule option 5: on Windows it registers a Task Scheduler job with a **UTC
+calendar trigger** at **20:00 UTC** (DST-stable via XML). On Linux/Pi it installs a **user**
+crontab block with `CRON_TZ=UTC` and `20:00` daily, running `cdr_daily.py`
+with the shared worker count from `ar_local_launcher_constants.py`.
+
+`START_HERE.cmd` only falls back to `py -3` when `python` is missing (**errorlevel
+9009**), not when `start_here.py` exits with an error.
+
+Boot option 8: installs a **systemd user** oneshot unit that runs `cdr_daily.py`
+on boot. Ingest is skipped for the current local day if `.daily-state/<date>.done.json`
+already exists (same rule as a normal daily run). User units run at boot only if
+lingering is enabled for your account, e.g. `loginctl enable-linger $USER` on
+the Pi.
+
+Non-interactive shortcuts (same as before):
+
+```powershell
+.\START_HERE.ps1 -Action daily
+python .\start_here.py --action dashboard
 ```
 
 The first full run can take a while because it fetches public CDR detail JSON
 from every discovered provider. Later runs resume and skip completed detail
 files.
+
+Database summary (menu 7) uses `runs/<latest>/_exports/local-cdr.sqlite` by
+default; override with env `AR_LOCAL_DB` if needed. `PRAGMA quick_check` is **skipped**
+by default (large DBs); set `AR_LOCAL_DB_QUICK_CHECK=1` or `DB_QUICK_CHECK=1` to run it.
 
 ## One-Click Shortcuts
 
@@ -76,8 +111,10 @@ python .\cdr_outputs.py .\runs\2026-05-06
 python .\cdr_dashboard_server.py --exports .\runs\2026-05-06\_exports
 ```
 
-Install the daily scheduled task:
+Install the daily scheduled task (local clock time; for 20:00 UTC on Windows,
+prefer menu option 5 in `start_here.py`). The script uses `python` when on PATH,
+otherwise the Windows `py -3` launcher (same as `start_here.py`).
 
 ```powershell
-.\install_daily_task.ps1 -At 03:15 -ExtraArgs "--workers 8"
+.\install_daily_task.ps1 -At "20:00" -ExtraArgs "--workers 8"
 ```
