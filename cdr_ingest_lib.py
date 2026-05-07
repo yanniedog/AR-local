@@ -248,6 +248,7 @@ def ingest_energy_brand(
     pages = 0
     plans_seen = 0
     details_fetched = 0
+    stopped_for_max_products = False
 
     while url:
         if url in visited:
@@ -282,7 +283,8 @@ def ingest_energy_brand(
         for plan in plans:
             if max_products is not None and plans_seen >= max_products:
                 log(f"max-products reached for {provider_dir_name}")
-                return
+                stopped_for_max_products = True
+                break
             plans_seen += 1
 
             if not is_record(plan):
@@ -351,6 +353,9 @@ def ingest_energy_brand(
                     f"{details_fetched} (index plans seen {plans_seen})",
                 )
 
+        if stopped_for_max_products:
+            break
+
         log(
             f"[energy] {provider_dir_name}: index page {pages} done "
             f"({len(plans)} plans on page; {details_fetched} detail fetches so far)",
@@ -359,9 +364,11 @@ def ingest_energy_brand(
         nxt = next_link(parsed, url)
         url = nxt
 
+    cap_note = "; capped by --max-products" if stopped_for_max_products else ""
     log(
         f"[energy] {provider_dir_name}: holder complete "
-        f"({details_fetched} plan-detail fetches, {plans_seen} index plan rows seen)",
+        f"({details_fetched} plan-detail fetches, {plans_seen} index plan rows seen)"
+        f"{cap_note}",
     )
 
 
