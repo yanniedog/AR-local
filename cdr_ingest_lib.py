@@ -247,6 +247,7 @@ def ingest_energy_brand(
     visited: Set[str] = set()
     pages = 0
     plans_seen = 0
+    details_fetched = 0
 
     while url:
         if url in visited:
@@ -343,8 +344,25 @@ def ingest_energy_brand(
                 err_path = leaf / "plan-detail.error.txt"
                 err_path.write_text(detail_res.text or "", encoding="utf-8")
 
+            details_fetched += 1
+            if details_fetched % 100 == 0:
+                log(
+                    f"[energy] {provider_dir_name}: plan-detail requests completed "
+                    f"{details_fetched} (index plans seen {plans_seen})",
+                )
+
+        log(
+            f"[energy] {provider_dir_name}: index page {pages} done "
+            f"({len(plans)} plans on page; {details_fetched} detail fetches so far)",
+        )
+
         nxt = next_link(parsed, url)
         url = nxt
+
+    log(
+        f"[energy] {provider_dir_name}: holder complete "
+        f"({details_fetched} plan-detail fetches, {plans_seen} index plan rows seen)",
+    )
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
