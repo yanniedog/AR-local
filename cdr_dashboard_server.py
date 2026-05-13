@@ -6,15 +6,22 @@ import argparse
 import errno
 import json
 import mimetypes
+import re
 import socket
+import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
+from ar_local_pi_runtime import latest_exports_root
+
 BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
+LATEST_EXPORTS_TTL_SECONDS = 5.0
+MAX_ARTIFACT_CACHE_ENTRIES = 4
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -77,6 +84,41 @@ class CachedFiles:
         return data
 
 
+class ExportResolver:
+    def __init__(self, exports_value: str, runs_root: Path):
+        self.exports_value = exports_value
+        self.runs_root = runs_root.expanduser().resolve()
+        self.fixed_root = (
+            None if exports_value == "latest" else Path(exports_value).expanduser().resolve()
+        )
+        self.cached_root: Path | None = None
+        self.cached_until = 0.0
+        self.lock = threading.Lock()
+
+    def root(self) -> Path:
+        if self.fixed_root is not None:
+            return self.fixed_root
+        with self.lock:
+            now = time.monotonic()
+            if self.cached_root is not None and now < self.cached_until:
+                return self.cached_root
+            latest = latest_exports_root(self.runs_root)
+            if latest is None:
+                raise FileNotFoundError("latest exports")
+            self.cached_root = latest
+            self.cached_until = now + LATEST_EXPORTS_TTL_SECONDS
+            return latest
+
+    def root_for_date(self, run_date: str) -> Path:
+        if self.fixed_root is not None:
+            return self.fixed_root
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", run_date):
+            candidate = self.runs_root / run_date / "_exports"
+            if (candidate / "dashboard-cache" / run_date).is_dir():
+                return candidate.resolve()
+        return self.root()
+
+
 class LocalDashboardServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
@@ -86,11 +128,62 @@ class LocalDashboardServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def make_handler(exports_root: Path, site_root: Path):
+def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool):
     bank_assets_root = site_root / "assets" / "banks"
-    artifact_cache = CachedFiles(exports_root)
+    artifact_caches: Dict[Path, CachedFiles] = {}
+    artifact_cache_lock = threading.Lock()
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
     site_cache = CachedFiles(site_root)
+
+    def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
+        exports_root = (exports_root or export_resolver.root()).resolve()
+        with artifact_cache_lock:
+            cached = artifact_caches.get(exports_root)
+            if cached is not None:
+                artifact_caches.pop(exports_root)
+                artifact_caches[exports_root] = cached
+                return exports_root, cached
+            if len(artifact_caches) >= MAX_ARTIFACT_CACHE_ENTRIES:
+                oldest_root = next(iter(artifact_caches))
+                artifact_caches.pop(oldest_root)
+            cached = CachedFiles(exports_root)
+            artifact_caches[exports_root] = cached
+            return exports_root, cached
+
+    def warm_common_files() -> None:
+        for rel in (
+            "index.html",
+            "app.css",
+            "app.js",
+            "ar-bank-brand.js",
+            "ar-ribbon-canonical-tiers.js",
+            "chart.js",
+            "hierarchy.js",
+            "cdr-ribbon-map.js",
+            "local-brand.js",
+            "utils.js",
+        ):
+            try:
+                dashboard_cache.read(DASHBOARD_ROOT / rel)
+            except FileNotFoundError:
+                pass
+        try:
+            site_cache.read(site_root / "assets" / "branding" / "ar-mark.svg")
+        except FileNotFoundError:
+            pass
+        try:
+            exports_root, cache = artifact_cache()
+            latest = cache.read(exports_root / "dashboard-cache" / "latest.json")
+            manifest = json.loads(latest.decode("utf-8"))
+            run_date = str(manifest.get("run_date") or "")
+            if run_date:
+                cache.read(exports_root / "dashboard-cache" / run_date / "banks.json")
+                cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    if preload:
+        warm_common_files()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
@@ -140,14 +233,18 @@ def make_handler(exports_root: Path, site_root: Path):
                     raise FileNotFoundError(path)
                 return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             if path == "/api/latest":
-                return artifact_cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
+                exports_root, cache = artifact_cache()
+                return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
             if path in ("/api/banks", "/api/energy"):
                 date = query.get("date", [""])[0]
+                exports_root = export_resolver.root_for_date(date)
+                exports_root, cache = artifact_cache(exports_root)
                 name = path.rsplit("/", 1)[1] + ".json"
-                return artifact_cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
+                return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
             if path.startswith("/exports/"):
+                exports_root, cache = artifact_cache()
                 target = exports_root / path.removeprefix("/exports/")
-                return artifact_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             raise FileNotFoundError(path)
 
     return Handler
@@ -155,10 +252,16 @@ def make_handler(exports_root: Path, site_root: Path):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Serve local CDR dashboard from generated cache.")
-    parser.add_argument("--exports", type=Path, required=True, help="Export folder containing dashboard-cache/")
+    parser.add_argument(
+        "--exports",
+        required=True,
+        help="Export folder containing dashboard-cache/, or 'latest' to serve the newest run under --runs.",
+    )
+    parser.add_argument("--runs", type=Path, default=BASE_DIR / "runs", help="Runs root used with --exports latest.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default="auto", help="Port number or 'auto' (default: auto from 8800)")
     parser.add_argument("--port-file", type=Path, help="Optional JSON file to write the selected dashboard URL to.")
+    parser.add_argument("--preload", action="store_true", help="Warm common dashboard and API payloads into memory at startup.")
     parser.add_argument(
         "--site-root",
         type=Path,
@@ -190,8 +293,10 @@ def create_server(host: str, value: str, handler):
 def main() -> int:
     args = parse_args()
     site_root = resolve_site_root(args.site_root)
+    export_resolver = ExportResolver(str(args.exports), args.runs)
     print(f"Site static root: {site_root}")
-    server, port = create_server(args.host, str(args.port), make_handler(args.exports, site_root))
+    print(f"Dashboard exports: {args.exports}")
+    server, port = create_server(args.host, str(args.port), make_handler(export_resolver, site_root, args.preload))
     url = dashboard_url(args.host, port)
     if args.port_file:
         args.port_file.write_text(json.dumps({"host": args.host, "port": port, "url": url}), encoding="utf-8")

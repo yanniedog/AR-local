@@ -1,0 +1,17 @@
+[Unit]
+Description=AR-local CDR dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/cdr_dashboard_server.py --exports latest --runs {{AR_LOCAL_REPO}}/runs --host 0.0.0.0 --port 8808 --site-root {{AR_SITE_ROOT}} --preload
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -11,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
+from ar_local_pi_runtime import copytree_atomic, default_ram_root, is_raspberry_pi, prepare_empty_dir
 from cdr_outputs import build_outputs
 
 
@@ -45,7 +47,7 @@ def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> 
 
 def run_once(args: argparse.Namespace) -> bool:
     script_dir = Path(__file__).resolve().parent
-    runs_root = args.runs.expanduser().resolve()
+    persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
     state_dir = (args.state or (script_dir / ".daily-state")).resolve()
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -53,9 +55,38 @@ def run_once(args: argparse.Namespace) -> bool:
     if marker.exists() and not args.force:
         print(f"Already completed local CDR daily run for {date}: {marker}")
         return False
-    run_ingest(script_dir, runs_root, date, args.ingest_arg)
-    export_root = args.exports.expanduser().resolve() if args.exports else runs_root / date / "_exports"
-    result = build_outputs(runs_root / date, export_root, args.db)
+
+    use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
+    if use_ram_stage:
+        ram_root = args.ram_root.expanduser().resolve()
+        staged_runs = ram_root / "runs"
+        staged_exports = ram_root / "exports" / date / "_exports"
+        prepare_empty_dir(ram_root / "runs" / date)
+        prepare_empty_dir(staged_exports)
+        run_ingest(script_dir, staged_runs, date, args.ingest_arg)
+        result = build_outputs(staged_runs / date, staged_exports, args.db)
+        persistent_export_root = (
+            args.exports.expanduser().resolve()
+            if args.exports
+            else persistent_runs_root / date / "_exports"
+        )
+        copytree_atomic(staged_exports, persistent_export_root)
+        result["out_dir"] = str(persistent_export_root)
+        result["ram_staged"] = True
+        result["ram_root"] = str(ram_root)
+        if args.clean_ram_stage:
+            shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
+            shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
+    else:
+        run_ingest(script_dir, persistent_runs_root, date, args.ingest_arg)
+        export_root = (
+            args.exports.expanduser().resolve()
+            if args.exports
+            else persistent_runs_root / date / "_exports"
+        )
+        result = build_outputs(persistent_runs_root / date, export_root, args.db)
+        result["ram_staged"] = False
+
     marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return True
@@ -70,6 +101,24 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Ignore daily completion marker")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
+    parser.add_argument(
+        "--ram-stage",
+        action="store_true",
+        help="Stage ingest and export build files in RAM before copying completed exports to --runs.",
+    )
+    parser.add_argument(
+        "--no-ram-stage",
+        action="store_true",
+        help="Disable automatic RAM staging on Raspberry Pi.",
+    )
+    parser.add_argument("--ram-root", type=Path, default=default_ram_root())
+    parser.add_argument(
+        "--keep-ram-stage",
+        dest="clean_ram_stage",
+        action="store_false",
+        help="Keep RAM-staged raw files for debugging after a successful run.",
+    )
+    parser.set_defaults(clean_ram_stage=True)
     args, extra = parser.parse_known_args(argv)
     args.ingest_arg = extra
     return args

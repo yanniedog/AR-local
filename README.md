@@ -62,6 +62,39 @@ Database summary (menu 7) uses `runs/<latest>/_exports/local-cdr.sqlite` by
 default; override with env `AR_LOCAL_DB` if needed. `PRAGMA quick_check` is **skipped**
 by default (large DBs); set `AR_LOCAL_DB_QUICK_CHECK=1` or `DB_QUICK_CHECK=1` to run it.
 
+## Raspberry Pi 5 deployment
+
+The Pi runtime is designed to keep high-churn ingest/build writes off the
+microSD card. On Raspberry Pi, `cdr_daily.py` automatically stages raw ingest
+and export building under `/dev/shm/ar-local`, then copies only the completed
+`_exports` tree into `runs/<date>/_exports`. Completed generated artifacts are
+not pruned.
+
+Install system packages and systemd units from a fresh Pi checkout:
+
+```sh
+cd /home/pi/AR-local
+sh deploy/pi/install-pi-systemd.sh
+```
+
+The installer renders the systemd units for the current Linux user, repo path,
+and adjacent AustralianRates checkout before installing them under
+`/etc/systemd/system`.
+
+After the first real ingest succeeds, the dashboard can run continuously on the
+LAN:
+
+```sh
+sudo systemctl start ar-local-dashboard.service
+npm run verify:local -- --base-url=http://127.0.0.1:8808/
+```
+
+The dashboard service serves the newest completed export with:
+
+```sh
+python3 cdr_dashboard_server.py --exports latest --runs /home/pi/AR-local/runs --host 0.0.0.0 --port 8808 --site-root /home/pi/australianrates/site --preload
+```
+
 ## One-Click Shortcuts
 
 Double-click these when you know what you want:
