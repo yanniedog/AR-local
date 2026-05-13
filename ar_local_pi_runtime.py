@@ -11,12 +11,17 @@ from typing import Optional
 
 from ar_local_platform import HostKind, host_kind
 
-PI_REPO_ROOT = Path("/home/pi/AR-local")
-PI_SITE_ROOT = Path("/home/pi/australianrates/site")
+PI_PORTABLE_ROOT = Path("/srv/ar-local")
+PI_REPO_ROOT = PI_PORTABLE_ROOT / "AR-local"
+PI_SITE_REPO = PI_PORTABLE_ROOT / "australianrates"
+PI_SITE_ROOT = PI_SITE_REPO / "site"
+PI_DATA_ROOT = PI_PORTABLE_ROOT / "data"
 _UID_SUFFIX = os.getuid() if hasattr(os, "getuid") else "shared"
 PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", f"/dev/shm/ar-local-{_UID_SUFFIX}"))
 PI_DASHBOARD_HOST = "0.0.0.0"
 PI_DASHBOARD_PORT = 8808
+ENV_PORTABLE_ROOT = "AR_LOCAL_PORTABLE_ROOT"
+ENV_DATA_ROOT = "AR_LOCAL_DATA_ROOT"
 
 
 def is_raspberry_pi() -> bool:
@@ -25,6 +30,26 @@ def is_raspberry_pi() -> bool:
 
 def default_ram_root() -> Path:
     return Path(os.environ.get("AR_LOCAL_RAM_ROOT", str(PI_RAM_ROOT))).expanduser().resolve()
+
+
+def data_root(repo_root: Path) -> Path:
+    configured = os.environ.get(ENV_DATA_ROOT, "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    configured_portable = os.environ.get(ENV_PORTABLE_ROOT, "").strip()
+    if configured_portable:
+        return (Path(configured_portable).expanduser().resolve() / "data").resolve()
+    if is_raspberry_pi():
+        return PI_DATA_ROOT
+    return repo_root.expanduser().resolve()
+
+
+def data_runs_root(repo_root: Path) -> Path:
+    return data_root(repo_root) / "runs"
+
+
+def data_state_root(repo_root: Path) -> Path:
+    return data_root(repo_root) / "state"
 
 
 def prepare_empty_dir(path: Path) -> None:

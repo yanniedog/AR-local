@@ -12,7 +12,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from ar_local_pi_runtime import copytree_atomic, default_ram_root, is_raspberry_pi, prepare_empty_dir
+from ar_local_pi_runtime import (
+    copytree_atomic,
+    data_runs_root,
+    data_state_root,
+    default_ram_root,
+    is_raspberry_pi,
+    prepare_empty_dir,
+)
 from cdr_outputs import build_outputs
 
 
@@ -49,7 +56,7 @@ def run_once(args: argparse.Namespace) -> bool:
     script_dir = Path(__file__).resolve().parent
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
-    state_dir = (args.state or (script_dir / ".daily-state")).resolve()
+    state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
     state_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_path(state_dir, date)
     if marker.exists() and not args.force:
@@ -94,7 +101,8 @@ def run_once(args: argparse.Namespace) -> bool:
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local CDR ingest once per local day.")
-    parser.add_argument("--runs", type=Path, default=Path(__file__).resolve().parent / "runs")
+    repo_root = Path(__file__).resolve().parent
+    parser.add_argument("--runs", type=Path, default=data_runs_root(repo_root))
     parser.add_argument("--exports", type=Path, default=None, help="Export folder; default <run>/_exports")
     parser.add_argument("--db", type=Path, default=None, help="SQLite path; default <exports>/local-cdr.sqlite")
     parser.add_argument("--state", type=Path, default=None, help="Daily completion marker folder")
