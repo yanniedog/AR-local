@@ -6,6 +6,7 @@ import argparse
 import errno
 import json
 import mimetypes
+import re
 import socket
 import time
 from http import HTTPStatus
@@ -105,6 +106,15 @@ class ExportResolver:
         self.cached_until = now + LATEST_EXPORTS_TTL_SECONDS
         return latest
 
+    def root_for_date(self, run_date: str) -> Path:
+        if self.fixed_root is not None:
+            return self.fixed_root
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", run_date):
+            candidate = self.runs_root / run_date / "_exports"
+            if (candidate / "dashboard-cache" / run_date).is_dir():
+                return candidate.resolve()
+        return self.root()
+
 
 class LocalDashboardServer(ThreadingHTTPServer):
     allow_reuse_address = False
@@ -121,8 +131,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
     site_cache = CachedFiles(site_root)
 
-    def artifact_cache() -> Tuple[Path, CachedFiles]:
-        exports_root = export_resolver.root()
+    def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
+        exports_root = (exports_root or export_resolver.root()).resolve()
         cached = artifact_caches.get(exports_root)
         if cached is not None:
             artifact_caches.pop(exports_root)
@@ -221,8 +231,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root, cache = artifact_cache()
                 return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
             if path in ("/api/banks", "/api/energy"):
-                exports_root, cache = artifact_cache()
                 date = query.get("date", [""])[0]
+                exports_root = export_resolver.root_for_date(date)
+                exports_root, cache = artifact_cache(exports_root)
                 name = path.rsplit("/", 1)[1] + ".json"
                 return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
             if path.startswith("/exports/"):
