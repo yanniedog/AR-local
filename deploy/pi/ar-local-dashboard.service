@@ -1,0 +1,17 @@
+[Unit]
+Description=AR-local CDR dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/AR-local
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/pi/AR-local/cdr_dashboard_server.py --exports latest --runs /home/pi/AR-local/runs --host 0.0.0.0 --port 8808 --site-root /home/pi/australianrates/site --preload
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

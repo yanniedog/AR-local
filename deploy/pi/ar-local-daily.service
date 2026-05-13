@@ -1,0 +1,13 @@
+[Unit]
+Description=AR-local CDR daily ingest/export
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/AR-local
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/pi/AR-local/pi_daily_sync.py
+ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
