@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/AR-local
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/pi/AR-local/pi_daily_sync.py
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service

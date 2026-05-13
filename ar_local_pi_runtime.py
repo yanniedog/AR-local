@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import filecmp
 import os
 import shutil
 import time
@@ -12,7 +13,8 @@ from ar_local_platform import HostKind, host_kind
 
 PI_REPO_ROOT = Path("/home/pi/AR-local")
 PI_SITE_ROOT = Path("/home/pi/australianrates/site")
-PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", "/dev/shm/ar-local"))
+_UID_SUFFIX = os.getuid() if hasattr(os, "getuid") else "shared"
+PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", f"/dev/shm/ar-local-{_UID_SUFFIX}"))
 PI_DASHBOARD_HOST = "0.0.0.0"
 PI_DASHBOARD_PORT = 8808
 
@@ -35,6 +37,8 @@ def copytree_atomic(src: Path, dst: Path) -> None:
     """Copy a completed tree into place with a same-parent final rename."""
     src = src.resolve()
     dst = dst.resolve()
+    if dst.exists() and tree_contents_equal(src, dst):
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.parent / f".{dst.name}.tmp-{os.getpid()}-{int(time.time())}"
     if tmp.exists():
@@ -51,6 +55,19 @@ def copytree_atomic(src: Path, dst: Path) -> None:
     tmp.replace(dst)
 
 
+def tree_contents_equal(left: Path, right: Path) -> bool:
+    if not left.is_dir() or not right.is_dir():
+        return False
+    left_files = sorted(p.relative_to(left) for p in left.rglob("*") if p.is_file())
+    right_files = sorted(p.relative_to(right) for p in right.rglob("*") if p.is_file())
+    if left_files != right_files:
+        return False
+    for rel in left_files:
+        if not filecmp.cmp(left / rel, right / rel, shallow=False):
+            return False
+    return True
+
+
 def latest_exports_root(runs_root: Path) -> Optional[Path]:
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
@@ -65,4 +82,3 @@ def latest_exports_root(runs_root: Path) -> Optional[Path]:
     if not candidates:
         return None
     return sorted(candidates, key=lambda item: item[0])[-1][1].resolve()
-

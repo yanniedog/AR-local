@@ -7,6 +7,7 @@ import errno
 import json
 import mimetypes
 import socket
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +18,8 @@ from ar_local_pi_runtime import latest_exports_root
 
 BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
+LATEST_EXPORTS_TTL_SECONDS = 5.0
+MAX_ARTIFACT_CACHE_ENTRIES = 4
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -86,13 +89,20 @@ class ExportResolver:
         self.fixed_root = (
             None if exports_value == "latest" else Path(exports_value).expanduser().resolve()
         )
+        self.cached_root: Path | None = None
+        self.cached_until = 0.0
 
     def root(self) -> Path:
         if self.fixed_root is not None:
             return self.fixed_root
+        now = time.monotonic()
+        if self.cached_root is not None and now < self.cached_until:
+            return self.cached_root
         latest = latest_exports_root(self.runs_root)
         if latest is None:
             raise FileNotFoundError("latest exports")
+        self.cached_root = latest
+        self.cached_until = now + LATEST_EXPORTS_TTL_SECONDS
         return latest
 
 
@@ -114,9 +124,15 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     def artifact_cache() -> Tuple[Path, CachedFiles]:
         exports_root = export_resolver.root()
         cached = artifact_caches.get(exports_root)
-        if cached is None:
-            cached = CachedFiles(exports_root)
+        if cached is not None:
+            artifact_caches.pop(exports_root)
             artifact_caches[exports_root] = cached
+            return exports_root, cached
+        if len(artifact_caches) >= MAX_ARTIFACT_CACHE_ENTRIES:
+            oldest_root = next(iter(artifact_caches))
+            artifact_caches.pop(oldest_root)
+        cached = CachedFiles(exports_root)
+        artifact_caches[exports_root] = cached
         return exports_root, cached
 
     def warm_common_files() -> None:

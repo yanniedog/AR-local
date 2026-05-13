@@ -77,6 +77,10 @@ cd /home/pi/AR-local
 sh deploy/pi/install-pi-systemd.sh
 ```
 
+The installer renders the systemd units for the current Linux user, repo path,
+and adjacent AustralianRates checkout before installing them under
+`/etc/systemd/system`.
+
 After the first real ingest succeeds, the dashboard can run continuously on the
 LAN:
 
