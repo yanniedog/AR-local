@@ -52,6 +52,12 @@ def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> 
     subprocess.run(cmd, cwd=script_dir, check=True, shell=False)
 
 
+def sector_ingest_args(args: argparse.Namespace) -> List[str]:
+    if args.banks_only:
+        return ["--no-energy"]
+    return []
+
+
 def run_once(args: argparse.Namespace) -> bool:
     script_dir = Path(__file__).resolve().parent
     persistent_runs_root = args.runs.expanduser().resolve()
@@ -70,7 +76,7 @@ def run_once(args: argparse.Namespace) -> bool:
         staged_exports = ram_root / "exports" / date / "_exports"
         prepare_empty_dir(ram_root / "runs" / date)
         prepare_empty_dir(staged_exports)
-        run_ingest(script_dir, staged_runs, date, args.ingest_arg)
+        run_ingest(script_dir, staged_runs, date, [*sector_ingest_args(args), *args.ingest_arg])
         result = build_outputs(staged_runs / date, staged_exports, args.db)
         persistent_export_root = (
             args.exports.expanduser().resolve()
@@ -85,7 +91,7 @@ def run_once(args: argparse.Namespace) -> bool:
             shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
-        run_ingest(script_dir, persistent_runs_root, date, args.ingest_arg)
+        run_ingest(script_dir, persistent_runs_root, date, [*sector_ingest_args(args), *args.ingest_arg])
         export_root = (
             args.exports.expanduser().resolve()
             if args.exports
@@ -108,6 +114,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--state", type=Path, default=None, help="Daily completion marker folder")
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Ignore daily completion marker")
+    parser.add_argument("--banks-only", action="store_true", help="Ingest banking products only.")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
     parser.add_argument(
         "--ram-stage",

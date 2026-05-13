@@ -110,6 +110,17 @@ The installer renders the systemd units for the current Linux user, repo path,
 adjacent AustralianRates checkout, portable root, and data root before
 installing them under `/etc/systemd/system`.
 
+The Pi daily service currently runs banking only:
+
+```sh
+python3 pi_daily_sync.py --banks-only
+```
+
+Use `python3 pi_daily_sync.py --banks-only --force` for a one-off same-day
+banking rerun after the daily marker exists. Remove `--banks-only` from
+`deploy/pi/ar-local-daily.service` before reinstalling the unit if you want
+daily banking and energy again.
+
 SSD migration later:
 
 ```sh
