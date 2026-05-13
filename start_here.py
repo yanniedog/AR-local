@@ -39,8 +39,18 @@ from ar_local_platform import HostKind, host_kind, platform_label
 from ar_local_subprocess import run_checked
 
 REPO_ROOT = Path(__file__).resolve().parent
-RUNS_DIR = data_runs_root(REPO_ROOT)
-STATE_DIR = data_state_root(REPO_ROOT)
+
+
+def runs_dir_for_repo(repo: Path) -> Path:
+    return data_runs_root(repo)
+
+
+def state_dir_for_repo(repo: Path) -> Path:
+    return data_state_root(repo)
+
+
+RUNS_DIR = runs_dir_for_repo(REPO_ROOT)
+STATE_DIR = state_dir_for_repo(REPO_ROOT)
 DB_STATS_SNAPSHOT = STATE_DIR / "last_db_stats.json"
 
 
@@ -195,8 +205,8 @@ def _cron_block(py: str, repo: Path) -> List[str]:
     repo_q = shlex.quote(str(repo))
     py_q = shlex.quote(py)
     script_q = shlex.quote(str(repo / "cdr_daily.py"))
-    runs_q = shlex.quote(str(RUNS_DIR))
-    state_q = shlex.quote(str(STATE_DIR))
+    runs_q = shlex.quote(str(runs_dir_for_repo(repo)))
+    state_q = shlex.quote(str(state_dir_for_repo(repo)))
     line = (
         f"{SCHEDULE_UTC_MINUTE} {SCHEDULE_UTC_HOUR} * * * cd {repo_q} && "
         f"{py_q} {script_q} --runs {runs_q} --state {state_q} --workers {DAILY_WORKER_COUNT}"

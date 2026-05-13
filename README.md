@@ -70,34 +70,59 @@ and export building under `/dev/shm/ar-local-<uid>`, then copies only the
 completed `_exports` tree into the configured data root. Completed generated
 artifacts are not pruned.
 
-Code and durable data are intentionally separate:
+The Pi deployment is self-contained under one portable root:
 
-- code: `/home/pi/AR-local`
-- AustralianRates shell assets: `/home/pi/australianrates/site`
-- durable CDR data: `/srv/ar-local-data` by default
+- portable root: `/srv/ar-local`
+- app repo: `/srv/ar-local/AR-local`
+- AustralianRates shell assets repo: `/srv/ar-local/australianrates`
+- durable data: `/srv/ar-local/data`
+- durable runs and SQLite exports: `/srv/ar-local/data/runs/<date>/_exports`
+- daily state: `/srv/ar-local/data/state`
 
-`/srv/ar-local-data` is the stable mountpoint for long-term storage. It can be
-a normal directory during initial setup, then later be replaced by a USB SSD or
-Pi 5 SSD HAT mount. The app reads `AR_LOCAL_DATA_ROOT`; its durable runs live
-under `$AR_LOCAL_DATA_ROOT/runs` and daily state lives under
-`$AR_LOCAL_DATA_ROOT/state`.
+`/srv/ar-local` can be a normal microSD directory during initial setup, then
+later be replaced by a USB SSD or Pi 5 SSD HAT mount. The service paths stay the
+same, so copying the whole `/srv/ar-local` tree to the SSD and mounting the SSD
+at `/srv/ar-local` keeps the app, site assets, runs, state, and database files
+together without reconfiguration.
 
-Install system packages and systemd units from a fresh Pi checkout:
+The app reads `AR_LOCAL_PORTABLE_ROOT` and `AR_LOCAL_DATA_ROOT`. If
+`AR_LOCAL_DATA_ROOT` is not set on Raspberry Pi, durable data defaults to
+`/srv/ar-local/data`.
+
+Install system packages and systemd units from any bootstrap checkout:
 
 ```sh
 cd /home/pi/AR-local
-sh deploy/pi/install-pi-systemd.sh
+sh deploy/pi/install-pi-systemd.sh /srv/ar-local
 ```
 
-To use a different mountpoint, pass it as the third argument:
+The installer clones or updates the runtime repos inside `/srv/ar-local`; the
+bootstrap checkout is not used by the installed services.
+
+To use a different portable root or explicit repo/data paths:
 
 ```sh
-sh deploy/pi/install-pi-systemd.sh /home/pi/AR-local /home/pi/australianrates /mnt/ar-local-ssd
+sh deploy/pi/install-pi-systemd.sh /mnt/ar-local-ssd
+sh deploy/pi/install-pi-systemd.sh /mnt/ar-local-ssd /mnt/ar-local-ssd/AR-local /mnt/ar-local-ssd/australianrates /mnt/ar-local-ssd/data
 ```
 
 The installer renders the systemd units for the current Linux user, repo path,
-adjacent AustralianRates checkout, and data root before installing them under
-`/etc/systemd/system`.
+adjacent AustralianRates checkout, portable root, and data root before
+installing them under `/etc/systemd/system`.
+
+SSD migration later:
+
+```sh
+sudo systemctl stop ar-local-dashboard.service ar-local-daily.timer
+sudo rsync -aHAX --numeric-ids /srv/ar-local/ /mnt/new-ssd/
+sudo mount /dev/disk/by-uuid/<ssd-uuid> /srv/ar-local
+sudo systemctl start ar-local-daily.timer
+sudo systemctl start ar-local-dashboard.service
+```
+
+Add the SSD mount to `/etc/fstab` after confirming the UUID and filesystem.
+Because the deployed unit paths point at `/srv/ar-local`, no service rewrite is
+needed when the SSD replaces the microSD directory.
 
 After the first real ingest succeeds, the dashboard can run continuously on the
 LAN:
@@ -110,7 +135,7 @@ npm run verify:local -- --base-url=http://127.0.0.1:8808/
 The dashboard service serves the newest completed export with:
 
 ```sh
-python3 cdr_dashboard_server.py --exports latest --runs /srv/ar-local-data/runs --host 0.0.0.0 --port 8808 --site-root /home/pi/australianrates/site --preload
+python3 cdr_dashboard_server.py --exports latest --runs /srv/ar-local/data/runs --host 0.0.0.0 --port 8808 --site-root /srv/ar-local/australianrates/site --preload
 ```
 
 ## One-Click Shortcuts
