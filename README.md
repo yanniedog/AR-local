@@ -66,9 +66,21 @@ by default (large DBs); set `AR_LOCAL_DB_QUICK_CHECK=1` or `DB_QUICK_CHECK=1` to
 
 The Pi runtime is designed to keep high-churn ingest/build writes off the
 microSD card. On Raspberry Pi, `cdr_daily.py` automatically stages raw ingest
-and export building under `/dev/shm/ar-local`, then copies only the completed
-`_exports` tree into `runs/<date>/_exports`. Completed generated artifacts are
-not pruned.
+and export building under `/dev/shm/ar-local-<uid>`, then copies only the
+completed `_exports` tree into the configured data root. Completed generated
+artifacts are not pruned.
+
+Code and durable data are intentionally separate:
+
+- code: `/home/pi/AR-local`
+- AustralianRates shell assets: `/home/pi/australianrates/site`
+- durable CDR data: `/srv/ar-local-data` by default
+
+`/srv/ar-local-data` is the stable mountpoint for long-term storage. It can be
+a normal directory during initial setup, then later be replaced by a USB SSD or
+Pi 5 SSD HAT mount. The app reads `AR_LOCAL_DATA_ROOT`; its durable runs live
+under `$AR_LOCAL_DATA_ROOT/runs` and daily state lives under
+`$AR_LOCAL_DATA_ROOT/state`.
 
 Install system packages and systemd units from a fresh Pi checkout:
 
@@ -77,8 +89,14 @@ cd /home/pi/AR-local
 sh deploy/pi/install-pi-systemd.sh
 ```
 
+To use a different mountpoint, pass it as the third argument:
+
+```sh
+sh deploy/pi/install-pi-systemd.sh /home/pi/AR-local /home/pi/australianrates /mnt/ar-local-ssd
+```
+
 The installer renders the systemd units for the current Linux user, repo path,
-and adjacent AustralianRates checkout before installing them under
+adjacent AustralianRates checkout, and data root before installing them under
 `/etc/systemd/system`.
 
 After the first real ingest succeeds, the dashboard can run continuously on the
@@ -92,7 +110,7 @@ npm run verify:local -- --base-url=http://127.0.0.1:8808/
 The dashboard service serves the newest completed export with:
 
 ```sh
-python3 cdr_dashboard_server.py --exports latest --runs /home/pi/AR-local/runs --host 0.0.0.0 --port 8808 --site-root /home/pi/australianrates/site --preload
+python3 cdr_dashboard_server.py --exports latest --runs /srv/ar-local-data/runs --host 0.0.0.0 --port 8808 --site-root /home/pi/australianrates/site --preload
 ```
 
 ## One-Click Shortcuts

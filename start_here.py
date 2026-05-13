@@ -34,12 +34,13 @@ from ar_local_launcher_constants import (
     SYSTEMD_UNIT_NAME,
     TASK_NAME,
 )
+from ar_local_pi_runtime import data_runs_root, data_state_root
 from ar_local_platform import HostKind, host_kind, platform_label
 from ar_local_subprocess import run_checked
 
 REPO_ROOT = Path(__file__).resolve().parent
-RUNS_DIR = REPO_ROOT / "runs"
-STATE_DIR = REPO_ROOT / ".daily-state"
+RUNS_DIR = data_runs_root(REPO_ROOT)
+STATE_DIR = data_state_root(REPO_ROOT)
 DB_STATS_SNAPSHOT = STATE_DIR / "last_db_stats.json"
 
 
@@ -79,7 +80,16 @@ def require_latest_run_date() -> str:
 
 def invoke_daily(force: bool) -> None:
     py = resolve_python_argv()
-    args = [*py, str(REPO_ROOT / "cdr_daily.py"), "--workers", str(DAILY_WORKER_COUNT)]
+    args = [
+        *py,
+        str(REPO_ROOT / "cdr_daily.py"),
+        "--runs",
+        str(RUNS_DIR),
+        "--state",
+        str(STATE_DIR),
+        "--workers",
+        str(DAILY_WORKER_COUNT),
+    ]
     if force:
         args.append("--force")
     run_checked(args, cwd=REPO_ROOT)
@@ -185,9 +195,11 @@ def _cron_block(py: str, repo: Path) -> List[str]:
     repo_q = shlex.quote(str(repo))
     py_q = shlex.quote(py)
     script_q = shlex.quote(str(repo / "cdr_daily.py"))
+    runs_q = shlex.quote(str(RUNS_DIR))
+    state_q = shlex.quote(str(STATE_DIR))
     line = (
         f"{SCHEDULE_UTC_MINUTE} {SCHEDULE_UTC_HOUR} * * * cd {repo_q} && "
-        f"{py_q} {script_q} --workers {DAILY_WORKER_COUNT}"
+        f"{py_q} {script_q} --runs {runs_q} --state {state_q} --workers {DAILY_WORKER_COUNT}"
     )
     return [CRON_BEGIN, "CRON_TZ=UTC", line, CRON_END]
 
@@ -298,6 +310,7 @@ def write_boot_systemd_unit() -> None:
     wd = _systemd_exec_word(REPO_ROOT)
     exec_line = (
         f"{_systemd_exec_word(Path(py))} {_systemd_exec_word(script)} "
+        f"--runs {_systemd_exec_word(RUNS_DIR)} --state {_systemd_exec_word(STATE_DIR)} "
         f"--workers {DAILY_WORKER_COUNT}"
     )
     unit = f"""[Unit]
