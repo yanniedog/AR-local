@@ -271,10 +271,10 @@
     const visible = rows;
     const isEnergy = state.sector === 'energy';
     const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
+    const productCount = isEnergy ? 0 : new Set(visible.map((row) => row.product_key || row.product_id || row.plan_id || row.product_name)).size;
     if (isEnergy) {
       countEl.textContent = `${num(visible.length)} plans / ${num(providerCount)} providers`;
     } else {
-      const productCount = new Set(visible.map((row) => row.product_key || row.product_id || row.plan_id || row.product_name)).size;
       countEl.textContent = `${num(visible.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
     }
     const panel = ensurePanel(container);

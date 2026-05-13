@@ -38,6 +38,8 @@ def marker_path(state_dir: Path, date: str) -> Path:
 
 
 def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str], energy_full_detail: bool) -> None:
+    # Strip legacy --energy-lite: cdr_full_ingest defaults to index-only (lite) mode,
+    # so passing nothing = lite. Only add --energy-full-detail when explicitly requested.
     cmd_extra = [a for a in extra if a not in ("--energy-lite",)]
     if energy_full_detail and "--energy-full-detail" not in cmd_extra:
         cmd_extra.append("--energy-full-detail")
