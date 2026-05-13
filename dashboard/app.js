@@ -88,7 +88,14 @@
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-current', active ? 'page' : 'false');
     });
-    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Energy plans, tracked.' };
+    const pageTitles = {
+      Mortgage: 'Compare Australian Home Loan Rates - Daily CDR Data | AustralianRates',
+      Savings: 'Compare Australian Savings Rates - Daily CDR Data | AustralianRates',
+      TD: 'Compare Australian Term Deposit Rates - Daily CDR Data | AustralianRates',
+      Energy: 'Australian Economic Data - Daily CDR Data | AustralianRates',
+    };
+    document.title = pageTitles[state.section] || pageTitles.Mortgage;
+    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Economic data, tracked.' };
     $('page-title').textContent = titles[state.section] || titles.Mortgage;
     const leaderLabels = { Mortgage: 'Lowest rate', Savings: 'Top yield', TD: 'Top yield', Energy: 'Plans' };
     const focusLabels = { Mortgage: 'Lowest rates', Savings: 'Top yields', TD: 'Top yields', Energy: 'Plan count' };
@@ -208,13 +215,16 @@
   }
 
   function renderTable(rows) {
-    if (state.sector === 'banks') {
+    const hasTaxonomy = rows.length > 0 && rows.some((r) => r.taxonomy_path);
+    if (state.sector === 'banks' || hasTaxonomy) {
       $('table').hidden = true;
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
       $('hierarchy').hidden = false;
       window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state);
-    } else renderFlatTable(rows);
+    } else {
+      renderFlatTable(rows);
+    }
   }
 
   function render() {
@@ -251,7 +261,7 @@
 
   function bind() {
     let resizeTimer = 0;
-    document.querySelectorAll('[data-section]').forEach((button) => button.addEventListener('click', () => loadSection(button.dataset.section)));
+    document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); loadSection(el.dataset.section); }));
     $('sectionCards').addEventListener('click', (event) => {
       const card = event.target.closest('[data-section-card]');
       if (card) loadSection(card.dataset.sectionCard);

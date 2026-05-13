@@ -11,7 +11,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
 
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
@@ -33,6 +33,54 @@ from cdr_ingest_support import (
     safe_url,
     sanitize_path_component,
 )
+
+
+# ─── Banking detail work unit ─────────────────────────────────────────────────
+
+class _BankWork(NamedTuple):
+    pid: str
+    leaf: Path
+    prefetched: Optional[FetchResult]
+
+
+def _fetch_bank_detail(
+    work: _BankWork,
+    endpoint_url: str,
+    *,
+    timeout: float,
+    max_retries: int,
+    sleep_ms: int,
+    date_root: Path,
+    bank_dir_name: str,
+    failure_lock: Optional[threading.Lock],
+) -> None:
+    """Write product-detail.json for one bank product (called from thread pool)."""
+    pid, leaf, prefetched = work
+    detail_path = leaf / "product-detail.json"
+
+    if prefetched is not None:
+        res = prefetched
+    else:
+        time.sleep(sleep_ms / 1000.0)
+        url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
+        res = fetch_cdr_json(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
+
+    parsed = res.data
+    if res.ok and parsed is not None and not has_cdr_errors(parsed):
+        detail_path.write_text(res.text, encoding="utf-8")
+    else:
+        append_failure(
+            date_root,
+            {
+                "phase": "product_detail",
+                "bank": bank_dir_name,
+                "product_id": pid,
+                "status": res.status,
+                "snippet": (res.text or "")[:500],
+            },
+            lock=failure_lock,
+        )
+        (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
 
 
 def classify_product_for_ingest(
@@ -86,11 +134,18 @@ def ingest_brand(
     max_products: Optional[int],
     fetch_unknown_detail: bool,
     bank_dir_name: str,
+    detail_workers: int,
     log: Callable[[str], None],
     failure_lock: Optional[threading.Lock] = None,
 ) -> None:
+    """Ingest one banking holder.
+
+    Phase 1 (serial): walk paginated product index, classify each product,
+    create directory skeletons.
+    Phase 2 (parallel): fetch all product-detail payloads concurrently using
+    up to ``detail_workers`` threads.
+    """
     endpoint_url = brand["endpoint_url"]
-    # Holder-level artifacts live beside Mortgage/Savings/TD so the product tree matches the plan.
     holders_root = date_root / "_holders" / bank_dir_name
     holders_root.mkdir(parents=True, exist_ok=True)
 
@@ -101,12 +156,16 @@ def ingest_brand(
     index_dir = holders_root / "_products-index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
+    # ─── Phase 1: collect all pages, build work list ──────────────────────────
+
+    pending: List[_BankWork] = []
     url: Optional[str] = endpoint_url
     visited: Set[str] = set()
     pages = 0
     products_seen = 0
+    capped = False
 
-    while url:
+    while url and not capped:
         if url in visited:
             break
         visited.add(url)
@@ -135,11 +194,11 @@ def ingest_brand(
             )
             break
 
-        products = extract_products(parsed)
-        for product in products:
+        for product in extract_products(parsed):
             if max_products is not None and products_seen >= max_products:
                 log(f"max-products reached for {bank_dir_name}")
-                return
+                capped = True
+                break
             products_seen += 1
 
             if not is_record(product):
@@ -149,7 +208,7 @@ def ingest_brand(
             if not pid:
                 continue
 
-            ds, prefetched_detail = classify_product_for_ingest(
+            ds, prefetched = classify_product_for_ingest(
                 product,
                 fetch_unknown_detail=fetch_unknown_detail,
                 endpoint_url=endpoint_url,
@@ -164,57 +223,113 @@ def ingest_brand(
             pname = sanitize_path_component(
                 pick_text(product, ["name", "productName"]) or "_unnamed"
             )
-
             id_dir = filesystem_product_id_directory(pid)
             leaf = date_root / folder / bank_dir_name / pname / id_dir
             leaf.mkdir(parents=True, exist_ok=True)
+
             id_file = leaf / "product-id.txt"
             if not id_file.exists():
                 id_file.write_text(pid + "\n", encoding="utf-8")
 
             detail_path = leaf / "product-detail.json"
-
             if resume and detail_path.exists() and detail_path.stat().st_size > 0:
                 continue
 
-            if prefetched_detail is not None:
-                detail_res = prefetched_detail
-            else:
-                time.sleep(sleep_ms / 1000.0)
-                detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-                detail_res = fetch_cdr_json(
-                    detail_url,
-                    timeout=timeout,
-                    max_retries=max_retries,
-                    sleep_ms=sleep_ms,
-                )
+            pending.append(_BankWork(pid=pid, leaf=leaf, prefetched=prefetched))
 
-            parsed_detail = detail_res.data
-            ok = (
-                detail_res.ok
-                and parsed_detail is not None
-                and not has_cdr_errors(parsed_detail)
-            )
-            if ok:
-                detail_path.write_text(detail_res.text, encoding="utf-8")
-            else:
-                append_failure(
-                    date_root,
-                    {
-                        "phase": "product_detail",
-                        "bank": bank_dir_name,
-                        "product_id": pid,
-                        "dataset": folder,
-                        "status": detail_res.status,
-                        "snippet": (detail_res.text or "")[:500],
-                    },
-                    lock=failure_lock,
-                )
-                err_path = leaf / "product-detail.error.txt"
-                err_path.write_text(detail_res.text or "", encoding="utf-8")
+        url = next_link(parsed, url)
 
-        nxt = next_link(parsed, url)
-        url = nxt
+    # ─── Phase 2: parallel detail fetches ────────────────────────────────────
+
+    if not pending:
+        return
+
+    n_workers = min(detail_workers, len(pending))
+    log(
+        f"[banks] {bank_dir_name}: fetching {len(pending)} product details "
+        f"({n_workers} concurrent)",
+    )
+
+    def _do(work: _BankWork) -> None:
+        _fetch_bank_detail(
+            work,
+            endpoint_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            sleep_ms=sleep_ms,
+            date_root=date_root,
+            bank_dir_name=bank_dir_name,
+            failure_lock=failure_lock,
+        )
+
+    if n_workers <= 1:
+        for w in pending:
+            _do(w)
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = {pool.submit(_do, w): w.pid for w in pending}
+            done = 0
+            for fut in as_completed(futures):
+                done += 1
+                try:
+                    fut.result()
+                except Exception as exc:
+                    log(f"[banks] {bank_dir_name}: detail error for {futures[fut]}: {exc}")
+                if done % 50 == 0:
+                    log(f"[banks] {bank_dir_name}: {done}/{len(pending)} details done")
+
+
+# ─── Energy detail work unit ──────────────────────────────────────────────────
+
+class _EnergyWork(NamedTuple):
+    pid: str
+    leaf: Path
+    list_row: Optional[Dict[str, Any]]  # non-None in lite mode → write directly
+
+
+def _fetch_energy_plan(
+    work: _EnergyWork,
+    endpoint_url: str,
+    *,
+    timeout: float,
+    max_retries: int,
+    sleep_ms: int,
+    date_root: Path,
+    provider_dir_name: str,
+    failure_lock: Optional[threading.Lock],
+) -> None:
+    """Write plan-detail.json for one energy plan (called from thread pool)."""
+    pid, leaf, list_row = work
+    detail_path = leaf / "plan-detail.json"
+
+    if list_row is not None:
+        # Lite mode: persist the list row directly (no network call).
+        envelope = {"data": list_row}
+        detail_path.write_text(
+            json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        return
+
+    time.sleep(sleep_ms / 1000.0)
+    url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
+    res = fetch_cdr_json(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
+    parsed = res.data
+    if res.ok and parsed is not None and not has_cdr_errors(parsed):
+        detail_path.write_text(res.text, encoding="utf-8")
+    else:
+        append_failure(
+            date_root,
+            {
+                "phase": "energy_plan_detail",
+                "provider": provider_dir_name,
+                "plan_id": pid,
+                "status": res.status,
+                "snippet": (res.text or "")[:500],
+            },
+            lock=failure_lock,
+        )
+        (leaf / "plan-detail.error.txt").write_text(res.text or "", encoding="utf-8")
 
 
 def ingest_energy_brand(
@@ -228,14 +343,20 @@ def ingest_energy_brand(
     max_pages: Optional[int],
     max_products: Optional[int],
     energy_lite: bool,
+    detail_workers: int,
     provider_dir_name: str,
     log: Callable[[str], None],
     failure_lock: Optional[threading.Lock] = None,
 ) -> None:
-    """Ingest one energy retailer's generic plans (CDS ``.../energy/plans``).
+    """Ingest one energy retailer's generic plans.
 
-    When ``energy_lite`` is True, each paginated list row is written as the plan payload
-    (no per-plan GET). That matches the local dashboard's plan-level columns only.
+    When ``energy_lite`` is True each list row is written directly (no per-plan
+    GET).  Default is False — per-plan detail is fetched so that
+    ``customerType``, ``pricingModel``, and ``solarFeedInTariff`` are available
+    for taxonomy classification and export.
+
+    Phase 1 (serial): walk paginated plans index, build work list.
+    Phase 2 (parallel): write or fetch each plan detail concurrently.
     """
     endpoint_url = brand["endpoint_url"]
     holders_root = date_root / "_holders" / provider_dir_name
@@ -248,14 +369,16 @@ def ingest_energy_brand(
     index_dir = holders_root / "_plans-index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
+    # ─── Phase 1: collect all pages ───────────────────────────────────────────
+
+    pending: List[_EnergyWork] = []
     url: Optional[str] = endpoint_url
     visited: Set[str] = set()
     pages = 0
     plans_seen = 0
-    details_fetched = 0
-    stopped_for_max_products = False
+    capped = False
 
-    while url:
+    while url and not capped:
         if url in visited:
             break
         visited.add(url)
@@ -284,11 +407,10 @@ def ingest_energy_brand(
             )
             break
 
-        plans = extract_energy_plans(parsed)
-        for plan in plans:
+        for plan in extract_energy_plans(parsed):
             if max_products is not None and plans_seen >= max_products:
                 log(f"max-products reached for {provider_dir_name}")
-                stopped_for_max_products = True
+                capped = True
                 break
             plans_seen += 1
 
@@ -300,92 +422,83 @@ def ingest_energy_brand(
                 continue
 
             pname = sanitize_path_component(
-                pick_text(
-                    plan,
-                    ["displayName", "name", "planName", "brandName"],
-                )
-                or "_unnamed"
+                pick_text(plan, ["displayName", "name", "planName", "brandName"]) or "_unnamed"
             )
-
             id_dir = filesystem_product_id_directory(pid)
             leaf = date_root / provider_dir_name / pname / id_dir
             leaf.mkdir(parents=True, exist_ok=True)
+
             id_file = leaf / "plan-id.txt"
             if not id_file.exists():
                 id_file.write_text(pid + "\n", encoding="utf-8")
 
             detail_path = leaf / "plan-detail.json"
-
             if resume and detail_path.exists() and detail_path.stat().st_size > 0:
                 continue
 
-            if energy_lite:
-                # List response only — matches local dashboard columns; skips tariffs/fees payloads.
-                envelope = {"data": plan} if isinstance(plan, dict) else {"data": {}}
-                detail_path.write_text(
-                    json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
-                    encoding="utf-8",
-                )
-            else:
-                time.sleep(sleep_ms / 1000.0)
-                detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-                detail_res = fetch_cdr_json(
-                    detail_url,
-                    timeout=timeout,
-                    max_retries=max_retries,
-                    sleep_ms=sleep_ms,
-                )
+            # In lite mode pass the list row so the worker writes it directly.
+            pending.append(_EnergyWork(
+                pid=pid,
+                leaf=leaf,
+                list_row=plan if energy_lite else None,
+            ))
 
-                parsed_detail = detail_res.data
-                ok = (
-                    detail_res.ok
-                    and parsed_detail is not None
-                    and not has_cdr_errors(parsed_detail)
-                )
-                if ok:
-                    detail_path.write_text(detail_res.text, encoding="utf-8")
-                else:
-                    append_failure(
-                        date_root,
-                        {
-                            "phase": "energy_plan_detail",
-                            "provider": provider_dir_name,
-                            "plan_id": pid,
-                            "status": detail_res.status,
-                            "snippet": (detail_res.text or "")[:500],
-                        },
-                        lock=failure_lock,
-                    )
-                    err_path = leaf / "plan-detail.error.txt"
-                    err_path.write_text(detail_res.text or "", encoding="utf-8")
-
-            details_fetched += 1
-            if details_fetched % 100 == 0:
-                label = "plans stored (index-only)" if energy_lite else "plan-detail requests completed"
-                log(
-                    f"[energy] {provider_dir_name}: {label} "
-                    f"{details_fetched} (index plans seen {plans_seen})",
-                )
-
-        if stopped_for_max_products:
-            break
-
-        lite_tail = "plans stored so far" if energy_lite else "detail fetches so far"
         log(
             f"[energy] {provider_dir_name}: index page {pages} done "
-            f"({len(plans)} plans on page; {details_fetched} {lite_tail})",
+            f"({len(extract_energy_plans(parsed))} plans on page; {plans_seen} seen so far)",
+        )
+        url = next_link(parsed, url)
+
+    # ─── Phase 2: parallel detail writes / fetches ───────────────────────────
+
+    if not pending:
+        log(f"[energy] {provider_dir_name}: nothing to write (all resumed or empty)")
+        return
+
+    mode_label = "plans stored (index-only)" if energy_lite else "plan-detail fetches"
+    n_workers = 1 if energy_lite else min(detail_workers, len(pending))
+    log(
+        f"[energy] {provider_dir_name}: {len(pending)} {mode_label} "
+        f"({n_workers} concurrent)",
+    )
+
+    def _do(work: _EnergyWork) -> None:
+        _fetch_energy_plan(
+            work,
+            endpoint_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            sleep_ms=sleep_ms,
+            date_root=date_root,
+            provider_dir_name=provider_dir_name,
+            failure_lock=failure_lock,
         )
 
-        nxt = next_link(parsed, url)
-        url = nxt
+    if n_workers <= 1:
+        for w in pending:
+            _do(w)
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = {pool.submit(_do, w): w.pid for w in pending}
+            done = 0
+            for fut in as_completed(futures):
+                done += 1
+                try:
+                    fut.result()
+                except Exception as exc:
+                    log(f"[energy] {provider_dir_name}: detail error for {futures[fut]}: {exc}")
+                if done % 50 == 0:
+                    log(f"[energy] {provider_dir_name}: {done}/{len(pending)} done")
 
-    cap_note = "; capped by --max-products" if stopped_for_max_products else ""
-    done_label = "plan records stored (index-only)" if energy_lite else "plan-detail fetches"
     log(
-        f"[energy] {provider_dir_name}: holder complete "
-        f"({details_fetched} {done_label}, {plans_seen} index plan rows seen)"
-        f"{cap_note}",
+        f"[energy] {provider_dir_name}: complete "
+        f"({len(pending)} {mode_label}, {plans_seen} index rows seen)"
+        + ("; capped by --max-products" if capped else ""),
     )
+
+
+# ─── CLI ──────────────────────────────────────────────────────────────────────
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     default_out = here / "runs"
@@ -405,26 +518,18 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=None,
         help="Run folder YYYY-MM-DD (default: UTC today)",
     )
-    p.add_argument(
-        "--no-banks",
-        action="store_true",
-        help="Skip banking sector (no banks/ tree)",
-    )
-    p.add_argument(
-        "--no-energy",
-        action="store_true",
-        help="Skip energy sector (no energy/ tree)",
-    )
+    p.add_argument("--no-banks", action="store_true", help="Skip banking sector")
+    p.add_argument("--no-energy", action="store_true", help="Skip energy sector")
     p.add_argument(
         "--resume",
         action="store_true",
-        help="Skip existing banking product-detail.json or energy plan-detail.json when non-empty",
+        help="Skip existing non-empty product-detail.json / plan-detail.json files",
     )
     p.add_argument(
         "--sleep-ms",
         type=int,
         default=40,
-        help="Delay between HTTP calls (milliseconds)",
+        help="Delay per HTTP call per worker thread (milliseconds, default 40)",
     )
     p.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout seconds")
     p.add_argument("--max-retries", type=int, default=3, help="Retries on 429/5xx")
@@ -435,7 +540,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Substring filter on brand name, legal name, or endpoint URL",
     )
     p.add_argument("--max-pages", type=int, default=None, help="Cap index pages per holder")
-    p.add_argument("--max-products", type=int, default=None, help="Cap products processed per holder")
+    p.add_argument("--max-products", type=int, default=None, help="Cap products per holder")
     p.add_argument(
         "--fetch-unknown-detail",
         action="store_true",
@@ -454,27 +559,35 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=int,
         default=8,
         metavar="N",
-        help="Parallel holder ingests (default: 8). Use 1 for strictly serial per-holder runs.",
+        help="Parallel holder ingests (default: 8). Use 1 for serial per-holder runs.",
     )
     p.add_argument(
-        "--energy-full-detail",
-        action="store_true",
+        "--detail-workers",
+        type=int,
+        default=4,
+        metavar="N",
         help=(
-            "Energy sector: GET each plan's detail payload (slow, large). "
-            "Default is index-row only plus slim exports downstream."
+            "Parallel detail GETs within each holder (default: 4). "
+            "Total concurrent requests ~= workers x detail-workers."
         ),
     )
-    p.add_argument("--energy-lite", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument(
+        "--energy-lite",
+        action="store_true",
+        help=(
+            "Energy: store only the plan list row, skip per-plan detail GET. "
+            "Much faster but omits customerType, pricingModel, tariffs, and solar fields."
+        ),
+    )
+    # Backwards-compat alias — was the flag to opt INTO detail; now detail is the default.
+    p.add_argument("--energy-full-detail", action="store_true", help=argparse.SUPPRESS)
     return p.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
 
-    run_date = args.date
-    if not run_date:
-        run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
+    run_date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     out_root: Path = args.out.expanduser().resolve()
     run_root = out_root / run_date
     banks_root = run_root / "banks"
@@ -489,13 +602,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         log("ERROR: specify at least one sector (remove --no-banks / --no-energy).")
         return 2
 
-    log(f"Run folder: {run_root} (banks under banks/, energy under energy/)")
-    run_root.mkdir(parents=True, exist_ok=True)
-
     if args.workers < 1:
         log("ERROR: --workers must be >= 1")
         return 2
-    workers = args.workers
+    if args.detail_workers < 1:
+        log("ERROR: --detail-workers must be >= 1")
+        return 2
+
+    log(f"Run folder: {run_root}")
+    run_root.mkdir(parents=True, exist_ok=True)
 
     snap = collect_register_snapshot(
         timeout=args.timeout,
@@ -517,15 +632,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if not snap.register_ok:
         if args.allow_empty_holders:
-            log(
-                "WARNING: CDR register discovery failed — no successful JSON payload from "
-                "any register URL (--allow-empty-holders); exiting 0.",
-            )
+            log("WARNING: CDR register discovery failed (--allow-empty-holders); exiting 0.")
             return 0
-        log(
-            "ERROR: CDR register discovery failed — no successful JSON payload from "
-            "any register URL (network outage, HTTP errors, or non-JSON body).",
-        )
+        log("ERROR: CDR register discovery failed.")
         return 2
 
     run_banks = want_banks and len(snap.banking_brands) > 0
@@ -536,18 +645,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             log("WARNING: no banking holders to ingest; skipping banks/.")
         else:
             if snap.banking_count_before_filter == 0:
-                log(
-                    "ERROR: register responded but extracted zero banking PRD brands "
-                    "before applying --holders filter (not a filter miss).",
-                )
+                log("ERROR: register returned zero banking PRD brands.")
                 return 2
             if args.holders:
-                log(
-                    f"ERROR: no banking holders matched --holders {args.holders!r} "
-                    "(register returned banking rows but none matched the filter).",
-                )
+                log(f"ERROR: no banking holders matched --holders {args.holders!r}.")
                 return 1
-            log("ERROR: register contained no banking PRD brands to ingest.")
+            log("ERROR: register contained no banking PRD brands.")
             return 2
 
     if want_energy and not run_energy:
@@ -555,34 +658,24 @@ def main(argv: Optional[List[str]] = None) -> int:
             log("WARNING: no energy retailers to ingest; skipping energy/.")
         elif not want_banks:
             if snap.energy_count_before_filter == 0:
-                log(
-                    "ERROR: register contained zero energy PRD brands "
-                    "before applying --holders filter.",
-                )
+                log("ERROR: register returned zero energy PRD brands.")
                 return 2
             if args.holders:
-                log(
-                    f"ERROR: no energy retailers matched --holders {args.holders!r} "
-                    "(register returned energy rows but none matched the filter).",
-                )
+                log(f"ERROR: no energy retailers matched --holders {args.holders!r}.")
                 return 1
-            log("ERROR: no energy PRD brands to ingest.")
+            log("ERROR: no energy PRD brands.")
             return 2
         else:
             if snap.energy_count_before_filter == 0:
                 log(
-                    "ERROR: energy ingest is enabled but register contained zero energy PRD brands "
-                    "before --holders (use --no-energy for banking-only, or --allow-empty-holders "
-                    "to skip energy).",
+                    "ERROR: energy ingest enabled but register returned zero energy PRD brands "
+                    "(use --no-energy for banking-only, or --allow-empty-holders to skip).",
                 )
                 return 2
             if args.holders:
-                log(
-                    f"ERROR: no energy retailers matched --holders {args.holders!r} "
-                    "(register returned energy rows but none matched the filter).",
-                )
+                log(f"ERROR: no energy retailers matched --holders {args.holders!r}.")
                 return 1
-            log("ERROR: no energy PRD brands to ingest.")
+            log("ERROR: no energy PRD brands.")
             return 2
 
     if not run_banks and not run_energy:
@@ -592,37 +685,43 @@ def main(argv: Optional[List[str]] = None) -> int:
         log("ERROR: no holders to ingest for enabled sector(s).")
         return 2
 
+    workers = args.workers
+    detail_workers = args.detail_workers
+    energy_lite = bool(args.energy_lite)  # default False — full detail
+
     failure_lock = threading.Lock() if workers > 1 else None
     log_lock = threading.Lock() if workers > 1 else None
 
-    def log_threadsafe(msg: str) -> None:
+    def log_ts(msg: str) -> None:
         if log_lock is not None:
             with log_lock:
                 log(msg)
         else:
             log(msg)
 
-    if run_banks:
+    # ─── Sector runner closures ───────────────────────────────────────────────
+
+    def do_banks() -> None:
         banks_root.mkdir(parents=True, exist_ok=True)
-        seen_bank_dirs: Set[str] = set()
+        seen_dirs: Set[str] = set()
         bank_work: List[Tuple[Dict[str, str], str]] = []
         for brand in snap.banking_brands:
-            bank_dir = allocate_bank_dir(
+            bdir = allocate_bank_dir(
                 brand["brand_name"],
                 brand["legal_entity_name"],
                 brand["endpoint_url"],
-                seen_bank_dirs,
+                seen_dirs,
             )
-            bank_work.append((brand, bank_dir))
+            bank_work.append((brand, bdir))
 
-        log(
+        log_ts(
             f"Starting banking ingest: {len(bank_work)} holders, "
-            f"--workers {workers}",
+            f"--workers {workers}, --detail-workers {detail_workers}",
         )
 
-        def run_bank_holder(item: Tuple[Dict[str, str], str]) -> None:
-            brand, bank_dir = item
-            log_threadsafe(f"[banks] Ingesting {bank_dir} ({brand['endpoint_url']})")
+        def run_one(item: Tuple[Dict[str, str], str]) -> None:
+            brand, bdir = item
+            log_ts(f"[banks] Ingesting {bdir} ({brand['endpoint_url']})")
             ingest_brand(
                 brand,
                 date_root=banks_root,
@@ -633,49 +732,46 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_pages=args.max_pages,
                 max_products=args.max_products,
                 fetch_unknown_detail=args.fetch_unknown_detail,
-                bank_dir_name=bank_dir,
-                log=log_threadsafe,
+                bank_dir_name=bdir,
+                detail_workers=detail_workers,
+                log=log_ts,
                 failure_lock=failure_lock,
             )
 
         if workers == 1:
             for item in bank_work:
-                run_bank_holder(item)
+                run_one(item)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                future_to_bank = {
-                    pool.submit(run_bank_holder, item): item[1] for item in bank_work
-                }
-                for fut in as_completed(future_to_bank):
-                    bank_name = future_to_bank[fut]
+                futs = {pool.submit(run_one, item): item[1] for item in bank_work}
+                for fut in as_completed(futs):
                     try:
                         fut.result()
-                    except Exception as e:
-                        log_threadsafe(
-                            f"ERROR: Banking ingest for {bank_name} failed: {e}",
-                        )
+                    except Exception as exc:
+                        log_ts(f"ERROR: banking ingest for {futs[fut]} failed: {exc}")
 
-    if run_energy:
+    def do_energy() -> None:
         energy_root.mkdir(parents=True, exist_ok=True)
         seen_prov: Set[str] = set()
         energy_work: List[Tuple[Dict[str, str], str]] = []
         for brand in snap.energy_brands:
-            prov_dir = allocate_bank_dir(
+            pdir = allocate_bank_dir(
                 brand["brand_name"],
                 brand["legal_entity_name"],
                 brand["endpoint_url"],
                 seen_prov,
             )
-            energy_work.append((brand, prov_dir))
+            energy_work.append((brand, pdir))
 
-        log(
+        log_ts(
             f"Starting energy ingest: {len(energy_work)} retailers, "
-            f"--workers {workers}",
+            f"--workers {workers}, --detail-workers {detail_workers}"
+            + (" (lite mode — no per-plan GET)" if energy_lite else ""),
         )
 
-        def run_energy_holder(item: Tuple[Dict[str, str], str]) -> None:
-            brand, prov_dir = item
-            log_threadsafe(f"[energy] Ingesting {prov_dir} ({brand['endpoint_url']})")
+        def run_one(item: Tuple[Dict[str, str], str]) -> None:
+            brand, pdir = item
+            log_ts(f"[energy] Ingesting {pdir} ({brand['endpoint_url']})")
             ingest_energy_brand(
                 brand,
                 date_root=energy_root,
@@ -685,26 +781,46 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_retries=args.max_retries,
                 max_pages=args.max_pages,
                 max_products=args.max_products,
-                energy_lite=not bool(args.energy_full_detail),
-                provider_dir_name=prov_dir,
-                log=log_threadsafe,
+                energy_lite=energy_lite,
+                detail_workers=detail_workers,
+                provider_dir_name=pdir,
+                log=log_ts,
                 failure_lock=failure_lock,
             )
 
         if workers == 1:
             for item in energy_work:
-                run_energy_holder(item)
+                run_one(item)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                fut_map = {pool.submit(run_energy_holder, item): item[1] for item in energy_work}
-                for fut in as_completed(fut_map):
-                    name = fut_map[fut]
+                futs = {pool.submit(run_one, item): item[1] for item in energy_work}
+                for fut in as_completed(futs):
                     try:
                         fut.result()
-                    except Exception as e:
-                        log_threadsafe(
-                            f"ERROR: Energy ingest for {name} failed: {e}",
-                        )
+                    except Exception as exc:
+                        log_ts(f"ERROR: energy ingest for {futs[fut]} failed: {exc}")
+
+    # ─── Run both sectors; if both are enabled, run them concurrently ─────────
+
+    if run_banks and run_energy:
+        with ThreadPoolExecutor(max_workers=2) as sector_pool:
+            sector_futs = {
+                sector_pool.submit(do_banks): "banks",
+                sector_pool.submit(do_energy): "energy",
+            }
+            for fut in as_completed(sector_futs):
+                try:
+                    fut.result()
+                except Exception as exc:
+                    log_ts(f"ERROR: {sector_futs[fut]} sector failed: {exc}")
+    elif run_banks:
+        do_banks()
+    elif run_energy:
+        do_energy()
 
     log("Done.")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

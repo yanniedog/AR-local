@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from cdr_clean_export import parse_banks_run, parse_energy_run, summary_counts, utc_now
+from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json", "energy_counts_json"],
@@ -55,6 +56,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "term_months",
         "interest_payment",
         "feature_set",
+        "taxonomy_path",
         "details_json",
     ],
     "bank_items": [
@@ -76,6 +78,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "plan_id",
         "plan_name",
         "fuel_type",
+        "taxonomy_path",
         "last_updated",
         "source_file",
         "details_json",
@@ -179,6 +182,7 @@ def ensure_db(con: sqlite3.Connection) -> None:
           term_months TEXT,
           interest_payment TEXT,
           feature_set TEXT,
+          taxonomy_path TEXT,
           details_json TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS bank_items (
@@ -201,10 +205,15 @@ def ensure_db(con: sqlite3.Connection) -> None:
           plan_id TEXT NOT NULL,
           plan_name TEXT NOT NULL,
           fuel_type TEXT,
+          taxonomy_path TEXT,
           last_updated TEXT,
           source_file TEXT NOT NULL,
           details_json TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_bank_rates_taxonomy
+          ON bank_rates (run_date, taxonomy_path);
+        CREATE INDEX IF NOT EXISTS idx_energy_plans_taxonomy
+          ON energy_plans (run_date, taxonomy_path);
         CREATE TABLE IF NOT EXISTS energy_items (
           run_date TEXT NOT NULL,
           item_group TEXT NOT NULL,
@@ -318,6 +327,7 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
     write_workbook(
         out_dir / f"banks-{run_date}.xlsx",
         {
+            "taxonomy": build_taxonomy_summary(banks["rates"]),
             "products": banks["products"],
             "rates": banks["rates"],
             "fees": banks["fees"],
@@ -330,6 +340,7 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
     write_workbook(
         out_dir / f"energy-{run_date}.xlsx",
         {
+            "taxonomy": build_taxonomy_summary(energy["plans"]),
             "plans": energy["plans"],
             "contracts": energy["contracts"],
             "charges": energy["charges"],

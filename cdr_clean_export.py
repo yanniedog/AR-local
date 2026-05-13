@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from cdr_ribbon_normalize import ribbon_columns_for_bank_rate_row
+from cdr_taxonomy import classify_energy_plan
 
 NOISE_KEYS = {
     "links",
@@ -276,6 +277,7 @@ def energy_base_row(path: Path, energy_root: Path, rec: Mapping[str, Any]) -> Di
         "effective_to": text(rec.get("effectiveTo")),
         "description": text(rec.get("description")),
         "source_file": str(path),
+        "taxonomy_path": classify_energy_plan(rec),
     }
 
 

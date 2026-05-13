@@ -1,5 +1,8 @@
 """AustralianRates-aligned ribbon facets for flattened CDR rate rows.
 
+Imports cdr_taxonomy at call-time (not module-load) to avoid a circular
+dependency — cdr_taxonomy is a leaf module with no upward imports.
+
 Logic mirrors dashboard/cdr-ribbon-map.js so export JSON/SQLite can stay slim without
 embedding full cleaned rate payloads in ``details_json``.
 """
@@ -343,6 +346,8 @@ def ribbon_columns_for_bank_rate_row(
     cleaned_item: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Return discrete ribbon-aligned columns merged into export bank rate rows."""
+    from cdr_taxonomy import classify_bank_rate_row as _classify
+
     defaults: Dict[str, Any] = {
         "ribbon_normalized": False,
         "security_purpose": "",
@@ -356,6 +361,7 @@ def ribbon_columns_for_bank_rate_row(
         "term_months": "",
         "interest_payment": "",
         "feature_set": "",
+        "taxonomy_path": "",
     }
 
     if dataset == "Mortgage" and rate_family == "lending":
@@ -398,6 +404,7 @@ def ribbon_columns_for_bank_rate_row(
                 "feature_set": feature_set,
             }
         )
+        out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
     if dataset == "Savings" and rate_family == "deposit":
@@ -428,6 +435,7 @@ def ribbon_columns_for_bank_rate_row(
                 "feature_set": feature_set,
             }
         )
+        out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
     if dataset == "TD" and rate_family == "deposit":
@@ -480,6 +488,8 @@ def ribbon_columns_for_bank_rate_row(
                 "balance_max": _num_or_empty(b_max),
             }
         )
+        out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
+    defaults["taxonomy_path"] = _classify(dataset, flat_base, defaults)
     return defaults
