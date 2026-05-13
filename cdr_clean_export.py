@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from cdr_ribbon_normalize import ribbon_columns_for_bank_rate_row
+from cdr_taxonomy import classify_energy_plan
 
 NOISE_KEYS = {
     "links",
@@ -243,6 +244,21 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
     return dataset
 
 
+# Dropped when ``energy_slim`` is True (default; use ``--energy-full-detail`` export for granular rows).
+ENERGY_SLIM_OMIT_KEYS = frozenset(
+    {
+        "electricityContract",
+        "gasContract",
+        "dualFuelContract",
+        "fees",
+    },
+)
+
+
+def slim_energy_plan_record(rec: Mapping[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in rec.items() if k not in ENERGY_SLIM_OMIT_KEYS}
+
+
 def energy_base_row(path: Path, energy_root: Path, rec: Mapping[str, Any]) -> Dict[str, str]:
     rel = path.relative_to(energy_root)
     parts = rel.parts
@@ -261,6 +277,7 @@ def energy_base_row(path: Path, energy_root: Path, rec: Mapping[str, Any]) -> Di
         "effective_to": text(rec.get("effectiveTo")),
         "description": text(rec.get("description")),
         "source_file": str(path),
+        "taxonomy_path": classify_energy_plan(rec),
     }
 
 
@@ -323,7 +340,7 @@ def add_nested_energy_rows(
                 )
 
 
-def parse_energy_run(run_root: Path) -> Dict[str, Any]:
+def parse_energy_run(run_root: Path, *, energy_slim: bool = True) -> Dict[str, Any]:
     energy_root = run_root / "energy"
     dataset: Dict[str, Any] = {
         "generated_at": utc_now(),
@@ -340,8 +357,10 @@ def parse_energy_run(run_root: Path) -> Dict[str, Any]:
     for path in sorted(energy_root.rglob("plan-detail.json")):
         rec = inner_record(load_json(path))
         base = energy_base_row(path, energy_root, rec)
-        dataset["plans"].append({**base, "details_json": detail_json(rec)})
-        append_energy_details(dataset, base, rec)
+        store_rec = slim_energy_plan_record(rec) if energy_slim else rec
+        dataset["plans"].append({**base, "details_json": detail_json(store_rec)})
+        if not energy_slim:
+            append_energy_details(dataset, base, rec)
     return dataset
 
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Local CDR Dashboard | AustralianRates</title>
+  <title>Compare Australian Home Loan Rates - Daily CDR Data | AustralianRates</title>
   <link rel="icon" type="image/svg+xml" href="/assets/branding/ar-mark.svg">
   <script>try { if (!localStorage.getItem('ar-theme')) localStorage.setItem('ar-theme', 'dark'); } catch (_e) {}</script>
   <script src="/site/theme.js"></script>
@@ -31,7 +31,7 @@
         <button class="site-header-segment-link is-active" type="button" data-section="Mortgage">Mortgage</button>
         <button class="site-header-segment-link" type="button" data-section="Savings">Savings</button>
         <button class="site-header-segment-link" type="button" data-section="TD">Term Deposits</button>
-        <button class="site-header-segment-link" type="button" data-section="Energy">Energy</button>
+        <button class="site-header-segment-link" type="button" data-section="Energy">Economic Data</button>
       </nav>
       <div class="site-header-actions">
         <button class="site-action-btn site-action-theme" type="button" data-theme-toggle data-theme-label="Theme" aria-label="Theme">Theme</button>
@@ -45,7 +45,7 @@
     <section class="panel market-intro" aria-label="Page introduction">
       <div class="market-intro-head">
         <div class="market-intro-copy">
-          <p class="eyebrow">Local CDR data - generated artifacts</p>
+          <p class="eyebrow">Daily CDR data</p>
           <h1 class="market-intro-title" id="page-title">Home loan rates, tracked.</h1>
         </div>
       </div>
@@ -115,7 +115,21 @@
   </main>
   <footer class="site-footer" role="contentinfo">
     <div class="site-footer-inner">
-      <span class="site-footer-meta"><span class="site-footer-dot" aria-hidden="true"></span>AustralianRates - Local CDR data</span>
+      <nav class="site-footer-nav" aria-label="Sections">
+        <a href="#" data-section="Mortgage">Mortgage</a>
+        <a href="#" data-section="Savings">Savings</a>
+        <a href="#" data-section="TD">Term Deposits</a>
+        <a href="#" data-section="Energy">Economic Data</a>
+      </nav>
+      <nav class="site-footer-nav" aria-label="Site">
+        <a href="https://australianrates.com/about/" rel="noopener noreferrer" target="_blank">About</a>
+        <a href="https://australianrates.com/privacy/" rel="noopener noreferrer" target="_blank">Privacy</a>
+        <a href="https://australianrates.com/terms/" rel="noopener noreferrer" target="_blank">Terms</a>
+        <a href="https://australianrates.com/contact/" rel="noopener noreferrer" target="_blank">Contact</a>
+      </nav>
+    </div>
+    <div class="site-footer-inner">
+      <span class="site-footer-meta"><span class="site-footer-dot" aria-hidden="true"></span>General information only. Always confirm rates and product terms directly with the lender.</span>
       <nav class="site-footer-nav" aria-label="Exports"><a id="footerJsonLink" href="#">JSON</a><a id="footerXlsxLink" href="#">XLSX</a></nav>
     </div>
   </footer>
@@ -128,6 +142,7 @@
   <script src="/assets/utils.js"></script>
   <script src="/assets/chart.js"></script>
   <script src="/assets/cdr-ribbon-map.js"></script>
+  <script src="/assets/cdr-taxonomy-tree.js"></script>
   <script src="/assets/hierarchy.js"></script>
   <script src="/assets/app.js"></script>
 </body>
