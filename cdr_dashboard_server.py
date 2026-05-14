@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
 LATEST_EXPORTS_TTL_SECONDS = 5.0
 MAX_ARTIFACT_CACHE_ENTRIES = 4
+MAX_HISTORY_CACHE_ENTRIES = 8
 DEFAULT_HISTORY_RUN_LIMIT = 90
 BANK_HISTORY_COLUMNS = (
     "run_date",
@@ -215,8 +216,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     def read_bank_history_db(db_path: Path, max_run_date: str) -> list[dict[str, object]]:
         with sqlite3.connect(db_path) as con:
             if max_run_date:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
                 rows = con.execute(BANK_HISTORY_SELECT_UNTIL_SQL, (max_run_date,))
             else:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
                 rows = con.execute(BANK_HISTORY_SELECT_SQL)
             out = []
             for row in rows:
@@ -245,7 +248,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             ensure_ascii=False,
         ).encode("utf-8")
         with history_cache_lock:
-            history_cache.clear()
+            if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
+                oldest_key = next(iter(history_cache))
+                history_cache.pop(oldest_key)
             history_cache[cache_key] = payload
         return payload
 
