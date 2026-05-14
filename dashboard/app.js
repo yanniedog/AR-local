@@ -10,10 +10,12 @@
     bankHistoryIndex: null,
     energy: null,
     descending: false,
+    historyWindow: '30D',
     hierarchyPath: '',
   };
   const $ = (id) => document.getElementById(id);
   const { bankRateMatchesSection, historyIndexKey, normalizeRows, pct } = window.LocalCdrUtils;
+  const HISTORY_WINDOWS = { '30D': 30, '90D': 90, '180D': 180, '1Y': 365 };
 
   function clear(element) {
     while (element.firstChild) element.removeChild(element.firstChild);
@@ -47,33 +49,44 @@
   }
 
   function rateRows() {
-    const q        = filterVal('query').toLowerCase();
-    const provider = filterVal('provider').toLowerCase();
-    const dataset  = state.section === 'Energy' ? '' : filterVal('dataset');
-    const purpose  = filterVal('filter-purpose');
-    const repay    = filterVal('filter-repayment');
-    const struct   = filterVal('filter-structure');
-    const term     = filterVal('filter-term');
-    const rateType = filterVal('filter-rate-type');
+    const filters = bankFilterValues();
     if (state.sector === 'banks') {
       if (!state.banks) return [];
-      return state.banks.rates.filter((row) =>
-        (!dataset   || row.dataset === dataset) &&
-        bankRateMatchesSection(row) &&
-        (!provider  || String(row.provider || '').toLowerCase().includes(provider)) &&
-        (!q         || String(row.product_name || '').toLowerCase().includes(q)) &&
-        (!purpose   || row.security_purpose === purpose) &&
-        (!repay     || row.ribbon_repayment_type === repay) &&
-        (!struct    || row.rate_type === struct) &&
-        (!term      || String(Math.round(Number(row.term_months)) || '') === term) &&
-        (!rateType  || row.ribbon_deposit_kind === rateType)
-      );
+      return state.banks.rates.filter((row) => matchesBankFilters(row, filters));
     }
+    const provider = filters.provider;
+    const q = filters.q;
     if (!state.energy) return [];
     return state.energy.plans.filter((row) =>
       (!provider || String(row.provider || '').toLowerCase().includes(provider)) &&
       (!q        || String(row.plan_name || '').toLowerCase().includes(q))
     );
+  }
+
+  function bankFilterValues() {
+    return {
+      q: filterVal('query').toLowerCase(),
+      provider: filterVal('provider').toLowerCase(),
+      dataset: state.section === 'Energy' ? '' : filterVal('dataset'),
+      purpose: filterVal('filter-purpose'),
+      repay: filterVal('filter-repayment'),
+      struct: filterVal('filter-structure'),
+      term: filterVal('filter-term'),
+      rateType: filterVal('filter-rate-type'),
+    };
+  }
+
+  function matchesBankFilters(row, filters, options) {
+    const skipQuery = options && options.skipQuery;
+    return (!filters.dataset || row.dataset === filters.dataset) &&
+      bankRateMatchesSection(row) &&
+      (!filters.provider || String(row.provider || '').toLowerCase().includes(filters.provider)) &&
+      (skipQuery || !filters.q || String(row.product_name || '').toLowerCase().includes(filters.q)) &&
+      (!filters.purpose || row.security_purpose === filters.purpose) &&
+      (!filters.repay || row.ribbon_repayment_type === filters.repay) &&
+      (!filters.struct || row.rate_type === filters.struct) &&
+      (!filters.term || String(Math.round(Number(row.term_months)) || '') === filters.term) &&
+      (!filters.rateType || row.ribbon_deposit_kind === filters.rateType);
   }
 
   function buildHistoryIndex(rows) {
@@ -87,10 +100,73 @@
     return index;
   }
 
+  function parseYmd(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return null;
+    const parts = String(value || '').split('-').map((part) => Number(part));
+    if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return null;
+    const ts = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+    const check = new Date(ts);
+    if (check.getUTCFullYear() !== parts[0] || check.getUTCMonth() !== parts[1] - 1 || check.getUTCDate() !== parts[2]) return null;
+    return ts;
+  }
+
+  function historyDatesInWindow(dates) {
+    const sorted = (dates || [])
+      .map((date) => ({ date: String(date || ''), ts: parseYmd(date) }))
+      .filter((item) => item.ts != null)
+      .sort((a, b) => a.ts - b.ts)
+      .map((item) => item.date);
+    if (state.historyWindow === 'All' || sorted.length < 2) return sorted;
+    const days = HISTORY_WINDOWS[state.historyWindow] || 30;
+    const anchor = parseYmd(sorted[sorted.length - 1]);
+    if (anchor == null) return sorted;
+    const cutoff = anchor - (days * 24 * 60 * 60 * 1000);
+    return sorted.filter((date) => {
+      const parsed = parseYmd(date);
+      return parsed != null && parsed >= cutoff;
+    });
+  }
+
   async function loadBankHistory() {
     if (state.bankHistory) return;
-    state.bankHistory = await getJson(`/api/banks/history?date=${state.manifest.run_date}`);
-    state.bankHistoryIndex = buildHistoryIndex(state.bankHistory.rates || []);
+    const data = await getJson(`/api/banks/history?date=${state.manifest.run_date}`);
+    const rates = Array.isArray(data.rates) ? normalizeRows(data.rates) : [];
+    state.bankHistory = {
+      ...data,
+      rates,
+      run_dates: Array.isArray(data.run_dates) ? data.run_dates : [],
+    };
+    state.bankHistoryIndex = buildHistoryIndex(rates);
+  }
+
+  function currentRateRange(rows) {
+    let min = null;
+    let max = null;
+    rows.forEach((row) => {
+      const rate = Number(row.rate);
+      if (!Number.isFinite(rate) || rate <= 0) return;
+      if (min == null || rate < min) min = rate;
+      if (max == null || rate > max) max = rate;
+    });
+    return { min, max };
+  }
+
+  function filteredHistoryRows(currentRows) {
+    if (!state.bankHistoryIndex) return [];
+    const visibleKeys = new Set();
+    currentRows.forEach((row) => {
+      const key = historyIndexKey(row);
+      if (key && key !== '||') visibleKeys.add(key);
+    });
+    if (!visibleKeys.size) return [];
+    const filters = bankFilterValues();
+    const out = [];
+    visibleKeys.forEach((key) => {
+      (state.bankHistoryIndex[key] || []).forEach((row) => {
+        if (matchesBankFilters(row, filters, { skipQuery: true })) out.push(row);
+      });
+    });
+    return out;
   }
 
   function chartRows(rows) {
@@ -102,20 +178,63 @@
         .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
         .slice(0, 30);
     }
+    const historyRows = filteredHistoryRows(rows);
     const byProvider = {};
-    rows.forEach((row) => {
+    const allDates = new Set();
+    historyRows.forEach((row) => {
+      const date = String(row.run_date || '');
+      const provider = row.provider || 'Unknown provider';
       const rate = Number(row.rate);
-      if (!Number.isFinite(rate) || rate <= 0) return;
-      if (!byProvider[row.provider]) byProvider[row.provider] = { min: rate, max: rate, count: 0 };
-      const p = byProvider[row.provider];
+      if (!date || !Number.isFinite(rate) || rate <= 0) return;
+      allDates.add(date);
+      if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {}, count: 0 };
+      if (!byProvider[provider].byDate[date]) {
+        byProvider[provider].byDate[date] = { min: rate, max: rate, count: 0, productKeys: new Set() };
+      }
+      const p = byProvider[provider].byDate[date];
       if (rate < p.min) p.min = rate;
       if (rate > p.max) p.max = rate;
       p.count++;
+      if (row.product_key || row.product_id || row.product_name) p.productKeys.add(row.product_key || row.product_id || row.product_name);
     });
-    return Object.entries(byProvider)
-      .map(([label, d]) => ({ label, min: d.min, max: d.max, value: d.max, count: d.count }))
-      .sort((a, b) => state.descending ? b.value - a.value : a.min - b.min)
+    const dates = historyDatesInWindow(Array.from(allDates));
+    const latestDate = dates[dates.length - 1] || state.manifest.run_date;
+    const providers = Object.values(byProvider).map((provider) => {
+      const visible = {};
+      let count = 0;
+      dates.forEach((date) => {
+        const point = provider.byDate[date];
+        if (!point) return;
+        visible[date] = {
+          min: point.min,
+          max: point.max,
+          count: point.count,
+          products: point.productKeys.size,
+        };
+        count += point.count;
+      });
+      const latest = visible[latestDate] || Object.values(visible).slice(-1)[0] || null;
+      return {
+        label: provider.label,
+        byDate: visible,
+        min: latest ? latest.min : null,
+        max: latest ? latest.max : null,
+        value: latest ? (state.descending ? latest.max : latest.min) : null,
+        count,
+      };
+    }).filter((provider) => provider.value != null)
+      .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
       .slice(0, 40);
+    return {
+      kind: 'bank-history',
+      section: state.section,
+      window: state.historyWindow,
+      dates,
+      allDates: Array.from(allDates).sort(),
+      providers,
+      currentRange: currentRateRange(rows),
+      totalHistoryRows: historyRows.length,
+    };
   }
 
   function setLinks() {
@@ -167,6 +286,26 @@
       .forEach((el) => { el.hidden = !isTD; });
     document.querySelectorAll('.local-filter-banks-only')
       .forEach((el) => { el.hidden = !isBanks; });
+    document.querySelectorAll('.local-history-window, .local-history-window-status')
+      .forEach((el) => { el.hidden = !isBanks; });
+  }
+
+  function setHistoryWindowUi(items) {
+    document.querySelectorAll('[data-history-window]').forEach((button) => {
+      const active = button.dataset.historyWindow === state.historyWindow;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const status = $('history-window-status');
+    if (!status || state.sector !== 'banks') return;
+    if (!items || items.kind !== 'bank-history' || !items.dates.length) {
+      status.textContent = 'Historical ribbon: no retained run data for this slice.';
+      return;
+    }
+    const first = items.dates[0];
+    const last = items.dates[items.dates.length - 1];
+    const label = first === last ? first : `${first} through ${last}`;
+    status.textContent = `Visible window: ${label}. ${num(items.allDates.length)} retained run date${items.allDates.length === 1 ? '' : 's'}.`;
   }
 
   function setupFilters() {
@@ -244,8 +383,10 @@
   function updateHero(rows, items) {
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(rows.length);
-    if (state.sector === 'banks' && items[0]) {
-      $('hero-leader').textContent = pct(items[0].min);
+    if (state.sector === 'banks') {
+      const range = items && items.kind === 'bank-history' ? items.currentRange : currentRateRange(rows);
+      const leader = state.descending ? range.max : range.min;
+      $('hero-leader').textContent = leader == null ? '-' : pct(leader);
     } else {
       $('hero-leader').textContent = num(rows.length);
     }
@@ -305,7 +446,12 @@
     renderStats(rows);
     renderTable(rows);
     window.LocalCdrChart.draw($('chart'), items, state.sector);
-    $('chart-status').textContent = `${num(rows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
+    setHistoryWindowUi(items);
+    if (state.sector === 'banks' && items && items.kind === 'bank-history') {
+      $('chart-status').textContent = `${num(rows.length)} current rows / ${num(items.totalHistoryRows)} historical rows loaded`;
+    } else {
+      $('chart-status').textContent = `${num(rows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
+    }
     renderSelectedLogos();
   }
 
@@ -378,6 +524,12 @@
       state.descending = !state.descending;
       $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
       render();
+    });
+    document.querySelectorAll('[data-history-window]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.historyWindow = button.dataset.historyWindow || '30D';
+        render();
+      });
     });
     window.addEventListener('resize', () => {
       window.clearTimeout(resizeTimer);

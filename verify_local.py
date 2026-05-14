@@ -33,7 +33,9 @@ def main() -> int:
     paths = [
         "",
         "assets/app.css",
+        "assets/app.js",
         "assets/ar-bank-brand.js",
+        "assets/chart.js",
         "assets/local-brand.js",
         "assets/cdr-taxonomy-tree.js",
         "api/latest",

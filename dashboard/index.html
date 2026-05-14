@@ -127,6 +127,14 @@
                       <button type="button" class="chart-preset chip-btn secondary is-active" id="chart-focus">Highest rates</button>
                       <button type="button" class="chart-preset chip-btn secondary" id="chart-toggle-sort">Lowest first</button>
                     </div>
+                    <div class="local-history-window" role="group" aria-label="History window">
+                      <button type="button" class="chart-preset chip-btn secondary is-active" data-history-window="30D">30D</button>
+                      <button type="button" class="chart-preset chip-btn secondary" data-history-window="90D">90D</button>
+                      <button type="button" class="chart-preset chip-btn secondary" data-history-window="180D">180D</button>
+                      <button type="button" class="chart-preset chip-btn secondary" data-history-window="1Y">1Y</button>
+                      <button type="button" class="chart-preset chip-btn secondary" data-history-window="All">All</button>
+                    </div>
+                    <p id="history-window-status" class="hint local-history-window-status"></p>
                   </div>
                 </div>
                 <div class="chart-workspace">
