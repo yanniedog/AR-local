@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import socket
+import sqlite3
 import threading
 import time
 from http import HTTPStatus
@@ -22,6 +23,48 @@ BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
 LATEST_EXPORTS_TTL_SECONDS = 5.0
 MAX_ARTIFACT_CACHE_ENTRIES = 4
+MAX_HISTORY_CACHE_ENTRIES = 8
+DEFAULT_HISTORY_RUN_LIMIT = 90
+BANK_HISTORY_COLUMNS = (
+    "run_date",
+    "dataset",
+    "provider",
+    "product_id",
+    "product_key",
+    "product_name",
+    "rate_family",
+    "rate",
+    "comparison_rate",
+    "rate_type",
+    "application_type",
+    "application_frequency",
+    "repayment_type",
+    "loan_purpose",
+    "term",
+    "ribbon_normalized",
+    "security_purpose",
+    "ribbon_repayment_type",
+    "lvr_tier",
+    "ribbon_rate_structure",
+    "account_type",
+    "ribbon_deposit_kind",
+    "balance_min",
+    "balance_max",
+    "term_months",
+    "interest_payment",
+    "feature_set",
+)
+BANK_HISTORY_SELECT_SQL = """
+SELECT run_date, dataset, provider, product_id, product_key, product_name,
+       rate_family, rate, comparison_rate, rate_type, application_type,
+       application_frequency, repayment_type, loan_purpose, term,
+       ribbon_normalized, security_purpose, ribbon_repayment_type, lvr_tier,
+       ribbon_rate_structure, account_type, ribbon_deposit_kind, balance_min,
+       balance_max, term_months, interest_payment, feature_set
+FROM bank_rates
+WHERE rate IS NOT NULL AND rate != ''
+"""
+BANK_HISTORY_SELECT_UNTIL_SQL = BANK_HISTORY_SELECT_SQL + " AND run_date <= ?"
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -134,6 +177,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     artifact_cache_lock = threading.Lock()
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
     site_cache = CachedFiles(site_root)
+    history_cache: Dict[Tuple[str, Tuple[Tuple[str, float, int], ...]], bytes] = {}
+    history_cache_lock = threading.Lock()
 
     def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
         exports_root = (exports_root or export_resolver.root()).resolve()
@@ -150,6 +195,65 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             artifact_caches[exports_root] = cached
             return exports_root, cached
 
+    def bank_history_db_paths(max_run_date: str) -> list[Path]:
+        if export_resolver.fixed_root is not None:
+            candidate = export_resolver.fixed_root / "local-cdr.sqlite"
+            return [candidate] if candidate.is_file() else []
+        runs_root = export_resolver.runs_root
+        if not runs_root.is_dir():
+            return []
+        dbs: list[Path] = []
+        for child in sorted(runs_root.iterdir(), key=lambda p: p.name):
+            if not child.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
+                continue
+            if max_run_date and child.name > max_run_date:
+                continue
+            candidate = child / "_exports" / "local-cdr.sqlite"
+            if candidate.is_file():
+                dbs.append(candidate.resolve())
+        return dbs[-DEFAULT_HISTORY_RUN_LIMIT:]
+
+    def read_bank_history_db(db_path: Path, max_run_date: str) -> list[dict[str, object]]:
+        with sqlite3.connect(db_path) as con:
+            if max_run_date:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+                rows = con.execute(BANK_HISTORY_SELECT_UNTIL_SQL, (max_run_date,))
+            else:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+                rows = con.execute(BANK_HISTORY_SELECT_SQL)
+            out = []
+            for row in rows:
+                item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+                out.append(item)
+            return out
+
+    def bank_history_payload(max_run_date: str) -> bytes:
+        dbs = bank_history_db_paths(max_run_date)
+        signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
+        cache_key = (max_run_date, signature)
+        with history_cache_lock:
+            cached = history_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        rows: list[dict[str, object]] = []
+        for db_path in dbs:
+            try:
+                rows.extend(read_bank_history_db(db_path, max_run_date))
+            except sqlite3.Error as exc:
+                print(f"Skipping unreadable history DB {db_path}: {exc}")
+        run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        payload = json.dumps(
+            {"run_dates": run_dates, "rates": rows},
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        with history_cache_lock:
+            if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
+                oldest_key = next(iter(history_cache))
+                history_cache.pop(oldest_key)
+            history_cache[cache_key] = payload
+        return payload
+
     def warm_common_files() -> None:
         for rel in (
             "index.html",
@@ -160,6 +264,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "chart.js",
             "hierarchy.js",
             "cdr-ribbon-map.js",
+            "cdr-taxonomy-tree.js",
             "local-brand.js",
             "utils.js",
         ):
@@ -179,7 +284,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if run_date:
                 cache.read(exports_root / "dashboard-cache" / run_date / "banks.json")
                 cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
-        except (FileNotFoundError, json.JSONDecodeError):
+                bank_history_payload(run_date)
+        except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 
     if preload:
@@ -214,6 +320,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/cdr-ribbon-map.js",
+                "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
                 "/assets/utils.js",
             ):
@@ -241,6 +348,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root, cache = artifact_cache(exports_root)
                 name = path.rsplit("/", 1)[1] + ".json"
                 return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
+            if path == "/api/banks/history":
+                date = query.get("date", [""])[0]
+                return bank_history_payload(date), "application/json"
             if path.startswith("/exports/"):
                 exports_root, cache = artifact_cache()
                 target = exports_root / path.removeprefix("/exports/")
@@ -258,7 +368,7 @@ def parse_args() -> argparse.Namespace:
         help="Export folder containing dashboard-cache/, or 'latest' to serve the newest run under --runs.",
     )
     parser.add_argument("--runs", type=Path, default=BASE_DIR / "runs", help="Runs root used with --exports latest.")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", default="auto", help="Port number or 'auto' (default: auto from 8800)")
     parser.add_argument("--port-file", type=Path, help="Optional JSON file to write the selected dashboard URL to.")
     parser.add_argument("--preload", action="store_true", help="Warm common dashboard and API payloads into memory at startup.")

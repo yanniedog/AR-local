@@ -2,7 +2,11 @@
 
 Real public CDR product-reference ingest for local analysis.
 
-Agent workflow (Git/PR/bots/local verify — aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
+Agent workflow (Git/PR/bots/local verify - aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
+
+Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
+captures the Pi/LAN/SSD portability model, the banks-first scope, and the
+AustralianRates dashboard parity contract.
 
 ## Easiest Start
 
@@ -108,7 +112,10 @@ sh deploy/pi/install-pi-systemd.sh /mnt/ar-local-ssd /mnt/ar-local-ssd/AR-local 
 
 The installer renders the systemd units for the current Linux user, repo path,
 adjacent AustralianRates checkout, portable root, and data root before
-installing them under `/etc/systemd/system`.
+installing them under `/etc/systemd/system`. It also installs and enables
+Avahi with mDNS host name `ar`, so the dashboard is available as
+`http://ar.local:8808/` on LANs that pass mDNS. Keep the Pi IP stable with a
+router DHCP reservation or equivalent static-IP setup.
 
 The Pi daily service currently runs banking only:
 
@@ -141,6 +148,8 @@ LAN:
 ```sh
 sudo systemctl start ar-local-dashboard.service
 npm run verify:local -- --base-url=http://127.0.0.1:8808/
+curl -fsS http://<pi-ip>:8808/api/latest
+curl -fsS http://ar.local:8808/api/latest
 ```
 
 The dashboard service serves the newest completed export with:
