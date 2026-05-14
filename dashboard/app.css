@@ -362,6 +362,27 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   min-height: 520px;
 }
 
+.ar-local-cdr .local-history-window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ar-local-cdr .local-history-window[hidden],
+.ar-local-cdr .local-history-window-status[hidden] {
+  display: none;
+}
+
+.ar-local-cdr .local-history-window .chart-preset {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.ar-local-cdr .local-history-window-status {
+  margin: 4px 0 0;
+}
+
 /* ── Table ──────────────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-table-panel {

@@ -35,6 +35,127 @@
 
   function pct(v) { return (v * 100).toFixed(2) + '%'; }
 
+  function pctAxis(v) { return (Number(v) * 100).toFixed(1) + '%'; }
+
+  function drawBankHistory(chart, model) {
+    var t = theme();
+    var dates = model.dates || [];
+    var providers = model.providers || [];
+    if (!dates.length || !providers.length) {
+      chart.clear();
+      return;
+    }
+    var series = [];
+    providers.forEach(function (provider, providerIndex) {
+      var color = PALETTE[providerIndex % PALETTE.length];
+      var baseData = dates.map(function (date) {
+        var point = provider.byDate && provider.byDate[date];
+        return point ? point.min : null;
+      });
+      var bandData = dates.map(function (date) {
+        var point = provider.byDate && provider.byDate[date];
+        return point ? Math.max(0, point.max - point.min) : null;
+      });
+      var lineData = dates.map(function (date) {
+        var point = provider.byDate && provider.byDate[date];
+        if (!point) return null;
+        return (point.min + point.max) / 2;
+      });
+      var stack = 'provider-' + providerIndex;
+      series.push({
+        type: 'line',
+        name: provider.label + ' base',
+        stack: stack,
+        data: baseData,
+        showSymbol: false,
+        connectNulls: true,
+        silent: true,
+        lineStyle: { opacity: 0 },
+        areaStyle: { opacity: 0 },
+        emphasis: { disabled: true },
+      });
+      series.push({
+        type: 'line',
+        name: provider.label,
+        stack: stack,
+        data: bandData,
+        showSymbol: dates.length < 3,
+        connectNulls: true,
+        lineStyle: { width: 1.3, color: color },
+        itemStyle: { color: color },
+        areaStyle: { opacity: 0.28, color: color },
+        emphasis: { focus: 'series' },
+      });
+      series.push({
+        type: 'line',
+        name: provider.label + ' midpoint',
+        data: lineData,
+        showSymbol: dates.length < 3,
+        connectNulls: true,
+        symbolSize: 5,
+        lineStyle: { width: 1.1, color: color, opacity: 0.8 },
+        itemStyle: { color: color },
+        tooltip: { show: false },
+        emphasis: { disabled: true },
+      });
+    });
+    chart.setOption({
+      backgroundColor: 'transparent',
+      animation: false,
+      color: PALETTE,
+      grid: { top: 14, bottom: 42, left: 44, right: 16, containLabel: false },
+      xAxis: {
+        type: 'category',
+        boundaryGap: dates.length < 2,
+        data: dates,
+        axisLabel: {
+          color: t.muted,
+          fontSize: 11,
+          hideOverlap: true,
+          formatter: function (v) { return String(v).slice(5); },
+        },
+        axisLine: { lineStyle: { color: t.line } },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        scale: true,
+        min: function (v) { return Math.max(0, Math.floor((v.min - 0.003) * 1000) / 1000); },
+        max: function (v) { return Math.ceil((v.max + 0.003) * 1000) / 1000; },
+        axisLabel: { formatter: pctAxis, color: t.muted, fontSize: 11 },
+        splitLine: { lineStyle: { color: t.line } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: t.muted, opacity: 0.45 } },
+        backgroundColor: t.bg,
+        borderColor: t.line,
+        textStyle: { color: t.text },
+        formatter: function (params) {
+          var dataIndex = params && params[0] ? params[0].dataIndex : 0;
+          var date = dates[dataIndex] || '';
+          var lines = ['<b>' + date + '</b>'];
+          providers.slice(0, 18).forEach(function (provider) {
+            var point = provider.byDate && provider.byDate[date];
+            if (!point) return;
+            var rate = Math.abs(point.max - point.min) < 0.00001
+              ? pct(point.min)
+              : pct(point.min) + ' - ' + pct(point.max);
+            lines.push(provider.label + ': ' + rate + ' (' + point.count + ' rates)');
+          });
+          if (providers.length > 18) lines.push('<small>+' + (providers.length - 18) + ' more providers</small>');
+          return lines.join('<br>');
+        },
+      },
+      legend: { show: false },
+      series: series,
+    }, true);
+    chart.resize();
+  }
+
   function drawBanks(chart, items) {
     var t = theme();
     var sorted = items.slice().sort(function (a, b) { return a.min - b.min; });
@@ -130,6 +251,10 @@
   function draw(container, items, sector) {
     var chart = getChart(container);
     if (!chart) return;
+    if (items && items.kind === 'bank-history') {
+      drawBankHistory(chart, items);
+      return;
+    }
     if (!items || !items.length) { chart.clear(); return; }
     if (sector === 'energy') drawEnergy(chart, items);
     else drawBanks(chart, items);
