@@ -11,6 +11,32 @@ AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data
 
 The dashboard must use real generated artifacts only, with banking as the current priority. Energy remains secondary unless the user explicitly reopens it.
 
+## Current Deployed Shape
+
+The current Pi deployment is portable-root based. The systemd service does not run from the old bootstrap checkout under `/home/pi`; it runs from the portable tree:
+
+- authoritative app checkout: `/srv/ar-local/AR-local`
+- authoritative AustralianRates shell checkout: `/srv/ar-local/australianrates`
+- authoritative durable data root: `/srv/ar-local/data`
+- durable run DBs: `/srv/ar-local/data/runs/<date>/_exports/local-cdr.sqlite`
+- dashboard service: `ar-local-dashboard.service`
+- dashboard bind: `0.0.0.0:8808`
+
+### Authoritative service checkout
+
+Before declaring the Pi updated, run:
+
+```sh
+systemctl cat ar-local-dashboard.service
+```
+
+Check these fields:
+
+- `WorkingDirectory`: the checkout where `git rev-parse HEAD` must equal `origin/main`.
+- `ExecStart`: the Python script path, `--runs` root, `--site-root`, host, and port that the live dashboard actually uses.
+
+Updating `/home/pi/AR-local` alone is not enough if `WorkingDirectory` points at `/srv/ar-local/AR-local`.
+
 ## Non-Negotiables
 
 - Work from fresh `origin/main` on a distinct branch.
@@ -41,6 +67,8 @@ Services must be rendered against this portable root and must not bake in microS
 3. Mount the SSD at `/srv/ar-local`, or reinstall the units with the SSD path as the portable root.
 4. Start the timer and dashboard service.
 5. Verify `git rev-parse HEAD` equals `origin/main` and run `npm run verify:local -- --base-url=http://127.0.0.1:8808/`.
+
+If a separate `/home/pi/AR-local` checkout exists, treat it as a bootstrap/admin convenience unless the authoritative service checkout proves the installed unit is using it.
 
 ## LAN Availability
 
@@ -76,12 +104,23 @@ Rules for future agents:
 
 The ribbon must surface historical banking values from retained SQLite exports. The server exposes `/api/banks/history`, built from the latest retained `runs/*/_exports/local-cdr.sqlite` files, and the client indexes historical rows by dataset and product identity. The HTTP payload is intentionally bounded to a recent run window while the artifacts themselves remain retained indefinitely.
 
+Current implemented behavior:
+
+- `dashboard/app.js` loads `/api/banks/history`, normalizes retained rows once, and indexes them by dataset/product identity.
+- `dashboard/chart.js` renders the banking chart from a `bank-history` model using retained run dates.
+- The dashboard exposes `30D`, `90D`, `180D`, `1Y`, and `All` history windows.
+- The right-hand `Current slice` panel remains based on the AustralianRates ribbon tree for the current visible slice.
+- Hierarchy rows show prior/latest history deltas when at least two retained run dates exist for the matching products.
+- With only one retained run, a single-date ribbon/point column is expected. Do not fabricate a second date to make the chart look historical.
+
+A retained run date is a valid `YYYY-MM-DD` child directory under the active service `--runs` root that contains `_exports/local-cdr.sqlite`; for the portable Pi service this is normally `/srv/ar-local/data/runs/<date>/_exports/local-cdr.sqlite`. New greenfield installs may legitimately have one retained run until daily automation accumulates more.
+
 Future improvements should:
 
 - Keep history reads in memory where practical; avoid repeated microSD churn.
 - Prefer compact history payloads over shipping full `details_json`.
-- Show history in the hierarchy without changing public tier semantics.
-- Verify at least two retained runs when changing historical display logic.
+- Extend hierarchy history only through public tier semantics; do not fork local node meanings.
+- Verify at least two retained runs when changing historical display logic where practical, but accept a one-run Pi as an initial greenfield state.
 
 ## Banks-First Work Queue
 
@@ -98,12 +137,19 @@ Before PR:
 
 ```sh
 python -m py_compile cdr_dashboard_server.py cdr_outputs.py cdr_daily.py pi_daily_sync.py
+node --check dashboard/app.js
+node --check dashboard/chart.js
 npm run verify:local -- --base-url=http://127.0.0.1:<port>/
 ```
+
+For dashboard UI changes, use Browser MCP or an equivalent real browser check against the running local dashboard. Confirm the chart, history-window controls, provider logos, and `Current slice` hierarchy render together.
 
 On Pi after merge/setup:
 
 ```sh
+# First identify the authoritative service checkout and --runs root.
+systemctl cat ar-local-dashboard.service
+cd /srv/ar-local/AR-local
 git rev-parse HEAD
 git rev-parse origin/main
 node --version
@@ -117,6 +163,8 @@ npm run verify:local -- --base-url=http://127.0.0.1:8808/
 curl -fsS http://127.0.0.1:8808/api/latest
 curl -fsS http://127.0.0.1:8808/api/banks/history
 ```
+
+The `HEAD` check must be run in the authoritative service checkout, normally `/srv/ar-local/AR-local`.
 
 From another LAN PC:
 
@@ -132,5 +180,7 @@ Every agent should leave the next agent with:
 - Branch name and PR URL.
 - Exact commands run and failures, if any.
 - Whether Pi deployment was updated to GitHub `main`.
+- Which Pi checkout the service is using, from the authoritative service checkout check.
 - Current dashboard URL and verification result.
+- Current retained history run count from `/api/banks/history`.
 - Any parity gap deliberately deferred.
