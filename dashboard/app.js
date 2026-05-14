@@ -13,7 +13,7 @@
     hierarchyPath: '',
   };
   const $ = (id) => document.getElementById(id);
-  const { bankRateMatchesSection, normalizeRows, pct } = window.LocalCdrUtils;
+  const { bankRateMatchesSection, historyIndexKey, normalizeRows, pct } = window.LocalCdrUtils;
 
   function clear(element) {
     while (element.firstChild) element.removeChild(element.firstChild);
@@ -76,13 +76,6 @@
     );
   }
 
-  function historyIndexKey(row) {
-    return [
-      row.dataset || '',
-      row.product_key || row.product_id || row.product_name || '',
-    ].join('||');
-  }
-
   function buildHistoryIndex(rows) {
     const index = {};
     (rows || []).forEach((row) => {
@@ -106,7 +99,7 @@
       rows.forEach((row) => { if (row.provider) counts[row.provider] = (counts[row.provider] || 0) + 1; });
       return Object.entries(counts)
         .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value)
+        .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
         .slice(0, 30);
     }
     const byProvider = {};
@@ -121,7 +114,7 @@
     });
     return Object.entries(byProvider)
       .map(([label, d]) => ({ label, min: d.min, max: d.max, value: d.max, count: d.count }))
-      .sort((a, b) => a.min - b.min)
+      .sort((a, b) => state.descending ? b.value - a.value : a.min - b.min)
       .slice(0, 40);
   }
 

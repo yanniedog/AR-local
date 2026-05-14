@@ -74,7 +74,7 @@ Rules for future agents:
 
 ## Historical Ribbon Values
 
-The ribbon must surface historical banking values from retained SQLite exports. The server exposes `/api/banks/history`, built from `runs/*/_exports/local-cdr.sqlite`, and the client indexes historical rows by dataset and product identity.
+The ribbon must surface historical banking values from retained SQLite exports. The server exposes `/api/banks/history`, built from the latest retained `runs/*/_exports/local-cdr.sqlite` files, and the client indexes historical rows by dataset and product identity. The HTTP payload is intentionally bounded to a recent run window while the artifacts themselves remain retained indefinitely.
 
 Future improvements should:
 

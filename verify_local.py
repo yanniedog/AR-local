@@ -35,6 +35,7 @@ def main() -> int:
         "assets/app.css",
         "assets/ar-bank-brand.js",
         "assets/local-brand.js",
+        "assets/cdr-taxonomy-tree.js",
         "api/latest",
         "api/banks/history",
     ]

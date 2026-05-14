@@ -2,7 +2,7 @@
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
-  const { pct, rateValue } = window.LocalCdrUtils;
+  const { historyIndexKey, pct, rateValue } = window.LocalCdrUtils;
 
   function clear(element) {
     while (element.firstChild) element.removeChild(element.firstChild);
@@ -64,13 +64,6 @@
     return PALETTE[hashText(row && row.provider) % PALETTE.length];
   }
 
-  function historyIndexKey(row) {
-    return [
-      row.dataset || '',
-      row.product_key || row.product_id || row.product_name || '',
-    ].join('||');
-  }
-
   function historyRowsFor(rows, state) {
     if (!state || !state.bankHistoryIndex) return [];
     const seenKeys = {};
@@ -105,7 +98,7 @@
     const latest = bestHistoryValue(byDate[latestDate], state.descending);
     const previous = bestHistoryValue(byDate[previousDate], state.descending);
     if (latest == null || previous == null) return '';
-    const delta = Math.round((latest - previous) * 100);
+    const delta = Math.round((latest - previous) * 10000);
     const deltaText = delta > 0 ? '+' + delta + 'bp' : delta + 'bp';
     return `${previousDate} ${pct(previous)} -> ${latestDate} ${pct(latest)} (${deltaText})`;
   }
@@ -333,13 +326,16 @@
     state.globalBest = isEnergy ? null : bestRate(visible, state.descending);
     let tree = { kind: 'empty', rows: [] };
     const ribbon = window.AR && window.AR.ribbon;
-    if (ribbon && ribbon.buildRibbonTierTree && ribbon.ribbonTierFieldsForSection && window.LocalCdrRibbonMap) {
+    const hasTaxonomyPath = visible.length > 0 && visible.some((r) => r.taxonomy_path);
+    if (isEnergy && hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
+      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
+    } else if (!isEnergy && ribbon && ribbon.buildRibbonTierTree && ribbon.ribbonTierFieldsForSection && window.LocalCdrRibbonMap) {
       const slug = window.LocalCdrRibbonMap.sectionSlug(state.section);
       const tierFields = ribbon.ribbonTierFieldsForSection(slug);
       const products = window.LocalCdrRibbonMap.toRibbonProducts(visible, state.section);
       const ribbonRoot = ribbon.buildRibbonTierTree(products, tierFields, 0);
       tree = annotateRibbonBranch(ribbonRoot, state.descending);
-    } else if (visible.length > 0 && visible.some((r) => r.taxonomy_path) && window.LocalCdrTaxonomyTree) {
+    } else if (hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
       tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');

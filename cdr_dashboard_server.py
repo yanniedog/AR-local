@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
 LATEST_EXPORTS_TTL_SECONDS = 5.0
 MAX_ARTIFACT_CACHE_ENTRIES = 4
+DEFAULT_HISTORY_RUN_LIMIT = 90
 BANK_HISTORY_COLUMNS = (
     "run_date",
     "dataset",
@@ -51,8 +52,18 @@ BANK_HISTORY_COLUMNS = (
     "term_months",
     "interest_payment",
     "feature_set",
-    "taxonomy_path",
 )
+BANK_HISTORY_SELECT_SQL = """
+SELECT run_date, dataset, provider, product_id, product_key, product_name,
+       rate_family, rate, comparison_rate, rate_type, application_type,
+       application_frequency, repayment_type, loan_purpose, term,
+       ribbon_normalized, security_purpose, ribbon_repayment_type, lvr_tier,
+       ribbon_rate_structure, account_type, ribbon_deposit_kind, balance_min,
+       balance_max, term_months, interest_payment, feature_set
+FROM bank_rates
+WHERE rate IS NOT NULL AND rate != ''
+"""
+BANK_HISTORY_SELECT_UNTIL_SQL = BANK_HISTORY_SELECT_SQL + " AND run_date <= ?"
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -183,7 +194,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             artifact_caches[exports_root] = cached
             return exports_root, cached
 
-    def bank_history_db_paths() -> list[Path]:
+    def bank_history_db_paths(max_run_date: str) -> list[Path]:
         if export_resolver.fixed_root is not None:
             candidate = export_resolver.fixed_root / "local-cdr.sqlite"
             return [candidate] if candidate.is_file() else []
@@ -194,44 +205,27 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         for child in sorted(runs_root.iterdir(), key=lambda p: p.name):
             if not child.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
                 continue
+            if max_run_date and child.name > max_run_date:
+                continue
             candidate = child / "_exports" / "local-cdr.sqlite"
             if candidate.is_file():
                 dbs.append(candidate.resolve())
-        return dbs
-
-    def table_columns(con: sqlite3.Connection, table: str) -> set[str]:
-        return {str(row[1]) for row in con.execute(f"PRAGMA table_info({table})")}
-
-    def quote_identifier(value: str) -> str:
-        return '"' + value.replace('"', '""') + '"'
+        return dbs[-DEFAULT_HISTORY_RUN_LIMIT:]
 
     def read_bank_history_db(db_path: Path, max_run_date: str) -> list[dict[str, object]]:
         with sqlite3.connect(db_path) as con:
-            columns = table_columns(con, "bank_rates")
-            if not columns:
-                return []
-            selected = [col for col in BANK_HISTORY_COLUMNS if col in columns]
-            if "run_date" not in selected:
-                return []
-            sql = (
-                "SELECT "
-                + ", ".join(quote_identifier(col) for col in selected)
-                + " FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
-            )
-            params: list[str] = []
             if max_run_date:
-                sql += " AND run_date <= ?"
-                params.append(max_run_date)
-            rows = []
-            for row in con.execute(sql, params):
-                item = {col: row[index] for index, col in enumerate(selected)}
-                for col in BANK_HISTORY_COLUMNS:
-                    item.setdefault(col, "")
-                rows.append(item)
-            return rows
+                rows = con.execute(BANK_HISTORY_SELECT_UNTIL_SQL, (max_run_date,))
+            else:
+                rows = con.execute(BANK_HISTORY_SELECT_SQL)
+            out = []
+            for row in rows:
+                item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+                out.append(item)
+            return out
 
     def bank_history_payload(max_run_date: str) -> bytes:
-        dbs = bank_history_db_paths()
+        dbs = bank_history_db_paths(max_run_date)
         signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
         cache_key = (max_run_date, signature)
         with history_cache_lock:
@@ -265,6 +259,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "chart.js",
             "hierarchy.js",
             "cdr-ribbon-map.js",
+            "cdr-taxonomy-tree.js",
             "local-brand.js",
             "utils.js",
         ):
@@ -320,6 +315,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/cdr-ribbon-map.js",
+                "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
                 "/assets/utils.js",
             ):

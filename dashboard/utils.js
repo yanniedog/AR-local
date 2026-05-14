@@ -37,5 +37,12 @@
       : row.rate_family === 'deposit';
   }
 
-  window.LocalCdrUtils = { bankRateMatchesSection, cssVar, normalizeRows, pct, rateValue };
+  function historyIndexKey(row) {
+    return [
+      row.dataset || '',
+      row.product_key || row.product_id || row.product_name || '',
+    ].join('||');
+  }
+
+  window.LocalCdrUtils = { bankRateMatchesSection, cssVar, historyIndexKey, normalizeRows, pct, rateValue };
 })();
