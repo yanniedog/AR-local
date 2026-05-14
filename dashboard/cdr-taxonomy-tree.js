@@ -36,10 +36,10 @@
     PURCHASE: 'Purchase', CASH_ADVANCE: 'Cash advance',
     BAL_TRANSFER: 'Balance transfer', INTEREST_FREE: 'Interest free',
     // LVR tiers
-    LVR_UNSP: 'LVR unspecified', LVR_LE60: 'LVR ≤ 60%',
-    LVR_60_70: 'LVR 60–70%', LVR_70_80: 'LVR 70–80%',
-    LVR_80_85: 'LVR 80–85%', LVR_85_90: 'LVR 85–90%',
-    LVR_90_95: 'LVR 90–95%',
+    LVR_UNSP: 'LVR unspecified', LVR_LE60: 'LVR <= 60%',
+    LVR_60_70: 'LVR 60-70%', LVR_70_80: 'LVR 70-80%',
+    LVR_80_85: 'LVR 80-85%', LVR_85_90: 'LVR 85-90%',
+    LVR_90_95: 'LVR 90-95%',
     // Savings account types
     SAVINGS_ACCT: 'Savings account', TRANSACTION: 'Transaction account',
     AT_CALL: 'At call',
@@ -69,9 +69,9 @@
 
   function formatLabel(token) {
     if (!token) return '';
-    // Term-month tokens: "12M", "24M", …
+    // Term-month tokens: "12M", "24M", ...
     var termMatch = String(token).match(/^(\d+)M$/);
-    if (termMatch) return termMatch[1] + ' month' + (Number(termMatch[1]) === 1 ? '' : 's');
+    if (termMatch) return termMatch[1] + ' month' + (Number(termMatch[1]) === 1 ? '' : 's');
     return LABEL[token] || String(token);
   }
 

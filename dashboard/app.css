@@ -308,6 +308,20 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   line-height: 1.25;
 }
 
+.ar-local-cdr .local-hierarchy-history {
+  display: block;
+  margin-top: 2px;
+  color: var(--ar-text-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ar-local-cdr .ar-report-infobox-trate .local-hierarchy-history {
+  text-align: right;
+}
+
 /* ── Filters ────────────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-filter-strip {

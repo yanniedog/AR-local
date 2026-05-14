@@ -9,7 +9,7 @@ run_user="$(id -un)"
 run_group="$(id -gn)"
 
 sudo apt-get update
-sudo apt-get install -y git python3 nodejs npm gh rsync
+sudo apt-get install -y git python3 nodejs npm gh rsync avahi-daemon
 
 sudo mkdir -p "$portable_root"
 sudo chown "$run_user:$run_group" "$portable_root"
@@ -60,9 +60,19 @@ sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily.timer" /etc/systemd/sys
 sudo systemctl daemon-reload
 sudo systemctl enable ar-local-dashboard.service
 sudo systemctl enable --now ar-local-daily.timer
+if [ -f /etc/avahi/avahi-daemon.conf ]; then
+  if sudo grep -q '^host-name=' /etc/avahi/avahi-daemon.conf; then
+    sudo sed -i 's/^host-name=.*/host-name=ar/' /etc/avahi/avahi-daemon.conf
+  else
+    sudo sed -i '/^\[server\]/a host-name=ar' /etc/avahi/avahi-daemon.conf
+  fi
+  sudo systemctl enable --now avahi-daemon.service
+  sudo systemctl restart avahi-daemon.service
+fi
 
 echo "Installed AR-local Pi services for $run_user using portable root $portable_root."
 echo "Repo: $repo_dir"
 echo "Site assets: $site_root"
 echo "Data root: $data_dir"
+echo "LAN dashboard: http://<pi-ip>:8808/ or http://ar.local:8808/ when mDNS is available."
 echo "Run a real ingest before starting ar-local-dashboard.service."

@@ -6,6 +6,8 @@
     sector: 'banks',
     manifest: null,
     banks: null,
+    bankHistory: null,
+    bankHistoryIndex: null,
     energy: null,
     descending: false,
     hierarchyPath: '',
@@ -72,6 +74,30 @@
       (!provider || String(row.provider || '').toLowerCase().includes(provider)) &&
       (!q        || String(row.plan_name || '').toLowerCase().includes(q))
     );
+  }
+
+  function historyIndexKey(row) {
+    return [
+      row.dataset || '',
+      row.product_key || row.product_id || row.product_name || '',
+    ].join('||');
+  }
+
+  function buildHistoryIndex(rows) {
+    const index = {};
+    (rows || []).forEach((row) => {
+      const key = historyIndexKey(row);
+      if (!key || key === '||') return;
+      if (!index[key]) index[key] = [];
+      index[key].push(row);
+    });
+    return index;
+  }
+
+  async function loadBankHistory() {
+    if (state.bankHistory) return;
+    state.bankHistory = await getJson(`/api/banks/history?date=${state.manifest.run_date}`);
+    state.bankHistoryIndex = buildHistoryIndex(state.bankHistory.rates || []);
   }
 
   function chartRows(rows) {
@@ -206,7 +232,7 @@
     }
 
     wrap.hidden = false;
-    child(wrap, 'span', 'local-selected-logos-title', `${label} providers — click a logo to filter`);
+    child(wrap, 'span', 'local-selected-logos-title', `${label} providers - click a logo to filter`);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
     const providerQuery = filterVal('provider').toLowerCase();
     providers.forEach((provider) => {
@@ -304,6 +330,7 @@
     clear($('table'));
     clear($('hierarchy'));
     if (!state[state.sector]) state[state.sector] = await getJson(`/api/${state.sector}?date=${state.manifest.run_date}`);
+    if (state.sector === 'banks') await loadBankHistory();
     setupFilters();
     renderSectionCards();
     render();

@@ -36,6 +36,7 @@ def main() -> int:
         "assets/ar-bank-brand.js",
         "assets/local-brand.js",
         "api/latest",
+        "api/banks/history",
     ]
     failures: list[tuple[str, int]] = []
     for path in paths:
