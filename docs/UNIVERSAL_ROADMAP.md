@@ -11,6 +11,98 @@ AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data
 
 The dashboard must use real generated artifacts only, with banking as the current priority. Energy remains secondary unless the user explicitly reopens it.
 
+## Access And Operator Facts
+
+This section is intentionally practical. It should let a future LLM or human operator reconnect to the Pi, identify the live service tree, open the dashboard remotely, and continue development without rediscovering the topology.
+
+### Public, non-secret access facts
+
+- Pi LAN IP: `10.0.0.92`
+- Pi Tailscale IP: `100.78.28.10`
+- Pi SSH user: `pi`
+- Local private key path on the Windows development machine: `%USERPROFILE%\.ssh\pi5`
+- Main repo: `https://github.com/yanniedog/AR-local.git`
+- AustralianRates shell repo: `https://github.com/yanniedog/australianrates.git`
+- Expected local Windows workspace for this repo: `C:\code\AR-local`
+- Expected sibling/related Pi checkout root: `/srv/ar-local`
+
+Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo password to this repository. Sudo may require an interactive password supplied by the operator in the current session; use it only when OS package, mount, or systemd changes require root.
+
+### Rediscovering current addresses
+
+The addresses above are the known-good deployment facts at the time this roadmap was written. They are operational facts, not permanent infrastructure guarantees.
+
+- LAN IP drift: check the home router DHCP client/reservation table for host `ar`, then update this file if the reserved address changes.
+- Tailscale IP drift: check the Tailscale admin console or local Tailscale client for the Pi node named `ar`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
+- Once SSH works, confirm both addresses from the Pi itself:
+
+```sh
+hostname -I
+```
+
+The Pi should continue to advertise `10.0.0.92` on the LAN and `100.78.28.10` on Tailscale unless the router or Tailscale node identity changes.
+
+### SSH from the Windows development machine
+
+LAN command when on the home network:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@10.0.0.92
+```
+
+Remote command over Tailscale:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@100.78.28.10
+```
+
+Recommended `%USERPROFILE%\.ssh\config` entries:
+
+```sshconfig
+Host ar-local-pi5
+  HostName 100.78.28.10
+  User pi
+  IdentityFile ~/.ssh/pi5
+  IdentitiesOnly yes
+  HostKeyAlias 10.0.0.92
+
+Host ar-local-pi5-dashboard
+  HostName 100.78.28.10
+  User pi
+  IdentityFile ~/.ssh/pi5
+  IdentitiesOnly yes
+  HostKeyAlias 10.0.0.92
+  Compression yes
+  ExitOnForwardFailure yes
+  LocalForward 127.0.0.1:18808 127.0.0.1:8808
+```
+
+Use `HostKeyAlias=10.0.0.92` for the Tailscale address because the known host identity was originally established for the LAN address.
+
+### Remote dashboard access while travelling
+
+Direct Tailscale URL:
+
+```text
+http://100.78.28.10:8808/
+```
+
+Local browser via SSH tunnel:
+
+```powershell
+ssh -N ar-local-pi5-dashboard
+```
+
+Then open:
+
+```text
+http://127.0.0.1:18808/
+```
+
+Use the tunnel when a tool, browser, or test runner needs a local loopback URL. The tunnel maps Windows `127.0.0.1:18808` to the Pi dashboard at `127.0.0.1:8808` and enables SSH compression for large JSON responses.
+
+`ar.local` is a LAN convenience name, not guaranteed over remote Tailscale unless Tailscale DNS, MagicDNS, or a split-DNS rule is explicitly configured and verified. When travelling, prefer the Tailscale IP or the SSH tunnel URL.
+
 ## Current Deployed Shape
 
 The current Pi deployment is portable-root based. The systemd service does not run from the old bootstrap checkout under `/home/pi`; it runs from the portable tree:
@@ -36,6 +128,145 @@ Check these fields:
 - `ExecStart`: the Python script path, `--runs` root, `--site-root`, host, and port that the live dashboard actually uses.
 
 Updating `/home/pi/AR-local` alone is not enough if `WorkingDirectory` points at `/srv/ar-local/AR-local`.
+
+## Development Bootstrap
+
+### Local Windows development
+
+Use the local repo for code changes and the Pi for deployed runtime verification:
+
+```powershell
+cd C:\code\AR-local
+git fetch origin --prune
+git checkout main
+git pull --ff-only origin main
+git checkout -b agent/<clear-slug>
+npm install
+```
+
+Keep the AustralianRates public shell repo available beside this project when doing dashboard parity work:
+
+```powershell
+cd C:\code
+git clone https://github.com/yanniedog/australianrates.git
+```
+
+If it already exists, update it before parity work:
+
+```powershell
+cd C:\code\australianrates
+git checkout main
+git pull --ff-only origin main
+```
+
+Local dashboard launch examples:
+
+```powershell
+python cdr_dashboard_server.py --exports latest --runs runs --host 127.0.0.1 --port 8808 --site-root C:\code\australianrates\site --preload
+npm run verify:local -- --base-url=http://127.0.0.1:8808/
+```
+
+Use real generated artifacts under `runs/<date>/_exports/`; never invent rows or demo JSON to satisfy a dashboard state.
+
+### Pi development and deployment
+
+The Pi should be treated as the deployed `main` runtime, not as a place to carry unmerged feature branches. For ad hoc inspection:
+
+```sh
+ssh ar-local-pi5
+cd /srv/ar-local/AR-local
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/main
+```
+
+Expected OS-level tools:
+
+```sh
+git --version
+python3 --version
+node --version
+npm --version
+gh --version
+```
+
+Expected package baseline on a greenfield Pi:
+
+```sh
+sudo apt update
+sudo apt install -y git python3 nodejs npm gh avahi-daemon
+```
+
+Only use sudo for OS package, mount, ownership, and systemd work. The application itself must run as `User=pi`.
+
+### GitHub ship workflow
+
+For any repo change, follow `WORKFLOW.md` end to end:
+
+1. Branch from fresh `origin/main`.
+2. Commit and push the topic branch.
+3. Open a PR to `main`.
+4. Wait for CI.
+5. Run `npm run wait-for-bots` and do feedback synthesis.
+6. Reply to/close substantive review threads.
+7. Squash merge.
+8. Update/restart the local/Pi dashboard from merged `main`.
+9. Run `npm run verify:local`.
+
+The Pi runtime must end on GitHub `main`. Never leave `/srv/ar-local/AR-local` deployed on an unmerged topic branch.
+
+## Live Pi Observability
+
+Do not wait blindly during Pi work. Keep one command producing live evidence, or poll short status commands while a long task runs.
+
+Useful remote probes:
+
+```powershell
+ssh ar-local-pi5 "hostname; hostname -I; date; uptime"
+ssh ar-local-pi5 "systemctl is-active ar-local-dashboard.service; systemctl is-enabled ar-local-dashboard.service"
+ssh ar-local-pi5 "systemctl status --no-pager ar-local-dashboard.service"
+ssh ar-local-pi5 "journalctl -u ar-local-dashboard.service -n 120 --no-pager"
+ssh ar-local-pi5 "journalctl -u ar-local-daily.service -n 160 --no-pager"
+ssh ar-local-pi5 "ss -ltnp | grep 8808 || true"
+ssh ar-local-pi5 "free -h; df -h / /srv/ar-local /dev/shm"
+ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git status --short --branch && git rev-parse --short HEAD && git rev-parse --short origin/main"
+```
+
+Useful HTTP probes:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10:8808/ -TimeoutSec 20
+Invoke-RestMethod -Uri http://100.78.28.10:8808/api/latest -TimeoutSec 20
+Invoke-WebRequest -UseBasicParsing -Uri http://127.0.0.1:18808/ -TimeoutSec 20
+Invoke-RestMethod -Uri http://127.0.0.1:18808/api/latest -TimeoutSec 20
+```
+
+Treat the SSH and HTTP probes in this section as canonical. Later verification sections should reference these probes instead of copying and expanding alternate versions unless a command is materially different.
+
+Large history endpoints can be network-bound over Tailscale even when the Pi serves them quickly locally. If `/api/banks/history` is slow over the remote link, compare the Pi-local timing before assuming the service is stalled:
+
+```powershell
+ssh ar-local-pi5 "python3 - <<'PY'
+import time, urllib.request
+url='http://127.0.0.1:8808/api/banks/history'
+t=time.time()
+with urllib.request.urlopen(url, timeout=120) as r:
+    data=r.read()
+print('status=200 bytes=%d time=%.3f' % (len(data), time.time()-t))
+PY"
+```
+
+For long ingest/export runs, capture service logs continuously:
+
+```sh
+journalctl -fu ar-local-daily.service
+```
+
+In a second shell, monitor resource and artifact movement:
+
+```sh
+watch -n 5 'date; free -h; df -h /srv/ar-local /dev/shm; find /srv/ar-local/data/runs -maxdepth 3 -type f -name "local-cdr.sqlite" | sort | tail'
+```
 
 ## Non-Negotiables
 
@@ -79,6 +310,8 @@ Pi setup should also provide a stable LAN name:
 - Preferred: router DHCP reservation for the Pi MAC address to keep the current fixed IP.
 - `ar.local`: use Avahi/mDNS or a router DNS override pointing `ar.local` to the Pi IP.
 - Verification: from another PC, open `http://<pi-ip>:8808/` and `http://ar.local:8808/api/latest`.
+
+Remote note: `.local` mDNS names usually do not traverse Tailscale by default. This is not a dashboard failure if `http://100.78.28.10:8808/` or the SSH tunnel works while travelling.
 
 ## Dashboard Parity
 
@@ -173,6 +406,14 @@ curl -fsS http://<pi-ip>:8808/api/latest
 curl -fsS http://ar.local:8808/api/latest
 ```
 
+From a remote PC over Tailscale:
+
+```sh
+curl -fsS http://100.78.28.10:8808/api/latest
+ssh -N ar-local-pi5-dashboard
+curl -fsS http://127.0.0.1:18808/api/latest
+```
+
 ## Handoff Discipline
 
 Every agent should leave the next agent with:
@@ -181,6 +422,7 @@ Every agent should leave the next agent with:
 - Exact commands run and failures, if any.
 - Whether Pi deployment was updated to GitHub `main`.
 - Which Pi checkout the service is using, from the authoritative service checkout check.
-- Current dashboard URL and verification result.
+- Current dashboard URLs and verification results: LAN IP, `ar.local`, Tailscale IP, and SSH tunnel if relevant.
 - Current retained history run count from `/api/banks/history`.
 - Any parity gap deliberately deferred.
+- Whether any access assumptions are unverified, especially DNS, SSH aliases, or the active systemd unit path.
