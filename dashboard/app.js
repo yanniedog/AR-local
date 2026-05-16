@@ -455,7 +455,14 @@
   }
 
   function bind() {
-    let resizeTimer = 0;
+    let resizeFrame = 0;
+    const scheduleChartResize = () => {
+      if (resizeFrame) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        redrawChart();
+      });
+    };
 
     document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -539,9 +546,17 @@
         render();
       });
     });
+    const workspaceResizeHandle = document.getElementById('chart-workspace-resizer');
+    if (workspaceResizeHandle) {
+      window.addEventListener('pointermove', () => {
+        if (document.body.classList.contains('is-resizing-chart-workspace')) scheduleChartResize();
+      });
+      ['pointerup', 'pointercancel', 'dblclick', 'keydown', 'keyup'].forEach((eventName) => {
+        workspaceResizeHandle.addEventListener(eventName, scheduleChartResize);
+      });
+    }
     window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => redrawChart(), 120);
+      scheduleChartResize();
     });
     window.addEventListener('ar:theme-changed', () => redrawChart());
     if (window.ARTheme && window.ARTheme.initToggles) window.ARTheme.initToggles(document);
