@@ -12,7 +12,6 @@
 
   /** Extra slug basenames tried before generic slugify (Westpac group shares pack assets). */
   const GROUP_SLUG_HINTS = [
-    { re: /banksa|bank\s+sa\b/i, slugs: ['westpac-banking-corporation'] },
     { re: /\brams\b/i, slugs: ['westpac-banking-corporation'] },
   ];
 
@@ -74,93 +73,220 @@
    * australianrates CDN logo pack. Clearbit is tried as a final fallback.
    */
   const BANK_DOMAINS = {
-    'arab bank australia': 'arabbank.com.au',
-    'alex.bank': 'alexbank.com',
-    'alex bank': 'alexbank.com',
+    'afg home loans': 'afgonline.com.au',
+    'alex.bank': 'alex.bank',
+    'alex bank': 'alex.bank',
+    'amp - my amp': 'amp.com.au',
+    'amp bank': 'amp.com.au',
+    'amp bank go': 'amp.com.au',
+    'anz': 'anz.com.au',
+    'anz plus': 'anz.com.au/plus/',
+    'arab bank australia': 'www.arabbank.com.au',
+    'auswide bank': 'auswidebank.com.au',
+    'aussie': 'aussie.com.au',
+    'aussie elevate': 'aussie.com.au',
+    'aussie home loans': 'aussie.com.au',
+    'australian military bank': 'australianmilitarybank.com.au',
+    'australian mutual bank': 'australianmutual.bank',
     'bank australia': 'bankaust.com.au',
     'bank first': 'bankfirst.com.au',
-    'bank of china': 'boc.cn',
+    'bank of china': 'www.bankofchina.com/au/',
+    'bank of melbourne': 'bankofmelbourne.com.au',
+    'bank of queensland': 'boq.com.au',
     'bank of sydney': 'bankofsydney.com.au',
     'bank of us': 'bankofus.com.au',
-    'auswide bank': 'auswidebank.com.au',
+    'banksa': 'banksa.com.au',
+    'bankwest': 'bankwest.com.au',
+    'bendigo and adelaide bank': 'bendigobank.com.au',
+    'bendigo bank': 'bendigobank.com.au',
+    'bnk bank': 'bnk.com.au',
+    'boq specialist': 'boqspecialist.com.au',
     'border bank': 'borderbank.com.au',
     'cairns bank': 'cairnsbank.com.au',
+    'commbank': 'commbank.com.au',
+    'commonwealth bank of australia': 'commbank.com.au',
     'credit union sa': 'creditunionsa.com.au',
-    'darling downs bank': 'darlingsbank.com.au',
+    'darling downs bank': 'ddbank.com.au',
     'defence bank': 'defencebank.com.au',
     'family first': 'familyfirst.com.au',
+    'firstmac': 'firstmac.com.au',
     'greater bank': 'greater.com.au',
+    'great southern bank': 'greatsouthernbank.com.au',
+    'great southern bank business+': 'greatsouthernbank.com.au',
+    'heartland': 'heartlandbank.com.au',
+    'heartland australia': 'heartlandbank.com.au',
+    'hsbc australia': 'hsbc.com.au',
+    'hsbc wholesale': 'hsbc.com.au',
     'hume bank': 'humebank.com.au',
     'imb bank': 'imb.com.au',
+    'in1bank': 'in1bank.com.au',
+    'in1bank ltd': 'in1bank.com.au',
+    'ing': 'ing.com.au',
     'judo bank': 'judo.bank',
     'liberty financial': 'liberty.com.au',
-    'move bank': 'movebank.com.au',
-    'mystate bank': 'mystate.com.au',
-    'people first bank': 'peoplefirstbank.com.au',
-    'police bank': 'policebank.com.au',
-    'qudos bank': 'qudosbank.com.au',
-    'racq bank': 'racq.com.au',
-    'south west credit union': 'swcu.com.au',
-    'southern cross credit union': 'southerncross.com.au',
-    'the capricornian': 'capricornian.com.au',
-    'transport mutual credit union': 'tmcu.com.au',
-    'unity bank': 'unitybank.com.au',
-    'up': 'up.com.au',
-    'unibank': 'unibank.com.au',
-    'victoria teachers mutual bank': 'victeach.com.au',
-    'banksa': 'banksa.com.au',
-    'boq specialist': 'boqspecialist.com.au',
-    'bnk bank': 'bnkbank.com.au',
+    'macquarie bank': 'macquarie.com.au',
+    'maitland mutual': 'www.themutual.com.au',
+    'maitland mutual limited': 'www.themutual.com.au',
     'me bank': 'mebank.com.au',
     'me bank me go': 'mebank.com.au',
     'me go': 'mebank.com.au',
+    'mecu': 'bankaust.com.au',
+    'move bank': 'movebank.com.au',
+    'mystate bank': 'mystate.com.au',
+    'national australia bank': 'nab.com.au',
     'newcastle permanent': 'newcastlepermanent.com.au',
     'newcastle permanent building society': 'newcastlepermanent.com.au',
-    'maitland mutual': 'maitlandmutual.com.au',
-    'maitland mutual limited': 'maitlandmutual.com.au',
-    'heartland': 'heartlandbank.com.au',
-    'heartland australia': 'heartlandbank.com.au',
     'paypal australia': 'paypal.com',
+    'people first bank': 'peoplefirstbank.com.au',
+    'pepper money': 'peppermoney.com.au',
+    'police bank': 'policebank.com.au',
+    'qudos bank': 'qudosbank.com.au',
+    'racq bank': 'racq.com.au',
+    'rsl money': 'rslmoney.com.au',
+    'solo by myob': 'myob.com',
+    'south west credit union': 'swcu.com.au',
+    'southern cross credit union': 'sccu.com.au',
+    'st. george bank': 'stgeorge.com.au',
+    'suncorp bank': 'suncorpbank.com.au',
+    'the capricornian': 'capricornian.com.au',
+    'traditional credit union': 'tcu.com.au',
+    'transport mutual credit union': 'tmcu.com.au',
     'tyro': 'tyro.com',
     'tyro banking': 'tyro.com',
     'tyro payments': 'tyro.com',
-    'rsl money': 'rslmoney.com.au',
-    'solo by myob': 'myob.com',
-    'in1bank': 'in1bank.com.au',
-    'in1bank ltd': 'in1bank.com.au',
-    'virgin money': 'virginmoney.com.au',
+    'ubank': 'ubank.com.au',
+    'unibank': 'unibank.com.au',
     'unloan': 'unloan.com.au',
-    'great southern bank business+': 'greatsouthernbank.com.au',
-    'hsbc wholesale': 'hsbc.com.au',
-    'traditional credit union': 'tcu.com.au',
-    'anz plus': 'anz.com.au',
-    'amp bank go': 'amp.com.au',
-    'afg home loans': 'afgonline.com.au',
-    'aussie home loans': 'aussie.com.au',
-    'aussie elevate': 'aussie.com.au',
-    'aussie': 'aussie.com.au',
-    'amp - my amp': 'amp.com.au',
-    'amp bank go': 'amp.com.au',
-    'anz plus': 'anz.com.au',
-    'australian military bank': 'australianmilitarybank.com.au',
-    'australian mutual bank': 'australianmutual.bank',
-    'bank of melbourne': 'bankofmelbourne.com.au',
-    'pepper money': 'peppermoney.com.au',
-    'firstmac': 'firstmac.com.au',
-    'mecu': 'bankaust.com.au',
+    'up': 'up.com.au',
+    'victoria teachers mutual bank': 'victeach.com.au',
+    'virgin money': 'virginmoney.com.au',
+    'westpac banking corporation': 'westpac.com.au',
   };
 
-  /** Clearbit Logo API — used as last resort when no local/CDN icon is found. */
+  /** Official exact-brand images for providers where group logos are misleading. */
+  const OFFICIAL_LOGO_URLS = {
+    'anz plus': [
+      'https://www.anz.com.au/content/dam/anzplus/logos/anz-plus-logo.svg',
+      'https://www.anz.com.au/etc.clientlibs/anzplus/web2/clientlibs/clientlib-anzplus-components/resources/icon-192x192.png',
+    ],
+    'arab bank australia': [
+      'https://www.arabbank.com.au/themes/arabbank/images/abal-logo.svg',
+    ],
+    'banksa': [
+      'https://www.banksa.com.au/etc/designs/sbgrp/bsa/clientlibs/css/favicons/apple-touch-icon-152x152.png',
+      'https://www.banksa.com.au/etc/designs/sbgrp/bsa/clientlibs/css/favicons/favicon-32x32.png',
+    ],
+    'bank of china': [
+      'https://www.bankofchina.com/images/boc2013_ovs_ft_logo.png',
+    ],
+    'bnk bank': [
+      'https://www.bnk.com.au/wp-content/uploads/2025/02/Logo.svg',
+      'https://www.bnk.com.au/wp-content/uploads/2025/02/cropped-Logo1-192x192.png',
+    ],
+    'boq specialist': [
+      'https://www.boqspecialist.com.au/favicon.ico',
+    ],
+    'family first': [
+      'https://familyfirst.com.au/wp-content/themes/familyfirst/images/logo.png',
+      'https://familyfirst.com.au/wp-content/uploads/2019/11/cropped-Family-First-Favicon-192x192.png',
+    ],
+    'maitland mutual': [
+      'https://www.themutual.com.au/favicon.ico',
+    ],
+    'traditional credit union': [
+      'https://tcu.com.au/wp-content/uploads/2019/02/TCU-Logo-Transparent-e1549607267783.png',
+      'https://tcu.com.au/wp-content/uploads/2019/01/cropped-TCU-Logo-1-e1548750375490-1-192x192.png',
+    ],
+    'unloan': [
+      'https://cdn.prod.website-files.com/6213e151e80699c74710709e/67c11fa0f20ffc6e0d1d2e5e_unloan-icon-256x256.png',
+      'https://cdn.prod.website-files.com/6213e151e80699c74710709e/67c11f9ab4f8226908b6dc20_unloan-icon-32x32.png',
+    ],
+  };
+
+  /** Clearbit Logo API - used after official-domain favicons. */
   function clearbitUrl(domain) {
-    return 'https://logo.clearbit.com/' + domain + '?size=64';
+    const host = domainHost(domain);
+    return host ? 'https://logo.clearbit.com/' + host + '?size=64' : '';
+  }
+
+  function canonicalProviderKey(label) {
+    return String(lookupProvider(label) || '').trim().toLowerCase();
+  }
+
+  function providerDomain(label) {
+    const raw = String(label || '').trim().toLowerCase();
+    const canonical = canonicalProviderKey(label);
+    return BANK_DOMAINS[raw] || BANK_DOMAINS[canonical] || ENERGY_DOMAINS[raw] || ENERGY_DOMAINS[canonical] || '';
+  }
+
+  function domainUrl(domain) {
+    const value = String(domain || '').trim();
+    if (!value) return '';
+    return /^https?:\/\//i.test(value) ? value : 'https://' + value;
+  }
+
+  function domainHost(domain) {
+    const value = domainUrl(domain);
+    if (!value) return '';
+    try {
+      return new URL(value).hostname.replace(/^www\./i, '');
+    } catch (_e) {
+      return String(domain || '').split('/')[0].replace(/^www\./i, '');
+    }
+  }
+
+  function googleFaviconUrl(domain) {
+    const value = domainUrl(domain);
+    return value ? 'https://www.google.com/s2/favicons?domain_url=' + encodeURIComponent(value) + '&sz=64' : '';
+  }
+
+  function rootFaviconUrl(domain) {
+    const value = domainUrl(domain);
+    if (!value) return '';
+    try {
+      const url = new URL(value);
+      return url.origin + '/favicon.ico';
+    } catch (_e) {
+      return '';
+    }
   }
 
   /** Look up the Clearbit URL for a given provider label (energy or bank). */
   function clearbitUrlForProvider(label) {
-    const key = String(label || '').trim().toLowerCase();
-    const domain = ENERGY_DOMAINS[key] || BANK_DOMAINS[key];
+    const domain = providerDomain(label);
     if (domain) return clearbitUrl(domain);
     return '';
+  }
+
+  function exactOfficialLogoUrlsForProvider(label) {
+    const raw = String(label || '').trim().toLowerCase();
+    const canonical = canonicalProviderKey(label);
+    const out = [];
+    const seen = new Set();
+    function push(value) {
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      out.push(value);
+    }
+    (OFFICIAL_LOGO_URLS[raw] || []).forEach(push);
+    (OFFICIAL_LOGO_URLS[canonical] || []).forEach(push);
+    return out;
+  }
+
+  function officialLogoUrlsForProvider(label) {
+    const out = [];
+    const seen = new Set();
+    function push(value) {
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      out.push(value);
+    }
+    exactOfficialLogoUrlsForProvider(label).forEach(push);
+    const domain = providerDomain(label);
+    push(googleFaviconUrl(domain));
+    push(rootFaviconUrl(domain));
+    push(clearbitUrlForProvider(label));
+    return out;
   }
 
   function child(parent, tagName, className, text) {
@@ -394,6 +520,7 @@
       urls.push(u);
     };
     const remoteFirst = preferBankCdnFirst();
+    exactOfficialLogoUrlsForProvider(provider).forEach(pushUrl);
     if (remoteFirst && metaIcon) {
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
       pushUrl(metaIcon);
@@ -402,6 +529,7 @@
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
+    officialLogoUrlsForProvider(provider).forEach(pushUrl);
     if (clearbitFallback) pushUrl(clearbitFallback);
 
     if (!urls.length) {
@@ -482,6 +610,8 @@
     lookupProvider,
     logoUrlsFromSlugs,
     orderedSlugBasenames,
+    officialLogoUrlsForProvider,
+    providerDomain,
     providerMeta,
   };
 })();
