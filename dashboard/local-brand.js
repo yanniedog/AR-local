@@ -231,7 +231,7 @@
     try {
       return new URL(value).hostname.replace(/^www\./i, '');
     } catch (_e) {
-      return String(domain || '').split('/')[0].replace(/^www\./i, '');
+      return String(domain || '').replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
     }
   }
 
@@ -251,11 +251,10 @@
     }
   }
 
-  /** Look up the Clearbit URL for a given provider label (energy or bank). */
-  function clearbitUrlForProvider(label) {
-    const domain = providerDomain(label);
-    if (domain) return clearbitUrl(domain);
-    return '';
+  function pushUnique(out, seen, value) {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    out.push(value);
   }
 
   function exactOfficialLogoUrlsForProvider(label) {
@@ -263,29 +262,19 @@
     const canonical = canonicalProviderKey(label);
     const out = [];
     const seen = new Set();
-    function push(value) {
-      if (!value || seen.has(value)) return;
-      seen.add(value);
-      out.push(value);
-    }
-    (OFFICIAL_LOGO_URLS[raw] || []).forEach(push);
-    (OFFICIAL_LOGO_URLS[canonical] || []).forEach(push);
+    (OFFICIAL_LOGO_URLS[raw] || []).forEach((value) => pushUnique(out, seen, value));
+    (OFFICIAL_LOGO_URLS[canonical] || []).forEach((value) => pushUnique(out, seen, value));
     return out;
   }
 
   function officialLogoUrlsForProvider(label) {
     const out = [];
     const seen = new Set();
-    function push(value) {
-      if (!value || seen.has(value)) return;
-      seen.add(value);
-      out.push(value);
-    }
-    exactOfficialLogoUrlsForProvider(label).forEach(push);
+    exactOfficialLogoUrlsForProvider(label).forEach((value) => pushUnique(out, seen, value));
     const domain = providerDomain(label);
-    push(googleFaviconUrl(domain));
-    push(rootFaviconUrl(domain));
-    push(clearbitUrlForProvider(label));
+    pushUnique(out, seen, googleFaviconUrl(domain));
+    pushUnique(out, seen, rootFaviconUrl(domain));
+    pushUnique(out, seen, clearbitUrl(domain));
     return out;
   }
 
@@ -510,7 +499,7 @@
       .toUpperCase();
   }
 
-  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider, clearbitFallback) {
+  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider) {
     while (logoWrap.firstChild) logoWrap.removeChild(logoWrap.firstChild);
     const urls = [];
     const seen = new Set();
@@ -530,7 +519,6 @@
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
     officialLogoUrlsForProvider(provider).forEach(pushUrl);
-    if (clearbitFallback) pushUrl(clearbitFallback);
 
     if (!urls.length) {
       child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
@@ -589,14 +577,13 @@
       const seen = new Set(slugBasenames);
       if (!seen.has(iconSlug)) slugBasenames = [iconSlug].concat(slugBasenames);
     }
-    const clearbitFallback = clearbitUrlForProvider(provider);
     const classes = ['bank-badge', 'local-bank-badge'];
     if (opts.logoOnly) classes.push('local-bank-badge--logo-only');
     const badge = child(parent, 'span', classes.join(' '));
     badge.title = provider || meta.name;
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
-    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, clearbitFallback);
+    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider);
     const copy = child(badge, 'span', 'bank-badge-copy');
     child(copy, 'span', 'bank-badge-label', meta.short || provider || '-');
     if (showName) child(copy, 'span', 'bank-badge-sub', provider || meta.name);
