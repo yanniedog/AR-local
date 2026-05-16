@@ -1,27 +1,45 @@
 (function () {
   'use strict';
 
-  var _chartEl = null;
-  var _chart = null;
+  let _chartEl = null;
+  let _chart = null;
 
   function cssVar(name, fallback) {
     try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
     catch (_e) { return fallback; }
   }
 
+  function isDarkTheme() {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t !== 'light';
+  }
+
   function theme() {
+    const dark = isDarkTheme();
     return {
-      text:   cssVar('--ar-text',         '#e2e8f0'),
-      muted:  cssVar('--ar-text-muted',   '#94a3b8'),
-      line:   cssVar('--ar-line',         '#1e293b'),
-      bg:     cssVar('--ar-surface-2',    '#0f172a'),
-      accent: cssVar('--ar-section-accent', cssVar('--ar-accent', '#2563eb')),
+      text:   cssVar('--ar-text',       dark ? '#e2e8f0' : '#1e293b'),
+      muted:  cssVar('--ar-text-muted', dark ? '#94a3b8' : '#64748b'),
+      line:   cssVar('--ar-line',       dark ? 'rgba(148,163,184,0.20)' : 'rgba(148,163,184,0.35)'),
+      grid:   dark ? 'rgba(148,163,184,0.08)' : 'rgba(148,163,184,0.16)',
+      bg:     cssVar('--ar-surface-2',  dark ? '#0f172a' : '#ffffff'),
+      ribbon: cssVar('--ar-section-accent', cssVar('--ar-accent', '#3b82f6')),
+      crosshair: dark ? 'rgba(99,179,237,0.60)' : 'rgba(37,99,235,0.55)',
+      ttBg:   dark ? 'rgba(15,23,42,0.96)' : 'rgba(255,255,255,0.97)',
+      ttBorder: dark ? 'rgba(100,116,139,0.30)' : 'rgba(100,116,139,0.20)',
+      ttText: dark ? '#e2e8f0' : '#1e293b',
     };
   }
 
-  var PALETTE = [
-    '#2563eb','#27c27a','#f0b90b','#f97316','#8b5cf6',
-    '#ef4444','#14b8a6','#64748b','#a78bfa','#fb923c',
+  function hexToRgba(hex, alpha) {
+    const m = String(hex).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!m) return 'rgba(59, 130, 246, ' + (alpha != null ? alpha : 0.5) + ')';
+    const a = alpha != null ? alpha : 0.5;
+    return 'rgba(' + parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' + parseInt(m[3], 16) + ',' + a + ')';
+  }
+
+  const PALETTE = [
+    '#2563eb', '#27c27a', '#f0b90b', '#f97316', '#8b5cf6',
+    '#ef4444', '#14b8a6', '#64748b', '#a78bfa', '#fb923c',
   ];
 
   function getChart(el) {
@@ -34,76 +52,152 @@
   }
 
   function pct(v) { return (v * 100).toFixed(2) + '%'; }
-
   function pctAxis(v) { return (Number(v) * 100).toFixed(1) + '%'; }
+  function pct2(v) { return (Number(v) * 100).toFixed(2); }
+
+  function escHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[ch]);
+  }
+
+  function ribbonTooltipHtml(date, point, providers, t, focusProvider) {
+    const rows = ['<div style="font-weight:800;margin-bottom:4px;">' + escHtml(date) + '</div>'];
+    if (!point || point.min == null) {
+      rows.push('<div style="color:' + t.muted + ';">No rates</div>');
+      return rows.join('');
+    }
+    const range = (Math.abs(point.max - point.min) < 0.00001)
+      ? pct(point.min)
+      : pct(point.min) + ' – ' + pct(point.max);
+    const spread = Math.round((point.max - point.min) * 10000);
+    rows.push(
+      '<div style="display:grid;grid-template-columns:auto auto;gap:2px 12px;font-variant-numeric:tabular-nums;">' +
+        '<span style="color:' + t.muted + ';">Range</span><span style="font-weight:700;">' + escHtml(range) + '</span>' +
+        '<span style="color:' + t.muted + ';">Mean (μ)</span><span style="font-weight:700;">' + escHtml(pct(point.mean)) + '</span>' +
+        '<span style="color:' + t.muted + ';">Spread</span><span>' + spread + 'bp</span>' +
+        '<span style="color:' + t.muted + ';">Products</span><span>' + point.count + '</span>' +
+      '</div>'
+    );
+    if (providers && providers.length && !focusProvider) {
+      // List the lender best/worst at this date — top 6 by best rate.
+      const lenders = providers
+        .map((p) => p.byDate[date] ? { label: p.label, pt: p.byDate[date] } : null)
+        .filter(Boolean);
+      if (lenders.length) {
+        lenders.sort((a, b) => a.pt.min - b.pt.min);
+        rows.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';">');
+        rows.push('<div style="color:' + t.muted + ';margin-bottom:2px;">Lender ranges</div>');
+        const shown = lenders.slice(0, 6);
+        shown.forEach((l) => {
+          const r = Math.abs(l.pt.max - l.pt.min) < 0.00001 ? pct(l.pt.min) : pct(l.pt.min) + '–' + pct(l.pt.max);
+          rows.push('<div style="display:flex;justify-content:space-between;gap:12px;">' +
+            '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;">' + escHtml(l.label) + '</span>' +
+            '<span style="font-variant-numeric:tabular-nums;">' + escHtml(r) + '</span></div>');
+        });
+        if (lenders.length > shown.length) {
+          rows.push('<div style="color:' + t.muted + ';">+' + (lenders.length - shown.length) + ' more</div>');
+        }
+        rows.push('</div>');
+      }
+    } else if (focusProvider) {
+      rows.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';color:' + t.muted + ';">Focused: ' + escHtml(focusProvider) + '</div>');
+    }
+    return rows.join('');
+  }
 
   function drawBankHistory(chart, model) {
-    var t = theme();
-    var dates = model.dates || [];
-    var providers = model.providers || [];
-    if (!dates.length || !providers.length) {
+    const t = theme();
+    const dates = model.dates || [];
+    const points = model.points || [];
+    const providers = model.providers || [];
+    if (!dates.length || !points.length) {
       chart.clear();
       return;
     }
-    var series = [];
-    providers.forEach(function (provider, providerIndex) {
-      var color = PALETTE[providerIndex % PALETTE.length];
-      var baseData = dates.map(function (date) {
-        var point = provider.byDate && provider.byDate[date];
-        return point ? point.min : null;
-      });
-      var bandData = dates.map(function (date) {
-        var point = provider.byDate && provider.byDate[date];
-        return point ? Math.max(0, point.max - point.min) : null;
-      });
-      var lineData = dates.map(function (date) {
-        var point = provider.byDate && provider.byDate[date];
-        if (!point) return null;
-        return (point.min + point.max) / 2;
-      });
-      var stack = 'provider-' + providerIndex;
-      series.push({
+    const minData = points.map((p) => p.min);
+    const maxData = points.map((p) => p.max);
+    const deltaData = points.map((p) => (p.min != null && p.max != null) ? Math.max(0, p.max - p.min) : null);
+    const meanData = points.map((p) => p.mean);
+
+    const ribbonColor = t.ribbon;
+    const fillColor = hexToRgba(ribbonColor, 0.5);
+
+    const series = [
+      // Min as transparent base for stacked area fill.
+      {
+        name: 'Min (base)',
         type: 'line',
-        name: provider.label + ' base',
-        stack: stack,
-        data: baseData,
+        stack: 'ribbon',
+        data: minData,
         showSymbol: false,
-        connectNulls: true,
+        connectNulls: false,
         silent: true,
-        lineStyle: { opacity: 0 },
+        lineStyle: { opacity: 0, width: 0 },
         areaStyle: { opacity: 0 },
         emphasis: { disabled: true },
-      });
-      series.push({
+        z: 2,
+      },
+      // Fill between min and max.
+      {
+        name: 'Range',
         type: 'line',
-        name: provider.label,
-        stack: stack,
-        data: bandData,
-        showSymbol: dates.length < 3,
-        connectNulls: true,
-        lineStyle: { width: 1.3, color: color },
-        itemStyle: { color: color },
-        areaStyle: { opacity: 0.28, color: color },
-        emphasis: { focus: 'series' },
-      });
-      series.push({
+        stack: 'ribbon',
+        data: deltaData,
+        showSymbol: false,
+        connectNulls: false,
+        silent: true,
+        lineStyle: { opacity: 0, width: 0 },
+        areaStyle: { color: fillColor, opacity: 1 },
+        emphasis: { disabled: true },
+        z: 2.01,
+      },
+      // Visible min line.
+      {
+        name: 'Min',
         type: 'line',
-        name: provider.label + ' midpoint',
-        data: lineData,
-        showSymbol: dates.length < 3,
-        connectNulls: true,
-        symbolSize: 5,
-        lineStyle: { width: 1.1, color: color, opacity: 0.8 },
-        itemStyle: { color: color },
+        data: minData,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { color: ribbonColor, width: 0.8, opacity: 0.45 },
+        itemStyle: { color: ribbonColor },
         tooltip: { show: false },
         emphasis: { disabled: true },
-      });
-    });
+        z: 3,
+      },
+      // Visible max line.
+      {
+        name: 'Max',
+        type: 'line',
+        data: maxData,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { color: ribbonColor, width: 0.8, opacity: 0.45 },
+        itemStyle: { color: ribbonColor },
+        tooltip: { show: false },
+        emphasis: { disabled: true },
+        z: 3,
+      },
+      // Mean line — thicker.
+      {
+        name: 'Mean',
+        type: 'line',
+        data: meanData,
+        showSymbol: false,
+        connectNulls: false,
+        smooth: true,
+        lineStyle: { color: ribbonColor, width: 2.0, opacity: 0.9, cap: 'round', join: 'round' },
+        itemStyle: { color: ribbonColor },
+        tooltip: { show: false },
+        emphasis: { focus: 'self', lineStyle: { width: 2.6 } },
+        z: 4,
+      },
+    ];
+
     chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
-      color: PALETTE,
-      grid: { top: 14, bottom: 42, left: 44, right: 16, containLabel: false },
+      grid: { top: 14, bottom: 28, left: 52, right: 16, containLabel: true },
       xAxis: {
         type: 'category',
         boundaryGap: dates.length < 2,
@@ -112,42 +206,51 @@
           color: t.muted,
           fontSize: 11,
           hideOverlap: true,
-          formatter: function (v) { return String(v).slice(5); },
+          formatter: (v) => String(v).slice(5),
         },
         axisLine: { lineStyle: { color: t.line } },
         axisTick: { show: false },
         splitLine: { show: false },
+        axisPointer: {
+          show: true,
+          type: 'line',
+          lineStyle: { color: t.crosshair, width: 1.5 },
+          label: {
+            show: true,
+            backgroundColor: t.ttBg,
+            borderColor: t.ttBorder,
+            color: t.ttText,
+            padding: [3, 6],
+            fontSize: 11,
+          },
+          z: 10,
+        },
       },
       yAxis: {
         type: 'value',
         scale: true,
-        min: function (v) { return Math.max(0, Math.floor((v.min - 0.003) * 1000) / 1000); },
-        max: function (v) { return Math.ceil((v.max + 0.003) * 1000) / 1000; },
+        min: (v) => Math.max(0, Math.floor((v.min - 0.003) * 1000) / 1000),
+        max: (v) => Math.ceil((v.max + 0.003) * 1000) / 1000,
         axisLabel: { formatter: pctAxis, color: t.muted, fontSize: 11 },
-        splitLine: { lineStyle: { color: t.line } },
+        splitLine: { lineStyle: { color: t.grid } },
         axisLine: { show: false },
         axisTick: { show: false },
       },
       tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'line', lineStyle: { color: t.muted, opacity: 0.45 } },
-        backgroundColor: t.bg,
-        borderColor: t.line,
-        textStyle: { color: t.text },
+        confine: true,
+        transitionDuration: 0,
+        hideDelay: 60,
+        backgroundColor: t.ttBg,
+        borderColor: t.ttBorder,
+        textStyle: { color: t.ttText, fontSize: 12 },
+        extraCssText: 'box-shadow: 0 6px 18px rgba(0,0,0,0.28);',
+        axisPointer: { type: 'line', lineStyle: { color: t.crosshair, width: 1.5 } },
         formatter: function (params) {
-          var dataIndex = params && params[0] ? params[0].dataIndex : 0;
-          var date = dates[dataIndex] || '';
-          var lines = ['<b>' + date + '</b>'];
-          providers.slice(0, 18).forEach(function (provider) {
-            var point = provider.byDate && provider.byDate[date];
-            if (!point) return;
-            var rate = Math.abs(point.max - point.min) < 0.00001
-              ? pct(point.min)
-              : pct(point.min) + ' - ' + pct(point.max);
-            lines.push(provider.label + ': ' + rate + ' (' + point.count + ' rates)');
-          });
-          if (providers.length > 18) lines.push('<small>+' + (providers.length - 18) + ' more providers</small>');
-          return lines.join('<br>');
+          const dataIndex = params && params[0] ? params[0].dataIndex : 0;
+          const date = dates[dataIndex] || '';
+          const point = points[dataIndex];
+          return ribbonTooltipHtml(date, point, providers, t, model.focusProvider || '');
         },
       },
       legend: { show: false },
@@ -156,69 +259,10 @@
     chart.resize();
   }
 
-  function drawBanks(chart, items) {
-    var t = theme();
-    var sorted = items.slice().sort(function (a, b) { return a.min - b.min; });
-    var names  = sorted.map(function (d) { return d.label; });
-    var baseData  = sorted.map(function (d) { return d.min; });
-    var rangeData = sorted.map(function (d, i) {
-      return { value: d.max - d.min, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: 2 } };
-    });
-    var rateLabels = sorted.map(function (d) {
-      return d.max - d.min < 0.0001 ? pct(d.min) : pct(d.min) + '–' + pct(d.max);
-    });
-    var bw = Math.max(6, Math.min(20, Math.floor(380 / Math.max(sorted.length, 1))));
-
-    chart.setOption({
-      backgroundColor: 'transparent',
-      animation: false,
-      grid: { top: 8, bottom: 44, left: 8, right: 80, containLabel: true },
-      xAxis: {
-        type: 'value',
-        min: function (v) { return Math.max(0, Math.floor((v.min - 0.003) * 1000) / 1000); },
-        max: function (v) { return Math.ceil((v.max + 0.003) * 1000) / 1000; },
-        axisLabel: { formatter: function (v) { return (v * 100).toFixed(1) + '%'; }, color: t.muted, fontSize: 11 },
-        splitLine: { lineStyle: { color: t.line } },
-        axisLine: { show: false }, axisTick: { show: false },
-      },
-      yAxis: {
-        type: 'category', data: names, inverse: false,
-        axisLabel: {
-          color: t.text, fontSize: 11,
-          formatter: function (v) {
-            var short = window.AR && window.AR.ribbon && window.AR.ribbon.ribbonBankShortName;
-            var s = short ? short(v) : v;
-            return s.length > 24 ? s.slice(0, 22) + '…' : s;
-          },
-        },
-        axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
-      },
-      tooltip: {
-        trigger: 'axis', axisPointer: { type: 'shadow' },
-        backgroundColor: t.bg, borderColor: t.line, textStyle: { color: t.text },
-        formatter: function (params) {
-          var idx = params[0] && params[0].dataIndex;
-          var d = sorted[idx];
-          if (!d) return '';
-          var r = d.max - d.min > 0.0001 ? pct(d.min) + ' – ' + pct(d.max) : pct(d.min);
-          return '<b>' + d.label + '</b><br>' + r + (d.count ? '<br><small>' + d.count + ' products</small>' : '');
-        },
-      },
-      series: [
-        { type: 'bar', name: '_base', stack: 'r', barWidth: bw, silent: true, data: baseData, itemStyle: { color: 'transparent' } },
-        {
-          type: 'bar', name: 'range', stack: 'r', barWidth: bw, data: rangeData,
-          label: { show: true, position: 'right', formatter: function (p) { return rateLabels[p.dataIndex] || ''; }, color: t.muted, fontSize: 10 },
-        },
-      ],
-    }, true);
-    chart.resize();
-  }
-
   function drawEnergy(chart, items) {
-    var t = theme();
-    var sorted = items.slice().sort(function (a, b) { return b.value - a.value; });
-    var bw = Math.max(6, Math.min(20, Math.floor(380 / Math.max(sorted.length, 1))));
+    const t = theme();
+    const sorted = items.slice().sort((a, b) => b.value - a.value);
+    const bw = Math.max(6, Math.min(20, Math.floor(380 / Math.max(sorted.length, 1))));
     chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
@@ -231,17 +275,17 @@
       },
       yAxis: {
         type: 'category',
-        data: sorted.map(function (d) { return d.label; }),
+        data: sorted.map((d) => d.label),
         inverse: false,
         axisLabel: {
           color: t.text, fontSize: 11,
-          formatter: function (v) { return v.length > 24 ? v.slice(0, 22) + '…' : v; },
+          formatter: (v) => v.length > 24 ? v.slice(0, 22) + '…' : v,
         },
         axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
       },
       series: [{
         type: 'bar', barWidth: bw,
-        data: sorted.map(function (d, i) { return { value: d.value, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: 2 } }; }),
+        data: sorted.map((d, i) => ({ value: d.value, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: 2 } })),
         label: { show: true, position: 'right', formatter: '{c}', color: t.muted, fontSize: 10 },
       }],
     }, true);
@@ -249,7 +293,7 @@
   }
 
   function draw(container, items, sector) {
-    var chart = getChart(container);
+    const chart = getChart(container);
     if (!chart) return;
     if (items && items.kind === 'bank-history') {
       drawBankHistory(chart, items);
@@ -257,7 +301,7 @@
     }
     if (!items || !items.length) { chart.clear(); return; }
     if (sector === 'energy') drawEnergy(chart, items);
-    else drawBanks(chart, items);
+    else { chart.clear(); }
   }
 
   window.LocalCdrChart = { draw };

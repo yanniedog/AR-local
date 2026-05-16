@@ -255,6 +255,12 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
 .ar-local-cdr button.local-provider-logo-btn.is-selected {
   border-color: color-mix(in srgb, var(--ar-line-strong) 92%, transparent);
   background: color-mix(in srgb, var(--ar-surface-2) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ar-section-accent) 65%, transparent);
+}
+
+.ar-local-cdr button.local-provider-logo-btn.is-hover {
+  border-color: color-mix(in srgb, var(--ar-section-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
 }
 
 body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
@@ -544,10 +550,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
   .ar-local-cdr .site-header-actions {
     justify-self: stretch;
-  }
-
-  .ar-local-cdr .local-filter-strip {
-    grid-template-columns: 1fr;
   }
 
   .ar-local-cdr .local-section-cards {

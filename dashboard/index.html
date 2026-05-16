@@ -62,62 +62,6 @@
     <section class="market-terminal" aria-label="Local CDR workspace">
       <section class="terminal-column terminal-column-center">
         <section class="panel terminal-panel terminal-workspace-panel" id="workspace">
-          <div class="workspace-nav-row">
-            <nav class="workspace-tab-nav" role="tablist" aria-label="Local CDR views">
-              <button id="tab-chart" class="tab-btn chip-btn secondary active" role="tab" aria-selected="true" aria-controls="panel-chart" type="button">Chart</button>
-            </nav>
-            <div class="workspace-nav-actions" role="toolbar" aria-label="Workspace actions">
-              <button type="button" id="refresh-page-btn" class="secondary small">Refresh</button>
-              <span id="last-refreshed" class="hint"></span>
-            </div>
-          </div>
-          <div class="local-filter-strip" aria-label="Filters">
-            <label class="terminal-field local-filter-banks-only"><span class="terminal-field-label">Dataset</span><select id="dataset"></select></label>
-            <label class="terminal-field local-filter-purpose"><span class="terminal-field-label">Purpose</span>
-              <select id="filter-purpose">
-                <option value="">All</option>
-                <option value="owner_occupied">Owner Occ.</option>
-                <option value="investment">Investment</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-repayment"><span class="terminal-field-label">Repayment</span>
-              <select id="filter-repayment">
-                <option value="">All</option>
-                <option value="principal_and_interest">P&amp;I</option>
-                <option value="interest_only">Interest only</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-structure"><span class="terminal-field-label">Structure</span>
-              <select id="filter-structure">
-                <option value="">All</option>
-                <option value="VARIABLE">Variable</option>
-                <option value="FIXED">Fixed</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-rate-type" hidden><span class="terminal-field-label">Rate type</span>
-              <select id="filter-rate-type">
-                <option value="">All</option>
-                <option value="base">Base</option>
-                <option value="bonus">Bonus</option>
-                <option value="introductory">Introductory</option>
-                <option value="total">Total</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-term" hidden><span class="terminal-field-label">Term</span>
-              <select id="filter-term">
-                <option value="">All terms</option>
-                <option value="3">3 months</option>
-                <option value="6">6 months</option>
-                <option value="12">12 months</option>
-                <option value="24">24 months</option>
-                <option value="36">36 months</option>
-                <option value="48">48 months</option>
-                <option value="60">60 months</option>
-              </select>
-            </label>
-            <label class="terminal-field"><span class="terminal-field-label">Provider</span><input id="provider" placeholder="all providers"></label>
-            <label class="terminal-field local-search-field"><span class="terminal-field-label">Search</span><input id="query" placeholder="product or plan"></label>
-          </div>
           <section id="panel-chart" class="tab-panel active" role="tabpanel" aria-labelledby="tab-chart">
             <div class="chart-block">
               <div class="chart-figure">

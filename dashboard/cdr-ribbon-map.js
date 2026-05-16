@@ -236,6 +236,7 @@
     var lvrTier = normalizeLvrTier(fullContext, lvrBounds.min, lvrBounds.max);
     var featureSet = normalizeFeatureSet(fullContext, null);
     return {
+      bank_name: String(rateRow.provider || '').trim(),
       security_purpose: securityPurpose,
       repayment_type: repaymentType,
       rate_structure: rateStructureText,
@@ -253,6 +254,7 @@
     var bounds = parseTierBounds(item);
     var featureSet = normalizeFeatureSet(productHint + ' ' + String(item.additionalInfo || ''), null);
     return {
+      bank_name: String(rateRow.provider || '').trim(),
       account_type: accountType,
       rate_type: rateType,
       min_balance: bounds.min,
@@ -279,6 +281,7 @@
     var featureSet = normalizeFeatureSet([rateRow.product_name, paymentText].join(' '), null);
 
     return {
+      bank_name: String(rateRow.provider || '').trim(),
       term_months: termMonths,
       min_balance: bounds.min,
       max_balance: bounds.max,
@@ -303,8 +306,10 @@
   function ribbonRowFromFlat(rateRow, section) {
     var bMin = parseBalance(rateRow.balance_min);
     var bMax = parseBalance(rateRow.balance_max);
+    var bank = String(rateRow.provider || '').trim();
     if (section === 'Mortgage') {
       return {
+        bank_name: bank,
         security_purpose: rateRow.security_purpose,
         repayment_type: rateRow.ribbon_repayment_type,
         rate_structure: rateRow.ribbon_rate_structure,
@@ -316,6 +321,7 @@
     }
     if (section === 'Savings') {
       return {
+        bank_name: bank,
         account_type: rateRow.account_type,
         rate_type: rateRow.ribbon_deposit_kind,
         min_balance: bMin,
@@ -328,6 +334,7 @@
     var tm = Number(rateRow.term_months);
     if (!Number.isFinite(tm) || tm < 1) tm = 12;
     return {
+      bank_name: bank,
       term_months: tm,
       min_balance: bMin,
       max_balance: bMax,
