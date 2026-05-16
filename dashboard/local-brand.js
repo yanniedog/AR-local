@@ -111,6 +111,30 @@
     'banksa': 'banksa.com.au',
     'boq specialist': 'boqspecialist.com.au',
     'bnk bank': 'bnkbank.com.au',
+    'me bank': 'mebank.com.au',
+    'me bank me go': 'mebank.com.au',
+    'me go': 'mebank.com.au',
+    'newcastle permanent': 'newcastlepermanent.com.au',
+    'newcastle permanent building society': 'newcastlepermanent.com.au',
+    'maitland mutual': 'maitlandmutual.com.au',
+    'maitland mutual limited': 'maitlandmutual.com.au',
+    'heartland': 'heartlandbank.com.au',
+    'heartland australia': 'heartlandbank.com.au',
+    'paypal australia': 'paypal.com',
+    'tyro': 'tyro.com',
+    'tyro banking': 'tyro.com',
+    'tyro payments': 'tyro.com',
+    'rsl money': 'rslmoney.com.au',
+    'solo by myob': 'myob.com',
+    'in1bank': 'in1bank.com.au',
+    'in1bank ltd': 'in1bank.com.au',
+    'virgin money': 'virginmoney.com.au',
+    'unloan': 'unloan.com.au',
+    'great southern bank business+': 'greatsouthernbank.com.au',
+    'hsbc wholesale': 'hsbc.com.au',
+    'traditional credit union': 'tcu.com.au',
+    'anz plus': 'anz.com.au',
+    'amp bank go': 'amp.com.au',
     'afg home loans': 'afgonline.com.au',
     'aussie home loans': 'aussie.com.au',
     'aussie elevate': 'aussie.com.au',
@@ -167,26 +191,73 @@
 
   /** Align folder / register labels with AustralianRates `ar-bank-brand.js` canonical keys. */
   function lookupProvider(value) {
-    const raw = String(value || '').toLowerCase();
+    const raw = String(value || '').toLowerCase().trim();
+    // Order matters — more-specific variants come before broader prefixes.
+    if (/great southern bank business/i.test(raw)) return 'great southern bank business+';
     if (raw.includes('great southern')) return 'great southern bank';
     if (raw.includes('86400') || raw.includes('86 400')) return 'ubank';
+    if (raw.includes('amp bank go') || raw === 'amp go') return 'amp bank go';
     if (raw.includes('amp')) return 'amp bank';
+    if (raw.includes('anz plus')) return 'anz plus';
     if (raw.includes('anz')) return 'anz';
-    if (raw.includes('commonwealth') || raw.includes('commbank')) return 'commonwealth bank of australia';
+    if (raw.includes('unloan')) return 'unloan';
+    if (raw.includes('commonwealth') || raw.includes('commbank') || raw === 'cba') return 'commonwealth bank of australia';
     if (raw.includes('national australia') || raw === 'nab' || raw.startsWith('nab ')) return 'national australia bank';
     if (raw.includes('westpac')) return 'westpac banking corporation';
-    if (/banksa|bank\s+sa\b/i.test(raw)) return 'westpac banking corporation';
+    if (/banksa|bank\s+sa\b/i.test(raw)) return 'banksa';
     if (/\brams\b/i.test(raw)) return 'westpac banking corporation';
     if (raw.includes('macquarie')) return 'macquarie bank';
     if (raw.includes('bankwest')) return 'bankwest';
     if (/\bing\b/.test(raw)) return 'ing';
+    if (/hsbc.*wholesale|wholesale.*hsbc/i.test(raw)) return 'hsbc wholesale';
     if (raw.includes('hsbc')) return 'hsbc australia';
     if (raw.includes('ubank') || raw.includes('u bank')) return 'ubank';
     if (raw.includes('suncorp')) return 'suncorp bank';
-    if (raw.includes('st george') || raw.includes('st.george') || raw.includes('st george')) return 'st. george bank';
+    if (/st\s*\.?\s*george/i.test(raw)) return 'st. george bank';
     if (raw.includes('bendigo')) return 'bendigo and adelaide bank';
+    if (raw.includes('boq specialist')) return 'boq specialist';
     if (raw.includes('queensland') || /\bboq\b/.test(raw)) return 'bank of queensland';
     if (raw.includes('melbourne') && raw.includes('bank')) return 'bank of melbourne';
+    if (raw.includes('alex')) return 'alex bank';
+    if (raw.includes('arab bank')) return 'arab bank australia';
+    if (raw.includes('australian military')) return 'australian military bank';
+    if (raw.includes('auswide')) return 'auswide bank';
+    if (raw.includes('bnk bank') || raw.includes('goldfields money')) return 'bnk bank';
+    if (raw.includes('bank australia') || raw === 'mecu') return 'bank australia';
+    if (raw.includes('bank first')) return 'bank first';
+    if (raw.includes('bank of china')) return 'bank of china';
+    if (raw.includes('bank of sydney')) return 'bank of sydney';
+    if (raw.includes('bank of us')) return 'bank of us';
+    if (raw.includes('border bank')) return 'border bank';
+    if (raw.includes('cairns')) return 'cairns bank';
+    if (raw.includes('credit union sa')) return 'credit union sa';
+    if (raw.includes('darling downs')) return 'darling downs bank';
+    if (raw.includes('defence bank')) return 'defence bank';
+    if (raw.includes('family first')) return 'family first';
+    if (raw.includes('greater bank')) return 'greater bank';
+    if (raw.includes('heartland')) return 'heartland';
+    if (raw.includes('hume bank')) return 'hume bank';
+    if (raw.includes('imb')) return 'imb bank';
+    if (raw.includes('in1')) return 'in1bank';
+    if (raw.includes('judo')) return 'judo bank';
+    if (raw.includes('liberty')) return 'liberty financial';
+    if (raw.includes('maitland mutual')) return 'maitland mutual';
+    if (/\bme\s*bank\b.*\bme\s*go\b/i.test(raw) || raw.includes('me go')) return 'me bank me go';
+    if (raw.includes('me bank') || /^me$/.test(raw)) return 'me bank';
+    if (raw.includes('mystate')) return 'mystate bank';
+    if (raw.includes('newcastle permanent')) return 'newcastle permanent';
+    if (raw.includes('paypal')) return 'paypal australia';
+    if (raw.includes('police bank')) return 'police bank';
+    if (raw.includes('qudos')) return 'qudos bank';
+    if (raw.includes('racq')) return 'racq bank';
+    if (raw.includes('rsl money')) return 'rsl money';
+    if (raw.includes('solo by myob') || raw === 'solo' || raw === 'myob') return 'solo by myob';
+    if (raw.includes('southern cross credit')) return 'southern cross credit union';
+    if (raw.includes('capricornian')) return 'the capricornian';
+    if (raw.includes('traditional credit union')) return 'traditional credit union';
+    if (raw.includes('tyro')) return 'tyro';
+    if (raw === 'up' || raw === 'up bank') return 'up';
+    if (raw.includes('virgin')) return 'virgin money';
     return value;
   }
 
