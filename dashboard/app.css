@@ -356,10 +356,22 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr .chart-workspace {
   min-height: 520px;
+  overflow: hidden;
 }
 
 .ar-local-cdr .terminal-chart-surface {
+  min-width: 0;
   min-height: 520px;
+  overflow: hidden;
+}
+
+.ar-local-cdr .chart-side-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ar-local-cdr .chart-workspace-resizer {
+  z-index: 2;
 }
 
 .ar-local-cdr #chart {
@@ -427,7 +439,39 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(15rem);
+  align-items: start;
+  gap: 4px 6px;
   min-height: 30px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-items: end;
+  align-content: start;
+  gap: 1px 3px;
+  max-width: min(15rem, 42vw);
+  min-width: max-content;
+  text-align: right;
+  white-space: normal;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+  white-space: nowrap;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+  grid-column: 1 / -1;
+  white-space: normal;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge {
@@ -446,7 +490,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-label,
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-sub {
-  max-width: 260px;
+  max-width: min(100%, 16rem);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -560,5 +604,96 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr .terminal-chart-surface,
   .ar-local-cdr #chart {
     min-height: 360px;
+  }
+
+  .ar-local-cdr .chart-side-panel,
+  .ar-local-cdr #hierarchy,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-body,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+    height: auto;
+    overflow: visible;
+  }
+
+  .ar-local-cdr #hierarchy.has-ribbon-hierarchy {
+    display: block;
+    grid-auto-rows: auto;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree {
+    max-height: none;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    max-width: 44vw;
+  }
+}
+
+@media (max-width: 520px) {
+  body.ar-public.ar-local-cdr .chart-workspace {
+    display: grid;
+    grid-template-rows: clamp(220px, var(--ar-chart-mobile-top-height, 240px), 260px) 12px minmax(220px, 1fr);
+  }
+
+  body.ar-public.ar-local-cdr .terminal-chart-surface {
+    height: auto;
+    min-height: 220px;
+  }
+
+  body.ar-public.ar-local-cdr .chart-side-panel {
+    margin-top: 12px;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "twist label rate"
+      ". history history";
+    align-items: center;
+    column-gap: 5px;
+    min-height: 0;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    margin-bottom: 0;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-twist,
+  .ar-local-cdr #hierarchy .ar-report-infobox-tsw {
+    display: inline-grid !important;
+    grid-area: twist;
+    vertical-align: top;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
+    display: block !important;
+    grid-area: label;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    display: inline-flex !important;
+    grid-area: rate;
+    flex-wrap: nowrap;
+    gap: 2px 4px;
+    width: auto;
+    margin-left: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    justify-self: end;
+    justify-items: end;
+    max-width: 100%;
+    min-width: 0;
+    text-align: right;
+    line-height: 1.25;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+    grid-area: history;
+    flex-basis: 100%;
   }
 }

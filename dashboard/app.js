@@ -456,6 +456,10 @@
 
   function bind() {
     let resizeTimer = 0;
+    const scheduleChartResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => redrawChart(), 80);
+    };
 
     document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -539,9 +543,19 @@
         render();
       });
     });
+    const workspaceResizeHandle = document.getElementById('chart-workspace-resizer');
+    if (workspaceResizeHandle) {
+      window.addEventListener('pointermove', () => {
+        if (document.body.classList.contains('is-resizing-chart-workspace')) scheduleChartResize();
+      });
+      ['pointerup', 'pointercancel', 'dblclick', 'keyup'].forEach((eventName) => {
+        workspaceResizeHandle.addEventListener(eventName, () => {
+          window.setTimeout(scheduleChartResize, 0);
+        });
+      });
+    }
     window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => redrawChart(), 120);
+      scheduleChartResize();
     });
     window.addEventListener('ar:theme-changed', () => redrawChart());
     if (window.ARTheme && window.ARTheme.initToggles) window.ARTheme.initToggles(document);
