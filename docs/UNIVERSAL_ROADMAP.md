@@ -425,4 +425,4 @@ Every agent should leave the next agent with:
 - Current dashboard URLs and verification results: LAN IP, `ar.local`, Tailscale IP, and SSH tunnel if relevant.
 - Current retained history run count from `/api/banks/history`.
 - Any parity gap deliberately deferred.
-- Whether any access assumptions are unverified, especially DNS, SSH aliases, or the active systemd unit path.
+- Whether any access assumptions are unverified, especially DNS, SSH aliases, or the active systemd unit path.![1778935415458](image/UNIVERSAL_ROADMAP/1778935415458.png)
