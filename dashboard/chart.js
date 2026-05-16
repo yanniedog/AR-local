@@ -30,11 +30,30 @@
     };
   }
 
-  function hexToRgba(hex, alpha) {
-    const m = String(hex).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-    if (!m) return 'rgba(59, 130, 246, ' + (alpha != null ? alpha : 0.5) + ')';
+  function hexToRgba(input, alpha) {
     const a = alpha != null ? alpha : 0.5;
-    return 'rgba(' + parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' + parseInt(m[3], 16) + ',' + a + ')';
+    const fallback = 'rgba(59, 130, 246, ' + a + ')';
+    if (typeof input !== 'string') return fallback;
+    const raw = input.trim();
+    if (!raw) return fallback;
+    // Pass through existing rgb()/rgba() strings — CSS vars can return any form.
+    if (/^rgba?\s*\(/i.test(raw)) return raw;
+    let r;
+    let g;
+    let b;
+    const m6 = raw.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (m6) {
+      r = parseInt(m6[1], 16);
+      g = parseInt(m6[2], 16);
+      b = parseInt(m6[3], 16);
+    } else {
+      const m3 = raw.match(/^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+      if (!m3) return fallback;
+      r = parseInt(m3[1] + m3[1], 16);
+      g = parseInt(m3[2] + m3[2], 16);
+      b = parseInt(m3[3] + m3[3], 16);
+    }
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
   const PALETTE = [
@@ -106,6 +125,31 @@
     return rows.join('');
   }
 
+  function rbaMarkData(dates) {
+    const api = window.AR && window.AR.rbaCashRate;
+    if (!api || !dates.length) return null;
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    const changes = api.changesWithinWindow(first, last) || [];
+    if (!changes.length) return null;
+    const dateSet = {};
+    dates.forEach((d) => { dateSet[d] = true; });
+    // Snap each RBA change date to the nearest plotted run-date so the marker
+    // sits on the category axis correctly even when the change date isn't a
+    // retained run.
+    const snapped = changes.map((change) => {
+      let snap = change.date;
+      if (!dateSet[snap]) {
+        for (let i = 0; i < dates.length; i += 1) {
+          if (dates[i] >= change.date) { snap = dates[i]; break; }
+          snap = dates[i];
+        }
+      }
+      return { ...change, snap };
+    });
+    return snapped;
+  }
+
   function drawBankHistory(chart, model) {
     const t = theme();
     const dates = model.dates || [];
@@ -122,6 +166,27 @@
 
     const ribbonColor = t.ribbon;
     const fillColor = hexToRgba(ribbonColor, 0.5);
+    const rbaColor = '#f59e0b';
+
+    const rbaChanges = rbaMarkData(dates) || [];
+    const rbaMarkLines = rbaChanges.map((change) => ({
+      xAxis: change.snap,
+      label: {
+        show: true,
+        position: 'insideEndTop',
+        distance: 4,
+        formatter: 'RBA ' + change.rate.toFixed(2) + '%',
+        color: rbaColor,
+        backgroundColor: 'transparent',
+        fontSize: 10,
+        fontWeight: 700,
+      },
+      lineStyle: { color: rbaColor, width: 1.2, type: 'dashed', opacity: 0.75 },
+      // Carry the raw change so the tooltip can reach it.
+      __rbaPrior: change.priorRate,
+      __rbaRate: change.rate,
+      __rbaDate: change.date,
+    }));
 
     const series = [
       // Min as transparent base for stacked area fill.
@@ -178,7 +243,8 @@
         emphasis: { disabled: true },
         z: 3,
       },
-      // Mean line — thicker.
+      // Mean line — thicker. Carries the RBA markLine overlay so AR-style
+      // rate-decision markers ride on top of the ribbon.
       {
         name: 'Mean',
         type: 'line',
@@ -190,6 +256,13 @@
         itemStyle: { color: ribbonColor },
         tooltip: { show: false },
         emphasis: { focus: 'self', lineStyle: { width: 2.6 } },
+        markLine: rbaMarkLines.length ? {
+          symbol: ['none', 'none'],
+          silent: false,
+          animation: false,
+          z: 5,
+          data: rbaMarkLines,
+        } : undefined,
         z: 4,
       },
     ];
@@ -250,7 +323,20 @@
           const dataIndex = params && params[0] ? params[0].dataIndex : 0;
           const date = dates[dataIndex] || '';
           const point = points[dataIndex];
-          return ribbonTooltipHtml(date, point, providers, t, model.focusProvider || '');
+          let html = ribbonTooltipHtml(date, point, providers, t, model.focusProvider || '');
+          // Append any RBA changes that snapped to this date.
+          const rbaToday = rbaChanges.filter((c) => c.snap === date);
+          if (rbaToday.length) {
+            const lines = rbaToday.map((c) => {
+              const prior = c.priorRate != null ? c.priorRate.toFixed(2) + '%' : '—';
+              const arrow = c.priorRate != null && c.rate > c.priorRate ? '↑' : c.priorRate != null && c.rate < c.priorRate ? '↓' : '→';
+              return '<div style="display:flex;justify-content:space-between;gap:12px;">' +
+                '<span style="color:' + rbaColor + ';font-weight:700;">RBA ' + c.date + '</span>' +
+                '<span style="font-variant-numeric:tabular-nums;">' + prior + ' ' + arrow + ' ' + c.rate.toFixed(2) + '%</span></div>';
+            });
+            html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';">' + lines.join('') + '</div>';
+          }
+          return html;
         },
       },
       legend: { show: false },

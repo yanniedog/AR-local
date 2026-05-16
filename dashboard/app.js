@@ -387,10 +387,10 @@
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
       $('hierarchy').hidden = false;
+      // Callback only updates state; the chart redraw is driven by the caller.
       window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
         onFocusChange: (productKeys) => {
           state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
-          redrawChart();
         },
       });
     } else {
@@ -404,35 +404,32 @@
     return rows;
   }
 
-  function redrawChart() {
-    const allRows = normalizeRows(rateRows());
-    const rows = focusedRows(allRows);
-    const items = chartItems(rows);
-    window.LocalCdrChart.draw($('chart'), items, state.sector);
-    setHistoryWindowUi(items);
-    updateHero(rows, items);
-    if (state.sector === 'banks' && items && items.kind === 'bank-history') {
-      $('chart-status').textContent = `${num(rows.length)} current rows / ${num(items.totalHistoryRows)} historical rows`;
-    }
-  }
-
-  function render() {
-    const allRows = normalizeRows(rateRows());
-    const focused = applyFocusFilter(allRows);
-    // Hierarchy renders BEFORE chart so it can populate state.focusedProductKeys via its callback.
-    setLinks();
-    renderStats(focused);
-    renderTable(focused);
-    const finalRows = applyHierarchyFilter(focused);
+  function drawChartFromState(finalRows) {
     const items = chartItems(finalRows);
-    updateHero(finalRows, items);
     window.LocalCdrChart.draw($('chart'), items, state.sector);
     setHistoryWindowUi(items);
+    updateHero(finalRows, items);
     if (state.sector === 'banks' && items && items.kind === 'bank-history') {
       $('chart-status').textContent = `${num(finalRows.length)} current rows / ${num(items.totalHistoryRows)} historical rows`;
     } else {
       $('chart-status').textContent = `${num(finalRows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
     }
+  }
+
+  function redrawChart() {
+    drawChartFromState(focusedRows(normalizeRows(rateRows())));
+  }
+
+  function render() {
+    const allRows = normalizeRows(rateRows());
+    const focused = applyFocusFilter(allRows);
+    setLinks();
+    renderStats(focused);
+    // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
+    // onFocusChange callback (state only — no redraw inside the callback).
+    renderTable(focused);
+    const finalRows = applyHierarchyFilter(focused);
+    drawChartFromState(finalRows);
     renderSelectedLogos();
   }
 

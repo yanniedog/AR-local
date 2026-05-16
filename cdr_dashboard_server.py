@@ -120,9 +120,9 @@ def fill_history_gaps(
     """
     if not rows or not run_dates:
         return list(rows), 0
-    sorted_dates = sorted(set(d for d in run_dates if d))
+    sorted_dates = sorted({d for d in run_dates if d})
 
-    by_identity: Dict[Tuple[str, ...], Dict[str, Dict[str, object]]] = {}
+    by_identity: dict[tuple[str, ...], dict[str, dict[str, object]]] = {}
     for row in rows:
         identity = tuple(str(row.get(field) or "") for field in HISTORY_IDENTITY_FIELDS)
         date = str(row.get("run_date") or "")
@@ -135,32 +135,35 @@ def fill_history_gaps(
 
     out: list[dict[str, object]] = list(rows)
     synthetic = 0
+    # Single moving pointer per identity: walk sorted_dates and the per-identity
+    # present list in lockstep so each gap-fill is O(D) not O(D^2).
     for bucket in by_identity.values():
         present = sorted(bucket.keys())
-        if not present:
-            continue
+        if len(present) < 2:
+            continue  # No interior days possible.
         first, last = present[0], present[-1]
-        if first == last:
-            continue  # Single-day product — nothing between to fill.
+        # Index of the most recent present date <= the current walked date.
+        prior_idx = -1
         for date in sorted_dates:
             if date <= first or date >= last:
+                # Advance prior_idx so it stays valid once we cross `first`.
+                while prior_idx + 1 < len(present) and present[prior_idx + 1] <= date:
+                    prior_idx += 1
                 continue
-            if date in bucket:
+            # Advance prior_idx to the latest present date strictly < date.
+            while prior_idx + 1 < len(present) and present[prior_idx + 1] < date:
+                prior_idx += 1
+            if prior_idx + 1 < len(present) and present[prior_idx + 1] == date:
+                # date is already present — advance pointer past it for next iter.
+                prior_idx += 1
                 continue
-            # Carry forward the latest prior real sample.
-            prior_date = None
-            for candidate in reversed(present):
-                if candidate < date:
-                    prior_date = candidate
-                    break
-            if prior_date is None:
+            if prior_idx < 0:
                 continue
-            template = bucket[prior_date]
+            template = bucket[present[prior_idx]]
             synth = dict(template)
             synth["run_date"] = date
             synth["carry_forward"] = "1"
             out.append(synth)
-            bucket[date] = synth
             synthetic += 1
     return out, synthetic
 
@@ -369,6 +372,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "cdr-ribbon-map.js",
             "cdr-taxonomy-tree.js",
             "local-brand.js",
+            "rba-cash-rate.js",
             "utils.js",
         ):
             try:
@@ -425,6 +429,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/cdr-ribbon-map.js",
                 "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
+                "/assets/rba-cash-rate.js",
                 "/assets/utils.js",
             ):
                 return dashboard_cache.read(DASHBOARD_ROOT / path.removeprefix("/assets/")), "application/javascript; charset=utf-8"
