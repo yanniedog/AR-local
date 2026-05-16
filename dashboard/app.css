@@ -356,7 +356,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr .chart-workspace {
   min-height: 520px;
-  overflow: hidden;
 }
 
 .ar-local-cdr .terminal-chart-surface {
@@ -367,7 +366,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr .chart-side-panel {
   min-width: 0;
-  overflow: hidden;
 }
 
 .ar-local-cdr .chart-workspace-resizer {
@@ -470,7 +468,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
-  grid-column: 1 / -1;
   white-space: normal;
 }
 
@@ -615,11 +612,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     overflow: visible;
   }
 
-  .ar-local-cdr #hierarchy.has-ribbon-hierarchy {
-    display: block;
-    grid-auto-rows: auto;
-  }
-
   .ar-local-cdr #hierarchy .ar-report-underchart-tree {
     max-height: none;
   }
@@ -693,7 +685,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
-    grid-area: history;
     flex-basis: 100%;
   }
 }

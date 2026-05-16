@@ -455,10 +455,13 @@
   }
 
   function bind() {
-    let resizeTimer = 0;
+    let resizeFrame = 0;
     const scheduleChartResize = () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => redrawChart(), 80);
+      if (resizeFrame) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        redrawChart();
+      });
     };
 
     document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => {
@@ -548,10 +551,8 @@
       window.addEventListener('pointermove', () => {
         if (document.body.classList.contains('is-resizing-chart-workspace')) scheduleChartResize();
       });
-      ['pointerup', 'pointercancel', 'dblclick', 'keyup'].forEach((eventName) => {
-        workspaceResizeHandle.addEventListener(eventName, () => {
-          window.setTimeout(scheduleChartResize, 0);
-        });
+      ['pointerup', 'pointercancel', 'dblclick', 'keydown', 'keyup'].forEach((eventName) => {
+        workspaceResizeHandle.addEventListener(eventName, scheduleChartResize);
       });
     }
     window.addEventListener('resize', () => {
