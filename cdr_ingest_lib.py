@@ -531,8 +531,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=40,
         help="Delay per HTTP call per worker thread (milliseconds, default 40)",
     )
-    p.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout seconds")
-    p.add_argument("--max-retries", type=int, default=3, help="Retries on 429/5xx")
+    p.add_argument("--timeout", type=float, default=90.0, help="Per-request timeout seconds")
+    p.add_argument("--max-retries", type=int, default=6, help="Retries on 429/5xx (exponential backoff with jitter)")
     p.add_argument(
         "--holders",
         type=str,

@@ -66,6 +66,104 @@ WHERE rate IS NOT NULL AND rate != ''
 """
 BANK_HISTORY_SELECT_UNTIL_SQL = BANK_HISTORY_SELECT_SQL + " AND run_date <= ?"
 
+# Fields that uniquely identify a "rate row template" across run dates.
+# When we carry-forward, two rows share an identity iff every field below
+# matches; only run_date and the rate / comparison_rate values differ.
+HISTORY_IDENTITY_FIELDS = (
+    "dataset",
+    "provider",
+    "product_key",
+    "product_id",
+    "product_name",
+    "rate_family",
+    "rate_type",
+    "term",
+    "repayment_type",
+    "loan_purpose",
+    "application_type",
+    "application_frequency",
+    "security_purpose",
+    "ribbon_repayment_type",
+    "ribbon_rate_structure",
+    "ribbon_deposit_kind",
+    "lvr_tier",
+    "balance_min",
+    "balance_max",
+    "term_months",
+    "interest_payment",
+    "feature_set",
+    "account_type",
+)
+
+
+def fill_history_gaps(
+    rows: list[dict[str, object]],
+    run_dates: list[str],
+) -> tuple[list[dict[str, object]], int]:
+    """Stabilize the ribbon aggregate against transient ingest gaps.
+
+    For every distinct rate-row identity (provider + product + rate variant)
+    we observe a series of (run_date, rate) samples. When the retained set
+    contains a date that lies *between* a product's first and last observed
+    appearance but the product has no sample on that date, we emit a
+    synthetic carry-forward row using the most recent prior sample. This
+    keeps the per-day product cohort stable: min/max/mean on a gap day are
+    computed from the same set of products as adjacent days, so the ribbon
+    does not jump just because one holder failed to respond.
+
+    Carry-forward does NOT extend a product beyond its last observed date —
+    a product that disappears for good (CDR delisting) drops out of the
+    cohort from then on, which is the correct behaviour.
+
+    Synthetic rows carry ``carry_forward = "1"`` so consumers can flag them.
+    Returns ``(filled_rows, synthetic_count)``.
+    """
+    if not rows or not run_dates:
+        return list(rows), 0
+    sorted_dates = sorted(set(d for d in run_dates if d))
+
+    by_identity: Dict[Tuple[str, ...], Dict[str, Dict[str, object]]] = {}
+    for row in rows:
+        identity = tuple(str(row.get(field) or "") for field in HISTORY_IDENTITY_FIELDS)
+        date = str(row.get("run_date") or "")
+        if not date:
+            continue
+        bucket = by_identity.setdefault(identity, {})
+        # If a duplicate identity+date exists, prefer the first concrete row.
+        if date not in bucket:
+            bucket[date] = row
+
+    out: list[dict[str, object]] = list(rows)
+    synthetic = 0
+    for bucket in by_identity.values():
+        present = sorted(bucket.keys())
+        if not present:
+            continue
+        first, last = present[0], present[-1]
+        if first == last:
+            continue  # Single-day product — nothing between to fill.
+        for date in sorted_dates:
+            if date <= first or date >= last:
+                continue
+            if date in bucket:
+                continue
+            # Carry forward the latest prior real sample.
+            prior_date = None
+            for candidate in reversed(present):
+                if candidate < date:
+                    prior_date = candidate
+                    break
+            if prior_date is None:
+                continue
+            template = bucket[prior_date]
+            synth = dict(template)
+            synth["run_date"] = date
+            synth["carry_forward"] = "1"
+            out.append(synth)
+            bucket[date] = synth
+            synthetic += 1
+    return out, synthetic
+
 
 def resolve_site_root(explicit: Path | None) -> Path:
     """Locate AustralianRates public shell assets (foundation.css, theme.js, …)."""
@@ -242,8 +340,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             except sqlite3.Error as exc:
                 print(f"Skipping unreadable history DB {db_path}: {exc}")
         run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        filled_rows, carry_forward_count = fill_history_gaps(rows, run_dates)
         payload = json.dumps(
-            {"run_dates": run_dates, "rates": rows},
+            {
+                "run_dates": run_dates,
+                "rates": filled_rows,
+                "carry_forward_count": carry_forward_count,
+            },
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
