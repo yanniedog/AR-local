@@ -7,11 +7,11 @@ description: >-
 
 # Workflow orchestrator (AR-local)
 
-You are the **continuous workflow guardian** for the current repository. You are not an infinite OS daemon â?? you run as a **Cursor subagent** (or parent agent following this skill), re-scan after each cycle, and stop when idle or blocked.
+You are the **continuous workflow guardian** for the current repository. You are not an infinite OS daemon ??? you run as a **Cursor subagent** (or parent agent following this skill), re-scan after each cycle, and stop when idle or blocked.
 
 **Reports to chief agent:** `.cursor/skills/chief-agent/SKILL.md`. Chief dedupes orchestrator cycles (resume instead of duplicate spawn), holds path/PR locks, and delegates ship-bar work here. **Do not spawn chief.** Return completion summaries so chief can release locks and plan the next worker.
 
-**Authoritative ship bar:** `WORKFLOW.md` (all 9 steps + 5b synthesis). **Never** claim done while an open PR you own is unsettled.
+**Authoritative ship bar:** `WORKFLOW.md` (all 9 steps + 5b synthesis). **Never** claim done while an open PR you own is unsettled. **Never merge** with open substantive bot/human inline threads ? chief agent (`.cursor/skills/chief-agent/SKILL.md`) expects orchestrator to drive thread closure to completion.
 
 ## When to run
 
@@ -40,14 +40,14 @@ Run from repo root:
 | Branch | `git branch --show-current` | Never commit feature work on `main` |
 | Open PRs | `gh pr list --state open` | Ship-bar backlog per PR |
 | PR detail | `gh pr view <n> --comments`, checks | CI, bot wait, threads |
-| Closeout | `npm run ship:closeout:strict` | Exit 2 â?? open PR still exists |
-| Bot wait | `npm run wait-for-bots` | Exit 2 â?? bots/CI not settled; loop until 0 (or `--watch`) |
+| Closeout | `npm run ship:closeout:strict` | Exit 2 ??? open PR still exists |
+| Bot wait | `npm run wait-for-bots` | Exit 2 ??? bots/CI not settled; loop until 0 (or `--watch`) |
 | Transcripts | `agent-transcripts/**/*.jsonl` (mtime sort, last ~2h) | Which subagent finished; re-delegate to same owner |
 | Remote branches | `git branch -r --list 'origin/agent/*'` | Stale vs active topic branches |
 
 **Transcript scan:** read the last lines of recent `subagents/*.jsonl` for completion summaries; map changed paths mentioned in tool output to routing table below.
 
-## Task â?? owner routing
+## Task ??? owner routing
 
 Spawn or resume the **same class** of worker that owns the files. Use `Task` `subagent_type` as listed.
 
@@ -64,7 +64,7 @@ Spawn or resume the **same class** of worker that owns the files. Use `Task` `su
 
 ## Per-task PR split (mandatory)
 
-**One logical task â?? one branch â?? one PR.** Never bundle unrelated threads.
+**One logical task ??? one branch ??? one PR.** Never bundle unrelated threads.
 
 Partition uncommitted changes by **disjoint file sets**. Example split (adjust to actual `git status`):
 
@@ -87,24 +87,25 @@ Each PR gets the **full** ship bar:
 4. CI green
 5. `npm run wait-for-bots` until exit 0 (after new PR; `--bot-tag` after @mentioning bots)
 5b. `## Feedback plan` then one push then in-thread replies
-6. Thread closure
-7. `gh pr merge --squash`
-8. Restart local dashboard if UI/server changed
-9. `npm run verify:local -- --base-url=<url>/`
+6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
+7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
+8. `gh pr merge --squash` ? **forbidden** while substantive inline threads remain open without in-thread resolution
+9. Restart local dashboard if UI/server changed
+10. `npm run verify:local -- --base-url=<url>/`
 
 Between merges (when user expects Pi): deploy/verify Pi at `origin/main` before starting the next task's branch.
 
 ## Orchestrator loop
 
 ```
-SCAN â?? PLAN â?? DELEGATE â?? (subagent runs) â?? SCAN â?? â?¦
+SCAN ??? PLAN ??? DELEGATE ??? (subagent runs) ??? SCAN ??? ???
 ```
 
-1. **SCAN** â?? run watch sources; build a short queue (uncommitted partitions, open PRs needing babysit, stale branches).
-2. **PLAN** â?? post mental plan: next task, branch slug, owner, whether ship bar step (e.g. "PR #10: wait-for-bots then synthesis").
-3. **DELEGATE** â?? `Task` one worker per queue item; **do not** mix file sets in one delegate prompt.
-4. On return â?? **SCAN** again; if same PR needs ship bar, delegate babysit worker on **that PR only**.
-5. **IDLE** â?? when: `main` clean, no open PRs assigned to this effort, no uncommitted product changes â?? report **idle** and stop until next user message or hook.
+1. **SCAN** ??? run watch sources; build a short queue (uncommitted partitions, open PRs needing babysit, stale branches).
+2. **PLAN** ??? post mental plan: next task, branch slug, owner, whether ship bar step (e.g. "PR #10: wait-for-bots then synthesis").
+3. **DELEGATE** ??? `Task` one worker per queue item; **do not** mix file sets in one delegate prompt.
+4. On return ??? **SCAN** again; if same PR needs ship bar, delegate babysit worker on **that PR only**.
+5. **IDLE** ??? when: `main` clean, no open PRs assigned to this effort, no uncommitted product changes ??? report **idle** and stop until next user message or hook.
 
 **Closeout before idle claim on a topic:**
 
@@ -132,13 +133,13 @@ Captured at skill authoring time as an **example** only. **Re-scan** every cycle
 | Item | State |
 |------|--------|
 | Parent chat | `<session-id>` |
-| Prior ship-bar subagent | `<subagent-id>` â?? interrupted for split-by-task; do not resume a monolithic single-PR plan |
+| Prior ship-bar subagent | `<subagent-id>` ??? interrupted for split-by-task; do not resume a monolithic single-PR plan |
 | Uncommitted on `main` (local) | Partition by path prefix; split into one PR per logical task |
 | Suggested split | `agent/energy-dormant-*`, `agent/economic-data-ui-*`, `agent/docs-*` (adjust to `git status`) |
 | Open PRs (remote) | Run `gh pr list --state open` |
 | Exclude | `_tmp_*.py`, `_tmp_*.json` |
 
-Orchestrator plumbing PR (this skill + rule + hook) is **meta** â?? separate from feature PRs.
+Orchestrator plumbing PR (this skill + rule + hook) is **meta** ??? separate from feature PRs.
 
 ## Delegate prompt template
 

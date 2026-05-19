@@ -7,16 +7,20 @@ alwaysApply: true
 
 AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, branch assignment, worktree dedupe, commit attribution). Orchestrator owns **ship bar** (git/PR/CI/bot wait/merge/Pi) **only when chief delegates**. Orchestrator **does not** spawn chief.
 
+## Non-negotiable: solution-first
+
+Chief **never** ends a cycle reporting blockers without an **active remediation subagent** already spawned. Forbidden: "orchestrator not delegated", "paused until remediation", "blocked" (without worker ID). **`chief:scan` exit 1 → spawn remediation** (orchestrator or pr-fix), not stop.
+
 ## Session start
 
 After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, recent subagent transcripts, multiple `agent/*` branches, or multiple worktrees — **spawn or resume chief** unless the user waived chief for this session:
 
 ```
 Task tool: subagent_type=generalPurpose, run_in_background=true
-Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run pre-delegate checklist (npm run chief:scan), one SCAN→LOCK CHECK→PLAN→DELEGATE cycle, report locks + queue.
+Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run pre-delegate checklist (npm run chief:scan), one SCAN→LOCK CHECK→PLAN→DELEGATE cycle, spawn remediation on exit 1, report locks + active worker IDs.
 ```
 
-Chief runs `npm run chief:scan` before delegating. Exit **1** → pause spawns; assign one remediation owner.
+Chief runs `npm run chief:scan` before delegating. Exit **1** → run remediation protocol: partition dirty tree, spawn **one** orchestrator or pr-fix worker with REMEDIATION checklist from scan output.
 
 ## Pre-delegate checklist (chief must run)
 
@@ -30,7 +34,7 @@ Chief runs `npm run chief:scan` before delegating. Exit **1** → pause spawns; 
 ## Branch and worktree locks (hard)
 
 - **One writer per `agent/<slug>` branch** — chief assigns branch lock before spawn; forbid second writer.
-- **One active worktree per feature PR** — resolve `AR-local-pr2`-style contention before delegating.
+- **One active worktree per feature PR** — spawn remediation owner to resolve contention; do not idle-report.
 - **Commit attribution** — verify `git log -1` and current branch match intended PR before push.
 - **No parallel orchestrator cycles** — resume/interrupt duplicate within **5 minutes**; one orchestrator at a time.
 
@@ -40,19 +44,26 @@ When a `Task` subagent returns after **implementation**, **ingest**, **dashboard
 
 1. Spawn or resume **chief** (not orchestrator directly) unless chief is already in flight or waived.
 2. Chief re-runs scan, updates branch lock registry, dedupes orchestrator spawns.
-3. Chief delegates **one** orchestrator cycle or path owner per non-overlapping queue item.
+3. Chief delegates **one** orchestrator cycle or path owner per non-overlapping queue item — or spawns remediation if scan exit 1.
 
-## Escalation
+## Remediation (not escalation-by-idle)
 
-On clash (path overlap, worktree duplicate, mis-commit branch, `chief:scan` exit 1): **pause spawns**, assign **single** remediation owner, re-scan before resuming. Do not spawn five parallel pr-fix workers.
+On clash (`chief:scan` exit 1, path overlap, worktree duplicate, mis-commit branch, merge conflicts):
+
+1. Partition paths per PR; print plan with affected branch/PR.
+2. **Spawn one remediation owner** (orchestrator for ship bar / rebase; pr-fix for single PR threads).
+3. Name **active subagent transcript ID** in summary.
+4. Re-scan when worker returns; repeat until exit 0 or hard blocker with evidence.
+
+Do not spawn five parallel pr-fix workers on the **same PR**.
 
 ## Ship-bar gate
 
-Chief **never** marks "done" until orchestrator reports thread closure + merge **or** explicit user waiver. Do not end while `ship:closeout:strict` exits **2** for an open PR.
+Chief **never** marks "done" until orchestrator reports thread closure + merge **or** explicit user waiver. Do not end while `ship:closeout:strict` exits **2** for an open PR. Orchestrator **must not merge** with open substantive bot/human inline threads (see workflow-orchestrator skill).
 
 ## Manual invoke
 
-User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md` and run a full coordination cycle including `npm run chief:scan`.
+User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md` and run a full coordination cycle including `npm run chief:scan`; spawn remediation on exit 1.
 
 ## Hooks
 
