@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "subagentStop": [
+      {
+        "command": "node .cursor/hooks/orchestrator-remind.mjs",
+        "loop_limit": 2
+      }
+    ],
+    "stop": [
+      {
+        "command": "node .cursor/hooks/orchestrator-remind.mjs",
+        "loop_limit": 2
+      }
+    ]
+  }
+}

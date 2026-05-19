@@ -62,6 +62,20 @@ Dense tables, compact controls, terse labels. Avoid marketing copy and narrative
 - Prefer focused changes; match existing style in Python and browser scripts.
 - Keep **`cdr_dashboard_server.py`** routing explicit and safe (path traversal checks preserved).
 
+## Continuous workflow orchestrator
+
+Closest durable equivalent to an always-on ship-bar agent (Cursor subagents are **not** OS daemons):
+
+| Piece | Location |
+|-------|----------|
+| Skill (scan, route, split PRs, loop) | [`.cursor/skills/workflow-orchestrator/SKILL.md`](.cursor/skills/workflow-orchestrator/SKILL.md) |
+| Always-on rule (spawn after substantive work) | [`.cursor/rules/workflow-orchestrator-always.mdc`](.cursor/rules/workflow-orchestrator-always.mdc) |
+| Hook reminder (dirty tree or open PRs) | [`.cursor/hooks/orchestrator-remind.mjs`](.cursor/hooks/orchestrator-remind.mjs) |
+
+**Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
+
+**Policy:** one logical task → one branch → one PR (no monolithic ingest + dashboard + docs bundles). Orchestrator re-scans after each subagent returns and redeligates to the path owner (ingest, dashboard, babysit/ship-bar, docs, Pi).
+
 ## Debugging
 
 - Use **fresh ingest/export outputs** and **dashboard server stdout/stderr**, not stale cached assumptions.

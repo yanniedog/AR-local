@@ -1,0 +1,43 @@
+---
+description: "Spawn workflow orchestrator after substantive work; one PR per task/thread; no monolithic bundles"
+alwaysApply: true
+---
+
+# Continuous workflow orchestrator
+
+AR-local uses a **polling orchestrator pattern** (not a real OS daemon). Parent agents act as schedulers.
+
+## Session start
+
+After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, or recent subagent work in agent-transcripts — **spawn or resume** the workflow orchestrator unless the user waived for this session:
+
+```
+Task tool: subagent_type=generalPurpose, run_in_background=true
+Prompt: Follow .cursor/skills/workflow-orchestrator/SKILL.md — run one SCAN→PLAN→DELEGATE cycle and report queue.
+```
+
+## After substantive subagent work
+
+When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, or **PR babysit**:
+
+1. Re-scan per the orchestrator skill.
+2. **Redeligate** to the same owner class (paths in routing table) to continue ship bar or the next partition.
+3. Spawn orchestrator in background if you are not executing the skill yourself this turn.
+
+## One PR per task (hard)
+
+- **Do not** bundle energy ingest, economic data UI, docs, and unrelated banking fixes in one PR.
+- Partition by disjoint file sets; see skill table `agent/energy-dormant-*`, `agent/economic-data-ui-*`, etc.
+- Meta orchestrator plumbing stays its own PR (`agent/workflow-orchestrator-*`).
+
+## Manual invoke
+
+User phrase: **"run workflow orchestrator"** — read `.cursor/skills/workflow-orchestrator/SKILL.md` and run a full cycle.
+
+## Hooks
+
+`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` when the tree is dirty or open PRs exist. Treat that as a signal to run the orchestrator, not as a substitute for `WORKFLOW.md`.
+
+## Ship bar unchanged
+
+Orchestrator coordinates work; it does **not** waive `WORKFLOW.md` steps 5–7, bot wait, thread closure, or `verify:local`.
