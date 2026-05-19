@@ -11,6 +11,7 @@
     "verify:local": "python verify_local.py",
     "git:graph-hygiene": "git fetch origin --prune",
     "chief:scan": "node scripts/chief-scan.mjs",
-    "agent:auditor": "node scripts/agent-auditor-scan.mjs"
+    "agent:auditor": "node scripts/agent-auditor-scan.mjs",
+    "branch-protection:apply": "node scripts/apply-branch-protection.mjs"
   }
 }

@@ -16,6 +16,12 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+  classifyThreads,
+  fetchPullRequestThreads,
+  hasGh,
+  repoSlug,
+} from './gh-pr-review-threads.mjs';
 
 const BUCK_PASS_PHRASES = [
   /\byou should run\b/i,
@@ -463,6 +469,33 @@ export function runAudit(opts) {
         'close-loop-never-defer / workflow-orchestrator',
         null,
       );
+    }
+  }
+
+  if (!hook && hasGh()) {
+    try {
+      const raw = sh('gh pr list --state closed --limit 10 --json number,title,mergedAt', root, 12000);
+      if (typeof raw === 'string' && raw) {
+        const closedUnmerged = JSON.parse(raw).filter((p) => !p.mergedAt);
+        if (closedUnmerged.length) {
+          const { owner, name } = repoSlug();
+          for (const row of closedUnmerged.slice(0, 5)) {
+            const pr = fetchPullRequestThreads(owner, name, row.number);
+            const violations = classifyThreads(pr.threads);
+            if (violations.length) {
+              add(
+                'open_loops',
+                'fail',
+                `Closed unmerged PR #${row.number} has ${violations.length} open bot thread(s) — agents must not close without merge unless waived`,
+                'workflow-orchestrator / pr-review-bot-replies',
+                null,
+              );
+            }
+          }
+        }
+      }
+    } catch {
+      /* gh unavailable or repo not authenticated */
     }
   }
 

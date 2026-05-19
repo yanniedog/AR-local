@@ -31,6 +31,17 @@ Commit only on the topic branch. `git push -u origin HEAD`.
 
 `gh pr checks <n> --watch` until required checks pass (e.g. `ci_result` when present). Fix forward on this PR. After fix pushes, `@mention` reviewers using handles from `gh pr view -c` (not display names).
 
+**Required GitHub status checks (when branch protection is enabled):**
+
+| Check name | Workflow | Purpose |
+|------------|----------|---------|
+| `bot-presence-gate` | `pr-bot-presence-gate.yml` | Waits until required bots (gemini, codex, sourcery) post + CI settled |
+| `bot-feedback-gate` | `pr-bot-feedback-check.yml` | Review thread closure (implement / defer / decline) |
+
+Apply protection: `npm run branch-protection:apply` (needs admin token). If API fails, see manual steps printed by that script or **Branch protection** below.
+
+Do **not** squash merge until **both** required checks are green on GitHub — local `npm run wait-for-bots` alone is not sufficient when branch protection is active.
+
 ### 5. Bot wait trigger (dynamic)
 
 ```sh
@@ -87,13 +98,20 @@ Reply in-thread on GitHub for every substantive thread: `implemented in <sha>` /
 npm run pr:bot-feedback-check -- --pr <n>
 ```
 
-Exit **1** when the PR has unresolved review threads or bot threads without an owner closure reply. `npm run ship:closeout:strict` runs this check when an open PR exists for the current branch. CI job **`pr-bot-feedback-check`** runs the same script on every PR event.
+Exit **1** when the PR has unresolved review threads or bot threads without an owner closure reply. `npm run ship:closeout:strict` runs this check when an open PR exists for the current branch. CI job **`bot-feedback-gate`** runs the same script on every PR event (with `--skip-bot-presence` because **`bot-presence-gate`** covers bot wait separately).
 
 Do **not** `gh pr merge --squash` while the gate fails. If a PR merged early, run `npm run pr:bot-feedback-audit`, post in-thread replies on the merged PR, and open a scoped post-merge fix PR when code changes were skipped.
 
+**Close without merge:** GitHub branch protection cannot block the "Close pull request" button. Agents must **not** close a PR without merge unless the user waives in writing. `npm run agent:auditor` fails on recently closed-unmerged PRs that still have open bot threads.
+
 ### 7. Merge
 
-`gh pr merge --squash` — only after steps 5–6 **and** `npm run pr:bot-feedback-check -- --pr <n>` exit **0**. Do NOT enable auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies.
+`gh pr merge --squash` — only after steps 5–6 **and**:
+
+- GitHub required checks **`bot-presence-gate`** and **`bot-feedback-gate`** are green (when branch protection is enabled), **and**
+- `npm run pr:bot-feedback-check -- --pr <n>` exit **0** locally (sanity check).
+
+Do NOT enable auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies.
 
 ### 8. Local server / assets confirmed
 
@@ -157,3 +175,27 @@ Only an explicit written waiver for that specific PR waives bot closeout for tha
 ## Exception
 
 `main` hotfix (user must explicitly request): push directly to `main`; still do steps **8–9** (local server + `verify:local`).
+
+---
+
+## Branch protection (GitHub)
+
+Enforce merge gates on `main` so squash merge is blocked until bots respond and threads are closed.
+
+```sh
+npm run branch-protection:apply
+```
+
+Required status checks: **`bot-presence-gate`**, **`bot-feedback-gate`**. Also enables **`required_conversation_resolution`**.
+
+If the API returns 403/404 (token lacks admin), apply manually:
+
+1. Repo **Settings → Branches → Add branch protection rule**
+2. Branch name pattern: `main`
+3. **Require a pull request before merging** — ON (0 approvals OK unless you want human review)
+4. **Require status checks to pass** — ON; **Require branches to be up to date** — ON
+5. Required checks: `bot-presence-gate`, `bot-feedback-gate`
+6. **Require conversation resolution before merging** — ON
+7. **Do not allow bypassing** (recommended)
+
+GitHub cannot block **Close pull request**; agents follow WORKFLOW.md step 6 close-without-merge policy and `npm run agent:auditor` catches violations.

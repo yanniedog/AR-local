@@ -1,31 +1,32 @@
-name: pr-bot-feedback-check
+name: pr-bot-presence-gate
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
-    types: [submitted, edited, dismissed]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
+    types: [submitted]
   issue_comment:
-    types: [created, edited]
+    types: [created]
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
-  bot-feedback-gate:
+  bot-presence-gate:
     if: github.event.pull_request != null || (github.event.issue != null && github.event.issue.pull_request)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Review thread closure gate
+      - name: Required bot wait gate
         env:
           GH_TOKEN: ${{ github.token }}
+          AR_BOT_WAIT_REQUIRED: gemini,codex,sourcery
+          BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check
         run: |
           PR="${{ github.event.pull_request.number || github.event.issue.number }}"
-          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
+          npm run wait-for-bots -- --watch --pr "$PR"

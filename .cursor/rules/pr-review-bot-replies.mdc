@@ -9,4 +9,4 @@ Same standard as Australian Rates: **`WORKFLOW.md`** step 6.
 
 **Summary:** for every substantive thread from automated reviewers — reply in-thread before merge: implemented (+ SHA) / deferred (reason) / declined (reason). Do not merge with unanswered threads. Green CI alone does not replace thread closure.
 
-**Gate:** `npm run pr:bot-feedback-check -- --pr <n>` must exit **0** before squash merge. `ship:closeout:strict` invokes it for the open PR on the current branch. CI: **`pr-bot-feedback-check`** workflow. Post-merge: `npm run pr:bot-feedback-audit` then in-thread replies + fix PR if needed.
+**Gate:** `npm run pr:bot-feedback-check -- --pr <n>` must exit **0** before squash merge. `ship:closeout:strict` invokes it for the open PR on the current branch. CI jobs **`bot-presence-gate`** and **`pr-bot-feedback-check`** must be green when branch protection is enabled. Post-merge: `npm run pr:bot-feedback-audit` then in-thread replies + fix PR if needed.
