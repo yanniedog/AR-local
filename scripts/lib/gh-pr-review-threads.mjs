@@ -117,6 +117,16 @@ export function fetchPullRequestThreads(owner, name, prNumber) {
   return { ...prMeta, threads };
 }
 
+const BOT_SELF_ADDRESSED_RE = /\baddressed in [0-9a-f]{7,40}\b/i;
+
+function threadHasBotSelfAddressed(comments) {
+  for (const c of comments) {
+    if (!isBotLogin(c.author?.login || '')) continue;
+    if (BOT_SELF_ADDRESSED_RE.test(c.body || '')) return true;
+  }
+  return false;
+}
+
 function threadHasOwnerClosure(comments, botAt) {
   for (const c of comments.slice(1)) {
     const login = c.author.login;
@@ -144,7 +154,7 @@ export function classifyThreads(threads, opts = {}) {
     const botAt = new Date(first.createdAt).getTime();
     const hasClosure =
       starterIsBot && !isLowSignalBotThread(comments)
-        ? threadHasOwnerClosure(comments, botAt)
+        ? threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments)
         : false;
 
     if (!t.isResolved) {

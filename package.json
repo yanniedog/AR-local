@@ -5,6 +5,7 @@
   "scripts": {
     "wait-for-bots": "node wait_for_bots.mjs",
     "pr:bot-feedback-check": "node scripts/pr-bot-feedback-check.mjs",
+    "pr:gates:check": "node scripts/pr-gates-check.mjs",
     "pr:bot-feedback-audit": "node scripts/pr-bot-feedback-check.mjs --audit-merged --limit 20",
     "close-loop:check": "node scripts/close-loop-check.mjs",
     "ship:closeout:strict": "python ship_closeout_strict.py",
