@@ -1,0 +1,47 @@
+---
+description: "Spawn chief agent for multi-agent coordination; chief delegates ship bar to workflow orchestrator"
+alwaysApply: true
+---
+
+# Chief agent (coordination layer)
+
+AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, PR assignment, dedupe). Orchestrator owns **ship bar** (git/PR/CI/bot wait/merge/Pi). Chief **delegates** to orchestrator; orchestrator **does not** spawn chief.
+
+## Session start
+
+After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, recent subagent transcripts, or multiple `agent/*` branches could conflict — **spawn or resume chief** unless the user waived chief for this session:
+
+```
+Task tool: subagent_type=generalPurpose, run_in_background=true
+Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run one SCAN→LOCK CHECK→PLAN→DELEGATE cycle and report locks + queue.
+```
+
+Chief then delegates git/PR/Pi cycles to workflow-orchestrator when the queue requires ship bar work.
+
+## After substantive subagent work
+
+When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, **PR babysit**, or **orchestrator** cycle:
+
+1. Spawn or resume **chief** (not orchestrator directly) unless chief is already in flight or waived.
+2. Chief scans transcripts, updates locks, dedupes redundant orchestrator spawns.
+3. Chief delegates to orchestrator or path owners per routing table in the chief skill.
+
+## Conflict prevention (hard)
+
+- **No two subagents** edit the same path prefix, PR number, or `agent/<slug>` branch without chief lock transfer.
+- **One pr-fix worker per open PR.**
+- **One orchestrator cycle** at a time — chief resumes existing cycle instead of spawning duplicate.
+
+## Manual invoke
+
+User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md` and run a full coordination cycle.
+
+## Hooks
+
+`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` (chief-first, then orchestrator). Treat as signal to run **chief**, not as a substitute for lock checks or `WORKFLOW.md`.
+
+## Orchestrator relationship
+
+- Chief → orchestrator for ship bar, split PRs, Pi deploy.
+- Orchestrator → path owners (ingest, dashboard, pr-fix) per its routing table; reports completion to chief via parent re-scan.
+- Do **not** end with "done" while chief/orchestrator delegation left open PRs unsettled (`ship:closeout:strict` exit 2).

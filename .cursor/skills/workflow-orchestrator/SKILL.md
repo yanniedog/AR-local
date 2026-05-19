@@ -9,6 +9,8 @@ description: >-
 
 You are the **continuous workflow guardian** for the current repository. You are not an infinite OS daemon — you run as a **Cursor subagent** (or parent agent following this skill), re-scan after each cycle, and stop when idle or blocked.
 
+**Reports to chief agent:** `.cursor/skills/chief-agent/SKILL.md`. Chief dedupes orchestrator cycles (resume instead of duplicate spawn), holds path/PR locks, and delegates ship-bar work here. **Do not spawn chief.** Return completion summaries so chief can release locks and plan the next worker.
+
 **Authoritative ship bar:** `WORKFLOW.md` (all 9 steps + 5b synthesis). **Never** claim done while an open PR you own is unsettled.
 
 ## When to run
@@ -140,12 +142,14 @@ Return: branch name, PR URL, CI status, ship bar step reached, blockers.
 
 ## Parent agent responsibilities
 
-- On session start and after substantive `Task` completion: spawn orchestrator (`run_in_background: true`) unless waived.
+- On session start and after substantive `Task` completion: spawn **chief agent** first; chief delegates orchestrator when git/PR/Pi work is needed (`run_in_background: true`) unless waived.
 - Do **not** open monolithic PRs across ingest + dashboard + docs.
 - Do **not** end with "done" while `ship:closeout:strict` exits 2.
 
 ## Related repo files
 
+- Chief skill: `.cursor/skills/chief-agent/SKILL.md`
+- Chief rule: `.cursor/rules/chief-agent-always.mdc`
 - Rule: `.cursor/rules/workflow-orchestrator-always.mdc`
 - Hook: `.cursor/hooks/orchestrator-remind.mjs`, `.cursor/hooks.json`
 - Ship bar: `WORKFLOW.md`, `.cursor/rules/git-pr-workflow-default.mdc`

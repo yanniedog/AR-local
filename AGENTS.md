@@ -62,19 +62,32 @@ Dense tables, compact controls, terse labels. Avoid marketing copy and narrative
 - Prefer focused changes; match existing style in Python and browser scripts.
 - Keep **`cdr_dashboard_server.py`** routing explicit and safe (path traversal checks preserved).
 
+## Chief agent
+
+Session **coordination authority** — path locks, PR assignment, dedupe redundant spawns, supersede stale workers when the user changes direction. Sits **above** the workflow orchestrator.
+
+| Piece | Location |
+|-------|----------|
+| Skill (locks, routing, handoff) | [`.cursor/skills/chief-agent/SKILL.md`](.cursor/skills/chief-agent/SKILL.md) |
+| Always-on rule (spawn chief first) | [`.cursor/rules/chief-agent-always.mdc`](.cursor/rules/chief-agent-always.mdc) |
+
+**Manual invoke:** say **"run chief agent"** — agent reads the skill and runs SCAN → LOCK CHECK → PLAN → DELEGATE.
+
+**Relationship to orchestrator:** chief owns multi-agent coordination; orchestrator owns ship bar (git/PR/CI/bot wait/merge/Pi). Parent agents spawn **chief first**; chief delegates git/PR work to orchestrator. Orchestrator does not spawn chief.
+
 ## Continuous workflow orchestrator
 
-Closest durable equivalent to an always-on ship-bar agent (Cursor subagents are **not** OS daemons):
+Ship-bar guardian (reports to chief agent). Cursor subagents are **not** OS daemons.
 
 | Piece | Location |
 |-------|----------|
 | Skill (scan, route, split PRs, loop) | [`.cursor/skills/workflow-orchestrator/SKILL.md`](.cursor/skills/workflow-orchestrator/SKILL.md) |
-| Always-on rule (spawn after substantive work) | [`.cursor/rules/workflow-orchestrator-always.mdc`](.cursor/rules/workflow-orchestrator-always.mdc) |
-| Hook reminder (dirty tree or open PRs) | [`.cursor/hooks/orchestrator-remind.mjs`](.cursor/hooks/orchestrator-remind.mjs) |
+| Always-on rule (chief delegates here) | [`.cursor/rules/workflow-orchestrator-always.mdc`](.cursor/rules/workflow-orchestrator-always.mdc) |
+| Hook reminder (chief-first, then orchestrator) | [`.cursor/hooks/orchestrator-remind.mjs`](.cursor/hooks/orchestrator-remind.mjs) |
 
-**Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
+**Manual invoke:** say **"run workflow orchestrator"** — usually via chief delegation; agent reads the skill and runs SCAN → PLAN → DELEGATE.
 
-**Policy:** one logical task → one branch → one PR (no monolithic ingest + dashboard + docs bundles). Orchestrator re-scans after each subagent returns and re-delegates to the path owner (ingest, dashboard, babysit/ship-bar, docs, Pi).
+**Policy:** one logical task → one branch → one PR (no monolithic ingest + dashboard + docs bundles). Chief prevents path/PR conflicts; orchestrator executes split and ship bar.
 
 ## Debugging
 
