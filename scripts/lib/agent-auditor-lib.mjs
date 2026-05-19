@@ -481,7 +481,7 @@ export function runAudit(opts) {
           const { owner, name } = repoSlug();
           for (const row of closedUnmerged.slice(0, 5)) {
             const pr = fetchPullRequestThreads(owner, name, row.number);
-            const violations = classifyThreads(pr.threads);
+            const violations = classifyThreads(pr.threads, { mergedAudit: true });
             if (violations.length) {
               add(
                 'open_loops',
