@@ -89,12 +89,12 @@
 
   function historyRowsFor(rows, state) {
     if (!state || !state.bankHistoryIndex) return [];
-    const seenKeys = {};
+    const seenKeys = new Set();
     const out = [];
     rows.forEach((row) => {
       const key = historyIndexKey(row);
-      if (!key || key === '||' || seenKeys[key]) return;
-      seenKeys[key] = true;
+      if (!key || key === '||' || seenKeys.has(key)) return;
+      seenKeys.add(key);
       (state.bankHistoryIndex[key] || []).forEach((historyRow) => out.push(historyRow));
     });
     return out;
@@ -121,7 +121,8 @@
     if (latest == null || previous == null) return null;
     const deltaBp = Math.round((latest - previous) * 10000);
     const deltaText = deltaBp > 0 ? '+' + deltaBp + 'bp' : deltaBp + 'bp';
-    const tone = deltaBp > 0 ? 'up' : deltaBp < 0 ? 'down' : 'flat';
+    const favorable = state.descending ? deltaBp > 0 : deltaBp < 0;
+    const tone = deltaBp === 0 ? 'flat' : favorable ? 'down' : 'up';
     return {
       text: `${pct(previous)} \u2192 ${pct(latest)} (${deltaText})`,
       tone,

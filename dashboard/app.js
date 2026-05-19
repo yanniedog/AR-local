@@ -278,8 +278,7 @@
     const next = String(dateYmd || '').slice(0, 10);
     if (state.chartHoverDate === next) return;
     state.chartHoverDate = next;
-    refreshHierarchyPanel();
-    renderSelectedLogos();
+    refreshProviderHighlightUi();
   }
 
   function visibleSliceRows() {
@@ -307,20 +306,26 @@
     return keys.size ? keys : null;
   }
 
-  function isProviderDimmed(provider) {
-    const active = relevantProviderKeys();
-    if (!active) return false;
+  function isProviderDimmed(provider, activeProviders) {
+    if (!activeProviders) return false;
     const keys = providerMatchKeys(provider);
     for (const key of keys) {
-      if (active.has(key)) return false;
+      if (activeProviders.has(key)) return false;
     }
     return true;
   }
 
-  function refreshHierarchyPanel() {
+  function refreshProviderHighlightUi(activeProviders) {
+    const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
+    refreshHierarchyPanel(active);
+    renderSelectedLogos(active);
+  }
+
+  function refreshHierarchyPanel(activeProviders) {
     if (!$('hierarchy') || $('hierarchy').hidden) return;
     const rows = applyFocusFilter(normalizeRows(rateRows()));
-    state.isProviderDimmed = isProviderDimmed;
+    const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
+    state.isProviderDimmed = (provider) => isProviderDimmed(provider, active);
     window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
       onFocusChange: (productKeys) => {
         state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
@@ -404,7 +409,7 @@
     });
   }
 
-  function renderSelectedLogos() {
+  function renderSelectedLogos(activeProviders) {
     const wrap = $('selectedLogos');
     clear(wrap);
     if (!window.LocalCdrBrand || !state.banks || !state.banks.rates) { wrap.hidden = true; return; }
@@ -420,7 +425,7 @@
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
     const focus = String(state.focusProvider || '').toLowerCase();
     const hover = String(state.hoverProvider || '').toLowerCase();
-    const activeProviders = relevantProviderKeys();
+    const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
     providers.forEach((provider) => {
       const btn = child(rail, 'button', 'local-provider-logo-btn');
       btn.type = 'button';
@@ -429,10 +434,10 @@
       const lc = provider.toLowerCase();
       if (focus && lc === focus) btn.classList.add('is-selected');
       if (hover && lc === hover) btn.classList.add('is-hover');
-      if (activeProviders) {
+      if (active) {
         const keys = providerMatchKeys(provider);
         let hit = false;
-        keys.forEach((key) => { if (activeProviders.has(key)) hit = true; });
+        keys.forEach((key) => { if (active.has(key)) hit = true; });
         if (!hit) btn.classList.add('is-dim');
       }
       const badge = window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
@@ -489,8 +494,8 @@
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
       $('hierarchy').hidden = false;
-      // Callback only updates state; the chart redraw is driven by the caller.
-      state.isProviderDimmed = isProviderDimmed;
+      const activeProviders = relevantProviderKeys();
+      state.isProviderDimmed = (provider) => isProviderDimmed(provider, activeProviders);
       window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
         onFocusChange: (productKeys) => {
           state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
@@ -535,7 +540,7 @@
     $('chart-status').textContent = emptyMsg;
     updateHero([], null);
     renderSectionCards();
-    renderSelectedLogos();
+    renderSelectedLogos(relevantProviderKeys());
   }
 
   function render() {
@@ -551,7 +556,7 @@
     // onFocusChange callback (state only — no redraw inside the callback).
     renderTable(focused);
     drawChartFromState(chartSliceRows(allRows));
-    renderSelectedLogos();
+    renderSelectedLogos(relevantProviderKeys());
   }
 
   async function loadSection(section) {
@@ -625,14 +630,14 @@
       state.hoverProvider = next;
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       btn.classList.add('is-hover');
-      renderSelectedLogos();
+      refreshProviderHighlightUi();
       redrawChart();
     });
     logoWrap.addEventListener('mouseleave', () => {
       if (!state.hoverProvider) return;
       state.hoverProvider = '';
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
-      renderSelectedLogos();
+      refreshProviderHighlightUi();
       redrawChart();
     });
 
@@ -658,16 +663,14 @@
       const provider = node.getAttribute('data-local-hierarchy-provider') || '';
       if (provider && provider !== state.hoverProvider) {
         state.hoverProvider = provider;
-        renderSelectedLogos();
-        refreshHierarchyPanel();
+        refreshProviderHighlightUi();
         redrawChart();
       }
     });
     $('hierarchy').addEventListener('mouseleave', () => {
       if (state.hoverProvider) {
         state.hoverProvider = '';
-        renderSelectedLogos();
-        refreshHierarchyPanel();
+        refreshProviderHighlightUi();
         redrawChart();
       }
     });
