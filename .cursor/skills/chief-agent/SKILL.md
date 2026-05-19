@@ -33,7 +33,8 @@ See `.cursor/skills/workflow-orchestrator/SKILL.md` — orchestrator **must not 
 - **After any substantive subagent completes** — scan, release locks, decide next spawn or resume.
 - **Before spawning any worker** — run pre-delegate checklist; dedupe duplicate orchestrator cycles.
 - **User corrects direction** (e.g. Energy vs Economic Data) — supersede stale workers.
-- **Hook follow-up** from `.cursor/hooks/orchestrator-remind.mjs` (chief-first message).
+- **Hook follow-up** from `.cursor/hooks/auditor-watch.mjs` then `.cursor/hooks/orchestrator-remind.mjs` (auditor → chief → orchestrator).
+- **Agent auditor fail** (`npm run agent:auditor` exit **2**) — remediate in the **same cycle** before unrelated spawns.
 - Manual: user says **"run chief agent"** or **"chief agent"**.
 
 Unless the user **explicitly waives** chief for this session, parent agents spawn chief first (`Task` `generalPurpose`, `run_in_background: true`), prompt = this skill + scan snapshot. Chief then delegates git/PR work to orchestrator when needed.
@@ -165,6 +166,7 @@ Chief **assigns** work and locks; workers **execute**. Delegate ship-bar steps t
 | Path → owner (ingest, dashboard, docs, meta plumbing) | **orchestrator path routing** | Use orchestrator skill routing table; chief names owner in prompt |
 | Open PR #N review / CI / bots | **pr-fix** (one per PR) | `generalPurpose` + babysit skill; never two babysit workers on same PR |
 | Status, exploration, read-only reports | **readonly explore** | `explore`; no file edits |
+| Dashboard UI verification (`dashboard/**`, hierarchy, console) | **deep-browser-explore** | Read [`.cursor/skills/deep-browser-explore/SKILL.md`](../deep-browser-explore/SKILL.md); after `verify:local` on same base URL |
 
 **Orchestrator does not spawn chief.** Chief may spawn orchestrator. Orchestrator reports to chief for dedupe and lock awareness. See `.cursor/skills/workflow-orchestrator/SKILL.md` — orchestrator owns git/PR/Pi **only when chief delegates**.
 
