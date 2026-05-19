@@ -8,8 +8,7 @@ Type=oneshot
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
 Environment=AR_PI_BASE_URL=http://127.0.0.1:8808/
-ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_deploy_verify.py --verify
-# On drift, run deploy manually or enable timer OnFailure unit — see install notes in docs/UNIVERSAL_ROADMAP.md
+ExecStart={{AR_LOCAL_REPO}}/deploy/pi/ar-local-deploy-watchdog.sh
 
 [Install]
 WantedBy=multi-user.target
