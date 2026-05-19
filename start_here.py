@@ -69,15 +69,14 @@ def resolve_python_argv() -> List[str]:
 
 
 def latest_run_date() -> Optional[str]:
+    dates: List[str] = []
+    if RUNS_DIR.is_dir():
+        for p in RUNS_DIR.iterdir():
+            if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.name):
+                dates.append(p.name)
     exports = latest_exports_root(RUNS_DIR)
     if exports is not None:
-        return exports.parent.name
-    if not RUNS_DIR.is_dir():
-        return None
-    dates: List[str] = []
-    for p in RUNS_DIR.iterdir():
-        if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.name):
-            dates.append(p.name)
+        dates.append(exports.parent.name)
     if not dates:
         return None
     return sorted(dates)[-1]

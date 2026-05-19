@@ -75,9 +75,21 @@ After `wait-for-bots` exits 0, and before replying to any thread:
 
 Reply in-thread on GitHub for every substantive thread: `implemented in <sha>` / `deferred — <reason>` / `declined — <reason>`. If inline replies unavailable: `## Feedback responses` section in PR body. Do NOT merge with unanswered threads.
 
+**Substantive thread:** an inline or review comment that proposes a code/doc change, reports a likely bug, or asks a blocking question. Exclude auto-generated summaries, reviewer guides, and low-signal one-liners (under ~40 characters, emoji-only, or “Useful? React with …” nudges). When in doubt, reply and resolve rather than skip.
+
+**Automated gate (required before merge):**
+
+```sh
+npm run pr:bot-feedback-check -- --pr <n>
+```
+
+Exit **1** when the PR has unresolved review threads or bot threads without an owner closure reply. `npm run ship:closeout:strict` runs this check when an open PR exists for the current branch. CI job **`pr-bot-feedback-check`** runs the same script on every PR event.
+
+Do **not** `gh pr merge --squash` while the gate fails. If a PR merged early, run `npm run pr:bot-feedback-audit`, post in-thread replies on the merged PR, and open a scoped post-merge fix PR when code changes were skipped.
+
 ### 7. Merge
 
-`gh pr merge --squash` — only after steps 5–6. Do NOT enable auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies.
+`gh pr merge --squash` — only after steps 5–6 **and** `npm run pr:bot-feedback-check -- --pr <n>` exit **0**. Do NOT enable auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies.
 
 ### 8. Local server / assets confirmed
 
@@ -115,7 +127,7 @@ If exit non-zero: fix, restart server if needed, re-run until **0**.
 npm run ship:closeout:strict && npm run wait-for-bots
 ```
 
-- `ship:closeout:strict` exit **2** → open PR still exists for this branch; continue steps 5–9.
+- `ship:closeout:strict` exit **2** → open PR still exists for this branch, **or** `pr:bot-feedback-check` failed; continue steps 5–9.
 - `wait-for-bots` exit **2** → bots/CI not settled; sleep and re-run (or use `--watch`).
 
 ---
