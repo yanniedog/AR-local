@@ -41,7 +41,7 @@ Run from repo root:
 | Open PRs | `gh pr list --state open` | Ship-bar backlog per PR |
 | PR detail | `gh pr view <n> --comments`, checks | CI, bot wait, threads |
 | Closeout | `npm run ship:closeout:strict` | Exit 2 → open PR still exists |
-| Bot wait | `npm run wait-for-bots` | Exit 2 → wait before merge |
+| Bot wait | `npm run wait-for-bots` | Exit 2 → bots/CI not settled; loop until 0 (or `--watch`) |
 | Transcripts | `agent-transcripts/**/*.jsonl` (mtime sort, last ~2h) | Which subagent finished; re-delegate to same owner |
 | Remote branches | `git branch -r --list 'origin/agent/*'` | Stale vs active topic branches |
 
@@ -85,7 +85,7 @@ Each PR gets the **full** ship bar:
 2. Commit + push on topic branch only
 3. `gh pr create --base main`
 4. CI green
-5. `npm run wait-for-bots` (and after bot tags)
+5. `npm run wait-for-bots` until exit 0 (after new PR; `--bot-tag` after @mentioning bots)
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure
 7. `gh pr merge --squash`
@@ -110,6 +110,17 @@ SCAN → PLAN → DELEGATE → (subagent runs) → SCAN → …
 
 ```sh
 npm run ship:closeout:strict && npm run wait-for-bots
+```
+
+**Bot wait retry loop** (do not sleep a fixed 7 minutes):
+
+```sh
+while [ "$(npm run wait-for-bots --silent; echo $?)" -ne 0 ]; do
+  code=$?
+  [ "$code" -eq 1 ] && break
+  sleep 45
+done
+# or: npm run wait-for-bots -- --watch
 ```
 
 ## Bootstrap state (template)

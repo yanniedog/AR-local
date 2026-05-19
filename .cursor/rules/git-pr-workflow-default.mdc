@@ -17,7 +17,7 @@ Every repo change follows: `agent/<slug>` branch → PR to `main` → CI → wai
 2. Commit and push on the topic branch only.
 3. One PR to `main`; fix-ups stay on the same branch.
 4. CI green (`gh pr checks <n> --watch`).
-5. **`npm run wait-for-bots`** after creating a PR; exit 2 means wait. Same 7-minute rule after tagging bots. Code pushes alone do not restart the wait.
+5. **`npm run wait-for-bots`** after creating a PR; exit 2 means bots/CI not settled — loop until exit 0 (or `--watch`). After tagging bots: `npm run wait-for-bots -- --bot-tag` then loop. Code pushes alone do not restart the wait.
 5b. Synthesize all threads → post `## Feedback plan` → then one push → in-thread replies.
 6. Thread closure on every substantive thread before merge.
 7. Merge (`gh pr merge --squash`) only after 5–6.

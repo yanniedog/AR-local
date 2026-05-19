@@ -15,7 +15,7 @@ npm run ship:closeout:strict && npm run wait-for-bots
 ```
 
 - Exit **2** from `ship:closeout:strict` → open PR still exists; continue `WORKFLOW.md` steps 5–9.
-- Exit **2** from `wait-for-bots` → wait for the minimum bot window, then re-sweep.
+- Exit **2** from `wait-for-bots` → bots/CI not settled; re-run until exit **0** (or use `--watch`).
 
 Cursor rules live under **`.cursor/rules/`** (mirrors AustralianRates rule names and intent; Cloudflare and production-URL steps are replaced with local equivalents).
 
