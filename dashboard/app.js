@@ -172,6 +172,16 @@
     });
   }
 
+  /** All run dates retained by /api/banks/history (not limited to the current chart slice). */
+  function retainedRunDates() {
+    const raw = state.bankHistory && state.bankHistory.run_dates;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((date) => String(date || ''))
+      .filter((date) => parseYmd(date) != null)
+      .sort();
+  }
+
   async function loadBankHistory() {
     if (state.bankHistory) return;
     const data = await getJson(`/api/banks/history?date=${state.manifest.run_date}`);
@@ -213,14 +223,14 @@
 
   function buildAggregateRibbon(historyRows) {
     const byProvider = {};
-    const allDates = new Set();
+    const sliceDates = new Set();
     const byDate = {};
     historyRows.forEach((row) => {
       const date = String(row.run_date || '');
       const provider = row.provider || 'Unknown';
       const rate = Number(row.rate);
       if (!date || !Number.isFinite(rate) || rate <= 0) return;
-      allDates.add(date);
+      sliceDates.add(date);
       if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {} };
       const p = byProvider[provider];
       const existing = p.byDate[date];
@@ -232,7 +242,10 @@
         ? { min: Math.min(agg.min, rate), max: Math.max(agg.max, rate), sum: agg.sum + rate, count: agg.count + 1 }
         : { min: rate, max: rate, sum: rate, count: 1 };
     });
-    const dates = historyDatesInWindow(Array.from(allDates));
+    const retained = retainedRunDates();
+    const sliceDatesSorted = Array.from(sliceDates).sort();
+    const timelineSource = retained.length ? retained : sliceDatesSorted;
+    const dates = historyDatesInWindow(timelineSource);
     const points = dates.map((date) => {
       const agg = byDate[date];
       if (!agg) return { date, min: null, max: null, mean: null, count: 0 };
@@ -252,7 +265,12 @@
       });
       return { label: p.label, byDate: visible };
     });
-    return { dates, points, providers, allDates: Array.from(allDates).sort() };
+    return {
+      dates,
+      points,
+      providers,
+      allDates: retained.length ? retained : sliceDatesSorted,
+    };
   }
 
   function chartItems(rows) {
@@ -391,7 +409,9 @@
     const first = items.dates[0];
     const last = items.dates[items.dates.length - 1];
     const label = first === last ? first : `${first} through ${last}`;
-    status.textContent = `Visible window: ${label}. ${num(items.allDates.length)} retained run date${items.allDates.length === 1 ? '' : 's'}.`;
+    const inRange = items.dates.length;
+    const retained = items.allDates.length;
+    status.textContent = `Visible window: ${label}. ${num(inRange)} in range, ${num(retained)} retained.`;
   }
 
   function renderSectionCards() {
