@@ -353,12 +353,12 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr .chart-workspace {
-  min-height: 520px;
+  min-height: 0;
 }
 
 .ar-local-cdr .terminal-chart-surface {
   min-width: 0;
-  min-height: 520px;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -373,7 +373,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 .ar-local-cdr #chart {
   width: 100%;
   height: 100%;
-  min-height: 520px;
+  min-height: 0;
 }
 
 .ar-local-cdr .local-history-window {
@@ -418,13 +418,13 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 .ar-local-cdr #hierarchy {
   min-height: 0;
   height: 100%;
-  padding: 10px;
+  padding: 0;
 }
 
 .ar-local-cdr #hierarchy .ar-report-underchart-tree {
   display: flex;
   height: 100%;
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
   border: 1px solid var(--ar-line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--ar-surface-2) 76%, var(--ar-surface));
@@ -598,7 +598,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr .chart-workspace,
   .ar-local-cdr .terminal-chart-surface,
   .ar-local-cdr #chart {
-    min-height: 360px;
+    min-height: 0;
   }
 
   .ar-local-cdr .chart-side-panel,
