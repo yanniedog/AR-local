@@ -11,11 +11,12 @@
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import {
   evaluateGates,
+  normalizePositiveNumber,
   parseGateArgs,
   resolvePrNumber,
 } from './lib/pr-gates-lib.mjs';
 
-const POLL_SEC = Number(process.env.PR_GATES_POLL_SEC || 45);
+const POLL_SEC = normalizePositiveNumber(process.env.PR_GATES_POLL_SEC, 45, 600);
 
 function printReport(result, { quiet = false } = {}) {
   const failed = result.gates.filter((g) => !g.pass);
@@ -44,6 +45,10 @@ function printReport(result, { quiet = false } = {}) {
 
 async function main() {
   const args = parseGateArgs(process.argv);
+  if (args.prError) {
+    console.error(`pr:gates:check: ${args.prError}`);
+    process.exit(1);
+  }
   if (args.help) {
     console.log(`Usage: npm run pr:gates:check -- [--pr N] [--watch] [--json] [--quiet] [--skip-feedback-plan] [--timeout-min M]
 

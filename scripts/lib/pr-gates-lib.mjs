@@ -13,6 +13,18 @@ export const BOT_GATE_CHECK_NAMES = ['bot-presence-gate', 'bot-feedback-gate'];
 
 const FEEDBACK_PLAN_RE = /##\s*feedback\s+plan\b/i;
 
+const DEFAULT_TIMEOUT_MIN = 35;
+const DEFAULT_POLL_SEC = 45;
+const MAX_TIMEOUT_MIN = 180;
+const MAX_POLL_SEC = 600;
+
+/** Positive finite number or fallback (avoids NaN watch loops). */
+export function normalizePositiveNumber(value, fallback, max = Infinity) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(n, max);
+}
+
 export function parseGateArgs(argv) {
   const out = {
     pr: null,
@@ -20,7 +32,11 @@ export function parseGateArgs(argv) {
     json: false,
     quiet: false,
     skipFeedbackPlan: false,
-    timeoutMin: Number(process.env.PR_GATES_WATCH_MAX_MIN || 35),
+    timeoutMin: normalizePositiveNumber(
+      process.env.PR_GATES_WATCH_MAX_MIN,
+      DEFAULT_TIMEOUT_MIN,
+      MAX_TIMEOUT_MIN,
+    ),
     help: false,
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -32,8 +48,24 @@ export function parseGateArgs(argv) {
     else if (a === '--skip-feedback-plan') out.skipFeedbackPlan = true;
     else if (a === '--pr' && argv[i + 1]) out.pr = Number(argv[++i]);
     else if (a.startsWith('--pr=')) out.pr = Number(a.slice(5));
-    else if (a === '--timeout-min' && argv[i + 1]) out.timeoutMin = Number(argv[++i]);
-    else if (a.startsWith('--timeout-min=')) out.timeoutMin = Number(a.slice('--timeout-min='.length));
+    else if (a === '--timeout-min' && argv[i + 1]) {
+      out.timeoutMin = normalizePositiveNumber(argv[++i], DEFAULT_TIMEOUT_MIN, MAX_TIMEOUT_MIN);
+    } else if (a.startsWith('--timeout-min=')) {
+      out.timeoutMin = normalizePositiveNumber(
+        a.slice('--timeout-min='.length),
+        DEFAULT_TIMEOUT_MIN,
+        MAX_TIMEOUT_MIN,
+      );
+    }
+  }
+  if (out.pr != null) {
+    const pr = Number(out.pr);
+    if (!Number.isInteger(pr) || pr <= 0) {
+      out.pr = null;
+      out.prError = 'invalid --pr (must be a positive integer)';
+    } else {
+      out.pr = pr;
+    }
   }
   return out;
 }
