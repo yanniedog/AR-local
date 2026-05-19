@@ -8,7 +8,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from cdr_clean_export import parse_banks_run, parse_energy_run, summary_counts, utc_now
+from ar_local_sectors import energy_dormant
+from cdr_clean_export import empty_energy_dataset, parse_banks_run, parse_energy_run, summary_counts, utc_now
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
@@ -374,6 +375,8 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
             "failures": banks["failures"],
         },
     )
+    if energy_dormant():
+        return
     write_workbook(
         out_dir / f"energy-{run_date}.xlsx",
         {
@@ -416,7 +419,8 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
         },
     }
     write_json(cache_dir / "banks.json", banks_cache)
-    write_json(cache_dir / "energy.json", energy_cache)
+    if not energy_dormant():
+        write_json(cache_dir / "energy.json", energy_cache)
     write_json(cache_dir / "manifest.json", manifest)
     write_json(out_dir / "dashboard-cache" / "latest.json", manifest)
 
@@ -431,9 +435,13 @@ def build_outputs(
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
     banks = parse_banks_run(run_root)
-    energy = parse_energy_run(run_root, energy_slim=energy_slim)
+    if energy_dormant():
+        energy = empty_energy_dataset(run_date)
+    else:
+        energy = parse_energy_run(run_root, energy_slim=energy_slim)
     write_json(out_dir / f"banks-{run_date}.json", banks)
-    write_json(out_dir / f"energy-{run_date}.json", energy)
+    if not energy_dormant():
+        write_json(out_dir / f"energy-{run_date}.json", energy)
     write_sector_workbooks(out_dir, run_date, banks, energy)
     rebuild_run_db(db_path or (out_dir / "local-cdr.sqlite"), run_date, banks, energy)
     write_dashboard_cache(out_dir, run_date, banks, energy)
