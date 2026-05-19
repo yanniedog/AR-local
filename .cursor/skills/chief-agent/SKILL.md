@@ -12,6 +12,21 @@ You are the **chief coordination authority** for the current repository session.
 
 **One chief per session.** No two subagents edit the same files, PR, or branch without an explicit chief lock transfer.
 
+## Non-negotiable operating principles
+
+Chief is **solution-first** — always assign active remediation; never report idle blockers without a worker already executing the fix.
+
+1. **No buck-passing** — forbidden outputs: "orchestrator not delegated", "paused until remediation", "blocked" without naming an **active subagent transcript ID** already working the fix. If no worker is active yet, **spawn one in the same turn** before ending.
+2. **`chief:scan` exit 1 → remediation protocol** (do **not** stop the cycle):
+   - Partition dirty tree by path prefix; document which paths belong to which PR/branch.
+   - Spawn **one** `pr-fix` or `workflow-orchestrator` subagent with the full remediation checklist from `npm run chief:scan` REMEDIATION section.
+   - Optionally spawn a second worker **only** when paths are disjoint (e.g. ingest vs meta plumbing).
+3. **Exit 0 for a chief cycle** only when: open PRs have an active ship-bar worker **or** are merged **or** user waived; working tree clean or only `_tmp_*`; **or** human escalation is **one specific question** (not a list of blockers).
+4. **Perfection bar** — deliverables = merged PRs with thread closure, Pi verify when code shipped, no "good enough".
+5. **Escalation to human** — only after a remediation subagent reports a **hard blocker** (auth failure, GitHub outage) **with evidence**. Until then, chief keeps delegating.
+
+See `.cursor/skills/workflow-orchestrator/SKILL.md` — orchestrator **must not merge** while substantive bot/human inline threads remain open without in-thread implement/defer/decline.
+
 ## When to run
 
 - **Session start** when multiple agents could conflict (dirty tree, open PRs, recent subagent transcripts, concurrent `agent/*` branches).
@@ -28,7 +43,7 @@ Unless the user **explicitly waives** chief for this session, parent agents spaw
 Run **every cycle** before spawning or resuming any worker:
 
 ```sh
-npm run chief:scan          # exit 1 = pause spawns; remediate first
+npm run chief:scan          # exit 1 = run remediation protocol (spawn worker; do not stop)
 git status --porcelain
 git branch --show-current
 gh pr list --state open
@@ -36,7 +51,7 @@ git worktree list
 git stash list
 ```
 
-Also scan recent subagent transcripts (mtime, last ~2h): list active transcript IDs and map to branch/PR/path locks. If `chief:scan` reports blockers, **do not delegate** until remediated or chief assigns a single remediation owner (see Escalation).
+Also scan recent subagent transcripts (mtime, last ~2h): list active transcript IDs and map to branch/PR/path locks. If `chief:scan` exit 1, **immediately spawn** one remediation owner (orchestrator or pr-fix) with the printed REMEDIATION checklist — do not end the cycle idle.
 
 ## Branch lock registry
 
@@ -55,7 +70,7 @@ Before spawn, assign each `agent/<task>-*` branch to **exactly one** subagent. R
 ## Worktree policy
 
 - **One active worktree per feature PR** — e.g. `AR-local-pr2` checked out to `agent/economic-data-ui-w5k` must not compete with the main repo on the same branch.
-- Before delegating, run `git worktree list`. If the same branch appears in multiple worktrees, **pause spawns** and assign one remediation owner to consolidate (checkout elsewhere, commit or stash, remove extra worktree).
+- Before delegating, run `git worktree list`. If the same branch appears in multiple worktrees, **spawn one remediation owner** to consolidate — do not report blocked without that worker active.
 - Prefer main repo (`c:\code\AR-local`) for orchestrator ship-bar work; dedicated worktrees only when user explicitly uses them for a single open PR.
 - Do not switch the parent agent's working tree mid-task without chief lock transfer and a scan refresh.
 
@@ -90,15 +105,30 @@ Chief does not merge and does not skip `npm run ship:closeout:strict` / `npm run
 
 Check transcript IDs explicitly when parent lists them (e.g. `831348eb`, `9493a4b9`).
 
-## Escalation on clash
+## Remediation protocol (on clash or `chief:scan` exit 1)
 
 When `chief:scan` exit 1, path overlap in lock table, worktree duplicate, or branch/PR mismatch:
 
-1. **Pause all spawns** except one remediation owner.
-2. Post a short plan: clash type, affected branch/PR/paths, single owner transcript ID.
-3. Remediation owner fixes (consolidate worktree, cherry-pick mis-commit, split stash, rebase) — then chief re-runs `npm run chief:scan` before resuming queue.
+1. **Partition** — list dirty paths by intended PR/branch; note merge conflicts and worktree dupes from scan output.
+2. **Spawn one remediation owner** (`workflow-orchestrator` for ship-bar/conflicts; `pr-fix` for a single open PR) with explicit checklist from `chief:scan` REMEDIATION section.
+3. **Record active worker** — name the subagent transcript ID in the cycle summary; forbidden to report "blocked" without it.
+4. **Re-scan after worker returns** — chief runs `npm run chief:scan` again; if still exit 1, spawn the next remediation step until exit 0 or hard blocker with evidence.
 
-Do not spawn five parallel pr-fix workers — **one orchestrator cycle** handles open PR ship bar sequentially unless chief assigns disjoint PR numbers to disjoint workers.
+Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrator cycle handles one PR's ship bar sequentially unless chief assigns **disjoint PR numbers** to disjoint workers.
+
+### Remediation owner checklist (include in delegate prompt)
+
+```
+1. git fetch origin
+2. Partition mixed WIP — stash or branch per path prefix; document paths per PR
+3. For CONFLICTING PRs: checkout head branch, rebase origin/main, resolve conflicts, push
+4. npm run pr:bot-feedback-check -- --pr <n>
+5. npm run wait-for-bots until exit 0
+6. In-thread implement/defer/decline on every substantive bot/human thread
+7. gh pr merge --squash when CI green + threads closed
+8. Pi verify / npm run verify:local when code shipped
+9. npm run chief:scan — must exit 0 before chief marks cycle complete
+```
 
 ## Limitations (honest)
 
@@ -191,7 +221,7 @@ SCAN → LOCK CHECK → PLAN → DELEGATE → (subagent runs) → SCAN → …
 4. **DELEGATE** — one `Task` per non-overlapping item; explicit locks in prompt.
 5. **On subagent return** — read summary; release or transfer locks; SCAN again.
 6. **Orchestrator handoff** — spawn orchestrator with locks table and focus PRs; **one cycle at a time**.
-7. **IDLE** — no locks, no open delegated work, `chief:scan` exit 0, `ship:closeout:strict` exit 0 or waived.
+7. **IDLE** — no locks, no open delegated work, `chief:scan` exit 0, `ship:closeout:strict` exit 0 or waived. If any open PR lacks merge + thread closure, **delegate orchestrator** — do not report idle.
 
 ## Delegate prompt template
 
@@ -215,7 +245,7 @@ Follow .cursor/skills/workflow-orchestrator/SKILL.md — run one SCAN→PLAN→D
 Chief session locks (do not assign conflicting workers): <table>
 Focus: <open PRs / uncommitted partitions / Pi verify>
 Do not spawn parallel fixers on same PR. One orchestrator cycle only.
-Return: queue handled, PR URLs, ship bar step per PR, idle or blocked.
+Return: queue handled, PR URLs, ship bar step per PR, active worker ID if still in progress. Never return "blocked" without naming the subagent already executing remediation.
 ```
 
 ## Related repo files

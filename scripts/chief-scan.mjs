@@ -113,6 +113,64 @@ function recentSubagentIds(projectSlug, withinMin = 120) {
   return ids.sort();
 }
 
+function printRemediation({
+  dirtyMain,
+  dirtyFiles,
+  pathClashes,
+  mergeConflicts,
+  worktreeDupes,
+  prHeadMismatch,
+  prs,
+  branch,
+}) {
+  console.log('\nREMEDIATION (chief must spawn orchestrator or pr-fix with this checklist):');
+  console.log('  Chief: spawn ONE workflow-orchestrator or pr-fix subagent now — do not end cycle idle.');
+
+  if (dirtyMain) {
+    console.log('\n  [dirty main]');
+    console.log('    git stash push -m "chief-partition" -- <paths>');
+    console.log('    git checkout -b agent/<topic>-<nonce> origin/main');
+  }
+
+  for (const n of mergeConflicts) {
+    const pr = prs.find((p) => p.number === n);
+    const head = pr?.headRefName || `agent/pr-${n}`;
+    console.log(`\n  [merge conflict PR #${n} ${head}]`);
+    console.log(`    git fetch origin && git checkout ${head}`);
+    console.log(`    git rebase origin/main`);
+    console.log(`    git push -u origin HEAD`);
+    console.log(`    npm run pr:bot-feedback-check -- --pr ${n}`);
+    console.log(`    npm run wait-for-bots`);
+    console.log(`    gh pr merge ${n} --squash`);
+  }
+
+  if (pathClashes.length) {
+    console.log('\n  [agent branch path overlap]');
+    console.log('    git status --porcelain   # partition dirty paths by PR');
+    for (const c of pathClashes.slice(0, 5)) {
+      console.log(`    clash: ${c.a} <> ${c.b} — ${c.files.slice(0, 3).join(', ')}`);
+    }
+  }
+
+  if (worktreeDupes.length) {
+    console.log('\n  [worktree duplicate]');
+    for (const d of worktreeDupes) {
+      console.log(`    consolidate ${d.branch}: ${d.paths.join(' | ')}`);
+    }
+  }
+
+  if (prHeadMismatch.length) {
+    console.log(`\n  [branch tip mismatch PR #${prHeadMismatch.join(', #')}]`);
+    console.log('    git push -u origin HEAD');
+  }
+
+  if (branch && branch.startsWith('agent/') && dirtyFiles.length) {
+    console.log(`\n  [dirty tree on ${branch}] — commit on topic branch or stash per partition`);
+  }
+
+  console.log('\n  After remediation: npm run chief:scan  # must exit 0');
+}
+
 function projectSlugFromRoot(root) {
   const norm = root.replace(/\\/g, '/').replace(/:/g, '-').replace(/^\/+/, '');
   return norm.toLowerCase();
@@ -243,6 +301,16 @@ function main() {
 
   if (blockers.length) {
     console.log(`\nBLOCKERS: ${blockers.join('; ')}`);
+    printRemediation({
+      dirtyMain,
+      dirtyFiles,
+      pathClashes,
+      mergeConflicts,
+      worktreeDupes,
+      prHeadMismatch,
+      prs,
+      branch,
+    });
     exitCode = 1;
   } else {
     console.log('\nOK: no chief blockers');
