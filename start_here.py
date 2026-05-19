@@ -1,4 +1,4 @@
-"""Cross-platform Start Here menu: daily ingest, dashboard, schedule, git update, DB summary."""
+﻿"""Cross-platform Start Here menu: daily ingest, dashboard, schedule, git update, DB summary."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from ar_local_launcher_constants import (
     SYSTEMD_UNIT_NAME,
     TASK_NAME,
 )
-from ar_local_pi_runtime import data_runs_root, data_state_root
+from ar_local_pi_runtime import data_runs_root, data_state_root, latest_exports_root
 from ar_local_platform import HostKind, host_kind, platform_label
 from ar_local_subprocess import run_checked
 
@@ -69,6 +69,9 @@ def resolve_python_argv() -> List[str]:
 
 
 def latest_run_date() -> Optional[str]:
+    exports = latest_exports_root(RUNS_DIR)
+    if exports is not None:
+        return exports.parent.name
     if not RUNS_DIR.is_dir():
         return None
     dates: List[str] = []

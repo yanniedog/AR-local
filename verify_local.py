@@ -1,12 +1,15 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """HTTP smoke checks for the local CDR dashboard (replaces verify:prod for this repo)."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import urllib.error
 import urllib.request
+
+from ar_local_pi_runtime import manifest_banks_rate_count
 
 
 def http_get(url: str, timeout: float = 30.0) -> int:
@@ -27,6 +30,11 @@ def main() -> int:
         "--base-url",
         default="http://127.0.0.1:8808/",
         help="Dashboard root URL (include trailing slash optional)",
+    )
+    parser.add_argument(
+        "--require-banks-rates",
+        action="store_true",
+        help="Fail unless /api/latest reports banks_counts.rates > 0.",
     )
     args = parser.parse_args()
     base = args.base_url.strip().rstrip("/") + "/"
@@ -55,6 +63,24 @@ def main() -> int:
         for url, code in failures:
             print(f"verify_local: {code} {url}", file=sys.stderr)
         return 1
+    if args.require_banks_rates:
+        latest_url = base + "api/latest"
+        try:
+            with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
+            return 1
+        rates = manifest_banks_rate_count(payload)
+        run_date = payload.get("run_date")
+        if rates <= 0:
+            print(
+                f"verify_local: /api/latest run_date={run_date!r} has banks_counts.rates={rates}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"verify_local: OK {base} (run_date={run_date}, banks_rates={rates})")
+        return 0
     print(f"verify_local: OK {base}")
     return 0
 
