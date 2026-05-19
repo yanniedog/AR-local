@@ -55,10 +55,11 @@ jobs:
       - name: Detect runner environment
         id: runner_env
         run: |
-          if [ "${{ runner.environment }}" = "github-hosted" ]; then
-            echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
-          else
+          # runner.environment is not a valid context; use self-hosted label instead.
+          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
             echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Detect Tailscale OAuth (hosted runner → tailnet)
