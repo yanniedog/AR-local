@@ -474,9 +474,9 @@ export function runAudit(opts) {
 
   if (!hook && hasGh()) {
     try {
-      const raw = sh('gh pr list --state closed --limit 10 --json number,title,merged', root, 12000);
+      const raw = sh('gh pr list --state closed --limit 10 --json number,title,mergedAt', root, 12000);
       if (typeof raw === 'string' && raw) {
-        const closedUnmerged = JSON.parse(raw).filter((p) => !p.merged);
+        const closedUnmerged = JSON.parse(raw).filter((p) => !p.mergedAt);
         if (closedUnmerged.length) {
           const { owner, name } = repoSlug();
           for (const row of closedUnmerged.slice(0, 5)) {

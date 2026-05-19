@@ -7,7 +7,6 @@ on:
     types: [submitted]
   issue_comment:
     types: [created]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +14,7 @@ permissions:
 
 jobs:
   bot-presence-gate:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    if: github.event.pull_request != null || (github.event.issue != null && github.event.issue.pull_request)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -27,5 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           AR_BOT_WAIT_REQUIRED: gemini,codex,sourcery
-          BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,pr-bot-feedback-check,required-bot-wait
-        run: npm run wait-for-bots -- --watch --pr ${{ github.event.pull_request.number || github.event.issue.number }}
+          BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check
+        run: |
+          PR="${{ github.event.pull_request.number || github.event.issue.number }}"
+          npm run wait-for-bots -- --watch --pr "$PR"

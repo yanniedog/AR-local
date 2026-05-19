@@ -176,6 +176,15 @@ function ignoredCheckNames() {
   );
 }
 
+/** Match full `gh pr checks` name or trailing job segment (e.g. `workflow / job`). */
+function checkNameMatchesIgnore(checkName, ignore) {
+  const lower = (checkName || '').toLowerCase();
+  if (ignore.has(lower)) return true;
+  const slash = lower.lastIndexOf('/');
+  const tail = slash >= 0 ? lower.slice(slash + 1).trim() : lower;
+  return ignore.has(tail);
+}
+
 function fetchChecks(prNumber) {
   const r = spawnSync('gh', ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], {
     encoding: 'utf8',
@@ -193,8 +202,7 @@ function fetchChecks(prNumber) {
     const pending =
       Array.isArray(checks) &&
       checks.some((c) => {
-        const name = (c.name || '').toLowerCase();
-        if (ignore.has(name)) return false;
+        if (checkNameMatchesIgnore(c.name, ignore)) return false;
         return c.bucket === 'pending';
       });
     return { pending };

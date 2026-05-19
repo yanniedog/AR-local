@@ -4,7 +4,7 @@ Real public CDR product-reference ingest for local analysis.
 
 Agent workflow (Git/PR/bots/local verify - aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
 
-Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). CI required checks: **`bot-presence-gate`**, **`pr-bot-feedback-check`**. Apply branch protection: `npm run branch-protection:apply` (see **`WORKFLOW.md`** → Branch protection).
+Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). CI required checks: **`bot-presence-gate`**, **`bot-feedback-gate`**. Apply branch protection: `npm run branch-protection:apply` (see **`WORKFLOW.md`** → Branch protection).
 
 Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banks-first scope, and the

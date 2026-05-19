@@ -9,15 +9,14 @@ on:
     types: [created, edited, deleted]
   issue_comment:
     types: [created, edited]
-  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
-  pr-bot-feedback-check:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+  bot-feedback-gate:
+    if: github.event.pull_request != null || (github.event.issue != null && github.event.issue.pull_request)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
