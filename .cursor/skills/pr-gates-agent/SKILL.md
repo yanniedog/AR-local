@@ -97,7 +97,7 @@ Stop on exit **0** or timeout; on timeout, re-delegate pr-fix with last checklis
 
 ## CI / GitHub Actions
 
-Workflow **`.github/workflows/pr-gates-check.yml`** runs the same script on PR events (**advisory** by default — does not replace required `bot-*` gates). Make the job required in branch protection only after the workflow is stable on your repo.
+**CI:** do not run `pr:gates:check --watch` in GitHub Actions (installation GraphQL quota). Use `npm run pr:gates:check` locally or `workflow_dispatch` only if you add a manual workflow later.
 
 ## Gaps and prerequisites
 

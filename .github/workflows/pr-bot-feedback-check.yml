@@ -1,12 +1,9 @@
 name: pr-bot-feedback-check
 
+# Thread closure gate on PR lifecycle only — not on every review/comment (GraphQL heavy).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
-  pull_request_review_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -33,9 +30,7 @@ jobs:
         with:
           node-version: "20"
       - name: Review thread closure gate
-        id: thread_gate
         env:
-          # Optional repo secret BOT_GATE_TOKEN (PAT) raises installation GraphQL quota vs GITHUB_TOKEN.
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
@@ -49,7 +44,7 @@ jobs:
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
-            echo "::warning::GitHub API rate limit — re-run this workflow after installation quota resets"
+            echo "::warning::GitHub API rate limit — re-run after quota resets"
             exit 1
           fi
           exit "$code"
