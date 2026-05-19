@@ -42,6 +42,15 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect runner environment
+        id: runner_env
+        run: |
+          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
+            echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Detect Tailscale OAuth
         id: tailscale
         run: |
@@ -52,7 +61,10 @@ jobs:
           fi
 
       - name: Join Tailscale tailnet
-        if: steps.secrets.outputs.configured == 'true' && steps.tailscale.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured == 'true'
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -62,7 +74,7 @@ jobs:
           version: latest
 
       - name: Configure SSH for Pi
-        if: steps.secrets.outputs.configured == 'true' && steps.tailscale.outputs.configured == 'true'
+        if: steps.secrets.outputs.configured == 'true'
         env:
           PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
@@ -84,15 +96,29 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Skip (Pi SSH or Tailscale not configured)
-        if: steps.secrets.outputs.configured != 'true' || steps.tailscale.outputs.configured != 'true'
+      - name: Skip (Pi SSH not configured)
+        if: steps.secrets.outputs.configured != 'true'
         run: |
-          echo "pi-deploy-watchdog: skipped (need PI_SSH_* and TS_OAUTH_* for cloud verify)"
+          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
           echo "On-Pi ar-local-deploy-watchdog.timer handles drift when GitHub cannot reach the Pi."
+
+      - name: Skip verify (Tailscale OAuth missing for hosted runner)
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured != 'true'
+        run: |
+          echo "::warning::PI_SSH_* set but TS_OAUTH_* missing — cloud runner cannot reach Tailscale-only Pi."
+          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~15 minutes."
 
       - name: Verify Pi deploy
         id: verify
-        if: steps.secrets.outputs.configured == 'true' && steps.tailscale.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
         env:
           AR_PI_SSH_HOST: ar-local-pi5
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
@@ -107,7 +133,10 @@ jobs:
       - name: Deploy on drift (optional)
         if: >-
           steps.secrets.outputs.configured == 'true' &&
-          steps.tailscale.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          ) &&
           steps.verify.outputs.exit != '0' &&
           (
             vars.AR_PI_AUTO_DEPLOY == '1' ||
@@ -121,7 +150,12 @@ jobs:
         run: python pi_deploy_verify.py --deploy
 
       - name: Fail if still unhealthy
-        if: steps.secrets.outputs.configured == 'true' && steps.tailscale.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
         env:
           VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
           AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
