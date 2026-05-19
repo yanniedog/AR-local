@@ -21,6 +21,8 @@ const PATH_RE =
 
 function isPlausibleRepoPath(p) {
   if (/^Node\.js$/i.test(p)) return false;
+  if (/^scripts\/foo\./i.test(p)) return false;
+  if (/^(?:chief-agent|workflow-orchestrator)\/SKILL\.md$/i.test(p)) return false;
   return !p.includes('node_modules');
 }
 
