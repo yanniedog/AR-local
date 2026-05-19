@@ -188,7 +188,7 @@ export function extractMentions(text) {
   for (const m of text.matchAll(/\bPR\s*#?(\d+)\b/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(/\bgh pr view\s+(\d+)/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(
-    /\b(?:^|[\s"'`])((?:(?:[\w.-]+[/\\])+[\w./\\-]+\.(?:py|mjs|js|mdc|md|json)|[\w.-]+\.(?:py|mjs|js|mdc|md|json)))\b/g,
+    /(?:^|[\s"'`])([/\\]?(?:[\w.-]+[/\\])*[\w.-]+\.(?:py|mjs|js|mdc|md|json))\b/g,
   )) {
     const p = m[1].replace(/\\/g, '/');
     if (!p.includes('node_modules')) paths.add(p);
