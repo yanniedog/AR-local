@@ -1,25 +1,43 @@
 #!/usr/bin/env node
 /**
  * Lightweight reminder after subagent/parent stop when repo needs orchestrator.
- * Reads hook JSON on stdin; prints { followup_message } or {} on stdout.
+ * Hook JSON on stdin is optional; prints { followup_message } or {} on stdout.
  * Fail-open on errors (exit 0, empty object).
  */
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 const repoRoot = process.cwd();
+const EXEC_TIMEOUT_MS = 2000;
+const EXEC_MAX_BUFFER = 1024 * 1024;
 
 function run(cmd) {
-  return execSync(cmd, { cwd: repoRoot, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+  try {
+    return execSync(cmd, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: EXEC_TIMEOUT_MS,
+      maxBuffer: EXEC_MAX_BUFFER,
+    }).trim();
+  } catch (error) {
+    if (error && (error.code === "ETIMEDOUT" || error.signal === "SIGTERM")) {
+      return "";
+    }
+    throw error;
+  }
+}
+
+function githubRepoSlug() {
+  try {
+    const url = run("git config --get remote.origin.url");
+    const match = url.match(/github\.com[:/]([^/]+\/[^/.]+)/);
+    return match ? match[1].replace(/\.git$/, "") : "";
+  } catch {
+    return "";
+  }
 }
 
 function main() {
-  try {
-    readFileSync(0, "utf8"); // consume stdin (hook payload); no fields required yet
-  } catch {
-    // ignore
-  }
-
   let dirty = false;
   let openPrCount = 0;
   try {
@@ -28,11 +46,13 @@ function main() {
     // not a git repo or git missing
   }
   try {
-    const out = run("gh pr list --state open --json number");
+    const slug = githubRepoSlug();
+    const repoFlag = slug ? ` --repo ${slug}` : "";
+    const out = run(`gh pr list --state open --json number${repoFlag}`);
     const parsed = JSON.parse(out || "[]");
     openPrCount = Array.isArray(parsed) ? parsed.length : 0;
   } catch {
-    // gh missing or not authenticated — skip PR signal
+    // gh missing, not authenticated, or timed out — skip PR signal
   }
 
   if (!dirty && openPrCount === 0) {

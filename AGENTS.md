@@ -74,7 +74,7 @@ Closest durable equivalent to an always-on ship-bar agent (Cursor subagents are 
 
 **Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
 
-**Policy:** one logical task → one branch → one PR (no monolithic ingest + dashboard + docs bundles). Orchestrator re-scans after each subagent returns and redeligates to the path owner (ingest, dashboard, babysit/ship-bar, docs, Pi).
+**Policy:** one logical task → one branch → one PR (no monolithic ingest + dashboard + docs bundles). Orchestrator re-scans after each subagent returns and re-delegates to the path owner (ingest, dashboard, babysit/ship-bar, docs, Pi).
 
 ## Debugging
 

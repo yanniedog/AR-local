@@ -21,7 +21,7 @@ Prompt: Follow .cursor/skills/workflow-orchestrator/SKILL.md — run one SCAN→
 When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, or **PR babysit**:
 
 1. Re-scan per the orchestrator skill.
-2. **Redeligate** to the same owner class (paths in routing table) to continue ship bar or the next partition.
+2. **Re-delegate** to the same owner class (paths in routing table) to continue ship bar or the next partition.
 3. Spawn orchestrator in background if you are not executing the skill yourself this turn.
 
 ## One PR per task (hard)
