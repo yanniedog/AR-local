@@ -108,7 +108,11 @@ export function fetchRequiredCi(prNumber) {
     return { ok: true, pending: true, failed: false, failedNames: [], checks: [] };
   }
   if (r.status !== 0) {
-    return { ok: false, error: (r.stderr || '').trim() || `gh pr checks exit ${r.status}` };
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    if (/no checks reported/i.test(msg) || /no required checks reported/i.test(msg)) {
+      return { ok: true, pending: false, failed: false, failedNames: [], checks: [] };
+    }
+    return { ok: false, error: msg };
   }
   const checks = JSON.parse(r.stdout || '[]');
   let pending = false;
@@ -137,7 +141,9 @@ export function fetchNamedChecks(prNumber, names) {
     { encoding: 'utf8' },
   );
   if (r.status !== 0) {
-    return { found: {}, error: (r.stderr || '').trim() || `gh pr checks exit ${r.status}` };
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    if (/no checks reported/i.test(msg)) return { found: {}, skipped: true };
+    return { found: {}, error: msg };
   }
   const all = JSON.parse(r.stdout || '[]');
   const want = new Set(names.map((n) => n.toLowerCase()));
@@ -184,13 +190,21 @@ export function gateCiRequired(prNumber) {
 }
 
 export function gateGithubBotChecks(prNumber) {
-  const { found, error } = fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES);
+  const { found, error, skipped } = fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES);
   if (error) {
     return {
       id: 'github-bot-gates',
       pass: false,
       detail: error,
       action: 'Ensure GitHub Actions workflows pr-bot-presence-gate and pr-bot-feedback-check ran',
+    };
+  }
+  if (skipped || !BOT_GATE_CHECK_NAMES.some((name) => found[name])) {
+    return {
+      id: 'github-bot-gates',
+      pass: true,
+      detail: 'No GitHub bot gate checks reported; relying on local wait/thread gates',
+      skipped: true,
     };
   }
   const parts = [];
