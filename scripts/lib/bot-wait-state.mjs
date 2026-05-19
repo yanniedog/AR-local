@@ -39,12 +39,17 @@ export function legacyBotWaitStatePath(prNumber, repoRoot) {
  * @returns {object | null}
  */
 export function readBotWaitStateFile(prNumber, repoRoot) {
-  for (const p of [botWaitStatePath(prNumber, repoRoot), legacyBotWaitStatePath(prNumber, repoRoot)]) {
+  const candidates = [botWaitStatePath(prNumber, repoRoot)];
+  // Explicit override: do not fall back to legacy .git anchors (stale/misleading).
+  if (!process.env.AR_BOT_WAIT_STATE_DIR?.trim()) {
+    candidates.push(legacyBotWaitStatePath(prNumber, repoRoot));
+  }
+  for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
     try {
       return JSON.parse(fs.readFileSync(p, 'utf8'));
     } catch {
-      return null;
+      continue;
     }
   }
   return null;

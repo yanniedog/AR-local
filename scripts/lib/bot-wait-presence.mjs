@@ -5,12 +5,7 @@ import {
   missingRequiredKeys,
   resolveRequiredKeys,
 } from './bot-wait-config.mjs';
-import { readBotWaitStateFile } from './bot-wait-state.mjs';
-
-function gitRepoRoot() {
-  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  return (r.stdout || '').trim() || process.cwd();
-}
+import { gitRepoRoot, readBotWaitStateFile } from './bot-wait-state.mjs';
 
 export function readBotWaitState(prNumber, cwd) {
   return readBotWaitStateFile(prNumber, cwd || gitRepoRoot());
