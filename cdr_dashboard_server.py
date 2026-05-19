@@ -238,14 +238,24 @@ def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]
         raise ProxyUpstreamError(HTTPStatus.BAD_GATEWAY, payload, "application/json; charset=utf-8") from exc
 
 
+def is_economic_data_page_path(url_path: str) -> bool:
+    path = url_path.split("?", 1)[0]
+    return path == "/economic-data" or path == "/economic-data/" or path.startswith("/economic-data/")
+
+
 def inject_local_dashboard_css(html: bytes) -> bytes:
     """Append local dashboard overrides so /economic-data/ gets nav focus fixes."""
-    if b"/assets/app.css" in html:
+    if b"/assets/app.css" in html.lower():
         return html
     link = b'    <link rel="stylesheet" href="/assets/app.css">\n'
-    if b"</head>" in html:
-        return html.replace(b"</head>", link + b"</head>", 1)
-    return html
+    patched, count = re.subn(
+        br"</head>",
+        link + br"</head>",
+        html,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return patched if count else html
 
 
 class ProxyUpstreamError(Exception):
@@ -581,10 +591,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 return bank_history_payload(date), "application/json"
-            if path in ("/economic-data", "/economic-data/"):
+            if is_economic_data_page_path(path):
                 target = resolve_site_public_file(site_root, path)
                 body = site_cache.read(target)
-                return inject_local_dashboard_css(body), "text/html; charset=utf-8"
+                ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                if (ctype or "").startswith("text/html"):
+                    return inject_local_dashboard_css(body), "text/html; charset=utf-8"
+                return body, ctype
             if path.startswith("/site/"):
                 target = (site_root / path.removeprefix("/site/")).resolve()
                 site_resolved = site_root.resolve()
