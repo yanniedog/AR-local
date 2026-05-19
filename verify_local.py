@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import urllib.error
 import urllib.request
@@ -27,6 +28,11 @@ def main() -> int:
         "--base-url",
         default="http://127.0.0.1:8808/",
         help="Dashboard root URL (include trailing slash optional)",
+    )
+    parser.add_argument(
+        "--require-banks-rates",
+        action="store_true",
+        help="Fail unless /api/latest reports banks_counts.rates > 0.",
     )
     args = parser.parse_args()
     base = args.base_url.strip().rstrip("/") + "/"
@@ -55,6 +61,24 @@ def main() -> int:
         for url, code in failures:
             print(f"verify_local: {code} {url}", file=sys.stderr)
         return 1
+    if args.require_banks_rates:
+        latest_url = base + "api/latest"
+        try:
+            with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
+            return 1
+        rates = int((payload.get("banks_counts") or {}).get("rates") or 0)
+        run_date = payload.get("run_date")
+        if rates <= 0:
+            print(
+                f"verify_local: /api/latest run_date={run_date!r} has banks_counts.rates={rates}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"verify_local: OK {base} (run_date={run_date}, banks_rates={rates})")
+        return 0
     print(f"verify_local: OK {base}")
     return 0
 

@@ -117,16 +117,24 @@ Avahi with mDNS host name `ar`, so the dashboard is available as
 `http://ar.local:8808/` on LANs that pass mDNS. Keep the Pi IP stable with a
 router DHCP reservation or equivalent static-IP setup.
 
-The Pi daily service currently runs banking only:
+The Pi daily timer (`deploy/pi/ar-local-daily.timer`) runs banking ingest at
+**20:00 UTC** each day via `pi_daily_sync.py --banks-only`. The service exits
+non-zero when the banking export has zero rates, so systemd records a failed
+unit instead of treating an empty export as success.
 
 ```sh
 python3 pi_daily_sync.py --banks-only
 ```
 
 Use `python3 pi_daily_sync.py --banks-only --force` for a one-off same-day
-banking rerun after the daily marker exists. Remove `--banks-only` from
-`deploy/pi/ar-local-daily.service` before reinstalling the unit if you want
+banking rerun after the daily marker exists. A marker is ignored when it records
+zero rates or the on-disk `latest.json` manifest is empty. Remove `--banks-only`
+from `deploy/pi/ar-local-daily.service` before reinstalling the unit if you want
 daily banking and energy again.
+
+`--exports latest` skips run folders whose dashboard manifest has
+`banks_counts.rates == 0`, so a same-day empty export cannot hide an older valid
+run.
 
 SSD migration later:
 

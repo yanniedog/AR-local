@@ -17,7 +17,9 @@ from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
     default_ram_root,
+    export_manifest_is_valid,
     is_raspberry_pi,
+    load_exports_manifest,
     prepare_empty_dir,
 )
 from ar_local_sectors import energy_ingest_enabled
@@ -36,6 +38,37 @@ def next_midnight_sleep_seconds() -> int:
 
 def marker_path(state_dir: Path, date: str) -> Path:
     return state_dir / f"{date}.done.json"
+
+
+def banks_result_rate_count(result: dict) -> int:
+    banks = result.get("banks")
+    if not isinstance(banks, dict):
+        return 0
+    try:
+        return int(banks.get("rates") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def persistent_export_root(persistent_runs_root: Path, date: str, exports: Optional[Path]) -> Path:
+    if exports is not None:
+        return exports.expanduser().resolve()
+    return (persistent_runs_root / date / "_exports").resolve()
+
+
+def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
+    try:
+        recorded = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(recorded, dict) or banks_result_rate_count(recorded) <= 0:
+        return False
+    manifest = load_exports_manifest(export_root)
+    if manifest is None:
+        return False
+    if str(manifest.get("run_date") or "") != date:
+        return False
+    return export_manifest_is_valid(manifest)
 
 
 def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str], energy_full_detail: bool) -> None:
@@ -64,16 +97,23 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
-def run_once(args: argparse.Namespace) -> bool:
+def run_once(args: argparse.Namespace) -> int:
+    """Return 0 when skipped, 1 on success, 2 when banking export is empty."""
     script_dir = Path(__file__).resolve().parent
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
     state_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_path(state_dir, date)
+    export_root = persistent_export_root(persistent_runs_root, date, args.exports)
     if marker.exists() and not args.force:
-        print(f"Already completed local CDR daily run for {date}: {marker}")
-        return False
+        if marker_is_trustworthy(marker, export_root, date):
+            print(f"Already completed local CDR daily run for {date}: {marker}")
+            return 0
+        print(
+            f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
+            file=sys.stderr,
+        )
 
     want_full_energy = bool(getattr(args, "energy_full_detail", False)) or "--energy-full-detail" in args.ingest_arg
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
@@ -86,13 +126,9 @@ def run_once(args: argparse.Namespace) -> bool:
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args, energy_full_detail=want_full_energy)
         result = build_outputs(staged_runs / date, staged_exports, args.db, energy_slim=not want_full_energy)
-        persistent_export_root = (
-            args.exports.expanduser().resolve()
-            if args.exports
-            else persistent_runs_root / date / "_exports"
-        )
-        copytree_atomic(staged_exports, persistent_export_root)
-        result["out_dir"] = str(persistent_export_root)
+        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
+        copytree_atomic(staged_exports, export_root)
+        result["out_dir"] = str(export_root)
         result["ram_staged"] = True
         result["ram_root"] = str(ram_root)
         if args.clean_ram_stage:
@@ -100,17 +136,20 @@ def run_once(args: argparse.Namespace) -> bool:
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
         run_ingest(script_dir, persistent_runs_root, date, extra_args, energy_full_detail=want_full_energy)
-        export_root = (
-            args.exports.expanduser().resolve()
-            if args.exports
-            else persistent_runs_root / date / "_exports"
-        )
+        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
         result = build_outputs(persistent_runs_root / date, export_root, args.db, energy_slim=not want_full_energy)
         result["ram_staged"] = False
 
+    if banks_result_rate_count(result) <= 0:
+        print(
+            f"ERROR: banking export for {date} has zero rates; refusing to write completion marker.",
+            file=sys.stderr,
+        )
+        return 2
+
     marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    return True
+    return 1
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -161,7 +200,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     while True:
-        run_once(args)
+        status = run_once(args)
+        if status == 2:
+            return 1
         if not args.daemon:
             return 0
         sleep_for = next_midnight_sleep_seconds()

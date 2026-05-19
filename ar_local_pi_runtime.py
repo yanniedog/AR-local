@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import filecmp
+import json
 import os
 import shutil
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from ar_local_platform import HostKind, host_kind
 
@@ -93,16 +94,45 @@ def tree_contents_equal(left: Path, right: Path) -> bool:
     return True
 
 
+def manifest_banks_rate_count(manifest: Mapping[str, Any]) -> int:
+    counts = manifest.get("banks_counts")
+    if not isinstance(counts, Mapping):
+        banks = manifest.get("banks")
+        counts = banks if isinstance(banks, Mapping) else {}
+    try:
+        return int(counts.get("rates") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def export_manifest_is_valid(manifest: Mapping[str, Any]) -> bool:
+    """A dashboard export is usable when banking rates were exported."""
+    return manifest_banks_rate_count(manifest) > 0
+
+
+def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
+    exports_root = exports_root.expanduser().resolve()
+    manifest_path = exports_root / "dashboard-cache" / "latest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def latest_exports_root(runs_root: Path) -> Optional[Path]:
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
         return None
-    candidates = []
+    candidates: list[tuple[str, Path]] = []
     for child in runs_root.iterdir():
         if not child.is_dir():
             continue
         exports = child / "_exports"
-        if (exports / "dashboard-cache" / "latest.json").is_file():
+        manifest = load_exports_manifest(exports)
+        if manifest is not None and export_manifest_is_valid(manifest):
             candidates.append((child.name, exports))
     if not candidates:
         return None
