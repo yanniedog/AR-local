@@ -188,7 +188,7 @@
   /** All run dates retained by /api/banks/history (not limited to the current chart slice). */
   function retainedRunDates() {
     if (!state.retainedRunDatesSorted) refreshRetainedRunDatesCache();
-    return state.retainedRunDatesSorted || [];
+    return (state.retainedRunDatesSorted || []).slice();
   }
 
   async function loadBankHistory() {
