@@ -1,4 +1,4 @@
----
+﻿---
 name: deep-browser-explore
 description: >-
   Deep visual and interaction QA via Browser MCP (user-browser_agent_cursor):
@@ -103,7 +103,7 @@ After expand, confirm `aria-expanded="true"` on the row in a follow-up `snapshot
 ### 1. Setup
 
 ```
-session_create(projectId, browser=chromium, headless=true, viewport={1280,900})
+session_create(projectId, browser=chromium, headless=true, viewport={width:1280,height:900})
 trace_start(sessionId)   # optional
 navigate(sessionId, baseUrl, waitUntil=networkidle)
 wait_for(sessionId, strategy=networkidle)
