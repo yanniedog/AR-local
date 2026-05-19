@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ from ar_local_pi_runtime import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
+SUBPROCESS_TIMEOUT_SEC = 120
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -91,7 +93,7 @@ def pi_remote() -> str:
     return _env("AR_PI_GITHUB_REMOTE", "origin")
 
 
-def run_local(args: Sequence[str], *, allow_fail: bool = False) -> subprocess.CompletedProcess[str]:
+def run_local(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(args),
         cwd=str(REPO_ROOT),
@@ -99,7 +101,12 @@ def run_local(args: Sequence[str], *, allow_fail: bool = False) -> subprocess.Co
         text=True,
         shell=False,
         check=False,
+        timeout=SUBPROCESS_TIMEOUT_SEC,
     )
+
+
+def shell_quote(value: str) -> str:
+    return shlex.quote(value)
 
 
 def on_pi_host() -> bool:
@@ -114,12 +121,13 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
             print(f"pi_deploy_verify: dry-run local {shell_cmd!r}")
             return 0, "", ""
         proc = subprocess.run(
-            shell_cmd,
-            shell=True,
+            ["bash", "-lc", shell_cmd],
+            shell=False,
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
             check=False,
+            timeout=SUBPROCESS_TIMEOUT_SEC,
         )
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
@@ -132,7 +140,14 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
     if dry_run:
         print(f"pi_deploy_verify: dry-run ssh {host} {shell_cmd!r}")
         return 0, "", ""
-    proc = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        shell=False,
+        check=False,
+        timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
     if proc.returncode != 0:
@@ -158,8 +173,8 @@ def origin_main_sha_local() -> Optional[str]:
 def git_rev_on_pi(repo_path: str) -> tuple[Optional[str], Optional[str]]:
     remote = pi_remote()
     script = (
-        f"cd {repo_path} && git fetch {remote} 2>/dev/null; "
-        f"git rev-parse HEAD; git rev-parse {remote}/main"
+        f"cd {shell_quote(repo_path)} && git fetch {shell_quote(remote)} 2>/dev/null; "
+        f"git rev-parse HEAD; git rev-parse {shell_quote(remote + '/main')}"
     )
     code, out, _ = run_ssh(script)
     if code != 0:
@@ -171,7 +186,10 @@ def git_rev_on_pi(repo_path: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
-    code, out, _ = run_ssh(f"cd {repo_path} && git status --porcelain", dry_run=dry_run)
+    code, out, _ = run_ssh(
+        f"cd {shell_quote(repo_path)} && git status --porcelain",
+        dry_run=dry_run,
+    )
     if dry_run:
         return True
     if code != 0:
@@ -270,8 +288,8 @@ def verify_sync(*, dry_run: bool = False) -> int:
 def deploy_pull(repo_path: str, *, dry_run: bool = False) -> int:
     remote = pi_remote()
     cmd = (
-        f"cd {repo_path} && git fetch {remote} && "
-        f"git checkout main && git pull --ff-only {remote} main"
+        f"cd {shell_quote(repo_path)} && git fetch {shell_quote(remote)} && "
+        f"git checkout main && git pull --ff-only {shell_quote(remote)} main"
     )
     code, out, _ = run_ssh(cmd, dry_run=dry_run)
     if code != 0 and not dry_run:

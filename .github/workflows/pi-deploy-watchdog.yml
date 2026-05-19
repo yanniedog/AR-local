@@ -105,7 +105,7 @@ jobs:
           steps.secrets.outputs.configured == 'true' &&
           steps.verify.outputs.exit != '0' &&
           (
-            env.AR_PI_AUTO_DEPLOY == '1' ||
+            vars.AR_PI_AUTO_DEPLOY == '1' ||
             github.event.inputs.deploy_on_drift == 'true'
           )
         env:

@@ -57,7 +57,8 @@ render_unit "$repo_dir/deploy/pi/ar-local-daily.service" "$tmp_dir/ar-local-dail
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily.timer" /etc/systemd/system/ar-local-daily.timer
-sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
+render_unit "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" "$tmp_dir/ar-local-deploy-watchdog.service"
+sudo install -m 0644 "$tmp_dir/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.timer" /etc/systemd/system/ar-local-deploy-watchdog.timer
 sudo systemctl daemon-reload
 sudo systemctl enable ar-local-dashboard.service
