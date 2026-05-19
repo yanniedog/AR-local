@@ -13,6 +13,28 @@
     return section === SECTION.EconomicData;
   }
 
+  function sectionFromPathname() {
+    const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    if (path === '/savings') return SECTION.Savings;
+    if (path === '/term-deposits') return SECTION.TD;
+    return SECTION.Mortgage;
+  }
+
+  function sectionToPath(section) {
+    if (section === SECTION.Savings) return '/savings/';
+    if (section === SECTION.TD) return '/term-deposits/';
+    return '/';
+  }
+
+  function syncSectionUrl() {
+    const target = sectionToPath(state.section);
+    if (window.location.pathname !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }
+
+  let loadSectionToken = 0;
+
   const state = {
     section: SECTION.Mortgage,
     manifest: null,
@@ -434,8 +456,24 @@
     drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
   }
 
+  function renderEmptySection() {
+    const label = state.section === SECTION.TD ? 'Term Deposits' : state.section;
+    $('chart-status').textContent = `No ${label} rates in export ${state.manifest.run_date}.`;
+    setLinks();
+    renderStats([]);
+    renderTable([]);
+    drawChartFromState([]);
+    updateHero([], null);
+    renderSectionCards();
+    renderSelectedLogos();
+  }
+
   function render() {
     const allRows = normalizeRows(rateRows());
+    if (!allRows.length) {
+      renderEmptySection();
+      return;
+    }
     const focused = applyFocusFilter(allRows);
     setLinks();
     renderStats(focused);
@@ -451,6 +489,7 @@
       window.location.assign('/economic-data/');
       return;
     }
+    const token = ++loadSectionToken;
     if (state.section !== section) {
       state.hierarchyPath = '';
       state.focusProvider = '';
@@ -460,12 +499,15 @@
     state.section = section;
     state.descending = preferredDescending(section);
     setSectionUi();
+    syncSectionUrl();
     $('chart-status').textContent = 'Loading local CDR data';
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
     if (!state.banks) state.banks = await getJson(`/api/banks?date=${state.manifest.run_date}`);
+    if (token !== loadSectionToken) return;
     await loadBankHistory();
+    if (token !== loadSectionToken) return;
     refreshBankHistoryIndex();
     renderSectionCards();
     render();
@@ -582,7 +624,7 @@
   async function init() {
     state.manifest = await getJson('/api/latest');
     bind();
-    await loadSection(SECTION.Mortgage);
+    await loadSection(sectionFromPathname());
   }
 
   init().catch((error) => {
