@@ -262,6 +262,11 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         return snap
     if code != 0:
         return None
+    missing = [k for k in required if not snap.get(k)]
+    print(
+        f"pi_deploy_verify: incomplete Pi snapshot (missing {', '.join(missing)}); remote output:\n{stdout[:500]}",
+        file=sys.stderr,
+    )
     return None
 
 
