@@ -36,18 +36,8 @@ body.ar-public.ar-local-cdr {
   --ar-accent-soft: var(--ar-local-blue-soft);
 }
 
-/* Savings and Energy sections carry a green/teal section accent — replace  */
-/* with the same blue used by the home-loans section.                        */
-body.ar-local-cdr.ar-section-savings,
-/* Energy: hide banking-only intro chrome (JS also toggles hidden). */
-body.ar-local-cdr.ar-section-economic-data .market-intro-live-grid,
-body.ar-local-cdr.ar-section-economic-data #sectionCards,
-body.ar-local-cdr.ar-section-economic-data #selectedLogos,
-body.ar-local-cdr.ar-section-economic-data .chart-question-row {
-  display: none;
-}
-
-body.ar-local-cdr.ar-section-economic-data {
+/* Savings: replace green/teal section accent with blue (Economic Data is /economic-data/). */
+body.ar-local-cdr.ar-section-savings {
   --ar-section-accent: var(--ar-local-blue-strong);
   --ar-section-accent-soft: var(--ar-local-section-fill);
   --ar-section-soft: var(--ar-local-section-tint);

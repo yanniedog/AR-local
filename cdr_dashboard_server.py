@@ -6,17 +6,20 @@ import argparse
 import errno
 import json
 import mimetypes
+import os
 import re
 import socket
 from datetime import date as calendar_date
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
 from ar_local_sectors import energy_dormant
@@ -100,6 +103,7 @@ HISTORY_IDENTITY_FIELDS = (
 )
 
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ECONOMIC_API_UPSTREAM = os.environ.get("AR_ECONOMIC_API_UPSTREAM", "https://www.australianrates.com").rstrip("/")
 
 
 class BadRequestError(Exception):
@@ -187,6 +191,59 @@ def fill_history_gaps(
             out.append(synth)
             synthetic += 1
     return out, synthetic
+
+
+def resolve_site_public_file(site_root: Path, url_path: str) -> Path:
+    """Map a public-site URL path to a file under ``site_root`` (path traversal safe)."""
+    path = url_path.split("?", 1)[0]
+    if path in ("/economic-data", "/economic-data/"):
+        target = (site_root / "economic-data" / "index.html").resolve()
+    else:
+        rel = path.lstrip("/")
+        if not rel:
+            raise FileNotFoundError(url_path)
+        target = (site_root / rel).resolve()
+    site_resolved = site_root.resolve()
+    if site_resolved not in target.parents and target != site_resolved:
+        raise FileNotFoundError(url_path)
+    if not target.is_file():
+        raise FileNotFoundError(url_path)
+    return target
+
+
+def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str]:
+    upstream_path = path if path.startswith("/") else "/" + path
+    qs = urlencode([(key, value) for key, values in query.items() for value in values], doseq=True)
+    url = upstream_base + upstream_path + (("?" + qs) if qs else "")
+    req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60.0) as resp:
+            body = resp.read()
+            ctype = resp.headers.get("Content-Type", "application/json")
+            return body, ctype.split(";")[0] + ("; charset=utf-8" if "charset" not in ctype.lower() else "")
+    except urllib.error.HTTPError as exc:
+        body = exc.read()
+        ctype = exc.headers.get("Content-Type", "application/json") if exc.headers else "application/json"
+        raise ProxyUpstreamError(int(exc.code), body, ctype) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        payload = json.dumps(
+            {
+                "error": "economic_data_upstream_unavailable",
+                "message": str(exc),
+                "upstream": upstream_base,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        raise ProxyUpstreamError(HTTPStatus.BAD_GATEWAY, payload, "application/json; charset=utf-8") from exc
+
+
+class ProxyUpstreamError(Exception):
+    def __init__(self, status: int, body: bytes, content_type: str) -> None:
+        super().__init__(status)
+        self.status = status
+        self.body = body
+        self.content_type = content_type
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -441,6 +498,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+            except ProxyUpstreamError as exc:
+                self.send_response(exc.status)
+                self.send_header("Content-Type", exc.content_type)
+                self.send_header("Cache-Control", "public, max-age=120")
+                self.send_header("Content-Length", str(len(exc.body)))
+                self.end_headers()
+                self.wfile.write(exc.body)
             except BadRequestError as exc:
                 self.send_error(HTTPStatus.BAD_REQUEST, explain=str(exc))
             except FileNotFoundError:
@@ -475,12 +539,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 if bank_root not in target.parents and target != bank_root:
                     raise FileNotFoundError(path)
                 return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-            if path.startswith("/site/"):
-                target = (site_root / path.removeprefix("/site/")).resolve()
-                site_resolved = site_root.resolve()
-                if site_resolved not in target.parents and target != site_resolved:
-                    raise FileNotFoundError(path)
-                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
                 return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
@@ -507,10 +565,26 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
                 return cache.read(exports_root / "dashboard-cache" / date / "banks.json"), "application/json"
+            if path.startswith("/api/economic-data"):
+                return proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
             if path == "/api/banks/history":
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 return bank_history_payload(date), "application/json"
+            if path in ("/economic-data", "/economic-data/"):
+                target = resolve_site_public_file(site_root, path)
+                return site_cache.read(target), "text/html; charset=utf-8"
+            if path.startswith("/site/"):
+                target = (site_root / path.removeprefix("/site/")).resolve()
+                site_resolved = site_root.resolve()
+                if site_resolved not in target.parents and target != site_resolved:
+                    raise FileNotFoundError(path)
+                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+            try:
+                target = resolve_site_public_file(site_root, path)
+                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+            except FileNotFoundError:
+                pass
             if path.startswith("/exports/"):
                 exports_root, cache = artifact_cache()
                 target = exports_root / path.removeprefix("/exports/")
