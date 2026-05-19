@@ -200,6 +200,28 @@ def _parse_kv_lines(text: str) -> dict[str, str]:
     return out
 
 
+def _normalize_dirty_field(raw: str) -> str:
+    return (raw or "").strip().strip(";")
+
+
+def _dirty_field_text(raw: str) -> str:
+    return _normalize_dirty_field(raw).replace(";", "\n")
+
+
+def _snap_has_dirty_repos(snap: dict[str, str], *, context: str = "") -> bool:
+    suffix = f" {context}" if context else ""
+    found = False
+    for label, key in (("AR-local", "AR_DIRTY"), ("australianrates", "SITE_DIRTY")):
+        dirty = _normalize_dirty_field(snap.get(key, ""))
+        if dirty:
+            print(
+                f"pi_deploy_verify: dirty tree ({label}){suffix}:\n{_dirty_field_text(dirty)}",
+                file=sys.stderr,
+            )
+            found = True
+    return found
+
+
 def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
     """One SSH round-trip for SHAs, dirty trees, and dashboard state."""
     remote = pi_remote()
@@ -248,9 +270,9 @@ def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
     if snap is None:
         return False
     key = "AR_DIRTY" if repo_path == pi_ar_repo() else "SITE_DIRTY"
-    dirty = (snap.get(key) or "").strip().strip(";")
+    dirty = _normalize_dirty_field(snap.get(key, ""))
     if dirty:
-        print(f"pi_deploy_verify: dirty tree at {repo_path}:\n{dirty.replace(';', chr(10))}", file=sys.stderr)
+        print(f"pi_deploy_verify: dirty tree at {repo_path}:\n{_dirty_field_text(dirty)}", file=sys.stderr)
         return False
     return True
 
@@ -309,10 +331,8 @@ def verify_sync(*, dry_run: bool = False) -> int:
     head_site = snap["SITE_HEAD"]
     origin_site = snap["SITE_ORIGIN"]
 
-    for label, dirty in (("AR-local", snap.get("AR_DIRTY", "")), ("australianrates", snap.get("SITE_DIRTY", ""))):
-        if (dirty or "").strip().strip(";"):
-            print(f"pi_deploy_verify: dirty tree ({label}):\n{dirty.replace(';', chr(10))}", file=sys.stderr)
-            return EXIT_VERIFY_FAIL
+    if _snap_has_dirty_repos(snap):
+        return EXIT_VERIFY_FAIL
 
     print(f"pi_deploy_verify: local origin/main={local_main[:12]}")
     print(f"pi_deploy_verify: Pi AR-local HEAD={head_ar[:12]} origin/main={origin_ar[:12]}")
@@ -425,10 +445,8 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         if snap is None:
             print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
             return EXIT_SSH
-        for label, dirty in (("AR-local", snap.get("AR_DIRTY", "")), ("australianrates", snap.get("SITE_DIRTY", ""))):
-            if (dirty or "").strip().strip(";"):
-                print(f"pi_deploy_verify: dirty tree ({label}) — resolve before deploy", file=sys.stderr)
-                return EXIT_VERIFY_FAIL
+        if _snap_has_dirty_repos(snap, context="— resolve before deploy"):
+            return EXIT_VERIFY_FAIL
     else:
         for repo_path in (pi_ar_repo(), pi_site_repo()):
             if not pi_tree_clean(repo_path, dry_run=args.dry_run):
