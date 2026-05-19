@@ -338,7 +338,7 @@
     const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
     const sampleByProvider = {};
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
-    const label = state.section === 'TD' ? 'Term Deposit' : state.section;
+    const label = state.section === SECTION.TD ? 'Term Deposit' : state.section;
 
     wrap.hidden = false;
     child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);

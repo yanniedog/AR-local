@@ -225,6 +225,17 @@ def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]
         body = exc.read()
         ctype = exc.headers.get("Content-Type", "application/json") if exc.headers else "application/json"
         raise ProxyUpstreamError(int(exc.code), body, ctype) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        payload = json.dumps(
+            {
+                "error": "economic_data_upstream_unavailable",
+                "message": str(exc),
+                "upstream": upstream_base,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        raise ProxyUpstreamError(HTTPStatus.BAD_GATEWAY, payload, "application/json; charset=utf-8") from exc
 
 
 class ProxyUpstreamError(Exception):
