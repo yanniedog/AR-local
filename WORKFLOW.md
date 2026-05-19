@@ -75,6 +75,8 @@ After `wait-for-bots` exits 0, and before replying to any thread:
 
 Reply in-thread on GitHub for every substantive thread: `implemented in <sha>` / `deferred — <reason>` / `declined — <reason>`. If inline replies unavailable: `## Feedback responses` section in PR body. Do NOT merge with unanswered threads.
 
+**Substantive thread:** an inline or review comment that proposes a code/doc change, reports a likely bug, or asks a blocking question. Exclude auto-generated summaries, reviewer guides, and low-signal one-liners (under ~40 characters, emoji-only, or “Useful? React with …” nudges). When in doubt, reply and resolve rather than skip.
+
 **Automated gate (required before merge):**
 
 ```sh
