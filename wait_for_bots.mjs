@@ -1,32 +1,25 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
- * Dynamic pre-merge bot wait gate (AR-local WORKFLOW.md step 5).
- * Polls GitHub until CI checks settle and bot review activity is quiet,
- * or until a safety cap. Exit 0 = ready, 2 = still waiting, 1 = error/timeout.
+ * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
+ * Exit 0 only when CI is settled, every required bot has posted since anchor,
+ * and the quiet window has passed after the last bot activity.
+ * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
 import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleepMs } from 'node:timers/promises';
-
-const DEFAULT_BOT_LOGINS = [
-  'gemini-code-assist[bot]',
-  'chatgpt-codex-connector[bot]',
-  'sourcery-ai[bot]',
-  'copilot-pull-request-reviewer[bot]',
-  'coderabbitai[bot]',
-];
+import {
+  allKnownBotLogins,
+  formatRequiredKeys,
+  missingRequiredKeys,
+  resolveRequiredKeys,
+} from './scripts/lib/bot-wait-config.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
 const MIN_WAIT_SEC = Number(process.env.BOT_WAIT_MIN_SEC || 60);
 const MAX_WAIT_MIN = Number(process.env.BOT_WAIT_MAX_MIN || 28);
-
-const BOT_LOGINS = (process.env.BOT_WAIT_LOGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const EXPECTED_BOTS = BOT_LOGINS.length > 0 ? BOT_LOGINS : DEFAULT_BOT_LOGINS;
 
 const COMMENTS_QUERY =
   'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){comments(last:100){nodes{author{login}createdAt}}reviews(last:30){nodes{author{login}submittedAt}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt}}}}}}}';
@@ -73,7 +66,14 @@ function isTopicBranch(b) {
 }
 
 function parseArgs(argv) {
-  const out = { pr: null, watch: false, botTag: false, since: null, help: false };
+  const out = {
+    pr: null,
+    watch: false,
+    botTag: false,
+    since: null,
+    help: false,
+    requireBots: null,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--help' || a === '-h') out.help = true;
@@ -83,6 +83,15 @@ function parseArgs(argv) {
     else if (a.startsWith('--pr=')) out.pr = Number(a.slice(5));
     else if ((a === '--since' || a === '--anchor') && argv[i + 1]) out.since = argv[++i];
     else if (a.startsWith('--since=') || a.startsWith('--anchor=')) out.since = a.split('=').slice(1).join('=');
+    else if (a === '--require-bots' && argv[i + 1]) {
+      out.requireBots = argv[++i].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    } else if (a.startsWith('--require-bots=')) {
+      out.requireBots = a
+        .slice('--require-bots='.length)
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+    }
   }
   return out;
 }
@@ -129,10 +138,9 @@ function resolvePr(prArg, branch) {
   return { pr: arr.length > 0 ? arr[0] : null };
 }
 
-function isBotLogin(login) {
+function isKnownBotLogin(login, knownSet) {
   if (!login) return false;
-  const lower = login.toLowerCase();
-  return EXPECTED_BOTS.some((b) => lower === b.toLowerCase());
+  return knownSet.has(login.toLowerCase());
 }
 
 function fetchBotActivity(owner, name, prNumber) {
@@ -165,7 +173,6 @@ function fetchChecks(prNumber) {
   const r = spawnSync('gh', ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], {
     encoding: 'utf8',
   });
-  // gh pr checks exits 8 when checks are still pending (see gh manual).
   if (r.status === 8) return { pending: true };
   if (r.status !== 0) {
     const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
@@ -190,7 +197,7 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state, repo: repoIn }) {
+function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
@@ -199,73 +206,89 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn }) {
   const repo = repoIn || resolveRepo();
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
+  const knownBots = allKnownBotLogins(requiredKeys);
   const elapsedMs = Date.now() - anchor.getTime();
   const maxMs = MAX_WAIT_MIN * 60 * 1000;
-  if (elapsedMs > maxMs) {
-    return {
-      status: 'timeout',
-      message:
-        `Bot wait safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ${anchor.toISOString()}. ` +
-        'Re-sweep manually or tag bots again.',
-    };
-  }
-
-  if (state?.readyAt) {
-    const readyAt = new Date(state.readyAt);
-    if (Number.isFinite(readyAt.getTime()) && readyAt >= anchor) {
-      return { status: 'ready', message: `Bot wait already satisfied at ${state.readyAt} (cached). Clear to sweep.` };
-    }
-  }
 
   const activity = fetchBotActivity(repo.owner, repo.name, prNumber);
   if (activity.error) return { status: 'error', message: activity.error };
+
+  const anchorMs = anchor.getTime();
+  const botEventsSinceAnchor = activity.events.filter(
+    (e) => isKnownBotLogin(e.login, knownBots) && new Date(e.at).getTime() >= anchorMs,
+  );
+  const seenLogins = [...new Set(botEventsSinceAnchor.map((e) => e.login))];
+  const missing = missingRequiredKeys(requiredKeys, seenLogins);
+  const allRequiredPosted = missing.length === 0;
+  const lastBotAt =
+    botEventsSinceAnchor.length > 0
+      ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
+      : null;
+  const quiet =
+    allRequiredPosted &&
+    lastBotAt !== null &&
+    Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000;
+
+  if (elapsedMs > maxMs) {
+    if (missing.length) {
+      return {
+        status: 'timeout',
+        message:
+          `Required bot(s) never posted before safety cap (${MAX_WAIT_MIN} min): ${missing.join(', ')}. ` +
+          `DO NOT MERGE. Tag bots or extend cap; expected: ${formatRequiredKeys(requiredKeys)}.`,
+        missing,
+        botsSeen: seenLogins,
+      };
+    }
+    return {
+      status: 'timeout',
+      message:
+        `Bot wait safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ${anchor.toISOString()} ` +
+        'without satisfying quiet window. Re-sweep manually or tag bots again.',
+    };
+  }
 
   const checks = fetchChecks(prNumber);
   if (checks.error && !checks.pending) {
     return { status: 'error', message: checks.error };
   }
 
-  const anchorMs = anchor.getTime();
-  const botEventsSinceAnchor = activity.events.filter(
-    (e) => isBotLogin(e.login) && new Date(e.at).getTime() >= anchorMs,
-  );
-  const lastBotAt =
-    botEventsSinceAnchor.length > 0
-      ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
-      : null;
-
-  const botsSinceAnchor = new Set(botEventsSinceAnchor.map((e) => e.login));
-  const allBotsPosted = EXPECTED_BOTS.every((b) =>
-    [...botsSinceAnchor].some((seen) => seen.toLowerCase() === b.toLowerCase()),
-  );
-  const anyBotPosted = botsSinceAnchor.size > 0;
-  const quiet = lastBotAt !== null && Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000;
   const checksReady = !checks.pending;
   const minElapsed = elapsedMs >= MIN_WAIT_SEC * 1000;
-  const botsPreexisting =
-    state?.readyAt && state?.lastBotAt && lastBotAt && state.lastBotAt === lastBotAt.toISOString();
 
-  if (checksReady && (minElapsed || botsPreexisting) && anyBotPosted && (quiet || allBotsPosted)) {
-    const reason = allBotsPosted
-      ? `all ${EXPECTED_BOTS.length} configured bots posted`
-      : `checks settled and no bot activity for ${QUIET_WINDOW_SEC}s`;
+  if (state?.readyAt) {
+    const readyAt = new Date(state.readyAt);
+    if (Number.isFinite(readyAt.getTime()) && readyAt >= anchor && allRequiredPosted && quiet && checksReady) {
+      return {
+        status: 'ready',
+        message: `Bot wait already satisfied at ${state.readyAt} (cached; required bots present).`,
+        botsSeen: seenLogins,
+        missing: [],
+      };
+    }
+  }
+
+  if (checksReady && minElapsed && allRequiredPosted && quiet) {
     return {
       status: 'ready',
-      message: `Bot wait satisfied (${reason}). Clear to sweep threads.`,
+      message: `Bot wait satisfied (required bots posted since anchor; ${QUIET_WINDOW_SEC}s quiet). Clear to sweep threads.`,
       lastBotAt: lastBotAt?.toISOString() || null,
-      botsSeen: [...botsSinceAnchor],
+      botsSeen: seenLogins,
+      missing: [],
     };
   }
 
   const waitParts = [];
   if (!checksReady) waitParts.push('CI checks still pending');
-  if (!anyBotPosted) waitParts.push('no bot comments yet since anchor');
-  else if (!quiet && !allBotsPosted) {
+  if (missing.length) {
+    waitParts.push(`waiting for required bot(s): ${missing.join(', ')} (${formatRequiredKeys(missing)})`);
+  }
+  if (allRequiredPosted && !quiet && lastBotAt) {
     waitParts.push(
-      `bot activity ${formatDuration(Date.now() - lastBotAt.getTime())} ago (need ${QUIET_WINDOW_SEC}s quiet or all bots)`,
+      `need ${QUIET_WINDOW_SEC}s quiet after last bot (last activity ${formatDuration(Date.now() - lastBotAt.getTime())} ago)`,
     );
   }
-  if (!minElapsed && !botsPreexisting) {
+  if (!minElapsed) {
     waitParts.push(`${Math.ceil((MIN_WAIT_SEC * 1000 - elapsedMs) / 1000)}s until minimum wait`);
   }
 
@@ -275,35 +298,39 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn }) {
     elapsedMs,
     remainingCapMs: maxMs - elapsedMs,
     lastBotAt: lastBotAt?.toISOString() || null,
-    botsSeen: [...botsSinceAnchor],
+    botsSeen: seenLogins,
+    missing,
   };
 }
 
-function printHelp() {
+function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Poll GitHub until bot review activity is stable (or safety cap).
+Poll GitHub until every required bot has posted since the wait anchor and activity is quiet.
 
 Options:
-  --pr <n>       Pull request number (default: open PR for current branch)
-  --watch, -w    Poll every ${POLL_INTERVAL_SEC}s until ready or cap (default: single check)
-  --bot-tag      Reset wait anchor to now (after @mentioning bots in PR)
-  --since <iso>  Anchor wait window to this timestamp (ISO 8601)
-  --help, -h     Show this help
+  --pr <n>              Pull request number (default: open PR for current branch)
+  --watch, -w           Poll every ${POLL_INTERVAL_SEC}s until ready or cap
+  --bot-tag             Reset wait anchor to now (after @mentioning bots)
+  --since <iso>         Anchor wait window to timestamp (ISO 8601)
+  --require-bots <list> Comma-separated required keys (default: gemini,codex,sourcery)
+  --help, -h            Show this help
 
-Exit codes: 0 ready | 2 still waiting | 1 error/timeout
+Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap (DO NOT MERGE)
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
-     BOT_WAIT_LOGINS (comma-separated)
+     AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
 
-Expected bots: ${EXPECTED_BOTS.join(', ')}
+Required bots: ${formatRequiredKeys(requiredKeys)}
 `);
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const requiredKeys = resolveRequiredKeys(args.requireBots);
+
   if (args.help) {
-    printHelp();
+    printHelp(requiredKeys);
     process.exit(0);
   }
 
@@ -315,8 +342,8 @@ async function main() {
   }
 
   if (!hasGh()) {
-    console.log('(Install gh CLI for dynamic bot wait on topic branches.)');
-    process.exit(0);
+    console.error('>>> BOT WAIT ERROR: gh CLI required on topic branches (install gh and gh auth login).');
+    process.exit(1);
   }
 
   const resolved = resolvePr(prArg, branch);
@@ -339,18 +366,26 @@ async function main() {
 
   if (args.botTag) {
     const anchorIso = new Date().toISOString();
-    state = { anchor: anchorIso, readyAt: null };
+    state = { anchor: anchorIso, readyAt: null, requiredKeys };
     writeState(prNumber, state);
     console.log(`>>> BOT WAIT: anchor reset (bot-tag) at ${anchorIso} for PR #${prNumber}`);
-    console.log('>>> Re-run wait-for-bots until exit 0 before synthesis.');
+    console.log(`>>> Required: ${formatRequiredKeys(requiredKeys)}`);
+    console.log('>>> Re-run wait-for-bots until exit 0 before synthesis or merge.');
   } else if (args.since) {
     state.anchor = args.since;
     state.readyAt = null;
+    state.requiredKeys = requiredKeys;
     writeState(prNumber, state);
   } else if (!state.anchor || new Date(state.anchor) < new Date(anchorFromPr)) {
     state.anchor = anchorFromPr;
+    state.requiredKeys = requiredKeys;
+    writeState(prNumber, state);
+  } else if (!state.requiredKeys) {
+    state.requiredKeys = requiredKeys;
     writeState(prNumber, state);
   }
+
+  const effectiveRequired = state.requiredKeys || requiredKeys;
 
   const finish = (result) => {
     const st = readState(prNumber) || state;
@@ -359,11 +394,15 @@ async function main() {
       if (result.botsSeen?.length) console.log(`>>> Bots seen since anchor: ${result.botsSeen.join(', ')}`);
       st.readyAt = new Date().toISOString();
       st.lastBotAt = result.lastBotAt || st.lastBotAt;
+      st.requiredKeys = effectiveRequired;
       writeState(prNumber, st);
       process.exit(0);
     }
     if (result.status === 'timeout' || result.status === 'error') {
       console.error(`>>> BOT WAIT ${result.status.toUpperCase()}: ${result.message}`);
+      if (result.missing?.length) {
+        console.error(`>>> Missing required bots: ${result.missing.join(', ')} — merge is blocked.`);
+      }
       process.exit(1);
     }
     console.log(`>>> BOT WAIT: ${result.message}`);
@@ -372,13 +411,20 @@ async function main() {
         `>>> Elapsed ${formatDuration(result.elapsedMs)}; cap remaining ~${formatDuration(result.remainingCapMs)}`,
       );
     }
-    console.log(`>>> PR #${prNumber} ÔÇö retry: npm run wait-for-bots -- --pr ${prNumber}`);
+    console.log(`>>> PR #${prNumber} — retry: npm run wait-for-bots -- --pr ${prNumber}`);
     process.exit(2);
   };
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
-    return evaluate({ prNumber, anchorIso: st.anchor || anchorFromPr, state: st, repo });
+    const keys = st.requiredKeys || effectiveRequired;
+    return evaluate({
+      prNumber,
+      anchorIso: st.anchor || anchorFromPr,
+      state: st,
+      repo,
+      requiredKeys: keys,
+    });
   };
 
   if (!args.watch) {
@@ -387,7 +433,7 @@ async function main() {
   }
 
   console.log(
-    `>>> Watching PR #${prNumber} (poll ${POLL_INTERVAL_SEC}s, quiet ${QUIET_WINDOW_SEC}s, cap ${MAX_WAIT_MIN} min)`,
+    `>>> Watching PR #${prNumber} (required: ${effectiveRequired.join(', ')}; poll ${POLL_INTERVAL_SEC}s, quiet ${QUIET_WINDOW_SEC}s, cap ${MAX_WAIT_MIN} min)`,
   );
   for (;;) {
     const result = runOnce();

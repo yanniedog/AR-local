@@ -136,9 +136,9 @@ Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrato
 2. Partition mixed WIP — stash or branch per path prefix; document paths per PR
 3. For CONFLICTING PRs: checkout head branch, rebase origin/main, resolve conflicts, push
 4. npm run pr:bot-feedback-check -- --pr <n>
-5. npm run wait-for-bots until exit 0
+5. npm run wait-for-bots until exit 0 (gemini + codex + sourcery each posted since anchor; exit 1 = do not merge)
 6. In-thread implement/defer/decline on every substantive bot/human thread
-7. gh pr merge --squash when CI green + threads closed
+7. gh pr merge --squash only after wait-for-bots exit 0, pr:bot-feedback-check exit 0, and threads closed — **never** on CI green alone
 8. Pi verify / npm run verify:local when code shipped
 9. npm run chief:scan — must exit 0 before chief marks cycle complete
 ```

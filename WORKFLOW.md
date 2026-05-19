@@ -46,11 +46,15 @@ Run this after creating a new PR (or after tagging bots). The script polls GitHu
 **Ready when** (since the wait anchor — PR creation, or `--bot-tag` / `--since`):
 
 - Required CI checks are not pending, **and**
-- At least one configured bot has commented since the anchor, **and**
-- Either no bot activity for **90s** (quiet window) **or** every configured bot account has posted, **and**
-- At least **60s** since anchor (unless a prior successful wait is cached for this PR)
+- **Every required bot** has at least one review or issue comment since the anchor (default: **gemini**, **codex**, **sourcery**), **and**
+- **90s** quiet window after the last bot activity, **and**
+- At least **60s** since anchor
 
-**Safety cap:** **28 minutes** from anchor (exit **1** if exceeded). Tune via env: `BOT_WAIT_POLL_SEC`, `BOT_WAIT_QUIET_SEC`, `BOT_WAIT_MIN_SEC`, `BOT_WAIT_MAX_MIN`, `BOT_WAIT_LOGINS`.
+**Required bots (default):** `gemini` → `gemini-code-assist[bot]`, `codex` → `chatgpt-codex-connector[bot]`, `sourcery` → `sourcery-ai[bot]`. Override with `AR_BOT_WAIT_REQUIRED=gemini,codex,sourcery` or `npm run wait-for-bots -- --require-bots gemini,codex,sourcery`.
+
+**Safety cap:** **28 minutes** from anchor. If required bots never post, exit **1** with **DO NOT MERGE** (not exit 0). Tune via env: `BOT_WAIT_POLL_SEC`, `BOT_WAIT_QUIET_SEC`, `BOT_WAIT_MIN_SEC`, `BOT_WAIT_MAX_MIN`.
+
+**Forbidden:** squash merge while `wait-for-bots` exit **2** or **1**, or while `pr:bot-feedback-check` reports missing required bots.
 
 **Orchestrator loop:** re-run until exit **0** (sleep ~45s between tries, or use `--watch`). Do **not** proceed to synthesis while exit **2**.
 
