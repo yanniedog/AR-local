@@ -4,6 +4,8 @@ Real public CDR product-reference ingest for local analysis.
 
 Agent workflow (Git/PR/bots/local verify - aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
 
+Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). CI runs **`pr-bot-feedback-check`**. Optional branch protection: require that check on PRs to `main`.
+
 Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banks-first scope, and the
 AustralianRates dashboard parity contract.

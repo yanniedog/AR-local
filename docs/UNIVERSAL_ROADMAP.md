@@ -375,7 +375,7 @@ The public JS calls Cloudflare Worker routes including (non-exhaustive):
 - `/api/home-loan-rates/health`
 - (presumed analogues for savings, term deposits, economic data)
 
-The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms — no remote calls.
+The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, the `/exports/` tree, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms — no remote calls.
 
 #### Header / chrome gap
 
@@ -425,7 +425,7 @@ Future improvements should:
 
 ## Banks-First Work Queue
 
-1. Keep banking ingest/export healthy on Pi. Re-run any missing day's ingest before adding retention depth elsewhere; missing dates leave irreversible gaps because CDR endpoints serve only current state.
+1. Keep banking ingest/export healthy on Pi. Investigate and record any missing retained-run dates; do **not** re-run ingest with a backdated `--date` (CDR endpoints only serve current state, so a late run stores today's snapshot under the missed date and corrupts ribbon history). Resume normal daily retention from the current day.
 2. Mirror parity track (priority, multi-PR — see `Parity Gap Inventory`):
    1. Mount `/api/home-loan-rates/*` (and savings/TD/economic-data equivalents) on `cdr_dashboard_server.py`, backed by retained run SQLite. Match request and response shapes the public site's JS modules expect.
    2. Vendor `lightweight-charts.bundle.js` into `australianrates/site/vendor/lightweight-charts/` (ship via the public shell repo) and update the Pi checkout.
