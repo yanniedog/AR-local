@@ -26,6 +26,9 @@ _BOUNDS_PAIR = re.compile(
 _BOUND_LE = re.compile(r"(?:<=|under|up to|maximum|max|below)\s*(\d{1,3}(?:\.\d+)?)\s*%?")
 _BOUND_GE = re.compile(r"(?:>=|over|above|from)\s*(\d{1,3}(?:\.\d+)?)\s*%?")
 _BOUND_SINGLE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
+_FIXED_TERM_YEARS = re.compile(r"fixed[^0-9]*(\d+)", re.IGNORECASE)
+_FIXED_TERM_ISO = re.compile(r"\bp(\d+)y\b", re.IGNORECASE)
+_BUNDLE_VARIABLE = re.compile(r"^bundle[_-]?discount[_-]?variable\b", re.IGNORECASE)
 
 
 def _lower_join(*parts: Any) -> str:
@@ -85,6 +88,66 @@ def parse_term_months(duration: Any) -> Optional[float]:
         return num
 
     return None
+
+
+def extract_fixed_rate_term_years(text: str) -> str:
+    """Years for ribbon fixed_rate_term tier (matches site ar-ribbon-format.js)."""
+    value = _lower(text)
+    if not value or value == "variable":
+        return ""
+    m = re.match(r"^fixed_(\d+)yr$", value)
+    if m:
+        return str(int(m.group(1)))
+    m = _FIXED_TERM_YEARS.search(value)
+    if m:
+        return str(int(m.group(1)))
+    m = _FIXED_TERM_ISO.search(value)
+    if m:
+        return str(int(m.group(1)))
+    return ""
+
+
+def normalize_rate_structure_group(text: str) -> str:
+    """Collapse CDR rate text to ribbon tree keys: variable | fixed."""
+    value = _lower(text)
+    if not value:
+        return ""
+    if value == "variable" or re.match(r"^variable\b", value) or _BUNDLE_VARIABLE.match(value):
+        return "variable"
+    if value == "fixed" or re.match(r"^fixed\b", value):
+        return "fixed"
+    if extract_fixed_rate_term_years(value):
+        return "fixed"
+    head = value.split(None, 1)[0] if value.split() else value
+    if head in ("variable", "var"):
+        return "variable"
+    if head == "fixed":
+        return "fixed"
+    if re.search(r"\bvariable\b", value[:96]) and not re.match(r"^fixed\b", value):
+        return "variable"
+    return ""
+
+
+def normalize_td_rate_structure_group(text: str, deposit_kind: str) -> str:
+    """Deposit ribbon rate_structure tier keys (short slugs for the tree)."""
+    kind = _lower(deposit_kind)
+    if kind in ("base", "bonus", "introductory", "bundle", "total"):
+        return kind
+    value = _lower(text)
+    if not value:
+        return "base"
+    if "intro" in value:
+        return "introductory"
+    if "bonus" in value:
+        return "bonus"
+    if "bundle" in value:
+        return "bundle"
+    if "total" in value:
+        return "total"
+    grouped = normalize_rate_structure_group(value)
+    if grouped:
+        return grouped
+    return kind or "base"
 
 
 def normalize_repayment_type(hints: str) -> str:
@@ -354,6 +417,7 @@ def ribbon_columns_for_bank_rate_row(
         "ribbon_repayment_type": "",
         "lvr_tier": "",
         "ribbon_rate_structure": "",
+        "ribbon_fixed_term": "",
         "account_type": "",
         "ribbon_deposit_kind": "",
         "balance_min": "",
@@ -393,6 +457,10 @@ def ribbon_columns_for_bank_rate_row(
         full_context = " ".join(p for p in (context_text, flat_base.get("product_name") or "") if p)
         lvr_tier = normalize_lvr_tier(full_context, l_min, l_max)
         feature_set = normalize_feature_set(full_context, None)
+        rate_structure_group = normalize_rate_structure_group(rate_structure_text)
+        fixed_term = (
+            extract_fixed_rate_term_years(rate_structure_text) if rate_structure_group == "fixed" else ""
+        )
         out = dict(defaults)
         out.update(
             {
@@ -400,7 +468,8 @@ def ribbon_columns_for_bank_rate_row(
                 "security_purpose": security_purpose,
                 "ribbon_repayment_type": ribbon_repayment,
                 "lvr_tier": lvr_tier,
-                "ribbon_rate_structure": rate_structure_text,
+                "ribbon_rate_structure": rate_structure_group,
+                "ribbon_fixed_term": fixed_term,
                 "feature_set": feature_set,
             }
         )
@@ -475,6 +544,7 @@ def ribbon_columns_for_bank_rate_row(
             None,
         )
 
+        rate_structure_group = normalize_td_rate_structure_group(rate_structure_text, ribbon_kind)
         out = dict(defaults)
         out.update(
             {
@@ -482,7 +552,7 @@ def ribbon_columns_for_bank_rate_row(
                 "ribbon_deposit_kind": ribbon_kind,
                 "term_months": _num_or_empty(term_m),
                 "interest_payment": interest_payment,
-                "ribbon_rate_structure": rate_structure_text,
+                "ribbon_rate_structure": rate_structure_group,
                 "feature_set": feature_set,
                 "balance_min": _num_or_empty(b_min),
                 "balance_max": _num_or_empty(b_max),

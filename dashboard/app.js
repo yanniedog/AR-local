@@ -12,6 +12,9 @@
     descending: false,
     historyWindow: '30D',
     hierarchyPath: '',
+    focusProvider: '',
+    hoverProvider: '',
+    focusedProductKeys: null,
   };
   const $ = (id) => document.getElementById(id);
   const { bankRateMatchesSection, historyIndexKey, normalizeRows, pct } = window.LocalCdrUtils;
@@ -43,61 +46,73 @@
     return Number(value || 0).toLocaleString('en-AU');
   }
 
-  function filterVal(id) {
-    const el = $(id);
-    return el ? el.value.trim() : '';
-  }
-
   function rateRows() {
-    const filters = bankFilterValues();
     if (state.sector === 'banks') {
       if (!state.banks) return [];
-      return state.banks.rates.filter((row) => matchesBankFilters(row, filters));
+      return state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
     }
-    const provider = filters.provider;
-    const q = filters.q;
     if (!state.energy) return [];
-    return state.energy.plans.filter((row) =>
-      (!provider || String(row.provider || '').toLowerCase().includes(provider)) &&
-      (!q        || String(row.plan_name || '').toLowerCase().includes(q))
-    );
+    return state.energy.plans.slice();
   }
 
-  function bankFilterValues() {
-    return {
-      q: filterVal('query').toLowerCase(),
-      provider: filterVal('provider').toLowerCase(),
-      dataset: state.section === 'Energy' ? '' : filterVal('dataset'),
-      purpose: filterVal('filter-purpose'),
-      repay: filterVal('filter-repayment'),
-      struct: filterVal('filter-structure'),
-      term: filterVal('filter-term'),
-      rateType: filterVal('filter-rate-type'),
-    };
+  function focusActiveProvider() {
+    return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
-  function matchesBankFilters(row, filters, options) {
-    const skipQuery = options && options.skipQuery;
-    return (!filters.dataset || row.dataset === filters.dataset) &&
-      bankRateMatchesSection(row) &&
-      (!filters.provider || String(row.provider || '').toLowerCase().includes(filters.provider)) &&
-      (skipQuery || !filters.q || String(row.product_name || '').toLowerCase().includes(filters.q)) &&
-      (!filters.purpose || row.security_purpose === filters.purpose) &&
-      (!filters.repay || row.ribbon_repayment_type === filters.repay) &&
-      (!filters.struct || row.rate_type === filters.struct) &&
-      (!filters.term || String(Math.round(Number(row.term_months)) || '') === filters.term) &&
-      (!filters.rateType || row.ribbon_deposit_kind === filters.rateType);
+  function providerMatchKeys(label) {
+    const raw = String(label || '').trim();
+    const brand = window.LocalCdrBrand;
+    const canonical = brand && brand.lookupProvider ? brand.lookupProvider(raw) : raw;
+    const keys = new Set();
+    [raw, canonical].forEach((value) => {
+      const key = String(value || '').trim().toLowerCase();
+      if (key) keys.add(key);
+    });
+    return keys;
+  }
+
+  function rowMatchesProvider(row, label) {
+    const keys = providerMatchKeys(label);
+    if (!keys.size) return true;
+    return keys.has(String(row.provider || '').trim().toLowerCase());
+  }
+
+  /** Click-locked provider filter (table/hierarchy). Chart hover uses focusProvider on the model only. */
+  function applyFocusFilter(rows) {
+    const focus = String(state.focusProvider || '').trim();
+    if (!focus) return rows;
+    return rows.filter((row) => rowMatchesProvider(row, focus));
+  }
+
+  function rowProductKey(row) {
+    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+  }
+
+  function applyHierarchyFilter(rows) {
+    if (!state.focusedProductKeys) return rows;
+    const allowed = state.focusedProductKeys;
+    return rows.filter((row) => allowed.has(rowProductKey(row)));
+  }
+
+  function historyRowMatchesLiveTable(row) {
+    return row.dataset === state.section && bankRateMatchesSection(row);
   }
 
   function buildHistoryIndex(rows) {
     const index = {};
     (rows || []).forEach((row) => {
+      if (!historyRowMatchesLiveTable(row)) return;
       const key = historyIndexKey(row);
-      if (!key || key === '||') return;
+      if (!key) return;
       if (!index[key]) index[key] = [];
       index[key].push(row);
     });
     return index;
+  }
+
+  function refreshBankHistoryIndex() {
+    if (!state.bankHistory) return;
+    state.bankHistoryIndex = buildHistoryIndex(state.bankHistory.rates);
   }
 
   function parseYmd(value) {
@@ -136,7 +151,7 @@
       rates,
       run_dates: Array.isArray(data.run_dates) ? data.run_dates : [],
     };
-    state.bankHistoryIndex = buildHistoryIndex(rates);
+    refreshBankHistoryIndex();
   }
 
   function currentRateRange(rows) {
@@ -156,84 +171,88 @@
     const visibleKeys = new Set();
     currentRows.forEach((row) => {
       const key = historyIndexKey(row);
-      if (key && key !== '||') visibleKeys.add(key);
+      if (key) visibleKeys.add(key);
     });
     if (!visibleKeys.size) return [];
-    const filters = bankFilterValues();
     const out = [];
     visibleKeys.forEach((key) => {
-      (state.bankHistoryIndex[key] || []).forEach((row) => {
-        if (matchesBankFilters(row, filters, { skipQuery: true })) out.push(row);
-      });
+      (state.bankHistoryIndex[key] || []).forEach((row) => out.push(row));
     });
     return out;
   }
 
-  function chartRows(rows) {
-    if (state.sector === 'energy') {
-      const counts = {};
-      rows.forEach((row) => { if (row.provider) counts[row.provider] = (counts[row.provider] || 0) + 1; });
-      return Object.entries(counts)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
-        .slice(0, 30);
-    }
-    const historyRows = filteredHistoryRows(rows);
+  function buildAggregateRibbon(historyRows) {
     const byProvider = {};
     const allDates = new Set();
+    const byDate = {};
     historyRows.forEach((row) => {
       const date = String(row.run_date || '');
-      const provider = row.provider || 'Unknown provider';
+      const provider = row.provider || 'Unknown';
       const rate = Number(row.rate);
       if (!date || !Number.isFinite(rate) || rate <= 0) return;
       allDates.add(date);
-      if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {}, count: 0 };
-      if (!byProvider[provider].byDate[date]) {
-        byProvider[provider].byDate[date] = { min: rate, max: rate, count: 0, productKeys: new Set() };
-      }
-      const p = byProvider[provider].byDate[date];
-      if (rate < p.min) p.min = rate;
-      if (rate > p.max) p.max = rate;
-      p.count++;
-      if (row.product_key || row.product_id || row.product_name) p.productKeys.add(row.product_key || row.product_id || row.product_name);
+      if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {} };
+      const p = byProvider[provider];
+      const existing = p.byDate[date];
+      p.byDate[date] = existing
+        ? { min: Math.min(existing.min, rate), max: Math.max(existing.max, rate), count: existing.count + 1, sum: existing.sum + rate }
+        : { min: rate, max: rate, count: 1, sum: rate };
+      const agg = byDate[date];
+      byDate[date] = agg
+        ? { min: Math.min(agg.min, rate), max: Math.max(agg.max, rate), sum: agg.sum + rate, count: agg.count + 1 }
+        : { min: rate, max: rate, sum: rate, count: 1 };
     });
     const dates = historyDatesInWindow(Array.from(allDates));
-    const latestDate = dates[dates.length - 1] || state.manifest.run_date;
-    const providers = Object.values(byProvider).map((provider) => {
+    const points = dates.map((date) => {
+      const agg = byDate[date];
+      if (!agg) return { date, min: null, max: null, mean: null, count: 0 };
+      return { date, min: agg.min, max: agg.max, mean: agg.sum / Math.max(1, agg.count), count: agg.count };
+    });
+    const providers = Object.values(byProvider).map((p) => {
       const visible = {};
-      let count = 0;
       dates.forEach((date) => {
-        const point = provider.byDate[date];
+        const point = p.byDate[date];
         if (!point) return;
         visible[date] = {
           min: point.min,
           max: point.max,
+          mean: point.sum / Math.max(1, point.count),
           count: point.count,
-          products: point.productKeys.size,
         };
-        count += point.count;
       });
-      const latest = visible[latestDate] || Object.values(visible).slice(-1)[0] || null;
+      return { label: p.label, byDate: visible };
+    });
+    return { dates, points, providers, allDates: Array.from(allDates).sort() };
+  }
+
+  function chartItems(rows) {
+    if (state.sector === 'energy') {
+      const counts = {};
+      rows.forEach((row) => { if (row.provider) counts[row.provider] = (counts[row.provider] || 0) + 1; });
       return {
-        label: provider.label,
-        byDate: visible,
-        min: latest ? latest.min : null,
-        max: latest ? latest.max : null,
-        value: latest ? (state.descending ? latest.max : latest.min) : null,
-        count,
+        kind: 'energy-counts',
+        items: Object.entries(counts)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
+          .slice(0, 30),
+        focusProvider: focusActiveProvider(),
+        descending: state.descending,
       };
-    }).filter((provider) => provider.value != null)
-      .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
-      .slice(0, 40);
+    }
+    const historyRows = filteredHistoryRows(rows);
+    const aggregate = buildAggregateRibbon(historyRows);
     return {
       kind: 'bank-history',
       section: state.section,
       window: state.historyWindow,
-      dates,
-      allDates: Array.from(allDates).sort(),
-      providers,
+      dates: aggregate.dates,
+      points: aggregate.points,
+      providers: aggregate.providers,
+      allDates: aggregate.allDates,
+      descending: state.descending,
       currentRange: currentRateRange(rows),
       totalHistoryRows: historyRows.length,
+      focusProvider: focusActiveProvider(),
     };
   }
 
@@ -263,10 +282,10 @@
       Mortgage: 'Compare Australian Home Loan Rates - Daily CDR Data | AustralianRates',
       Savings:  'Compare Australian Savings Rates - Daily CDR Data | AustralianRates',
       TD:       'Compare Australian Term Deposit Rates - Daily CDR Data | AustralianRates',
-      Energy:   'Australian Economic Data - Daily CDR Data | AustralianRates',
+      Energy:   'Australian Energy Plans - Daily CDR Data | AustralianRates',
     };
     document.title = pageTitles[state.section] || pageTitles.Mortgage;
-    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Economic data, tracked.' };
+    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Energy plans, tracked.' };
     $('page-title').textContent = titles[state.section] || titles.Mortgage;
     const leaderLabels = { Mortgage: 'Lowest rate', Savings: 'Top yield', TD: 'Top yield', Energy: 'Plans' };
     const focusLabels  = { Mortgage: 'Lowest rates', Savings: 'Top yields', TD: 'Top yields', Energy: 'Plan count' };
@@ -274,20 +293,19 @@
     $('chart-focus').textContent = focusLabels[state.section] || focusLabels.Mortgage;
     $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
 
-    const isBanks    = state.sector === 'banks';
-    const isMortgage = state.section === 'Mortgage';
-    const isSavings  = state.section === 'Savings';
-    const isTD       = state.section === 'TD';
-    document.querySelectorAll('.local-filter-purpose, .local-filter-repayment, .local-filter-structure')
-      .forEach((el) => { el.hidden = !isMortgage; });
-    document.querySelectorAll('.local-filter-rate-type')
-      .forEach((el) => { el.hidden = !isSavings; });
-    document.querySelectorAll('.local-filter-term')
-      .forEach((el) => { el.hidden = !isTD; });
-    document.querySelectorAll('.local-filter-banks-only')
-      .forEach((el) => { el.hidden = !isBanks; });
+    const isBanks = state.sector === 'banks';
+    const isEnergy = state.sector === 'energy';
     document.querySelectorAll('.local-history-window, .local-history-window-status')
       .forEach((el) => { el.hidden = !isBanks; });
+
+    const heroGrid = document.querySelector('.market-intro-live-grid');
+    if (heroGrid) heroGrid.hidden = isEnergy;
+    const sectionCards = $('sectionCards');
+    if (sectionCards) sectionCards.hidden = isEnergy;
+    const selectedLogos = $('selectedLogos');
+    if (selectedLogos && isEnergy) selectedLogos.hidden = true;
+    const chartQuestionRow = document.querySelector('.chart-question-row');
+    if (chartQuestionRow) chartQuestionRow.hidden = isEnergy;
   }
 
   function setHistoryWindowUi(items) {
@@ -308,28 +326,14 @@
     status.textContent = `Visible window: ${label}. ${num(items.allDates.length)} retained run date${items.allDates.length === 1 ? '' : 's'}.`;
   }
 
-  function setupFilters() {
-    const dataset = $('dataset');
-    clear(dataset);
-    if (state.sector === 'banks') {
-      const values = [...new Set(state.banks.products.map((row) => row.dataset).filter(Boolean))].sort();
-      child(dataset, 'option', '', 'All banking datasets').value = '';
-      values.forEach((value) => child(dataset, 'option', '', value));
-      dataset.value = values.includes(state.section) ? state.section : '';
-      dataset.disabled = false;
-    } else {
-      child(dataset, 'option', '', 'Energy plans').value = '';
-      dataset.disabled = true;
-    }
-    ['filter-purpose', 'filter-repayment', 'filter-structure', 'filter-term', 'filter-rate-type'].forEach((id) => {
-      const el = $(id);
-      if (el) el.value = '';
-    });
-  }
-
   function renderSectionCards() {
     const wrap = $('sectionCards');
     clear(wrap);
+    if (state.sector === 'energy') {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
     if (!state.banks || !window.LocalCdrBrand) return;
     ['Mortgage', 'Savings', 'TD'].forEach((section) => {
       const rows = state.banks.rates.filter((row) => row.dataset === section && bankRateMatchesSection(row));
@@ -348,39 +352,42 @@
   function renderSelectedLogos() {
     const wrap = $('selectedLogos');
     clear(wrap);
+    if (state.sector === 'energy') {
+      wrap.hidden = true;
+      return;
+    }
     if (!window.LocalCdrBrand) { wrap.hidden = true; return; }
 
-    let providers, label;
+    let providers, label, sampleByProvider = {};
     if (state.sector === 'banks' && state.banks && state.banks.rates) {
       const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
       providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
+      rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
       label = state.section === 'TD' ? 'Term Deposit' : state.section;
-    } else if (state.sector === 'energy' && state.energy && state.energy.plans) {
-      providers = [...new Set(state.energy.plans.map((row) => row.provider).filter(Boolean))].sort();
-      label = 'Energy';
     } else {
       wrap.hidden = true;
       return;
     }
 
     wrap.hidden = false;
-    child(wrap, 'span', 'local-selected-logos-title', `${label} providers - click a logo to filter`);
+    child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
-    const providerQuery = filterVal('provider').toLowerCase();
+    const focus = String(state.focusProvider || '').toLowerCase();
+    const hover = String(state.hoverProvider || '').toLowerCase();
     providers.forEach((provider) => {
       const btn = child(rail, 'button', 'local-provider-logo-btn');
       btn.type = 'button';
       btn.dataset.providerPick = provider;
-      btn.title = 'Show products for ' + provider + ' only (click again to clear)';
-      if (providerQuery && provider.toLowerCase() === providerQuery) btn.classList.add('is-selected');
-      const sample = state.sector === 'banks' && state.banks && state.banks.rates
-        ? state.banks.rates.find((r) => r.provider === provider)
-        : undefined;
-      window.LocalCdrBrand.appendProviderBadge(btn, provider, false, { logoOnly: true, rateRow: sample });
+      btn.title = provider;
+      const lc = provider.toLowerCase();
+      if (focus && lc === focus) btn.classList.add('is-selected');
+      if (hover && lc === hover) btn.classList.add('is-hover');
+      window.LocalCdrBrand.appendProviderBadge(btn, provider, false, { logoOnly: true, rateRow: sampleByProvider[provider] });
     });
   }
 
   function updateHero(rows, items) {
+    if (state.sector === 'energy') return;
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(rows.length);
     if (state.sector === 'banks') {
@@ -391,8 +398,6 @@
       $('hero-leader').textContent = num(rows.length);
     }
   }
-
-  function setLastRefreshed() { $('last-refreshed').textContent = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }); }
 
   function renderStats(rows) {
     const counts = state.sector === 'banks' ? state.manifest.banks_counts : state.manifest.energy_counts;
@@ -427,38 +432,62 @@
 
   function renderTable(rows) {
     const hasTaxonomy = rows.length > 0 && rows.some((r) => r.taxonomy_path);
-    if (state.sector === 'banks' || hasTaxonomy) {
+    if (state.sector === 'banks' || state.sector === 'energy' || hasTaxonomy) {
       $('table').hidden = true;
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
       $('hierarchy').hidden = false;
-      window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state);
+      // Callback only updates state; the chart redraw is driven by the caller.
+      window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
+        onFocusChange: (productKeys) => {
+          state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
+        },
+      });
     } else {
       renderFlatTable(rows);
     }
   }
 
-  function render() {
-    const rows  = normalizeRows(rateRows());
-    const items = chartRows(rows);
-    setLinks();
-    updateHero(rows, items);
-    renderStats(rows);
-    renderTable(rows);
+  function chartSliceRows(allRows) {
+    return applyHierarchyFilter(allRows);
+  }
+
+  function drawChartFromState(finalRows) {
+    const items = chartItems(finalRows);
     window.LocalCdrChart.draw($('chart'), items, state.sector);
     setHistoryWindowUi(items);
+    updateHero(finalRows, items);
     if (state.sector === 'banks' && items && items.kind === 'bank-history') {
-      $('chart-status').textContent = `${num(rows.length)} current rows / ${num(items.totalHistoryRows)} historical rows loaded`;
+      $('chart-status').textContent = `${num(finalRows.length)} current rows / ${num(items.totalHistoryRows)} historical rows`;
+    } else if (state.sector === 'energy' && items && items.kind === 'energy-counts') {
+      $('chart-status').textContent = `${num(finalRows.length)} plans / ${num(items.items.length)} providers in chart`;
     } else {
-      $('chart-status').textContent = `${num(rows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
+      $('chart-status').textContent = `${num(finalRows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
     }
+  }
+
+  function redrawChart() {
+    drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
+  }
+
+  function render() {
+    const allRows = normalizeRows(rateRows());
+    const focused = applyFocusFilter(allRows);
+    setLinks();
+    renderStats(focused);
+    // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
+    // onFocusChange callback (state only — no redraw inside the callback).
+    renderTable(focused);
+    drawChartFromState(chartSliceRows(allRows));
     renderSelectedLogos();
   }
 
   async function loadSection(section) {
     if (state.section !== section) {
       state.hierarchyPath = '';
-      $('provider').value = '';
+      state.focusProvider = '';
+      state.hoverProvider = '';
+      state.focusedProductKeys = null;
     }
     state.section = section;
     state.sector  = section === 'Energy' ? 'energy' : 'banks';
@@ -469,57 +498,95 @@
     clear($('table'));
     clear($('hierarchy'));
     if (!state[state.sector]) state[state.sector] = await getJson(`/api/${state.sector}?date=${state.manifest.run_date}`);
-    if (state.sector === 'banks') await loadBankHistory();
-    setupFilters();
+    if (state.sector === 'banks') {
+      await loadBankHistory();
+      refreshBankHistoryIndex();
+    }
     renderSectionCards();
     render();
-    setLastRefreshed();
   }
 
   function bind() {
-    let resizeTimer = 0;
-    document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); loadSection(el.dataset.section); }));
+    let resizeFrame = 0;
+    const scheduleChartResize = () => {
+      if (resizeFrame) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        redrawChart();
+      });
+    };
+
+    document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadSection(el.dataset.section);
+    }));
+
     $('sectionCards').addEventListener('click', (event) => {
       const card = event.target.closest('[data-section-card]');
       if (card) loadSection(card.dataset.sectionCard);
     });
-    $('selectedLogos').addEventListener('click', (event) => {
+
+    const logoWrap = $('selectedLogos');
+    logoWrap.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-provider-pick]');
       if (!btn) return;
       const pick = btn.dataset.providerPick || '';
-      const input = $('provider');
-      const cur = input.value.trim();
-      if (cur && pick.toLowerCase() === cur.toLowerCase()) input.value = '';
-      else input.value = pick;
+      const current = state.focusProvider;
+      state.focusProvider = (current && pick.toLowerCase() === current.toLowerCase()) ? '' : pick;
+      state.hoverProvider = '';
       state.hierarchyPath = '';
+      state.focusedProductKeys = null;
       render();
     });
+    logoWrap.addEventListener('mouseover', (event) => {
+      const btn = event.target.closest('[data-provider-pick]');
+      if (!btn) return;
+      const next = btn.dataset.providerPick || '';
+      if (state.hoverProvider === next) return;
+      state.hoverProvider = next;
+      logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
+      btn.classList.add('is-hover');
+      redrawChart();
+    });
+    logoWrap.addEventListener('mouseleave', () => {
+      if (!state.hoverProvider) return;
+      state.hoverProvider = '';
+      logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
+      redrawChart();
+    });
+
     $('hierarchy').addEventListener('click', (event) => {
       const action = event.target.closest('[data-local-hierarchy-action]');
       if (!action) return;
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
-      renderTable(normalizeRows(rateRows()));
+      renderTable(applyFocusFilter(normalizeRows(rateRows())));
+      redrawChart();
     });
     $('hierarchy').addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target.closest('button')) return;
       const action = event.target.closest('[data-local-hierarchy-action]');
       if (!action) return;
       event.preventDefault();
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
-      renderTable(normalizeRows(rateRows()));
+      renderTable(applyFocusFilter(normalizeRows(rateRows())));
+      redrawChart();
     });
-    ['dataset', 'provider', 'query',
-      'filter-purpose', 'filter-repayment', 'filter-structure',
-      'filter-term', 'filter-rate-type',
-    ].forEach((id) => {
-      const el = $(id);
-      if (el) {
-        el.addEventListener('input', render);
-        el.addEventListener('change', render);
+    $('hierarchy').addEventListener('mouseover', (event) => {
+      const node = event.target.closest('[data-local-hierarchy-action]');
+      if (!node) return;
+      const provider = node.getAttribute('data-local-hierarchy-provider') || '';
+      if (provider && provider !== state.hoverProvider) {
+        state.hoverProvider = provider;
+        redrawChart();
       }
     });
-    $('refresh-page-btn').addEventListener('click', () => window.location.reload());
+    $('hierarchy').addEventListener('mouseleave', () => {
+      if (state.hoverProvider) {
+        state.hoverProvider = '';
+        redrawChart();
+      }
+    });
+
     $('chart-toggle-sort').addEventListener('click', () => {
       state.descending = !state.descending;
       $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
@@ -531,11 +598,19 @@
         render();
       });
     });
+    const workspaceResizeHandle = document.getElementById('chart-workspace-resizer');
+    if (workspaceResizeHandle) {
+      window.addEventListener('pointermove', () => {
+        if (document.body.classList.contains('is-resizing-chart-workspace')) scheduleChartResize();
+      });
+      ['pointerup', 'pointercancel', 'dblclick', 'keydown', 'keyup'].forEach((eventName) => {
+        workspaceResizeHandle.addEventListener(eventName, scheduleChartResize);
+      });
+    }
     window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => window.LocalCdrChart.draw($('chart'), chartRows(normalizeRows(rateRows())), state.sector), 120);
+      scheduleChartResize();
     });
-    window.addEventListener('ar:theme-changed', () => window.LocalCdrChart.draw($('chart'), chartRows(normalizeRows(rateRows())), state.sector));
+    window.addEventListener('ar:theme-changed', () => redrawChart());
     if (window.ARTheme && window.ARTheme.initToggles) window.ARTheme.initToggles(document);
   }
 

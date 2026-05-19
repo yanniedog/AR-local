@@ -12,7 +12,7 @@ from cdr_clean_export import parse_banks_run, parse_energy_run, summary_counts, 
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json", "energy_counts_json"],
@@ -49,6 +49,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "ribbon_repayment_type",
         "lvr_tier",
         "ribbon_rate_structure",
+        "ribbon_fixed_term",
         "account_type",
         "ribbon_deposit_kind",
         "balance_min",
@@ -125,7 +126,40 @@ def row_for_columns(row: Mapping[str, Any], columns: List[str]) -> List[Any]:
     return out
 
 
+def bank_rates_column_names(con: sqlite3.Connection) -> set[str]:
+    if not table_exists(con, "bank_rates"):
+        return set()
+    rows = con.execute("PRAGMA table_info(bank_rates)").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def migrate_bank_rates_columns(con: sqlite3.Connection) -> bool:
+    """Add missing bank_rates columns in place (avoids wiping history on minor schema bumps)."""
+    if not table_exists(con, "bank_rates"):
+        return False
+    existing = bank_rates_column_names(con)
+    changed = False
+    for column in TABLE_COLUMNS["bank_rates"]:
+        if column in existing:
+            continue
+        con.execute(f"ALTER TABLE bank_rates ADD COLUMN {quote_column(column)} TEXT DEFAULT ''")
+        changed = True
+    return changed
+
+
+def schema_columns_compatible(con: sqlite3.Connection) -> bool:
+    if not table_exists(con, "bank_products"):
+        return False
+    if not table_exists(con, "bank_rates"):
+        return False
+    return bank_rates_column_names(con) >= set(TABLE_COLUMNS["bank_rates"])
+
+
 def ensure_db(con: sqlite3.Connection) -> None:
+    # Ingest writes one SQLite file per run under runs/<date>/_exports/local-cdr.sqlite.
+    # Re-opening the same path across runs is unsupported; a version bump normally means
+    # a fresh DB for that run. migrate_bank_rates_columns() only helps when the same file
+    # is reopened after adding export columns (e.g. ribbon_fixed_term) without a full reset.
     if needs_schema_reset(con):
         reset_schema(con)
     con.executescript(
@@ -175,6 +209,7 @@ def ensure_db(con: sqlite3.Connection) -> None:
           ribbon_repayment_type TEXT,
           lvr_tier TEXT,
           ribbon_rate_structure TEXT,
+          ribbon_fixed_term TEXT,
           account_type TEXT,
           ribbon_deposit_kind TEXT,
           balance_min TEXT,
@@ -240,8 +275,10 @@ def ensure_db(con: sqlite3.Connection) -> None:
 
 
 def needs_schema_reset(con: sqlite3.Connection) -> bool:
-    has_core_table = table_exists(con, "bank_products")
-    if not has_core_table:
+    if not table_exists(con, "bank_products"):
+        return False
+    migrate_bank_rates_columns(con)
+    if schema_columns_compatible(con):
         return False
     if not table_exists(con, "schema_meta"):
         return True

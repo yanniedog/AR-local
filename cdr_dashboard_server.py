@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import socket
+from datetime import date as calendar_date
 import sqlite3
 import threading
 import time
@@ -46,6 +47,7 @@ BANK_HISTORY_COLUMNS = (
     "ribbon_repayment_type",
     "lvr_tier",
     "ribbon_rate_structure",
+    "ribbon_fixed_term",
     "account_type",
     "ribbon_deposit_kind",
     "balance_min",
@@ -59,12 +61,131 @@ SELECT run_date, dataset, provider, product_id, product_key, product_name,
        rate_family, rate, comparison_rate, rate_type, application_type,
        application_frequency, repayment_type, loan_purpose, term,
        ribbon_normalized, security_purpose, ribbon_repayment_type, lvr_tier,
-       ribbon_rate_structure, account_type, ribbon_deposit_kind, balance_min,
+       ribbon_rate_structure, ribbon_fixed_term, account_type, ribbon_deposit_kind, balance_min,
        balance_max, term_months, interest_payment, feature_set
 FROM bank_rates
 WHERE rate IS NOT NULL AND rate != ''
 """
 BANK_HISTORY_SELECT_UNTIL_SQL = BANK_HISTORY_SELECT_SQL + " AND run_date <= ?"
+
+# Fields that uniquely identify a "rate row template" across run dates.
+# When we carry-forward, two rows share an identity iff every field below
+# matches; only run_date and the rate / comparison_rate values differ.
+HISTORY_IDENTITY_FIELDS = (
+    "dataset",
+    "provider",
+    "product_key",
+    "product_id",
+    "product_name",
+    "rate_family",
+    "rate_type",
+    "term",
+    "repayment_type",
+    "loan_purpose",
+    "application_type",
+    "application_frequency",
+    "security_purpose",
+    "ribbon_repayment_type",
+    "ribbon_rate_structure",
+    "ribbon_fixed_term",
+    "ribbon_deposit_kind",
+    "lvr_tier",
+    "balance_min",
+    "balance_max",
+    "term_months",
+    "interest_payment",
+    "feature_set",
+    "account_type",
+)
+
+_RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class BadRequestError(Exception):
+    """Client supplied invalid query parameters."""
+
+
+def parse_run_date_param(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not _RUN_DATE_RE.fullmatch(value):
+        raise BadRequestError("date must be YYYY-MM-DD")
+    try:
+        calendar_date(int(value[0:4]), int(value[5:7]), int(value[8:10]))
+    except ValueError as exc:
+        raise BadRequestError("date is not a valid calendar day") from exc
+    return value
+
+
+def fill_history_gaps(
+    rows: list[dict[str, object]],
+    run_dates: list[str],
+) -> tuple[list[dict[str, object]], int]:
+    """Stabilize the ribbon aggregate against transient ingest gaps.
+
+    For every distinct rate-row identity (provider + product + rate variant)
+    we observe a series of (run_date, rate) samples. When the retained set
+    contains a date that lies *between* a product's first and last observed
+    appearance but the product has no sample on that date, we emit a
+    synthetic carry-forward row using the most recent prior sample. This
+    keeps the per-day product cohort stable: min/max/mean on a gap day are
+    computed from the same set of products as adjacent days, so the ribbon
+    does not jump just because one holder failed to respond.
+
+    Carry-forward does NOT extend a product beyond its last observed date —
+    a product that disappears for good (CDR delisting) drops out of the
+    cohort from then on, which is the correct behaviour.
+
+    Synthetic rows carry ``carry_forward = "1"`` so consumers can flag them.
+    Returns ``(filled_rows, synthetic_count)``.
+    """
+    if not rows or not run_dates:
+        return list(rows), 0
+    sorted_dates = sorted({d for d in run_dates if d})
+
+    by_identity: dict[tuple[str, ...], dict[str, dict[str, object]]] = {}
+    for row in rows:
+        identity = tuple(str(row.get(field) or "") for field in HISTORY_IDENTITY_FIELDS)
+        date = str(row.get("run_date") or "")
+        if not date:
+            continue
+        bucket = by_identity.setdefault(identity, {})
+        # If a duplicate identity+date exists, prefer the first concrete row.
+        if date not in bucket:
+            bucket[date] = row
+
+    out: list[dict[str, object]] = list(rows)
+    synthetic = 0
+    # Single moving pointer per identity: walk sorted_dates and the per-identity
+    # present list in lockstep so each gap-fill is O(D) not O(D^2).
+    for bucket in by_identity.values():
+        present = sorted(bucket.keys())
+        if len(present) < 2:
+            continue  # No interior days possible.
+        first, last = present[0], present[-1]
+        # Index of the most recent present date <= the current walked date.
+        prior_idx = -1
+        for date in sorted_dates:
+            if date <= first or date >= last:
+                # Advance prior_idx so it stays valid once we cross `first`.
+                while prior_idx + 1 < len(present) and present[prior_idx + 1] <= date:
+                    prior_idx += 1
+                continue
+            # Advance prior_idx to the latest present date strictly < date.
+            while prior_idx + 1 < len(present) and present[prior_idx + 1] < date:
+                prior_idx += 1
+            if prior_idx + 1 < len(present) and present[prior_idx + 1] == date:
+                # date is already present — advance pointer past it for next iter.
+                prior_idx += 1
+                continue
+            if prior_idx < 0:
+                continue
+            template = bucket[present[prior_idx]]
+            synth = dict(template)
+            synth["run_date"] = date
+            synth["carry_forward"] = "1"
+            out.append(synth)
+            synthetic += 1
+    return out, synthetic
 
 
 def resolve_site_root(explicit: Path | None) -> Path:
@@ -242,8 +363,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             except sqlite3.Error as exc:
                 print(f"Skipping unreadable history DB {db_path}: {exc}")
         run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        filled_rows, carry_forward_count = fill_history_gaps(rows, run_dates)
         payload = json.dumps(
-            {"run_dates": run_dates, "rates": rows},
+            {
+                "run_dates": run_dates,
+                "rates": filled_rows,
+                "carry_forward_count": carry_forward_count,
+            },
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
@@ -266,16 +392,27 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "cdr-ribbon-map.js",
             "cdr-taxonomy-tree.js",
             "local-brand.js",
+            "rba-cash-rate.js",
             "utils.js",
         ):
             try:
                 dashboard_cache.read(DASHBOARD_ROOT / rel)
             except FileNotFoundError:
                 pass
+        for site_rel in (
+            "theme.js",
+            "foundation.css",
+            "ar-ribbon-format.js",
+            "ar-ribbon-tree.js",
+        ):
+            try:
+                site_cache.read(site_root / site_rel)
+            except FileNotFoundError:
+                print(f"Site static missing: {site_root / site_rel}")
         try:
             site_cache.read(site_root / "assets" / "branding" / "ar-mark.svg")
         except FileNotFoundError:
-            pass
+            print(f"Site static missing: {site_root / 'assets' / 'branding' / 'ar-mark.svg'}")
         try:
             exports_root, cache = artifact_cache()
             latest = cache.read(exports_root / "dashboard-cache" / "latest.json")
@@ -302,6 +439,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+            except BadRequestError as exc:
+                self.send_error(HTTPStatus.BAD_REQUEST, explain=str(exc))
             except FileNotFoundError:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -322,6 +461,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/cdr-ribbon-map.js",
                 "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
+                "/assets/rba-cash-rate.js",
                 "/assets/utils.js",
             ):
                 return dashboard_cache.read(DASHBOARD_ROOT / path.removeprefix("/assets/")), "application/javascript; charset=utf-8"
@@ -343,13 +483,14 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root, cache = artifact_cache()
                 return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
             if path in ("/api/banks", "/api/energy"):
-                date = query.get("date", [""])[0]
+                date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
                 name = path.rsplit("/", 1)[1] + ".json"
                 return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
             if path == "/api/banks/history":
-                date = query.get("date", [""])[0]
+                raw_date = str(query.get("date", [""])[0] or "").strip()
+                date = parse_run_date_param(raw_date) if raw_date else ""
                 return bank_history_payload(date), "application/json"
             if path.startswith("/exports/"):
                 exports_root, cache = artifact_cache()

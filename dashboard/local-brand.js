@@ -8,11 +8,10 @@
     'i',
   );
   const LOCAL_BANK_BASE = '/assets/banks/';
-  const CDN_BANK_BASE = 'https://www.australianrates.com.au/assets/banks/';
+  const CDN_BANK_BASE = 'https://australianrates.com/assets/banks/';
 
   /** Extra slug basenames tried before generic slugify (Westpac group shares pack assets). */
   const GROUP_SLUG_HINTS = [
-    { re: /banksa|bank\s+sa\b/i, slugs: ['westpac-banking-corporation'] },
     { re: /\brams\b/i, slugs: ['westpac-banking-corporation'] },
   ];
 
@@ -74,69 +73,209 @@
    * australianrates CDN logo pack. Clearbit is tried as a final fallback.
    */
   const BANK_DOMAINS = {
-    'arab bank australia': 'arabbank.com.au',
-    'alex.bank': 'alexbank.com',
-    'alex bank': 'alexbank.com',
+    'afg home loans': 'afgonline.com.au',
+    'alex.bank': 'alex.bank',
+    'alex bank': 'alex.bank',
+    'amp - my amp': 'amp.com.au',
+    'amp bank': 'amp.com.au',
+    'amp bank go': 'amp.com.au',
+    'anz': 'anz.com.au',
+    'anz plus': 'anz.com.au/plus/',
+    'arab bank australia': 'www.arabbank.com.au',
+    'auswide bank': 'auswidebank.com.au',
+    'aussie': 'aussie.com.au',
+    'aussie elevate': 'aussie.com.au',
+    'aussie home loans': 'aussie.com.au',
+    'australian military bank': 'australianmilitarybank.com.au',
+    'australian mutual bank': 'australianmutual.bank',
     'bank australia': 'bankaust.com.au',
     'bank first': 'bankfirst.com.au',
-    'bank of china': 'boc.cn',
+    'bank of china': 'www.bankofchina.com/au/',
+    'bank of melbourne': 'bankofmelbourne.com.au',
+    'bank of queensland': 'boq.com.au',
     'bank of sydney': 'bankofsydney.com.au',
     'bank of us': 'bankofus.com.au',
-    'auswide bank': 'auswidebank.com.au',
+    'banksa': 'banksa.com.au',
+    'bankwest': 'bankwest.com.au',
+    'bendigo and adelaide bank': 'bendigobank.com.au',
+    'bendigo bank': 'bendigobank.com.au',
+    'bnk bank': 'bnk.com.au',
+    'boq specialist': 'boqspecialist.com.au',
     'border bank': 'borderbank.com.au',
     'cairns bank': 'cairnsbank.com.au',
+    'commbank': 'commbank.com.au',
+    'commonwealth bank of australia': 'commbank.com.au',
     'credit union sa': 'creditunionsa.com.au',
-    'darling downs bank': 'darlingsbank.com.au',
+    'darling downs bank': 'ddbank.com.au',
     'defence bank': 'defencebank.com.au',
     'family first': 'familyfirst.com.au',
+    'firstmac': 'firstmac.com.au',
     'greater bank': 'greater.com.au',
+    'great southern bank': 'greatsouthernbank.com.au',
+    'great southern bank business+': 'greatsouthernbank.com.au',
+    'heartland': 'heartlandbank.com.au',
+    'heartland australia': 'heartlandbank.com.au',
+    'hsbc australia': 'hsbc.com.au',
+    'hsbc wholesale': 'hsbc.com.au',
     'hume bank': 'humebank.com.au',
     'imb bank': 'imb.com.au',
+    'in1bank': 'in1bank.com.au',
+    'in1bank ltd': 'in1bank.com.au',
+    'ing': 'ing.com.au',
     'judo bank': 'judo.bank',
     'liberty financial': 'liberty.com.au',
+    'macquarie bank': 'macquarie.com.au',
+    'maitland mutual': 'www.themutual.com.au',
+    'maitland mutual limited': 'www.themutual.com.au',
+    'me bank': 'mebank.com.au',
+    'me bank me go': 'mebank.com.au',
+    'me go': 'mebank.com.au',
+    'mecu': 'bankaust.com.au',
     'move bank': 'movebank.com.au',
     'mystate bank': 'mystate.com.au',
+    'national australia bank': 'nab.com.au',
+    'newcastle permanent': 'newcastlepermanent.com.au',
+    'newcastle permanent building society': 'newcastlepermanent.com.au',
+    'paypal australia': 'paypal.com',
     'people first bank': 'peoplefirstbank.com.au',
+    'pepper money': 'peppermoney.com.au',
     'police bank': 'policebank.com.au',
     'qudos bank': 'qudosbank.com.au',
     'racq bank': 'racq.com.au',
+    'rsl money': 'rslmoney.com.au',
+    'solo by myob': 'myob.com',
     'south west credit union': 'swcu.com.au',
-    'southern cross credit union': 'southerncross.com.au',
+    'southern cross credit union': 'sccu.com.au',
+    'st. george bank': 'stgeorge.com.au',
+    'suncorp bank': 'suncorpbank.com.au',
     'the capricornian': 'capricornian.com.au',
+    'traditional credit union': 'tcu.com.au',
     'transport mutual credit union': 'tmcu.com.au',
-    'unity bank': 'unitybank.com.au',
-    'up': 'up.com.au',
+    'tyro': 'tyro.com',
+    'tyro banking': 'tyro.com',
+    'tyro payments': 'tyro.com',
+    'ubank': 'ubank.com.au',
     'unibank': 'unibank.com.au',
+    'unloan': 'unloan.com.au',
+    'up': 'up.com.au',
     'victoria teachers mutual bank': 'victeach.com.au',
-    'banksa': 'banksa.com.au',
-    'boq specialist': 'boqspecialist.com.au',
-    'bnk bank': 'bnkbank.com.au',
-    'afg home loans': 'afgonline.com.au',
-    'aussie home loans': 'aussie.com.au',
-    'aussie elevate': 'aussie.com.au',
-    'aussie': 'aussie.com.au',
-    'amp - my amp': 'amp.com.au',
-    'amp bank go': 'amp.com.au',
-    'anz plus': 'anz.com.au',
-    'australian military bank': 'australianmilitarybank.com.au',
-    'australian mutual bank': 'australianmutual.bank',
-    'bank of melbourne': 'bankofmelbourne.com.au',
-    'pepper money': 'peppermoney.com.au',
-    'firstmac': 'firstmac.com.au',
-    'mecu': 'bankaust.com.au',
+    'virgin money': 'virginmoney.com.au',
+    'westpac banking corporation': 'westpac.com.au',
   };
 
-  /** Clearbit Logo API — used as last resort when no local/CDN icon is found. */
+  /** Official exact-brand images for providers where group logos are misleading. */
+  const OFFICIAL_LOGO_URLS = {
+    'anz plus': [
+      'https://www.anz.com.au/content/dam/anzplus/logos/anz-plus-logo.svg',
+      'https://www.anz.com.au/etc.clientlibs/anzplus/web2/clientlibs/clientlib-anzplus-components/resources/icon-192x192.png',
+    ],
+    'arab bank australia': [
+      'https://www.arabbank.com.au/themes/arabbank/images/abal-logo.svg',
+    ],
+    'banksa': [
+      'https://www.banksa.com.au/etc/designs/sbgrp/bsa/clientlibs/css/favicons/apple-touch-icon-152x152.png',
+      'https://www.banksa.com.au/etc/designs/sbgrp/bsa/clientlibs/css/favicons/favicon-32x32.png',
+    ],
+    'bank of china': [
+      'https://www.bankofchina.com/images/boc2013_ovs_ft_logo.png',
+    ],
+    'bnk bank': [
+      'https://www.bnk.com.au/wp-content/uploads/2025/02/Logo.svg',
+      'https://www.bnk.com.au/wp-content/uploads/2025/02/cropped-Logo1-192x192.png',
+    ],
+    'boq specialist': [
+      'https://www.boqspecialist.com.au/favicon.ico',
+    ],
+    'family first': [
+      'https://familyfirst.com.au/wp-content/themes/familyfirst/images/logo.png',
+      'https://familyfirst.com.au/wp-content/uploads/2019/11/cropped-Family-First-Favicon-192x192.png',
+    ],
+    'maitland mutual': [
+      'https://www.themutual.com.au/favicon.ico',
+    ],
+    'traditional credit union': [
+      'https://tcu.com.au/wp-content/uploads/2019/02/TCU-Logo-Transparent-e1549607267783.png',
+      'https://tcu.com.au/wp-content/uploads/2019/01/cropped-TCU-Logo-1-e1548750375490-1-192x192.png',
+    ],
+    'unloan': [
+      'https://cdn.prod.website-files.com/6213e151e80699c74710709e/67c11fa0f20ffc6e0d1d2e5e_unloan-icon-256x256.png',
+      'https://cdn.prod.website-files.com/6213e151e80699c74710709e/67c11f9ab4f8226908b6dc20_unloan-icon-32x32.png',
+    ],
+  };
+
+  /** Clearbit Logo API - used after official-domain favicons. */
   function clearbitUrl(domain) {
-    return 'https://logo.clearbit.com/' + domain + '?size=64';
+    const host = domainHost(domain);
+    return host ? 'https://logo.clearbit.com/' + host + '?size=64' : '';
   }
 
-  /** Look up the Clearbit URL for a given provider label (energy or bank). */
-  function clearbitUrlForProvider(label) {
-    const key = String(label || '').trim().toLowerCase();
-    const domain = ENERGY_DOMAINS[key] || BANK_DOMAINS[key];
-    if (domain) return clearbitUrl(domain);
-    return '';
+  function canonicalProviderKey(label) {
+    return String(lookupProvider(label) || '').trim().toLowerCase();
+  }
+
+  function providerDomain(label) {
+    const raw = String(label || '').trim().toLowerCase();
+    const canonical = canonicalProviderKey(label);
+    return BANK_DOMAINS[raw] || BANK_DOMAINS[canonical] || ENERGY_DOMAINS[raw] || ENERGY_DOMAINS[canonical] || '';
+  }
+
+  function domainUrl(domain) {
+    const value = String(domain || '').trim();
+    if (!value) return '';
+    return /^https?:\/\//i.test(value) ? value : 'https://' + value;
+  }
+
+  function domainHost(domain) {
+    const value = domainUrl(domain);
+    if (!value) return '';
+    try {
+      return new URL(value).hostname.replace(/^www\./i, '');
+    } catch (_e) {
+      return String(domain || '').replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
+    }
+  }
+
+  function googleFaviconUrl(domain) {
+    const value = domainUrl(domain);
+    return value ? 'https://www.google.com/s2/favicons?domain_url=' + encodeURIComponent(value) + '&sz=64' : '';
+  }
+
+  function rootFaviconUrl(domain) {
+    const value = domainUrl(domain);
+    if (!value) return '';
+    try {
+      const url = new URL(value);
+      return url.origin + '/favicon.ico';
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function pushUnique(out, seen, value) {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    out.push(value);
+  }
+
+  function exactOfficialLogoUrlsForProvider(label) {
+    const raw = String(label || '').trim().toLowerCase();
+    const canonical = canonicalProviderKey(label);
+    const out = [];
+    const seen = new Set();
+    (OFFICIAL_LOGO_URLS[raw] || []).forEach((value) => pushUnique(out, seen, value));
+    (OFFICIAL_LOGO_URLS[canonical] || []).forEach((value) => pushUnique(out, seen, value));
+    return out;
+  }
+
+  function officialLogoUrlsForProvider(label) {
+    const out = [];
+    const seen = new Set();
+    exactOfficialLogoUrlsForProvider(label).forEach((value) => pushUnique(out, seen, value));
+    const domain = providerDomain(label);
+    pushUnique(out, seen, googleFaviconUrl(domain));
+    pushUnique(out, seen, rootFaviconUrl(domain));
+    pushUnique(out, seen, clearbitUrl(domain));
+    return out;
   }
 
   function child(parent, tagName, className, text) {
@@ -167,26 +306,73 @@
 
   /** Align folder / register labels with AustralianRates `ar-bank-brand.js` canonical keys. */
   function lookupProvider(value) {
-    const raw = String(value || '').toLowerCase();
+    const raw = String(value || '').toLowerCase().trim();
+    // Order matters — more-specific variants come before broader prefixes.
+    if (/great southern bank business/i.test(raw)) return 'great southern bank business+';
     if (raw.includes('great southern')) return 'great southern bank';
     if (raw.includes('86400') || raw.includes('86 400')) return 'ubank';
+    if (raw.includes('amp bank go') || raw === 'amp go') return 'amp bank go';
     if (raw.includes('amp')) return 'amp bank';
+    if (raw.includes('anz plus')) return 'anz plus';
     if (raw.includes('anz')) return 'anz';
-    if (raw.includes('commonwealth') || raw.includes('commbank')) return 'commonwealth bank of australia';
+    if (raw.includes('unloan')) return 'unloan';
+    if (raw.includes('commonwealth') || raw.includes('commbank') || raw === 'cba') return 'commonwealth bank of australia';
     if (raw.includes('national australia') || raw === 'nab' || raw.startsWith('nab ')) return 'national australia bank';
     if (raw.includes('westpac')) return 'westpac banking corporation';
-    if (/banksa|bank\s+sa\b/i.test(raw)) return 'westpac banking corporation';
+    if (/banksa|bank\s+sa\b/i.test(raw)) return 'banksa';
     if (/\brams\b/i.test(raw)) return 'westpac banking corporation';
     if (raw.includes('macquarie')) return 'macquarie bank';
     if (raw.includes('bankwest')) return 'bankwest';
     if (/\bing\b/.test(raw)) return 'ing';
+    if (/hsbc.*wholesale|wholesale.*hsbc/i.test(raw)) return 'hsbc wholesale';
     if (raw.includes('hsbc')) return 'hsbc australia';
     if (raw.includes('ubank') || raw.includes('u bank')) return 'ubank';
     if (raw.includes('suncorp')) return 'suncorp bank';
-    if (raw.includes('st george') || raw.includes('st.george') || raw.includes('st george')) return 'st. george bank';
+    if (/st\s*\.?\s*george/i.test(raw)) return 'st. george bank';
     if (raw.includes('bendigo')) return 'bendigo and adelaide bank';
+    if (raw.includes('boq specialist')) return 'boq specialist';
     if (raw.includes('queensland') || /\bboq\b/.test(raw)) return 'bank of queensland';
     if (raw.includes('melbourne') && raw.includes('bank')) return 'bank of melbourne';
+    if (raw.includes('alex')) return 'alex bank';
+    if (raw.includes('arab bank')) return 'arab bank australia';
+    if (raw.includes('australian military')) return 'australian military bank';
+    if (raw.includes('auswide')) return 'auswide bank';
+    if (raw.includes('bnk bank') || raw.includes('goldfields money')) return 'bnk bank';
+    if (raw.includes('bank australia') || raw === 'mecu') return 'bank australia';
+    if (raw.includes('bank first')) return 'bank first';
+    if (raw.includes('bank of china')) return 'bank of china';
+    if (raw.includes('bank of sydney')) return 'bank of sydney';
+    if (raw.includes('bank of us')) return 'bank of us';
+    if (raw.includes('border bank')) return 'border bank';
+    if (raw.includes('cairns')) return 'cairns bank';
+    if (raw.includes('credit union sa')) return 'credit union sa';
+    if (raw.includes('darling downs')) return 'darling downs bank';
+    if (raw.includes('defence bank')) return 'defence bank';
+    if (raw.includes('family first')) return 'family first';
+    if (raw.includes('greater bank')) return 'greater bank';
+    if (raw.includes('heartland')) return 'heartland';
+    if (raw.includes('hume bank')) return 'hume bank';
+    if (raw.includes('imb')) return 'imb bank';
+    if (raw.includes('in1')) return 'in1bank';
+    if (raw.includes('judo')) return 'judo bank';
+    if (raw.includes('liberty')) return 'liberty financial';
+    if (raw.includes('maitland mutual')) return 'maitland mutual';
+    if (/\bme\s*bank\b.*\bme\s*go\b/i.test(raw) || raw.includes('me go')) return 'me bank me go';
+    if (raw.includes('me bank') || /^me$/.test(raw)) return 'me bank';
+    if (raw.includes('mystate')) return 'mystate bank';
+    if (raw.includes('newcastle permanent')) return 'newcastle permanent';
+    if (raw.includes('paypal')) return 'paypal australia';
+    if (raw.includes('police bank')) return 'police bank';
+    if (raw.includes('qudos')) return 'qudos bank';
+    if (raw.includes('racq')) return 'racq bank';
+    if (raw.includes('rsl money')) return 'rsl money';
+    if (raw.includes('solo by myob') || raw === 'solo' || raw === 'myob') return 'solo by myob';
+    if (raw.includes('southern cross credit')) return 'southern cross credit union';
+    if (raw.includes('capricornian')) return 'the capricornian';
+    if (raw.includes('traditional credit union')) return 'traditional credit union';
+    if (raw.includes('tyro')) return 'tyro';
+    if (raw === 'up' || raw === 'up bank') return 'up';
+    if (raw.includes('virgin')) return 'virgin money';
     return value;
   }
 
@@ -313,7 +499,7 @@
       .toUpperCase();
   }
 
-  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider, clearbitFallback) {
+  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider) {
     while (logoWrap.firstChild) logoWrap.removeChild(logoWrap.firstChild);
     const urls = [];
     const seen = new Set();
@@ -323,6 +509,7 @@
       urls.push(u);
     };
     const remoteFirst = preferBankCdnFirst();
+    exactOfficialLogoUrlsForProvider(provider).forEach(pushUrl);
     if (remoteFirst && metaIcon) {
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
       pushUrl(metaIcon);
@@ -331,7 +518,7 @@
       pushUrl(cdnTwinForLocalBankUrl(metaIcon));
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
-    if (clearbitFallback) pushUrl(clearbitFallback);
+    officialLogoUrlsForProvider(provider).forEach(pushUrl);
 
     if (!urls.length) {
       child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
@@ -390,14 +577,13 @@
       const seen = new Set(slugBasenames);
       if (!seen.has(iconSlug)) slugBasenames = [iconSlug].concat(slugBasenames);
     }
-    const clearbitFallback = clearbitUrlForProvider(provider);
     const classes = ['bank-badge', 'local-bank-badge'];
     if (opts.logoOnly) classes.push('local-bank-badge--logo-only');
     const badge = child(parent, 'span', classes.join(' '));
     badge.title = provider || meta.name;
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
-    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, clearbitFallback);
+    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider);
     const copy = child(badge, 'span', 'bank-badge-copy');
     child(copy, 'span', 'bank-badge-label', meta.short || provider || '-');
     if (showName) child(copy, 'span', 'bank-badge-sub', provider || meta.name);
@@ -411,6 +597,8 @@
     lookupProvider,
     logoUrlsFromSlugs,
     orderedSlugBasenames,
+    officialLogoUrlsForProvider,
+    providerDomain,
     providerMeta,
   };
 })();

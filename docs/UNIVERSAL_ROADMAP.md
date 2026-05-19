@@ -338,7 +338,8 @@ Current source of truth:
 
 Rules for future agents:
 
-- Prefer `window.AR.ribbon.ribbonTierFieldsForSection()` and `window.AR.ribbon.buildRibbonTierTree()` for visible banking hierarchy.
+- Prefer `window.AR.ribbon.ribbonInitialTierFieldsForSection()` (or `ribbonTierFieldsForSection`) and `buildRibbonTierTree()` for visible banking hierarchy.
+- Deferred locally: full `ar-filters.js` bar, Tabulator table, and `chartReportPlot` CPI stack (see parity audit).
 - Keep `dashboard/cdr-taxonomy-tree.js` as fallback or diagnostic support, not the primary visible banking tree.
 - When public AustralianRates changes hierarchy fields or labels, update the local row adapter and verify identical node lists against the public asset behavior.
 - Do not invent local display names for canonical public nodes.
@@ -501,7 +502,7 @@ Every agent should leave the next agent with:
 
 ## Verified Current State
 
-Snapshot of operational facts the next agent can trust without re-running every probe. Re-verify and overwrite this section whenever the underlying state changes. Use the `Live Pi Observability` probes; do not invent fresh commands here.
+Snapshot of operational facts the next agent can trust without re-running every probe. **Treat as stale** unless `Last verified` is within **48 hours** of the current work. Re-verify and overwrite this section whenever the underlying state changes. Use the `Live Pi Observability` probes; do not invent fresh commands here.
 
 Last verified: **2026-05-15** (UTC ~13:24).
 

@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
@@ -24,6 +24,19 @@
 
   function num(value) {
     return Number(value || 0).toLocaleString('en-AU');
+  }
+
+  function shortBank(name) {
+    const brand = window.AR && window.AR.bankBrand;
+    if (brand && brand.shortLabel) {
+      const short = brand.shortLabel(name);
+      if (short && short !== '-') return short;
+    }
+    return String(name || '').slice(0, 12);
+  }
+
+  function rowProductKey(row) {
+    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
   }
 
   function minMax(rows) {
@@ -100,13 +113,46 @@
     if (latest == null || previous == null) return '';
     const delta = Math.round((latest - previous) * 10000);
     const deltaText = delta > 0 ? '+' + delta + 'bp' : delta + 'bp';
-    return `${previousDate} ${pct(previous)} -> ${latestDate} ${pct(latest)} (${deltaText})`;
+    return `${previousDate} ${pct(previous)} → ${latestDate} ${pct(latest)} (${deltaText})`;
   }
 
   function collectRowsUnder(node) {
     if (!node || node.kind === 'empty') return [];
     if (node.kind === 'leaves') return node.rows.slice();
     return node.groups.flatMap((g) => collectRowsUnder(g.child));
+  }
+
+  /** Provider → plan leaves when energy rows lack taxonomy_path. */
+  function buildEnergyProviderTree(rows) {
+    if (!rows.length) return { kind: 'empty', rows: [] };
+    const byProvider = {};
+    rows.forEach((row) => {
+      const provider = row.provider || 'Unknown';
+      if (!byProvider[provider]) byProvider[provider] = [];
+      byProvider[provider].push(row);
+    });
+    const providers = Object.keys(byProvider).sort((a, b) => a.localeCompare(b));
+    return {
+      kind: 'branch',
+      field: 'bank_name',
+      groups: providers.map((label) => ({
+        label,
+        rows: byProvider[label],
+        best: null,
+        child: { kind: 'leaves', rows: byProvider[label] },
+      })),
+      rows: rows.slice(),
+    };
+  }
+
+  function singleProviderUnder(node) {
+    const rows = collectRowsUnder(node);
+    if (!rows.length) return '';
+    const first = rows[0].provider || '';
+    for (let i = 1; i < rows.length; i += 1) {
+      if ((rows[i].provider || '') !== first) return '';
+    }
+    return first;
   }
 
   /** Adapt AustralianRates ribbon tier tree to this panel's shape (groups carry rows + best rate). */
@@ -132,9 +178,12 @@
   }
 
   function formatBranchLabel(field, label, mode) {
-    // Taxonomy tree fields start with "taxonomy_" — route to local formatter.
     if (String(field || '').startsWith('taxonomy_') && window.LocalCdrTaxonomyTree) {
       return window.LocalCdrTaxonomyTree.formatLabel(label);
+    }
+    if (field === 'bank_name') {
+      const s = shortBank(label);
+      return s || String(label || '');
     }
     const ribbon = window.AR && window.AR.ribbon;
     if (ribbon && ribbon.ribbonCompactBranchLabel) {
@@ -174,6 +223,18 @@
     return Number(active.slice(path.length + 1).split('>')[0]);
   }
 
+  function nodeAtPath(tree, activePath) {
+    const parts = String(activePath || '').split('>').filter(Boolean);
+    let node = tree;
+    for (let i = 0; i < parts.length; i += 1) {
+      if (!node || node.kind !== 'branch') return node;
+      const idx = Number(parts[i]);
+      if (!node.groups || !node.groups[idx]) return node;
+      node = node.groups[idx].child;
+    }
+    return node;
+  }
+
   function renderRateRange(parent, rows, best, descending) {
     const mm = minMax(rows);
     if (mm.min == null) return;
@@ -203,12 +264,11 @@
       if (!node || node.kind !== 'branch' || !node.groups[groupIndex]) return;
       const group = node.groups[groupIndex];
       path = path ? path + '>' + groupIndex : String(groupIndex);
-      child(bar, 'span', 'ar-report-underchart-tree-crumb-sep', '>');
+      child(bar, 'span', 'ar-report-underchart-tree-crumb-sep', '›');
       const crumbText = formatBranchLabel(node.field, group.label, 'crumb');
-      const crumbTitle = formatBranchLabel(node.field, group.label, 'branch');
       const crumb = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (index === pathParts.length - 1 ? ' is-current' : ''), crumbText);
       crumb.type = 'button';
-      crumb.title = crumbTitle;
+      crumb.title = formatBranchLabel(node.field, group.label, 'branch');
       crumb.dataset.localHierarchyAction = 'crumb';
       crumb.dataset.localHierarchyPath = path;
       node = group.child;
@@ -218,6 +278,7 @@
   function renderLeaf(container, row, depth, best, descending, state) {
     const rateRow = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--leaf ar-report-infobox-row');
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
+    if (row.provider) rateRow.dataset.localHierarchyProvider = row.provider;
     const dot = child(rateRow, 'span', 'ar-report-infobox-tsw');
     dot.style.setProperty('--ar-swatch-color', swatch(row));
     const label = child(rateRow, 'span', 'ar-report-infobox-tlabel local-hierarchy-leaf-label');
@@ -240,7 +301,11 @@
     const history = historyText([row], state);
     if (history) child(textCol, 'span', 'local-hierarchy-history', history);
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
-    renderRateRange(rate, [row], best, descending);
+    if (isEnergy && minMax([row]).min == null) {
+      if (row.fuel_type) child(rate, 'span', '', row.fuel_type);
+    } else {
+      renderRateRange(rate, [row], best, descending);
+    }
   }
 
   function renderBranch(container, node, group, path, depth, activePath, state) {
@@ -253,12 +318,19 @@
     row.setAttribute('data-ribbon-tree-path', path);
     row.setAttribute('role', 'button');
     row.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    row.setAttribute('aria-label', (expanded ? 'Collapse ' : 'Expand ') + formatBranchLabel(node.field, group.label, 'branch'));
+    const fullLabel = formatBranchLabel(node.field, group.label, 'branch');
+    row.setAttribute('aria-label', (expanded ? 'Collapse ' : 'Expand ') + fullLabel);
     row.tabIndex = 0;
-    child(row, 'span', 'ar-report-infobox-twist', expanded ? 'v' : '>');
+    if (node.field === 'bank_name') {
+      row.dataset.localHierarchyProvider = String(group.label || '');
+    } else {
+      const singleProvider = singleProviderUnder(group.child);
+      if (singleProvider) row.dataset.localHierarchyProvider = singleProvider;
+    }
+    child(row, 'span', 'ar-report-infobox-twist', expanded ? '▾' : '▸');
     const label = child(row, 'span', 'ar-report-infobox-tlabel');
-    label.textContent = formatBranchLabel(node.field, group.label, 'branch');
-    label.title = formatBranchLabel(node.field, group.label, 'branch');
+    label.textContent = fullLabel;
+    label.title = fullLabel;
     const rate = child(row, 'span', 'ar-report-infobox-trate');
     const mm = minMax(group.rows);
     if (mm.min != null) {
@@ -273,7 +345,12 @@
   function renderTree(container, node, path, depth, activePath, state) {
     if (!node || node.kind === 'empty') return;
     if (node.kind === 'leaves') {
-      const sorted = node.rows.slice().sort((a, b) => state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate));
+      const sorted = node.rows.slice().sort((a, b) => {
+        if (state.sector === 'energy') {
+          return String(a.plan_name || '').localeCompare(String(b.plan_name || ''));
+        }
+        return state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate);
+      });
       sorted.forEach((row) => renderLeaf(container, row, depth, state.globalBest, state.descending, state));
       return;
     }
@@ -310,7 +387,27 @@
     return panel;
   }
 
-  function render(container, countEl, rows, state) {
+  function emitFocus(options, tree, activePath) {
+    if (!options || typeof options.onFocusChange !== 'function') return;
+    const focused = nodeAtPath(tree, activePath);
+    if (!focused) {
+      options.onFocusChange(null);
+      return;
+    }
+    const rows = collectRowsUnder(focused);
+    if (!rows.length || !activePath) {
+      options.onFocusChange(null);
+      return;
+    }
+    const keys = new Set();
+    rows.forEach((row) => {
+      const k = rowProductKey(row);
+      if (k) keys.add(k);
+    });
+    options.onFocusChange(keys);
+  }
+
+  function render(container, countEl, rows, state, options) {
     const visible = rows;
     const isEnergy = state.sector === 'energy';
     const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
@@ -329,12 +426,17 @@
     const hasTaxonomyPath = visible.length > 0 && visible.some((r) => r.taxonomy_path);
     if (isEnergy && hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
       tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
-    } else if (!isEnergy && ribbon && ribbon.buildRibbonTierTree && ribbon.ribbonTierFieldsForSection && window.LocalCdrRibbonMap) {
+    } else if (isEnergy) {
+      tree = buildEnergyProviderTree(visible);
+    } else if (!isEnergy && ribbon && ribbon.buildRibbonTierTree && window.LocalCdrRibbonMap) {
       const slug = window.LocalCdrRibbonMap.sectionSlug(state.section);
-      const tierFields = ribbon.ribbonTierFieldsForSection(slug);
-      const products = window.LocalCdrRibbonMap.toRibbonProducts(visible, state.section);
-      const ribbonRoot = ribbon.buildRibbonTierTree(products, tierFields, 0);
-      tree = annotateRibbonBranch(ribbonRoot, state.descending);
+      const tierFieldsFn = ribbon.ribbonInitialTierFieldsForSection || ribbon.ribbonTierFieldsForSection;
+      if (tierFieldsFn) {
+        const tierFields = tierFieldsFn(slug);
+        const products = window.LocalCdrRibbonMap.toRibbonProducts(visible, state.section);
+        const ribbonRoot = ribbon.buildRibbonTierTree(products, tierFields, 0);
+        tree = annotateRibbonBranch(ribbonRoot, state.descending);
+      }
     } else if (hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
       tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
     }
@@ -344,11 +446,16 @@
         heading: state.section + ' hierarchy', meta: 'No rows',
         renderBody: (wrap) => child(wrap, 'div', 'chart-series-empty', 'No hierarchy data available.'),
       });
+      emitFocus(options, tree, '');
       return;
     }
+    emitFocus(options, tree, state.hierarchyPath || '');
+    const metaParts = isEnergy
+      ? [`${num(visible.length)} plans`, `${num(providerCount)} providers`]
+      : [`${rangeText(visible)}`, `${num(productCount)} products`, `${num(providerCount)} providers`];
     panel.show({
       heading: 'Current slice',
-      meta: `${state.manifest.run_date} - ${rangeText(visible)} - ${num(productCount)} products - ${num(providerCount)} providers`,
+      meta: `${state.manifest.run_date} • ${metaParts.join(' • ')}`,
       compact: true,
       renderBody: (wrap) => {
         renderBreadcrumbs(wrap, tree, state.hierarchyPath || '');
@@ -357,5 +464,5 @@
     });
   }
 
-window.LocalCdrHierarchy = { render };
+  window.LocalCdrHierarchy = { render };
 })();

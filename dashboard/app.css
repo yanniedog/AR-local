@@ -39,6 +39,14 @@ body.ar-public.ar-local-cdr {
 /* Savings and Energy sections carry a green/teal section accent — replace  */
 /* with the same blue used by the home-loans section.                        */
 body.ar-local-cdr.ar-section-savings,
+/* Energy: hide banking-only intro chrome (JS also toggles hidden). */
+body.ar-local-cdr.ar-section-economic-data .market-intro-live-grid,
+body.ar-local-cdr.ar-section-economic-data #sectionCards,
+body.ar-local-cdr.ar-section-economic-data #selectedLogos,
+body.ar-local-cdr.ar-section-economic-data .chart-question-row {
+  display: none;
+}
+
 body.ar-local-cdr.ar-section-economic-data {
   --ar-section-accent: var(--ar-local-blue-strong);
   --ar-section-accent-soft: var(--ar-local-section-fill);
@@ -255,6 +263,12 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
 .ar-local-cdr button.local-provider-logo-btn.is-selected {
   border-color: color-mix(in srgb, var(--ar-line-strong) 92%, transparent);
   background: color-mix(in srgb, var(--ar-surface-2) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ar-section-accent) 65%, transparent);
+}
+
+.ar-local-cdr button.local-provider-logo-btn.is-hover {
+  border-color: color-mix(in srgb, var(--ar-section-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
 }
 
 body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
@@ -353,7 +367,17 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr .terminal-chart-surface {
+  min-width: 0;
   min-height: 520px;
+  overflow: hidden;
+}
+
+.ar-local-cdr .chart-side-panel {
+  min-width: 0;
+}
+
+.ar-local-cdr .chart-workspace-resizer {
+  z-index: 2;
 }
 
 .ar-local-cdr #chart {
@@ -421,7 +445,38 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(15rem);
+  align-items: start;
+  gap: 4px 6px;
   min-height: 30px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-items: end;
+  align-content: start;
+  gap: 1px 3px;
+  max-width: min(15rem, 42vw);
+  min-width: max-content;
+  text-align: right;
+  white-space: normal;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+  white-space: nowrap;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+  white-space: normal;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge {
@@ -440,7 +495,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-label,
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge-sub {
-  max-width: 260px;
+  max-width: min(100%, 16rem);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -546,10 +601,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     justify-self: stretch;
   }
 
-  .ar-local-cdr .local-filter-strip {
-    grid-template-columns: 1fr;
-  }
-
   .ar-local-cdr .local-section-cards {
     grid-template-columns: 1fr;
   }
@@ -558,5 +609,90 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr .terminal-chart-surface,
   .ar-local-cdr #chart {
     min-height: 360px;
+  }
+
+  .ar-local-cdr .chart-side-panel,
+  .ar-local-cdr #hierarchy,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-body,
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+    height: auto;
+    overflow: visible;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree {
+    max-height: none;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    max-width: 44vw;
+  }
+}
+
+@media (max-width: 520px) {
+  body.ar-public.ar-local-cdr .chart-workspace {
+    display: grid;
+    grid-template-rows: clamp(220px, var(--ar-chart-mobile-top-height, 240px), 260px) 12px minmax(220px, 1fr);
+  }
+
+  body.ar-public.ar-local-cdr .terminal-chart-surface {
+    height: auto;
+    min-height: 220px;
+  }
+
+  body.ar-public.ar-local-cdr .chart-side-panel {
+    margin-top: 12px;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "twist label rate"
+      ". history history";
+    align-items: center;
+    column-gap: 5px;
+    min-height: 0;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    margin-bottom: 0;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-twist,
+  .ar-local-cdr #hierarchy .ar-report-infobox-tsw {
+    display: inline-grid !important;
+    grid-area: twist;
+    vertical-align: top;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
+    display: block !important;
+    grid-area: label;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    display: inline-flex !important;
+    grid-area: rate;
+    flex-wrap: nowrap;
+    gap: 2px 4px;
+    width: auto;
+    margin-left: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    justify-self: end;
+    justify-items: end;
+    max-width: 100%;
+    min-width: 0;
+    text-align: right;
+    line-height: 1.25;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+    flex-basis: 100%;
   }
 }

@@ -31,7 +31,7 @@
         <button class="site-header-segment-link is-active" type="button" data-section="Mortgage">Mortgage</button>
         <button class="site-header-segment-link" type="button" data-section="Savings">Savings</button>
         <button class="site-header-segment-link" type="button" data-section="TD">Term Deposits</button>
-        <button class="site-header-segment-link" type="button" data-section="Energy">Economic Data</button>
+        <button class="site-header-segment-link" type="button" data-section="Energy">Energy</button>
       </nav>
       <div class="site-header-actions">
         <button class="site-action-btn site-action-theme" type="button" data-theme-toggle data-theme-label="Theme" aria-label="Theme">Theme</button>
@@ -62,62 +62,6 @@
     <section class="market-terminal" aria-label="Local CDR workspace">
       <section class="terminal-column terminal-column-center">
         <section class="panel terminal-panel terminal-workspace-panel" id="workspace">
-          <div class="workspace-nav-row">
-            <nav class="workspace-tab-nav" role="tablist" aria-label="Local CDR views">
-              <button id="tab-chart" class="tab-btn chip-btn secondary active" role="tab" aria-selected="true" aria-controls="panel-chart" type="button">Chart</button>
-            </nav>
-            <div class="workspace-nav-actions" role="toolbar" aria-label="Workspace actions">
-              <button type="button" id="refresh-page-btn" class="secondary small">Refresh</button>
-              <span id="last-refreshed" class="hint"></span>
-            </div>
-          </div>
-          <div class="local-filter-strip" aria-label="Filters">
-            <label class="terminal-field local-filter-banks-only"><span class="terminal-field-label">Dataset</span><select id="dataset"></select></label>
-            <label class="terminal-field local-filter-purpose"><span class="terminal-field-label">Purpose</span>
-              <select id="filter-purpose">
-                <option value="">All</option>
-                <option value="owner_occupied">Owner Occ.</option>
-                <option value="investment">Investment</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-repayment"><span class="terminal-field-label">Repayment</span>
-              <select id="filter-repayment">
-                <option value="">All</option>
-                <option value="principal_and_interest">P&amp;I</option>
-                <option value="interest_only">Interest only</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-structure"><span class="terminal-field-label">Structure</span>
-              <select id="filter-structure">
-                <option value="">All</option>
-                <option value="VARIABLE">Variable</option>
-                <option value="FIXED">Fixed</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-rate-type" hidden><span class="terminal-field-label">Rate type</span>
-              <select id="filter-rate-type">
-                <option value="">All</option>
-                <option value="base">Base</option>
-                <option value="bonus">Bonus</option>
-                <option value="introductory">Introductory</option>
-                <option value="total">Total</option>
-              </select>
-            </label>
-            <label class="terminal-field local-filter-term" hidden><span class="terminal-field-label">Term</span>
-              <select id="filter-term">
-                <option value="">All terms</option>
-                <option value="3">3 months</option>
-                <option value="6">6 months</option>
-                <option value="12">12 months</option>
-                <option value="24">24 months</option>
-                <option value="36">36 months</option>
-                <option value="48">48 months</option>
-                <option value="60">60 months</option>
-              </select>
-            </label>
-            <label class="terminal-field"><span class="terminal-field-label">Provider</span><input id="provider" placeholder="all providers"></label>
-            <label class="terminal-field local-search-field"><span class="terminal-field-label">Search</span><input id="query" placeholder="product or plan"></label>
-          </div>
           <section id="panel-chart" class="tab-panel active" role="tabpanel" aria-labelledby="tab-chart">
             <div class="chart-block">
               <div class="chart-figure">
@@ -141,7 +85,7 @@
                   <div class="terminal-chart-surface">
                     <div id="chart" class="terminal-chart-output" aria-label="Rate comparison chart"></div>
                   </div>
-                  <div class="chart-workspace-resizer" role="separator" aria-hidden="true"></div>
+                  <div id="chart-workspace-resizer" class="chart-workspace-resizer" role="separator" tabindex="0" aria-label="Resize chart workspace panels"></div>
                   <aside id="chart-side-panel" class="chart-side-panel" aria-label="Visible rows">
                     <div id="hierarchy" class="chart-selection-rail"></div>
                   </aside>
@@ -169,7 +113,7 @@
         <a href="#" data-section="Mortgage">Mortgage</a>
         <a href="#" data-section="Savings">Savings</a>
         <a href="#" data-section="TD">Term Deposits</a>
-        <a href="#" data-section="Energy">Economic Data</a>
+        <a href="#" data-section="Energy">Energy</a>
       </nav>
       <nav class="site-footer-nav" aria-label="Site">
         <a href="https://australianrates.com/about/" rel="noopener noreferrer" target="_blank">About</a>
@@ -188,9 +132,11 @@
   <script src="/site/ar-ribbon-tree.js"></script>
   <script src="/assets/ar-ribbon-canonical-tiers.js"></script>
   <script src="/site/ar-chart-report-plot-hierarchy-panel.js"></script>
+  <script src="/site/ar-chart-workspace-resize.js"></script>
   <script src="/site/vendor/echarts/echarts.min.js"></script>
   <script src="/assets/local-brand.js"></script>
   <script src="/assets/utils.js"></script>
+  <script src="/assets/rba-cash-rate.js"></script>
   <script src="/assets/chart.js"></script>
   <script src="/assets/cdr-ribbon-map.js"></script>
   <script src="/assets/cdr-taxonomy-tree.js"></script>
