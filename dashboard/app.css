@@ -44,6 +44,31 @@ body.ar-local-cdr.ar-section-savings {
   --ar-section-glow: var(--ar-local-section-glow);
 }
 
+/*
+ * Economic Data (/economic-data/): cdr_dashboard_server injects this file after
+ * public-polish.css, which sets --ar-section-accent to #a855f7 (purple). That
+ * tints :focus-visible rings and the bg-layer aurora into a purple box around
+ * the main landmark. Use public-modern teal and hide the aurora (same approach
+ * as ar-local-cdr banking pages).
+ */
+:root[data-theme="dark"] body.ar-public.ar-section-economic-data,
+:root[data-theme="light"] body.ar-public.ar-section-economic-data {
+  --ar-section-accent: #0f766e;
+  --ar-section-accent-soft: rgba(15, 118, 110, 0.12);
+  --ar-section-glow: rgba(15, 118, 110, 0.14);
+}
+
+html body.ar-public.ar-section-economic-data .bg-layer {
+  display: none;
+}
+
+body.ar-public.ar-section-economic-data #main-content,
+body.ar-public.ar-section-economic-data #main-content:focus,
+body.ar-public.ar-section-economic-data #main-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 /* Showcase-spark / glow (used by bg-layer gradients) — keep neutral blue. */
 body.ar-local-cdr {
   --ar-showcase-spark: var(--ar-local-showcase-spark);
