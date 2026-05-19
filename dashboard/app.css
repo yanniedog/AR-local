@@ -44,6 +44,31 @@ body.ar-local-cdr.ar-section-savings {
   --ar-section-glow: var(--ar-local-section-glow);
 }
 
+/*
+ * Economic Data (/economic-data/): cdr_dashboard_server injects this file after
+ * public-polish.css, which sets --ar-section-accent to #a855f7 (purple). That
+ * tints the bg-layer aurora into a purple wash around the shell. Use the same
+ * blue section tokens as local CDR pages and hide the aurora.
+ */
+body.ar-public.ar-section-economic-data {
+  --ar-section-accent: #3b82f6;
+  --ar-section-accent-soft: rgba(59, 130, 246, 0.12);
+  --ar-section-soft: rgba(59, 130, 246, 0.1);
+  --ar-section-glow: rgba(59, 130, 246, 0.18);
+}
+
+html body.ar-public.ar-section-economic-data .bg-layer {
+  display: none;
+}
+
+/* Skip-to-content focuses #main-content; beat public-polish outline:none with a blue ring, no shadow box */
+body.ar-public.ar-section-economic-data #main-content:focus,
+body.ar-public.ar-section-economic-data #main-content:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ar-section-accent) 75%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 /* Showcase-spark / glow (used by bg-layer gradients) — keep neutral blue. */
 body.ar-local-cdr {
   --ar-showcase-spark: var(--ar-local-showcase-spark);
@@ -124,6 +149,16 @@ body.ar-public .site-header-segment-link:focus-visible {
   border: 1px solid var(--ar-line);
   background: var(--ar-surface-2);
   color: var(--ar-text);
+}
+
+/* frame.js toolbar: public-modern bumps refresh to 1.2rem; match public-shell .site-action-icon (1rem). */
+body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
+  stroke-width: 1.8;
 }
 
 /* ── Section cards ─────────────────────────────────────────────────────── */
