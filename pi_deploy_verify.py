@@ -205,19 +205,20 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
     remote = pi_remote()
     ar = pi_ar_repo()
     site = pi_site_repo()
+    q_remote = shell_quote(remote)
+    q_ar = shell_quote(ar)
+    q_site = shell_quote(site)
+    q_remote_main = shell_quote(f"{remote}/main")
     script = (
         f"set +e; "
-        f"remote={shell_quote(remote)}; "
-        f"ar={shell_quote(ar)}; "
-        f"site={shell_quote(site)}; "
-        f"cd \"$ar\" && git fetch \"$remote\" 2>/dev/null; "
-        f"ar_h=$(git -C \"$ar\" rev-parse HEAD 2>/dev/null); "
-        f"ar_o=$(git -C \"$ar\" rev-parse \"$remote/main\" 2>/dev/null); "
-        f"ar_d=$(git -C \"$ar\" status --porcelain); "
-        f"cd \"$site\" && git fetch \"$remote\" 2>/dev/null; "
-        f"site_h=$(git -C \"$site\" rev-parse HEAD 2>/dev/null); "
-        f"site_o=$(git -C \"$site\" rev-parse \"$remote/main\" 2>/dev/null); "
-        f"site_d=$(git -C \"$site\" status --porcelain); "
+        f"git -C {q_ar} fetch {q_remote} 2>/dev/null; "
+        f"ar_h=$(git -C {q_ar} rev-parse HEAD 2>/dev/null); "
+        f"ar_o=$(git -C {q_ar} rev-parse {q_remote_main} 2>/dev/null); "
+        f"ar_d=$(git -C {q_ar} status --porcelain); "
+        f"git -C {q_site} fetch {q_remote} 2>/dev/null; "
+        f"site_h=$(git -C {q_site} rev-parse HEAD 2>/dev/null); "
+        f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
+        f"site_d=$(git -C {q_site} status --porcelain); "
         f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
         f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
         f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$(echo \"$ar_d\" | tr '\\n' ';')\" \"$(echo \"$site_d\" | tr '\\n' ';')\" \"$dash\""
