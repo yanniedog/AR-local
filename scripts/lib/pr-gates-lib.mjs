@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -130,7 +131,11 @@ export function fetchRequiredCi(prNumber) {
 }
 
 export function fetchNamedChecks(prNumber, names) {
-  const r = spawnSync('gh', ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], { encoding: 'utf8' });
+  const r = spawnSync(
+    'gh',
+    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,completedAt'],
+    { encoding: 'utf8' },
+  );
   if (r.status !== 0) {
     return { found: {}, error: (r.stderr || '').trim() || `gh pr checks exit ${r.status}` };
   }
@@ -190,6 +195,8 @@ export function gateGithubBotChecks(prNumber) {
   }
   const parts = [];
   let pass = true;
+  let botPresencePass = false;
+  let botPresenceCompletedAt = null;
   for (const name of BOT_GATE_CHECK_NAMES) {
     const c = found[name];
     if (!c) {
@@ -198,7 +205,13 @@ export function gateGithubBotChecks(prNumber) {
       continue;
     }
     const ok = checkBucketPass(c);
-    if (ok === true) parts.push(`${name}: pass`);
+    if (ok === true) {
+      parts.push(`${name}: pass`);
+      if (name === 'bot-presence-gate') {
+        botPresencePass = true;
+        botPresenceCompletedAt = c.completedAt || null;
+      }
+    }
     else if (ok === false) {
       parts.push(`${name}: ${c.bucket || c.state}`);
       pass = false;
@@ -211,6 +224,8 @@ export function gateGithubBotChecks(prNumber) {
     id: 'github-bot-gates',
     pass,
     detail: parts.join('; '),
+    botPresencePass,
+    botPresenceCompletedAt,
     action: pass
       ? undefined
       : 'Wait for bot-presence-gate and bot-feedback-gate on GitHub (branch protection)',
@@ -223,6 +238,8 @@ export function runNodeScript(relPath, extraArgs = [], options = {}) {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: { ...process.env, ...(options.env || {}) },
+    maxBuffer: options.maxBuffer || 1024 * 1024,
+    timeout: options.timeout || 120_000,
   });
   return {
     exitCode: r.status ?? 1,
@@ -232,13 +249,18 @@ export function runNodeScript(relPath, extraArgs = [], options = {}) {
 }
 
 export function gateWaitForBots(prNumber, githubBotGate) {
-  if (githubBotGate?.pass) {
-    return {
-      id: 'wait-for-bots',
-      pass: true,
-      detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
-      exitCode: 0,
-    };
+  if (githubBotGate?.botPresencePass) {
+    const state = readBotWaitStateFile(prNumber, REPO_ROOT);
+    const anchorMs = new Date(state?.anchor || '').getTime();
+    const gateMs = new Date(githubBotGate.botPresenceCompletedAt || '').getTime();
+    if (!Number.isFinite(anchorMs) || (Number.isFinite(gateMs) && anchorMs <= gateMs)) {
+      return {
+        id: 'wait-for-bots',
+        pass: true,
+        detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
+        exitCode: 0,
+      };
+    }
   }
   const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
   if (exitCode === 0) {
@@ -262,6 +284,7 @@ export function gateBotFeedback(prNumber) {
     '--pr',
     String(prNumber),
     '--quiet',
+    '--skip-bot-presence',
   ]);
   if (exitCode === 0) {
     return { id: 'pr-bot-feedback-check', pass: true, detail: 'Thread closure gate passed', exitCode };
