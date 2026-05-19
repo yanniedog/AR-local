@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
+import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
 import {
   classifyThreads,
   fetchPullRequestThreads,
@@ -129,7 +129,13 @@ function main() {
 
   let botPresence = null;
   if (!args.skipBotPresence) {
-    const requiredKeys = resolveRequiredKeys(args.requireBots);
+    const state = readBotWaitState(prNumber);
+    const requiredKeys =
+      args.requireBots !== null
+        ? resolveRequiredKeys(args.requireBots)
+        : state?.requiredKeys?.length
+          ? state.requiredKeys
+          : resolveRequiredKeys();
     try {
       botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
     } catch (e) {

@@ -216,7 +216,8 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   );
   const seenLogins = [...new Set(botEventsSinceAnchor.map((e) => e.login))];
   const missing = missingRequiredKeys(requiredKeys, seenLogins);
-  const allRequiredPosted = missing.length === 0 && requiredKeys.length > 0;
+  const allRequiredPosted =
+    requiredKeys.length > 0 && botEventsSinceAnchor.length > 0 && missing.length === 0;
   const lastBotAt =
     botEventsSinceAnchor.length > 0
       ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
@@ -280,10 +281,14 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   if (missing.length) {
     waitParts.push(`waiting for required bot(s): ${missing.join(', ')} (${formatRequiredKeys(missing)})`);
   }
-  if (allRequiredPosted && !quiet && lastBotAt) {
-    waitParts.push(
-      `need ${QUIET_WINDOW_SEC}s quiet after last bot (last activity ${formatDuration(Date.now() - lastBotAt.getTime())} ago)`,
-    );
+  if (allRequiredPosted && !quiet) {
+    if (lastBotAt) {
+      waitParts.push(
+        `need ${QUIET_WINDOW_SEC}s quiet after last bot (last activity ${formatDuration(Date.now() - lastBotAt.getTime())} ago)`,
+      );
+    } else {
+      waitParts.push(`need ${QUIET_WINDOW_SEC}s quiet after required bots post`);
+    }
   }
   if (!minElapsed) {
     waitParts.push(`${Math.ceil((MIN_WAIT_SEC * 1000 - elapsedMs) / 1000)}s until minimum wait`);

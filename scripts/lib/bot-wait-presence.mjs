@@ -78,18 +78,21 @@ export function collectBotEvents(prPayload, knownBots, anchorIso, fallbackIso) {
     }
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
-  return events.filter(
+  const filtered = events.filter(
     (e) => knownBots.has(e.login.toLowerCase()) && new Date(e.at).getTime() >= anchorMs,
   );
+  filtered.sort((a, b) => new Date(a.at) - new Date(b.at));
+  return filtered;
 }
 
 export function checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys, anchorIso, repoRoot } = {}) {
-  const keys = requiredKeys || resolveRequiredKeys();
+  const state = readBotWaitState(prNumber, repoRoot);
+  const keys =
+    requiredKeys?.length ? requiredKeys : state?.requiredKeys?.length ? state.requiredKeys : resolveRequiredKeys();
   const knownBots = allKnownBotLogins(keys);
   const data = ghGraphql(owner, name, prNumber);
   const pr = data?.data?.repository?.pullRequest;
   if (!pr) throw new Error('GraphQL: pull request not found');
-  const state = readBotWaitState(prNumber, repoRoot);
   const anchor = resolveAnchorIso(anchorIso || state?.anchor, pr.createdAt);
   const events = collectBotEvents(pr, knownBots, anchor, pr.createdAt);
   const seenLogins = [...new Set(events.map((e) => e.login))];
