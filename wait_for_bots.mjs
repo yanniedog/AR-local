@@ -16,14 +16,19 @@ import {
 } from './scripts/lib/bot-wait-config.mjs';
 import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-wait-state.mjs';
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
+import { isBotNoise } from './scripts/lib/bot-noise.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
 const MIN_WAIT_SEC = Number(process.env.BOT_WAIT_MIN_SEC || 60);
 const MAX_WAIT_MIN = Number(process.env.BOT_WAIT_MAX_MIN || 28);
 
+// `body` is fetched on every comment/review so we can classify quota /
+// trivial bot messages and exclude them from the quiet-window calculation —
+// otherwise a chatty bot looping on "out of credits" notices holds the cap
+// timeout open until merge gets blocked.
 const COMMENTS_QUERY =
-  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){comments(last:100){nodes{author{login}createdAt}}reviews(last:30){nodes{author{login}submittedAt}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt}}}}}}}';
+  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){comments(last:100){nodes{author{login}createdAt body}}reviews(last:30){nodes{author{login}submittedAt body}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt body}}}}}}}';
 
 function sh(cmd) {
   try {
@@ -141,15 +146,19 @@ function fetchBotActivity(owner, name, prNumber) {
   if (!pr) return { error: 'GraphQL: pull request not found', events: [] };
 
   const events = [];
+  const pushEvent = (login, at, body) => {
+    if (!login || !at) return;
+    events.push({ login, at, noise: isBotNoise(body) });
+  };
   for (const c of pr.comments?.nodes || []) {
-    if (c.author?.login && c.createdAt) events.push({ login: c.author.login, at: c.createdAt });
+    pushEvent(c.author?.login, c.createdAt, c.body);
   }
   for (const rev of pr.reviews?.nodes || []) {
-    if (rev.author?.login && rev.submittedAt) events.push({ login: rev.author.login, at: rev.submittedAt });
+    pushEvent(rev.author?.login, rev.submittedAt, rev.body);
   }
   for (const t of pr.reviewThreads?.nodes || []) {
     for (const c of t.comments?.nodes || []) {
-      if (c.author?.login && c.createdAt) events.push({ login: c.author.login, at: c.createdAt });
+      pushEvent(c.author?.login, c.createdAt, c.body);
     }
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
@@ -268,18 +277,24 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   const botEventsSinceAnchor = activity.events.filter(
     (e) => isKnownBotLogin(e.login, knownBots) && new Date(e.at).getTime() >= anchorMs,
   );
+  // Bot presence counts ANY event (so a quota notice still proves the bot is
+  // wired up to the PR), but the quiet window only looks at substantive
+  // events. Otherwise a bot stuck in a quota / "useful?" loop pegs lastBotAt
+  // forever and the 28-minute safety cap fires while the human has nothing
+  // actionable to respond to.
+  const substantiveBotEvents = botEventsSinceAnchor.filter((e) => !e.noise);
+  const noiseEventCount = botEventsSinceAnchor.length - substantiveBotEvents.length;
   const seenLogins = [...new Set(botEventsSinceAnchor.map((e) => e.login))];
   const missing = missingRequiredKeys(requiredKeys, seenLogins);
   const allRequiredPosted =
     requiredKeys.length > 0 && botEventsSinceAnchor.length > 0 && missing.length === 0;
   const lastBotAt =
-    botEventsSinceAnchor.length > 0
-      ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
+    substantiveBotEvents.length > 0
+      ? new Date(substantiveBotEvents[substantiveBotEvents.length - 1].at)
       : null;
   const quiet =
     allRequiredPosted &&
-    lastBotAt !== null &&
-    Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000;
+    (lastBotAt === null || Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000);
 
   const checks = fetchChecks(prNumber);
   if (checks.error && !checks.failed) {
@@ -317,9 +332,12 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   }
 
   if (checksReady && minElapsed && allRequiredPosted && quiet) {
+    const suffix = noiseEventCount > 0
+      ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
+      : '';
     return {
       status: 'ready',
-      message: `Bot wait satisfied (required bots posted since anchor; ${QUIET_WINDOW_SEC}s quiet). Clear to sweep threads.`,
+      message: `Bot wait satisfied (required bots posted since anchor; ${QUIET_WINDOW_SEC}s quiet). Clear to sweep threads.${suffix}`,
       lastBotAt: lastBotAt?.toISOString() || null,
       botsSeen: seenLogins,
       missing: [],
