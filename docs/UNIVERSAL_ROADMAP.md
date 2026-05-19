@@ -349,7 +349,7 @@ Rules for future agents:
 
 This is the authoritative gap list between the Pi runtime and `https://australianrates.com/`. Any agent picking up parity work should pick from this list, update it on completion, and keep retained-state facts in `Verified Current State` below in sync.
 
-**Drift note:** JS module and public API lists below are point-in-time snapshots (see section date). To refresh module names, use the live-site probe at the end of `Verified Current State` (`curl` against `https://australianrates.com/` `src=` attributes). Public API routes: `australianrates` worker sources under `workers/` in that repo.
+**Drift note:** JS module and public API lists below are point-in-time snapshots (see section date). To refresh module names, run the live-site probe in `Re-verification probes` below (`curl -fsSL -A "Mozilla/5.0" https://australianrates.com/ | grep -oE 'src="[^"]+"' | sort -u`). Public API routes: `australianrates` worker sources under `workers/` in that repo.
 
 #### Frontend shell / module gap
 

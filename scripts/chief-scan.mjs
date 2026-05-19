@@ -14,12 +14,19 @@ import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+const isWin = process.platform === 'win32';
+const nullDev = isWin ? 'nul' : '/dev/null';
+
 function sh(cmd) {
   try {
     return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   } catch (e) {
     return (e.stdout || e.stderr || '').trim();
   }
+}
+
+function shQuiet(cmd) {
+  return sh(`${cmd} 2>${nullDev}`);
 }
 
 function shJson(cmd) {
@@ -37,7 +44,7 @@ function repoRoot() {
 }
 
 function branchFiles(branch) {
-  const out = sh(`git diff --name-only origin/main...${branch} 2>nul`);
+  const out = shQuiet(`git diff --name-only origin/main...${branch}`);
   if (!out) return [];
   return out.split(/\r?\n/).filter(Boolean);
 }
@@ -152,8 +159,8 @@ function main() {
 
   const prHeadMismatch = prs
     .filter((p) => {
-      const local = sh(`git rev-parse ${p.headRefName} 2>nul`);
-      const remote = sh(`git rev-parse origin/${p.headRefName} 2>nul`);
+      const local = shQuiet(`git rev-parse ${p.headRefName}`);
+      const remote = shQuiet(`git rev-parse origin/${p.headRefName}`);
       return local && remote && local !== remote;
     })
     .map((p) => p.number);
