@@ -126,6 +126,16 @@ body.ar-public .site-header-segment-link:focus-visible {
   color: var(--ar-text);
 }
 
+/* frame.js toolbar: public-modern bumps refresh to 1.2rem; match heart/theme/help/menu. */
+body.ar-public .site-action-refresh .site-action-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+body.ar-public .site-action-refresh .site-action-icon svg {
+  stroke-width: 1.8;
+}
+
 /* ── Section cards ─────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-section-cards {
