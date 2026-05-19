@@ -246,14 +246,14 @@ export function gateGithubBotChecks(prNumber) {
   };
 }
 
-export function runNodeScript(relPath, extraArgs = [], options = {}) {
+export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxBuffer, timeout } = {}) {
   const script = path.join(REPO_ROOT, relPath);
   const r = spawnSync(process.execPath, [script, ...extraArgs], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    env: { ...process.env, ...(options.env || {}) },
-    maxBuffer: options.maxBuffer || 1024 * 1024,
-    timeout: options.timeout || 120_000,
+    env: { ...process.env, ...(envOverrides || {}) },
+    maxBuffer: maxBuffer || 1024 * 1024,
+    timeout: timeout || 120_000,
   });
   return {
     exitCode: r.status ?? 1,
@@ -324,7 +324,9 @@ export function hasFeedbackPlanComment(prNumber) {
     throw new Error((r.stderr || r.stdout || 'gh api issue comments failed').trim());
   }
   const comments = JSON.parse(r.stdout || '[]');
-  const list = Array.isArray(comments) ? comments.flat(1) : [];
+  const list = (Array.isArray(comments) ? comments : []).flatMap((page) =>
+    Array.isArray(page) ? page : [],
+  );
   return list.some((c) => FEEDBACK_PLAN_RE.test(c.body || ''));
 }
 
