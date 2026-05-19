@@ -1,0 +1,29 @@
+---
+description: Agent auditor meta-monitor — hook and manual invoke (not always-on).
+globs:
+alwaysApply: false
+---
+
+# Agent auditor (hook + manual)
+
+Meta-monitor **above chief**. Read-only on product code unless remediation PR assigned.
+
+## Triggers
+
+`auditor-watch.mjs` on `subagentStop`/`stop`, **"run agent auditor"**, chief session start when multi-agent risk.
+
+## Hook chain
+
+`auditor-watch` → **chief** (accept fail-level findings same cycle) → **orchestrator** (chief delegates ship bar)
+
+## Commands
+
+```sh
+npm run agent:auditor
+```
+
+Exit **0** / **1** / **2**. Reports: `.git/auditor/` (gitignored).
+
+## Limits
+
+Not a daemon; cannot stop subagents.
