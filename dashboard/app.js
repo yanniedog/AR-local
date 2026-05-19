@@ -294,8 +294,18 @@
     $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
 
     const isBanks = state.sector === 'banks';
+    const isEnergy = state.sector === 'energy';
     document.querySelectorAll('.local-history-window, .local-history-window-status')
       .forEach((el) => { el.hidden = !isBanks; });
+
+    const heroGrid = document.querySelector('.market-intro-live-grid');
+    if (heroGrid) heroGrid.hidden = isEnergy;
+    const sectionCards = $('sectionCards');
+    if (sectionCards) sectionCards.hidden = isEnergy;
+    const selectedLogos = $('selectedLogos');
+    if (selectedLogos && isEnergy) selectedLogos.hidden = true;
+    const chartQuestionRow = document.querySelector('.chart-question-row');
+    if (chartQuestionRow) chartQuestionRow.hidden = isEnergy;
   }
 
   function setHistoryWindowUi(items) {
@@ -319,6 +329,11 @@
   function renderSectionCards() {
     const wrap = $('sectionCards');
     clear(wrap);
+    if (state.sector === 'energy') {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
     if (!state.banks || !window.LocalCdrBrand) return;
     ['Mortgage', 'Savings', 'TD'].forEach((section) => {
       const rows = state.banks.rates.filter((row) => row.dataset === section && bankRateMatchesSection(row));
@@ -337,6 +352,10 @@
   function renderSelectedLogos() {
     const wrap = $('selectedLogos');
     clear(wrap);
+    if (state.sector === 'energy') {
+      wrap.hidden = true;
+      return;
+    }
     if (!window.LocalCdrBrand) { wrap.hidden = true; return; }
 
     let providers, label, sampleByProvider = {};
@@ -345,9 +364,6 @@
       providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
       rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
       label = state.section === 'TD' ? 'Term Deposit' : state.section;
-    } else if (state.sector === 'energy' && state.energy && state.energy.plans) {
-      providers = [...new Set(state.energy.plans.map((row) => row.provider).filter(Boolean))].sort();
-      label = 'Economic Data';
     } else {
       wrap.hidden = true;
       return;
@@ -371,6 +387,7 @@
   }
 
   function updateHero(rows, items) {
+    if (state.sector === 'energy') return;
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(rows.length);
     if (state.sector === 'banks') {
