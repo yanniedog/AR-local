@@ -15,6 +15,7 @@ import {
   resolveRequiredKeys,
 } from './scripts/lib/bot-wait-config.mjs';
 import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-wait-state.mjs';
+import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -101,6 +102,8 @@ function writeState(prNumber, state) {
 }
 
 function resolveRepo() {
+  const fromEnv = repoSlugFromEnv();
+  if (fromEnv) return fromEnv;
   const r = gh(['repo', 'view', '--json', 'nameWithOwner'], { json: true });
   if (!r.ok || !r.data?.nameWithOwner) return null;
   const [owner, name] = r.data.nameWithOwner.split('/');
@@ -153,14 +156,21 @@ function fetchBotActivity(owner, name, prNumber) {
   return { events };
 }
 
+const DEFAULT_IGNORED_CHECK_NAMES = [
+  'bot-presence-gate',
+  'bot-feedback-gate',
+  'pr-bot-presence-gate',
+  'pr-bot-feedback-check',
+  'pr-gates-advisory',
+];
+
 function ignoredCheckNames() {
   const raw = process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '';
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
+  const fromEnv = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...fromEnv]);
 }
 
 /** Match full `gh pr checks` name or trailing job segment (e.g. `workflow / job`). */
@@ -238,7 +248,17 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   const maxMs = MAX_WAIT_MIN * 60 * 1000;
 
   const activity = fetchBotActivity(repo.owner, repo.name, prNumber);
-  if (activity.error) return { status: 'error', message: activity.error };
+  if (activity.error) {
+    if (isGithubRateLimitError(activity.error)) {
+      return {
+        status: 'waiting',
+        message: `GitHub API rate limit — retry after quota resets (${activity.error})`,
+        elapsedMs,
+        remainingCapMs: maxMs - elapsedMs,
+      };
+    }
+    return { status: 'error', message: activity.error };
+  }
 
   const anchorMs = anchor.getTime();
   const botEventsSinceAnchor = activity.events.filter(
@@ -259,6 +279,14 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
 
   const checks = fetchChecks(prNumber);
   if (checks.error && !checks.failed) {
+    if (isGithubRateLimitError(checks.error)) {
+      return {
+        status: 'waiting',
+        message: `GitHub API rate limit on required checks — retry later (${checks.error})`,
+        elapsedMs,
+        remainingCapMs: maxMs - elapsedMs,
+      };
+    }
     return { status: 'error', message: checks.error };
   }
   if (checks.failed) {

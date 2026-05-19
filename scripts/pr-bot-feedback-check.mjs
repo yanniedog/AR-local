@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
 import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
 import {
+  GhRateLimitError,
   classifyThreads,
   fetchPullRequestThreads,
   hasGh,
@@ -91,7 +92,18 @@ function main() {
     process.exit(1);
   }
 
-  const { owner, name } = repoSlug();
+  let owner;
+  let name;
+  try {
+    ({ owner, name } = repoSlug());
+  } catch (e) {
+    if (e instanceof GhRateLimitError) {
+      console.error(`pr-bot-feedback-check: ${e.message}`);
+      console.error('pr-bot-feedback-check: GitHub API rate limit — retry after quota resets (exit 2)');
+      process.exit(2);
+    }
+    throw e;
+  }
 
   if (args.auditMerged) {
     const prs = args.pr ? [{ number: args.pr }] : mergedPrs(args.limit);
@@ -156,7 +168,17 @@ function main() {
     }
   }
 
-  const result = checkOne(owner, name, prNumber);
+  let result;
+  try {
+    result = checkOne(owner, name, prNumber);
+  } catch (e) {
+    if (e instanceof GhRateLimitError) {
+      console.error(`pr-bot-feedback-check: ${e.message}`);
+      console.error('pr-bot-feedback-check: GitHub API rate limit — retry after quota resets (exit 2)');
+      process.exit(2);
+    }
+    throw e;
+  }
   if (args.json) {
     console.log(JSON.stringify({ ...result, botPresence }, null, 2));
   } else if (result.violations.length) {
