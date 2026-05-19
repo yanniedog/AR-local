@@ -74,12 +74,17 @@ def ssh_host() -> str:
     return _env("AR_PI_SSH_HOST", DEFAULT_SSH_HOST)
 
 
+def posix_repo_path(path: str) -> str:
+    """Remote Linux paths only (Windows Path defaults must not reach ssh)."""
+    return path.replace("\\", "/")
+
+
 def pi_ar_repo() -> str:
-    return _env("AR_PI_AR_LOCAL_REPO", str(PI_REPO_ROOT))
+    return posix_repo_path(_env("AR_PI_AR_LOCAL_REPO", "/srv/ar-local/AR-local"))
 
 
 def pi_site_repo() -> str:
-    return _env("AR_PI_SITE_REPO", str(PI_SITE_REPO))
+    return posix_repo_path(_env("AR_PI_SITE_REPO", "/srv/ar-local/australianrates"))
 
 
 def pi_base_url() -> str:
@@ -113,6 +118,16 @@ def on_pi_host() -> bool:
     if os.environ.get("AR_PI_VERIFY_LOCAL", "").strip() in ("1", "true", "yes"):
         return True
     return is_raspberry_pi()
+
+
+def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
+    """Windows OpenSSH often returns a failure code after successful remote output."""
+    if sys.platform != "win32" or code == 0:
+        return False
+    if not stdout.strip():
+        return False
+    combined = f"{stdout}\n{stderr}"
+    return "close - IO is still pending on closed socket" in combined
 
 
 def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
@@ -151,6 +166,10 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
     if proc.returncode != 0:
+        if _windows_openssh_exit_quirk(proc.returncode, out, err):
+            if err:
+                print(f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode}", file=sys.stderr)
+            return 0, out, err
         print(f"pi_deploy_verify: ssh failed ({proc.returncode}): {err or out}", file=sys.stderr)
     return proc.returncode, out, err
 
@@ -170,44 +189,77 @@ def origin_main_sha_local() -> Optional[str]:
     return rev.stdout.strip()
 
 
-def git_rev_on_pi(repo_path: str) -> tuple[Optional[str], Optional[str]]:
+def _parse_kv_lines(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        out[key.strip()] = val.strip()
+    return out
+
+
+def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
+    """One SSH round-trip for SHAs, dirty trees, and dashboard state."""
     remote = pi_remote()
+    ar = pi_ar_repo()
+    site = pi_site_repo()
     script = (
-        f"cd {shell_quote(repo_path)} && git fetch {shell_quote(remote)} 2>/dev/null; "
-        f"git rev-parse HEAD; git rev-parse {shell_quote(remote + '/main')}"
+        f"set +e; "
+        f"remote={shell_quote(remote)}; "
+        f"ar={shell_quote(ar)}; "
+        f"site={shell_quote(site)}; "
+        f"cd \"$ar\" && git fetch \"$remote\" 2>/dev/null; "
+        f"ar_h=$(git -C \"$ar\" rev-parse HEAD 2>/dev/null); "
+        f"ar_o=$(git -C \"$ar\" rev-parse \"$remote/main\" 2>/dev/null); "
+        f"ar_d=$(git -C \"$ar\" status --porcelain); "
+        f"cd \"$site\" && git fetch \"$remote\" 2>/dev/null; "
+        f"site_h=$(git -C \"$site\" rev-parse HEAD 2>/dev/null); "
+        f"site_o=$(git -C \"$site\" rev-parse \"$remote/main\" 2>/dev/null); "
+        f"site_d=$(git -C \"$site\" status --porcelain); "
+        f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
+        f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
+        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$(echo \"$ar_d\" | tr '\\n' ';')\" \"$(echo \"$site_d\" | tr '\\n' ';')\" \"$dash\""
     )
-    code, out, _ = run_ssh(script)
+    code, stdout, _ = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        return {
+            "AR_HEAD": "dry",
+            "AR_ORIGIN": "dry",
+            "SITE_HEAD": "dry",
+            "SITE_ORIGIN": "dry",
+            "AR_DIRTY": "",
+            "SITE_DIRTY": "",
+            "DASHBOARD": "active",
+        }
+    snap = _parse_kv_lines(stdout)
+    required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "DASHBOARD")
+    if all(snap.get(k) for k in required):
+        return snap
     if code != 0:
-        return None, None
-    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
-    if len(lines) < 2:
-        return None, None
-    return lines[0], lines[1]
+        return None
+    return None
 
 
 def pi_tree_clean(repo_path: str, *, dry_run: bool = False) -> bool:
-    code, out, _ = run_ssh(
-        f"cd {shell_quote(repo_path)} && git status --porcelain",
-        dry_run=dry_run,
-    )
-    if dry_run:
-        return True
-    if code != 0:
+    snap = pi_remote_snapshot(dry_run=dry_run)
+    if snap is None:
         return False
-    if out.strip():
-        print(f"pi_deploy_verify: dirty tree at {repo_path}:\n{out}", file=sys.stderr)
+    key = "AR_DIRTY" if repo_path == pi_ar_repo() else "SITE_DIRTY"
+    dirty = (snap.get(key) or "").strip().strip(";")
+    if dirty:
+        print(f"pi_deploy_verify: dirty tree at {repo_path}:\n{dirty.replace(';', chr(10))}", file=sys.stderr)
         return False
     return True
 
 
-def dashboard_active(*, dry_run: bool = False) -> bool:
-    code, out, _ = run_ssh(
-        "systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive",
-        dry_run=dry_run,
-    )
-    if dry_run:
-        return True
-    return code == 0 and out.strip() == "active"
+def dashboard_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = None) -> bool:
+    if snap is None:
+        snap = pi_remote_snapshot(dry_run=dry_run)
+    if snap is None:
+        return False
+    return snap.get("DASHBOARD") == "active"
 
 
 def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
@@ -246,25 +298,29 @@ def verify_sync(*, dry_run: bool = False) -> int:
         print("pi_deploy_verify: could not resolve origin/main locally", file=sys.stderr)
         return EXIT_CONFIG
 
-    for repo_path in (pi_ar_repo(), pi_site_repo()):
-        if not pi_tree_clean(repo_path, dry_run=dry_run):
-            return EXIT_VERIFY_FAIL
-
-    head_ar, origin_ar = git_rev_on_pi(pi_ar_repo())
-    head_site, origin_site = git_rev_on_pi(pi_site_repo())
-    if not head_ar or not origin_ar:
-        print("pi_deploy_verify: could not read AR-local SHAs on Pi", file=sys.stderr)
+    snap = pi_remote_snapshot(dry_run=dry_run)
+    if snap is None:
+        print("pi_deploy_verify: could not read Pi sync state (SSH)", file=sys.stderr)
         return EXIT_SSH
+
+    head_ar = snap["AR_HEAD"]
+    origin_ar = snap["AR_ORIGIN"]
+    head_site = snap["SITE_HEAD"]
+    origin_site = snap["SITE_ORIGIN"]
+
+    for label, dirty in (("AR-local", snap.get("AR_DIRTY", "")), ("australianrates", snap.get("SITE_DIRTY", ""))):
+        if (dirty or "").strip().strip(";"):
+            print(f"pi_deploy_verify: dirty tree ({label}):\n{dirty.replace(';', chr(10))}", file=sys.stderr)
+            return EXIT_VERIFY_FAIL
 
     print(f"pi_deploy_verify: local origin/main={local_main[:12]}")
     print(f"pi_deploy_verify: Pi AR-local HEAD={head_ar[:12]} origin/main={origin_ar[:12]}")
-    if head_site and origin_site:
-        print(f"pi_deploy_verify: Pi australianrates HEAD={head_site[:12]} origin/main={origin_site[:12]}")
+    print(f"pi_deploy_verify: Pi australianrates HEAD={head_site[:12]} origin/main={origin_site[:12]}")
 
     drift: list[str] = []
     if head_ar != origin_ar:
         drift.append(f"AR-local not on {pi_remote()}/main (HEAD {head_ar[:12]} != {origin_ar[:12]})")
-    if head_site and origin_site and head_site != origin_site:
+    if head_site != origin_site:
         drift.append(
             f"australianrates not on {pi_remote()}/main (HEAD {head_site[:12]} != {origin_site[:12]})"
         )
@@ -278,7 +334,7 @@ def verify_sync(*, dry_run: bool = False) -> int:
             print(f"pi_deploy_verify: DRIFT {item}", file=sys.stderr)
         return EXIT_VERIFY_FAIL
 
-    if not dashboard_active(dry_run=dry_run):
+    if not dashboard_active(dry_run=dry_run, snap=snap):
         print("pi_deploy_verify: ar-local-dashboard.service not active", file=sys.stderr)
         return EXIT_VERIFY_FAIL
 
@@ -299,14 +355,34 @@ def deploy_pull(repo_path: str, *, dry_run: bool = False) -> int:
     return EXIT_OK
 
 
+def deploy_pull_all(*, dry_run: bool = False) -> int:
+    """One SSH session for both repos (fewer connections; helps Windows OpenSSH)."""
+    remote = pi_remote()
+    ar = pi_ar_repo()
+    site = pi_site_repo()
+    script = (
+        f"set -e; "
+        f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} && git checkout main && "
+        f"git pull --ff-only {shell_quote(remote)} main; "
+        f"cd {shell_quote(site)} && git fetch {shell_quote(remote)} && git checkout main && "
+        f"git pull --ff-only {shell_quote(remote)} main"
+    )
+    code, out, _ = run_ssh(script, dry_run=dry_run)
+    if code != 0 and not dry_run:
+        return EXIT_SSH
+    if out and not dry_run:
+        print(f"pi_deploy_verify: pull AR-local + australianrates:\n{out}")
+    return EXIT_OK
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
-    for cmd in (
-        "sudo systemctl restart ar-local-dashboard.service",
-        "sudo systemctl restart ar-local-daily.timer || true",
-    ):
-        code, _, _ = run_ssh(cmd, dry_run=dry_run)
-        if code != 0 and not dry_run:
-            return EXIT_SSH
+    script = (
+        "sudo systemctl restart ar-local-dashboard.service && "
+        "(sudo systemctl restart ar-local-daily.timer || true)"
+    )
+    code, _, _ = run_ssh(script, dry_run=dry_run)
+    if code != 0 and not dry_run:
+        return EXIT_SSH
     return EXIT_OK
 
 
@@ -343,12 +419,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_deploy(args: argparse.Namespace) -> int:
-    for repo_path in (pi_ar_repo(), pi_site_repo()):
-        if not pi_tree_clean(repo_path, dry_run=args.dry_run):
-            return EXIT_VERIFY_FAIL
-        rc = deploy_pull(repo_path, dry_run=args.dry_run)
-        if rc != EXIT_OK:
-            return rc
+    if not on_pi_host():
+        snap = pi_remote_snapshot(dry_run=args.dry_run)
+        if snap is None:
+            print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
+            return EXIT_SSH
+        for label, dirty in (("AR-local", snap.get("AR_DIRTY", "")), ("australianrates", snap.get("SITE_DIRTY", ""))):
+            if (dirty or "").strip().strip(";"):
+                print(f"pi_deploy_verify: dirty tree ({label}) — resolve before deploy", file=sys.stderr)
+                return EXIT_VERIFY_FAIL
+    else:
+        for repo_path in (pi_ar_repo(), pi_site_repo()):
+            if not pi_tree_clean(repo_path, dry_run=args.dry_run):
+                return EXIT_VERIFY_FAIL
+    rc = deploy_pull_all(dry_run=args.dry_run)
+    if rc != EXIT_OK:
+        return rc
     rc = deploy_services(dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc
