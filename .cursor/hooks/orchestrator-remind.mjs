@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Lightweight reminder after subagent/parent stop when repo needs orchestrator.
+ * Lightweight reminder after subagent/parent stop when repo needs coordination.
+ * Chief-first message; chief delegates ship bar to workflow-orchestrator.
  * Hook JSON on stdin is optional; prints { followup_message } or {} on stdout.
  * Fail-open on errors (exit 0, empty object).
  */
@@ -65,10 +66,11 @@ function main() {
   if (openPrCount > 0) parts.push(`${openPrCount} open PR(s)`);
 
   const msg =
-    `Workflow orchestrator: ${parts.join(" and ")} detected. ` +
-    "Run one cycle per .cursor/skills/workflow-orchestrator/SKILL.md " +
+    `Chief agent: ${parts.join(" and ")} detected. ` +
+    "Run one coordination cycle per .cursor/skills/chief-agent/SKILL.md " +
     "(Task generalPurpose, run_in_background unless waived). " +
-    "Enforce one PR per task; do not bundle unrelated files.";
+    "Chief dedupes locks and delegates ship bar to workflow-orchestrator; " +
+    "one PR per task; do not bundle unrelated files.";
 
   console.log(JSON.stringify({ followup_message: msg }));
 }

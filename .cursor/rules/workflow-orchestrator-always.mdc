@@ -5,24 +5,26 @@ alwaysApply: true
 
 # Continuous workflow orchestrator
 
-AR-local uses a **polling orchestrator pattern** (not a real OS daemon). Parent agents act as schedulers.
+AR-local uses a **polling orchestrator pattern** (not a real OS daemon). **Reports to chief agent** (`.cursor/rules/chief-agent-always.mdc`). Parent agents spawn **chief first**; chief delegates ship-bar cycles here.
 
 ## Session start
 
-After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, or recent subagent work in agent-transcripts — **spawn or resume** the workflow orchestrator unless the user waived for this session:
+After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, or recent subagent work in agent-transcripts — **spawn or resume chief agent** unless waived. Chief dedupes orchestrator spawns and delegates git/PR work:
 
 ```
 Task tool: subagent_type=generalPurpose, run_in_background=true
 Prompt: Follow .cursor/skills/workflow-orchestrator/SKILL.md — run one SCAN→PLAN→DELEGATE cycle and report queue.
 ```
 
+(Orchestrator prompt is issued **by chief**, not in parallel with a duplicate orchestrator.)
+
 ## After substantive subagent work
 
 When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, or **PR babysit**:
 
-1. Re-scan per the orchestrator skill.
-2. **Re-delegate** to the same owner class (paths in routing table) to continue ship bar or the next partition.
-3. Spawn orchestrator in background if you are not executing the skill yourself this turn.
+1. Spawn or resume **chief** to update locks and dedupe.
+2. Chief re-scans and delegates orchestrator or path owners per routing tables.
+3. Orchestrator re-delegates to the same owner class to continue ship bar or the next partition.
 
 ## One PR per task (hard)
 
@@ -36,7 +38,7 @@ User phrase: **"run workflow orchestrator"** — read `.cursor/skills/workflow-o
 
 ## Hooks
 
-`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` when the tree is dirty or open PRs exist. Treat that as a signal to run the orchestrator, not as a substitute for `WORKFLOW.md`.
+`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` (chief-first). Treat that as a signal to run **chief**, which may delegate orchestrator — not as a substitute for `WORKFLOW.md`.
 
 ## Ship bar unchanged
 
