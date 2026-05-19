@@ -10,13 +10,15 @@ export function gitRepoRoot() {
 
 /**
  * Directory for per-PR bot-wait anchor JSON (portable across linked worktrees).
- * Override: AR_BOT_WAIT_STATE_DIR (absolute path).
+ * Override: AR_BOT_WAIT_STATE_DIR (absolute, or repo-relative).
  * Default: <repo>/.ar-bot-wait (not under .git).
  */
 export function botWaitStateDir(repoRoot) {
   const env = process.env.AR_BOT_WAIT_STATE_DIR?.trim();
-  if (env) return path.resolve(env);
   const root = repoRoot || gitRepoRoot();
+  if (env) {
+    return path.isAbsolute(env) ? path.resolve(env) : path.resolve(root, env);
+  }
   return path.join(root, '.ar-bot-wait');
 }
 

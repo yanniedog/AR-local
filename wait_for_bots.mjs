@@ -333,7 +333,7 @@ Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap 
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
      AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
-     AR_BOT_WAIT_STATE_DIR — directory for per-PR anchor JSON (default: <repo>/.ar-bot-wait)
+     AR_BOT_WAIT_STATE_DIR — per-PR anchor JSON dir (absolute or repo-relative; default: <repo>/.ar-bot-wait)
      BOT_WAIT_IGNORE_CHECK_NAMES — comma-separated gh pr checks names to ignore (CI self-gate)
 
 Required bots: ${formatRequiredKeys(requiredKeys)}
