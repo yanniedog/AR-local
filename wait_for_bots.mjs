@@ -6,8 +6,6 @@
  * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
 import { execSync, spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import {
   allKnownBotLogins,
@@ -16,6 +14,7 @@ import {
   parseRequiredKeys,
   resolveRequiredKeys,
 } from './scripts/lib/bot-wait-config.mjs';
+import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-wait-state.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -93,24 +92,12 @@ function parseArgs(argv) {
   return out;
 }
 
-function statePath(prNumber) {
-  return path.join(repoRoot(), '.git', 'ar-bot-wait', `${prNumber}.json`);
-}
-
 function readState(prNumber) {
-  const p = statePath(prNumber);
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch {
-    return null;
-  }
+  return readBotWaitStateFile(prNumber, repoRoot());
 }
 
 function writeState(prNumber, state) {
-  const p = statePath(prNumber);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  writeBotWaitStateFile(prNumber, state, repoRoot());
 }
 
 function resolveRepo() {
@@ -346,6 +333,7 @@ Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap 
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
      AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
+     AR_BOT_WAIT_STATE_DIR — per-PR anchor JSON dir (absolute or repo-relative; default: <repo>/.ar-bot-wait)
      BOT_WAIT_IGNORE_CHECK_NAMES — comma-separated gh pr checks names to ignore (CI self-gate)
 
 Required bots: ${formatRequiredKeys(requiredKeys)}

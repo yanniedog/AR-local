@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   allKnownBotLogins,
@@ -7,21 +5,10 @@ import {
   missingRequiredKeys,
   resolveRequiredKeys,
 } from './bot-wait-config.mjs';
-
-function gitRepoRoot() {
-  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  return (r.stdout || '').trim() || process.cwd();
-}
+import { gitRepoRoot, readBotWaitStateFile } from './bot-wait-state.mjs';
 
 export function readBotWaitState(prNumber, cwd) {
-  const root = cwd || gitRepoRoot();
-  const p = path.join(root, '.git', 'ar-bot-wait', `${prNumber}.json`);
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch {
-    return null;
-  }
+  return readBotWaitStateFile(prNumber, cwd || gitRepoRoot());
 }
 
 /** Resolve anchor ISO; fall back to fallbackIso when anchor is missing/invalid. */
