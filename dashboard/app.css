@@ -23,7 +23,6 @@ body.ar-public.ar-local-cdr {
   --ar-local-logo-tile: rgba(255, 255, 255, 0.97);
   --ar-local-logo-tile-border: rgba(0, 0, 0, 0.07);
   --ar-local-fallback-ink: #1e293b;
-  --ar-local-card-active-mix: #111827;
   --ar-local-showcase-spark: #60a5fa;
   --ar-local-showcase-glow: rgba(96, 165, 250, 0.14);
 }
@@ -160,50 +159,6 @@ body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon {
 
 body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
   stroke-width: 1.8;
-}
-
-/* ── Section cards ─────────────────────────────────────────────────────── */
-
-.ar-local-cdr .local-section-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.ar-local-cdr .local-section-card {
-  display: grid;
-  min-height: 86px;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--ar-line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--ar-surface-2) 78%, var(--ar-surface));
-  color: var(--ar-text);
-  text-align: left;
-  box-shadow: none;
-}
-
-.ar-local-cdr .local-section-card:hover,
-.ar-local-cdr .local-section-card.is-active {
-  border-color: color-mix(in srgb, var(--ar-line-strong) 82%, var(--ar-line));
-  background: color-mix(in srgb, var(--ar-surface-2) 58%, var(--ar-local-card-active-mix));
-}
-
-.ar-local-cdr .local-section-card-head {
-  display: grid;
-  gap: 3px;
-}
-
-.ar-local-cdr .local-section-kicker {
-  color: var(--ar-text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.ar-local-cdr .local-section-card strong {
-  color: var(--ar-text);
-  font-size: 0.98rem;
 }
 
 /* ── Logo rail ─────────────────────────────────────────────────────────── */
@@ -419,6 +374,12 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   opacity: 1;
   filter: none;
   transform: none;
+}
+
+/* Loading hides broken/pending image; must beat non-dim badge opacity above. */
+.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo.is-logo-loading,
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge-logo.is-logo-loading {
+  opacity: 0;
 }
 
 /* ── Filters ────────────────────────────────────────────────────────────── */
