@@ -13,6 +13,11 @@
     return section === SECTION.EconomicData;
   }
 
+  function sectionDisplayLabel(section) {
+    if (section === SECTION.TD) return 'Term Deposits';
+    return section;
+  }
+
   function sectionFromPathname() {
     const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
     if (path === '/savings') return SECTION.Savings;
@@ -423,21 +428,6 @@
     status.textContent = `Visible window: ${label}. ${num(inRange)} in range, ${num(retained)} retained.`;
   }
 
-  function renderSectionCards() {
-    const wrap = $('sectionCards');
-    clear(wrap);
-    wrap.hidden = false;
-    if (!state.banks || !window.LocalCdrBrand) return;
-    ['Mortgage', 'Savings', 'TD'].forEach((section) => {
-      const card = child(wrap, 'button', 'local-section-card' + (state.section === section ? ' is-active' : ''));
-      card.type = 'button';
-      card.dataset.sectionCard = section;
-      const head = child(card, 'span', 'local-section-card-head');
-      child(head, 'span', 'local-section-kicker', section === 'TD' ? 'Term Deposits' : section);
-      child(head, 'strong', '', section === 'Mortgage' ? 'Home loans' : section === 'Savings' ? 'Savings accounts' : 'Term deposits');
-    });
-  }
-
   function renderSelectedLogos(activeProviders) {
     const wrap = $('selectedLogos');
     clear(wrap);
@@ -447,7 +437,7 @@
     const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
     const sampleByProvider = {};
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
-    const label = state.section === SECTION.TD ? 'Term Deposit' : state.section;
+    const label = sectionDisplayLabel(state.section);
 
     wrap.hidden = false;
     child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);
@@ -560,7 +550,7 @@
   }
 
   function renderEmptySection() {
-    const label = state.section === SECTION.TD ? 'Term Deposits' : state.section;
+    const label = sectionDisplayLabel(state.section);
     const emptyMsg = `No ${label} rates in export ${state.manifest.run_date}.`;
     setLinks();
     renderStats([]);
@@ -568,7 +558,6 @@
     drawChartFromState([]);
     $('chart-status').textContent = emptyMsg;
     updateHero([], null);
-    renderSectionCards();
     renderSelectedLogos(relevantProviderKeys());
   }
 
@@ -615,7 +604,6 @@
     await loadBankHistory();
     if (token !== loadSectionToken) return;
     refreshBankHistoryIndex();
-    renderSectionCards();
     render();
   }
 
@@ -633,11 +621,6 @@
       e.preventDefault();
       loadSection(el.dataset.section);
     }));
-
-    $('sectionCards').addEventListener('click', (event) => {
-      const card = event.target.closest('[data-section-card]');
-      if (card) loadSection(card.dataset.sectionCard);
-    });
 
     const logoWrap = $('selectedLogos');
     logoWrap.addEventListener('click', (event) => {
