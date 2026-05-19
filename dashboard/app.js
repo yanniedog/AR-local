@@ -394,21 +394,6 @@
     status.textContent = `Visible window: ${label}. ${num(items.allDates.length)} retained run date${items.allDates.length === 1 ? '' : 's'}.`;
   }
 
-  function renderSectionCards() {
-    const wrap = $('sectionCards');
-    clear(wrap);
-    wrap.hidden = false;
-    if (!state.banks || !window.LocalCdrBrand) return;
-    ['Mortgage', 'Savings', 'TD'].forEach((section) => {
-      const card = child(wrap, 'button', 'local-section-card' + (state.section === section ? ' is-active' : ''));
-      card.type = 'button';
-      card.dataset.sectionCard = section;
-      const head = child(card, 'span', 'local-section-card-head');
-      child(head, 'span', 'local-section-kicker', section === 'TD' ? 'Term Deposits' : section);
-      child(head, 'strong', '', section === 'Mortgage' ? 'Home loans' : section === 'Savings' ? 'Savings accounts' : 'Term deposits');
-    });
-  }
-
   function renderSelectedLogos(activeProviders) {
     const wrap = $('selectedLogos');
     clear(wrap);
@@ -539,7 +524,6 @@
     drawChartFromState([]);
     $('chart-status').textContent = emptyMsg;
     updateHero([], null);
-    renderSectionCards();
     renderSelectedLogos(relevantProviderKeys());
   }
 
@@ -586,7 +570,6 @@
     await loadBankHistory();
     if (token !== loadSectionToken) return;
     refreshBankHistoryIndex();
-    renderSectionCards();
     render();
   }
 
@@ -604,11 +587,6 @@
       e.preventDefault();
       loadSection(el.dataset.section);
     }));
-
-    $('sectionCards').addEventListener('click', (event) => {
-      const card = event.target.closest('[data-section-card]');
-      if (card) loadSection(card.dataset.sectionCard);
-    });
 
     const logoWrap = $('selectedLogos');
     logoWrap.addEventListener('click', (event) => {
