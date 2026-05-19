@@ -44,6 +44,7 @@ Unless the user **explicitly waives** chief for this session, parent agents spaw
 Run **every cycle** before spawning or resuming any worker:
 
 ```sh
+npm run agent:auditor       # exit 2 = critical; remediate first
 npm run chief:scan          # exit 1 = run remediation protocol (spawn worker; do not stop)
 git status --porcelain
 git branch --show-current
@@ -52,7 +53,11 @@ git worktree list
 git stash list
 ```
 
-Also scan recent subagent transcripts (mtime, last ~2h): list active transcript IDs and map to branch/PR/path locks. If `chief:scan` exit 1, **immediately spawn** one remediation owner (orchestrator or pr-fix) with the printed REMEDIATION checklist — do not end the cycle idle.
+Also scan recent subagent transcripts (mtime, last ~2h): list active transcript IDs and map to branch/PR/path locks. Read `.git/auditor/auditor-report.md` when present.
+
+**Agent auditor (same cycle):** When `npm run agent:auditor` exits **2**, or hook reports CRITICAL, chief **must** remediate per `.cursor/skills/agent-auditor/SKILL.md` — re-run auditor after fix.
+
+If `chief:scan` exit 1, **immediately spawn** one remediation owner (orchestrator or pr-fix) with the printed REMEDIATION checklist — do not end the cycle idle.
 
 ## Branch lock registry
 
@@ -113,7 +118,7 @@ When `chief:scan` exit 1, path overlap in lock table, worktree duplicate, or bra
 1. **Partition** — list dirty paths by intended PR/branch; note merge conflicts and worktree dupes from scan output.
 2. **Spawn one remediation owner** (`workflow-orchestrator` for ship-bar/conflicts; `pr-fix` for a single open PR) with explicit checklist from `chief:scan` REMEDIATION section.
 3. **Record active worker** — name the subagent transcript ID in the cycle summary; forbidden to report "blocked" without it.
-4. **Re-scan after worker returns** — chief runs `npm run chief:scan` again; if still exit 1, spawn the next remediation step until exit 0 or hard blocker with evidence.
+4. **Re-scan after worker returns** — chief runs `npm run agent:auditor` and `npm run chief:scan` again; if still exit 1, spawn the next remediation step until exit 0 or hard blocker with evidence.
 
 Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrator cycle handles one PR's ship bar sequentially unless chief assigns **disjoint PR numbers** to disjoint workers.
 
@@ -153,6 +158,7 @@ Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrato
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` (mtime sort, last ~2h) | Active/completed subagents; changed paths |
 | Orchestrator state | Recent transcript mentioning `workflow-orchestrator` or SCAN→PLAN→DELEGATE | Dedupe: resume existing cycle |
 | Closeout (delegate) | `npm run ship:closeout:strict`, `npm run wait-for-bots` | Chief asks orchestrator to act; chief does not merge |
+| Agent quality | `npm run agent:auditor`, `.git/auditor/auditor-report.md` | Meta-monitor above chief; hook: `auditor-watch.mjs` |
 
 **Transcript scan:** read last lines of recent `subagents/*.jsonl` for completion summaries, paths, branch names, PR numbers. Map to branch lock registry.
 
@@ -223,7 +229,7 @@ SCAN → LOCK CHECK → PLAN → DELEGATE → (subagent runs) → SCAN → …
 4. **DELEGATE** — one `Task` per non-overlapping item; explicit locks in prompt.
 5. **On subagent return** — read summary; release or transfer locks; SCAN again.
 6. **Orchestrator handoff** — spawn orchestrator with locks table and focus PRs; **one cycle at a time**.
-7. **IDLE** — no locks, no open delegated work, `chief:scan` exit 0, `ship:closeout:strict` exit 0 or waived. If any open PR lacks merge + thread closure, **delegate orchestrator** — do not report idle.
+7. **IDLE** — no locks, no open delegated work, `agent:auditor` exit 0, `chief:scan` exit 0, `ship:closeout:strict` exit 0 or waived. If any open PR lacks merge + thread closure, **delegate orchestrator** — do not report idle.
 
 ## Delegate prompt template
 
@@ -256,5 +262,6 @@ Return: queue handled, PR URLs, ship bar step per PR, active worker ID if still 
 - Scan tool: `npm run chief:scan` (`scripts/chief-scan.mjs`)
 - Orchestrator skill: `.cursor/skills/workflow-orchestrator/SKILL.md`
 - Orchestrator rule: `.cursor/rules/workflow-orchestrator-always.mdc`
-- Hook: `.cursor/hooks/orchestrator-remind.mjs` (chief-first reminder)
+- Hooks: `.cursor/hooks/auditor-watch.mjs` → `.cursor/hooks/orchestrator-remind.mjs`
+- Auditor: `.cursor/skills/agent-auditor/SKILL.md` (`npm run agent:auditor`)
 - Ship bar: `WORKFLOW.md`
