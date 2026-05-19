@@ -9,7 +9,7 @@ AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data
 - `http://<pi-ip>:8808/`
 - `http://ar.local:8808/` when local DNS or mDNS is configured for the Pi
 
-The dashboard must use real generated artifacts only, with banking as the current priority. Energy remains secondary unless the user explicitly reopens it.
+The dashboard must use real generated artifacts only, with banking as the current priority. **Energy CDR ingest is dormant by default** (`AR_ENERGY_DORMANT=1`; opt in with `cdr_daily.py --energy`). **Economic Data is not Energy**: the nav opens `/economic-data/` and macro APIs proxy to production (`AR_ECONOMIC_API_UPSTREAM`, default `https://www.australianrates.com`).
 
 ### Target parity (operator-confirmed 2026-05-15)
 
@@ -364,7 +364,7 @@ Public-shell modules already on the Pi (loaded by `dashboard/index.html`): `them
 #### Routing gap
 
 - Public: each section is a real URL — `/`, `/savings/`, `/term-deposits/`, `/economic-data/`. Nav uses `<a href="…">` with `aria-current="page"`.
-- Pi: a single page with `<button data-section="Mortgage|Savings|TD|Energy">`. The Pi server must also serve per-section URLs and the public shell must own section switching.
+- Pi: a single page with `<button data-section="Mortgage|Savings|TD|EconomicData">` (Economic Data redirects to `/economic-data/`). The Pi server must also serve per-section URLs and the public shell must own section switching.
 
 #### API surface gap
 
@@ -436,7 +436,7 @@ Future improvements should:
 4. Keep historical ribbon values populated from retained DB exports.
 5. Keep LAN access stable on Pi IP and `ar.local`.
 6. Keep SSD portability documentation and systemd unit rendering current.
-7. Only revisit Energy after the user explicitly asks. (Note: the public site exposes Economic Data as a full section, so the mirror track will eventually need it — wire the route as an empty-but-valid section first, populate later.)
+7. Economic Data: `/economic-data/` shell + proxied `/api/economic-data/*` (production upstream until local macro SQLite exists). Energy CDR stays dormant unless explicitly re-enabled.
 
 ## Verification Checklist
 
