@@ -499,59 +499,174 @@
       .toUpperCase();
   }
 
-  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider) {
-    while (logoWrap.firstChild) logoWrap.removeChild(logoWrap.firstChild);
+  /** url -> 'ok' | 'fail' | Promise — skip known-bad URLs; coalesce in-flight loads. */
+  const LOGO_LOAD_CACHE = new Map();
+  const LOGO_LOAD_CACHE_MAX = 512;
+
+  function pruneLogoLoadCacheIfNeeded() {
+    if (LOGO_LOAD_CACHE.size <= LOGO_LOAD_CACHE_MAX) return;
+    const drop = LOGO_LOAD_CACHE.size - Math.floor(LOGO_LOAD_CACHE_MAX / 2);
+    let n = 0;
+    for (const key of LOGO_LOAD_CACHE.keys()) {
+      if (n >= drop) break;
+      LOGO_LOAD_CACHE.delete(key);
+      n += 1;
+    }
+  }
+
+  function rememberLogoUrlResult(url, ok) {
+    const src = String(url || '').trim();
+    if (!src) return;
+    LOGO_LOAD_CACHE.set(src, ok ? 'ok' : 'fail');
+    pruneLogoLoadCacheIfNeeded();
+  }
+
+  function isLogoUrlKnownBad(url) {
+    return LOGO_LOAD_CACHE.get(String(url || '').trim()) === 'fail';
+  }
+
+  /**
+   * Fast paths first (exact brand map, meta/CDN, slug pack), slow fallbacks last (favicons, Clearbit).
+   */
+  function buildLogoUrlList(metaIcon, slugBasenames, provider) {
     const urls = [];
     const seen = new Set();
     const pushUrl = (u) => {
-      if (!u || seen.has(u)) return;
-      seen.add(u);
-      urls.push(u);
+      const src = String(u || '').trim();
+      if (!src || seen.has(src) || isLogoUrlKnownBad(src)) return;
+      seen.add(src);
+      urls.push(src);
     };
-    const remoteFirst = preferBankCdnFirst();
     exactOfficialLogoUrlsForProvider(provider).forEach(pushUrl);
-    if (remoteFirst && metaIcon) {
-      pushUrl(cdnTwinForLocalBankUrl(metaIcon));
-      pushUrl(metaIcon);
-    } else {
-      pushUrl(metaIcon);
-      pushUrl(cdnTwinForLocalBankUrl(metaIcon));
+    const remoteFirst = preferBankCdnFirst();
+    const icon = String(metaIcon || '').trim();
+    if (remoteFirst && icon) {
+      pushUrl(cdnTwinForLocalBankUrl(icon));
+      pushUrl(icon);
+    } else if (icon) {
+      pushUrl(icon);
+      pushUrl(cdnTwinForLocalBankUrl(icon));
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
     officialLogoUrlsForProvider(provider).forEach(pushUrl);
+    return urls;
+  }
+
+  function preloadLogoUrl(url) {
+    const src = String(url || '').trim();
+    if (!src) return Promise.resolve(false);
+    const cached = LOGO_LOAD_CACHE.get(src);
+    if (cached === 'ok') return Promise.resolve(true);
+    if (cached === 'fail') return Promise.resolve(false);
+    if (cached && typeof cached.then === 'function') return cached;
+
+    const p = new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        rememberLogoUrlResult(src, true);
+        resolve(true);
+      };
+      img.onerror = () => {
+        rememberLogoUrlResult(src, false);
+        resolve(false);
+      };
+      img.src = src;
+    });
+    LOGO_LOAD_CACHE.set(src, p);
+    return p;
+  }
+
+  /**
+   * Warm logo URLs for a provider rail (parallel per provider, sequential fallbacks per provider).
+   * @param {string[]} providers
+   * @param {Record<string, object>} [sampleByProvider]
+   */
+  function preloadRailProviders(providers, sampleByProvider) {
+    const brand = window.AR && window.AR.bankBrand;
+    if (brand && brand.preloadIcons) brand.preloadIcons(providers);
+    const list = Array.isArray(providers) ? providers : [];
+    return Promise.all(
+      list.map(async (provider) => {
+        const meta = providerMeta(provider);
+        let slugBasenames = orderedSlugBasenames(
+          provider,
+          sampleByProvider && sampleByProvider[provider],
+          [],
+        );
+        const iconSlug = slugFromBankIconUrl(meta.icon || '');
+        if (iconSlug) {
+          const seen = new Set(slugBasenames);
+          if (!seen.has(iconSlug)) slugBasenames = [iconSlug].concat(slugBasenames);
+        }
+        const urls = buildLogoUrlList(meta.icon || '', slugBasenames, provider);
+        for (let i = 0; i < urls.length; i += 1) {
+          if (LOGO_LOAD_CACHE.get(urls[i]) === 'ok') return;
+          const ok = await preloadLogoUrl(urls[i]);
+          if (ok) return;
+        }
+      }),
+    );
+  }
+
+  function mountLogoIntoWrap(logoWrap, metaIcon, slugBasenames, meta, provider, mountOpts) {
+    while (logoWrap.firstChild) logoWrap.removeChild(logoWrap.firstChild);
+    const urls = buildLogoUrlList(metaIcon, slugBasenames, provider);
 
     if (!urls.length) {
       child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
       return;
     }
 
+    const fallbackEl = child(
+      logoWrap,
+      'span',
+      'bank-badge-fallback local-bank-fallback-neutral',
+      abbrevFallback(meta, provider),
+    );
     const img = document.createElement('img');
-    img.className = 'bank-badge-logo';
+    img.className = 'bank-badge-logo is-logo-loading';
     img.alt = '';
     img.width = 32;
     img.height = 32;
     img.loading = 'eager';
+    img.decoding = 'async';
     img.draggable = false;
+    const priority = mountOpts && mountOpts.logoFetchPriority;
+    if (priority === 'high' || priority === 'low') img.fetchPriority = priority;
+    logoWrap.appendChild(img);
+
     const finishNeutral = () => {
       img.onload = null;
       img.onerror = null;
-      img.remove();
-      child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
+      if (img.parentNode === logoWrap) img.remove();
+      if (!logoWrap.contains(fallbackEl)) {
+        child(logoWrap, 'span', 'bank-badge-fallback local-bank-fallback-neutral', abbrevFallback(meta, provider));
+      }
     };
+
     function attempt(index) {
       if (index >= urls.length) {
         finishNeutral();
         return;
       }
+      const url = urls[index];
+      if (isLogoUrlKnownBad(url)) {
+        attempt(index + 1);
+        return;
+      }
       img.onload = () => {
+        rememberLogoUrlResult(url, true);
         img.onload = null;
         img.onerror = null;
-        if (!logoWrap.contains(img)) logoWrap.appendChild(img);
+        img.classList.remove('is-logo-loading');
+        if (fallbackEl.parentNode === logoWrap) fallbackEl.remove();
       };
       img.onerror = () => {
+        rememberLogoUrlResult(url, false);
         attempt(index + 1);
       };
-      img.src = urls[index];
+      img.src = url;
     }
     attempt(0);
   }
@@ -583,7 +698,9 @@
     badge.title = provider || meta.name;
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
-    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider);
+    mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, {
+      logoFetchPriority: opts.logoFetchPriority,
+    });
     const copy = child(badge, 'span', 'bank-badge-copy');
     child(copy, 'span', 'bank-badge-label', meta.short || provider || '-');
     if (showName) child(copy, 'span', 'bank-badge-sub', provider || meta.name);
@@ -592,12 +709,14 @@
 
   window.LocalCdrBrand = {
     appendProviderBadge,
+    buildLogoUrlList,
     iconSlugCandidates,
     iconSlugCandidatesForRate,
     lookupProvider,
     logoUrlsFromSlugs,
     orderedSlugBasenames,
     officialLogoUrlsForProvider,
+    preloadRailProviders,
     providerDomain,
     providerMeta,
   };
