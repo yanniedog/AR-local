@@ -194,7 +194,7 @@ If the API returns 403/404 (token lacks admin), apply manually:
 2. Branch name pattern: `main`
 3. **Require a pull request before merging** — ON (0 approvals OK unless you want human review)
 4. **Require status checks to pass** — ON; **Require branches to be up to date** — ON
-5. Required checks: `bot-presence-gate`, `bot-feedback-gate`
+5. Required checks: `bot-presence-gate`, `pr-bot-feedback-check`
 6. **Require conversation resolution before merging** — ON
 7. **Do not allow bypassing** (recommended)
 
