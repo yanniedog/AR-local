@@ -85,11 +85,11 @@ Each PR gets the **full** ship bar:
 2. Commit + push on topic branch only
 3. `gh pr create --base main`
 4. CI green
-5. `npm run wait-for-bots` until exit 0 (after new PR; `--bot-tag` after @mentioning bots)
+5. `npm run wait-for-bots` until exit **0** ? **gemini, codex, and sourcery** must each post since anchor, then quiet window (after new PR; `--bot-tag` after @mentioning bots). Exit **1** = missing required bots at cap ? **do not merge**.
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
 7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
-8. `gh pr merge --squash` ? **forbidden** while substantive inline threads remain open without in-thread resolution
+8. `gh pr merge --squash` ? **FORBIDDEN** until `npm run wait-for-bots -- --pr <n>` exit **0** (required bots posted) **and** `npm run pr:bot-feedback-check -- --pr <n>` exit **0**, and while substantive inline threads remain open without in-thread resolution. Never merge on "CI green" alone.
 9. Restart local dashboard if UI/server changed
 10. `npm run verify:local -- --base-url=<url>/`
 
@@ -120,7 +120,7 @@ while true; do
   npm run wait-for-bots --silent
   code=$?
   [ "$code" -eq 0 ] && break
-  [ "$code" -eq 1 ] && break
+  [ "$code" -eq 1 ] && exit 1
   sleep 45
 done
 # or: npm run wait-for-bots -- --watch

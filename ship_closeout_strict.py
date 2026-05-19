@@ -46,13 +46,39 @@ def main() -> int:
         )
         if pr_number:
             try:
+                wait = subprocess.run(
+                    ["node", "wait_for_bots.mjs", "--pr", str(pr_number)],
+                    cwd=_REPO_ROOT,
+                )
+            except FileNotFoundError:
+                print(
+                    "ship_closeout_strict: Node.js not found on PATH — install Node.js (LTS), "
+                    "then re-run npm run ship:closeout:strict (bot gates require Node).",
+                    file=sys.stderr,
+                )
+                return 2
+            if wait.returncode == 2:
+                print(
+                    "ship_closeout_strict: bot wait not satisfied — run npm run wait-for-bots until exit 0.",
+                    file=sys.stderr,
+                )
+                return 2
+            if wait.returncode == 1:
+                print(
+                    "ship_closeout_strict: bot wait failed (required bots missing or error) — do not merge.",
+                    file=sys.stderr,
+                )
+                return 2
+            try:
                 gate = subprocess.run(
                     ["node", "scripts/pr-bot-feedback-check.mjs", "--pr", str(pr_number)],
                     cwd=_REPO_ROOT,
                 )
             except FileNotFoundError:
                 print(
-                    "ship_closeout_strict: Node not found; run npm run pr:bot-feedback-check manually.",
+                    "ship_closeout_strict: Node.js not found on PATH — install Node.js (LTS), "
+                    "then re-run npm run pr:bot-feedback-check -- --pr "
+                    f"{pr_number} (requires Node).",
                     file=sys.stderr,
                 )
                 return 2
