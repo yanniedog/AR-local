@@ -48,6 +48,8 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Local dashboard smoke HTTP | `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` |
+| Pi deploy verify / apply | `npm run pi:deploy:verify` / `npm run pi:deploy` |
+| Pi deploy needed (post-merge gate) | `npm run pi:needs-deploy -- --ref origin/main~1` |
 | Prune remote refs | `npm run git:graph-hygiene` |
 
 Requires **Node** (for `npm run wait-for-bots`) and **Python** (for `verify:local` and ingest). Requires **`gh`** CLI for PR-driven steps.
@@ -85,11 +87,13 @@ Session **coordination authority** ? path locks, PR assignment, dedupe redundant
 | Piece | Location |
 |-------|----------|
 | Skill (locks, routing, handoff) | [`.cursor/skills/chief-agent/SKILL.md`](.cursor/skills/chief-agent/SKILL.md) |
-| Always-on rule (spawn chief first) | [`.cursor/rules/chief-agent-always.mdc`](.cursor/rules/chief-agent-always.mdc) |
+| Always-on rule (manual invoke only) | [`.cursor/rules/chief-agent-always.mdc`](.cursor/rules/chief-agent-always.mdc) |
 
-**Manual invoke:** say **"run chief agent"** ? agent reads the skill and runs SCAN ? LOCK CHECK ? PLAN ? DELEGATE.
+**Manual invoke:** say **"run chief agent"** — agent reads the skill and runs SCAN → LOCK CHECK → PLAN → DELEGATE. Chief is **not** auto-spawned on dirty tree, open PRs, or stop hooks.
 
-**Relationship to orchestrator:** chief owns multi-agent coordination; orchestrator owns ship bar (git/PR/CI/bot wait/merge/Pi). Parent agents spawn **chief first**; chief delegates git/PR work to orchestrator. Orchestrator does not spawn chief.
+**If chief reminders still inject:** Cursor also loads `%USERPROFILE%\.cursor\hooks.json`. Remove `orchestrator-remind.mjs` from `subagentStop`/`stop` there (repo `.cursor/hooks.json` is empty). Reload the window (Developer: Reload Window).
+
+**Relationship to orchestrator:** chief owns coordination when invoked; orchestrator owns ship bar. Say **"run workflow orchestrator"** without chief, or chief may delegate. Orchestrator does not spawn chief.
 
 ## Continuous workflow orchestrator
 
@@ -98,20 +102,21 @@ Ship-bar guardian (reports to chief agent). Cursor subagents are **not** OS daem
 | Piece | Location |
 |-------|----------|
 | Skill (scan, route, split PRs, loop) | [`.cursor/skills/workflow-orchestrator/SKILL.md`](.cursor/skills/workflow-orchestrator/SKILL.md) |
-| Always-on rule (chief delegates here) | [`.cursor/rules/workflow-orchestrator-always.mdc`](.cursor/rules/workflow-orchestrator-always.mdc) |
-| Hook reminder (chief-first, then orchestrator) | [`.cursor/hooks/orchestrator-remind.mjs`](.cursor/hooks/orchestrator-remind.mjs) |
+| Always-on rule (manual invoke) | [`.cursor/rules/workflow-orchestrator-always.mdc`](.cursor/rules/workflow-orchestrator-always.mdc) |
+| Coordination hooks (opt-in, off) | `.cursor/hooks.json` (empty); `AR_LOCAL_COORDINATION_HOOKS=1` to re-enable |
 
-**Manual invoke:** say **"run workflow orchestrator"** ? usually via chief delegation; agent reads the skill and runs SCAN ? PLAN ? DELEGATE.
+**Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
 
-**Policy:** one logical task ? one branch ? one PR (no monolithic ingest + dashboard + docs bundles). Chief prevents path/PR conflicts; orchestrator executes split and ship bar.
+**Policy:** one logical task → one branch → one PR. Chief prevents path conflicts when invoked; orchestrator executes split and ship bar.
 
 ## Team agents (specialized workers)
 
-Chief assigns **one writer per path prefix and branch**. Each skill defines path locks, invoke phrases, and handoffs. Parent agents spawn **chief first**; chief delegates below.
+Chief assigns **one writer per path prefix and branch** when invoked. Each skill defines path locks, invoke phrases, and handoffs.
 
 | Agent | Skill | Invoke | Relationship to chief |
 |-------|-------|--------|------------------------|
 | Pi deploy | [pi-deploy-agent/SKILL.md](.cursor/skills/pi-deploy-agent/SKILL.md) | **run pi deploy** | Post-merge runtime on Pi; SSH `/srv/ar-local`, pull `main`, restart units; smoke URL from `docs/UNIVERSAL_ROADMAP.md` |
+| Pi deploy watchdog | [pi-deploy-watchdog/SKILL.md](.cursor/skills/pi-deploy-watchdog/SKILL.md) | **run pi deploy watchdog** | `npm run pi:deploy:verify` / scheduled Actions + Pi timer; auto-deploy via `npm run pi:deploy` |
 | Ingest | [`.cursor/skills/ingest-agent/SKILL.md`](.cursor/skills/ingest-agent/SKILL.md) | **run ingest bring-up** | `cdr_daily.py` / `cdr_outputs.py` / `runs/`; real data only |
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR gates | [`.cursor/skills/pr-gates-agent/SKILL.md`](.cursor/skills/pr-gates-agent/SKILL.md) | **run pr gates agent** / **ensure PR gates** | Read-only: `npm run pr:gates:check`; hand off failures to pr-fix |

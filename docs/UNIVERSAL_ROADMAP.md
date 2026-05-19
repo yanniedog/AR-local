@@ -226,6 +226,28 @@ For any repo change, follow `WORKFLOW.md` end to end:
 
 The Pi runtime must end on GitHub `main`. Never leave `/srv/ar-local/AR-local` deployed on an unmerged topic branch.
 
+### Pi deploy watchdog (continuous)
+
+Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest` (no mock data).
+
+| Layer | Mechanism |
+|-------|-----------|
+| Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:deploy`, `npm run pi:needs-deploy` (`pi_deploy_verify.py`) |
+| GitHub Actions | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, on relevant `main` pushes, `workflow_dispatch` |
+| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — hourly loopback verify (`AR_PI_VERIFY_LOCAL=1`) |
+
+**GitHub secrets:** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` (optional `PI_SSH_USER`, repo variable `AR_PI_BASE_URL`, `AR_PI_AUTO_DEPLOY=1` to pull on drift).
+
+**Install Pi timer (on the Pi):**
+
+```bash
+sudo cp /srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ar-local-deploy-watchdog.timer
+```
+
+Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` — invoke **run pi deploy watchdog**.
+
 ## Live Pi Observability
 
 Do not wait blindly during Pi work. Keep one command producing live evidence, or poll short status commands while a long task runs.

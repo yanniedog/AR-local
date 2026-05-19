@@ -1,0 +1,132 @@
+# Scheduled Pi deploy verification (and optional auto-deploy on drift).
+# Secrets (repo Settings → Secrets → Actions):
+#   PI_SSH_PRIVATE_KEY  — private key for Pi SSH (ed25519 recommended)
+#   PI_SSH_HOST         — host or IP (e.g. 100.78.28.10)
+# Optional:
+#   PI_SSH_USER         — default pi
+#   AR_PI_BASE_URL      — default http://100.78.28.10:8808/
+#   AR_PI_AUTO_DEPLOY   — set to 1 to run --deploy when --verify fails
+
+name: pi-deploy-watchdog
+
+on:
+  schedule:
+    # Every 6 hours (UTC)
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      deploy_on_drift:
+        description: "Run --deploy when verify fails"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+      - "cdr_*.py"
+      - "cdr_dashboard_server.py"
+      - "deploy/pi/**"
+      - "pi_deploy_verify.py"
+      - "pi_daily_sync.py"
+      - "ar_local_pi_runtime.py"
+      - "verify_local.py"
+      - "package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  pi-watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Detect Pi SSH secrets
+        id: secrets
+        run: |
+          if [ -n "${{ secrets.PI_SSH_PRIVATE_KEY }}" ] && [ -n "${{ secrets.PI_SSH_HOST }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure SSH for Pi
+        if: steps.secrets.outputs.configured == 'true'
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
+          chmod 600 ~/.ssh/pi_deploy_key
+          USER="${PI_SSH_USER:-pi}"
+          ssh-keyscan -H "$PI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          cat >> ~/.ssh/config <<EOF
+          Host ar-local-pi5
+            HostName ${PI_SSH_HOST}
+            User ${USER}
+            IdentityFile ~/.ssh/pi_deploy_key
+            BatchMode yes
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Skip (Pi SSH secrets not configured)
+        if: steps.secrets.outputs.configured != 'true'
+        run: |
+          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST repo secrets"
+
+      - name: Verify Pi deploy
+        id: verify
+        if: steps.secrets.outputs.configured == 'true'
+        env:
+          AR_PI_SSH_HOST: ar-local-pi5
+          AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
+        run: |
+          set +e
+          python pi_deploy_verify.py --verify
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Deploy on drift (optional)
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.verify.outputs.exit != '0' &&
+          (
+            vars.AR_PI_AUTO_DEPLOY == '1' ||
+            github.event.inputs.deploy_on_drift == 'true'
+          )
+        env:
+          AR_PI_SSH_HOST: ar-local-pi5
+          AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
+          AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
+        run: python pi_deploy_verify.py --deploy
+
+      - name: Fail if still unhealthy
+        if: steps.secrets.outputs.configured == 'true'
+        env:
+          VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
+          AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
+          DEPLOY_INPUT: ${{ github.event.inputs.deploy_on_drift }}
+        run: |
+          if [ "$VERIFY_EXIT" = "0" ]; then
+            exit 0
+          fi
+          if [ "$AR_PI_AUTO_DEPLOY" = "1" ] || [ "$DEPLOY_INPUT" = "true" ]; then
+            python pi_deploy_verify.py --verify
+            exit $?
+          fi
+          echo "pi-deploy-watchdog: verify failed (exit $VERIFY_EXIT); set AR_PI_AUTO_DEPLOY=1 or re-run with deploy_on_drift=true"
+          exit 1
