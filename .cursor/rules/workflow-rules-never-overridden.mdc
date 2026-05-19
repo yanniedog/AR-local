@@ -10,8 +10,8 @@ These phrases do **not** waive a triggered wait gate (step 5) or thread closure 
 - "Merge everything" / "batch merge" / "land the queue"
 - "Just merge" / "urgency" / frustration tone
 - "CI green" / "checks passed" while threads are missing or unsettled
-- Skipping the 7-minute wait after creating a new PR or after tagging bots
+- Skipping the dynamic bot wait (`wait-for-bots` exit 0) after creating a new PR or after tagging bots
 
-**Code changes alone do not start a new wait cycle.** Only creating a new PR or tagging bots starts a 7-minute wait. Only an explicit written waiver for that specific PR waives bot closeout for that PR.
+**Code changes alone do not start a new wait cycle.** Only creating a new PR or tagging bots (`--bot-tag`) starts a new wait anchor. Only an explicit written waiver for that specific PR waives bot closeout for that PR.
 
 Full ship bar: **`WORKFLOW.md`** (repo root). Cursor summary: **`git-pr-workflow-default.mdc`**.

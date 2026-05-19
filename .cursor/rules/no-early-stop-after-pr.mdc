@@ -15,7 +15,7 @@ from repo root.
 
 - **Exit 0** — clear to stop (for these guards).
 - **`ship:closeout:strict` exit 2** — open PR exists; continue **`WORKFLOW.md`** steps 5–9.
-- **`wait-for-bots` exit 2** — < 7 min since PR creation; wait and re-sweep.
+- **`wait-for-bots` exit 2** — bots/CI not settled; re-run until exit 0 (dynamic poll, not a fixed timer).
 
 **Never** end with "done", "shipped", "PR opened", "CI green so we're good", or "handing off the PR" while an open PR exists and you have merge ability.
 

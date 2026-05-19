@@ -31,15 +31,30 @@ Commit only on the topic branch. `git push -u origin HEAD`.
 
 `gh pr checks <n> --watch` until required checks pass (e.g. `ci_result` when present). Fix forward on this PR. After fix pushes, `@mention` reviewers using handles from `gh pr view -c` (not display names).
 
-### 5. Bot wait trigger
+### 5. Bot wait trigger (dynamic)
 
 ```sh
 npm run wait-for-bots
+# optional: block until ready
+npm run wait-for-bots -- --watch
+# after @mentioning bots in the PR:
+npm run wait-for-bots -- --bot-tag
 ```
 
-Run this after creating a new PR. It exits 2 with time remaining if < 7 minutes since PR creation. **Do not proceed until exit 0.**
+Run this after creating a new PR (or after tagging bots). The script polls GitHub via `gh` and exits **2** while bots or CI are still active, **0** when ready, **1** on error or safety timeout.
 
-Also wait 7 minutes after tagging bots in PR comments or review replies, then re-sweep comments before merging. Do **not** restart a wait cycle just because you pushed a code change. Fix-up pushes stay on the same branch and go straight to CI, feedback synthesis, and thread closure unless you tagged bots.
+**Ready when** (since the wait anchor — PR creation, or `--bot-tag` / `--since`):
+
+- Required CI checks are not pending, **and**
+- At least one configured bot has commented since the anchor, **and**
+- Either no bot activity for **90s** (quiet window) **or** every configured bot account has posted, **and**
+- At least **60s** since anchor (unless a prior successful wait is cached for this PR)
+
+**Safety cap:** **28 minutes** from anchor (exit **1** if exceeded). Tune via env: `BOT_WAIT_POLL_SEC`, `BOT_WAIT_QUIET_SEC`, `BOT_WAIT_MIN_SEC`, `BOT_WAIT_MAX_MIN`, `BOT_WAIT_LOGINS`.
+
+**Orchestrator loop:** re-run until exit **0** (sleep ~45s between tries, or use `--watch`). Do **not** proceed to synthesis while exit **2**.
+
+After tagging bots in PR comments or review replies, run `npm run wait-for-bots -- --bot-tag` then loop until exit **0**. Do **not** restart a wait cycle just because you pushed a code change. Fix-up pushes stay on the same branch and go straight to CI, feedback synthesis, and thread closure unless you tagged bots.
 
 ### 5b. Synthesize all feedback before responding
 
@@ -101,7 +116,7 @@ npm run ship:closeout:strict && npm run wait-for-bots
 ```
 
 - `ship:closeout:strict` exit **2** → open PR still exists for this branch; continue steps 5–9.
-- `wait-for-bots` exit **2** → < 7 min since PR creation; wait and re-sweep.
+- `wait-for-bots` exit **2** → bots/CI not settled; sleep and re-run (or use `--watch`).
 
 ---
 
@@ -111,7 +126,7 @@ Phrases that do NOT waive the wait gate, the synthesis step, or thread closure:
 
 - "merge everything" / "batch merge" / "just merge" / "urgency" / "ASAP" / frustration
 - "CI green" / "checks passed" while new-PR or bot-tag wait is still active, or threads are unsettled
-- "no bot feedback" before the required 7-minute new-PR or bot-tag wait has elapsed
+- "no bot feedback" before `wait-for-bots` exits **0** for the current wait anchor (new PR or bot-tag)
 
 Only an explicit written waiver for that specific PR waives bot closeout for that PR.
 
