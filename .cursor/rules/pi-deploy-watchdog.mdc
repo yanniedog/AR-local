@@ -13,4 +13,4 @@ When the user says **"run pi deploy watchdog"** or when **orchestrator/chief** c
 3. If exit **0**, run `npm run pi:deploy:verify`; on failure run `npm run pi:deploy` then verify again.
 4. Do not treat local `verify:local` as Pi acceptance.
 
-Scheduled CI: `.github/workflows/pi-deploy-watchdog.yml` (requires `PI_SSH_*` secrets).
+Auto-deploy on merge: `.github/workflows/pi-deploy-on-main.yml`. Scheduled drift CI: `.github/workflows/pi-deploy-watchdog.yml` (requires `PI_SSH_*` secrets).
