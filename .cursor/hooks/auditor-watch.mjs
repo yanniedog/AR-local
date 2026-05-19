@@ -3,11 +3,15 @@
  * Post-stop hook: quick agent auditor scan, then chief/orchestrator chain.
  * Chain: auditor → chief → orchestrator (via chief delegation).
  */
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const repoRoot = process.cwd();
 const EXEC_TIMEOUT_MS = 8000;
+/** Full scan runs chief:scan + ship:closeout; 7s was too short on Windows. */
+const AUDITOR_SCAN_TIMEOUT_MS = 45000;
+
 function run(cmd, timeoutMs = EXEC_TIMEOUT_MS) {
   try {
     return execSync(cmd, {
@@ -17,15 +21,21 @@ function run(cmd, timeoutMs = EXEC_TIMEOUT_MS) {
       timeout: timeoutMs,
       maxBuffer: 2 * 1024 * 1024,
     }).trim();
-  } catch {
+  } catch (error) {
+    const stdout = (error.stdout || '').toString().trim();
+    if (stdout) return stdout;
     return '';
   }
 }
 
-function auditorScanScript() {
+function resolveAuditorScanScript() {
+  const repoScript = join(repoRoot, 'scripts', 'agent-auditor-scan.mjs');
   const wf = process.env.CURSOR_WORKFLOW_SCRIPTS;
-  if (wf) return join(wf, 'agent-auditor-scan.mjs');
-  return join(repoRoot, 'scripts', 'agent-auditor-scan.mjs');
+  if (wf) {
+    const globalScript = join(wf, 'agent-auditor-scan.mjs');
+    if (existsSync(globalScript)) return globalScript;
+  }
+  return repoScript;
 }
 
 function githubRepoSlug() {
@@ -39,21 +49,66 @@ function githubRepoSlug() {
 }
 
 function quickAuditorScan() {
-  const script = auditorScanScript();
-  try {
-    const out = run(`node "${script}" --hook --since-minutes 45 --no-write`, 7000);
-    if (!out) {
-      return {
-        exitCode: 1,
-        findings: [{ severity: 'warn', message: 'agent-auditor-scan produced no output in hook' }],
-      };
-    }
-    const report = JSON.parse(out);
-    return { exitCode: report.exitCode ?? 0, findings: report.findings ?? [] };
-  } catch {
+  const script = resolveAuditorScanScript();
+  if (!existsSync(script)) {
     return {
       exitCode: 2,
-      findings: [{ severity: 'fail', message: 'agent-auditor-scan failed in auditor-watch hook' }],
+      findings: [
+        {
+          severity: 'fail',
+          message: `agent-auditor-scan not found: ${script}`,
+        },
+      ],
+    };
+  }
+
+  const args = [script, '--hook', '--since-minutes', '45', '--no-write'];
+  let stdout = '';
+  let stderr = '';
+  let status = 0;
+
+  try {
+    stdout = execFileSync(process.execPath, args, {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: AUDITOR_SCAN_TIMEOUT_MS,
+      maxBuffer: 2 * 1024 * 1024,
+    }).trim();
+  } catch (error) {
+    stdout = (error.stdout || '').toString().trim();
+    stderr = (error.stderr || '').toString().trim();
+    status = error.status ?? 2;
+  }
+
+  if (!stdout) {
+    const detail = stderr ? stderr.slice(0, 240) : `exit ${status}, script ${script}`;
+    return {
+      exitCode: 1,
+      findings: [
+        {
+          severity: 'warn',
+          message: `agent-auditor-scan produced no output in hook (${detail})`,
+        },
+      ],
+    };
+  }
+
+  try {
+    const report = JSON.parse(stdout);
+    return {
+      exitCode: report.exitCode ?? status ?? 0,
+      findings: report.findings ?? [],
+    };
+  } catch {
+    return {
+      exitCode: 1,
+      findings: [
+        {
+          severity: 'warn',
+          message: `agent-auditor-scan returned non-JSON in hook: ${stdout.slice(0, 160)}`,
+        },
+      ],
     };
   }
 }
