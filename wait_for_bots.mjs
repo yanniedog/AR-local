@@ -205,7 +205,7 @@ function fetchChecks(prNumber) {
   if (r.status !== 0) {
     const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
     // PR branches often have no required checks registered until branch protection applies.
-    if (/no required checks reported/i.test(msg)) {
+    if (/no required checks reported/i.test(msg) || /no checks reported/i.test(msg)) {
       return { pending: false, failed: false, failedNames: [] };
     }
     return checksPendingShape({ error: msg });

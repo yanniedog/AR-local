@@ -69,6 +69,15 @@ Run this after creating a new PR (or after tagging bots). The script polls GitHu
 
 **Orchestrator loop:** re-run until exit **0** (sleep ~45s between tries, or use `--watch`). Do **not** proceed to synthesis while exit **2**.
 
+After local `wait-for-bots` exits **0**, make sure the GitHub required check is updated too. The Actions `bot-presence-gate` job is a single-shot check and does **not** see local `.ar-bot-wait` state or local `--bot-tag` anchors. Re-run the failed GitHub check from the PR checks UI, or dispatch it explicitly:
+
+```sh
+gh workflow run pr-bot-presence-gate.yml -f pr_number=<n>
+gh pr checks <n> --watch
+```
+
+Only continue once GitHub reports `bot-presence-gate` green.
+
 After tagging bots in PR comments or review replies, run `npm run wait-for-bots -- --bot-tag` then loop until exit **0**. Do **not** restart a wait cycle just because you pushed a code change. Fix-up pushes stay on the same branch and go straight to CI, feedback synthesis, and thread closure unless you tagged bots.
 
 ### 5b. Synthesize all feedback before responding
