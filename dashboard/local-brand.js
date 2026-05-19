@@ -526,7 +526,7 @@
   }
 
   /**
-   * Fast paths first (brand map + slug pack), slow fallbacks last (favicons, Clearbit).
+   * Fast paths first (exact brand map, meta/CDN, slug pack), slow fallbacks last (favicons, Clearbit).
    */
   function buildLogoUrlList(metaIcon, slugBasenames, provider) {
     const urls = [];
@@ -537,6 +537,7 @@
       seen.add(src);
       urls.push(src);
     };
+    exactOfficialLogoUrlsForProvider(provider).forEach(pushUrl);
     const remoteFirst = preferBankCdnFirst();
     const icon = String(metaIcon || '').trim();
     if (remoteFirst && icon) {
@@ -547,7 +548,6 @@
       pushUrl(cdnTwinForLocalBankUrl(icon));
     }
     logoUrlsFromSlugs(slugBasenames).forEach(pushUrl);
-    exactOfficialLogoUrlsForProvider(provider).forEach(pushUrl);
     officialLogoUrlsForProvider(provider).forEach(pushUrl);
     return urls;
   }
