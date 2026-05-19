@@ -1,18 +1,11 @@
 # Scheduled Pi deploy verification (and optional auto-deploy on drift).
-# Secrets (repo Settings → Secrets → Actions):
-#   PI_SSH_PRIVATE_KEY  — private key for Pi SSH (ed25519 recommended)
-#   PI_SSH_HOST         — host or IP (e.g. 100.78.28.10)
-# Optional:
-#   PI_SSH_USER         — default pi
-#   AR_PI_BASE_URL      — default http://100.78.28.10:8808/
-#   AR_PI_AUTO_DEPLOY   — repo variable: set to 1 to run --deploy when --verify fails
-# Main-push deploy: .github/workflows/pi-deploy-on-main.yml
+# Secrets: PI_SSH_PRIVATE_KEY, PI_SSH_HOST; TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (for hosted runners).
+# Variable AR_PI_AUTO_DEPLOY=1 runs --deploy when verify fails.
 
 name: pi-deploy-watchdog
 
 on:
   schedule:
-    # Every 6 hours (UTC)
     - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
@@ -24,7 +17,6 @@ on:
         options:
           - "false"
           - "true"
-  # Main-push deploy: .github/workflows/pi-deploy-on-main.yml (every merge to main)
 
 permissions:
   contents: read
@@ -50,6 +42,37 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect runner environment
+        id: runner_env
+        run: |
+          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
+            echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect Tailscale OAuth
+        id: tailscale
+        run: |
+          if [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_SECRET }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Join Tailscale tailnet
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
       - name: Configure SSH for Pi
         if: steps.secrets.outputs.configured == 'true'
         env:
@@ -69,21 +92,38 @@ jobs:
             User ${USER}
             IdentityFile ~/.ssh/pi_deploy_key
             BatchMode yes
-            ConnectTimeout 20
+            ConnectTimeout 60
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Skip (Pi SSH secrets not configured)
+      - name: Skip (Pi SSH not configured)
         if: steps.secrets.outputs.configured != 'true'
         run: |
-          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST repo secrets"
+          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
+          echo "On-Pi ar-local-deploy-watchdog.timer handles drift when GitHub cannot reach the Pi."
+
+      - name: Skip verify (Tailscale OAuth missing for hosted runner)
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured != 'true'
+        run: |
+          echo "::warning::PI_SSH_* set but TS_OAUTH_* missing — cloud runner cannot reach Tailscale-only Pi."
+          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~15 minutes."
 
       - name: Verify Pi deploy
         id: verify
-        if: steps.secrets.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
         env:
           AR_PI_SSH_HOST: ar-local-pi5
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
+          AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
+          AR_PI_SITE_REPO: /srv/ar-local/australianrates
         run: |
           set +e
           python pi_deploy_verify.py --verify
@@ -93,6 +133,10 @@ jobs:
       - name: Deploy on drift (optional)
         if: >-
           steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          ) &&
           steps.verify.outputs.exit != '0' &&
           (
             vars.AR_PI_AUTO_DEPLOY == '1' ||
@@ -101,11 +145,17 @@ jobs:
         env:
           AR_PI_SSH_HOST: ar-local-pi5
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
-          AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
+          AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
+          AR_PI_SITE_REPO: /srv/ar-local/australianrates
         run: python pi_deploy_verify.py --deploy
 
       - name: Fail if still unhealthy
-        if: steps.secrets.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
         env:
           VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
           AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
@@ -118,5 +168,5 @@ jobs:
             python pi_deploy_verify.py --verify
             exit $?
           fi
-          echo "pi-deploy-watchdog: verify failed (exit $VERIFY_EXIT); set AR_PI_AUTO_DEPLOY=1 or re-run with deploy_on_drift=true"
+          echo "pi-deploy-watchdog: verify failed (exit $VERIFY_EXIT)"
           exit 1

@@ -1,14 +1,12 @@
 # Deploy Pi runtime after every push to main (squash merges included).
-# Does not gate PR merges — job succeeds when secrets are absent; deploy step uses continue-on-error.
+# Does not gate PR merges.
 #
 # Secrets (Settings → Secrets and variables → Actions):
-#   PI_SSH_PRIVATE_KEY  — private key for Pi SSH (ed25519 recommended)
-#   PI_SSH_HOST         — host or IP (e.g. 100.78.28.10)
-# Optional secrets:
-#   PI_SSH_USER         — default pi
-# Optional variables:
-#   AR_PI_BASE_URL      — smoke URL (default http://100.78.28.10:8808/ when unset)
-# SSH Host alias ar-local-pi5 must match docs/UNIVERSAL_ROADMAP.md (~/.ssh/config).
+#   PI_SSH_PRIVATE_KEY, PI_SSH_HOST — required for deploy step
+#   TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET — required for GitHub-hosted runners (Pi is on Tailscale)
+# Optional: PI_SSH_USER (default pi), variable AR_PI_BASE_URL
+#
+# Without Tailscale OAuth secrets, use on-Pi timer (ar-local-deploy-watchdog) which pulls on drift.
 
 name: pi-deploy-on-main
 
@@ -54,6 +52,38 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect runner environment
+        id: runner_env
+        run: |
+          # runner.environment is not a valid context; use self-hosted label instead.
+          if echo "${{ join(runner.labels, ' ') }}" | grep -qE '(^| )self-hosted( |$)'; then
+            echo "requires_tailscale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "requires_tailscale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect Tailscale OAuth (hosted runner → tailnet)
+        id: tailscale
+        run: |
+          if [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_SECRET }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Join Tailscale tailnet
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ secrets.PI_SSH_HOST }}
+          version: latest
+
       - name: Configure SSH for Pi
         if: steps.secrets.outputs.configured == 'true'
         env:
@@ -73,21 +103,37 @@ jobs:
             User ${USER}
             IdentityFile ~/.ssh/pi_deploy_key
             BatchMode yes
-            ConnectTimeout 20
+            ConnectTimeout 60
           EOF
           chmod 600 ~/.ssh/config
 
       - name: Skip (Pi SSH secrets not configured)
         if: steps.secrets.outputs.configured != 'true'
         run: |
-          echo "pi-deploy-on-main: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST in repo Actions secrets"
-          echo "Merge to main is not blocked; configure secrets to enable automatic Pi deploy."
+          echo "pi-deploy-on-main: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
+          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~15 minutes."
+
+      - name: Skip deploy (Tailscale OAuth missing for hosted runner)
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured != 'true'
+        run: |
+          echo "::warning::PI_SSH_* set but TS_OAUTH_CLIENT_ID/TS_OAUTH_SECRET missing — GitHub cloud cannot reach Tailscale-only Pi."
+          echo "Add Tailscale OAuth secrets (see docs/UNIVERSAL_ROADMAP.md) or use a self-hosted runner on the tailnet."
 
       - name: Deploy Pi (pull main + restart + smoke)
-        if: steps.secrets.outputs.configured == 'true'
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
         env:
           AR_PI_SSH_HOST: ar-local-pi5
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
+          AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
+          AR_PI_SITE_REPO: /srv/ar-local/australianrates
         run: |
           export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10:8808/}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
@@ -95,9 +141,12 @@ jobs:
           else
             python pi_deploy_verify.py --deploy
           fi
-        continue-on-error: true
 
       - name: Deploy result
-        if: steps.secrets.outputs.configured == 'true'
-        run: |
-          echo "pi-deploy-on-main: finished (see Deploy Pi step for exit code; failures do not fail this workflow)"
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          )
+        run: echo "pi-deploy-on-main: finished (see Deploy Pi step log)"

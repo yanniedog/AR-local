@@ -235,14 +235,27 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:deploy`, `npm run pi:needs-deploy` (`pi_deploy_verify.py`) |
 | GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` — every push to `main`; `workflow_dispatch` |
 | GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
-| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — hourly loopback verify (`AR_PI_VERIFY_LOCAL=1`) |
+| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
 
-**GitHub secrets (Actions):** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` (required for CI deploy). Optional: `PI_SSH_USER`, variable `AR_PI_BASE_URL`. Watchdog: `AR_PI_AUTO_DEPLOY=1` to pull when scheduled verify finds drift. `pi-deploy-on-main` runs post-merge only: missing secrets skip deploy (logged); deploy uses `continue-on-error` so failures never fail the workflow run.
+**GitHub secrets (Actions):**
+
+| Secret / variable | Purpose |
+|-------------------|---------|
+| `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
+| `PI_SSH_USER` | Optional (default `pi`) |
+| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client — **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
+| `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10:8808/`) |
+| `AR_PI_AUTO_DEPLOY` (variable) | Set to `1` so scheduled `pi-deploy-watchdog` runs `--deploy` when verify fails |
+
+Without Tailscale OAuth secrets, cloud workflows skip SSH and print a warning; the on-Pi timer still syncs within ~15 minutes. Windows dev: `npm run pi:deploy:verify` may log a harmless OpenSSH socket message after successful output.
 
 **Install Pi timer (on the Pi):**
 
 ```bash
-sudo cp /srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.{service,timer} /etc/systemd/system/
+cd /srv/ar-local/AR-local
+git pull origin main
+chmod +x deploy/pi/ar-local-deploy-watchdog.sh
+sudo AR_LOCAL_REPO=/srv/ar-local/AR-local bash deploy/pi/install-pi-systemd.sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
 ```
@@ -455,7 +468,7 @@ Future improvements should:
    3. Implement per-section routing on the Pi server so `/`, `/savings/`, `/term-deposits/`, `/economic-data/` each render the public shell with the right `data-ar-section` value.
    4. Replace `dashboard/index.html` with a thin loader that serves the public shell `index.html` and lets the public JS modules drive the UI; retire the Pi-specific hero/filter strip markup.
    5. Disable Microsoft Clarity for any non-loopback Pi access (modify `siteVariant.isLocalHost` semantics or strip the Clarity tag from the served `site-variant.js`).
-3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1–2.4 land).
+3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1—2.4 land).
 4. Keep historical ribbon values populated from retained DB exports.
 5. Keep LAN access stable on Pi IP and `ar.local`.
 6. Keep SSD portability documentation and systemd unit rendering current.
