@@ -19,6 +19,7 @@ from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
+from ar_local_sectors import energy_dormant
 
 BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
@@ -420,7 +421,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             run_date = str(manifest.get("run_date") or "")
             if run_date:
                 cache.read(exports_root / "dashboard-cache" / run_date / "banks.json")
-                cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
+                if not energy_dormant():
+                    cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
                 bank_history_payload(run_date)
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
@@ -482,12 +484,29 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
                 return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
-            if path in ("/api/banks", "/api/energy"):
+            if path == "/api/energy":
+                if energy_dormant():
+                    payload = json.dumps(
+                        {
+                            "run_date": "",
+                            "plans": [],
+                            "counts": {},
+                            "dormant": True,
+                            "message": "Energy CDR sector is dormant (set AR_ENERGY_DORMANT=0 and use cdr_daily.py --energy to re-enable).",
+                        },
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    return payload, "application/json; charset=utf-8"
                 date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
-                name = path.rsplit("/", 1)[1] + ".json"
-                return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
+                return cache.read(exports_root / "dashboard-cache" / date / "energy.json"), "application/json"
+            if path == "/api/banks":
+                date = parse_run_date_param(query.get("date", [""])[0])
+                exports_root = export_resolver.root_for_date(date)
+                exports_root, cache = artifact_cache(exports_root)
+                return cache.read(exports_root / "dashboard-cache" / date / "banks.json"), "application/json"
             if path == "/api/banks/history":
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
