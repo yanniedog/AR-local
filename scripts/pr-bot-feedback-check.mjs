@@ -130,9 +130,12 @@ function main() {
   let botPresence = null;
   if (!args.skipBotPresence) {
     const state = readBotWaitState(prNumber);
-    const requiredKeys =
-      args.requireBots !== null
-        ? resolveRequiredKeys(args.requireBots)
+    const cliOverride = args.requireBots !== null;
+    const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
+    const requiredKeys = cliOverride
+      ? resolveRequiredKeys(args.requireBots)
+      : envOverride
+        ? resolveRequiredKeys()
         : state?.requiredKeys?.length
           ? state.requiredKeys
           : resolveRequiredKeys();
