@@ -40,16 +40,38 @@ export function hasGh() {
   return spawnSync('gh', ['--version'], { encoding: 'utf8', stdio: 'ignore' }).status === 0;
 }
 
+export function isGithubRateLimitError(message) {
+  return /rate limit/i.test(message || '');
+}
+
+export class GhRateLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'GhRateLimitError';
+  }
+}
+
+export function repoSlugFromEnv() {
+  const slug = (process.env.GITHUB_REPOSITORY || '').trim();
+  if (!slug) return null;
+  const [owner, name] = slug.split('/');
+  if (!owner || !name) return null;
+  return { owner, name };
+}
+
 export function ghJson(args) {
   const r = spawnSync('gh', args, { encoding: 'utf8' });
   if (r.error || r.status !== 0) {
     const err = (r.stderr || r.stdout || r.error?.message || 'gh failed').trim();
+    if (isGithubRateLimitError(err)) throw new GhRateLimitError(err);
     throw new Error(err);
   }
   return JSON.parse(r.stdout || '{}');
 }
 
 export function repoSlug() {
+  const fromEnv = repoSlugFromEnv();
+  if (fromEnv) return fromEnv;
   const json = ghJson(['repo', 'view', '--json', 'nameWithOwner']);
   const [owner, name] = (json.nameWithOwner || '').split('/');
   if (!owner || !name) throw new Error('Could not resolve repo owner/name from gh');
