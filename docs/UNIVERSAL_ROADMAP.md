@@ -327,7 +327,8 @@ Current source of truth:
 
 Rules for future agents:
 
-- Prefer `window.AR.ribbon.ribbonTierFieldsForSection()` and `window.AR.ribbon.buildRibbonTierTree()` for visible banking hierarchy.
+- Prefer `window.AR.ribbon.ribbonInitialTierFieldsForSection()` (or `ribbonTierFieldsForSection`) and `buildRibbonTierTree()` for visible banking hierarchy.
+- Deferred locally: full `ar-filters.js` bar, Tabulator table, and `chartReportPlot` CPI stack (see parity audit).
 - Keep `dashboard/cdr-taxonomy-tree.js` as fallback or diagnostic support, not the primary visible banking tree.
 - When public AustralianRates changes hierarchy fields or labels, update the local row adapter and verify identical node lists against the public asset behavior.
 - Do not invent local display names for canonical public nodes.
