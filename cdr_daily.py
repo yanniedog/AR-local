@@ -59,7 +59,7 @@ def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str], ene
 
 
 def sector_ingest_args(args: argparse.Namespace) -> List[str]:
-    if args.banks_only or not energy_ingest_enabled(cli_energy=bool(getattr(args, "energy", False))):
+    if args.banks_only or not energy_ingest_enabled(cli_energy=args.energy):
         return ["--no-energy"]
     return []
 

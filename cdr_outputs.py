@@ -435,12 +435,13 @@ def build_outputs(
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
     banks = parse_banks_run(run_root)
-    if energy_dormant():
+    skip_energy = energy_dormant()
+    if skip_energy:
         energy = empty_energy_dataset(run_date)
     else:
         energy = parse_energy_run(run_root, energy_slim=energy_slim)
     write_json(out_dir / f"banks-{run_date}.json", banks)
-    if not energy_dormant():
+    if not skip_energy:
         write_json(out_dir / f"energy-{run_date}.json", energy)
     write_sector_workbooks(out_dir, run_date, banks, energy)
     rebuild_run_db(db_path or (out_dir / "local-cdr.sqlite"), run_date, banks, energy)
