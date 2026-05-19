@@ -1,0 +1,43 @@
+# Advisory aggregate PR gate audit (local npm run pr:gates:check parity).
+# Required merge gates remain bot-presence-gate and bot-feedback-gate.
+name: pr-gates-check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  pr-gates-advisory:
+    if: github.event.pull_request != null || (github.event.issue != null && github.event.issue.pull_request) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: PR gates aggregate (advisory)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check,pr-gates-advisory
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR="${{ inputs.pr_number }}"
+          else
+            PR="${{ github.event.pull_request.number || github.event.issue.number }}"
+          fi
+          npm run pr:gates:check -- --pr "$PR" --watch --timeout-min 35

@@ -40,13 +40,21 @@ When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROAD
 
 ## Mandatory gates (before merge request)
 
+Prefer the aggregate audit (chief may run this before assigning you):
+
+```sh
+npm run pr:gates:check -- --pr <n>         # exit 0 = all merge gates
+```
+
+Individual gates (same bar):
+
 ```sh
 npm run wait-for-bots -- --pr <n>          # exit 0 required
 npm run pr:bot-feedback-check -- --pr <n>  # exit 0 required
 gh pr checks <n> --watch                   # bot-presence-gate, bot-feedback-gate green
 ```
 
-**Never** recommend merge on “CI green” alone.
+**Never** recommend merge on “CI green” alone. **pr-gates-agent** audits; you implement fixes until `pr:gates:check` exits **0**.
 
 ## Workflow
 
@@ -122,6 +130,7 @@ After @mentioning bots: `npm run wait-for-bots -- --bot-tag` then loop until exi
 ## Related
 
 - `WORKFLOW.md`, `.cursor/rules/respond-to-each-review-comment.mdc`
+- `pr-gates-agent` — read-only gate audit before/after your fixes
 - `workflow-orchestrator` — full ship bar loop
 - `split-pr-agent` — when PR scope was wrong
 - `babysit` skill — parallel triage patterns
