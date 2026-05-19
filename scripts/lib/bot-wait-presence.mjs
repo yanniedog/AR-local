@@ -80,7 +80,7 @@ export function checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys, anc
   const data = ghGraphql(owner, name, prNumber);
   const pr = data?.data?.repository?.pullRequest;
   if (!pr) throw new Error('GraphQL: pull request not found');
-  const anchor = resolveAnchorIso(anchorIso || state?.anchor, pr.createdAt);
+  const anchor = resolveAnchorIso(anchorIso, pr.createdAt);
   const events = collectBotEvents(pr, knownBots, anchor, pr.createdAt);
   const seenLogins = [...new Set(events.map((e) => e.login))];
   const missing = missingRequiredKeys(keys, seenLogins);

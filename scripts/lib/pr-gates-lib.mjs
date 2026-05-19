@@ -2,6 +2,7 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
@@ -217,12 +218,12 @@ export function gateGithubBotChecks(prNumber) {
   };
 }
 
-export function runNodeScript(relPath, extraArgs = []) {
+export function runNodeScript(relPath, extraArgs = [], options = {}) {
   const script = path.join(REPO_ROOT, relPath);
   const r = spawnSync(process.execPath, [script, ...extraArgs], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    env: process.env,
+    env: options.env || process.env,
   });
   return {
     exitCode: r.status ?? 1,
@@ -232,7 +233,20 @@ export function runNodeScript(relPath, extraArgs = []) {
 }
 
 export function gateWaitForBots(prNumber) {
-  const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
+  let createdAt = null;
+  try {
+    createdAt = ghJson(['pr', 'view', String(prNumber), '--json', 'createdAt'])?.createdAt || null;
+  } catch {
+    createdAt = null;
+  }
+  const args = ['--pr', String(prNumber)];
+  if (createdAt) args.push('--since', createdAt);
+  const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', args, {
+    env: {
+      ...process.env,
+      AR_BOT_WAIT_STATE_DIR: path.join(os.tmpdir(), `ar-local-pr-gates-${process.pid}-${prNumber}`),
+    },
+  });
   if (exitCode === 0) {
     return { id: 'wait-for-bots', pass: true, detail: 'Bot wait satisfied (exit 0)', exitCode };
   }
@@ -279,7 +293,7 @@ export function hasFeedbackPlanComment(prNumber) {
     throw new Error((r.stderr || r.stdout || 'gh api issue comments failed').trim());
   }
   const comments = JSON.parse(r.stdout || '[]');
-  const list = Array.isArray(comments) ? comments : [];
+  const list = Array.isArray(comments) ? comments.flat(Infinity) : [];
   return list.some((c) => FEEDBACK_PLAN_RE.test(c.body || ''));
 }
 
