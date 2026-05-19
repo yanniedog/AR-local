@@ -26,8 +26,8 @@ Unless the user **explicitly waives** chief for this session, parent agents spaw
 ## Limitations (honest)
 
 - Subagents **cannot** run as permanent OS daemons outside Cursor.
-- Locks are **convention** documented in this skill and chief's session state — not OS file locks.
-- Transcript paths live under the Cursor project dir (e.g. `%USERPROFILE%\.cursor\projects\<project-slug>\agent-transcripts\`), not always in the git repo.
+- Locks are **by convention** documented in this skill and chief's session state — not OS file locks.
+- Transcript paths live under the Cursor **project** dir (`<cursor-project-slug>/agent-transcripts/`), not in the git repo.
 - Hooks only **remind**; they do not enforce locks or cancel running subagents automatically.
 - Chief **cannot** force-stop a running subagent; supersede by marking stale and not re-resuming.
 
@@ -45,21 +45,18 @@ Run from repo root:
 | Orchestrator state | Recent transcript mentioning `workflow-orchestrator` or SCAN→PLAN→DELEGATE | Dedupe: resume existing cycle instead of spawn duplicate |
 | Closeout (delegate) | `npm run ship:closeout:strict`, `npm run wait-for-bots` | Chief asks orchestrator to act; chief does not merge |
 
-**Transcript scan:** read last lines of recent `subagents/*.jsonl` for completion summaries, mentioned paths, branch names, PR numbers. Map to routing table and lock table.
+**Transcript scan:** read last lines of recent `agent-transcripts/**/subagents/*.jsonl` (mtime sort) for completion summaries, paths, branch names, PR numbers. Map to assignments and lock table.
 
-## Routing table (who owns what)
+## Routing (chief assigns; orchestrator executes path owners)
 
-Chief **assigns** work; workers **execute**. Delegate ship-bar steps to orchestrator; do not re-implement `WORKFLOW.md` in chief.
+Chief **assigns** work and locks; workers **execute**. Delegate ship-bar steps to orchestrator; do not re-implement `WORKFLOW.md` in chief.
 
-| Path / topic | Delegate to | Subagent type | Notes |
-|--------------|-------------|---------------|-------|
-| Ship bar, split PRs, bot wait, merge, thread closure | **workflow-orchestrator** | `generalPurpose` | Read orchestrator skill; one PR per task |
-| `cdr_*.py`, `ar_local_sectors.py`, ingest/export | **ingest/backend** | `generalPurpose` | Real CDR data only |
-| `dashboard/*`, dashboard UI in `cdr_dashboard_server.py` | **dashboard-ui** | `generalPurpose` | Verify via local dashboard |
-| Pi SSH, deploy, `verify:local` on Pi | **pi-ops** | `shell` or `generalPurpose` | After merge when user expects Pi parity |
-| Open PR #N review / CI / bots | **pr-fix** (one per PR) | `generalPurpose` + babysit skill | Never two babysit workers on same PR |
-| Status, exploration, read-only reports | **readonly explore** | `explore` | No file edits; report only |
-| `docs/*.md`, `AGENTS.md`, `.cursor/rules/*`, `.cursor/skills/*` | **docs/meta** | `generalPurpose` | Often separate PR; chief meta PR is separate from feature PRs |
+| Concern | Delegate to | Notes |
+|---------|-------------|-------|
+| Ship bar, split PRs, bot wait, merge, thread closure, Pi verify after merge | **workflow-orchestrator** | Read `.cursor/skills/workflow-orchestrator/SKILL.md`; one PR per task |
+| Path → owner (ingest, dashboard, docs, meta plumbing) | **orchestrator path routing** | Use orchestrator skill **Task → owner routing** table; chief names the owner in the delegate prompt |
+| Open PR #N review / CI / bots | **pr-fix** (one per PR) | `generalPurpose` + babysit skill; never two babysit workers on same PR |
+| Status, exploration, read-only reports | **readonly explore** | `explore`; no file edits |
 
 **Orchestrator does not spawn chief.** Chief may spawn orchestrator. Orchestrator reports to chief for dedupe and lock awareness.
 
