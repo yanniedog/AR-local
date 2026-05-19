@@ -1,0 +1,35 @@
+"""Sector enablement for AR-local ingest, export, and dashboard.
+
+Energy (electricity/gas CDR plans) is dormant by default. Re-enable with:
+
+  set AR_ENERGY_DORMANT=0
+  python cdr_daily.py --energy
+
+or pass ``--energy`` on ``cdr_daily.py`` / ``cdr_full_ingest.py`` without setting the env var.
+"""
+
+from __future__ import annotations
+
+import os
+
+# Default True: skip energy ingest/export and hide Energy in the local banking dashboard.
+_ENERGY_DORMANT_DEFAULT = True
+
+
+def _env_truthy(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
+def energy_dormant() -> bool:
+    """When True, daily ingest and exports skip the energy CDR sector."""
+    return _env_truthy("AR_ENERGY_DORMANT", _ENERGY_DORMANT_DEFAULT)
+
+
+def energy_ingest_enabled(*, cli_energy: bool = False) -> bool:
+    """True when energy CDR collection should run for this process."""
+    if cli_energy:
+        return True
+    return not energy_dormant()

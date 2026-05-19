@@ -20,6 +20,7 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
     prepare_empty_dir,
 )
+from ar_local_sectors import energy_ingest_enabled
 from cdr_outputs import build_outputs
 
 
@@ -58,7 +59,7 @@ def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str], ene
 
 
 def sector_ingest_args(args: argparse.Namespace) -> List[str]:
-    if args.banks_only:
+    if args.banks_only or not energy_ingest_enabled(cli_energy=args.energy):
         return ["--no-energy"]
     return []
 
@@ -122,6 +123,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Ignore daily completion marker")
     parser.add_argument("--banks-only", action="store_true", help="Ingest banking products only.")
+    parser.add_argument(
+        "--energy",
+        action="store_true",
+        help="Enable energy CDR ingest (default: off while AR_ENERGY_DORMANT is active).",
+    )
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
     parser.add_argument(
         "--energy-full-detail",

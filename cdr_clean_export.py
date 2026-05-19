@@ -340,6 +340,20 @@ def add_nested_energy_rows(
                 )
 
 
+def empty_energy_dataset(run_date: str) -> Dict[str, Any]:
+    """Placeholder energy export when the sector is dormant (no ingest, no disk scan)."""
+    return {
+        "generated_at": utc_now(),
+        "run_date": run_date,
+        "sector": "energy",
+        "plans": [],
+        "contracts": [],
+        "charges": [],
+        "fees": [],
+        "failures": [],
+    }
+
+
 def parse_energy_run(run_root: Path, *, energy_slim: bool = True) -> Dict[str, Any]:
     energy_root = run_root / "energy"
     dataset: Dict[str, Any] = {
