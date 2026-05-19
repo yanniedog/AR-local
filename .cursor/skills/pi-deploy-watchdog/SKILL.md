@@ -46,11 +46,11 @@ You keep the **Raspberry Pi runtime aligned with GitHub `main`** and healthy —
    - `workflow_dispatch` with optional deploy-on-drift
    - Requires secrets `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional repo variable `AR_PI_AUTO_DEPLOY=1`
 
-2. **Pi systemd timer** — `deploy/pi/ar-local-deploy-watchdog.timer` + `.service`
+3. **Pi systemd timer** — `deploy/pi/ar-local-deploy-watchdog.timer` + `.service`
    - Hourly `--verify` on loopback `http://127.0.0.1:8808/`
    - Install: copy units to `/etc/systemd/system/`, `systemctl enable --now ar-local-deploy-watchdog.timer`
 
-3. **Orchestrator post-merge** — after merge touching Pi paths:
+4. **Orchestrator post-merge** — after merge touching Pi paths:
    ```sh
    npm run pi:needs-deploy -- --ref origin/main~1
    # exit 0 →
