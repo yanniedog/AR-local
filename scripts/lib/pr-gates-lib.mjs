@@ -269,7 +269,16 @@ export function gateBotFeedback(prNumber) {
 
 export function hasFeedbackPlanComment(prNumber) {
   const { owner, name } = repoSlug();
-  const comments = ghJson(['api', `repos/${owner}/${name}/issues/${prNumber}/comments`, '--paginate']);
+  // Paginated gh api emits one JSON blob per page unless --slurp wraps them (see gh api manual).
+  const r = spawnSync(
+    'gh',
+    ['api', `repos/${owner}/${name}/issues/${prNumber}/comments`, '--paginate', '--slurp'],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) {
+    throw new Error((r.stderr || r.stdout || 'gh api issue comments failed').trim());
+  }
+  const comments = JSON.parse(r.stdout || '[]');
   const list = Array.isArray(comments) ? comments : [];
   return list.some((c) => FEEDBACK_PLAN_RE.test(c.body || ''));
 }
