@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 import errno
+import gzip
 import json
 import mimetypes
 import os
@@ -37,16 +38,20 @@ LATEST_EXPORTS_TTL_SECONDS = 5.0
 MAX_ARTIFACT_CACHE_ENTRIES = 4
 MAX_HISTORY_CACHE_ENTRIES = 8
 DEFAULT_HISTORY_RUN_LIMIT = 90
+# Columns dropped from the wire vs. earlier revisions: run_date and dataset (constant
+# per response — the envelope already names both), rate_family (server now applies the
+# section filter, so the client no longer needs it), comparison_rate (never rendered
+# anywhere in the dashboard), taxonomy_path (only used by the energy panel which has
+# its own endpoint), and brand_name/brand (not real columns — the legacy SELECT
+# emitted them as '' and compact_bank_row stripped them anyway). The client hydrates
+# dataset/rate_family per-row from the response section so existing filters and the
+# history identity hash keep matching.
 BANK_SECTION_COLUMNS = (
-    "run_date",
-    "dataset",
     "provider",
     "product_id",
     "product_key",
     "product_name",
-    "rate_family",
     "rate",
-    "comparison_rate",
     "rate_type",
     "application_type",
     "application_frequency",
@@ -66,21 +71,15 @@ BANK_SECTION_COLUMNS = (
     "term_months",
     "interest_payment",
     "feature_set",
-    "taxonomy_path",
-    "brand_name",
-    "brand",
     "rate_index",
 )
 BANK_HISTORY_COLUMNS = (
     "run_date",
-    "dataset",
     "provider",
     "product_id",
     "product_key",
     "product_name",
-    "rate_family",
     "rate",
-    "comparison_rate",
     "rate_type",
     "application_type",
     "application_frequency",
@@ -134,6 +133,59 @@ HISTORY_IDENTITY_FIELDS = (
 )
 
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# gzip the dashboard's bulky JSON/JS/CSS responses on the wire. The Mortgage
+# section payload is ~4 MB of JSON that crushes to ~80 KB; history is similar.
+# Compressed bytes are cached keyed by id() of the source bytes — every cached
+# body in this module is held in a long-lived dict, so the id stays stable.
+GZIP_MIN_BYTES = 512
+GZIP_LEVEL = 6
+GZIP_CACHE_MAX = 64
+_GZIP_COMPRESSIBLE_PREFIXES = (
+    "text/",
+    "application/json",
+    "application/javascript",
+    "image/svg+xml",
+)
+_gzip_cache: "OrderedDict[int, tuple[bytes, bytes]]" = OrderedDict()
+_gzip_cache_lock = threading.Lock()
+
+
+def _content_type_is_compressible(ctype: str) -> bool:
+    low = (ctype or "").lower()
+    return any(low.startswith(prefix) for prefix in _GZIP_COMPRESSIBLE_PREFIXES)
+
+
+def _client_accepts_gzip(accept_encoding: str) -> bool:
+    if not accept_encoding:
+        return False
+    for token in accept_encoding.split(","):
+        name, _, params = token.strip().partition(";")
+        if name.lower() != "gzip":
+            continue
+        for param in params.split(";"):
+            key, _, value = param.strip().partition("=")
+            if key.lower() == "q" and value.strip() in ("0", "0.0", "0.00", "0.000"):
+                return False
+        return True
+    return False
+
+
+def gzip_bytes(body: bytes) -> bytes:
+    key = id(body)
+    with _gzip_cache_lock:
+        cached = _gzip_cache.get(key)
+        if cached is not None and cached[0] is body:
+            _gzip_cache.move_to_end(key)
+            return cached[1]
+    compressed = gzip.compress(body, compresslevel=GZIP_LEVEL)
+    with _gzip_cache_lock:
+        _gzip_cache[key] = (body, compressed)
+        _gzip_cache.move_to_end(key)
+        while len(_gzip_cache) > GZIP_CACHE_MAX:
+            _gzip_cache.popitem(last=False)
+    return compressed
+
 ECONOMIC_API_UPSTREAM = os.environ.get("AR_ECONOMIC_API_UPSTREAM", "https://www.australianrates.com").rstrip("/")
 
 
@@ -503,15 +555,21 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         return candidate.resolve()
 
     def read_bank_section_db(db_path: Path, run_date: str, section: str) -> list[dict[str, object]]:
+        # Apply the same rate_family / non-DISCOUNT filter the client used to do
+        # post-fetch (and that /api/banks/ribbon already applies). Saves the wire
+        # cost of every Mortgage DISCOUNT row that the dashboard discards anyway.
+        filter_sql, filter_params = bank_section_rate_filter(section)
         with sqlite3.connect(db_path) as con:
             available = bank_rate_columns(con)
             select_list = bank_rate_select_list(available, BANK_SECTION_COLUMNS)
             sql = (
                 f"SELECT {select_list} FROM bank_rates "
                 "WHERE run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
+                + filter_sql
             )
+            params = [run_date, section, *filter_params]
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-            rows = con.execute(sql, (run_date, section))
+            rows = con.execute(sql, params)
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_SECTION_COLUMNS)}
@@ -651,12 +709,24 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if section:
                 sql += " AND dataset = ?"
                 params.append(section)
+                # Same DISCOUNT / rate_family filter the section endpoint applies,
+                # so the history payload doesn't ship rows the dashboard discards.
+                filter_sql, filter_params = bank_section_rate_filter(section)
+                sql += filter_sql
+                params.extend(filter_params)
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
             rows = con.execute(sql, params)
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+                # dataset isn't in the history payload anymore, but the history
+                # ribbon canonicaliser keys off it. Inject the section we know
+                # before canonicalising, then drop it before compacting.
+                if section:
+                    item["dataset"] = section
                 canonicalize_history_row(item)
+                if section:
+                    item.pop("dataset", None)
                 out.append(compact_bank_row(item))
             return out
 
@@ -747,9 +817,20 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             parsed = urlparse(self.path)
             try:
                 body, ctype = self.route(parsed.path, parse_qs(parsed.query))
+                encoding = None
+                if (
+                    len(body) >= GZIP_MIN_BYTES
+                    and _content_type_is_compressible(ctype)
+                    and _client_accepts_gzip(self.headers.get("Accept-Encoding", ""))
+                ):
+                    body = gzip_bytes(body)
+                    encoding = "gzip"
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Cache-Control", "public, max-age=300")
+                self.send_header("Vary", "Accept-Encoding")
+                if encoding:
+                    self.send_header("Content-Encoding", encoding)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)

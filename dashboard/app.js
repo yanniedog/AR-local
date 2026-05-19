@@ -85,6 +85,20 @@
     return response.json();
   }
 
+  // The server strips constants (dataset, rate_family) from /api/banks/section
+  // and /api/banks/history/section since they're already in the envelope. Put
+  // them back on each row before downstream code touches it, so the existing
+  // section filter and history identity key keep working unchanged.
+  function hydrateSectionRows(rows, section) {
+    if (!Array.isArray(rows) || !section) return rows;
+    const rateFamily = section === 'Mortgage' ? 'lending' : 'deposit';
+    rows.forEach((row) => {
+      if (!row.dataset) row.dataset = section;
+      if (!row.rate_family) row.rate_family = rateFamily;
+    });
+    return rows;
+  }
+
   function num(value) {
     return Number(value || 0).toLocaleString('en-AU');
   }
@@ -206,6 +220,7 @@
     const sectionName = state.section;
     const section = encodeURIComponent(sectionName);
     const data = await getJson(`/api/banks/history/section?date=${state.manifest.run_date}&section=${section}`);
+    hydrateSectionRows(data.rates, sectionName);
     const rates = Array.isArray(data.rates) ? normalizeRows(data.rates) : [];
     if (state.section !== sectionName) return;
     state.bankHistory = {
@@ -736,7 +751,9 @@
     renderRibbonBootstrap();
     if (!state.bankSections[section]) {
       const encodedSection = encodeURIComponent(section);
-      state.bankSections[section] = await getJson(`/api/banks/section?date=${state.manifest.run_date}&section=${encodedSection}`);
+      const payload = await getJson(`/api/banks/section?date=${state.manifest.run_date}&section=${encodedSection}`);
+      hydrateSectionRows(payload.rates, section);
+      state.bankSections[section] = payload;
       warmProviderLogoCache();
     }
     if (token !== loadSectionToken) return;
