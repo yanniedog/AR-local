@@ -13,6 +13,11 @@
     return section === SECTION.EconomicData;
   }
 
+  function sectionDisplayLabel(section) {
+    if (section === SECTION.TD) return 'Term Deposits';
+    return section;
+  }
+
   function sectionFromPathname() {
     const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
     if (path === '/savings') return SECTION.Savings;
@@ -403,7 +408,7 @@
     const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
     const sampleByProvider = {};
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
-    const label = state.section === SECTION.TD ? 'Term Deposits' : state.section;
+    const label = sectionDisplayLabel(state.section);
 
     wrap.hidden = false;
     child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);
@@ -516,7 +521,7 @@
   }
 
   function renderEmptySection() {
-    const label = state.section === SECTION.TD ? 'Term Deposits' : state.section;
+    const label = sectionDisplayLabel(state.section);
     const emptyMsg = `No ${label} rates in export ${state.manifest.run_date}.`;
     setLinks();
     renderStats([]);
