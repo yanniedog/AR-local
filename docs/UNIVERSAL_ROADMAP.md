@@ -237,7 +237,7 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
 | On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — hourly loopback verify (`AR_PI_VERIFY_LOCAL=1`) |
 
-**GitHub secrets (Actions):** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` (required for CI deploy). Optional: `PI_SSH_USER`, variable `AR_PI_BASE_URL`. Watchdog: `AR_PI_AUTO_DEPLOY=1` to pull when scheduled verify finds drift. Missing secrets skip deploy (logged); they do not block merges.
+**GitHub secrets (Actions):** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` (required for CI deploy). Optional: `PI_SSH_USER`, variable `AR_PI_BASE_URL`. Watchdog: `AR_PI_AUTO_DEPLOY=1` to pull when scheduled verify finds drift. `pi-deploy-on-main` runs post-merge only: missing secrets skip deploy (logged); deploy uses `continue-on-error` so failures never fail the workflow run.
 
 **Install Pi timer (on the Pi):**
 

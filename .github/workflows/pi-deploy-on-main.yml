@@ -7,7 +7,8 @@
 # Optional secrets:
 #   PI_SSH_USER         — default pi
 # Optional variables:
-#   AR_PI_BASE_URL      — default http://100.78.28.10:8808/
+#   AR_PI_BASE_URL      — smoke URL (default http://100.78.28.10:8808/ when unset)
+# SSH Host alias ar-local-pi5 must match docs/UNIVERSAL_ROADMAP.md (~/.ssh/config).
 
 name: pi-deploy-on-main
 
@@ -84,6 +85,7 @@ jobs:
           AR_PI_SSH_HOST: ar-local-pi5
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
         run: |
+          export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10:8808/}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python pi_deploy_verify.py --deploy --dry-run
           else

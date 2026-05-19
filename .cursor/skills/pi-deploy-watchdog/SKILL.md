@@ -37,20 +37,20 @@ You keep the **Raspberry Pi runtime aligned with GitHub `main`** and healthy —
 
 ## Constant monitoring (three layers)
 
-1. **GitHub Actions — auto-deploy on merge** — `.github/workflows/pi-deploy-on-main.yml`
-   - Every **`main` push** (squash merges): `python pi_deploy_verify.py --deploy` when `PI_SSH_*` secrets set
-   - `workflow_dispatch` (optional dry-run input); deploy step `continue-on-error` (does not gate merges)
+1. **GitHub Actions**
+   - **Auto-deploy on merge** — `.github/workflows/pi-deploy-on-main.yml`
+     - Every **`main` push** (all paths; Pi tracks `main` after any merge)
+     - `python pi_deploy_verify.py --deploy` when `PI_SSH_*` secrets set; `workflow_dispatch` dry-run
+     - Deploy step is advisory (`continue-on-error`); workflow succeeds if secrets are missing
+   - **Drift watchdog** — `.github/workflows/pi-deploy-watchdog.yml`
+     - Cron every **6 hours** (UTC); `workflow_dispatch` with optional deploy-on-drift
+     - Secrets `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional `AR_PI_AUTO_DEPLOY=1`
 
-2. **GitHub Actions — drift watchdog** — `.github/workflows/pi-deploy-watchdog.yml`
-   - Cron every **6 hours** (UTC)
-   - `workflow_dispatch` with optional deploy-on-drift
-   - Requires secrets `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional repo variable `AR_PI_AUTO_DEPLOY=1`
-
-3. **Pi systemd timer** — `deploy/pi/ar-local-deploy-watchdog.timer` + `.service`
+2. **Pi systemd timer** — `deploy/pi/ar-local-deploy-watchdog.timer` + `.service`
    - Hourly `--verify` on loopback `http://127.0.0.1:8808/`
    - Install: copy units to `/etc/systemd/system/`, `systemctl enable --now ar-local-deploy-watchdog.timer`
 
-4. **Orchestrator post-merge** — after merge touching Pi paths:
+3. **Orchestrator post-merge** — after merge touching Pi paths:
    ```sh
    npm run pi:needs-deploy -- --ref origin/main~1
    # exit 0 →
