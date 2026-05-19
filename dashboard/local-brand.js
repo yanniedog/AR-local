@@ -499,13 +499,26 @@
       .toUpperCase();
   }
 
-  /** url -> 'ok' | 'fail' — skip known-bad URLs when many tiles mount at once. */
+  /** url -> 'ok' | 'fail' | Promise — skip known-bad URLs; coalesce in-flight loads. */
   const LOGO_LOAD_CACHE = new Map();
+  const LOGO_LOAD_CACHE_MAX = 512;
+
+  function pruneLogoLoadCacheIfNeeded() {
+    if (LOGO_LOAD_CACHE.size <= LOGO_LOAD_CACHE_MAX) return;
+    const drop = LOGO_LOAD_CACHE.size - Math.floor(LOGO_LOAD_CACHE_MAX / 2);
+    let n = 0;
+    for (const key of LOGO_LOAD_CACHE.keys()) {
+      if (n >= drop) break;
+      LOGO_LOAD_CACHE.delete(key);
+      n += 1;
+    }
+  }
 
   function rememberLogoUrlResult(url, ok) {
     const src = String(url || '').trim();
     if (!src) return;
     LOGO_LOAD_CACHE.set(src, ok ? 'ok' : 'fail');
+    pruneLogoLoadCacheIfNeeded();
   }
 
   function isLogoUrlKnownBad(url) {
@@ -542,9 +555,12 @@
   function preloadLogoUrl(url) {
     const src = String(url || '').trim();
     if (!src) return Promise.resolve(false);
-    if (LOGO_LOAD_CACHE.get(src) === 'ok') return Promise.resolve(true);
-    if (LOGO_LOAD_CACHE.get(src) === 'fail') return Promise.resolve(false);
-    return new Promise((resolve) => {
+    const cached = LOGO_LOAD_CACHE.get(src);
+    if (cached === 'ok') return Promise.resolve(true);
+    if (cached === 'fail') return Promise.resolve(false);
+    if (cached && typeof cached.then === 'function') return cached;
+
+    const p = new Promise((resolve) => {
       const img = new Image();
       img.decoding = 'async';
       img.onload = () => {
@@ -557,6 +573,8 @@
       };
       img.src = src;
     });
+    LOGO_LOAD_CACHE.set(src, p);
+    return p;
   }
 
   /**

@@ -438,7 +438,7 @@
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
     const label = state.section === SECTION.TD ? 'Term Deposit' : state.section;
 
-    if (window.LocalCdrBrand.preloadRailProviders) {
+    if (window.LocalCdrBrand && window.LocalCdrBrand.preloadRailProviders) {
       window.LocalCdrBrand.preloadRailProviders(providers, sampleByProvider);
     }
 

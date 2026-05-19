@@ -236,11 +236,19 @@ body.ar-public .site-header-segment-link:focus-visible {
 }
 
 /* Provider rail tiles: no section-accent frame from public-polish / local accent. */
-body.ar-public.ar-local-cdr button.local-provider-logo-btn,
 body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
 body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
   outline: none;
   box-shadow: none;
+}
+
+body.ar-public.ar-local-cdr button.local-provider-logo-btn:focus:not(:focus-visible) {
+  outline: none;
+}
+
+body.ar-public.ar-local-cdr button.local-provider-logo-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ar-text-muted) 80%, transparent);
+  outline-offset: 2px;
 }
 
 .ar-local-cdr button.local-provider-logo-btn {
