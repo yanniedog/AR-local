@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Dynamic pre-merge bot wait gate (AR-local WORKFLOW.md step 5).
  * Polls GitHub until CI checks settle and bot review activity is quiet,
@@ -162,10 +162,25 @@ function fetchBotActivity(owner, name, prNumber) {
 }
 
 function fetchChecks(prNumber) {
-  const r = gh(['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], { json: true });
-  if (!r.ok) return { error: r.error, pending: true };
-  const checks = Array.isArray(r.data) ? r.data : [];
-  return { pending: checks.some((c) => c.bucket === 'pending') };
+  const r = spawnSync('gh', ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], {
+    encoding: 'utf8',
+  });
+  // gh pr checks exits 8 when checks are still pending (see gh manual).
+  if (r.status === 8) return { pending: true };
+  if (r.status !== 0) {
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    return { pending: true, error: msg };
+  }
+  const stdout = (r.stdout || '').trim();
+  if (!stdout) return { pending: true };
+  try {
+    const checks = JSON.parse(stdout);
+    return {
+      pending: Array.isArray(checks) && checks.some((c) => c.bucket === 'pending'),
+    };
+  } catch (e) {
+    return { pending: true, error: `Invalid JSON from gh pr checks: ${e.message}` };
+  }
 }
 
 function formatDuration(ms) {
@@ -175,13 +190,13 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state }) {
+function evaluate({ prNumber, anchorIso, state, repo: repoIn }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
   }
 
-  const repo = resolveRepo();
+  const repo = repoIn || resolveRepo();
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
   const elapsedMs = Date.now() - anchor.getTime();
@@ -206,7 +221,9 @@ function evaluate({ prNumber, anchorIso, state }) {
   if (activity.error) return { status: 'error', message: activity.error };
 
   const checks = fetchChecks(prNumber);
-  if (checks.error) return { status: 'error', message: checks.error };
+  if (checks.error && !checks.pending) {
+    return { status: 'error', message: checks.error };
+  }
 
   const anchorMs = anchor.getTime();
   const botEventsSinceAnchor = activity.events.filter(
@@ -312,6 +329,11 @@ async function main() {
   }
 
   const prNumber = resolved.pr.number;
+  const repo = resolveRepo();
+  if (!repo) {
+    console.error('>>> BOT WAIT ERROR: Could not resolve repository (gh repo view).');
+    process.exit(1);
+  }
   let state = readState(prNumber) || {};
   const anchorFromPr = resolved.pr.createdAt;
 
@@ -350,13 +372,13 @@ async function main() {
         `>>> Elapsed ${formatDuration(result.elapsedMs)}; cap remaining ~${formatDuration(result.remainingCapMs)}`,
       );
     }
-    console.log(`>>> PR #${prNumber} — retry: npm run wait-for-bots -- --pr ${prNumber}`);
+    console.log(`>>> PR #${prNumber} ÔÇö retry: npm run wait-for-bots -- --pr ${prNumber}`);
     process.exit(2);
   };
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
-    return evaluate({ prNumber, anchorIso: st.anchor || anchorFromPr, state: st });
+    return evaluate({ prNumber, anchorIso: st.anchor || anchorFromPr, state: st, repo });
   };
 
   if (!args.watch) {
