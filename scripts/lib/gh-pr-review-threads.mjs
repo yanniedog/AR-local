@@ -148,7 +148,8 @@ export function classifyThreads(threads, opts = {}) {
         : false;
 
     if (!t.isResolved) {
-      if (mergedAudit && (hasClosure || !starterIsBot)) continue;
+      // mergedAudit: ignore unresolved non-bot threads only; unresolved bot threads still fail.
+      if (mergedAudit && !starterIsBot) continue;
       violations.push({
         threadIndex: i + 1,
         kind: 'unresolved',
