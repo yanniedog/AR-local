@@ -41,7 +41,7 @@ const QUOTA_PATTERNS = [
 
 const TRIVIAL_PATTERNS = [
   // Ack/no-op replies (the whole body, modulo whitespace and trailing puncts).
-  /^[\s]*(?:lgtm|looks good(?:\stome)?|ok|okay|got it|thanks?|thx|noted|nothing to (?:report|add)|no (?:comments?|issues?|concerns?)|all good|approved)[\s.!]*$/i,
+  /^[\s]*(?:lgtm|looks good(?:\s+to\s+me)?|ok|okay|got it|thanks?|thx|noted|nothing to (?:report|add)|no (?:comments?|issues?|concerns?)|all good|approved)[\s.!]*$/i,
   // Emoji-only / reaction-only.
   /^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}‍👍👎❤️✅🚀]+$/u,
 ];
@@ -65,7 +65,6 @@ export function isTrivialBotMessage(bodyRaw) {
   if (!bodyRaw) return true;
   const body = String(bodyRaw).trim();
   if (!body) return true;
-  if (body.length < 40) return true;
   // "Useful? React with..." is a footer template. Strip it and re-check whether
   // anything substantive remains — bodies whose ONLY content is the footer get
   // dropped, but a real review with a footer tacked on stays.

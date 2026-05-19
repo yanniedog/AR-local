@@ -292,9 +292,15 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
     substantiveBotEvents.length > 0
       ? new Date(substantiveBotEvents[substantiveBotEvents.length - 1].at)
       : null;
+  const lastQuietAnchorAt =
+    lastBotAt ||
+    (botEventsSinceAnchor.length > 0
+      ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
+      : null);
   const quiet =
     allRequiredPosted &&
-    (lastBotAt === null || Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000);
+    lastQuietAnchorAt !== null &&
+    Date.now() - lastQuietAnchorAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
   const checks = fetchChecks(prNumber);
   if (checks.error && !checks.failed) {
