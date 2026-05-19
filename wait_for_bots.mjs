@@ -257,25 +257,6 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
     lastBotAt !== null &&
     Date.now() - lastBotAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
-  if (elapsedMs > maxMs) {
-    if (missing.length) {
-      return {
-        status: 'timeout',
-        message:
-          `Required bot(s) never posted before safety cap (${MAX_WAIT_MIN} min): ${missing.join(', ')}. ` +
-          `DO NOT MERGE. Tag bots or extend cap; expected: ${formatRequiredKeys(requiredKeys)}.`,
-        missing,
-        botsSeen: seenLogins,
-      };
-    }
-    return {
-      status: 'timeout',
-      message:
-        `Bot wait safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ${anchor.toISOString()} ` +
-        'without satisfying quiet window. Re-sweep manually or tag bots again.',
-    };
-  }
-
   const checks = fetchChecks(prNumber);
   if (checks.error && !checks.failed) {
     return { status: 'error', message: checks.error };
@@ -310,6 +291,25 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
       lastBotAt: lastBotAt?.toISOString() || null,
       botsSeen: seenLogins,
       missing: [],
+    };
+  }
+
+  if (elapsedMs > maxMs) {
+    if (missing.length) {
+      return {
+        status: 'timeout',
+        message:
+          `Required bot(s) never posted before safety cap (${MAX_WAIT_MIN} min): ${missing.join(', ')}. ` +
+          `DO NOT MERGE. Tag bots or extend cap; expected: ${formatRequiredKeys(requiredKeys)}.`,
+        missing,
+        botsSeen: seenLogins,
+      };
+    }
+    return {
+      status: 'timeout',
+      message:
+        `Bot wait safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ${anchor.toISOString()} ` +
+        'without satisfying quiet window. Re-sweep manually or tag bots again.',
     };
   }
 
