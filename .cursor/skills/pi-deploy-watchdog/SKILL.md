@@ -37,9 +37,12 @@ You keep the **Raspberry Pi runtime aligned with GitHub `main`** and healthy —
 
 ## Constant monitoring (three layers)
 
-1. **GitHub Actions** — `.github/workflows/pi-deploy-watchdog.yml`
+1. **GitHub Actions — auto-deploy on merge** — `.github/workflows/pi-deploy-on-main.yml`
+   - Every **`main` push** (squash merges): `python pi_deploy_verify.py --deploy` when `PI_SSH_*` secrets set
+   - `workflow_dispatch` (optional dry-run input); deploy step `continue-on-error` (does not gate merges)
+
+2. **GitHub Actions — drift watchdog** — `.github/workflows/pi-deploy-watchdog.yml`
    - Cron every **6 hours** (UTC)
-   - On **`main` push** when dashboard/ingest/Pi unit paths change
    - `workflow_dispatch` with optional deploy-on-drift
    - Requires secrets `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional repo variable `AR_PI_AUTO_DEPLOY=1`
 

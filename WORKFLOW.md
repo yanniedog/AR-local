@@ -144,7 +144,11 @@ If verify exits non-zero (drift or smoke failure) and the Pi git tree is clean:
 npm run pi:deploy
 ```
 
-Use Tailscale URL from `docs/UNIVERSAL_ROADMAP.md` via `AR_PI_BASE_URL` when not on the Pi. Continuous checks: `.github/workflows/pi-deploy-watchdog.yml` (every 6h + on relevant `main` pushes). Invoke **pi-deploy-watchdog** skill for detail.
+Use Tailscale URL from `docs/UNIVERSAL_ROADMAP.md` via `AR_PI_BASE_URL` when not on the Pi.
+
+**GitHub Actions (Pi):** every push to `main` runs `.github/workflows/pi-deploy-on-main.yml` (`python pi_deploy_verify.py --deploy` when `PI_SSH_PRIVATE_KEY` and `PI_SSH_HOST` secrets are set; skipped otherwise). Scheduled drift checks: `.github/workflows/pi-deploy-watchdog.yml`. Invoke **pi-deploy-watchdog** skill for detail.
+
+**Actions secrets (repo Settings → Secrets → Actions):** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional `PI_SSH_USER`. Optional variable `AR_PI_BASE_URL` (default `http://100.78.28.10:8808/`). Test deploy manually: Actions → **pi-deploy-on-main** → **Run workflow**.
 
 ### 9. Local verify
 
