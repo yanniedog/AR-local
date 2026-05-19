@@ -1,0 +1,21 @@
+{
+  "run_date": "2026-05-19",
+  "out_dir": "C:\\code\\AR-local\\runs\\2026-05-19\\_exports",
+  "banks": {
+    "products": 1618,
+    "rates": 10514,
+    "fees": 18107,
+    "features": 10842,
+    "eligibility": 4600,
+    "constraints": 2669,
+    "failures": 68
+  },
+  "energy": {
+    "plans": 0,
+    "contracts": 0,
+    "charges": 0,
+    "fees": 0,
+    "failures": 0
+  },
+  "ram_staged": false
+}
