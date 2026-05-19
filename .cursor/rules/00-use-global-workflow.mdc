@@ -1,0 +1,14 @@
+---
+description: "Opt in to user-global cursor-global-workflow (ship bar, chief, orchestrator)"
+alwaysApply: true
+---
+
+# Global workflow (opt-in)
+
+This repo uses **[cursor-global-workflow](https://github.com/yanniedog/cursor-global-workflow)** installed to `~/.cursor/`.
+
+- Ship bar: repo root **`WORKFLOW.md`** (fill `{VERIFY_COMMAND}`, `{DEPLOY_COMMAND}`, `{DEPLOY_URL}`).
+- Optional: **`.cursor/project.json`** from `templates/project.json.example`.
+- npm scripts: wire `wait-for-bots`, `chief:scan`, `pr:bot-feedback-check`, `ship:closeout:strict` via `%CURSOR_WORKFLOW_SCRIPTS%` / `$CURSOR_WORKFLOW_SCRIPTS` (see global README).
+
+Manual: **"run chief agent"** or **"run workflow orchestrator"**.

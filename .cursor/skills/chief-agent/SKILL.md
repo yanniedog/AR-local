@@ -27,6 +27,17 @@ Chief is **solution-first** — always assign active remediation; never report i
 
 See `.cursor/skills/workflow-orchestrator/SKILL.md` — orchestrator **must not merge** while substantive bot/human inline threads remain open without in-thread implement/defer/decline.
 
+## Drift remediation (chief-owned every cycle)
+
+When **`npm run chief:scan` exit 1** or **`npm run agent:auditor` exit 2**:
+
+1. **Delegate ship bar** — spawn **one** workflow-orchestrator with the printed REMEDIATION checklist (open PRs, thread closure, merge order).
+2. **Global sync (not optional)** — mirror canonical paths per `.cursor/rules/global-feature-sync.mdc` to [cursor-global-workflow](https://github.com/yanniedog/cursor-global-workflow); scrub private hostnames and machine paths; **commit + push** global `main`; run **`install.ps1`** / **`install.sh`** to refresh `~/.cursor/`.
+3. **Project bootstrap** — if `.cursor/rules/00-use-global-workflow.mdc` or `.cursor/workflow-bootstrapped` is missing or older than global `bootstrap-version.txt`, run `node repo-auto-bootstrap.mjs` (global `CURSOR_WORKFLOW_SCRIPTS`).
+4. **Re-scan** — `npm run chief:scan` must exit **0** (or one specific human question with evidence) before the chief cycle ends.
+
+Do not return idle while global repo or `~/.cursor/` install lags merged project plumbing.
+
 ## When to run
 
 - **Session start** when multiple agents could conflict (dirty tree, open PRs, recent subagent transcripts, concurrent `agent/*` branches).
@@ -34,7 +45,8 @@ See `.cursor/skills/workflow-orchestrator/SKILL.md` — orchestrator **must not 
 - **Before spawning any worker** — run pre-delegate checklist; dedupe duplicate orchestrator cycles.
 - **User corrects direction** (e.g. Energy vs Economic Data) — supersede stale workers.
 - **Hook follow-up** from `.cursor/hooks/auditor-watch.mjs` then `.cursor/hooks/orchestrator-remind.mjs` (auditor → chief → orchestrator).
-- **Agent auditor fail** (`npm run agent:auditor` exit **2**) — remediate in the **same cycle** before unrelated spawns.
+- **Agent auditor fail** (`npm run agent:auditor` exit **2**) — remediate in the **same cycle** before unrelated spawns (includes global sync + orchestrator per Drift remediation).
+- **`chief:scan` exit 1** — drift remediation in the **same cycle**; do not end idle.
 - Manual: user says **"run chief agent"** or **"chief agent"**.
 
 Unless the user **explicitly waives** chief for this session, parent agents spawn chief first (`Task` `generalPurpose`, `run_in_background: true`), prompt = this skill + scan snapshot. Chief then delegates git/PR work to orchestrator when needed.
