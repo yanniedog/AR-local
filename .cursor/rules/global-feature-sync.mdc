@@ -1,0 +1,39 @@
+---
+description: Mirror canonical agent skills/scripts to public cursor-global-workflow before done
+alwaysApply: true
+---
+
+# Global feature sync (AR-local)
+
+Shared agent plumbing must stay aligned with the public global repo: **https://github.com/yanniedog/cursor-global-workflow**
+
+Local clone (typical): `~/code/cursor-global-workflow` or `%USERPROFILE%\code\cursor-global-workflow`.
+
+## Canonical features (mirror on change)
+
+| Piece | AR-local path | Global path |
+|-------|---------------|-------------|
+| Chief | `.cursor/skills/chief-agent/` | `skills/chief-agent/` |
+| Orchestrator | `.cursor/skills/workflow-orchestrator/` | `skills/workflow-orchestrator/` |
+| Browser QA | `.cursor/skills/deep-browser-explore/` | `skills/deep-browser-explore/` |
+| Auditor | `.cursor/skills/agent-auditor/` | `skills/agent-auditor/` |
+| Ship bar scripts | `scripts/wait_for_bots.mjs`, `scripts/chief-scan.mjs`, `scripts/pr-bot-feedback-check.mjs`, `scripts/ship-closeout-strict.mjs`, `scripts/agent-auditor-scan.mjs`, `scripts/lib/agent-auditor-lib.mjs` | `scripts/` (same names) |
+| Hooks | `.cursor/hooks/auditor-watch.mjs`, `.cursor/hooks/orchestrator-remind.mjs` | `hooks/` |
+| Shared rules | `.cursor/rules/chief-agent-always.mdc`, `workflow-orchestrator-always.mdc`, `agent-auditor-always.mdc`, `git-pr-workflow-default.mdc`, `no-early-stop-after-pr.mdc`, `pr-review-bot-replies.mdc`, `respond-to-each-review-comment.mdc`, `multiagent-modularity.mdc`, `workflow-rules-never-overridden.mdc` | `rules/` |
+
+Also mirror edits under `~/.cursor/skills/` or `~/.cursor/workflow-scripts/` when those are the canonical copies you changed.
+
+## Before done on a PR that touches the table
+
+1. Apply the same change in `cursor-global-workflow` (generalize project-specific paths).
+2. Scrub private hostnames, paths, and secrets.
+3. Push global `main`; record global commit SHA in the AR-local PR body.
+4. Do **not** bundle global-only policy with unrelated feature work — use `agent/global-feature-sync-policy-*` or a dedicated sync commit.
+
+Chief: if a worker edits listed paths, assign sync in the **same PR cycle** or spawn a sync subagent before merge.
+
+Orchestrator: **global mirror check** before `gh pr merge` when the PR diff includes any row above.
+
+## Invoke
+
+**"sync global workflow"** — mirror listed paths to `cursor-global-workflow`, push, report SHA.
