@@ -17,17 +17,17 @@ import {
 } from './lib/gh-pr-review-threads.mjs';
 
 const PATH_RE =
-  /(?:^|[\s"'`])([/\\]?(?:[\w.-]+[/\\])*[\w.-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml))\b/g;
+  /\b(?:^|[\s"'`])((?:(?:[\w.-]+[/\\])+[\w./\\-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml)|[\w.-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml)))\b/g;
 
 function isPlausibleRepoPath(p) {
   if (/^Node\.js$/i.test(p)) return false;
   return !p.includes('node_modules');
 }
 
-function sh(cmd, { allowFail = false } = {}) {
-  const r = spawnSync(cmd, { shell: true, encoding: 'utf8' });
+function git(args, { allowFail = false } = {}) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
   if (r.status !== 0 && !allowFail) {
-    throw new Error((r.stderr || r.stdout || 'command failed').trim());
+    throw new Error((r.stderr || r.stdout || 'git failed').trim());
   }
   if (r.status !== 0) return null;
   return (r.stdout || '').trim();
@@ -49,15 +49,15 @@ function extractFilePaths(text) {
 }
 
 function mergeCommitOnMain(mergeOid) {
-  return sh(`git merge-base --is-ancestor ${mergeOid} origin/main`, { allowFail: true }) !== null;
+  return git(['merge-base', '--is-ancestor', mergeOid, 'origin/main'], { allowFail: true }) !== null;
 }
 
 function fileExistsOnRef(ref, filePath) {
-  return sh(`git cat-file -e "${ref}:${filePath}"`, { allowFail: true }) !== null;
+  return git(['cat-file', '-e', `${ref}:${filePath}`], { allowFail: true }) !== null;
 }
 
 function blobHash(ref, filePath) {
-  return sh(`git rev-parse "${ref}:${filePath}"`, { allowFail: true });
+  return git(['rev-parse', `${ref}:${filePath}`], { allowFail: true });
 }
 
 function checkPrOnMain(prNumber) {
@@ -93,8 +93,6 @@ function checkPrOnMain(prNumber) {
     return { gaps, pr };
   }
 
-  sh('git fetch origin main');
-
   if (!mergeCommitOnMain(mergeOid)) {
     gaps.push({
       kind: 'merge_not_on_main',
@@ -106,9 +104,9 @@ function checkPrOnMain(prNumber) {
 
   const headBranch = pr.headRefName;
   if (headBranch) {
-    sh(`git fetch origin ${headBranch}`, { allowFail: true });
-    const orphanCommits = sh(
-      `git log origin/${headBranch} --after="${pr.mergedAt}" --format=%H --not origin/main`,
+    git(['fetch', 'origin', headBranch], { allowFail: true });
+    const orphanCommits = git(
+      ['log', `origin/${headBranch}`, `--after=${pr.mergedAt}`, '--format=%H', '--not', 'origin/main'],
       { allowFail: true },
     );
     if (orphanCommits) {
@@ -127,6 +125,7 @@ function checkPrOnMain(prNumber) {
 }
 
 function checkPostMergeGaps(limit = 20) {
+  git(['fetch', 'origin', 'main'], { allowFail: true });
   const merged = ghJson([
     'pr',
     'list',
@@ -229,7 +228,7 @@ function main() {
       process.exit(gaps.length ? 1 : 0);
     }
 
-    const branch = sh('git rev-parse --abbrev-ref HEAD', { allowFail: true });
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
     if (args.postMergeGap || branch === 'main') {
       const gaps = checkPostMergeGaps(args.limit);
       printGaps(gaps);
