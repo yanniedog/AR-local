@@ -129,6 +129,23 @@ After merge to `main`:
 
 Push to `main` does **not** automatically update a long-lived local Python process — restart when needed.
 
+**8b. Pi deploy (when merge touches dashboard, ingest, or Pi units)**
+
+If the merge diff includes paths under `dashboard/`, `cdr_*.py`, `cdr_dashboard_server.py`, or `deploy/pi/`:
+
+```sh
+npm run pi:needs-deploy -- --ref origin/main~1
+npm run pi:deploy:verify
+```
+
+If verify exits non-zero (drift or smoke failure) and the Pi git tree is clean:
+
+```sh
+npm run pi:deploy
+```
+
+Use Tailscale URL from `docs/UNIVERSAL_ROADMAP.md` via `AR_PI_BASE_URL` when not on the Pi. Continuous checks: `.github/workflows/pi-deploy-watchdog.yml` (every 6h + on relevant `main` pushes). Invoke **pi-deploy-watchdog** skill for detail.
+
 ### 9. Local verify
 
 ```sh

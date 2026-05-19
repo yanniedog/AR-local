@@ -48,6 +48,8 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Local dashboard smoke HTTP | `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` |
+| Pi deploy verify / apply | `npm run pi:deploy:verify` / `npm run pi:deploy` |
+| Pi deploy needed (post-merge gate) | `npm run pi:needs-deploy -- --ref origin/main~1` |
 | Prune remote refs | `npm run git:graph-hygiene` |
 
 Requires **Node** (for `npm run wait-for-bots`) and **Python** (for `verify:local` and ingest). Requires **`gh`** CLI for PR-driven steps.
@@ -112,6 +114,7 @@ Chief assigns **one writer per path prefix and branch**. Each skill defines path
 | Agent | Skill | Invoke | Relationship to chief |
 |-------|-------|--------|------------------------|
 | Pi deploy | [pi-deploy-agent/SKILL.md](.cursor/skills/pi-deploy-agent/SKILL.md) | **run pi deploy** | Post-merge runtime on Pi; SSH `/srv/ar-local`, pull `main`, restart units; smoke URL from `docs/UNIVERSAL_ROADMAP.md` |
+| Pi deploy watchdog | [pi-deploy-watchdog/SKILL.md](.cursor/skills/pi-deploy-watchdog/SKILL.md) | **run pi deploy watchdog** | `npm run pi:deploy:verify` / scheduled Actions + Pi timer; auto-deploy via `npm run pi:deploy` |
 | Ingest | [`.cursor/skills/ingest-agent/SKILL.md`](.cursor/skills/ingest-agent/SKILL.md) | **run ingest bring-up** | `cdr_daily.py` / `cdr_outputs.py` / `runs/`; real data only |
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR gates | [`.cursor/skills/pr-gates-agent/SKILL.md`](.cursor/skills/pr-gates-agent/SKILL.md) | **run pr gates agent** / **ensure PR gates** | Read-only: `npm run pr:gates:check`; hand off failures to pr-fix |

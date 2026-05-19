@@ -1,0 +1,15 @@
+[Unit]
+Description=AR-local Pi deploy verify (sync + /api/latest smoke)
+After=network-online.target ar-local-dashboard.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/ar-local/AR-local
+Environment=AR_PI_VERIFY_LOCAL=1
+Environment=AR_PI_BASE_URL=http://127.0.0.1:8808/
+ExecStart=/usr/bin/python3 /srv/ar-local/AR-local/pi_deploy_verify.py --verify
+# On drift, run deploy manually or enable timer OnFailure unit — see install notes in docs/UNIVERSAL_ROADMAP.md
+
+[Install]
+WantedBy=multi-user.target

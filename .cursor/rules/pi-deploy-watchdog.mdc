@@ -1,0 +1,16 @@
+---
+description: Pi deploy watchdog — continuous verify/deploy on Raspberry Pi (invoke or post-merge).
+globs:
+alwaysApply: false
+---
+
+# Pi deploy watchdog
+
+When the user says **"run pi deploy watchdog"** or when **orchestrator/chief** closes a merge that touches `dashboard/**`, `cdr_*.py`, `deploy/pi/**`, or `cdr_dashboard_server.py`:
+
+1. Read `.cursor/skills/pi-deploy-watchdog/SKILL.md`.
+2. Run `npm run pi:needs-deploy -- --ref origin/main~1` (adjust `--ref` to merge base if known).
+3. If exit **0**, run `npm run pi:deploy:verify`; on failure run `npm run pi:deploy` then verify again.
+4. Do not treat local `verify:local` as Pi acceptance.
+
+Scheduled CI: `.github/workflows/pi-deploy-watchdog.yml` (requires `PI_SSH_*` secrets).
