@@ -98,7 +98,7 @@ Reply in-thread on GitHub for every substantive thread: `implemented in <sha>` /
 npm run pr:bot-feedback-check -- --pr <n>
 ```
 
-**Aggregate audit (all steps 4–7 gates):** `npm run pr:gates:check -- --pr <n>` — exit **0** only when CI, `wait-for-bots`, thread closure, GitHub `bot-*` checks, and `## Feedback plan` (when required) all pass. Invoke **pr-gates-agent** for read-only enforcement; **pr-fix-agent** for remediation.
+**Aggregate audit (all steps 4–7 gates):** `npm run pr:gates:check -- --pr <n>` — exit **0** only when CI, `wait-for-bots`, thread closure, GitHub `bot-*` checks, and `## Feedback plan` (when required) all pass. Invoke **pr-gates-agent** for read-only enforcement; **pr-fix-agent** for remediation. Run locally only (`--watch` polls GraphQL); there is no `pr-gates-check` Actions workflow (installation quota).
 
 Exit **1** when the PR has unresolved review threads or bot threads without an owner closure reply. `npm run ship:closeout:strict` runs this check when an open PR exists for the current branch. CI job **`bot-feedback-gate`** runs the same script on every PR event (with `--skip-bot-presence` because **`bot-presence-gate`** covers bot wait separately).
 
