@@ -51,7 +51,6 @@ def main() -> int:
         "site/ar-ribbon-format.js",
         "site/ar-ribbon-tree.js",
         "api/latest",
-        "api/banks/history",
     ]
     failures: list[tuple[str, int]] = []
     for path in paths:
@@ -63,16 +62,27 @@ def main() -> int:
         for url, code in failures:
             print(f"verify_local: {code} {url}", file=sys.stderr)
         return 1
+    latest_url = base + "api/latest"
+    try:
+        with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
+            latest_payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
+        return 1
+    run_date = latest_payload.get("run_date")
+    if run_date:
+        for path in (
+            f"api/banks/ribbon?date={run_date}&section=Mortgage",
+            f"api/banks/section?date={run_date}&section=Mortgage",
+            f"api/banks/history/section?date={run_date}&section=Mortgage",
+        ):
+            url = base + path
+            code = http_get(url)
+            if code != 200:
+                print(f"verify_local: {code} {url}", file=sys.stderr)
+                return 1
     if args.require_banks_rates:
-        latest_url = base + "api/latest"
-        try:
-            with urllib.request.urlopen(latest_url, timeout=30.0) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
-            return 1
-        rates = manifest_banks_rate_count(payload)
-        run_date = payload.get("run_date")
+        rates = manifest_banks_rate_count(latest_payload)
         if rates <= 0:
             print(
                 f"verify_local: /api/latest run_date={run_date!r} has banks_counts.rates={rates}",

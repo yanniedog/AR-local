@@ -43,9 +43,12 @@
   const state = {
     section: SECTION.Mortgage,
     manifest: null,
-    banks: null,
+    bankRibbons: {},
+    bankSections: {},
     bankHistory: null,
+    bankHistorySection: '',
     bankHistoryIndex: null,
+    retainedRunDatesSorted: [],
     descending: false,
     historyWindow: '30D',
     hierarchyPath: '',
@@ -86,8 +89,9 @@
   }
 
   function rateRows() {
-    if (!state.banks) return [];
-    return state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+    const sectionPayload = state.bankSections[state.section];
+    if (!sectionPayload || !Array.isArray(sectionPayload.rates)) return [];
+    return sectionPayload.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
   }
 
   function focusActiveProvider() {
@@ -197,14 +201,31 @@
   }
 
   async function loadBankHistory() {
-    if (state.bankHistory) return;
-    const data = await getJson(`/api/banks/history?date=${state.manifest.run_date}`);
+    if (state.bankHistory && state.bankHistorySection === state.section) return;
+    const sectionName = state.section;
+    const section = encodeURIComponent(sectionName);
+    const data = await getJson(`/api/banks/history/section?date=${state.manifest.run_date}&section=${section}`);
     const rates = Array.isArray(data.rates) ? normalizeRows(data.rates) : [];
+    if (state.section !== sectionName) return;
     state.bankHistory = {
       ...data,
       rates,
       run_dates: Array.isArray(data.run_dates) ? data.run_dates : [],
     };
+    state.bankHistorySection = sectionName;
+    refreshBankHistoryIndex();
+  }
+
+  function seedCurrentHistory(section, rows) {
+    const normalized = normalizeRows(rows || []);
+    state.bankHistory = {
+      run_dates: state.manifest && state.manifest.run_date ? [state.manifest.run_date] : [],
+      rates: normalized,
+      carry_forward_count: 0,
+      section,
+      current_only: true,
+    };
+    state.bankHistorySection = section;
     refreshBankHistoryIndex();
   }
 
@@ -301,6 +322,46 @@
       descending: state.descending,
       currentRange: currentRateRange(rows),
       totalHistoryRows: historyRows.length,
+      focusProvider: focusActiveProvider(),
+      onHoverDateChange: onChartHoverDate,
+    };
+  }
+
+  function ribbonChartItems(ribbon) {
+    if (!ribbon || !ribbon.run_date) return null;
+    const date = String(ribbon.run_date);
+    const range = ribbon.range || {};
+    const providers = (ribbon.providers || []).map((row) => ({
+      label: row.provider || 'Unknown',
+      byDate: {
+        [date]: {
+          min: Number(row.min),
+          max: Number(row.max),
+          mean: Number(row.mean),
+          count: Number(row.rates || 0),
+        },
+      },
+    }));
+    return {
+      kind: 'bank-history',
+      section: state.section,
+      window: state.historyWindow,
+      dates: [date],
+      points: [{
+        date,
+        min: range.min == null ? null : Number(range.min),
+        max: range.max == null ? null : Number(range.max),
+        mean: range.mean == null ? null : Number(range.mean),
+        count: Number((ribbon.counts && ribbon.counts.rates) || 0),
+      }],
+      providers,
+      allDates: [date],
+      descending: state.descending,
+      currentRange: {
+        min: range.min == null ? null : Number(range.min),
+        max: range.max == null ? null : Number(range.max),
+      },
+      totalHistoryRows: Number((ribbon.counts && ribbon.counts.rates) || 0),
       focusProvider: focusActiveProvider(),
       onHoverDateChange: onChartHoverDate,
     };
@@ -429,11 +490,12 @@
   }
 
   function warmProviderLogoCache() {
-    if (!window.LocalCdrBrand || !window.LocalCdrBrand.preloadRailProviders || !state.banks || !state.banks.rates) {
+    const sectionPayload = state.bankSections[state.section];
+    if (!window.LocalCdrBrand || !window.LocalCdrBrand.preloadRailProviders || !sectionPayload || !sectionPayload.rates) {
       return;
     }
     const bySection = {};
-    state.banks.rates.forEach((row) => {
+    sectionPayload.rates.forEach((row) => {
       if (!row.provider || !row.dataset) return;
       if (!bySection[row.dataset]) bySection[row.dataset] = { providers: new Set(), samples: {} };
       bySection[row.dataset].providers.add(row.provider);
@@ -450,7 +512,7 @@
     const wrap = $('sectionCards');
     clear(wrap);
     wrap.hidden = false;
-    if (!state.banks || !window.LocalCdrBrand) return;
+    if (!window.LocalCdrBrand) return;
     ['Mortgage', 'Savings', 'TD'].forEach((section) => {
       const card = child(wrap, 'button', 'local-section-card' + (state.section === section ? ' is-active' : ''));
       card.type = 'button';
@@ -464,9 +526,10 @@
   function renderSelectedLogos(activeProviders) {
     const wrap = $('selectedLogos');
     clear(wrap);
-    if (!window.LocalCdrBrand || !state.banks || !state.banks.rates) { wrap.hidden = true; return; }
+    const sectionPayload = state.bankSections[state.section];
+    if (!window.LocalCdrBrand || !sectionPayload || !sectionPayload.rates) { wrap.hidden = true; return; }
 
-    const rows = state.banks.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+    const rows = sectionPayload.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
     const providers = [...new Set(rows.map((row) => row.provider).filter(Boolean))].sort();
     const sampleByProvider = {};
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
@@ -546,7 +609,7 @@
 
   function renderTable(rows) {
     const hasTaxonomy = rows.length > 0 && rows.some((r) => r.taxonomy_path);
-    if (hasTaxonomy || state.banks) {
+    if (hasTaxonomy || state.bankSections[state.section]) {
       $('table').hidden = true;
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
@@ -599,6 +662,32 @@
     renderSelectedLogos(relevantProviderKeys());
   }
 
+  function renderRibbonBootstrap() {
+    const ribbon = state.bankRibbons[state.section];
+    if (!ribbon) return;
+    const counts = ribbon.counts || {};
+    const items = ribbonChartItems(ribbon);
+    setLinks();
+    $('hero-run').textContent = state.manifest.run_date;
+    $('hero-rows').textContent = num(counts.rates || 0);
+    const range = items && items.currentRange ? items.currentRange : { min: null, max: null };
+    const leader = state.descending ? range.max : range.min;
+    $('hero-leader').textContent = leader == null ? '-' : pct(leader);
+    window.LocalCdrChart.draw($('chart'), items, 'banks');
+    setHistoryWindowUi(items);
+    $('chart-status').textContent = `${num(counts.rates || 0)} current rows / details loading`;
+    $('table-count').textContent = counts.products || counts.providers
+      ? `${num(counts.products || 0)} products / ${num(counts.providers || 0)} providers`
+      : 'Loading details';
+    $('table').hidden = true;
+    document.querySelector('.local-table-panel').hidden = true;
+    $('chart-side-panel').hidden = false;
+    $('hierarchy').hidden = false;
+    clear($('hierarchy'));
+    const loading = child($('hierarchy'), 'div', 'chart-series-empty', 'Loading current slice...');
+    loading.setAttribute('aria-live', 'polite');
+  }
+
   function render() {
     const allRows = normalizeRows(rateRows());
     if (!allRows.length) {
@@ -637,15 +726,28 @@
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
-    if (!state.banks) {
-      state.banks = await getJson(`/api/banks?date=${state.manifest.run_date}`);
+    if (!state.bankRibbons[section]) {
+      const encodedSection = encodeURIComponent(section);
+      state.bankRibbons[section] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}`);
+    }
+    if (token !== loadSectionToken) return;
+    renderRibbonBootstrap();
+    if (!state.bankSections[section]) {
+      const encodedSection = encodeURIComponent(section);
+      state.bankSections[section] = await getJson(`/api/banks/section?date=${state.manifest.run_date}&section=${encodedSection}`);
       warmProviderLogoCache();
     }
     if (token !== loadSectionToken) return;
-    await loadBankHistory();
-    if (token !== loadSectionToken) return;
-    refreshBankHistoryIndex();
+    seedCurrentHistory(section, rateRows());
     render();
+    loadBankHistory()
+      .then(() => {
+        if (token !== loadSectionToken || state.section !== section) return;
+        render();
+      })
+      .catch((error) => {
+        console.warn('History payload failed', error);
+      });
   }
 
   function bind() {
