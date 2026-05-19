@@ -10,12 +10,12 @@ import {
   statSync,
   appendFileSync,
   writeFileSync,
+  openSync,
+  readSync,
+  closeSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { join } from 'node:path';
 
 const BUCK_PASS_PHRASES = [
   /\byou should run\b/i,
@@ -117,15 +117,50 @@ export function listRecentTranscripts(transcriptRoot, sinceMinutes = 60) {
   return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export function parseTranscriptFile(filePath, tailLines = 120) {
-  let raw;
+function readTranscriptTailLines(filePath, tailLines) {
+  const CHUNK_BYTES = 256 * 1024;
+  let fd;
   try {
-    raw = readFileSync(filePath, 'utf8');
+    const size = statSync(filePath).size;
+    if (size === 0) return { tail: [], lineCount: 0 };
+    const readLen = Math.min(size, CHUNK_BYTES);
+    const start = size - readLen;
+    fd = openSync(filePath, 'r');
+    const buf = Buffer.alloc(readLen);
+    readSync(fd, buf, 0, readLen, start);
+    closeSync(fd);
+    const allLines = buf.toString('utf8').split(/\r?\n/).filter(Boolean);
+    return { tail: allLines.slice(-tailLines), lineCount: allLines.length };
+  } catch {
+    if (fd != null) {
+      try {
+        closeSync(fd);
+      } catch {
+        /* */
+      }
+    }
+    return { tail: [], lineCount: 0 };
+  }
+}
+
+export function parseTranscriptFile(filePath, tailLines = 120) {
+  let lines;
+  let lineCount = 0;
+  try {
+    const st = statSync(filePath);
+    if (st.size <= 512 * 1024) {
+      const raw = readFileSync(filePath, 'utf8');
+      const allLines = raw.split(/\r?\n/).filter(Boolean);
+      lineCount = allLines.length;
+      lines = allLines.slice(-tailLines);
+    } else {
+      const tailed = readTranscriptTailLines(filePath, tailLines);
+      lines = tailed.tail;
+      lineCount = tailed.lineCount;
+    }
   } catch {
     return { lines: [], text: '', toolUses: 0, assistantTurns: 0, lineCount: 0 };
   }
-  const allLines = raw.split(/\r?\n/).filter(Boolean);
-  const lines = allLines.slice(-tailLines);
   const text = lines.join('\n');
   let toolUses = 0;
   let assistantTurns = 0;
@@ -142,7 +177,7 @@ export function parseTranscriptFile(filePath, tailLines = 120) {
       /* skip */
     }
   }
-  return { lines, text, toolUses, assistantTurns, lineCount: allLines.length };
+  return { lines, text, toolUses, assistantTurns, lineCount };
 }
 
 export function extractMentions(text) {
@@ -153,9 +188,10 @@ export function extractMentions(text) {
   for (const m of text.matchAll(/\bPR\s*#?(\d+)\b/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(/\bgh pr view\s+(\d+)/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(
-    /\b(?:^|[\s"'`])([\w.-]+\/[\w./-]+\.(?:py|mjs|js|mdc|md|json))\b/g,
+    /\b(?:^|[\s"'`])(?:(?:[\w.-]+[/\\])+[\w./\\-]+\.(?:py|mjs|js|mdc|md|json)|[\w.-]+\.(?:py|mjs|js|mdc|md|json))\b/g,
   )) {
-    if (!m[1].includes('node_modules')) paths.add(m[1]);
+    const p = m[1].replace(/\\/g, '/');
+    if (!p.includes('node_modules')) paths.add(p);
   }
   return { branches: [...branches], prs: [...prs], paths: [...paths].slice(0, 40) };
 }
@@ -211,9 +247,11 @@ export function runAudit(opts) {
   const orchestratorHits = [];
   const branchMentions = new Map();
   const pathMentions = new Map();
+  const parsedByTranscript = new Map();
 
   for (const t of transcripts) {
     const parsed = parseTranscriptFile(t.path, hook ? 60 : 120);
+    parsedByTranscript.set(t.id, parsed);
     const { text, toolUses, assistantTurns } = parsed;
     const mentions = extractMentions(text);
 
@@ -309,17 +347,18 @@ export function runAudit(opts) {
   }
 
   orchestratorHits.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const fiveMinMs = 5 * 60 * 1000;
   for (let i = 0; i < orchestratorHits.length; i++) {
     for (let j = i + 1; j < orchestratorHits.length; j++) {
-      if (orchestratorHits[i].mtimeMs - orchestratorHits[j].mtimeMs <= 5 * 60 * 1000) {
-        add(
-          'dedupe',
-          'warn',
-          `Duplicate orchestrator within 5m: ${orchestratorHits[j].id.slice(0, 8)}… / ${orchestratorHits[i].id.slice(0, 8)}…`,
-          'chief-agent',
-          orchestratorHits[i].id,
-        );
-      }
+      const gap = orchestratorHits[i].mtimeMs - orchestratorHits[j].mtimeMs;
+      if (gap > fiveMinMs) break;
+      add(
+        'dedupe',
+        'warn',
+        `Duplicate orchestrator within 5m: ${orchestratorHits[j].id.slice(0, 8)}… / ${orchestratorHits[i].id.slice(0, 8)}…`,
+        'chief-agent',
+        orchestratorHits[i].id,
+      );
     }
   }
 
@@ -347,9 +386,10 @@ export function runAudit(opts) {
   }
 
   if (chief.exitCode === 1) {
-    const recentChiefSpawn = transcripts.some((t) =>
-      /chief-agent|chief:scan|run chief/i.test(parseTranscriptFile(t.path, 40).text),
-    );
+    const recentChiefSpawn = transcripts.some((t) => {
+      const text = parsedByTranscript.get(t.id)?.text ?? '';
+      return /chief-agent|chief:scan|run chief/i.test(text);
+    });
     if (!recentChiefSpawn) {
       add(
         'chief_coordination',

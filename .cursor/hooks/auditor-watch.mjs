@@ -17,8 +17,7 @@ function run(cmd, timeoutMs = EXEC_TIMEOUT_MS) {
       timeout: timeoutMs,
       maxBuffer: 2 * 1024 * 1024,
     }).trim();
-  } catch (error) {
-    if (error?.code === 'ETIMEDOUT' || error?.signal === 'SIGTERM') return '';
+  } catch {
     return '';
   }
 }
@@ -43,11 +42,19 @@ function quickAuditorScan() {
   const script = auditorScanScript();
   try {
     const out = run(`node "${script}" --hook --since-minutes 45 --no-write`, 7000);
-    if (!out) return { exitCode: 0, findings: [] };
+    if (!out) {
+      return {
+        exitCode: 1,
+        findings: [{ severity: 'warn', message: 'agent-auditor-scan produced no output in hook' }],
+      };
+    }
     const report = JSON.parse(out);
     return { exitCode: report.exitCode ?? 0, findings: report.findings ?? [] };
   } catch {
-    return { exitCode: 0, findings: [] };
+    return {
+      exitCode: 2,
+      findings: [{ severity: 'fail', message: 'agent-auditor-scan failed in auditor-watch hook' }],
+    };
   }
 }
 
