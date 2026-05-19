@@ -458,11 +458,12 @@
 
   function renderEmptySection() {
     const label = state.section === SECTION.TD ? 'Term Deposits' : state.section;
-    $('chart-status').textContent = `No ${label} rates in export ${state.manifest.run_date}.`;
+    const emptyMsg = `No ${label} rates in export ${state.manifest.run_date}.`;
     setLinks();
     renderStats([]);
     renderTable([]);
     drawChartFromState([]);
+    $('chart-status').textContent = emptyMsg;
     updateHero([], null);
     renderSectionCards();
     renderSelectedLogos();
