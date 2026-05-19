@@ -143,24 +143,30 @@ _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # gzip the dashboard's bulky JSON/JS/CSS responses on the wire. The Mortgage
 # section payload is ~4 MB of JSON that crushes to ~80 KB; history is similar.
-# Compressed bytes are cached keyed by id() of the source bytes — every cached
-# body in this module is held in a long-lived dict, so the id stays stable.
+# Compressed bytes are stored alongside the raw bytes in each upstream cache
+# (section_cache, history_cache, CachedFiles), so the lifetime of the gz
+# matches the lifetime of the raw it was produced from — no separate
+# fingerprint-keyed cache that could mis-serve when id() is reused.
 GZIP_MIN_BYTES = 512
 GZIP_LEVEL = 6
-GZIP_CACHE_MAX = 64
 _GZIP_COMPRESSIBLE_PREFIXES = (
     "text/",
     "application/json",
     "application/javascript",
     "image/svg+xml",
 )
-_gzip_cache: "OrderedDict[tuple[int, int, bytes], bytes]" = OrderedDict()
-_gzip_cache_lock = threading.Lock()
 
 
 def _content_type_is_compressible(ctype: str) -> bool:
     low = (ctype or "").lower()
     return any(low.startswith(prefix) for prefix in _GZIP_COMPRESSIBLE_PREFIXES)
+
+
+def maybe_gzip(body: bytes, ctype: str) -> bytes | None:
+    """Return gz-encoded body when it's worth compressing, else None."""
+    if not body or len(body) < GZIP_MIN_BYTES or not _content_type_is_compressible(ctype):
+        return None
+    return gzip.compress(body, compresslevel=GZIP_LEVEL)
 
 
 def _client_accepts_gzip(accept_encoding: str) -> bool:
@@ -184,29 +190,6 @@ def _client_accepts_gzip(accept_encoding: str) -> bool:
     return False
 
 
-# Fingerprint = (id, length, leading bytes). The id half makes the common case
-# cheap (cached payloads keep the same bytes object), and the length + head
-# bytes guard against id reuse after the source body is GC'd. We deliberately
-# do NOT keep a reference to the source body — that's what pinned memory in
-# the earlier draft of this cache.
-def _gzip_cache_key(body: bytes) -> tuple[int, int, bytes]:
-    return (id(body), len(body), body[:32])
-
-
-def gzip_bytes(body: bytes) -> bytes:
-    key = _gzip_cache_key(body)
-    with _gzip_cache_lock:
-        cached = _gzip_cache.get(key)
-        if cached is not None:
-            _gzip_cache.move_to_end(key)
-            return cached
-    compressed = gzip.compress(body, compresslevel=GZIP_LEVEL)
-    with _gzip_cache_lock:
-        _gzip_cache[key] = compressed
-        _gzip_cache.move_to_end(key)
-        while len(_gzip_cache) > GZIP_CACHE_MAX:
-            _gzip_cache.popitem(last=False)
-    return compressed
 
 ECONOMIC_API_UPSTREAM = os.environ.get("AR_ECONOMIC_API_UPSTREAM", "https://www.australianrates.com").rstrip("/")
 
@@ -462,19 +445,36 @@ def resolve_site_root(explicit: Path | None) -> Path:
 class CachedFiles:
     def __init__(self, exports_root: Path):
         self.exports_root = exports_root.resolve()
-        self.memory: Dict[Path, Tuple[float, bytes]] = {}
+        # (mtime, raw_bytes, gz_or_None). gz is computed lazily by gz_for() when
+        # the response handler signals the content-type is compressible — keeps
+        # binary assets (PNGs, woff2) from wasting CPU on pointless gzip.
+        self.memory: Dict[Path, Tuple[float, bytes, bytes | None]] = {}
 
-    def read(self, path: Path) -> bytes:
+    def _entry(self, path: Path) -> Tuple[Path, float, bytes, bytes | None]:
         resolved = path.resolve()
         if self.exports_root not in resolved.parents and resolved != self.exports_root:
             raise FileNotFoundError(path)
         stat = resolved.stat()
         cached = self.memory.get(resolved)
         if cached and cached[0] == stat.st_mtime:
-            return cached[1]
+            return resolved, cached[0], cached[1], cached[2]
         data = resolved.read_bytes()
-        self.memory[resolved] = (stat.st_mtime, data)
+        self.memory[resolved] = (stat.st_mtime, data, None)
+        return resolved, stat.st_mtime, data, None
+
+    def read(self, path: Path) -> bytes:
+        _, _, data, _ = self._entry(path)
         return data
+
+    def gz_for(self, path: Path, ctype: str) -> bytes | None:
+        """Return the precomputed gz for path, lazily compressing on first call."""
+        resolved, mtime, data, gz = self._entry(path)
+        if gz is not None:
+            return gz
+        gz = maybe_gzip(data, ctype)
+        if gz is not None:
+            self.memory[resolved] = (mtime, data, gz)
+        return gz
 
 
 class ExportResolver:
@@ -531,9 +531,11 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     artifact_cache_lock = threading.Lock()
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
     site_cache = CachedFiles(site_root)
-    history_cache: Dict[Tuple[str, str, Tuple[Tuple[str, float, int], ...]], bytes] = {}
+    # Each entry stores (raw_json, gz_json). gz is computed once at cache-insert
+    # time and lives exactly as long as the raw — no cross-payload aliasing.
+    history_cache: Dict[Tuple[str, str, Tuple[Tuple[str, float, int], ...]], Tuple[bytes, bytes | None]] = {}
     history_cache_lock = threading.Lock()
-    section_cache: OrderedDict[Tuple[str, str, str, float, int], bytes] = OrderedDict()
+    section_cache: OrderedDict[Tuple[str, str, str, float, int], Tuple[bytes, bytes | None]] = OrderedDict()
     section_cache_lock = threading.Lock()
 
     def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
@@ -691,9 +693,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "section": section,
             **aggregate,
         }
-        return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return body, maybe_gzip(body, "application/json")
 
-    def bank_section_payload(run_date: str, section: str) -> bytes:
+    def bank_section_payload(run_date: str, section: str) -> Tuple[bytes, bytes | None]:
         db_path = bank_db_for_date(run_date)
         stat = db_path.stat()
         cache_key = (run_date, section, str(db_path), stat.st_mtime, stat.st_size)
@@ -703,7 +706,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 section_cache.move_to_end(cache_key)
                 return cached
         rows = read_bank_section_db(db_path, run_date, section)
-        payload = json.dumps(
+        body = json.dumps(
             {
                 "run_date": run_date,
                 "section": section,
@@ -713,11 +716,12 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
+        entry = (body, maybe_gzip(body, "application/json"))
         with section_cache_lock:
             if len(section_cache) >= MAX_ARTIFACT_CACHE_ENTRIES * 3:
                 section_cache.popitem(last=False)
-            section_cache[cache_key] = payload
-        return payload
+            section_cache[cache_key] = entry
+        return entry
 
     def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
         with sqlite3.connect(db_path) as con:
@@ -754,7 +758,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 out.append(compact_bank_row(item))
             return out
 
-    def bank_history_payload(max_run_date: str, section: str = "") -> bytes:
+    def bank_history_payload(max_run_date: str, section: str = "") -> Tuple[bytes, bytes | None]:
         dbs = bank_history_db_paths(max_run_date)
         signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
         cache_key = (max_run_date, section, signature)
@@ -770,7 +774,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 print(f"Skipping unreadable history DB {db_path}: {exc}")
         run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
         filled_rows, carry_forward_count = fill_history_gaps(rows, run_dates)
-        payload = json.dumps(
+        body = json.dumps(
             {
                 "run_dates": run_dates,
                 "section": section,
@@ -780,12 +784,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
+        entry = (body, maybe_gzip(body, "application/json"))
         with history_cache_lock:
             if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
                 oldest_key = next(iter(history_cache))
                 history_cache.pop(oldest_key)
-            history_cache[cache_key] = payload
-        return payload
+            history_cache[cache_key] = entry
+        return entry
 
     def warm_common_files() -> None:
         for rel in (
@@ -840,14 +845,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             try:
-                body, ctype = self.route(parsed.path, parse_qs(parsed.query))
+                body, ctype, gz = self.route(parsed.path, parse_qs(parsed.query))
                 encoding = None
-                if (
-                    len(body) >= GZIP_MIN_BYTES
-                    and _content_type_is_compressible(ctype)
-                    and _client_accepts_gzip(self.headers.get("Accept-Encoding", ""))
-                ):
-                    body = gzip_bytes(body)
+                if gz is not None and _client_accepts_gzip(self.headers.get("Accept-Encoding", "")):
+                    body = gz
                     encoding = "gzip"
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", ctype)
@@ -873,11 +874,14 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         def log_message(self, fmt: str, *args: object) -> None:
             print(fmt % args)
 
-        def route(self, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str]:
+        def _serve_file(self, cache: CachedFiles, target: Path, ctype: str) -> Tuple[bytes, str, bytes | None]:
+            return cache.read(target), ctype, cache.gz_for(target, ctype)
+
+        def route(self, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str, bytes | None]:
             if path == "/":
-                return dashboard_cache.read(DASHBOARD_ROOT / "index.html"), "text/html; charset=utf-8"
+                return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "index.html", "text/html; charset=utf-8")
             if path == "/assets/app.css":
-                return dashboard_cache.read(DASHBOARD_ROOT / "app.css"), "text/css; charset=utf-8"
+                return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "app.css", "text/css; charset=utf-8")
             if path in (
                 "/assets/app.js",
                 "/assets/ar-bank-brand.js",
@@ -890,21 +894,26 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/rba-cash-rate.js",
                 "/assets/utils.js",
             ):
-                return dashboard_cache.read(DASHBOARD_ROOT / path.removeprefix("/assets/")), "application/javascript; charset=utf-8"
+                return self._serve_file(
+                    dashboard_cache,
+                    DASHBOARD_ROOT / path.removeprefix("/assets/"),
+                    "application/javascript; charset=utf-8",
+                )
             if path == "/assets/branding/ar-mark.svg":
-                return site_cache.read(site_root / "assets" / "branding" / "ar-mark.svg"), "image/svg+xml"
+                return self._serve_file(site_cache, site_root / "assets" / "branding" / "ar-mark.svg", "image/svg+xml")
             if path.startswith("/assets/banks/"):
                 target = (site_root / path.removeprefix("/")).resolve()
                 bank_root = bank_assets_root.resolve()
                 if bank_root not in target.parents and target != bank_root:
                     raise FileNotFoundError(path)
-                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return self._serve_file(site_cache, target, ctype)
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
-                return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
+                return self._serve_file(cache, exports_root / "dashboard-cache" / "latest.json", "application/json")
             if path == "/api/energy":
                 if energy_dormant():
-                    payload = json.dumps(
+                    body = json.dumps(
                         {
                             "run_date": "",
                             "plans": [],
@@ -915,57 +924,66 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                         separators=(",", ":"),
                         ensure_ascii=False,
                     ).encode("utf-8")
-                    return payload, "application/json; charset=utf-8"
+                    return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
                 date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
-                return cache.read(exports_root / "dashboard-cache" / date / "energy.json"), "application/json"
+                return self._serve_file(cache, exports_root / "dashboard-cache" / date / "energy.json", "application/json")
             if path == "/api/banks":
                 date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
-                return cache.read(exports_root / "dashboard-cache" / date / "banks.json"), "application/json"
+                return self._serve_file(cache, exports_root / "dashboard-cache" / date / "banks.json", "application/json")
             if path == "/api/banks/section":
                 date = parse_run_date_param(query.get("date", [""])[0])
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                return bank_section_payload(date, section), "application/json; charset=utf-8"
+                body, gz = bank_section_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
             if path == "/api/banks/ribbon":
                 date = parse_run_date_param(query.get("date", [""])[0])
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                return bank_ribbon_payload(date, section), "application/json; charset=utf-8"
+                body, gz = bank_ribbon_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
             if path.startswith("/api/economic-data"):
-                return proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
+                body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
+                return body, ctype, None
             if path == "/api/banks/history":
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
-                return bank_history_payload(date), "application/json"
+                body, gz = bank_history_payload(date)
+                return body, "application/json", gz
             if path == "/api/banks/history/section":
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                return bank_history_payload(date, section), "application/json; charset=utf-8"
+                body, gz = bank_history_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
             if is_economic_data_page_path(path):
                 target = resolve_site_public_file(site_root, path)
                 body = site_cache.read(target)
                 ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
                 if (ctype or "").startswith("text/html"):
-                    return inject_local_dashboard_css(body), "text/html; charset=utf-8"
-                return body, ctype
+                    injected = inject_local_dashboard_css(body)
+                    return injected, "text/html; charset=utf-8", maybe_gzip(injected, "text/html")
+                return body, ctype, site_cache.gz_for(target, ctype)
             if path.startswith("/site/"):
                 target = (site_root / path.removeprefix("/site/")).resolve()
                 site_resolved = site_root.resolve()
                 if site_resolved not in target.parents and target != site_resolved:
                     raise FileNotFoundError(path)
-                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return self._serve_file(site_cache, target, ctype)
             try:
                 target = resolve_site_public_file(site_root, path)
-                return site_cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return self._serve_file(site_cache, target, ctype)
             except FileNotFoundError:
                 pass
             if path.startswith("/exports/"):
                 exports_root, cache = artifact_cache()
                 target = exports_root / path.removeprefix("/exports/")
-                return cache.read(target), mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                return self._serve_file(cache, target, ctype)
             raise FileNotFoundError(path)
 
     return Handler
