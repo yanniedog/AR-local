@@ -140,9 +140,22 @@
     return index;
   }
 
+  function refreshRetainedRunDatesCache() {
+    const raw = state.bankHistory && state.bankHistory.run_dates;
+    if (!Array.isArray(raw)) {
+      state.retainedRunDatesSorted = [];
+      return;
+    }
+    state.retainedRunDatesSorted = raw
+      .map((date) => String(date || ''))
+      .filter((date) => parseYmd(date) != null)
+      .sort();
+  }
+
   function refreshBankHistoryIndex() {
     if (!state.bankHistory) return;
     state.bankHistoryIndex = buildHistoryIndex(state.bankHistory.rates);
+    refreshRetainedRunDatesCache();
   }
 
   function parseYmd(value) {
@@ -174,12 +187,8 @@
 
   /** All run dates retained by /api/banks/history (not limited to the current chart slice). */
   function retainedRunDates() {
-    const raw = state.bankHistory && state.bankHistory.run_dates;
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((date) => String(date || ''))
-      .filter((date) => parseYmd(date) != null)
-      .sort();
+    if (!state.retainedRunDatesSorted) refreshRetainedRunDatesCache();
+    return state.retainedRunDatesSorted || [];
   }
 
   async function loadBankHistory() {
