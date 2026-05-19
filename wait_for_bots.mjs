@@ -247,7 +247,7 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
+function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, singleShot = false }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
@@ -337,13 +337,19 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
     }
   }
 
-  if (checksReady && minElapsed && allRequiredPosted && quiet) {
+  if (
+    checksReady &&
+    (minElapsed || singleShot) &&
+    allRequiredPosted &&
+    (quiet || singleShot)
+  ) {
     const suffix = noiseEventCount > 0
       ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
       : '';
+    const quietNote = singleShot && !quiet ? ' (single-shot; quiet window skipped)' : `; ${QUIET_WINDOW_SEC}s quiet`;
     return {
       status: 'ready',
-      message: `Bot wait satisfied (required bots posted since anchor; ${QUIET_WINDOW_SEC}s quiet). Clear to sweep threads.${suffix}`,
+      message: `Bot wait satisfied (required bots posted since anchor${quietNote}). Clear to sweep threads.${suffix}`,
       lastBotAt: lastBotAt?.toISOString() || null,
       botsSeen: seenLogins,
       missing: [],
@@ -547,6 +553,7 @@ async function main() {
       state: st,
       repo,
       requiredKeys: keys,
+      singleShot: !args.watch,
     });
   };
 
