@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import socket
+from datetime import date as calendar_date
 import sqlite3
 import threading
 import time
@@ -46,6 +47,7 @@ BANK_HISTORY_COLUMNS = (
     "ribbon_repayment_type",
     "lvr_tier",
     "ribbon_rate_structure",
+    "ribbon_fixed_term",
     "account_type",
     "ribbon_deposit_kind",
     "balance_min",
@@ -59,7 +61,7 @@ SELECT run_date, dataset, provider, product_id, product_key, product_name,
        rate_family, rate, comparison_rate, rate_type, application_type,
        application_frequency, repayment_type, loan_purpose, term,
        ribbon_normalized, security_purpose, ribbon_repayment_type, lvr_tier,
-       ribbon_rate_structure, account_type, ribbon_deposit_kind, balance_min,
+       ribbon_rate_structure, ribbon_fixed_term, account_type, ribbon_deposit_kind, balance_min,
        balance_max, term_months, interest_payment, feature_set
 FROM bank_rates
 WHERE rate IS NOT NULL AND rate != ''
@@ -85,6 +87,7 @@ HISTORY_IDENTITY_FIELDS = (
     "security_purpose",
     "ribbon_repayment_type",
     "ribbon_rate_structure",
+    "ribbon_fixed_term",
     "ribbon_deposit_kind",
     "lvr_tier",
     "balance_min",
@@ -94,6 +97,23 @@ HISTORY_IDENTITY_FIELDS = (
     "feature_set",
     "account_type",
 )
+
+_RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class BadRequestError(Exception):
+    """Client supplied invalid query parameters."""
+
+
+def parse_run_date_param(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not _RUN_DATE_RE.fullmatch(value):
+        raise BadRequestError("date must be YYYY-MM-DD")
+    try:
+        calendar_date(int(value[0:4]), int(value[5:7]), int(value[8:10]))
+    except ValueError as exc:
+        raise BadRequestError("date is not a valid calendar day") from exc
+    return value
 
 
 def fill_history_gaps(
@@ -379,10 +399,20 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 dashboard_cache.read(DASHBOARD_ROOT / rel)
             except FileNotFoundError:
                 pass
+        for site_rel in (
+            "theme.js",
+            "foundation.css",
+            "ar-ribbon-format.js",
+            "ar-ribbon-tree.js",
+        ):
+            try:
+                site_cache.read(site_root / site_rel)
+            except FileNotFoundError:
+                print(f"Site static missing: {site_root / site_rel}")
         try:
             site_cache.read(site_root / "assets" / "branding" / "ar-mark.svg")
         except FileNotFoundError:
-            pass
+            print(f"Site static missing: {site_root / 'assets' / 'branding' / 'ar-mark.svg'}")
         try:
             exports_root, cache = artifact_cache()
             latest = cache.read(exports_root / "dashboard-cache" / "latest.json")
@@ -409,6 +439,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+            except BadRequestError as exc:
+                self.send_error(HTTPStatus.BAD_REQUEST, explain=str(exc))
             except FileNotFoundError:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -451,13 +483,14 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root, cache = artifact_cache()
                 return cache.read(exports_root / "dashboard-cache" / "latest.json"), "application/json"
             if path in ("/api/banks", "/api/energy"):
-                date = query.get("date", [""])[0]
+                date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
                 name = path.rsplit("/", 1)[1] + ".json"
                 return cache.read(exports_root / "dashboard-cache" / date / name), "application/json"
             if path == "/api/banks/history":
-                date = query.get("date", [""])[0]
+                raw_date = str(query.get("date", [""])[0] or "").strip()
+                date = parse_run_date_param(raw_date) if raw_date else ""
                 return bank_history_payload(date), "application/json"
             if path.startswith("/exports/"):
                 exports_root, cache = artifact_cache()

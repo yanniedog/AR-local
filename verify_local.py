@@ -38,6 +38,10 @@ def main() -> int:
         "assets/chart.js",
         "assets/local-brand.js",
         "assets/cdr-taxonomy-tree.js",
+        "site/theme.js",
+        "site/foundation.css",
+        "site/ar-ribbon-format.js",
+        "site/ar-ribbon-tree.js",
         "api/latest",
         "api/banks/history",
     ]
