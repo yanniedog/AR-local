@@ -29,6 +29,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pi-deploy-on-main
+  cancel-in-progress: false
+
 jobs:
   pi-deploy:
     runs-on: ubuntu-latest
