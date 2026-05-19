@@ -28,11 +28,11 @@ You are the **continuous workflow guardian** for the current repository. You run
 | Working tree | `git status --porcelain` | Uncommitted work; partition by path |
 | Branch | `git branch --show-current` | Never feature work on `main` |
 | Open PRs | `gh pr list --state open` | Ship-bar backlog |
-| Closeout | `npm run ship:closeout:strict` | Exit 2 â?? open PR |
-| Bot wait | `npm run wait-for-bots` | Exit 2 â?? loop until 0 |
+| Closeout | `npm run ship:closeout:strict` | Exit 2 ??? open PR |
+| Bot wait | `npm run wait-for-bots` | Exit 2 ??? loop until 0 |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` | Active/completed subagents |
 
-## Task â?? owner routing
+## Task ??? owner routing
 
 Spawn the **same class** of worker that owns the files. Adjust path prefixes to your repo.
 
@@ -48,20 +48,22 @@ Spawn the **same class** of worker that owns the files. Adjust path prefixes to 
 
 ## Per-task PR split (mandatory)
 
-**One logical task â?? one branch â?? one PR.** Never bundle unrelated file sets.
+**One logical task ??? one branch ??? one PR.** Never bundle unrelated file sets.
 
 Partition by **disjoint paths**. If a monolithic PR was opened by mistake: close/abandon, split from fresh `origin/main`.
 
-Each PR gets the **full** ship bar (steps 1â??9 in `WORKFLOW.md`).
+Each PR gets the **full** ship bar (steps 1???9 in `WORKFLOW.md`).
 
-**Merge gate (step 7 â?? FORBIDDEN to skip):**
+**Merge gate (step 7 ??? FORBIDDEN to skip):**
 
 - All bot **implement** commits are on the PR branch **before** merge (rebase/push if bots posted after last push).
-- `npm run wait-for-bots -- --pr <n>` exit **0** â?? **gemini**, **codex**, and **sourcery** must each post since anchor, then quiet window. Exit **1** = required bots missing at cap â?? **do not merge**.
-- `npm run pr:bot-feedback-check -- --pr <n>` exit **0** â?? includes required-bot presence and thread closure.
-- **Never** `gh pr merge --squash` on "CI green" alone or before both gates pass.
+- GitHub required checks **`bot-presence-gate`** and **`bot-feedback-gate`** are green (when branch protection is enabled).
+- `npm run wait-for-bots -- --pr <n>` exit **0** ? **gemini**, **codex**, and **sourcery** must each post since anchor, then quiet window. Exit **1** = required bots missing at cap ? **do not merge**.
+- `npm run pr:bot-feedback-check -- --pr <n>` exit **0** ? includes required-bot presence and thread closure.
+- **Never** `gh pr merge --squash` on "CI green" alone or before both GitHub checks and local gates pass.
+- **Never** close a PR without merge unless the user waives in writing; auditor fails on closed-unmerged PRs with open bot threads.
 
-**After merge (step 7b â?? before step 8):**
+**After merge (step 7b ??? before step 8):**
 
 1. Branch from fresh `main`
 2. Commit + push on topic branch only
@@ -71,7 +73,7 @@ Each PR gets the **full** ship bar (steps 1â??9 in `WORKFLOW.md`).
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
 7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
-8. `gh pr merge --squash` ? **FORBIDDEN** until `npm run wait-for-bots -- --pr <n>` exit **0** (required bots posted) **and** `npm run pr:bot-feedback-check -- --pr <n>` exit **0**, and while substantive inline threads remain open without in-thread resolution. Never merge on "CI green" alone.
+8. `gh pr merge --squash` ? **FORBIDDEN** until GitHub checks **`bot-presence-gate`** + **`bot-feedback-gate`** are green, `npm run wait-for-bots -- --pr <n>` exit **0**, `npm run pr:bot-feedback-check -- --pr <n>` exit **0**, and substantive inline threads are closed. Never merge on "CI green" alone.
 7b. Post-merge close-loop:
 
 ```sh
@@ -82,7 +84,7 @@ npm run close-loop:check -- --post-merge-gap
 9. Restart local dashboard if UI/server changed
 10. `npm run verify:local -- --base-url=<url>/`
 
-Exit **1** â?? open `agent/close-loop-pr-<n>-followup` in the **same cycle**; do not report merged until fix SHAs are on `origin/main`.
+Exit **1** ??? open `agent/close-loop-pr-<n>-followup` in the **same cycle**; do not report merged until fix SHAs are on `origin/main`.
 
 ## Global mirror check (before merge)
 
@@ -90,14 +92,14 @@ If this PR's diff touches **canonical global features** (see `~/.cursor/rules/gl
 
 1. Confirm the same logical change is committed and **pushed** to **https://github.com/yanniedog/cursor-global-workflow** (`main` or merged sync branch).
 2. Record the **global commit SHA** in the project PR body (`Global sync: <sha>`).
-3. If not mirrored: **do not merge** â?? delegate a sync subagent or implement the mirror in this cycle unless the user waived global sync for this PR in writing.
+3. If not mirrored: **do not merge** ??? delegate a sync subagent or implement the mirror in this cycle unless the user waived global sync for this PR in writing.
 
 Chief enforces; orchestrator blocks merge at step 7 until the mirror exists or is waived.
 
 ## Orchestrator loop
 
 ```
-SCAN â?? PLAN â?? DELEGATE â?? (subagent runs) â?? SCAN â?? â?¦
+SCAN ??? PLAN ??? DELEGATE ??? (subagent runs) ??? SCAN ??? ???
 ```
 
 **Closeout before idle claim:**
@@ -107,7 +109,7 @@ npm run ship:closeout:strict && npm run wait-for-bots
 npm run close-loop:check -- --post-merge-gap   # on main after merges
 ```
 
-**Bot wait retry loop** (dynamic poll â?? not a fixed sleep):
+**Bot wait retry loop** (dynamic poll ??? not a fixed sleep):
 
 ```sh
 while true; do
@@ -120,13 +122,13 @@ done
 # or: npm run wait-for-bots -- --watch
 ```
 
-## Steps 8â??9 (project-specific)
+## Steps 8???9 (project-specific)
 
 Read `.cursor/project.json` or repo `WORKFLOW.md` for:
 
-- `{DEPLOY_COMMAND}` â?? step 8
-- `{VERIFY_COMMAND}` â?? step 9
-- `{DEPLOY_URL}` â?? optional acceptance URL for Browser MCP
+- `{DEPLOY_COMMAND}` ??? step 8
+- `{VERIFY_COMMAND}` ??? step 9
+- `{DEPLOY_URL}` ??? optional acceptance URL for Browser MCP
 
 ## Delegate prompt template
 
