@@ -121,7 +121,8 @@
     if (latest == null || previous == null) return null;
     const deltaBp = Math.round((latest - previous) * 10000);
     const deltaText = deltaBp > 0 ? '+' + deltaBp + 'bp' : deltaBp + 'bp';
-    const favorable = state.descending ? deltaBp > 0 : deltaBp < 0;
+    const isDeposit = state.section === 'Savings' || state.section === 'TD';
+    const favorable = isDeposit ? deltaBp > 0 : deltaBp < 0;
     const tone = deltaBp === 0 ? 'flat' : favorable ? 'down' : 'up';
     return {
       text: `${pct(previous)} \u2192 ${pct(latest)} (${deltaText})`,
