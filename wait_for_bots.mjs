@@ -361,6 +361,21 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
         botsSeen: seenLogins,
       };
     }
+    if (allRequiredPosted && checksReady) {
+      const suffix =
+        noiseEventCount > 0
+          ? ` Ignored ${noiseEventCount} noise event(s) — quota / trivial replies.`
+          : '';
+      return {
+        status: 'ready',
+        message:
+          `Bot wait satisfied (required bots present since anchor; ` +
+          `safety cap skipped for aged PR anchor).${suffix}`,
+        lastBotAt: lastBotAt?.toISOString() || null,
+        botsSeen: seenLogins,
+        missing: [],
+      };
+    }
     return {
       status: 'timeout',
       message:
