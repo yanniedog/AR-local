@@ -17,9 +17,9 @@ Local clone (typical): `~/code/cursor-global-workflow` or `%USERPROFILE%\code\cu
 | Orchestrator | `.cursor/skills/workflow-orchestrator/` | `skills/workflow-orchestrator/` |
 | Browser QA | `.cursor/skills/deep-browser-explore/` | `skills/deep-browser-explore/` |
 | Auditor | `.cursor/skills/agent-auditor/` | `skills/agent-auditor/` |
-| Ship bar (AR-local) | `wait_for_bots.mjs`, `ship_closeout_strict.py`, `scripts/chief-scan.mjs`, `scripts/pr-bot-feedback-check.mjs`, `scripts/agent-auditor-scan.mjs`, `scripts/lib/bot-wait-config.mjs`, `scripts/lib/bot-wait-presence.mjs`, `scripts/lib/agent-auditor-lib.mjs` | `scripts/` (Node equivalents; see global `package.json`) |
+| Ship bar (AR-local) | `wait_for_bots.mjs`, `ship_closeout_strict.py`, `scripts/close-loop-check.mjs`, `scripts/chief-scan.mjs`, `scripts/pr-bot-feedback-check.mjs`, `scripts/agent-auditor-scan.mjs`, `scripts/lib/bot-wait-config.mjs`, `scripts/lib/bot-wait-presence.mjs`, `scripts/lib/agent-auditor-lib.mjs` | `scripts/` (Node equivalents; see global `package.json`) |
 | Hooks | `.cursor/hooks/auditor-watch.mjs`, `.cursor/hooks/orchestrator-remind.mjs` | `hooks/` |
-| Shared rules | `.cursor/rules/chief-agent-always.mdc`, `.cursor/rules/workflow-orchestrator-always.mdc`, `.cursor/rules/agent-auditor-always.mdc`, `.cursor/rules/git-pr-workflow-default.mdc`, `.cursor/rules/no-early-stop-after-pr.mdc`, `.cursor/rules/pr-review-bot-replies.mdc`, `.cursor/rules/respond-to-each-review-comment.mdc`, `.cursor/rules/multiagent-modularity.mdc`, `.cursor/rules/workflow-rules-never-overridden.mdc` | `rules/` |
+| Shared rules | `.cursor/rules/chief-agent-always.mdc`, `.cursor/rules/workflow-orchestrator-always.mdc`, `.cursor/rules/agent-auditor-always.mdc`, `.cursor/rules/close-loop-never-defer.mdc`, `.cursor/rules/git-pr-workflow-default.mdc`, `.cursor/rules/no-early-stop-after-pr.mdc`, `.cursor/rules/pr-review-bot-replies.mdc`, `.cursor/rules/respond-to-each-review-comment.mdc`, `.cursor/rules/multiagent-modularity.mdc`, `.cursor/rules/workflow-rules-never-overridden.mdc` | `rules/` |
 
 Also mirror edits under `~/.cursor/skills/` or `~/.cursor/workflow-scripts/` when those are the canonical copies you changed.
 

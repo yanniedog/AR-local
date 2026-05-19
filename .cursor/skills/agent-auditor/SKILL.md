@@ -43,6 +43,8 @@ Exit **0** pass, **1** warn, **2** fail. Artifacts: `.git/auditor/` (gitignored)
 
 | Check | Signal |
 |-------|--------|
+| **Open loops** | "deferred", "handoff", "may need follow-up", "orchestrator not delegated" without worker UUID |
+| Post-merge gap | `close-loop:check --post-merge-gap` exit **1** on `main` |
 | Buck-passing | "you should run", "handing off the PR", "user can run" |
 | Early stop | "shipped", "merge-ready", "CI green so we're good" with open PRs |
 | Thread closure | `ship:closeout:strict` exit 2 |
@@ -55,7 +57,7 @@ Exit **0** pass, **1** warn, **2** fail. Artifacts: `.git/auditor/` (gitignored)
 
 ## Scoring rubric
 
-Per dimension: **pass** / **warn** / **fail** — accountability, ship_bar, execution, dedupe, git_hygiene, verification, concurrency, chief_coordination.
+Per dimension: **pass** / **warn** / **fail** — accountability, **open_loops**, ship_bar, execution, dedupe, git_hygiene, verification, concurrency, chief_coordination.
 
 ## Recommendation format
 
