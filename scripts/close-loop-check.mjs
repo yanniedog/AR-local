@@ -8,7 +8,7 @@
  *
  * Exit 0 pass, 1 gap (prints remediation commands).
  */
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import {
   fetchPullRequestThreads,
   hasGh,
@@ -17,7 +17,12 @@ import {
 } from './lib/gh-pr-review-threads.mjs';
 
 const PATH_RE =
-  /\b(?:^|[\s"'`])((?:(?:[\w.-]+[/\\])+[\w./\\-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml)|[\w.-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml)))\b/g;
+  /(?:^|[\s"'`])([/\\]?(?:[\w.-]+[/\\])*[\w.-]+\.(?:py|mjs|js|mdc|md|json|yml|yaml))\b/g;
+
+function isPlausibleRepoPath(p) {
+  if (/^Node\.js$/i.test(p)) return false;
+  return !p.includes('node_modules');
+}
 
 function sh(cmd, { allowFail = false } = {}) {
   const r = spawnSync(cmd, { shell: true, encoding: 'utf8' });
@@ -32,16 +37,6 @@ function ghJson(args) {
   const r = spawnSync('gh', args, { encoding: 'utf8' });
   if (r.status !== 0) throw new Error((r.stderr || 'gh failed').trim());
   return JSON.parse(r.stdout || '{}');
-}
-
-function isPlausibleRepoPath(p) {
-  if (/^Node\.js$/i.test(p)) return false;
-  if (/^scripts\/foo\./i.test(p)) return false;
-  if (/^[\w.-]+\.(?:py|mjs|js|md|json)$/i.test(p) && !p.includes('/') && !p.startsWith('.')) {
-    return false;
-  }
-  if (!p.includes('/') && !p.startsWith('.')) return false;
-  return true;
 }
 
 function extractFilePaths(text) {
@@ -142,8 +137,6 @@ function checkPostMergeGaps(limit = 20) {
     '--json',
     'number,title,mergedAt,headRefOid,mergeCommit,headRefName',
   ]);
-
-  sh('git fetch origin main');
 
   const allGaps = [];
   let owner;
