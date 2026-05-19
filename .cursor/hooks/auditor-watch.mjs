@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Post-stop hook: quick agent auditor scan, then chief/orchestrator chain.
- * Chain: auditor → chief → orchestrator (via chief delegation).
+ * Optional post-stop hook: agent auditor scan (critical findings only).
+ * Disabled unless AR_LOCAL_COORDINATION_HOOKS=1 and registered in .cursor/hooks.json.
  */
 import { execFileSync, execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -114,20 +114,9 @@ function quickAuditorScan() {
 }
 
 function main() {
-  let dirty = false;
-  let openPrCount = 0;
-  try {
-    dirty = Boolean(run('git status --porcelain', 2000));
-  } catch {
-    /* */
-  }
-  try {
-    const slug = githubRepoSlug();
-    const repoFlag = slug ? ` --repo ${slug}` : '';
-    const parsed = JSON.parse(run(`gh pr list --state open --json number${repoFlag}`, 4000) || '[]');
-    openPrCount = Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    /* */
+  if (process.env.AR_LOCAL_COORDINATION_HOOKS !== '1') {
+    console.log('{}');
+    return;
   }
 
   const audit = quickAuditorScan();
@@ -146,17 +135,6 @@ function main() {
   } else if (audit.exitCode === 1 && audit.findings.length) {
     const top = audit.findings.slice(0, 2).map((f) => f.message).join('; ');
     parts.push(`Agent auditor: warnings (${top}). Consider "run agent auditor".`);
-  }
-
-  if (dirty || openPrCount > 0) {
-    const signals = [];
-    if (dirty) signals.push('uncommitted changes');
-    if (openPrCount > 0) signals.push(`${openPrCount} open PR(s)`);
-    parts.push(
-      `Chief agent: ${signals.join(' and ')} detected. ` +
-        'Run one coordination cycle per .cursor/skills/chief-agent/SKILL.md. ' +
-        'Chief accepts auditor recommendations this cycle; delegates ship bar to workflow-orchestrator.',
-    );
   }
 
   if (!parts.length) {
