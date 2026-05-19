@@ -5,43 +5,61 @@ alwaysApply: true
 
 # Chief agent (coordination layer)
 
-AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, PR assignment, dedupe). Orchestrator owns **ship bar** (git/PR/CI/bot wait/merge/Pi). Chief **delegates** to orchestrator; orchestrator **does not** spawn chief.
+AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, branch assignment, worktree dedupe, commit attribution). Orchestrator owns **ship bar** (git/PR/CI/bot wait/merge/Pi) **only when chief delegates**. Orchestrator **does not** spawn chief.
 
 ## Session start
 
-After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, recent subagent transcripts, or multiple `agent/*` branches could conflict — **spawn or resume chief** unless the user waived chief for this session:
+After orienting to the repo, if **any** of: dirty `git status`, open `gh pr list`, recent subagent transcripts, multiple `agent/*` branches, or multiple worktrees — **spawn or resume chief** unless the user waived chief for this session:
 
 ```
 Task tool: subagent_type=generalPurpose, run_in_background=true
-Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run one SCAN→LOCK CHECK→PLAN→DELEGATE cycle and report locks + queue.
+Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run pre-delegate checklist (npm run chief:scan), one SCAN→LOCK CHECK→PLAN→DELEGATE cycle, report locks + queue.
 ```
 
-Chief then delegates git/PR/Pi cycles to workflow-orchestrator when the queue requires ship bar work.
+Chief runs `npm run chief:scan` before delegating. Exit **1** → pause spawns; assign one remediation owner.
+
+## Pre-delegate checklist (chief must run)
+
+1. `npm run chief:scan`
+2. `git status --porcelain`
+3. `gh pr list --state open`
+4. Recent subagent transcript IDs (locks)
+5. `git worktree list`
+6. `git stash list`
+
+## Branch and worktree locks (hard)
+
+- **One writer per `agent/<slug>` branch** — chief assigns branch lock before spawn; forbid second writer.
+- **One active worktree per feature PR** — resolve `AR-local-pr2`-style contention before delegating.
+- **Commit attribution** — verify `git log -1` and current branch match intended PR before push.
+- **No parallel orchestrator cycles** — resume/interrupt duplicate within **5 minutes**; one orchestrator at a time.
 
 ## After substantive subagent work
 
 When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, **PR babysit**, or **orchestrator** cycle:
 
 1. Spawn or resume **chief** (not orchestrator directly) unless chief is already in flight or waived.
-2. Chief scans transcripts, updates locks, dedupes redundant orchestrator spawns.
-3. Chief delegates to orchestrator or path owners per routing table in the chief skill.
+2. Chief re-runs scan, updates branch lock registry, dedupes orchestrator spawns.
+3. Chief delegates **one** orchestrator cycle or path owner per non-overlapping queue item.
 
-## Conflict prevention (hard)
+## Escalation
 
-- **No two subagents** edit the same path prefix, PR number, or `agent/<slug>` branch without chief lock transfer.
-- **One pr-fix worker per open PR.**
-- **One orchestrator cycle** at a time — chief resumes existing cycle instead of spawning duplicate.
+On clash (path overlap, worktree duplicate, mis-commit branch, `chief:scan` exit 1): **pause spawns**, assign **single** remediation owner, re-scan before resuming. Do not spawn five parallel pr-fix workers.
+
+## Ship-bar gate
+
+Chief **never** marks "done" until orchestrator reports thread closure + merge **or** explicit user waiver. Do not end while `ship:closeout:strict` exits **2** for an open PR.
 
 ## Manual invoke
 
-User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md` and run a full coordination cycle.
+User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md` and run a full coordination cycle including `npm run chief:scan`.
 
 ## Hooks
 
-`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` (chief-first, then orchestrator). Treat as signal to run **chief**, not as a substitute for lock checks or `WORKFLOW.md`.
+`subagentStop` / `stop` may inject a follow-up via `.cursor/hooks/orchestrator-remind.mjs` (chief-first). Treat as signal to run **chief**, not as a substitute for lock checks or `WORKFLOW.md`. Dedupe chief/orchestrator hook fires within 5 minutes.
 
 ## Orchestrator relationship
 
-- Chief → orchestrator for ship bar, split PRs, Pi deploy.
+- Chief → orchestrator for ship bar, split PRs, Pi deploy (one cycle at a time).
 - Orchestrator → path owners (ingest, dashboard, pr-fix) per its routing table; reports completion to chief via parent re-scan.
-- Do **not** end with "done" while chief/orchestrator delegation left open PRs unsettled (`ship:closeout:strict` exit 2).
+- Parent agents spawn **chief first**; do not spawn orchestrator directly unless chief waived or chief delegates this turn.
