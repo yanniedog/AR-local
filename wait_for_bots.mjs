@@ -199,7 +199,13 @@ function fetchChecks(prNumber) {
       for (const c of checks) {
         if (checkNameMatchesIgnore(c.name, ignore)) continue;
         if (c.bucket === 'pending') pending = true;
-        if (c.bucket === 'fail' || c.state === 'FAILURE' || c.state === 'ERROR') {
+        if (
+          c.bucket === 'fail' ||
+          c.bucket === 'cancel' ||
+          c.state === 'FAILURE' ||
+          c.state === 'ERROR' ||
+          c.state === 'CANCELLED'
+        ) {
           failed = true;
           failedNames.push(c.name);
         }
