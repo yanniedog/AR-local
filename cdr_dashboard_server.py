@@ -24,6 +24,11 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
 from ar_local_sectors import energy_dormant
+from cdr_ribbon_normalize import (
+    extract_fixed_rate_term_years,
+    normalize_rate_structure_group,
+    normalize_td_rate_structure_group,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DASHBOARD_ROOT = BASE_DIR / "dashboard"
@@ -171,6 +176,25 @@ def bank_rate_select_list(available: set[str], columns: tuple[str, ...]) -> str:
 def compact_bank_row(row: dict[str, object]) -> dict[str, object]:
     """Drop absent/empty fields before JSON encoding section chunks."""
     return {key: value for key, value in row.items() if value not in (None, "")}
+
+
+def canonicalize_history_row(item: dict[str, object]) -> None:
+    # Legacy run DBs stored verbose CDR text in ribbon_rate_structure and had no
+    # ribbon_fixed_term column; today's ingest writes canonical 'variable'/'fixed'
+    # plus a separate term. Realign legacy rows so historyIndexKey matches across
+    # the ribbon's full retention window.
+    raw_structure = str(item.get("ribbon_rate_structure") or "")
+    dataset = str(item.get("dataset") or "")
+    if dataset == "Mortgage":
+        canonical = normalize_rate_structure_group(raw_structure)
+        if canonical == "fixed" and not str(item.get("ribbon_fixed_term") or ""):
+            years = extract_fixed_rate_term_years(raw_structure)
+            if years:
+                item["ribbon_fixed_term"] = years
+        item["ribbon_rate_structure"] = canonical
+    else:
+        deposit_kind = str(item.get("ribbon_deposit_kind") or "")
+        item["ribbon_rate_structure"] = normalize_td_rate_structure_group(raw_structure, deposit_kind)
 
 
 def fill_history_gaps(
@@ -627,6 +651,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
+                canonicalize_history_row(item)
                 out.append(compact_bank_row(item))
             return out
 
