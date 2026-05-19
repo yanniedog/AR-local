@@ -2,7 +2,7 @@
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
-  const { historyIndexKey, pct, rateValue } = window.LocalCdrUtils;
+  const { pct, rateValue } = window.LocalCdrUtils;
 
   function clear(element) {
     while (element.firstChild) element.removeChild(element.firstChild);
@@ -75,45 +75,6 @@
 
   function swatch(row) {
     return PALETTE[hashText(row && row.provider) % PALETTE.length];
-  }
-
-  function historyRowsFor(rows, state) {
-    if (!state || !state.bankHistoryIndex) return [];
-    const seenKeys = {};
-    const out = [];
-    rows.forEach((row) => {
-      const key = historyIndexKey(row);
-      if (!key || key === '||' || seenKeys[key]) return;
-      seenKeys[key] = true;
-      (state.bankHistoryIndex[key] || []).forEach((historyRow) => out.push(historyRow));
-    });
-    return out;
-  }
-
-  function bestHistoryValue(rows, descending) {
-    const best = bestRate(rows, descending);
-    return Number.isFinite(best) ? best : null;
-  }
-
-  function historyText(rows, state) {
-    const historyRows = historyRowsFor(rows, state);
-    const byDate = {};
-    historyRows.forEach((row) => {
-      const date = String(row.run_date || '');
-      if (!date) return;
-      if (!byDate[date]) byDate[date] = [];
-      byDate[date].push(row);
-    });
-    const dates = Object.keys(byDate).sort();
-    if (dates.length < 2) return '';
-    const latestDate = dates[dates.length - 1];
-    const previousDate = dates[dates.length - 2];
-    const latest = bestHistoryValue(byDate[latestDate], state.descending);
-    const previous = bestHistoryValue(byDate[previousDate], state.descending);
-    if (latest == null || previous == null) return '';
-    const delta = Math.round((latest - previous) * 10000);
-    const deltaText = delta > 0 ? '+' + delta + 'bp' : delta + 'bp';
-    return `${previousDate} ${pct(previous)} → ${latestDate} ${pct(latest)} (${deltaText})`;
   }
 
   function collectRowsUnder(node) {
@@ -298,8 +259,6 @@
     if (row.product_name && metaBits.length) {
       child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
     }
-    const history = historyText([row], state);
-    if (history) child(textCol, 'span', 'local-hierarchy-history', history);
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
     if (isEnergy && minMax([row]).min == null) {
       if (row.fuel_type) child(rate, 'span', '', row.fuel_type);
@@ -338,8 +297,6 @@
     } else {
       child(rate, 'span', '', num(group.rows.length));
     }
-    const history = historyText(group.rows, state);
-    if (history) child(rate, 'span', 'local-hierarchy-history', history);
   }
 
   function renderTree(container, node, path, depth, activePath, state) {
