@@ -42,8 +42,6 @@ jobs:
           else
             PR="${{ github.event.pull_request.number }}"
           fi
-          # One-shot check after quiet window (avoid --watch GraphQL polling in CI).
-          sleep 95
           set +e
           npm run wait-for-bots -- --pr "$PR"
           code=$?
