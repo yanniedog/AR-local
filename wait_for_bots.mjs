@@ -186,13 +186,20 @@ function fetchChecks(prNumber) {
   try {
     const checks = JSON.parse(stdout);
     const ignore = ignoredCheckNames();
-    const pending =
-      Array.isArray(checks) &&
-      checks.some((c) => {
-        if (checkNameMatchesIgnore(c.name, ignore)) return false;
-        return c.bucket === 'pending';
-      });
-    return { pending };
+    let pending = false;
+    let failed = false;
+    const failedNames = [];
+    if (Array.isArray(checks)) {
+      for (const c of checks) {
+        if (checkNameMatchesIgnore(c.name, ignore)) continue;
+        if (c.bucket === 'pending') pending = true;
+        if (c.bucket === 'fail' || c.state === 'FAILURE' || c.state === 'ERROR') {
+          failed = true;
+          failedNames.push(c.name);
+        }
+      }
+    }
+    return { pending, failed, failedNames };
   } catch (e) {
     return { pending: true, error: `Invalid JSON from gh pr checks: ${e.message}` };
   }
@@ -258,8 +265,15 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   }
 
   const checks = fetchChecks(prNumber);
-  if (checks.error && !checks.pending) {
+  if (checks.error && !checks.pending && !checks.failed) {
     return { status: 'error', message: checks.error };
+  }
+  if (checks.failed) {
+    const names = checks.failedNames?.length ? checks.failedNames.join(', ') : 'required check(s)';
+    return {
+      status: 'error',
+      message: `PR #${prNumber} has failed required check(s): ${names}. Fix CI before bot wait.`,
+    };
   }
 
   const checksReady = !checks.pending;
