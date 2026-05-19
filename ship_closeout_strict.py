@@ -21,6 +21,26 @@ def main() -> int:
         print("ship_closeout_strict: git not available or not a repo", file=sys.stderr)
         return 1
     if not branch or branch == "main":
+        try:
+            loop = subprocess.run(
+                ["node", "scripts/close-loop-check.mjs", "--post-merge-gap"],
+                cwd=_REPO_ROOT,
+            )
+        except FileNotFoundError:
+            print(
+                "ship_closeout_strict: Node not found; run npm run close-loop:check manually.",
+                file=sys.stderr,
+            )
+            return 1
+        if loop.returncode == 1:
+            print(
+                "ship_closeout_strict: post-merge gap detected — run npm run close-loop:check -- --post-merge-gap",
+                file=sys.stderr,
+            )
+            return 1
+        if loop.returncode not in (0, None):
+            print("ship_closeout_strict: close-loop-check failed", file=sys.stderr)
+            return loop.returncode or 1
         return 0
     try:
         out = subprocess.check_output(

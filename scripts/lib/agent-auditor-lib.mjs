@@ -28,6 +28,17 @@ const BUCK_PASS_PHRASES = [
   /\bask the user to run\b/i,
 ];
 
+const OPEN_LOOP_PHRASES = [
+  /\bmay need follow[- ]up\b/i,
+  /\bdeferred\b/i,
+  /\bleft for next cycle\b/i,
+  /\bhandoff\b/i,
+  /\bparent should\b/i,
+  /\borchestrator not delegated\b/i,
+  /\bpaused until remediation\b/i,
+  /\bwithout naming an active\b/i,
+];
+
 const EARLY_DONE_PHRASES = [/\b(shipped|task done|all done)\b/i, /\bpr opened\b/i];
 
 const ORCHESTRATOR_MARKERS = [
@@ -188,7 +199,7 @@ export function extractMentions(text) {
   for (const m of text.matchAll(/\bPR\s*#?(\d+)\b/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(/\bgh pr view\s+(\d+)/gi)) prs.add(Number(m[1]));
   for (const m of text.matchAll(
-    /(?:^|[\s"'`])([/\\]?(?:[\w.-]+[/\\])*[\w.-]+\.(?:py|mjs|js|mdc|md|json))\b/g,
+    /\b(?:^|[\s"'`])((?:(?:[\w.-]+[/\\])+[\w./\\-]+\.(?:py|mjs|js|mdc|md|json)|[\w.-]+\.(?:py|mjs|js|mdc|md|json)))\b/g,
   )) {
     const p = m[1].replace(/\\/g, '/');
     if (!p.includes('node_modules')) paths.add(p);
@@ -420,6 +431,41 @@ export function runAudit(opts) {
     }
   }
 
+  const chiefReport = transcripts.find((t) => t.kind === 'parent');
+  if (chiefReport) {
+    const chiefText = parsedByTranscript.get(chiefReport.id)?.text ?? '';
+    for (const re of OPEN_LOOP_PHRASES) {
+      if (re.test(chiefText)) {
+        const hasWorkerId = /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/i.test(
+          chiefText,
+        );
+        if (!hasWorkerId) {
+          add(
+            'open_loops',
+            'fail',
+            `Handoff/defer language in chief report without active worker ID (${chiefReport.id.slice(0, 8)}…)`,
+            'chief-agent / close-loop-never-defer',
+            chiefReport.id,
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  if (!hook && git.branch === 'main') {
+    const loopCheck = sh('npm run close-loop:check -- --post-merge-gap', root, hook ? 12000 : 20000);
+    if (typeof loopCheck === 'object' && loopCheck.error && loopCheck.status === 1) {
+      add(
+        'open_loops',
+        'fail',
+        'Post-merge gap detected (close-loop:check exit 1)',
+        'close-loop-never-defer / workflow-orchestrator',
+        null,
+      );
+    }
+  }
+
   const scores = scoreDimensions(findings);
   const maxSeverity = findings.reduce(
     (m, f) => (severityRank(f.severity) > severityRank(m) ? f.severity : m),
@@ -450,6 +496,7 @@ function severityRank(s) {
 function scoreDimensions(findings) {
   const dims = [
     'accountability',
+    'open_loops',
     'ship_bar',
     'execution',
     'dedupe',

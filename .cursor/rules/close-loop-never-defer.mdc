@@ -1,0 +1,32 @@
+---
+description: Close every loop — no deferred handoffs without active workers
+alwaysApply: true
+---
+
+# Close loop — never defer
+
+Under **no circumstances** is it OK to leave an identified gap unowned.
+
+## Forbidden outcomes (without active worker transcript ID)
+
+- "may need follow-up", "deferred", "left for next cycle", "handoff", "parent should"
+- "orchestrator not delegated", "blocked", "paused until remediation"
+- Merging a PR before bot **implement** commits are on the branch that merges
+- Reporting **merged** without verifying fix SHAs are on `origin/main`
+- `chief:scan` exit **0** while known post-merge code gaps remain
+
+## Required
+
+- Every identified gap: **implemented + on main** OR **open PR with ship bar in flight** in the **same chief cycle**
+- After squash merge: `npm run close-loop:check -- --pr <n>` then `npm run close-loop:check -- --post-merge-gap`
+- Chief cycle complete only when: no open PRs **or** each has active orchestrator; no post-merge gaps; `chief:scan` **0**; `agent:auditor` no **fail** on `open_loops`
+
+## Commands
+
+```sh
+npm run close-loop:check -- --pr <n>          # after merge
+npm run close-loop:check -- --post-merge-gap  # scan recent merges
+npm run ship:closeout:strict                  # includes close-loop on main
+```
+
+Full policy: `~/.cursor/skills/chief-agent/SKILL.md` (Non-negotiable: close every loop).
