@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,7 +108,11 @@ export function fetchRequiredCi(prNumber) {
     return { ok: true, pending: true, failed: false, failedNames: [], checks: [] };
   }
   if (r.status !== 0) {
-    return { ok: false, error: (r.stderr || '').trim() || `gh pr checks exit ${r.status}` };
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    if (/no checks reported/i.test(msg) || /no required checks reported/i.test(msg)) {
+      return { ok: true, pending: false, failed: false, failedNames: [], checks: [] };
+    }
+    return { ok: false, error: msg };
   }
   const checks = JSON.parse(r.stdout || '[]');
   let pending = false;
@@ -130,9 +135,15 @@ export function fetchRequiredCi(prNumber) {
 }
 
 export function fetchNamedChecks(prNumber, names) {
-  const r = spawnSync('gh', ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state'], { encoding: 'utf8' });
+  const r = spawnSync(
+    'gh',
+    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,completedAt'],
+    { encoding: 'utf8' },
+  );
   if (r.status !== 0) {
-    return { found: {}, error: (r.stderr || '').trim() || `gh pr checks exit ${r.status}` };
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    if (/no checks reported/i.test(msg)) return { found: {}, skipped: true };
+    return { found: {}, error: msg };
   }
   const all = JSON.parse(r.stdout || '[]');
   const want = new Set(names.map((n) => n.toLowerCase()));
@@ -179,7 +190,7 @@ export function gateCiRequired(prNumber) {
 }
 
 export function gateGithubBotChecks(prNumber) {
-  const { found, error } = fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES);
+  const { found, error, skipped } = fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES);
   if (error) {
     return {
       id: 'github-bot-gates',
@@ -188,8 +199,18 @@ export function gateGithubBotChecks(prNumber) {
       action: 'Ensure GitHub Actions workflows pr-bot-presence-gate and pr-bot-feedback-check ran',
     };
   }
+  if (skipped || !BOT_GATE_CHECK_NAMES.some((name) => found[name])) {
+    return {
+      id: 'github-bot-gates',
+      pass: true,
+      detail: 'No GitHub bot gate checks reported; relying on local wait/thread gates',
+      skipped: true,
+    };
+  }
   const parts = [];
   let pass = true;
+  let botPresencePass = false;
+  let botPresenceCompletedAt = null;
   for (const name of BOT_GATE_CHECK_NAMES) {
     const c = found[name];
     if (!c) {
@@ -198,7 +219,13 @@ export function gateGithubBotChecks(prNumber) {
       continue;
     }
     const ok = checkBucketPass(c);
-    if (ok === true) parts.push(`${name}: pass`);
+    if (ok === true) {
+      parts.push(`${name}: pass`);
+      if (name === 'bot-presence-gate') {
+        botPresencePass = true;
+        botPresenceCompletedAt = c.completedAt || null;
+      }
+    }
     else if (ok === false) {
       parts.push(`${name}: ${c.bucket || c.state}`);
       pass = false;
@@ -211,18 +238,22 @@ export function gateGithubBotChecks(prNumber) {
     id: 'github-bot-gates',
     pass,
     detail: parts.join('; '),
+    botPresencePass,
+    botPresenceCompletedAt,
     action: pass
       ? undefined
       : 'Wait for bot-presence-gate and bot-feedback-gate on GitHub (branch protection)',
   };
 }
 
-export function runNodeScript(relPath, extraArgs = []) {
+export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxBuffer, timeout } = {}) {
   const script = path.join(REPO_ROOT, relPath);
   const r = spawnSync(process.execPath, [script, ...extraArgs], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    env: process.env,
+    env: { ...process.env, ...(envOverrides || {}) },
+    maxBuffer: maxBuffer || 1024 * 1024,
+    timeout: timeout || 120_000,
   });
   return {
     exitCode: r.status ?? 1,
@@ -231,7 +262,20 @@ export function runNodeScript(relPath, extraArgs = []) {
   };
 }
 
-export function gateWaitForBots(prNumber) {
+export function gateWaitForBots(prNumber, githubBotGate) {
+  if (githubBotGate?.botPresencePass) {
+    const state = readBotWaitStateFile(prNumber, REPO_ROOT);
+    const anchorMs = new Date(state?.anchor || '').getTime();
+    const gateMs = new Date(githubBotGate.botPresenceCompletedAt || '').getTime();
+    if (!Number.isFinite(anchorMs) || (Number.isFinite(gateMs) && anchorMs <= gateMs)) {
+      return {
+        id: 'wait-for-bots',
+        pass: true,
+        detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
+        exitCode: 0,
+      };
+    }
+  }
   const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
   if (exitCode === 0) {
     return { id: 'wait-for-bots', pass: true, detail: 'Bot wait satisfied (exit 0)', exitCode };
@@ -254,6 +298,7 @@ export function gateBotFeedback(prNumber) {
     '--pr',
     String(prNumber),
     '--quiet',
+    '--skip-bot-presence',
   ]);
   if (exitCode === 0) {
     return { id: 'pr-bot-feedback-check', pass: true, detail: 'Thread closure gate passed', exitCode };
@@ -279,7 +324,9 @@ export function hasFeedbackPlanComment(prNumber) {
     throw new Error((r.stderr || r.stdout || 'gh api issue comments failed').trim());
   }
   const comments = JSON.parse(r.stdout || '[]');
-  const list = Array.isArray(comments) ? comments : [];
+  const list = (Array.isArray(comments) ? comments : []).flatMap((page) =>
+    Array.isArray(page) ? page : [],
+  );
   return list.some((c) => FEEDBACK_PLAN_RE.test(c.body || ''));
 }
 
@@ -340,7 +387,7 @@ export function evaluateGates(prNumber, options = {}) {
 
   const ci = gateCiRequired(prNumber);
   const ghBot = gateGithubBotChecks(prNumber);
-  const wait = gateWaitForBots(prNumber);
+  const wait = gateWaitForBots(prNumber, ghBot);
   const feedback = gateBotFeedback(prNumber);
   const plan = gateFeedbackPlan(prNumber, {
     skip: options.skipFeedbackPlan,
