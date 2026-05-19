@@ -443,6 +443,10 @@ class LocalDashboardServer(ThreadingHTTPServer):
     def server_bind(self) -> None:
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            # systemd manages mutual exclusion on the Pi; SO_REUSEADDR lets
+            # a restart bind through the previous instance's TIME_WAIT.
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         super().server_bind()
 
 
