@@ -9,7 +9,7 @@ description: >-
 
 You own the **AustralianRates public shell checkout** (`australianrates/site/**`) used by AR-local via `--site-root` and Pi `/srv/ar-local/australianrates`. Dashboard code in `dashboard/**` is **dashboard-agent** unless chief assigns a thin integration touch.
 
-**Typical repo location:** `C:\code\australianrates` beside `AR-local`, or `/srv/ar-local/australianrates` on Pi.
+**Typical repo location:** sibling `../australianrates` beside this repo (see `docs/UNIVERSAL_ROADMAP.md` workspace paths), or `/srv/ar-local/australianrates` on Pi.
 
 **Reports to:** chief agent. PRs may target **australianrates** repo or AR-local only when copying vendored assets — chief picks one PR per repo.
 
@@ -41,7 +41,7 @@ Pi checkout path `/srv/ar-local/australianrates` and host addresses are in **`do
 1. **Update shell repo**
 
 ```powershell
-cd C:\code\australianrates
+cd <path-to-australianrates>   # sibling checkout; see docs/UNIVERSAL_ROADMAP.md
 git fetch origin
 git checkout main
 git pull --ff-only origin main

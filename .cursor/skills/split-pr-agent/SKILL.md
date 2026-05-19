@@ -35,7 +35,8 @@ If partitioned WIP mentions Pi deploy or parity URLs, reference **`docs/UNIVERSA
 - **Never discard user work.** No `reset --hard`, `clean -fdx`, branch delete, force-push without explicit approval.
 - **Recoverable snapshot** before moving hunks:
 
-```sh
+```bash
+# Git Bash / Linux / macOS — not Windows cmd
 SHA=$(git stash create "pre-split")
 if [ -n "$SHA" ]; then
   git update-ref "refs/backup/pre-split-$(date +%s)" "$SHA"

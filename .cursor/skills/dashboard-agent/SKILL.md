@@ -42,7 +42,7 @@ Pi Tailscale/LAN IPs and dashboard URLs (`:8808`, SSH tunnel `18808`) are in **`
 1. **Real exports** (required):
 
 ```powershell
-python cdr_dashboard_server.py --exports <path-to-latest-_exports> --runs runs --host 127.0.0.1 --port 8808 --site-root C:\code\australianrates\site --preload
+python cdr_dashboard_server.py --exports <path-to-latest-_exports> --runs runs --host 127.0.0.1 --port 8808 --site-root <path-to-australianrates>/site --preload
 ```
 
 Prefer `runs/<date>/_exports/` from real ingest. Use `_tmp_exports/dashboard-cache` only if it is **generated**, not hand-written mock data.

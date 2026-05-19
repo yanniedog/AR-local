@@ -47,7 +47,7 @@ git fetch origin && git checkout main && git pull origin main
 Restart dashboard so running code matches `main`:
 
 ```powershell
-python cdr_dashboard_server.py --exports <path-to-latest-_exports> --runs runs --host 127.0.0.1 --port 8808 --site-root C:\code\australianrates\site --preload
+python cdr_dashboard_server.py --exports <path-to-latest-_exports> --runs runs --host 127.0.0.1 --port 8808 --site-root <path-to-australianrates>/site --preload
 ```
 
 Or **`START_HERE.cmd`** / **`open_dashboard.cmd`** if that is the user’s normal launcher.

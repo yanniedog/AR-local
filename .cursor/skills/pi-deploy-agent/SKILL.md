@@ -113,7 +113,8 @@ ssh ar-local-pi5 "cd /srv/ar-local/AR-local && npm run verify:local -- --base-ur
 
 On the Pi, daily automation may use repo script instead of manual pull:
 
-```sh
+```bash
+# On the Pi shell (via ssh ar-local-pi5)
 cd /srv/ar-local/AR-local
 python3 pi_daily_sync.py   # pulls main + runs cdr_daily (see --help)
 ```
