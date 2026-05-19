@@ -12,3 +12,6 @@ runs/*.*
 
 node_modules/
 
+# Agent auditor session artifacts (local only)
+.git/auditor/
+
