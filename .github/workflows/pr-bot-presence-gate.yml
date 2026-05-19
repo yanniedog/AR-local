@@ -1,10 +1,10 @@
 name: pr-bot-presence-gate
 
+# Single-shot bot presence check on PR lifecycle only. Bot wait polling (--watch) is local
+# (npm run wait-for-bots) — do not poll GraphQL from Actions (installation quota).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -24,14 +24,13 @@ jobs:
   bot-presence-gate:
     if: github.event.pull_request != null || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Required bot wait gate
-        id: bot_wait
+      - name: Required bot wait gate (single shot)
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -43,13 +42,12 @@ jobs:
           else
             PR="${{ github.event.pull_request.number }}"
           fi
-          sleep 95
           set +e
           npm run wait-for-bots -- --pr "$PR"
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
-            echo "::warning::Bot wait not ready yet (exit 2) — re-run after bots settle or quota resets"
+            echo "::warning::Bot wait not ready yet (exit 2) — run npm run wait-for-bots locally until exit 0, then re-run this workflow"
             exit 1
           fi
           exit "$code"
