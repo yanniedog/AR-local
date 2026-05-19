@@ -2,6 +2,7 @@
  * Fetch and classify PR review threads via GitHub GraphQL (gh api).
  */
 import { spawnSync } from 'node:child_process';
+import { isBotNoise } from './bot-noise.mjs';
 
 const BOT_LOGIN_RE =
   /(?:gemini|codex|sourcery|coderabbit|copilot|greptile|chatgpt|github-actions\[bot\])/i;
@@ -90,9 +91,11 @@ export function isLowSignalBotThread(comments) {
   if (!comments?.length) return true;
   const first = comments[0];
   const body = (first.body || '').trim();
-  if (body.length < 40) return true;
-  if (/^Useful\?\s*React with/m.test(body) && body.length < 200) return true;
-  return false;
+  // Centralised in bot-noise.mjs so wait_for_bots and the feedback gate apply
+  // the same definition. Covers quota / API-limit notices and trivial /
+  // inconsequential replies (ack-only, emoji-only, "Useful? React with..."
+  // tail-only summaries).
+  return isBotNoise(body);
 }
 
 export function fetchPullRequestThreads(owner, name, prNumber) {
@@ -182,6 +185,10 @@ export function classifyThreads(threads, opts = {}) {
     if (!t.isResolved) {
       // mergedAudit: ignore unresolved non-bot threads only; unresolved bot threads still fail.
       if (mergedAudit && !starterIsBot) continue;
+      // Low-signal bot threads (quota notices, "Useful? React with..." tails,
+      // emoji-only acks) carry no actionable feedback and must not block merge
+      // even when nobody resolved them on GitHub.
+      if (starterIsBot && isLowSignalBotThread(comments)) continue;
       violations.push({
         threadIndex: i + 1,
         kind: 'unresolved',
