@@ -56,7 +56,11 @@ function ghGraphql(owner, name, prNumber) {
   if (r.status !== 0) {
     throw new Error((r.stderr || r.stdout || 'gh api graphql failed').trim());
   }
-  return JSON.parse(r.stdout || '{}');
+  try {
+    return JSON.parse(r.stdout || '{}');
+  } catch (e) {
+    throw new Error(`Invalid JSON from gh api graphql: ${e.message}`);
+  }
 }
 
 export function collectBotEvents(prPayload, knownBots, anchorIso, fallbackIso) {
@@ -73,6 +77,7 @@ export function collectBotEvents(prPayload, knownBots, anchorIso, fallbackIso) {
       if (c.author?.login && c.createdAt) events.push({ login: c.author.login, at: c.createdAt });
     }
   }
+  events.sort((a, b) => new Date(a.at) - new Date(b.at));
   return events.filter(
     (e) => knownBots.has(e.login.toLowerCase()) && new Date(e.at).getTime() >= anchorMs,
   );

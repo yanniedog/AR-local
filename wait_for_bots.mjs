@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
  * Exit 0 only when CI is settled, every required bot has posted since anchor,
@@ -13,6 +13,7 @@ import {
   allKnownBotLogins,
   formatRequiredKeys,
   missingRequiredKeys,
+  parseRequiredKeys,
   resolveRequiredKeys,
 } from './scripts/lib/bot-wait-config.mjs';
 
@@ -84,13 +85,9 @@ function parseArgs(argv) {
     else if ((a === '--since' || a === '--anchor') && argv[i + 1]) out.since = argv[++i];
     else if (a.startsWith('--since=') || a.startsWith('--anchor=')) out.since = a.split('=').slice(1).join('=');
     else if (a === '--require-bots' && argv[i + 1]) {
-      out.requireBots = argv[++i].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      out.requireBots = parseRequiredKeys(argv[++i]);
     } else if (a.startsWith('--require-bots=')) {
-      out.requireBots = a
-        .slice('--require-bots='.length)
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
+      out.requireBots = parseRequiredKeys(a.slice('--require-bots='.length));
     }
   }
   return out;
@@ -219,7 +216,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys }) {
   );
   const seenLogins = [...new Set(botEventsSinceAnchor.map((e) => e.login))];
   const missing = missingRequiredKeys(requiredKeys, seenLogins);
-  const allRequiredPosted = missing.length === 0;
+  const allRequiredPosted = missing.length === 0 && requiredKeys.length > 0;
   const lastBotAt =
     botEventsSinceAnchor.length > 0
       ? new Date(botEventsSinceAnchor[botEventsSinceAnchor.length - 1].at)
@@ -385,7 +382,18 @@ async function main() {
     writeState(prNumber, state);
   }
 
-  const effectiveRequired = state.requiredKeys || requiredKeys;
+  const cliOverride = args.requireBots !== null;
+  const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
+  const effectiveRequired =
+    cliOverride || envOverride ? requiredKeys : state.requiredKeys || requiredKeys;
+  if (
+    state.requiredKeys &&
+    JSON.stringify(state.requiredKeys) !== JSON.stringify(effectiveRequired)
+  ) {
+    state.requiredKeys = effectiveRequired;
+    state.readyAt = null;
+    writeState(prNumber, state);
+  }
 
   const finish = (result) => {
     const st = readState(prNumber) || state;

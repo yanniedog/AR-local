@@ -30,14 +30,14 @@ export function parseRequiredKeys(raw) {
 }
 
 export function resolveRequiredKeys(argvKeys, envRaw) {
-  if (argvKeys?.length) return argvKeys;
+  if (argvKeys?.length) return [...argvKeys];
   const fromEnv = envRaw ?? process.env.AR_BOT_WAIT_REQUIRED ?? process.env.BOT_WAIT_REQUIRED ?? '';
   return parseRequiredKeys(fromEnv);
 }
 
 export function loginsForKey(key) {
   const k = key.toLowerCase();
-  if (BOT_ALIASES[k]) return BOT_ALIASES[k];
+  if (BOT_ALIASES[k]) return BOT_ALIASES[k].slice();
   if (k.includes('[') || k.includes('-')) return [key];
   return [key];
 }

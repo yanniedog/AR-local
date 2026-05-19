@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
-import { resolveRequiredKeys } from './lib/bot-wait-config.mjs';
+import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
 import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
 import {
   classifyThreads,
@@ -36,13 +36,9 @@ function parseArgs(argv) {
     else if (a === '--quiet') out.quiet = true;
     else if (a === '--skip-bot-presence') out.skipBotPresence = true;
     else if (a === '--require-bots' && argv[i + 1]) {
-      out.requireBots = argv[++i].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      out.requireBots = parseRequiredKeys(argv[++i]);
     } else if (a.startsWith('--require-bots=')) {
-      out.requireBots = a
-        .slice('--require-bots='.length)
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
+      out.requireBots = parseRequiredKeys(a.slice('--require-bots='.length));
     } else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
