@@ -105,6 +105,16 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   color: var(--ar-text);
 }
 
+/* Suppress public-polish section-tinted focus ring on pointer click; keep keyboard ring. */
+body.ar-public .site-header-segment-link:focus:not(:focus-visible) {
+  outline: none;
+}
+
+body.ar-public .site-header-segment-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ar-text-muted) 80%, transparent);
+  outline-offset: 2px;
+}
+
 .ar-local-cdr .site-header-actions .buttonish {
   min-height: 40px;
   padding-inline: 12px;

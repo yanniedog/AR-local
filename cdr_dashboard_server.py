@@ -238,6 +238,16 @@ def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]
         raise ProxyUpstreamError(HTTPStatus.BAD_GATEWAY, payload, "application/json; charset=utf-8") from exc
 
 
+def inject_local_dashboard_css(html: bytes) -> bytes:
+    """Append local dashboard overrides so /economic-data/ gets nav focus fixes."""
+    if b"/assets/app.css" in html:
+        return html
+    link = b'    <link rel="stylesheet" href="/assets/app.css">\n'
+    if b"</head>" in html:
+        return html.replace(b"</head>", link + b"</head>", 1)
+    return html
+
+
 class ProxyUpstreamError(Exception):
     def __init__(self, status: int, body: bytes, content_type: str) -> None:
         super().__init__(status)
@@ -573,7 +583,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 return bank_history_payload(date), "application/json"
             if path in ("/economic-data", "/economic-data/"):
                 target = resolve_site_public_file(site_root, path)
-                return site_cache.read(target), "text/html; charset=utf-8"
+                body = site_cache.read(target)
+                return inject_local_dashboard_css(body), "text/html; charset=utf-8"
             if path.startswith("/site/"):
                 target = (site_root / path.removeprefix("/site/")).resolve()
                 site_resolved = site_root.resolve()
