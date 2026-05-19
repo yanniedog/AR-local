@@ -75,6 +75,13 @@ BANK_SECTION_COLUMNS = (
 )
 BANK_HISTORY_COLUMNS = (
     "run_date",
+    # dataset and rate_family stay in the SELECT so canonicalize_history_row can
+    # still key off dataset for Mortgage rows AND the unscoped /api/banks/history
+    # endpoint (which mixes Mortgage/Savings/TD) keeps its row provenance. The
+    # /api/banks/history/section path drops them post-canonicalise — see
+    # read_bank_history_db below.
+    "dataset",
+    "rate_family",
     "provider",
     "product_id",
     "product_key",
@@ -147,7 +154,7 @@ _GZIP_COMPRESSIBLE_PREFIXES = (
     "application/javascript",
     "image/svg+xml",
 )
-_gzip_cache: "OrderedDict[int, tuple[bytes, bytes]]" = OrderedDict()
+_gzip_cache: "OrderedDict[tuple[int, int, bytes], bytes]" = OrderedDict()
 _gzip_cache_lock = threading.Lock()
 
 
@@ -165,22 +172,37 @@ def _client_accepts_gzip(accept_encoding: str) -> bool:
             continue
         for param in params.split(";"):
             key, _, value = param.strip().partition("=")
-            if key.lower() == "q" and value.strip() in ("0", "0.0", "0.00", "0.000"):
-                return False
+            if key.lower() == "q":
+                try:
+                    if float(value) == 0:
+                        return False
+                except ValueError:
+                    # Malformed q-value — fall back to "accept" (we already know
+                    # the token is "gzip"; a bad q shouldn't disable the encoding).
+                    pass
         return True
     return False
 
 
+# Fingerprint = (id, length, leading bytes). The id half makes the common case
+# cheap (cached payloads keep the same bytes object), and the length + head
+# bytes guard against id reuse after the source body is GC'd. We deliberately
+# do NOT keep a reference to the source body — that's what pinned memory in
+# the earlier draft of this cache.
+def _gzip_cache_key(body: bytes) -> tuple[int, int, bytes]:
+    return (id(body), len(body), body[:32])
+
+
 def gzip_bytes(body: bytes) -> bytes:
-    key = id(body)
+    key = _gzip_cache_key(body)
     with _gzip_cache_lock:
         cached = _gzip_cache.get(key)
-        if cached is not None and cached[0] is body:
+        if cached is not None:
             _gzip_cache.move_to_end(key)
-            return cached[1]
+            return cached
     compressed = gzip.compress(body, compresslevel=GZIP_LEVEL)
     with _gzip_cache_lock:
-        _gzip_cache[key] = (body, compressed)
+        _gzip_cache[key] = compressed
         _gzip_cache.move_to_end(key)
         while len(_gzip_cache) > GZIP_CACHE_MAX:
             _gzip_cache.popitem(last=False)
@@ -719,14 +741,16 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
-                # dataset isn't in the history payload anymore, but the history
-                # ribbon canonicaliser keys off it. Inject the section we know
-                # before canonicalising, then drop it before compacting.
-                if section:
-                    item["dataset"] = section
+                # dataset and rate_family are needed by canonicalize_history_row
+                # (Mortgage branch) and by callers of the unscoped endpoint to
+                # identify which section a row belongs to. When we're scoped to
+                # a single section those two fields are constant — the client
+                # already knows them from the request — so drop them after
+                # canonicalisation to save the wire cost.
                 canonicalize_history_row(item)
                 if section:
                     item.pop("dataset", None)
+                    item.pop("rate_family", None)
                 out.append(compact_bank_row(item))
             return out
 
