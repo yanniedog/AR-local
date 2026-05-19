@@ -104,6 +104,23 @@ Ship-bar guardian (reports to chief agent). Cursor subagents are **not** OS daem
 
 **Policy:** one logical task ? one branch ? one PR (no monolithic ingest + dashboard + docs bundles). Chief prevents path/PR conflicts; orchestrator executes split and ship bar.
 
+## Team agents (specialized workers)
+
+Chief assigns **one writer per path prefix and branch**. Each skill defines path locks, invoke phrases, and handoffs. Parent agents spawn **chief first**; chief delegates below.
+
+| Agent | Skill | Invoke | Relationship to chief |
+|-------|-------|--------|------------------------|
+| Pi deploy | [`.cursor/skills/pi-deploy-agent/SKILL.md`](.cursor/skills/pi-deploy-agent/SKILL.md) | **run pi deploy** | Post-merge runtime on Pi; SSH `/srv/ar-local`, pull `main`, restart units, smoke `100.78.28.10:8808` |
+| Ingest | [`.cursor/skills/ingest-agent/SKILL.md`](.cursor/skills/ingest-agent/SKILL.md) | **run ingest bring-up** | `cdr_daily.py` / `cdr_outputs.py` / `runs/`; real data only |
+| Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
+| PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | One PR: threads, CI, `pr:bot-feedback-check`; orchestrator merges |
+| Parity | [`.cursor/skills/parity-agent/SKILL.md`](.cursor/skills/parity-agent/SKILL.md) | **run parity check** | Prod vs local/Pi layout/CSS; not functional QA |
+| Post-merge verify | [`.cursor/skills/post-merge-verify-agent/SKILL.md`](.cursor/skills/post-merge-verify-agent/SKILL.md) | **run post-merge verify** | `WORKFLOW.md` steps 8-9 after merge |
+| Split PRs | [`.cursor/skills/split-pr-agent/SKILL.md`](.cursor/skills/split-pr-agent/SKILL.md) | **split PRs** | Partition mixed WIP; then orchestrator per slice |
+| Site shell | [`.cursor/skills/site-shell-agent/SKILL.md`](.cursor/skills/site-shell-agent/SKILL.md) | **run site shell agent** | `australianrates/site/**`; separate from dashboard PRs |
+
+**Also see:** chief, orchestrator, deep-browser-explore, agent-auditor (tables above).
+
 ## Debugging
 
 - Use **fresh ingest/export outputs** and **dashboard server stdout/stderr**, not stale cached assumptions.
