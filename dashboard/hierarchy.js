@@ -2,7 +2,7 @@
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
-  const { pct, rateValue } = window.LocalCdrUtils;
+  const { historyIndexKey, pct, rateValue } = window.LocalCdrUtils;
 
   function clear(element) {
     while (element.firstChild) element.removeChild(element.firstChild);
@@ -75,6 +75,66 @@
 
   function swatch(row) {
     return PALETTE[hashText(row && row.provider) % PALETTE.length];
+  }
+
+  function chartDatePair(state) {
+    const dates = Array.isArray(state.chartDates) ? state.chartDates.filter(Boolean) : [];
+    if (dates.length < 2) return { anchor: '', previous: '' };
+    const anchor = String(state.chartHoverDate || dates[dates.length - 1] || '').slice(0, 10);
+    const ix = dates.indexOf(anchor);
+    const anchorIx = ix >= 0 ? ix : dates.length - 1;
+    const previous = dates[anchorIx - 1] || '';
+    return { anchor: dates[anchorIx] || '', previous };
+  }
+
+  function historyRowsFor(rows, state) {
+    if (!state || !state.bankHistoryIndex) return [];
+    const seenKeys = new Set();
+    const out = [];
+    rows.forEach((row) => {
+      const key = historyIndexKey(row);
+      if (!key || key === '||' || seenKeys.has(key)) return;
+      seenKeys.add(key);
+      (state.bankHistoryIndex[key] || []).forEach((historyRow) => out.push(historyRow));
+    });
+    return out;
+  }
+
+  function bestHistoryValue(rows, descending) {
+    const best = bestRate(rows, descending);
+    return Number.isFinite(best) ? best : null;
+  }
+
+  function historyCompare(rows, state) {
+    const pair = chartDatePair(state);
+    if (!pair.anchor || !pair.previous) return null;
+    const historyRows = historyRowsFor(rows, state);
+    const byDate = {};
+    historyRows.forEach((row) => {
+      const date = String(row.run_date || '');
+      if (!date) return;
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push(row);
+    });
+    const latest = bestHistoryValue(byDate[pair.anchor] || [], state.descending);
+    const previous = bestHistoryValue(byDate[pair.previous] || [], state.descending);
+    if (latest == null || previous == null) return null;
+    const deltaBp = Math.round((latest - previous) * 10000);
+    const deltaText = deltaBp > 0 ? '+' + deltaBp + 'bp' : deltaBp + 'bp';
+    const isDeposit = state.section === 'Savings' || state.section === 'TD';
+    const favorable = isDeposit ? deltaBp > 0 : deltaBp < 0;
+    const tone = deltaBp === 0 ? 'flat' : favorable ? 'down' : 'up';
+    return {
+      text: `${pct(previous)} \u2192 ${pct(latest)} (${deltaText})`,
+      tone,
+    };
+  }
+
+  function appendHistoryCompare(parent, rows, state) {
+    const compare = historyCompare(rows, state);
+    if (!compare || !compare.text) return;
+    const el = child(parent, 'span', 'local-hierarchy-history local-hierarchy-history--' + compare.tone);
+    el.textContent = compare.text;
   }
 
   function collectRowsUnder(node) {
@@ -249,16 +309,20 @@
       : [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose].filter(Boolean);
     if (window.LocalCdrBrand && row.provider) {
       const brandSlot = child(label, 'span', 'local-hierarchy-leaf-brand');
-      window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {
+      const badge = window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {
         logoOnly: true,
         rateRow: row,
       });
+      if (state.isProviderDimmed && state.isProviderDimmed(row.provider)) {
+        badge.classList.add('is-logo-dim');
+      }
     }
     const textCol = child(label, 'span', 'local-hierarchy-leaf-text');
     child(textCol, 'span', 'ar-ribbon-tleaf-product', row.product_name || row.plan_name || metaBits.join(' - ') || 'Rate');
     if (row.product_name && metaBits.length) {
       child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
     }
+    appendHistoryCompare(textCol, [row], state);
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
     if (isEnergy && minMax([row]).min == null) {
       if (row.fuel_type) child(rate, 'span', '', row.fuel_type);
@@ -297,6 +361,7 @@
     } else {
       child(rate, 'span', '', num(group.rows.length));
     }
+    appendHistoryCompare(rate, group.rows, state);
   }
 
   function renderTree(container, node, path, depth, activePath, state) {

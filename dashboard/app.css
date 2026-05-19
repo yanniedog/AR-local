@@ -159,8 +159,7 @@ body.ar-public .site-header-segment-link:focus-visible {
   gap: 3px;
 }
 
-.ar-local-cdr .local-section-kicker,
-.ar-local-cdr .local-section-card-meta {
+.ar-local-cdr .local-section-kicker {
   color: var(--ar-text-muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -325,15 +324,46 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 .ar-local-cdr .local-hierarchy-history {
   display: block;
   margin-top: 2px;
-  color: var(--ar-text-muted);
   font-size: 0.66rem;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ar-local-cdr .local-hierarchy-history--up {
+  color: var(--ar-warning, #eab308);
+}
+
+.ar-local-cdr .local-hierarchy-history--down {
+  color: var(--ar-positive, #22c55e);
+}
+
+.ar-local-cdr .local-hierarchy-history--flat {
+  color: var(--ar-text-muted);
 }
 
 .ar-local-cdr .ar-report-infobox-trate .local-hierarchy-history {
   text-align: right;
+}
+
+/* Logo dim — mirrors production .lwc-focus-bank-chip.is-ribbon-dim (public-analysis.css). */
+.ar-local-cdr button.local-provider-logo-btn.is-dim .bank-badge-logo,
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge.is-logo-dim .bank-badge-logo {
+  opacity: 0.22;
+  filter: grayscale(1) saturate(0) brightness(0.62);
+  transform: scale(0.94);
+  transition:
+    opacity var(--ar-motion-fast, 150ms) ease,
+    filter var(--ar-motion-fast, 150ms) ease,
+    transform var(--ar-motion-fast, 150ms) ease;
+}
+
+.ar-local-cdr button.local-provider-logo-btn:not(.is-dim) .bank-badge-logo,
+.ar-local-cdr .local-hierarchy-leaf-brand .bank-badge:not(.is-logo-dim) .bank-badge-logo {
+  opacity: 1;
+  filter: none;
+  transform: none;
 }
 
 /* ── Filters ────────────────────────────────────────────────────────────── */
@@ -687,6 +717,8 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+    grid-area: history;
     flex-basis: 100%;
+    justify-self: end;
   }
 }

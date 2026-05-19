@@ -553,11 +553,18 @@
       series: series,
     }, true);
 
+    function notifyHoverDate(anchorYmd) {
+      if (typeof model.onHoverDateChange === 'function') {
+        model.onHoverDateChange(String(anchorYmd || '').slice(0, 10));
+      }
+    }
+
     function onAxisPointer(ev) {
       const ax0 = ev && ev.axesInfo && ev.axesInfo[0];
       if (!ax0) return;
       const anchor = resolveDateFromAxisValue(ax0.value, dates);
       if (!anchor) return;
+      notifyHoverDate(anchor);
       syncReportHoverBox(hoverBox, anchor, dates, points, t, {
         changes: rbaChanges,
         step: rbaStep,
@@ -565,6 +572,7 @@
       }, hoverHeading);
     }
     function onGlobalOut() {
+      notifyHoverDate('');
       if (hoverBox) hoverBox.style.display = 'none';
     }
 
@@ -574,8 +582,10 @@
     chart._localHoverCleanup = function () {
       chart.off('updateAxisPointer', onAxisPointer);
       zr.off('globalout', onGlobalOut);
+      notifyHoverDate('');
       if (hoverBox) hoverBox.style.display = 'none';
     };
+    notifyHoverDate(dates.length ? dates[dates.length - 1] : '');
     chart.resize();
   }
 
