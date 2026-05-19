@@ -27,8 +27,12 @@ function parseArgs(argv) {
 function ghJson(args, { allow404 = false } = {}) {
   const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
   if (r.error) throw new Error(r.error.message);
-  if (r.status === 404 && allow404) return null;
-  if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').trim() || `gh exit ${r.status}`);
+  if (r.status !== 0) {
+    const msg = (r.stderr || r.stdout || '').trim();
+    // gh uses process exit codes; HTTP 404 appears in stderr (e.g. "HTTP 404: Not Found").
+    if (allow404 && /\b404\b/.test(msg)) return null;
+    throw new Error(msg || `gh exit ${r.status}`);
+  }
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }
 
