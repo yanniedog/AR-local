@@ -2,7 +2,6 @@
  * Shared helpers for npm run pr:gates:check (merge-blocking PR gate audit).
  */
 import { spawnSync } from 'node:child_process';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
@@ -223,7 +222,7 @@ export function runNodeScript(relPath, extraArgs = [], options = {}) {
   const r = spawnSync(process.execPath, [script, ...extraArgs], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    env: options.env || process.env,
+    env: { ...process.env, ...(options.env || {}) },
   });
   return {
     exitCode: r.status ?? 1,
@@ -232,21 +231,16 @@ export function runNodeScript(relPath, extraArgs = [], options = {}) {
   };
 }
 
-export function gateWaitForBots(prNumber) {
-  let createdAt = null;
-  try {
-    createdAt = ghJson(['pr', 'view', String(prNumber), '--json', 'createdAt'])?.createdAt || null;
-  } catch {
-    createdAt = null;
+export function gateWaitForBots(prNumber, githubBotGate) {
+  if (githubBotGate?.pass) {
+    return {
+      id: 'wait-for-bots',
+      pass: true,
+      detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
+      exitCode: 0,
+    };
   }
-  const args = ['--pr', String(prNumber)];
-  if (createdAt) args.push('--since', createdAt);
-  const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', args, {
-    env: {
-      ...process.env,
-      AR_BOT_WAIT_STATE_DIR: path.join(os.tmpdir(), `ar-local-pr-gates-${process.pid}-${prNumber}`),
-    },
-  });
+  const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
   if (exitCode === 0) {
     return { id: 'wait-for-bots', pass: true, detail: 'Bot wait satisfied (exit 0)', exitCode };
   }
@@ -293,7 +287,7 @@ export function hasFeedbackPlanComment(prNumber) {
     throw new Error((r.stderr || r.stdout || 'gh api issue comments failed').trim());
   }
   const comments = JSON.parse(r.stdout || '[]');
-  const list = Array.isArray(comments) ? comments.flat(Infinity) : [];
+  const list = Array.isArray(comments) ? comments.flat(1) : [];
   return list.some((c) => FEEDBACK_PLAN_RE.test(c.body || ''));
 }
 
@@ -354,7 +348,7 @@ export function evaluateGates(prNumber, options = {}) {
 
   const ci = gateCiRequired(prNumber);
   const ghBot = gateGithubBotChecks(prNumber);
-  const wait = gateWaitForBots(prNumber);
+  const wait = gateWaitForBots(prNumber, ghBot);
   const feedback = gateBotFeedback(prNumber);
   const plan = gateFeedbackPlan(prNumber, {
     skip: options.skipFeedbackPlan,
