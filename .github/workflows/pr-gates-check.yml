@@ -5,8 +5,6 @@ name: pr-gates-check
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  issue_comment:
-    types: [created, edited]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -19,11 +17,15 @@ permissions:
   pull-requests: read
   issues: read
 
+concurrency:
+  group: pr-gates-advisory-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   pr-gates-advisory:
-    if: github.event.pull_request != null || (github.event.issue != null && github.event.issue.pull_request) || github.event_name == 'workflow_dispatch'
+    if: github.event.pull_request != null || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -33,11 +35,12 @@ jobs:
       - name: PR gates aggregate (advisory)
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check,pr-gates-advisory
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR="${{ inputs.pr_number }}"
           else
-            PR="${{ github.event.pull_request.number || github.event.issue.number }}"
+            PR="${{ github.event.pull_request.number }}"
           fi
-          npm run pr:gates:check -- --pr "$PR" --watch --timeout-min 35
+          npm run pr:gates:check -- --pr "$PR" --timeout-min 12
