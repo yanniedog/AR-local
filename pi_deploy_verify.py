@@ -440,17 +440,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_deploy(args: argparse.Namespace) -> int:
-    if not on_pi_host():
-        snap = pi_remote_snapshot(dry_run=args.dry_run)
-        if snap is None:
-            print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
-            return EXIT_SSH
-        if _snap_has_dirty_repos(snap, context="— resolve before deploy"):
-            return EXIT_VERIFY_FAIL
-    else:
-        for repo_path in (pi_ar_repo(), pi_site_repo()):
-            if not pi_tree_clean(repo_path, dry_run=args.dry_run):
-                return EXIT_VERIFY_FAIL
+    snap = pi_remote_snapshot(dry_run=args.dry_run)
+    if snap is None:
+        print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
+        return EXIT_SSH
+    if _snap_has_dirty_repos(snap, context="— resolve before deploy"):
+        return EXIT_VERIFY_FAIL
     rc = deploy_pull_all(dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc
