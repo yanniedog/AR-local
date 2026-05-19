@@ -7,6 +7,53 @@
     return String(value == null ? '' : value).trim().toLowerCase();
   }
 
+  /** Mirror cdr_ribbon_normalize.normalize_rate_structure_group for legacy export rows. */
+  function rateStructureGroupFromText(raw) {
+    var ribbon = window.AR && window.AR.ribbon;
+    if (ribbon && typeof ribbon.ribbonRateStructureGroupValue === 'function') {
+      var grouped = ribbon.ribbonRateStructureGroupValue(raw);
+      if (grouped === 'variable' || grouped === 'fixed') return grouped;
+    }
+    var value = lower(raw);
+    if (!value) return '';
+    if (value === 'variable' || /^variable\b/.test(value) || /^bundle[_-]?discount[_-]?variable\b/.test(value)) {
+      return 'variable';
+    }
+    if (value === 'fixed' || /^fixed\b/.test(value)) return 'fixed';
+    if (fixedTermYearsFromText(raw)) return 'fixed';
+    var head = value.split(/\s+/)[0] || '';
+    if (head === 'variable' || head === 'var') return 'variable';
+    if (head === 'fixed') return 'fixed';
+    if (/\bvariable\b/.test(value.slice(0, 96)) && !/^fixed\b/.test(value)) return 'variable';
+    return '';
+  }
+
+  function fixedTermYearsFromText(raw) {
+    var ribbon = window.AR && window.AR.ribbon;
+    if (ribbon && typeof ribbon.ribbonFixedRateTermValue === 'function') {
+      return String(ribbon.ribbonFixedRateTermValue(raw) || '').trim();
+    }
+    var value = lower(raw);
+    if (!value || value === 'variable') return '';
+    var m = value.match(/^fixed_(\d+)yr$/) || value.match(/fixed[^0-9]*(\d+)/) || value.match(/\bp(\d+)y\b/);
+    return m ? String(Number(m[1])) : '';
+  }
+
+  function tdRateStructureGroupFromText(raw, depositKind) {
+    var kind = lower(depositKind);
+    if (kind === 'base' || kind === 'bonus' || kind === 'introductory' || kind === 'bundle' || kind === 'total') {
+      return kind;
+    }
+    var value = lower(raw);
+    if (!value) return 'base';
+    if (value.indexOf('intro') >= 0) return 'introductory';
+    if (value.indexOf('bonus') >= 0) return 'bonus';
+    if (value.indexOf('bundle') >= 0) return 'bundle';
+    if (value.indexOf('total') >= 0) return 'total';
+    var grouped = rateStructureGroupFromText(value);
+    return grouped || kind || 'base';
+  }
+
   function parseJson(str, fallback) {
     if (!str) return fallback;
     try {
@@ -235,11 +282,14 @@
     var fullContext = [contextText, rateRow.product_name].join(' ');
     var lvrTier = normalizeLvrTier(fullContext, lvrBounds.min, lvrBounds.max);
     var featureSet = normalizeFeatureSet(fullContext, null);
+    var rateStructureGroup = rateStructureGroupFromText(rateStructureText);
     return {
       bank_name: String(rateRow.provider || '').trim(),
       security_purpose: securityPurpose,
       repayment_type: repaymentType,
-      rate_structure: rateStructureText,
+      rate_structure: rateStructureGroup,
+      ribbon_fixed_term:
+        rateStructureGroup === 'fixed' ? fixedTermYearsFromText(rateStructureText) : '',
       lvr_tier: lvrTier,
       feature_set: featureSet,
       product_name: trimProduct(rateRow.product_name),
@@ -278,6 +328,7 @@
     var interestPayment = normalizeInterestPayment(paymentText, item.applicationType, item.applicationFrequency, termMonths);
     var depositRateType = String(item.depositRateType || item.rateType || rateRow.rate_type || '').trim();
     var rateStructureText = [depositRateType, item.name || ''].filter(Boolean).join(' ');
+    var depositKind = normalizeDepositRateType(depositRateType);
     var featureSet = normalizeFeatureSet([rateRow.product_name, paymentText].join(' '), null);
 
     return {
@@ -286,7 +337,7 @@
       min_balance: bounds.min,
       max_balance: bounds.max,
       interest_payment: interestPayment,
-      rate_structure: rateStructureText,
+      rate_structure: tdRateStructureGroupFromText(rateStructureText, depositKind),
       feature_set: featureSet,
       product_name: trimProduct(rateRow.product_name),
       product_id: String(rateRow.product_id || ''),
@@ -303,16 +354,25 @@
     return rateRow.ribbon_normalized === true || rateRow.ribbon_normalized === '1';
   }
 
+  function normalizedRateStructureGroup(structureRaw) {
+    var g = String(structureRaw || '').trim().toLowerCase();
+    if (g === 'fixed' || g === 'variable') return g;
+    return rateStructureGroupFromText(structureRaw);
+  }
+
   function ribbonRowFromFlat(rateRow, section) {
     var bMin = parseBalance(rateRow.balance_min);
     var bMax = parseBalance(rateRow.balance_max);
     var bank = String(rateRow.provider || '').trim();
     if (section === 'Mortgage') {
+      var structureRaw = rateRow.ribbon_rate_structure;
+      var structureGroup = normalizedRateStructureGroup(structureRaw);
       return {
         bank_name: bank,
         security_purpose: rateRow.security_purpose,
         repayment_type: rateRow.ribbon_repayment_type,
-        rate_structure: rateRow.ribbon_rate_structure,
+        rate_structure: structureGroup,
+        ribbon_fixed_term: String(rateRow.ribbon_fixed_term || '').trim(),
         lvr_tier: rateRow.lvr_tier,
         feature_set: rateRow.feature_set,
         product_name: trimProduct(rateRow.product_name),
@@ -339,7 +399,10 @@
       min_balance: bMin,
       max_balance: bMax,
       interest_payment: rateRow.interest_payment,
-      rate_structure: rateRow.ribbon_rate_structure,
+      rate_structure: tdRateStructureGroupFromText(
+        rateRow.ribbon_rate_structure,
+        rateRow.ribbon_deposit_kind,
+      ),
       feature_set: rateRow.feature_set,
       product_name: trimProduct(rateRow.product_name),
       product_id: String(rateRow.product_id || ''),
