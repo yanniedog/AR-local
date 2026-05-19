@@ -3,9 +3,14 @@
  * Keys are short names (gemini, codex, sourcery); values are GitHub logins to match.
  */
 export const BOT_ALIASES = {
-  gemini: ['gemini-code-assist[bot]', 'google-github-actions-bot[bot]', 'google-github-actions[bot]'],
-  codex: ['chatgpt-codex-connector[bot]'],
-  sourcery: ['sourcery-ai[bot]'],
+  gemini: [
+    'gemini-code-assist',
+    'gemini-code-assist[bot]',
+    'google-github-actions-bot[bot]',
+    'google-github-actions[bot]',
+  ],
+  codex: ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]'],
+  sourcery: ['sourcery-ai', 'sourcery-ai[bot]'],
 };
 
 export const DEFAULT_REQUIRED_KEYS = ['gemini', 'codex', 'sourcery'];
