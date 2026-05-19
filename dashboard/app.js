@@ -59,15 +59,33 @@
     return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
+  function providerMatchKeys(label) {
+    const raw = String(label || '').trim();
+    const brand = window.LocalCdrBrand;
+    const canonical = brand && brand.lookupProvider ? brand.lookupProvider(raw) : raw;
+    const keys = new Set();
+    [raw, canonical].forEach((value) => {
+      const key = String(value || '').trim().toLowerCase();
+      if (key) keys.add(key);
+    });
+    return keys;
+  }
+
+  function rowMatchesProvider(row, label) {
+    const keys = providerMatchKeys(label);
+    if (!keys.size) return true;
+    return keys.has(String(row.provider || '').trim().toLowerCase());
+  }
+
+  /** Click-locked provider filter (table/hierarchy). Chart hover uses focusProvider on the model only. */
   function applyFocusFilter(rows) {
-    const focus = focusActiveProvider();
+    const focus = String(state.focusProvider || '').trim();
     if (!focus) return rows;
-    const target = focus.toLowerCase();
-    return rows.filter((row) => String(row.provider || '').toLowerCase() === target);
+    return rows.filter((row) => rowMatchesProvider(row, focus));
   }
 
   function rowProductKey(row) {
-    return row.product_key || row.product_id || row.product_name || '';
+    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
   }
 
   function applyHierarchyFilter(rows) {
@@ -76,15 +94,25 @@
     return rows.filter((row) => allowed.has(rowProductKey(row)));
   }
 
+  function historyRowMatchesLiveTable(row) {
+    return row.dataset === state.section && bankRateMatchesSection(row);
+  }
+
   function buildHistoryIndex(rows) {
     const index = {};
     (rows || []).forEach((row) => {
+      if (!historyRowMatchesLiveTable(row)) return;
       const key = historyIndexKey(row);
-      if (!key || key === '||') return;
+      if (!key) return;
       if (!index[key]) index[key] = [];
       index[key].push(row);
     });
     return index;
+  }
+
+  function refreshBankHistoryIndex() {
+    if (!state.bankHistory) return;
+    state.bankHistoryIndex = buildHistoryIndex(state.bankHistory.rates);
   }
 
   function parseYmd(value) {
@@ -123,7 +151,7 @@
       rates,
       run_dates: Array.isArray(data.run_dates) ? data.run_dates : [],
     };
-    state.bankHistoryIndex = buildHistoryIndex(rates);
+    refreshBankHistoryIndex();
   }
 
   function currentRateRange(rows) {
@@ -143,7 +171,7 @@
     const visibleKeys = new Set();
     currentRows.forEach((row) => {
       const key = historyIndexKey(row);
-      if (key && key !== '||') visibleKeys.add(key);
+      if (key) visibleKeys.add(key);
     });
     if (!visibleKeys.size) return [];
     const out = [];
@@ -201,10 +229,15 @@
     if (state.sector === 'energy') {
       const counts = {};
       rows.forEach((row) => { if (row.provider) counts[row.provider] = (counts[row.provider] || 0) + 1; });
-      return Object.entries(counts)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
-        .slice(0, 30);
+      return {
+        kind: 'energy-counts',
+        items: Object.entries(counts)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => state.descending ? b.value - a.value : a.value - b.value)
+          .slice(0, 30),
+        focusProvider: focusActiveProvider(),
+        descending: state.descending,
+      };
     }
     const historyRows = filteredHistoryRows(rows);
     const aggregate = buildAggregateRibbon(historyRows);
@@ -249,10 +282,10 @@
       Mortgage: 'Compare Australian Home Loan Rates - Daily CDR Data | AustralianRates',
       Savings:  'Compare Australian Savings Rates - Daily CDR Data | AustralianRates',
       TD:       'Compare Australian Term Deposit Rates - Daily CDR Data | AustralianRates',
-      Energy:   'Australian Economic Data - Daily CDR Data | AustralianRates',
+      Energy:   'Australian Energy Plans - Daily CDR Data | AustralianRates',
     };
     document.title = pageTitles[state.section] || pageTitles.Mortgage;
-    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Economic data, tracked.' };
+    const titles = { Mortgage: 'Home loan rates, tracked.', Savings: 'Savings rates, tracked.', TD: 'Term deposit yields, tracked.', Energy: 'Energy plans, tracked.' };
     $('page-title').textContent = titles[state.section] || titles.Mortgage;
     const leaderLabels = { Mortgage: 'Lowest rate', Savings: 'Top yield', TD: 'Top yield', Energy: 'Plans' };
     const focusLabels  = { Mortgage: 'Lowest rates', Savings: 'Top yields', TD: 'Top yields', Energy: 'Plan count' };
@@ -314,7 +347,7 @@
       label = state.section === 'TD' ? 'Term Deposit' : state.section;
     } else if (state.sector === 'energy' && state.energy && state.energy.plans) {
       providers = [...new Set(state.energy.plans.map((row) => row.provider).filter(Boolean))].sort();
-      label = 'Energy';
+      label = 'Economic Data';
     } else {
       wrap.hidden = true;
       return;
@@ -382,7 +415,7 @@
 
   function renderTable(rows) {
     const hasTaxonomy = rows.length > 0 && rows.some((r) => r.taxonomy_path);
-    if (state.sector === 'banks' || hasTaxonomy) {
+    if (state.sector === 'banks' || state.sector === 'energy' || hasTaxonomy) {
       $('table').hidden = true;
       document.querySelector('.local-table-panel').hidden = true;
       $('chart-side-panel').hidden = false;
@@ -398,10 +431,8 @@
     }
   }
 
-  function focusedRows(allRows) {
-    let rows = applyFocusFilter(allRows);
-    rows = applyHierarchyFilter(rows);
-    return rows;
+  function chartSliceRows(allRows) {
+    return applyHierarchyFilter(allRows);
   }
 
   function drawChartFromState(finalRows) {
@@ -411,13 +442,15 @@
     updateHero(finalRows, items);
     if (state.sector === 'banks' && items && items.kind === 'bank-history') {
       $('chart-status').textContent = `${num(finalRows.length)} current rows / ${num(items.totalHistoryRows)} historical rows`;
+    } else if (state.sector === 'energy' && items && items.kind === 'energy-counts') {
+      $('chart-status').textContent = `${num(finalRows.length)} plans / ${num(items.items.length)} providers in chart`;
     } else {
       $('chart-status').textContent = `${num(finalRows.length)} local ${state.sector === 'banks' ? 'rate rows' : 'plans'} loaded`;
     }
   }
 
   function redrawChart() {
-    drawChartFromState(focusedRows(normalizeRows(rateRows())));
+    drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
   }
 
   function render() {
@@ -428,8 +461,7 @@
     // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
     // onFocusChange callback (state only — no redraw inside the callback).
     renderTable(focused);
-    const finalRows = applyHierarchyFilter(focused);
-    drawChartFromState(finalRows);
+    drawChartFromState(chartSliceRows(allRows));
     renderSelectedLogos();
   }
 
@@ -449,7 +481,10 @@
     clear($('table'));
     clear($('hierarchy'));
     if (!state[state.sector]) state[state.sector] = await getJson(`/api/${state.sector}?date=${state.manifest.run_date}`);
-    if (state.sector === 'banks') await loadBankHistory();
+    if (state.sector === 'banks') {
+      await loadBankHistory();
+      refreshBankHistoryIndex();
+    }
     renderSectionCards();
     render();
   }

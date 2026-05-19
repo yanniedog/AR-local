@@ -8,7 +8,7 @@
     'i',
   );
   const LOCAL_BANK_BASE = '/assets/banks/';
-  const CDN_BANK_BASE = 'https://www.australianrates.com.au/assets/banks/';
+  const CDN_BANK_BASE = 'https://australianrates.com/assets/banks/';
 
   /** Extra slug basenames tried before generic slugify (Westpac group shares pack assets). */
   const GROUP_SLUG_HINTS = [
