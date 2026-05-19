@@ -7,8 +7,8 @@
  */
 import { spawnSync } from 'node:child_process';
 
-/** GitHub Actions job ids — must match workflow YAML job keys exactly. */
-const DEFAULT_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+/** Bot merge gates — must match workflow YAML job keys exactly. */
+const BOT_GATE_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -24,11 +24,49 @@ function parseArgs(argv) {
   return out;
 }
 
-function ghJson(args) {
+function ghJson(args, { allow404 = false } = {}) {
   const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
   if (r.error) throw new Error(r.error.message);
-  if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').trim() || `gh exit ${r.status}`);
+  if (r.status !== 0) {
+    const msg = (r.stderr || r.stdout || '').trim();
+    // gh uses process exit codes; HTTP 404 appears in stderr (e.g. "HTTP 404: Not Found").
+    if (allow404 && /\b404\b/.test(msg)) return null;
+    throw new Error(msg || `gh exit ${r.status}`);
+  }
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
+}
+
+function mergeCheckContexts(existingContexts, botChecks) {
+  const merged = [...(existingContexts || []), ...botChecks];
+  return [...new Set(merged.filter(Boolean))];
+}
+
+/** Map GET branch protection to PUT input, merging required check contexts. */
+function buildProtectionPayload(existing, mergedContexts) {
+  const strict = existing?.required_status_checks?.strict ?? true;
+  const enforceAdmins =
+    typeof existing?.enforce_admins?.enabled === 'boolean' ? existing.enforce_admins.enabled : true;
+
+  const payload = {
+    required_status_checks: { strict, contexts: mergedContexts },
+    enforce_admins: enforceAdmins,
+    required_pull_request_reviews: null,
+    restrictions: null,
+    required_conversation_resolution: existing?.required_conversation_resolution?.enabled ?? true,
+    allow_force_pushes: existing?.allow_force_pushes?.enabled ?? false,
+    allow_deletions: existing?.allow_deletions?.enabled ?? false,
+  };
+
+  const reviews = existing?.required_pull_request_reviews;
+  if (reviews) {
+    payload.required_pull_request_reviews = {
+      dismiss_stale_reviews: reviews.dismiss_stale_reviews ?? false,
+      require_code_owner_reviews: reviews.require_code_owner_reviews ?? false,
+      required_approving_review_count: reviews.required_approving_review_count ?? 0,
+    };
+  }
+
+  return payload;
 }
 
 function printManualSteps(repo, branch, checks) {
@@ -72,22 +110,38 @@ function main() {
     process.exit(1);
   }
 
-  const payload = {
-    required_status_checks: { strict: true, contexts: DEFAULT_CHECKS },
-    enforce_admins: true,
-    required_pull_request_reviews: null,
-    restrictions: null,
-    required_conversation_resolution: true,
-    allow_force_pushes: false,
-    allow_deletions: false,
-  };
+  const protectionPath = `repos/${repo}/branches/${args.branch}/protection`;
+  let existing = null;
+  try {
+    existing = ghJson(['api', protectionPath], { allow404: true });
+  } catch (e) {
+    console.error(`apply-branch-protection: could not read existing protection: ${e.message}`);
+    process.exit(1);
+  }
+
+  const existingContexts = existing?.required_status_checks?.contexts || [];
+  const mergedContexts = mergeCheckContexts(existingContexts, BOT_GATE_CHECKS);
+  const payload = buildProtectionPayload(existing, mergedContexts);
 
   if (args.dryRun) {
-    console.log(JSON.stringify({ repo, branch: args.branch, checks: DEFAULT_CHECKS, payload }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          repo,
+          branch: args.branch,
+          existingContexts,
+          mergedContexts,
+          botGates: BOT_GATE_CHECKS,
+          payload,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
 
-  const path = `repos/${repo}/branches/${args.branch}/protection`;
+  const path = protectionPath;
   const r = spawnSync(
     'gh',
     ['api', '--method', 'PUT', path, '--input', '-'],
@@ -95,14 +149,17 @@ function main() {
   );
   if (r.status === 0) {
     console.log(`Branch protection applied on ${repo}:${args.branch}`);
-    console.log(`Required checks: ${DEFAULT_CHECKS.join(', ')}`);
-    console.log('required_conversation_resolution: true');
+    console.log(`Required checks (${mergedContexts.length}): ${mergedContexts.join(', ')}`);
+    if (existingContexts.length) {
+      console.log(`Preserved ${existingContexts.length} existing check(s); added bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
+    }
+    console.log(`required_conversation_resolution: ${payload.required_conversation_resolution}`);
     process.exit(0);
   }
 
   console.error(`apply-branch-protection: API failed (exit ${r.status})`);
   if (r.stderr) console.error(r.stderr.trim());
-  printManualSteps(repo, args.branch, DEFAULT_CHECKS);
+  printManualSteps(repo, args.branch, mergedContexts);
   process.exit(r.status === 403 || r.status === 404 ? 2 : 1);
 }
 
