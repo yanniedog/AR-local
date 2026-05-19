@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 import errno
 import json
 import mimetypes
@@ -429,7 +430,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     site_cache = CachedFiles(site_root)
     history_cache: Dict[Tuple[str, str, Tuple[Tuple[str, float, int], ...]], bytes] = {}
     history_cache_lock = threading.Lock()
-    section_cache: Dict[Tuple[str, str, str, float, int], bytes] = {}
+    section_cache: OrderedDict[Tuple[str, str, str, float, int], bytes] = OrderedDict()
     section_cache_lock = threading.Lock()
 
     def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
@@ -493,51 +494,93 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             return " AND rate_family = ? AND COALESCE(rate_type, '') != ?", ["lending", "DISCOUNT"]
         return " AND rate_family = ?", ["deposit"]
 
+    def normalized_rate_value(raw: object, dataset: str, percent_style: bool) -> float | None:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not value or value <= 0:
+            return None
+        if percent_style:
+            return value / 100.0
+        if dataset == "Mortgage" and 0.3 < value <= 1:
+            return value / 10.0
+        return value / 100.0 if value > 1 else value
+
+    def aggregate_ribbon_rows(rows: list[sqlite3.Row], section: str) -> dict[str, object]:
+        product_keys = [
+            str(row["product_key"] or row["product_id"] or row["product_name"] or "")
+            for row in rows
+        ]
+        percent_style_products: set[str] = set()
+        for key, row in zip(product_keys, rows):
+            try:
+                raw_value = float(row["rate"])
+            except (TypeError, ValueError):
+                continue
+            if key and raw_value > 1:
+                percent_style_products.add(key)
+        providers: dict[str, dict[str, object]] = {}
+        rates: list[float] = []
+        products: set[str] = set()
+        for key, row in zip(product_keys, rows):
+            rate = normalized_rate_value(row["rate"], section, key in percent_style_products)
+            if rate is None:
+                continue
+            provider = str(row["provider"] or "Unknown")
+            products.add(key)
+            rates.append(rate)
+            bucket = providers.setdefault(provider, {"rates": [], "products": set()})
+            bucket["rates"].append(rate)
+            bucket["products"].add(key)
+
+        def stats(values: list[float]) -> dict[str, float | None]:
+            if not values:
+                return {"min": None, "max": None, "mean": None}
+            return {
+                "min": min(values),
+                "max": max(values),
+                "mean": sum(values) / len(values),
+            }
+
+        return {
+            "counts": {
+                "rates": len(rates),
+                "products": len(products),
+                "providers": len(providers),
+            },
+            "range": stats(rates),
+            "providers": [
+                {
+                    "provider": provider,
+                    "rates": len(bucket["rates"]),
+                    "products": len(bucket["products"]),
+                    **stats(bucket["rates"]),
+                }
+                for provider, bucket in sorted(providers.items())
+            ],
+        }
+
     def bank_ribbon_payload(run_date: str, section: str) -> bytes:
         db_path = bank_db_for_date(run_date)
         with sqlite3.connect(db_path) as con:
+            con.row_factory = sqlite3.Row
             filter_sql, filter_params = bank_section_rate_filter(section)
             where = (
                 "run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
                 + filter_sql
             )
             params = [run_date, section, *filter_params]
-            total = con.execute(
-                "SELECT COUNT(*), COUNT(DISTINCT COALESCE(NULLIF(product_key, ''), product_id, product_name)), "
-                "COUNT(DISTINCT provider), MIN(CAST(rate AS REAL)), MAX(CAST(rate AS REAL)), AVG(CAST(rate AS REAL)) "
+            rows = con.execute(
+                "SELECT provider, product_key, product_id, product_name, rate "
                 f"FROM bank_rates WHERE {where}",
                 params,
-            ).fetchone()
-            providers = con.execute(
-                "SELECT provider, COUNT(*), COUNT(DISTINCT COALESCE(NULLIF(product_key, ''), product_id, product_name)), "
-                "MIN(CAST(rate AS REAL)), MAX(CAST(rate AS REAL)), AVG(CAST(rate AS REAL)) "
-                f"FROM bank_rates WHERE {where} GROUP BY provider ORDER BY provider",
-                params,
             ).fetchall()
+        aggregate = aggregate_ribbon_rows(rows, section)
         payload = {
             "run_date": run_date,
             "section": section,
-            "counts": {
-                "rates": int(total[0] or 0),
-                "products": int(total[1] or 0),
-                "providers": int(total[2] or 0),
-            },
-            "range": {
-                "min": total[3],
-                "max": total[4],
-                "mean": total[5],
-            },
-            "providers": [
-                {
-                    "provider": row[0] or "Unknown",
-                    "rates": int(row[1] or 0),
-                    "products": int(row[2] or 0),
-                    "min": row[3],
-                    "max": row[4],
-                    "mean": row[5],
-                }
-                for row in providers
-            ],
+            **aggregate,
         }
         return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
@@ -548,6 +591,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         with section_cache_lock:
             cached = section_cache.get(cache_key)
             if cached is not None:
+                section_cache.move_to_end(cache_key)
                 return cached
         rows = read_bank_section_db(db_path, run_date, section)
         payload = json.dumps(
@@ -562,8 +606,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         ).encode("utf-8")
         with section_cache_lock:
             if len(section_cache) >= MAX_ARTIFACT_CACHE_ENTRIES * 3:
-                oldest_key = next(iter(section_cache))
-                section_cache.pop(oldest_key)
+                section_cache.popitem(last=False)
             section_cache[cache_key] = payload
         return payload
 

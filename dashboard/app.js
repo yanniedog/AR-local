@@ -8,6 +8,7 @@
     TD: 'TD',
     EconomicData: 'EconomicData',
   };
+  const BANKING_SECTIONS = [SECTION.Mortgage, SECTION.Savings, SECTION.TD];
 
   function isEconomicDataSection(section) {
     return section === SECTION.EconomicData;
@@ -201,7 +202,7 @@
   }
 
   async function loadBankHistory() {
-    if (state.bankHistory && state.bankHistorySection === state.section) return;
+    if (state.bankHistory && state.bankHistorySection === state.section && !state.bankHistory.current_only) return;
     const sectionName = state.section;
     const section = encodeURIComponent(sectionName);
     const data = await getJson(`/api/banks/history/section?date=${state.manifest.run_date}&section=${section}`);
@@ -513,7 +514,7 @@
     clear(wrap);
     wrap.hidden = false;
     if (!window.LocalCdrBrand) return;
-    ['Mortgage', 'Savings', 'TD'].forEach((section) => {
+    BANKING_SECTIONS.forEach((section) => {
       const card = child(wrap, 'button', 'local-section-card' + (state.section === section ? ' is-active' : ''));
       card.type = 'button';
       card.dataset.sectionCard = section;
@@ -667,6 +668,7 @@
     if (!ribbon) return;
     const counts = ribbon.counts || {};
     const items = ribbonChartItems(ribbon);
+    if (!items) return;
     setLinks();
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(counts.rates || 0);
