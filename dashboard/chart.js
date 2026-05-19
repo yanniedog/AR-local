@@ -64,7 +64,14 @@
   function getChart(el) {
     if (!window.echarts) return null;
     if (_chart && _chartEl === el) { try { _chart.resize(); } catch (_e) {} return _chart; }
-    if (_chart) { try { window.echarts.dispose(_chart); } catch (_e) {} _chart = null; }
+    if (_chart) {
+      if (_chart._localHoverCleanup) {
+        try { _chart._localHoverCleanup(); } catch (_e) {}
+        _chart._localHoverCleanup = null;
+      }
+      try { window.echarts.dispose(_chart); } catch (_e) {}
+      _chart = null;
+    }
     _chartEl = el;
     _chart = window.echarts.init(el, null, { renderer: 'canvas' });
     return _chart;
@@ -80,64 +87,209 @@
     })[ch]);
   }
 
-  function ribbonTooltipHtml(date, point, providers, t, focusProvider) {
-    const rows = ['<div style="font-weight:800;margin-bottom:4px;">' + escHtml(date) + '</div>'];
-    if (!point || point.min == null) {
-      rows.push('<div style="color:' + t.muted + ';">No rates</div>');
-      return rows.join('');
-    }
-    const range = (Math.abs(point.max - point.min) < 0.00001)
-      ? pct(point.min)
-      : pct(point.min) + ' – ' + pct(point.max);
-    const spread = Math.round((point.max - point.min) * 10000);
-    rows.push(
-      '<div style="display:grid;grid-template-columns:auto auto;gap:2px 12px;font-variant-numeric:tabular-nums;">' +
-        '<span style="color:' + t.muted + ';">Range</span><span style="font-weight:700;">' + escHtml(range) + '</span>' +
-        '<span style="color:' + t.muted + ';">Mean (μ)</span><span style="font-weight:700;">' + escHtml(pct(point.mean)) + '</span>' +
-        '<span style="color:' + t.muted + ';">Spread</span><span>' + spread + 'bp</span>' +
-        '<span style="color:' + t.muted + ';">Products</span><span>' + point.count + '</span>' +
-      '</div>'
-    );
-    if (providers && providers.length && !focusProvider) {
-      // List the lender best/worst at this date — top 6 by best rate.
-      const lenders = providers
-        .map((p) => p.byDate[date] ? { label: p.label, pt: p.byDate[date] } : null)
-        .filter(Boolean);
-      if (lenders.length) {
-        lenders.sort((a, b) => a.pt.min - b.pt.min);
-        rows.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';">');
-        rows.push('<div style="color:' + t.muted + ';margin-bottom:2px;">Lender ranges</div>');
-        const shown = lenders.slice(0, 6);
-        shown.forEach((l) => {
-          const r = Math.abs(l.pt.max - l.pt.min) < 0.00001 ? pct(l.pt.min) : pct(l.pt.min) + '–' + pct(l.pt.max);
-          rows.push('<div style="display:flex;justify-content:space-between;gap:12px;">' +
-            '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;">' + escHtml(l.label) + '</span>' +
-            '<span style="font-variant-numeric:tabular-nums;">' + escHtml(r) + '</span></div>');
-        });
-        if (lenders.length > shown.length) {
-          rows.push('<div style="color:' + t.muted + ';">+' + (lenders.length - shown.length) + ' more</div>');
-        }
-        rows.push('</div>');
-      }
-    } else if (focusProvider) {
-      rows.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';color:' + t.muted + ';">Focused: ' + escHtml(focusProvider) + '</div>');
-    }
-    return rows.join('');
+  /** AustralianRates ar-chart-report-plot-utils.js */
+  function fmtReportDateYmd(ymd) {
+    const s = String(ymd || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const p = s.split('-');
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return m[+p[1] - 1] + ' ' + (+p[2]) + ', ' + p[0];
   }
 
+  /** Rates in chart data are decimal fractions; production hover uses percentage points. */
+  function fmtHoverRate(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? (n * 100).toFixed(2) + '%' : 'n/a';
+  }
+
+  function ensureReportHoverBox(mount, t) {
+    let box = mount.querySelector('.ar-report-hoverbox');
+    if (box) return box;
+    if (getComputedStyle(mount).position === 'static') mount.style.position = 'relative';
+    box = document.createElement('div');
+    box.className = 'ar-report-hoverbox';
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = [
+      'position:absolute',
+      'top:8px',
+      'left:10px',
+      'z-index:20',
+      'display:none',
+      'max-width:min(520px, calc(100vw - 28px))',
+      'padding:7px 9px',
+      'border:1px solid ' + t.ttBorder,
+      'border-radius:6px',
+      'background:' + t.ttBg,
+      'color:' + t.ttText,
+      'font:11px/1.45 "Space Grotesk",system-ui,sans-serif',
+      'box-shadow:0 14px 28px rgba(0,0,0,0.16)',
+      'pointer-events:none',
+      'font-variant-numeric:tabular-nums',
+    ].join(';');
+    mount.appendChild(box);
+    return box;
+  }
+
+  function showReportHoverBox(hoverBox, input, t) {
+    if (!hoverBox || !input) return;
+    const rows = input.rows || [];
+    if (!rows.length) {
+      hoverBox.style.display = 'none';
+      return;
+    }
+    hoverBox.innerHTML =
+      '<div style="font-weight:800;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">' +
+        escHtml(input.heading || 'Chart') +
+      '</div>' +
+      '<div style="color:' + t.muted + ';font-size:10px;margin-bottom:5px;white-space:nowrap;">' +
+        escHtml(input.date || '') +
+      '</div>' +
+      rows.map((row) =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid rgba(148,163,184,0.14);padding-top:2px;margin-top:2px;white-space:nowrap;">' +
+          '<span style="color:' + escHtml(row.color || t.muted) + ';">' + escHtml(row.label) + '</span>' +
+          '<strong style="white-space:nowrap;">' + escHtml(row.value) + '</strong>' +
+        '</div>'
+      ).join('');
+    hoverBox.style.display = 'block';
+  }
+
+  function resolveDateFromAxisValue(xRaw, dates) {
+    if (xRaw == null) return '';
+    if (typeof xRaw === 'number' && Number.isFinite(xRaw)) {
+      const i = Math.round(xRaw);
+      if (i >= 0 && i < dates.length) return dates[i];
+    }
+    const s = String(xRaw).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s) && dates.indexOf(s) >= 0) return s;
+    return '';
+  }
+
+  function normProviderKey(name) {
+    return String(name || '')
+      .trim()
+      .replace(/[\u00A0\u2000-\u200B\uFEFF]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  function resolveFocusedProvider(model) {
+    const focus = normProviderKey(model && model.focusProvider);
+    if (!focus || !model || !Array.isArray(model.providers)) return null;
+    return model.providers.find((p) => normProviderKey(p.label) === focus) || null;
+  }
+
+  function pointsFromProviderSeries(dates, providerSeries) {
+    if (!providerSeries || !providerSeries.byDate) return [];
+    return (dates || []).map((date) => {
+      const point = providerSeries.byDate[date];
+      if (!point) return { date, min: null, max: null, mean: null, count: 0 };
+      return {
+        date,
+        min: point.min,
+        max: point.max,
+        mean: point.mean,
+        count: point.count || 0,
+      };
+    });
+  }
+
+  function ribbonHeadingForModel(model) {
+    const focus = String(model && model.focusProvider || '').trim();
+    if (!focus) return 'Visible ribbon';
+    const brand = window.LocalCdrBrand;
+    if (brand && brand.providerMeta) {
+      const meta = brand.providerMeta(focus);
+      if (meta && meta.short) return String(meta.short);
+    }
+    return focus;
+  }
+
+  function syncReportHoverBox(hoverBox, anchorYmd, dates, points, t, rbaContext, heading) {
+    const anchor = String(anchorYmd || '').slice(0, 10);
+    if (!anchor || dates.indexOf(anchor) < 0) {
+      if (hoverBox) hoverBox.style.display = 'none';
+      return;
+    }
+    const idx = dates.indexOf(anchor);
+    const point = points[idx];
+    const emDash = '\u2014';
+    const rows = [];
+    if (!point || point.min == null || point.max == null) {
+      rows.push(
+        { label: 'Min', value: emDash },
+        { label: 'Mean', value: emDash },
+        { label: 'Max', value: emDash },
+      );
+    } else {
+      rows.push(
+        { label: 'Min', value: fmtHoverRate(point.min) },
+        { label: 'Mean', value: fmtHoverRate(point.mean) },
+        { label: 'Max', value: fmtHoverRate(point.max) },
+      );
+    }
+    const ctx = rbaContext || {};
+    const rbaChanges = ctx.changes || [];
+    const rbaStep = ctx.step || [];
+    const rbaColor = ctx.color || '#eab308';
+    const rbaToday = rbaChanges.filter((c) => c.snap === anchor);
+    if (rbaToday.length) {
+      rbaToday.forEach((c) => {
+        const prior = c.priorRate != null ? c.priorRate.toFixed(2) + '%' : emDash;
+        const arrow = c.priorRate != null && c.rate > c.priorRate ? '\u2191'
+          : c.priorRate != null && c.rate < c.priorRate ? '\u2193' : '\u2192';
+        rows.push({
+          label: 'RBA ' + c.date,
+          value: prior + ' ' + arrow + ' ' + c.rate.toFixed(2) + '%',
+          color: rbaColor,
+        });
+      });
+    } else {
+      const stepRate = rbaStep[idx];
+      if (stepRate != null) {
+        rows.push({ label: 'RBA target', value: fmtHoverRate(stepRate), color: rbaColor });
+      }
+    }
+    showReportHoverBox(hoverBox, {
+      heading: heading || 'Visible ribbon',
+      date: fmtReportDateYmd(anchor),
+      rows,
+    }, t);
+  }
+
+  function rbaChangeBp(change) {
+    if (!change || change.priorRate == null) return NaN;
+    const rate = Number(change.rate);
+    const prior = Number(change.priorRate);
+    if (!Number.isFinite(rate) || !Number.isFinite(prior)) return NaN;
+    return Math.round((rate - prior) * 100);
+  }
+
+  /** Snap RBA decision dates to plotted run-dates (first run on/after the decision). */
   function rbaMarkData(dates) {
     const api = window.AR && window.AR.rbaCashRate;
-    if (!api || !dates.length) return null;
+    if (!api || !dates.length) return [];
     const first = dates[0];
     const last = dates[dates.length - 1];
-    const changes = api.changesWithinWindow(first, last) || [];
-    if (!changes.length) return null;
+    let changes = (api.changesWithinWindow(first, last) || []).filter((change) => {
+      const bp = rbaChangeBp(change);
+      return Number.isFinite(bp) && bp !== 0;
+    });
+    if (
+      !changes.length
+      && typeof api.latestChangeOnOrBefore === 'function'
+    ) {
+      const latest = api.latestChangeOnOrBefore(last);
+      if (latest) {
+        const bp = rbaChangeBp(latest);
+        if (Number.isFinite(bp) && bp !== 0 && latest.date < first) {
+          changes = [latest];
+        }
+      }
+    }
+    if (!changes.length) return [];
     const dateSet = {};
     dates.forEach((d) => { dateSet[d] = true; });
-    // Snap each RBA change date to the nearest plotted run-date so the marker
-    // sits on the category axis correctly even when the change date isn't a
-    // retained run.
-    const snapped = changes.map((change) => {
+    return changes.map((change) => {
       let snap = change.date;
       if (!dateSet[snap]) {
         for (let i = 0; i < dates.length; i += 1) {
@@ -147,14 +299,77 @@
       }
       return { ...change, snap };
     });
-    return snapped;
+  }
+
+  /** Cash rate stepped line — one value per plotted run date (AustralianRates parity). */
+  function rbaStepData(dates) {
+    const api = window.AR && window.AR.rbaCashRate;
+    if (!api || typeof api.rateAsOf !== 'function') return dates.map(() => null);
+    return dates.map((date) => {
+      const rate = api.rateAsOf(date);
+      return Number.isFinite(rate) ? rate / 100 : null;
+    });
+  }
+
+  /**
+   * Amber vertical bands + bps labels on category axis (site ar-chart-report-plot-series-builders.js).
+   */
+  function buildRbaChangeMarkAreaPairs(dates, changes) {
+    const out = [];
+    (changes || []).forEach((row) => {
+      const d = String(row.snap || row.date || '').slice(0, 10);
+      const ix = dates.indexOf(d);
+      if (ix < 0) return;
+      const d2 = ix + 1 < dates.length ? dates[ix + 1] : d;
+      const change = rbaChangeBp(row);
+      const start = { xAxis: d };
+      if (Number.isFinite(change) && change !== 0) {
+        const bps = Math.abs(change);
+        const sign = change > 0 ? '+' : '-';
+        const headText = sign + bps + ' bps';
+        const arrowGlyph = change > 0 ? '\u25b2' : '\u25bc';
+        const arrowBlock = Array(5).fill(arrowGlyph).join('\n');
+        start.name = headText;
+        start.label = {
+          show: true,
+          position: 'insideTop',
+          distance: 2,
+          align: 'center',
+          verticalAlign: 'top',
+          formatter: () => '{head|' + headText + '}\n{arr|' + arrowBlock + '}',
+          rich: {
+            head: {
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#fef9c3',
+              lineHeight: 16,
+              align: 'center',
+              textBorderColor: 'rgba(15,23,42,0.75)',
+              textBorderWidth: 2,
+            },
+            arr: {
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#fde047',
+              lineHeight: 12,
+              align: 'center',
+              textBorderColor: 'rgba(15,23,42,0.65)',
+              textBorderWidth: 1,
+            },
+          },
+        };
+      }
+      out.push([start, { xAxis: d2 }]);
+    });
+    return out;
   }
 
   function drawBankHistory(chart, model) {
     const t = theme();
     const dates = model.dates || [];
-    const points = model.points || [];
-    const providers = model.providers || [];
+    const focused = resolveFocusedProvider(model);
+    const points = focused ? pointsFromProviderSeries(dates, focused) : (model.points || []);
+    const hoverHeading = ribbonHeadingForModel(model);
     if (!dates.length || !points.length) {
       chart.clear();
       return;
@@ -167,28 +382,28 @@
     const ribbonColor = t.ribbon;
     const fillColor = hexToRgba(ribbonColor, 0.5);
     const rbaColor = '#f59e0b';
-
-    const rbaChanges = rbaMarkData(dates) || [];
-    const rbaMarkLines = rbaChanges.map((change) => ({
-      xAxis: change.snap,
-      label: {
-        show: true,
-        position: 'insideEndTop',
-        distance: 4,
-        formatter: 'RBA ' + change.rate.toFixed(2) + '%',
-        color: rbaColor,
-        backgroundColor: 'transparent',
-        fontSize: 10,
-        fontWeight: 700,
-      },
-      lineStyle: { color: rbaColor, width: 1.2, type: 'dashed', opacity: 0.75 },
-      // Carry the raw change so the tooltip can reach it.
-      __rbaPrior: change.priorRate,
-      __rbaRate: change.rate,
-      __rbaDate: change.date,
-    }));
+    const rbaChanges = rbaMarkData(dates);
+    const rbaMarkPairs = buildRbaChangeMarkAreaPairs(dates, rbaChanges);
+    const rbaStep = rbaStepData(dates);
+    const bandYMin = minData.reduce((acc, v) => {
+      if (v == null || !Number.isFinite(v)) return acc;
+      return acc == null || v < acc ? v : acc;
+    }, null);
 
     const series = [
+      {
+        name: 'RBA',
+        type: 'line',
+        data: rbaStep,
+        showSymbol: false,
+        connectNulls: false,
+        step: 'end',
+        lineStyle: { color: rbaColor, width: 2, type: 'dashed', opacity: 0.85 },
+        itemStyle: { color: rbaColor },
+        tooltip: { show: false },
+        emphasis: { disabled: true },
+        z: 1,
+      },
       // Min as transparent base for stacked area fill.
       {
         name: 'Min (base)',
@@ -243,8 +458,7 @@
         emphasis: { disabled: true },
         z: 3,
       },
-      // Mean line — thicker. Carries the RBA markLine overlay so AR-style
-      // rate-decision markers ride on top of the ribbon.
+      // Mean line — thicker ribbon centre.
       {
         name: 'Mean',
         type: 'line',
@@ -256,21 +470,56 @@
         itemStyle: { color: ribbonColor },
         tooltip: { show: false },
         emphasis: { focus: 'self', lineStyle: { width: 2.6 } },
-        markLine: rbaMarkLines.length ? {
-          symbol: ['none', 'none'],
-          silent: false,
-          animation: false,
-          z: 5,
-          data: rbaMarkLines,
-        } : undefined,
         z: 4,
       },
     ];
 
+    if (rbaMarkPairs.length && bandYMin != null) {
+      series.push({
+        name: 'RBA change',
+        type: 'line',
+        data: dates.map(() => bandYMin),
+        showSymbol: false,
+        silent: true,
+        lineStyle: { width: 0, opacity: 0 },
+        tooltip: { show: false },
+        emphasis: { disabled: true },
+        markArea: {
+          silent: true,
+          itemStyle: {
+            color: 'rgba(234, 179, 8, 0.42)',
+            borderWidth: 1,
+            borderColor: 'rgba(202, 138, 4, 0.55)',
+          },
+          data: rbaMarkPairs,
+        },
+        z: 5,
+      });
+    }
+
+    const hoverBox = ensureReportHoverBox(_chartEl, t);
+
+    if (chart._localHoverCleanup) {
+      try { chart._localHoverCleanup(); } catch (_e) {}
+      chart._localHoverCleanup = null;
+    }
+
     chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
-      grid: { top: 14, bottom: 28, left: 52, right: 16, containLabel: true },
+      grid: { top: rbaMarkPairs.length ? 36 : 14, bottom: 28, left: 52, right: 16, containLabel: true },
+      axisPointer: {
+        link: [{ xAxisIndex: [0] }],
+        label: {
+          backgroundColor: t.ttBg,
+          borderColor: t.ttBorder,
+          borderWidth: 1,
+          color: t.ttText,
+          fontSize: 10,
+          padding: [3, 6],
+        },
+        lineStyle: { color: t.crosshair, width: 1.4, type: 'dashed' },
+      },
       xAxis: {
         type: 'category',
         boundaryGap: dates.length < 2,
@@ -284,20 +533,6 @@
         axisLine: { lineStyle: { color: t.line } },
         axisTick: { show: false },
         splitLine: { show: false },
-        axisPointer: {
-          show: true,
-          type: 'line',
-          lineStyle: { color: t.crosshair, width: 1.5 },
-          label: {
-            show: true,
-            backgroundColor: t.ttBg,
-            borderColor: t.ttBorder,
-            color: t.ttText,
-            padding: [3, 6],
-            fontSize: 11,
-          },
-          z: 10,
-        },
       },
       yAxis: {
         type: 'value',
@@ -311,43 +546,55 @@
       },
       tooltip: {
         trigger: 'axis',
-        confine: true,
-        transitionDuration: 0,
-        hideDelay: 60,
-        backgroundColor: t.ttBg,
-        borderColor: t.ttBorder,
-        textStyle: { color: t.ttText, fontSize: 12 },
-        extraCssText: 'box-shadow: 0 6px 18px rgba(0,0,0,0.28);',
-        axisPointer: { type: 'line', lineStyle: { color: t.crosshair, width: 1.5 } },
-        formatter: function (params) {
-          const dataIndex = params && params[0] ? params[0].dataIndex : 0;
-          const date = dates[dataIndex] || '';
-          const point = points[dataIndex];
-          let html = ribbonTooltipHtml(date, point, providers, t, model.focusProvider || '');
-          // Append any RBA changes that snapped to this date.
-          const rbaToday = rbaChanges.filter((c) => c.snap === date);
-          if (rbaToday.length) {
-            const lines = rbaToday.map((c) => {
-              const prior = c.priorRate != null ? c.priorRate.toFixed(2) + '%' : '—';
-              const arrow = c.priorRate != null && c.rate > c.priorRate ? '↑' : c.priorRate != null && c.rate < c.priorRate ? '↓' : '→';
-              return '<div style="display:flex;justify-content:space-between;gap:12px;">' +
-                '<span style="color:' + rbaColor + ';font-weight:700;">RBA ' + c.date + '</span>' +
-                '<span style="font-variant-numeric:tabular-nums;">' + prior + ' ' + arrow + ' ' + c.rate.toFixed(2) + '%</span></div>';
-            });
-            html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid ' + t.ttBorder + ';">' + lines.join('') + '</div>';
-          }
-          return html;
-        },
+        showContent: false,
+        axisPointer: { type: 'line' },
       },
       legend: { show: false },
       series: series,
     }, true);
+
+    function onAxisPointer(ev) {
+      const ax0 = ev && ev.axesInfo && ev.axesInfo[0];
+      if (!ax0) return;
+      const anchor = resolveDateFromAxisValue(ax0.value, dates);
+      if (!anchor) return;
+      syncReportHoverBox(hoverBox, anchor, dates, points, t, {
+        changes: rbaChanges,
+        step: rbaStep,
+        color: rbaColor,
+      }, hoverHeading);
+    }
+    function onGlobalOut() {
+      if (hoverBox) hoverBox.style.display = 'none';
+    }
+
+    chart.on('updateAxisPointer', onAxisPointer);
+    const zr = chart.getZr();
+    zr.on('globalout', onGlobalOut);
+    chart._localHoverCleanup = function () {
+      chart.off('updateAxisPointer', onAxisPointer);
+      zr.off('globalout', onGlobalOut);
+      if (hoverBox) hoverBox.style.display = 'none';
+    };
     chart.resize();
   }
 
-  function drawEnergy(chart, items) {
+  function drawEnergy(chart, payload) {
     const t = theme();
-    const sorted = items.slice().sort((a, b) => b.value - a.value);
+    const rows = (payload && payload.items) || [];
+    const focus = String((payload && payload.focusProvider) || '').trim().toLowerCase();
+    const mount = chart.getDom();
+    const hoverBox = ensureReportHoverBox(mount, t);
+    if (!rows.length) {
+      chart.clear();
+      if (hoverBox) hoverBox.style.display = 'none';
+      return;
+    }
+    if (chart._localHoverCleanup) {
+      try { chart._localHoverCleanup(); } catch (_e) {}
+      chart._localHoverCleanup = null;
+    }
+    const sorted = rows.slice();
     const bw = Math.max(6, Math.min(20, Math.floor(380 / Math.max(sorted.length, 1))));
     chart.setOption({
       backgroundColor: 'transparent',
@@ -369,12 +616,48 @@
         },
         axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
       },
+      tooltip: { trigger: 'item', showContent: false },
       series: [{
         type: 'bar', barWidth: bw,
-        data: sorted.map((d, i) => ({ value: d.value, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: 2 } })),
+        data: sorted.map((d, i) => {
+          const dimmed = focus && String(d.label || '').toLowerCase() !== focus;
+          const color = PALETTE[i % PALETTE.length];
+          return {
+            value: d.value,
+            name: d.label,
+            itemStyle: {
+              color: dimmed ? hexToRgba(color, 0.28) : color,
+              borderRadius: 2,
+            },
+          };
+        }),
         label: { show: true, position: 'right', formatter: '{c}', color: t.muted, fontSize: 10 },
       }],
     }, true);
+
+    function onBarHover(params) {
+      if (!params || params.componentType !== 'series') return;
+      const label = String(params.name || sorted[params.dataIndex]?.label || '');
+      const value = params.value;
+      showReportHoverBox(hoverBox, {
+        heading: label || 'Provider',
+        date: 'Plan count',
+        rows: [{ label: 'Plans', value: String(value), color: t.text }],
+      }, t);
+    }
+    function onGlobalOut() {
+      if (hoverBox) hoverBox.style.display = 'none';
+    }
+    chart.on('mouseover', onBarHover);
+    chart.on('globalout', onGlobalOut);
+    const zr = chart.getZr();
+    zr.on('globalout', onGlobalOut);
+    chart._localHoverCleanup = function () {
+      chart.off('mouseover', onBarHover);
+      chart.off('globalout', onGlobalOut);
+      zr.off('globalout', onGlobalOut);
+      if (hoverBox) hoverBox.style.display = 'none';
+    };
     chart.resize();
   }
 
@@ -385,8 +668,12 @@
       drawBankHistory(chart, items);
       return;
     }
+    if (items && items.kind === 'energy-counts') {
+      drawEnergy(chart, items);
+      return;
+    }
     if (!items || !items.length) { chart.clear(); return; }
-    if (sector === 'energy') drawEnergy(chart, items);
+    if (sector === 'energy') drawEnergy(chart, { items: items, focusProvider: '' });
     else { chart.clear(); }
   }
 

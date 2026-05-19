@@ -32,6 +32,9 @@
     { date: '2025-02-19', rate: 4.10 },
     { date: '2025-05-21', rate: 3.85 },
     { date: '2025-08-13', rate: 3.60 },
+    { date: '2026-02-04', rate: 3.85 },
+    { date: '2026-03-18', rate: 4.10 },
+    { date: '2026-05-06', rate: 4.35 },
   ];
 
   function entries() {
@@ -53,9 +56,30 @@
       if (lo && entry.date < lo) continue;
       if (hi && entry.date > hi) continue;
       const prior = i > 0 ? ENTRIES[i - 1].rate : null;
+      if (prior == null || prior === entry.rate) continue;
       out.push({ date: entry.date, rate: entry.rate, priorRate: prior });
     }
     return out;
+  }
+
+  /**
+   * Most recent rate change on or before endDate (YYYY-MM-DD).
+   * Skips the inaugural entry (no prior rate). Used when a narrow chart
+   * window has no in-window decisions but should still show latest RBA context.
+   */
+  function latestChangeOnOrBefore(endDate) {
+    if (!Array.isArray(ENTRIES) || !ENTRIES.length) return null;
+    const hi = String(endDate || '');
+    let latest = null;
+    for (let i = 0; i < ENTRIES.length; i += 1) {
+      const entry = ENTRIES[i];
+      if (hi && entry.date > hi) break;
+      const prior = i > 0 ? ENTRIES[i - 1].rate : null;
+      if (prior != null && prior !== entry.rate) {
+        latest = { date: entry.date, rate: entry.rate, priorRate: prior };
+      }
+    }
+    return latest;
   }
 
   /** Latest known cash rate target as of (or just before) the given date. */
@@ -72,6 +96,7 @@
   window.AR.rbaCashRate = {
     entries,
     changesWithinWindow,
+    latestChangeOnOrBefore,
     rateAsOf,
   };
 })();
