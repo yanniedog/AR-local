@@ -298,6 +298,7 @@ function main() {
   if (dirtyMain) blockers.push('dirty main branch');
   if (pathClashes.length) blockers.push('agent branch path overlap');
   if (mergeConflicts.length) blockers.push(`merge conflicts on PR #${mergeConflicts.join(', #')}`);
+  if (worktreeDupes.length) blockers.push('duplicate worktrees for same branch');
 
   if (blockers.length) {
     console.log(`\nBLOCKERS: ${blockers.join('; ')}`);
