@@ -64,14 +64,19 @@ If SSH fails, stop with evidence — do not claim deploy complete.
 ssh ar-local-pi5 "systemctl cat ar-local-dashboard.service | grep -E 'WorkingDirectory|ExecStart'"
 ```
 
-2. **Sync both repos on Pi** (clean tree only):
+2. **Sync both repos on Pi** (clean tree only — preflight before any checkout/pull):
+
+```powershell
+ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git status --porcelain"
+ssh ar-local-pi5 "cd /srv/ar-local/australianrates && git status --porcelain"
+```
+
+Refuse deploy if either command prints output — report dirty Pi tree to chief.
 
 ```powershell
 ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git fetch origin && git checkout main && git pull --ff-only origin main && git status --short --branch && git rev-parse --short HEAD && git rev-parse --short origin/main"
 ssh ar-local-pi5 "cd /srv/ar-local/australianrates && git fetch origin && git checkout main && git pull --ff-only origin main && git rev-parse --short HEAD"
 ```
-
-Refuse pull if `git status --porcelain` is non-empty — report dirty Pi tree to chief.
 
 3. **Restart services**
 

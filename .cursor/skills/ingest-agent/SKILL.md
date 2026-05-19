@@ -51,7 +51,9 @@ Energy is **dormant by default** (`AR_ENERGY_DORMANT=1`). Opt in only when expli
 
 ```text
 runs/<YYYY-MM-DD>/_exports/
-  latest.json          # and/or dashboard-cache symlinks
+  dashboard-cache/
+    latest.json        # manifest; cdr_dashboard_server /api/latest reads this path
+    <YYYY-MM-DD>/      # per-date banks.json, energy.json, …
   local-cdr.sqlite
   … (other export files from cdr_outputs.py)
 ```
@@ -96,7 +98,7 @@ python cdr_daily.py                    # or flags per --help / task
 python cdr_outputs.py runs/<YYYY-MM-DD>   # positional run_root required; --out if non-default
 ```
 
-4. **Verify exports** — files exist, SQLite non-zero, `latest.json` keys match server expectations (`banks_counts`, `run_date`, etc.).
+4. **Verify exports** — files exist, SQLite non-zero, `_exports/dashboard-cache/latest.json` keys match server expectations (`banks_counts`, `run_date`, etc.).
 
 5. **Point dashboard** at real exports path; delegate **dashboard-agent** or **post-merge-verify-agent** for HTTP/UI sign-off.
 
