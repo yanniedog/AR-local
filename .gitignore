@@ -15,3 +15,6 @@ node_modules/
 # Agent auditor session artifacts (local only)
 .git/auditor/
 
+# Bot wait gate anchor state (local; override with AR_BOT_WAIT_STATE_DIR)
+.ar-bot-wait/
+
