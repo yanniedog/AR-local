@@ -60,8 +60,9 @@ html body.ar-public.ar-local-cdr .bg-layer {
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-logo-wrap,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-logo-wrap,
 body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
+  position: relative;
   background: var(--ar-local-logo-tile);
-  box-shadow: inset 0 0 0 1px var(--ar-local-logo-tile-border);
+  box-shadow: none;
 }
 
 /* Fallback abbreviations sit on a white tile — use dark ink, not light-on- */
@@ -234,6 +235,14 @@ body.ar-public .site-header-segment-link:focus-visible {
   object-fit: contain;
 }
 
+/* Provider rail tiles: no section-accent frame from public-polish / local accent. */
+body.ar-public.ar-local-cdr button.local-provider-logo-btn,
+body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
+body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
+  outline: none;
+  box-shadow: none;
+}
+
 .ar-local-cdr button.local-provider-logo-btn {
   display: inline-flex;
   align-items: center;
@@ -250,7 +259,7 @@ body.ar-public .site-header-segment-link:focus-visible {
 }
 
 .ar-local-cdr button.local-provider-logo-btn:hover {
-  border-color: color-mix(in srgb, var(--ar-line-strong) 70%, transparent);
+  border-color: color-mix(in srgb, var(--ar-line-strong) 55%, transparent);
   background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
 }
 
@@ -260,14 +269,17 @@ body.ar-public .site-header-segment-link:focus-visible {
 }
 
 .ar-local-cdr button.local-provider-logo-btn.is-selected {
-  border-color: color-mix(in srgb, var(--ar-line-strong) 92%, transparent);
+  border-color: color-mix(in srgb, var(--ar-line-strong) 88%, transparent);
   background: color-mix(in srgb, var(--ar-surface-2) 55%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ar-section-accent) 65%, transparent);
 }
 
 .ar-local-cdr button.local-provider-logo-btn.is-hover {
-  border-color: color-mix(in srgb, var(--ar-section-accent) 70%, transparent);
+  border-color: color-mix(in srgb, var(--ar-line-strong) 65%, transparent);
   background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
+}
+
+.ar-local-cdr .bank-badge-logo.is-logo-loading {
+  opacity: 0;
 }
 
 body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {

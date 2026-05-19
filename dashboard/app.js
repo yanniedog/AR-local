@@ -394,6 +394,24 @@
     status.textContent = `Visible window: ${label}. ${num(items.allDates.length)} retained run date${items.allDates.length === 1 ? '' : 's'}.`;
   }
 
+  function warmProviderLogoCache() {
+    if (!window.LocalCdrBrand || !window.LocalCdrBrand.preloadRailProviders || !state.banks || !state.banks.rates) {
+      return;
+    }
+    const bySection = {};
+    state.banks.rates.forEach((row) => {
+      if (!row.provider || !row.dataset) return;
+      if (!bySection[row.dataset]) bySection[row.dataset] = { providers: new Set(), samples: {} };
+      bySection[row.dataset].providers.add(row.provider);
+      if (!bySection[row.dataset].samples[row.provider]) bySection[row.dataset].samples[row.provider] = row;
+    });
+    Object.keys(bySection).forEach((section) => {
+      const pack = bySection[section];
+      const providers = [...pack.providers].sort((a, b) => a.localeCompare(b));
+      window.LocalCdrBrand.preloadRailProviders(providers, pack.samples);
+    });
+  }
+
   function renderSectionCards() {
     const wrap = $('sectionCards');
     clear(wrap);
@@ -420,13 +438,17 @@
     rows.forEach((row) => { if (row.provider && !sampleByProvider[row.provider]) sampleByProvider[row.provider] = row; });
     const label = state.section === SECTION.TD ? 'Term Deposit' : state.section;
 
+    if (window.LocalCdrBrand.preloadRailProviders) {
+      window.LocalCdrBrand.preloadRailProviders(providers, sampleByProvider);
+    }
+
     wrap.hidden = false;
     child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
     const focus = String(state.focusProvider || '').toLowerCase();
     const hover = String(state.hoverProvider || '').toLowerCase();
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
-    providers.forEach((provider) => {
+    providers.forEach((provider, index) => {
       const btn = child(rail, 'button', 'local-provider-logo-btn');
       btn.type = 'button';
       btn.dataset.providerPick = provider;
@@ -443,6 +465,7 @@
       const badge = window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
         logoOnly: true,
         rateRow: sampleByProvider[provider],
+        logoFetchPriority: index < 16 ? 'high' : 'low',
       });
       if (btn.classList.contains('is-dim')) badge.classList.add('is-logo-dim');
     });
@@ -581,7 +604,10 @@
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
-    if (!state.banks) state.banks = await getJson(`/api/banks?date=${state.manifest.run_date}`);
+    if (!state.banks) {
+      state.banks = await getJson(`/api/banks?date=${state.manifest.run_date}`);
+      warmProviderLogoCache();
+    }
     if (token !== loadSectionToken) return;
     await loadBankHistory();
     if (token !== loadSectionToken) return;
