@@ -349,6 +349,8 @@ Rules for future agents:
 
 This is the authoritative gap list between the Pi runtime and `https://australianrates.com/`. Any agent picking up parity work should pick from this list, update it on completion, and keep retained-state facts in `Verified Current State` below in sync.
 
+**Drift note:** JS module and public API lists below are point-in-time snapshots (see section date). To refresh module names, use the live-site probe at the end of `Verified Current State` (`curl` against `https://australianrates.com/` `src=` attributes). Public API routes: `australianrates` worker sources under `workers/` in that repo.
+
 #### Frontend shell / module gap
 
 The public site renders an empty `<div id="ar-section-root"></div>` and bootstraps the UI from ~50 JS modules served from the domain root with `?v=<hash>` cache-bust query strings (e.g. `app.js?v=11afb6e8c9`). The Pi serves a hand-crafted `dashboard/index.html` that hard-codes nav buttons, the hero strip, filter strip, workspace tabs, and chart panel, and loads only a small subset of public JS.
@@ -373,7 +375,7 @@ The public JS calls Cloudflare Worker routes including (non-exhaustive):
 - `/api/home-loan-rates/health`
 - (presumed analogues for savings, term deposits, economic data)
 
-The Pi currently exposes a different surface: `/api/latest`, `/api/banks/history`, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms — no remote calls.
+The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms — no remote calls.
 
 #### Header / chrome gap
 
