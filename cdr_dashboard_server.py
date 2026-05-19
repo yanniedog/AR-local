@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 import errno
 import json
 import mimetypes
@@ -30,6 +31,40 @@ LATEST_EXPORTS_TTL_SECONDS = 5.0
 MAX_ARTIFACT_CACHE_ENTRIES = 4
 MAX_HISTORY_CACHE_ENTRIES = 8
 DEFAULT_HISTORY_RUN_LIMIT = 90
+BANK_SECTION_COLUMNS = (
+    "run_date",
+    "dataset",
+    "provider",
+    "product_id",
+    "product_key",
+    "product_name",
+    "rate_family",
+    "rate",
+    "comparison_rate",
+    "rate_type",
+    "application_type",
+    "application_frequency",
+    "repayment_type",
+    "loan_purpose",
+    "term",
+    "ribbon_normalized",
+    "security_purpose",
+    "ribbon_repayment_type",
+    "lvr_tier",
+    "ribbon_rate_structure",
+    "ribbon_fixed_term",
+    "account_type",
+    "ribbon_deposit_kind",
+    "balance_min",
+    "balance_max",
+    "term_months",
+    "interest_payment",
+    "feature_set",
+    "taxonomy_path",
+    "brand_name",
+    "brand",
+    "rate_index",
+)
 BANK_HISTORY_COLUMNS = (
     "run_date",
     "dataset",
@@ -60,17 +95,7 @@ BANK_HISTORY_COLUMNS = (
     "interest_payment",
     "feature_set",
 )
-BANK_HISTORY_SELECT_SQL = """
-SELECT run_date, dataset, provider, product_id, product_key, product_name,
-       rate_family, rate, comparison_rate, rate_type, application_type,
-       application_frequency, repayment_type, loan_purpose, term,
-       ribbon_normalized, security_purpose, ribbon_repayment_type, lvr_tier,
-       ribbon_rate_structure, ribbon_fixed_term, account_type, ribbon_deposit_kind, balance_min,
-       balance_max, term_months, interest_payment, feature_set
-FROM bank_rates
-WHERE rate IS NOT NULL AND rate != ''
-"""
-BANK_HISTORY_SELECT_UNTIL_SQL = BANK_HISTORY_SELECT_SQL + " AND run_date <= ?"
+VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
 # Fields that uniquely identify a "rate row template" across run dates.
 # When we carry-forward, two rows share an identity iff every field below
@@ -119,6 +144,33 @@ def parse_run_date_param(raw: str) -> str:
     except ValueError as exc:
         raise BadRequestError("date is not a valid calendar day") from exc
     return value
+
+
+def parse_bank_section_param(raw: str) -> str:
+    value = str(raw or "").strip()
+    if value not in VALID_BANK_SECTIONS:
+        raise BadRequestError("section must be one of Mortgage, Savings, TD")
+    return value
+
+
+def bank_rate_columns(con: sqlite3.Connection) -> set[str]:
+    rows = con.execute("PRAGMA table_info(bank_rates)").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def bank_rate_select_list(available: set[str], columns: tuple[str, ...]) -> str:
+    parts: list[str] = []
+    for column in columns:
+        if column in available:
+            parts.append(column)
+        else:
+            parts.append(f"'' AS {column}")
+    return ", ".join(parts)
+
+
+def compact_bank_row(row: dict[str, object]) -> dict[str, object]:
+    """Drop absent/empty fields before JSON encoding section chunks."""
+    return {key: value for key, value in row.items() if value not in (None, "")}
 
 
 def fill_history_gaps(
@@ -376,8 +428,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
     artifact_cache_lock = threading.Lock()
     dashboard_cache = CachedFiles(DASHBOARD_ROOT)
     site_cache = CachedFiles(site_root)
-    history_cache: Dict[Tuple[str, Tuple[Tuple[str, float, int], ...]], bytes] = {}
+    history_cache: Dict[Tuple[str, str, Tuple[Tuple[str, float, int], ...]], bytes] = {}
     history_cache_lock = threading.Lock()
+    section_cache: OrderedDict[Tuple[str, str, str, float, int], bytes] = OrderedDict()
+    section_cache_lock = threading.Lock()
 
     def artifact_cache(exports_root: Path | None = None) -> Tuple[Path, CachedFiles]:
         exports_root = (exports_root or export_resolver.root()).resolve()
@@ -412,24 +466,174 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 dbs.append(candidate.resolve())
         return dbs[-DEFAULT_HISTORY_RUN_LIMIT:]
 
-    def read_bank_history_db(db_path: Path, max_run_date: str) -> list[dict[str, object]]:
+    def bank_db_for_date(run_date: str) -> Path:
+        exports_root = export_resolver.root_for_date(run_date)
+        candidate = exports_root / "local-cdr.sqlite"
+        if not candidate.is_file():
+            raise FileNotFoundError(candidate)
+        return candidate.resolve()
+
+    def read_bank_section_db(db_path: Path, run_date: str, section: str) -> list[dict[str, object]]:
         with sqlite3.connect(db_path) as con:
+            available = bank_rate_columns(con)
+            select_list = bank_rate_select_list(available, BANK_SECTION_COLUMNS)
+            sql = (
+                f"SELECT {select_list} FROM bank_rates "
+                "WHERE run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
+            )
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+            rows = con.execute(sql, (run_date, section))
+            out = []
+            for row in rows:
+                item = {col: row[index] for index, col in enumerate(BANK_SECTION_COLUMNS)}
+                out.append(compact_bank_row(item))
+            return out
+
+    def bank_section_rate_filter(section: str) -> tuple[str, list[str]]:
+        if section == "Mortgage":
+            return " AND rate_family = ? AND COALESCE(rate_type, '') != ?", ["lending", "DISCOUNT"]
+        return " AND rate_family = ?", ["deposit"]
+
+    def normalized_rate_value(raw: object, dataset: str, percent_style: bool) -> float | None:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not value or value <= 0:
+            return None
+        if percent_style:
+            return value / 100.0
+        if dataset == "Mortgage" and 0.3 < value <= 1:
+            return value / 10.0
+        return value / 100.0 if value > 1 else value
+
+    def aggregate_ribbon_rows(rows: list[sqlite3.Row], section: str) -> dict[str, object]:
+        product_keys = [
+            str(row["product_key"] or row["product_id"] or row["product_name"] or "")
+            for row in rows
+        ]
+        percent_style_products: set[str] = set()
+        for key, row in zip(product_keys, rows):
+            try:
+                raw_value = float(row["rate"])
+            except (TypeError, ValueError):
+                continue
+            if key and raw_value > 1:
+                percent_style_products.add(key)
+        providers: dict[str, dict[str, object]] = {}
+        rates: list[float] = []
+        products: set[str] = set()
+        for key, row in zip(product_keys, rows):
+            rate = normalized_rate_value(row["rate"], section, key in percent_style_products)
+            if rate is None:
+                continue
+            provider = str(row["provider"] or "Unknown")
+            products.add(key)
+            rates.append(rate)
+            bucket = providers.setdefault(provider, {"rates": [], "products": set()})
+            bucket["rates"].append(rate)
+            bucket["products"].add(key)
+
+        def stats(values: list[float]) -> dict[str, float | None]:
+            if not values:
+                return {"min": None, "max": None, "mean": None}
+            return {
+                "min": min(values),
+                "max": max(values),
+                "mean": sum(values) / len(values),
+            }
+
+        return {
+            "counts": {
+                "rates": len(rates),
+                "products": len(products),
+                "providers": len(providers),
+            },
+            "range": stats(rates),
+            "providers": [
+                {
+                    "provider": provider,
+                    "rates": len(bucket["rates"]),
+                    "products": len(bucket["products"]),
+                    **stats(bucket["rates"]),
+                }
+                for provider, bucket in sorted(providers.items())
+            ],
+        }
+
+    def bank_ribbon_payload(run_date: str, section: str) -> bytes:
+        db_path = bank_db_for_date(run_date)
+        with sqlite3.connect(db_path) as con:
+            con.row_factory = sqlite3.Row
+            filter_sql, filter_params = bank_section_rate_filter(section)
+            where = (
+                "run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
+                + filter_sql
+            )
+            params = [run_date, section, *filter_params]
+            rows = con.execute(
+                "SELECT provider, product_key, product_id, product_name, rate "
+                f"FROM bank_rates WHERE {where}",
+                params,
+            ).fetchall()
+        aggregate = aggregate_ribbon_rows(rows, section)
+        payload = {
+            "run_date": run_date,
+            "section": section,
+            **aggregate,
+        }
+        return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    def bank_section_payload(run_date: str, section: str) -> bytes:
+        db_path = bank_db_for_date(run_date)
+        stat = db_path.stat()
+        cache_key = (run_date, section, str(db_path), stat.st_mtime, stat.st_size)
+        with section_cache_lock:
+            cached = section_cache.get(cache_key)
+            if cached is not None:
+                section_cache.move_to_end(cache_key)
+                return cached
+        rows = read_bank_section_db(db_path, run_date, section)
+        payload = json.dumps(
+            {
+                "run_date": run_date,
+                "section": section,
+                "rates": rows,
+                "counts": {"rates": len(rows)},
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        with section_cache_lock:
+            if len(section_cache) >= MAX_ARTIFACT_CACHE_ENTRIES * 3:
+                section_cache.popitem(last=False)
+            section_cache[cache_key] = payload
+        return payload
+
+    def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
+        with sqlite3.connect(db_path) as con:
+            available = bank_rate_columns(con)
+            select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
+            sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
+            params: list[str] = []
             if max_run_date:
-                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-                rows = con.execute(BANK_HISTORY_SELECT_UNTIL_SQL, (max_run_date,))
-            else:
-                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-                rows = con.execute(BANK_HISTORY_SELECT_SQL)
+                sql += " AND run_date <= ?"
+                params.append(max_run_date)
+            if section:
+                sql += " AND dataset = ?"
+                params.append(section)
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+            rows = con.execute(sql, params)
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_HISTORY_COLUMNS)}
-                out.append(item)
+                out.append(compact_bank_row(item))
             return out
 
-    def bank_history_payload(max_run_date: str) -> bytes:
+    def bank_history_payload(max_run_date: str, section: str = "") -> bytes:
         dbs = bank_history_db_paths(max_run_date)
         signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
-        cache_key = (max_run_date, signature)
+        cache_key = (max_run_date, section, signature)
         with history_cache_lock:
             cached = history_cache.get(cache_key)
             if cached is not None:
@@ -437,7 +641,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         rows: list[dict[str, object]] = []
         for db_path in dbs:
             try:
-                rows.extend(read_bank_history_db(db_path, max_run_date))
+                rows.extend(read_bank_history_db(db_path, max_run_date, section))
             except sqlite3.Error as exc:
                 print(f"Skipping unreadable history DB {db_path}: {exc}")
         run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
@@ -445,6 +649,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         payload = json.dumps(
             {
                 "run_dates": run_dates,
+                "section": section,
                 "rates": filled_rows,
                 "carry_forward_count": carry_forward_count,
             },
@@ -497,10 +702,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             manifest = json.loads(latest.decode("utf-8"))
             run_date = str(manifest.get("run_date") or "")
             if run_date:
-                cache.read(exports_root / "dashboard-cache" / run_date / "banks.json")
+                bank_ribbon_payload(run_date, "Mortgage")
+                bank_section_payload(run_date, "Mortgage")
                 if not energy_dormant():
                     cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
-                bank_history_payload(run_date)
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 
@@ -585,12 +790,25 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 exports_root = export_resolver.root_for_date(date)
                 exports_root, cache = artifact_cache(exports_root)
                 return cache.read(exports_root / "dashboard-cache" / date / "banks.json"), "application/json"
+            if path == "/api/banks/section":
+                date = parse_run_date_param(query.get("date", [""])[0])
+                section = parse_bank_section_param(query.get("section", [""])[0])
+                return bank_section_payload(date, section), "application/json; charset=utf-8"
+            if path == "/api/banks/ribbon":
+                date = parse_run_date_param(query.get("date", [""])[0])
+                section = parse_bank_section_param(query.get("section", [""])[0])
+                return bank_ribbon_payload(date, section), "application/json; charset=utf-8"
             if path.startswith("/api/economic-data"):
                 return proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
             if path == "/api/banks/history":
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 return bank_history_payload(date), "application/json"
+            if path == "/api/banks/history/section":
+                raw_date = str(query.get("date", [""])[0] or "").strip()
+                date = parse_run_date_param(raw_date) if raw_date else ""
+                section = parse_bank_section_param(query.get("section", [""])[0])
+                return bank_history_payload(date, section), "application/json; charset=utf-8"
             if is_economic_data_page_path(path):
                 target = resolve_site_public_file(site_root, path)
                 body = site_cache.read(target)
