@@ -13,6 +13,10 @@ You **do not** merge PRs or reply to review threads (→ **pr-fix-agent**, **wor
 
 **Reports to:** chief agent. Required for close-loop: `npm run close-loop:check -- --post-merge-gap`.
 
+## Environment URLs (do not hardcode)
+
+Pi dashboard and smoke URLs are in **`docs/UNIVERSAL_ROADMAP.md`** § **Remote dashboard access**. Delegate **pi-deploy-agent** for probes; do not hardcode Tailscale IPs here.
+
 ## Invocation phrases
 
 - **"run post-merge verify"**
@@ -67,7 +71,7 @@ Loop: fix on topic branch → PR → merge → repeat 8–9 until 0.
 
 When merge affects runtime on Pi, delegate or run:
 
-1. **pi-deploy-agent** — pull `main`, restart units, `http://100.78.28.10:8808/api/latest`
+1. **pi-deploy-agent** — pull `main`, restart units, `http://<pi-tailscale-ip-from-roadmap>:8808/api/latest`
 2. Pi-local: `npm run verify:local -- --base-url=http://127.0.0.1:8808/` over SSH
 
 ## Optional UI evidence

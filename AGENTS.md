@@ -110,7 +110,7 @@ Chief assigns **one writer per path prefix and branch**. Each skill defines path
 
 | Agent | Skill | Invoke | Relationship to chief |
 |-------|-------|--------|------------------------|
-| Pi deploy | [`.cursor/skills/pi-deploy-agent/SKILL.md`](.cursor/skills/pi-deploy-agent/SKILL.md) | **run pi deploy** | Post-merge runtime on Pi; SSH `/srv/ar-local`, pull `main`, restart units, smoke `100.78.28.10:8808` |
+| Pi deploy | [pi-deploy-agent/SKILL.md](.cursor/skills/pi-deploy-agent/SKILL.md) | **run pi deploy** | Post-merge runtime on Pi; SSH `/srv/ar-local`, pull `main`, restart units; smoke URL from `docs/UNIVERSAL_ROADMAP.md` |
 | Ingest | [`.cursor/skills/ingest-agent/SKILL.md`](.cursor/skills/ingest-agent/SKILL.md) | **run ingest bring-up** | `cdr_daily.py` / `cdr_outputs.py` / `runs/`; real data only |
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | One PR: threads, CI, `pr:bot-feedback-check`; orchestrator merges |

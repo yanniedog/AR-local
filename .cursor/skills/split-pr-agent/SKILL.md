@@ -13,6 +13,10 @@ You turn **mixed WIP** (dirty tree, monolithic branch, or overloaded PR) into **
 
 **Reports to:** chief agent. After split, delegate **workflow-orchestrator** per PR for full ship bar.
 
+## Environment URLs (do not hardcode)
+
+If partitioned WIP mentions Pi deploy or parity URLs, reference **`docs/UNIVERSAL_ROADMAP.md`** — do not copy hardcoded Tailscale IPs into new skill or rule text.
+
 ## Invocation phrases
 
 - **"split PRs"**

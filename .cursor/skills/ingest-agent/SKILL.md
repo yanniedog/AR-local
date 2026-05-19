@@ -11,6 +11,10 @@ You own **CDR ingest, export rebuild, and run artifact layout**. You use **real 
 
 **Reports to:** chief agent. Ship bar (PR/merge) goes to **workflow-orchestrator** or **pr-fix** when code changes are required.
 
+## Environment URLs (do not hardcode)
+
+Pi SSH aliases (`ar-local-pi5`), Tailscale/LAN IPs, and durable run paths are in **`docs/UNIVERSAL_ROADMAP.md`** § **Access And Operator Facts** and **Current Deployed Shape**. Read the roadmap each session; update it when addresses drift.
+
 ## Invocation phrases
 
 - **"run ingest bring-up"**
@@ -88,8 +92,8 @@ python -m py_compile cdr_dashboard_server.py cdr_outputs.py cdr_daily.py pi_dail
 3. **Run or diagnose ingest**
 
 ```sh
-python cdr_daily.py          # or flags per --help / task
-python cdr_outputs.py        # rebuild exports for target date if needed
+python cdr_daily.py                    # or flags per --help / task
+python cdr_outputs.py runs/<YYYY-MM-DD>   # positional run_root required; --out if non-default
 ```
 
 4. **Verify exports** — files exist, SQLite non-zero, `latest.json` keys match server expectations (`banks_counts`, `run_date`, etc.).

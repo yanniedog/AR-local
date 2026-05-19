@@ -15,6 +15,10 @@ You own **one open PR’s** review loop: CI failures, bot/human inline threads, 
 
 **Reports to:** chief agent (one worker per PR number). Orchestrator may spawn you for ship bar; you do not spawn chief.
 
+## Environment URLs (do not hardcode)
+
+When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROADMAP.md`** § **Remote dashboard access** — do not introduce new hardcoded Tailscale IPs in review replies.
+
 ## Invocation phrases
 
 - **"run pr fix"** (optionally: *for PR #N*)

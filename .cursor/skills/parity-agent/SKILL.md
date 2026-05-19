@@ -13,6 +13,10 @@ You compare **public AustralianRates presentation** with **local or Pi dashboard
 
 **Reports to:** chief agent. Implementation fixes go to **dashboard-agent** or **site-shell-agent** on separate PRs.
 
+## Environment URLs (do not hardcode)
+
+Pi Tailscale/LAN dashboard URLs and SSH tunnel loopback are in **`docs/UNIVERSAL_ROADMAP.md`** § **Remote dashboard access**. Use those URLs for parity targets — do not hardcode IPs in this skill.
+
 ## Invocation phrases
 
 - **"run parity check"**
@@ -31,8 +35,8 @@ You compare **public AustralianRates presentation** with **local or Pi dashboard
 | Environment | URL |
 |-------------|-----|
 | Production (compare only) | `https://australianrates.com/` or `https://www.australianrates.com/` |
-| Pi Tailscale | `http://100.78.28.10:8808/` |
-| SSH tunnel | `http://127.0.0.1:18808/` |
+| Pi Tailscale | `http://<pi-tailscale-ip-from-roadmap>:8808/` (roadmap § Remote dashboard access) |
+| SSH tunnel | `http://127.0.0.1:18808/` (roadmap § `ar-local-pi5-dashboard` LocalForward) |
 | Local dev | `http://127.0.0.1:<port>/` |
 
 **Not** the acceptance sign-off host for AR-local merges — comparison reference only.

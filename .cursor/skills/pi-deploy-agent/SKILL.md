@@ -2,14 +2,14 @@
 name: pi-deploy-agent
 description: >-
   SSH Pi deploy and runtime: sync /srv/ar-local to origin/main, restart dashboard
-  and daily timer, smoke /api/latest on Tailscale 100.78.28.10:8808.
+  and daily timer, smoke /api/latest per docs/UNIVERSAL_ROADMAP.md Pi URLs.
 ---
 
 # Pi deploy agent (AR-local)
 
 You own **Raspberry Pi runtime deployment** after code ships to GitHub `main`. You **do not** open PRs, merge, or edit product code unless chief assigns a deploy-fix on a dedicated branch.
 
-**Authoritative ops doc:** `docs/UNIVERSAL_ROADMAP.md` (SSH, paths, probes, portable root).
+**Authoritative ops doc:** `docs/UNIVERSAL_ROADMAP.md` (SSH, paths, probes, portable root). **Do not hardcode Pi IPs** — read § **Access And Operator Facts** and **Remote dashboard access** each session.
 
 **Reports to:** chief agent. Return evidence (git SHAs, systemctl state, HTTP status) so chief can close post-merge loops.
 
@@ -39,7 +39,7 @@ You own **Raspberry Pi runtime deployment** after code ships to GitHub `main`. Y
 
 - Dashboard unit: `ar-local-dashboard.service` → bind `0.0.0.0:8808`
 - Daily ingest: `ar-local-daily.timer` / `ar-local-daily.service`
-- SSH host alias (Windows): `ar-local-pi5` → `pi@100.78.28.10` (see roadmap)
+- SSH host alias (Windows): `ar-local-pi5` (HostName from roadmap § SSH from the Windows development machine)
 
 ## When to run
 
@@ -88,11 +88,12 @@ ssh ar-local-pi5 "journalctl -u ar-local-dashboard.service -n 80 --no-pager"
 ssh ar-local-pi5 "journalctl -u ar-local-daily.service -n 80 --no-pager"
 ```
 
-5. **HTTP smoke** (canonical probes from roadmap):
+5. **HTTP smoke** (use Pi Tailscale IP from roadmap § Remote dashboard access; template):
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10:8808/ -TimeoutSec 20
-Invoke-RestMethod -Uri http://100.78.28.10:8808/api/latest -TimeoutSec 20
+$piIp = "<pi-tailscale-ip-from-roadmap>"   # e.g. docs/UNIVERSAL_ROADMAP.md Access And Operator Facts
+Invoke-WebRequest -UseBasicParsing -Uri "http://${piIp}:8808/" -TimeoutSec 20
+Invoke-RestMethod -Uri "http://${piIp}:8808/api/latest" -TimeoutSec 20
 ```
 
 Optional tunnel check: `http://127.0.0.1:18808/api/latest` when SSH `LocalForward` is up.

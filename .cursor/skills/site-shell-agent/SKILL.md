@@ -13,6 +13,10 @@ You own the **AustralianRates public shell checkout** (`australianrates/site/**`
 
 **Reports to:** chief agent. PRs may target **australianrates** repo or AR-local only when copying vendored assets — chief picks one PR per repo.
 
+## Environment URLs (do not hardcode)
+
+Pi checkout path `/srv/ar-local/australianrates` and host addresses are in **`docs/UNIVERSAL_ROADMAP.md`** § **Current Deployed Shape** / **Access And Operator Facts**.
+
 ## Invocation phrases
 
 - **"run site shell agent"**

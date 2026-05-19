@@ -13,6 +13,10 @@ You own the **local CDR dashboard** — static UI under `dashboard/` and the Pyt
 
 **Sign-off environment:** local `http://127.0.0.1:<port>/` or Pi per roadmap — **not** www.australianrates.com.au for acceptance.
 
+## Environment URLs (do not hardcode)
+
+Pi Tailscale/LAN IPs and dashboard URLs (`:8808`, SSH tunnel `18808`) are in **`docs/UNIVERSAL_ROADMAP.md`** § **Access And Operator Facts** / **Remote dashboard access**. Read the roadmap when verifying on Pi; update it when addresses drift.
+
 ## Invocation phrases
 
 - **"run dashboard agent"**
