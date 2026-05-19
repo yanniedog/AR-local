@@ -1,4 +1,4 @@
-"""Run the local manual CDR ingest at most once per local day."""
+﻿"""Run the local manual CDR ingest at most once per local day."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from ar_local_pi_runtime import (
     export_manifest_is_valid,
     is_raspberry_pi,
     load_exports_manifest,
+    manifest_banks_rate_count,
     prepare_empty_dir,
 )
 from ar_local_sectors import energy_ingest_enabled
@@ -41,13 +42,7 @@ def marker_path(state_dir: Path, date: str) -> Path:
 
 
 def banks_result_rate_count(result: dict) -> int:
-    banks = result.get("banks")
-    if not isinstance(banks, dict):
-        return 0
-    try:
-        return int(banks.get("rates") or 0)
-    except (TypeError, ValueError):
-        return 0
+    return manifest_banks_rate_count(result)
 
 
 def persistent_export_root(persistent_runs_root: Path, date: str, exports: Optional[Path]) -> Path:

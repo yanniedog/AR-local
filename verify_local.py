@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """HTTP smoke checks for the local CDR dashboard (replaces verify:prod for this repo)."""
 
 from __future__ import annotations
@@ -8,6 +8,8 @@ import json
 import sys
 import urllib.error
 import urllib.request
+
+from ar_local_pi_runtime import manifest_banks_rate_count
 
 
 def http_get(url: str, timeout: float = 30.0) -> int:
@@ -69,7 +71,7 @@ def main() -> int:
         except Exception as exc:
             print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
             return 1
-        rates = int((payload.get("banks_counts") or {}).get("rates") or 0)
+        rates = manifest_banks_rate_count(payload)
         run_date = payload.get("run_date")
         if rates <= 0:
             print(

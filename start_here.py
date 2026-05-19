@@ -1,4 +1,4 @@
-"""Cross-platform Start Here menu: daily ingest, dashboard, schedule, git update, DB summary."""
+﻿"""Cross-platform Start Here menu: daily ingest, dashboard, schedule, git update, DB summary."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def resolve_python_argv() -> List[str]:
 def latest_run_date() -> Optional[str]:
     exports = latest_exports_root(RUNS_DIR)
     if exports is not None:
-        return exports.parent.parent.name
+        return exports.parent.name
     if not RUNS_DIR.is_dir():
         return None
     dates: List[str] = []
