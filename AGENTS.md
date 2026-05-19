@@ -64,6 +64,19 @@ Dense tables, compact controls, terse labels. Avoid marketing copy and narrative
 - Prefer focused changes; match existing style in Python and browser scripts.
 - Keep **`cdr_dashboard_server.py`** routing explicit and safe (path traversal checks preserved).
 
+## Deep browser exploration
+
+Interactive UI QA via Browser MCP for navigation, hierarchy drill-down, screenshots, console/network capture. Complements **`verify:local`**; does not replace it for ship-bar sign-off.
+
+| Piece | Location |
+|-------|----------|
+| Skill (MCP workflow, selectors, report format) | [`.cursor/skills/deep-browser-explore/SKILL.md`](.cursor/skills/deep-browser-explore/SKILL.md) |
+| Manual-invoke rule (`dashboard/**` optional) | [`.cursor/rules/deep-browser-explore.mdc`](.cursor/rules/deep-browser-explore.mdc) |
+
+**Invoke:** **deep browser explore**, **browser QA pass**, or **`/deep-browser-explore`**. Read MCP tool schemas under `user-browser_agent_cursor` each session.
+
+**Targets:** `http://127.0.0.1:<port>/` (local) or Pi dashboard per **`docs/UNIVERSAL_ROADMAP.md`** (LAN/Tailscale IP, SSH tunnel). Not production australianrates.com for acceptance unless comparing parity.
+
 ## Chief agent
 
 Session **coordination authority** ? path locks, PR assignment, dedupe redundant spawns, supersede stale workers when the user changes direction. Sits **above** the workflow orchestrator.
