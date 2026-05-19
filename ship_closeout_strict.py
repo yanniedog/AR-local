@@ -52,7 +52,8 @@ def main() -> int:
                 )
             except FileNotFoundError:
                 print(
-                    "ship_closeout_strict: Node not found; run npm run wait-for-bots manually.",
+                    "ship_closeout_strict: Node.js not found on PATH — install Node.js (LTS), "
+                    "then re-run npm run ship:closeout:strict (bot gates require Node).",
                     file=sys.stderr,
                 )
                 return 2
@@ -75,7 +76,9 @@ def main() -> int:
                 )
             except FileNotFoundError:
                 print(
-                    "ship_closeout_strict: Node not found; run npm run pr:bot-feedback-check manually.",
+                    "ship_closeout_strict: Node.js not found on PATH — install Node.js (LTS), "
+                    "then re-run npm run pr:bot-feedback-check -- --pr "
+                    f"{pr_number} (requires Node).",
                     file=sys.stderr,
                 )
                 return 2

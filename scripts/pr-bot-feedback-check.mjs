@@ -37,6 +37,12 @@ function parseArgs(argv) {
     else if (a === '--skip-bot-presence') out.skipBotPresence = true;
     else if (a === '--require-bots' && argv[i + 1]) {
       out.requireBots = argv[++i].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    } else if (a.startsWith('--require-bots=')) {
+      out.requireBots = a
+        .slice('--require-bots='.length)
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
     } else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
