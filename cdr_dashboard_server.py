@@ -416,7 +416,7 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
     out = html
     if b"ar-section-economic-data" in out.lower() and b"ar-local-cdr" not in out.lower():
         out, _ = re.subn(
-            br'(<body\s+class="[^"]*)(ar-section-economic-data)([^"]*")',
+            br'(<body\s+class="[^"]*\b)(ar-section-economic-data)(\b[^"]*")',
             br"\1\2 ar-local-cdr\3",
             out,
             count=1,

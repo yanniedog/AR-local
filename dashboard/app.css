@@ -73,15 +73,7 @@ body.ar-public.ar-local-cdr .market-intro::after {
   --ar-showcase-glow: rgba(96, 165, 250, 0.14);
 }
 
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data {
-  --ar-section-accent: var(--ar-local-blue-strong);
-  --ar-section-accent-soft: var(--ar-local-section-fill);
-  --ar-section-soft: var(--ar-local-section-tint);
-  --ar-section-glow: var(--ar-local-section-glow);
-}
-
-:root[data-theme] body.ar-public.ar-section-economic-data .bg-layer,
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data .bg-layer {
+:root[data-theme] body.ar-public.ar-section-economic-data .bg-layer {
   display: none;
 }
 
@@ -100,9 +92,7 @@ body.ar-public.ar-local-cdr .market-intro::after {
 
 /* Skip-to-content: neutral focus ring (same as local CDR header tabs). */
 :root[data-theme] body.ar-public.ar-section-economic-data #main-content:focus,
-:root[data-theme] body.ar-public.ar-section-economic-data #main-content:focus-visible,
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus,
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus-visible {
+:root[data-theme] body.ar-public.ar-section-economic-data #main-content:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--ar-text-muted) 80%, transparent);
   outline-offset: 2px;
   box-shadow: none;
