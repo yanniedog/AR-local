@@ -750,18 +750,6 @@
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
   }
 
-  function renderStats(rows) {
-    const counts = state.manifest.banks_counts;
-    const entries = Object.entries(counts).slice(0, 6).concat([['visible rows', rows.length]]);
-    const stats = $('stats');
-    clear(stats);
-    entries.forEach(([key, value]) => {
-      const card = child(stats, 'div', 'terminal-stat');
-      child(card, 'span', 'metric-code', key);
-      child(card, 'strong', '', num(value));
-    });
-  }
-
   function renderFlatTable(rows) {
     const keys = ['provider', 'plan_name', 'fuel_type', 'last_updated', 'description'];
     const visible = rows.slice(0, 1500);
@@ -828,7 +816,6 @@
     const label = sectionDisplayLabel(state.section);
     const emptyMsg = `No ${label} rates in export ${state.manifest.run_date}.`;
     setLinks();
-    renderStats([]);
     renderTable([]);
     drawChartFromState([]);
     $('chart-status').textContent = emptyMsg;
@@ -871,7 +858,6 @@
     }
     const focused = applyFocusFilter(allRows);
     setLinks();
-    renderStats(focused);
     // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
     // onFocusChange callback (state only — no redraw inside the callback).
     renderTable(focused);
