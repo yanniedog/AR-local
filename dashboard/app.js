@@ -950,7 +950,7 @@
   }
 
   async function init() {
-    state.manifest = await getJson('/api/latest');
+    state.manifest = await getJson('/api/latest', { cache: 'no-store' });
     loadIngestSchedule();
     bind();
     await loadSection(sectionFromPathname());
