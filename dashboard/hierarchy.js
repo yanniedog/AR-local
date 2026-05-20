@@ -330,9 +330,19 @@
     dot.style.setProperty('--ar-swatch-color', swatch(row));
     const label = child(rateRow, 'span', 'ar-report-infobox-tlabel local-hierarchy-leaf-label');
     const isEnergy = Boolean(row.plan_name && !row.product_name);
+    const lvrSourceHint =
+      !isEnergy && row.lvr_tier === 'lvr_unspecified' && row.lvr_source
+        ? {
+            product_constraints: 'LVR: product constraint (rate row empty)',
+            product_unparsed: 'LVR: product signal not parsed',
+            none: 'LVR: not in CDR rate fields',
+            rate_structured: '',
+            context_text: '',
+          }[row.lvr_source] || ''
+        : '';
     const metaBits = isEnergy
       ? [row.fuel_type, row.last_updated && row.last_updated.slice(0, 10)].filter(Boolean)
-      : [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose].filter(Boolean);
+      : [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose, lvrSourceHint].filter(Boolean);
     if (window.LocalCdrBrand && row.provider) {
       const brandSlot = child(label, 'span', 'local-hierarchy-leaf-brand');
       const badge = window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {

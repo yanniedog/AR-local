@@ -34,7 +34,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          AR_BOT_WAIT_REQUIRED: gemini,codex,sourcery
+          # codex connector does not post on AR-local PRs; gemini + sourcery cover review
+          AR_BOT_WAIT_REQUIRED: gemini,sourcery
           BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check
           # CI has no .ar-bot-wait state; anchor falls back to PR createdAt (long-open PRs exceed 28m).
           BOT_WAIT_MAX_MIN: "240"

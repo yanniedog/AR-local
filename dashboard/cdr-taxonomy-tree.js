@@ -36,7 +36,7 @@
     PURCHASE: 'Purchase', CASH_ADVANCE: 'Cash advance',
     BAL_TRANSFER: 'Balance transfer', INTEREST_FREE: 'Interest free',
     // LVR tiers
-    LVR_UNSP: 'LVR unspecified', LVR_LE60: 'LVR <= 60%',
+    LVR_UNSP: 'LVR unspecified (no tier resolved)', LVR_LE60: 'LVR <= 60%',
     LVR_60_70: 'LVR 60-70%', LVR_70_80: 'LVR 70-80%',
     LVR_80_85: 'LVR 80-85%', LVR_85_90: 'LVR 85-90%',
     LVR_90_95: 'LVR 90-95%',

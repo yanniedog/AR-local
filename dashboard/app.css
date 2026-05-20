@@ -55,26 +55,45 @@ body.ar-public.ar-local-cdr .market-intro::after {
 }
 
 /*
- * Economic Data (/economic-data/): cdr_dashboard_server injects this file after
- * public-polish.css, which sets --ar-section-accent to #a855f7 (purple) on
- * :root[data-theme] body.ar-section-economic-data (higher specificity than body-only).
- * Match banking tabs: blue section tokens, no bg aurora.
+ * Economic Data (/economic-data/): standalone site page uses
+ * body.ar-public.ar-section-economic-data without ar-local-cdr. public-polish
+ * sets --ar-section-accent to #a855f7 at :root[data-theme] body.ar-section-economic-data.
+ * Match banking: blue section tokens, neutral nav tab, no purple bg aurora.
  */
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data {
+:root[data-theme] body.ar-public.ar-section-economic-data {
+  --ar-local-blue-strong: #3b82f6;
+  --ar-local-section-fill: rgba(59, 130, 246, 0.12);
+  --ar-local-section-tint: rgba(59, 130, 246, 0.10);
+  --ar-local-section-glow: rgba(59, 130, 246, 0.18);
   --ar-section-accent: var(--ar-local-blue-strong);
   --ar-section-accent-soft: var(--ar-local-section-fill);
   --ar-section-soft: var(--ar-local-section-tint);
   --ar-section-glow: var(--ar-local-section-glow);
+  --ar-showcase-spark: #60a5fa;
+  --ar-showcase-glow: rgba(96, 165, 250, 0.14);
 }
 
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data .bg-layer {
+:root[data-theme] body.ar-public.ar-section-economic-data .bg-layer {
   display: none;
 }
 
-/* Skip-to-content: blue focus ring (no purple shadow from section accent) */
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus,
-:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ar-section-accent) 75%, transparent);
+/* Active nav tab: neutral border (beat public-polish section-purple !important). */
+:root[data-theme] body.ar-public.ar-section-economic-data .site-header-segment-link.is-active {
+  color: var(--ar-text) !important;
+  background: color-mix(in srgb, var(--ar-surface) 80%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--ar-line-strong) 90%, transparent) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme] body.ar-public.ar-section-economic-data .site-header-segment-link:hover {
+  color: var(--ar-text);
+  background: color-mix(in srgb, var(--ar-surface-2) 88%, transparent);
+}
+
+/* Skip-to-content: neutral focus ring (same as local CDR header tabs). */
+:root[data-theme] body.ar-public.ar-section-economic-data #main-content:focus,
+:root[data-theme] body.ar-public.ar-section-economic-data #main-content:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ar-text-muted) 80%, transparent);
   outline-offset: 2px;
   box-shadow: none;
 }
@@ -167,13 +186,20 @@ body.ar-public .site-header-segment-link:focus-visible {
   color: var(--ar-text);
 }
 
-/* frame.js toolbar: public-modern bumps refresh to 1.2rem; match public-shell .site-action-icon (1rem). */
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon {
+/*
+ * frame.js header toolbar: public-modern.css sets refresh to 1.2rem; arc clips in 34px
+ * buttons. Prior override used body.ar-local-cdr only; /economic-data/ lacks that class.
+ */
+body.ar-public .site-header-actions .site-action-refresh.site-action-btn {
+  overflow: visible;
+}
+
+body.ar-public .site-header-actions .site-action-refresh .site-action-icon {
   width: 1rem;
   height: 1rem;
 }
 
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
+body.ar-public .site-header-actions .site-action-refresh .site-action-icon svg {
   stroke-width: 1.8;
 }
 

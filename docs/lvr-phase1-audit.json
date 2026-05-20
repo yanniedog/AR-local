@@ -1,0 +1,20 @@
+{
+  "run_date": "2026-05-19",
+  "baseline_pct_unspecified": 12.5,
+  "baseline_unspecified_rows": 686,
+  "mortgage_lending_rows": 5490,
+  "findings": {
+    "product_constraints_only": "LVR declared on product constraints[] but not on lendingRates[] — primary fix target (Phase 2)",
+    "no_lvr_signal": "No LVR in rate fields, product constraints, or parseable text — remains after all phases",
+    "text_lvr_not_parsed": "LVR wording present but regex/keyword rules did not extract a bound",
+    "rate_has_bounds_but_unspecified": "Should be zero when tier_for_boundary is consistent"
+  },
+  "remaining_after_fix": {
+    "lvr_unspecified_rows": 249,
+    "pct_unspecified": 4.54,
+    "reasons": { "no_lvr_signal": 249 },
+    "sample_products": [
+      "AMP - My AMP | Land Loan | VARIABLE"
+    ]
+  }
+}
