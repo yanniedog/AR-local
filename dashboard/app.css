@@ -161,13 +161,20 @@ body.ar-public .site-header-segment-link:focus-visible {
   color: var(--ar-text);
 }
 
-/* frame.js toolbar: public-modern bumps refresh to 1.2rem; match public-shell .site-action-icon (1rem). */
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon {
+/*
+ * frame.js header toolbar: public-modern.css sets refresh to 1.2rem; arc clips in 34px
+ * buttons. Prior override used body.ar-local-cdr only; /economic-data/ lacks that class.
+ */
+body.ar-public .site-header-actions .site-action-refresh.site-action-btn {
+  overflow: visible;
+}
+
+body.ar-public .site-header-actions .site-action-refresh .site-action-icon {
   width: 1rem;
   height: 1rem;
 }
 
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
+body.ar-public .site-header-actions .site-action-refresh .site-action-icon svg {
   stroke-width: 1.8;
 }
 
