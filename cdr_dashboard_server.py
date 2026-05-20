@@ -110,6 +110,20 @@ BANK_HISTORY_COLUMNS = (
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
+# Banking dashboard SPA entry URLs (client app.js sectionToPath / sectionFromPathname).
+# Must serve dashboard/index.html — not site_root/savings/ (a directory → 404).
+DASHBOARD_BANKING_SECTION_PATHS = frozenset(
+    (
+        "/",
+        "/savings",
+        "/savings/",
+        "/term-deposits",
+        "/term-deposits/",
+        "/home-loans",
+        "/home-loans/",
+    )
+)
+
 # Fields that uniquely identify a "rate row template" across run dates.
 # When we carry-forward, two rows share an identity iff every field below
 # matches; only run_date and the rate / comparison_rate values differ.
@@ -390,6 +404,11 @@ def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]
 def is_economic_data_page_path(url_path: str) -> bool:
     path = url_path.split("?", 1)[0]
     return path == "/economic-data" or path == "/economic-data/" or path.startswith("/economic-data/")
+
+
+def is_dashboard_banking_section_path(url_path: str) -> bool:
+    """True when the URL should return the local CDR dashboard shell (index.html)."""
+    return url_path.split("?", 1)[0] in DASHBOARD_BANKING_SECTION_PATHS
 
 
 def inject_local_dashboard_css(html: bytes) -> bytes:
@@ -893,7 +912,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             return cache.read(target), ctype, cache.gz_for(target, ctype)
 
         def route(self, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str, bytes | None]:
-            if path == "/":
+            if is_dashboard_banking_section_path(path):
                 return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "index.html", "text/html; charset=utf-8")
             if path == "/assets/app.css":
                 return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "app.css", "text/css; charset=utf-8")
