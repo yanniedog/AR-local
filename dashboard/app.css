@@ -161,13 +161,23 @@ body.ar-public .site-header-segment-link:focus-visible {
   color: var(--ar-text);
 }
 
-/* frame.js toolbar: public-modern bumps refresh to 1.2rem; match public-shell .site-action-icon (1rem). */
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon {
-  width: 1rem;
-  height: 1rem;
+/*
+ * frame.js toolbar (economic-data, etc.): public-modern.css sets refresh to 1.2rem;
+ * the arc glyph bleeds past a 34px hit target and clips vs 1rem siblings.
+ * app.css loads on all ar-public pages here — not only body.ar-local-cdr banking shell.
+ */
+body.ar-public .site-action-refresh.site-action-btn {
+  overflow: visible;
 }
 
-body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
+body.ar-public .site-action-refresh .site-action-icon {
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+}
+
+body.ar-public .site-action-refresh .site-action-icon svg {
+  display: block;
   stroke-width: 1.8;
 }
 
