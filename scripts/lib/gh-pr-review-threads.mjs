@@ -60,8 +60,11 @@ export function repoSlugFromEnv() {
   return { owner, name };
 }
 
-export function ghJson(args) {
-  const r = spawnSync('gh', args, { encoding: 'utf8' });
+export function ghJson(args, { timeout = 120_000, maxBuffer = 4 * 1024 * 1024 } = {}) {
+  const r = spawnSync('gh', args, { encoding: 'utf8', timeout, maxBuffer });
+  if (r.error?.code === 'ETIMEDOUT') {
+    throw new Error(`gh timed out after ${timeout}ms`);
+  }
   if (r.error || r.status !== 0) {
     const err = (r.stderr || r.stdout || r.error?.message || 'gh failed').trim();
     if (isGithubRateLimitError(err)) throw new GhRateLimitError(err);

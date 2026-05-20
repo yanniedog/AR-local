@@ -236,6 +236,7 @@ Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrato
 | Concern | Delegate to | Notes |
 |---------|-------------|-------|
 | Ship bar, split PRs, bot wait, merge, verify | **workflow-orchestrator** | One PR per task; global mirror check before merge when applicable |
+| Continuous open-PR queue (multi-PR merge + Pi) | **pr-watch-agent** | Background when `gh pr list --state open` non-empty; one worker; `npm run pr:watch-once`; chief still holds path locks |
 | Open PR #N review / CI / bots | **pr-fix** + **babysit** | One worker per PR |
 | Browser QA | **deep-browser-explore** | After deploy or for UI tasks |
 | Global sync only | **generalPurpose** sync worker | Push `cursor-global-workflow`; return SHA |
