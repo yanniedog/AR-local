@@ -6,10 +6,9 @@
  * greens via --ar-section-accent / --ar-section-glow. These are neutralised
  * here with blue equivalents so nothing renders green on the local dashboard.
  *
- * Logo wraps: foundation.css uses a near-white tile. The original workaround
- * (dark tile) masked teal bleed-through but made logos unreadable. Now that
- * the accent is neutralised, wraps revert to opaque white so bank logos
- * (designed for light backgrounds) render clearly.
+ * Logo wraps: foundation.css `.bank-badge-logo-wrap` uses a near-white tile
+ * (reads as a sky-blue frame on the dark dashboard). Dark theme uses a
+ * transparent wrap; light theme keeps a white tile for logo contrast.
  */
 
 body.ar-public.ar-local-cdr {
@@ -20,9 +19,9 @@ body.ar-public.ar-local-cdr {
   --ar-local-section-fill: rgba(59, 130, 246, 0.12);
   --ar-local-section-tint: rgba(59, 130, 246, 0.10);
   --ar-local-section-glow: rgba(59, 130, 246, 0.18);
-  --ar-local-logo-tile: rgba(255, 255, 255, 0.97);
-  --ar-local-logo-tile-border: rgba(0, 0, 0, 0.07);
-  --ar-local-fallback-ink: #1e293b;
+  --ar-local-logo-tile: transparent;
+  --ar-local-logo-tile-border: transparent;
+  --ar-local-fallback-ink: var(--ar-text-soft);
   --ar-local-showcase-spark: #60a5fa;
   --ar-local-showcase-glow: rgba(96, 165, 250, 0.14);
 }
@@ -33,6 +32,12 @@ body.ar-public.ar-local-cdr {
   --ar-accent: var(--ar-local-blue);
   --ar-accent-hover: var(--ar-local-blue-strong);
   --ar-accent-soft: var(--ar-local-blue-soft);
+}
+
+:root[data-theme="light"] body.ar-public.ar-local-cdr {
+  --ar-local-logo-tile: rgba(255, 255, 255, 0.97);
+  --ar-local-logo-tile-border: rgba(0, 0, 0, 0.07);
+  --ar-local-fallback-ink: #1e293b;
 }
 
 /* Savings/TD: beat public-polish section greens (same specificity pattern as economic-data). */
@@ -85,7 +90,7 @@ html body.ar-public.ar-local-cdr .bg-layer {
   display: none;
 }
 
-/* ── Logo-wrap: opaque white so bank/energy logos render correctly ────── */
+/* ── Logo-wrap: beat foundation.css near-white tile on dark panel ─────── */
 
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-logo-wrap,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-logo-wrap,
@@ -95,8 +100,7 @@ body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
   box-shadow: none;
 }
 
-/* Fallback abbreviations sit on a white tile — use dark ink, not light-on- */
-/* dark.                                                                       */
+/* Fallback abbreviations when the image is missing or still loading. */
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-fallback,
@@ -233,11 +237,16 @@ body.ar-public.ar-local-cdr .site-action-refresh .site-action-icon svg {
   object-fit: contain;
 }
 
-/* Provider rail tiles: no section-accent frame from public-polish / local accent. */
+/* Provider rail tiles: no section-accent frame from public-polish / foundation. */
 body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
 body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
   outline: none;
   box-shadow: none;
+}
+
+:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
+:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
+  background: transparent;
 }
 
 body.ar-public.ar-local-cdr button.local-provider-logo-btn:focus:not(:focus-visible) {
