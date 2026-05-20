@@ -554,5 +554,11 @@
     delete container.__localHierarchyPathKeys;
   }
 
-  window.LocalCdrHierarchy = { render, applyProviderHighlight, productKeysAtPath, productKeysForRows };
+  window.LocalCdrHierarchy = {
+    render,
+    applyProviderHighlight,
+    productKeysAtPath,
+    productKeysForRows,
+    rowProductKey,
+  };
 })();

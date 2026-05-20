@@ -61,6 +61,7 @@
     chartHoverDate: '',
     chartPinnedDate: '',
     chartDates: [],
+    _chartFocusPainted: '',
     ingestSchedule: null,
     ingestClockOffsetMs: 0,
     ingestScheduleFetchedAtMs: 0,
@@ -153,10 +154,7 @@
     return rows.filter((row) => rowMatchesProvider(row, focus));
   }
 
-  function rowProductKey(row) {
-    const raw = row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
-    return raw === '' || raw == null ? '' : String(raw);
-  }
+  const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
     const focus = state.focusedProductKeys;
@@ -820,6 +818,7 @@
 
   function paintChart(finalRows, items) {
     window.LocalCdrChart.draw($('chart'), items, 'banks');
+    state._chartFocusPainted = focusActiveProvider();
     setHistoryWindowUi(items);
     updateHero(finalRows, items);
     if (items && items.kind === 'bank-history') {
@@ -836,6 +835,13 @@
 
   function redrawChart() {
     drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
+  }
+
+  /** Hover paths: skip full ECharts rebuild when ribbon focus is unchanged. */
+  function redrawChartIfFocusChanged() {
+    const focus = focusActiveProvider();
+    if (focus === state._chartFocusPainted) return;
+    redrawChart();
   }
 
   function renderEmptySection() {
@@ -1003,14 +1009,14 @@
     state.hoverProvider = provider;
     lastHierarchyHoverSignature = domSig;
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    redrawChart();
+    redrawChartIfFocusChanged();
   }
 
   function clearHierarchyTableHover() {
     if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
     resetHierarchyHover();
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    redrawChart();
+    redrawChartIfFocusChanged();
   }
 
   function bind() {
@@ -1051,14 +1057,14 @@
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       btn.classList.add('is-hover');
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
-      redrawChart();
+      redrawChartIfFocusChanged();
     });
     logoWrap.addEventListener('mouseleave', () => {
       if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
       resetHierarchyHover();
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
-      redrawChart();
+      redrawChartIfFocusChanged();
     });
 
     $('hierarchy').addEventListener('click', (event) => {
