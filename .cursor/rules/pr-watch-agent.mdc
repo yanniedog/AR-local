@@ -1,0 +1,18 @@
+---
+description: PR watch agent — continuous open-PR bot closure, merge, Pi deploy (invoke or chief delegation).
+globs:
+alwaysApply: false
+---
+
+# PR watch agent
+
+When the user says **"run pr watch"**, **"watch open PRs"**, or when **chief/workflow-orchestrator** delegates continuous PR babysit + merge + Pi sync:
+
+1. Read [`.cursor/skills/pr-watch-agent/SKILL.md`](../skills/pr-watch-agent/SKILL.md).
+2. Run `npm run pr:watch-once` (add `--watch` for idle polling).
+3. For each open PR (oldest first): pr-fix patterns → `wait-for-bots` → `pr:bot-feedback-check` → `pr:gates:check` → squash merge only at exit **0**.
+4. After merges: `npm run pi:deploy` + `pi:deploy:verify` + `npm run verify:pi` (Pi URL from `docs/UNIVERSAL_ROADMAP.md` — not default `127.0.0.1`).
+
+**Not a replacement for chief** on path locks or concurrent `agent/*` branch writers. One pr-watch worker at a time per repo.
+
+**Hooks:** `.cursor/hooks.json` remains empty unless `AR_LOCAL_COORDINATION_HOOKS=1`; chief may spawn this agent in the background when `gh pr list --state open` is non-empty.

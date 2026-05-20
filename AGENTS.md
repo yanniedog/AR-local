@@ -45,6 +45,7 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Bot wait gate (new PR) | `npm run wait-for-bots` |
 | Bot thread closure gate | `npm run pr:bot-feedback-check -- --pr <n>` |
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
+| PR watch one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = gates failing) |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Pi dashboard smoke HTTP (default acceptance) | `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/` |
@@ -122,6 +123,7 @@ Chief assigns **one writer per path prefix and branch** when invoked. Each skill
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR gates | [`.cursor/skills/pr-gates-agent/SKILL.md`](.cursor/skills/pr-gates-agent/SKILL.md) | **run pr gates agent** / **ensure PR gates** | Read-only: `npm run pr:gates:check`; hand off failures to pr-fix |
 | PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | One PR: threads, CI, synthesis; orchestrator merges after gates pass |
+| PR watch | [`.cursor/skills/pr-watch-agent/SKILL.md`](.cursor/skills/pr-watch-agent/SKILL.md) | **run pr watch** / **watch open PRs** | Continuous open-PR loop: gates, merge (oldest first), Pi deploy + verify; `npm run pr:watch-once`; chief holds path locks |
 | Parity | [`.cursor/skills/parity-agent/SKILL.md`](.cursor/skills/parity-agent/SKILL.md) | **run parity check** | Prod vs local/Pi layout/CSS; not functional QA |
 | Post-merge verify | [`.cursor/skills/post-merge-verify-agent/SKILL.md`](.cursor/skills/post-merge-verify-agent/SKILL.md) | **run post-merge verify** | `WORKFLOW.md` steps 8-9 after merge |
 | Split PRs | [`.cursor/skills/split-pr-agent/SKILL.md`](.cursor/skills/split-pr-agent/SKILL.md) | **split PRs** | Partition mixed WIP; then orchestrator per slice |
