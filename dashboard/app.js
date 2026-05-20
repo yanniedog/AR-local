@@ -437,8 +437,9 @@
     const focus = String(state.focusProvider || '').trim();
     if (focus) return providerMatchKeys(focus);
     const rows = visibleSliceRows();
+    const pinned = String(state.chartPinnedDate || '').slice(0, 10);
     const chartHover = String(state.chartHoverDate || '').slice(0, 10);
-    const anchor = chartHover || chartTableAnchorDate();
+    const anchor = pinned || chartHover || chartTableAnchorDate();
     if (!anchor || !state.bankHistoryIndex || !rows.length) return null;
     const keys = new Set();
     rows.forEach((row) => {
