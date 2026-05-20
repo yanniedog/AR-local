@@ -21,6 +21,11 @@ _UID_SUFFIX = os.getuid() if hasattr(os, "getuid") else "shared"
 PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", f"/dev/shm/ar-local-{_UID_SUFFIX}"))
 PI_DASHBOARD_HOST = "0.0.0.0"
 PI_DASHBOARD_PORT = 8808
+PI_DASHBOARD_PROXY_PORT = 80
+# Operational Tailscale IP from docs/UNIVERSAL_ROADMAP.md (override via AR_PI_TAILSCALE_IP / AR_PI_BASE_URL).
+PI_TAILSCALE_IP = (os.environ.get("AR_PI_TAILSCALE_IP", "100.78.28.10") or "100.78.28.10").strip()
+_pi_base_url = (os.environ.get("AR_PI_BASE_URL", "") or "").strip().rstrip("/")
+PI_PUBLIC_BASE_URL = f"{_pi_base_url}/" if _pi_base_url else f"http://{PI_TAILSCALE_IP}/"
 ENV_PORTABLE_ROOT = "AR_LOCAL_PORTABLE_ROOT"
 ENV_DATA_ROOT = "AR_LOCAL_DATA_ROOT"
 

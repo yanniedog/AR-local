@@ -6,8 +6,9 @@ This is the shared roadmap for LLM agents working on AR-local. Treat it as the o
 
 AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data. On the Raspberry Pi it must serve the dashboard continuously at:
 
-- `http://<pi-ip>:8808/`
-- `http://ar.local:8808/` when local DNS or mDNS is configured for the Pi
+- `http://<pi-ip>/` (nginx on port 80 proxies to the Python server on `8808`)
+- `http://ar.local/` when local DNS or mDNS is configured for the Pi
+- Optional direct backend: `http://<pi-ip>:8808/`
 
 The dashboard must use real generated artifacts only, with banking as the current priority. **Energy CDR ingest is dormant by default** (`AR_ENERGY_DORMANT=1`; opt in with `cdr_daily.py --energy`). **Economic Data is not Energy**: the nav opens `/economic-data/` and macro APIs proxy to production (`AR_ECONOMIC_API_UPSTREAM`, default `https://www.australianrates.com`).
 
@@ -92,7 +93,13 @@ Use `HostKeyAlias=10.0.0.92` for the Tailscale address because the known host id
 
 ### Remote dashboard access while travelling
 
-Direct Tailscale URL:
+Direct Tailscale URL (default HTTP port 80; no `:8808` in the address bar):
+
+```text
+http://100.78.28.10/
+```
+
+Direct backend (optional, bypasses nginx):
 
 ```text
 http://100.78.28.10:8808/
@@ -123,7 +130,8 @@ The current Pi deployment is portable-root based. The systemd service does not r
 - authoritative durable data root: `/srv/ar-local/data`
 - durable run DBs: `/srv/ar-local/data/runs/<date>/_exports/local-cdr.sqlite`
 - dashboard service: `ar-local-dashboard.service`
-- dashboard bind: `0.0.0.0:8808`
+- dashboard bind: `0.0.0.0:8808` (Python; unprivileged high port)
+- public HTTP entry: `nginx` site `ar-local-dashboard` on port `80` ? `127.0.0.1:8808`
 
 ### Authoritative service checkout
 
@@ -245,7 +253,7 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
 | `PI_SSH_USER` | Optional (default `pi`) |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client — **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
-| `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10:8808/`) |
+| `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
 | `AR_PI_AUTO_DEPLOY` (variable) | Set to `1` so scheduled `pi-deploy-watchdog` runs `--deploy` when verify fails |
 
 Without Tailscale OAuth secrets, cloud workflows skip SSH and print a warning; the on-Pi timer still syncs within ~15 minutes. Windows dev: `npm run pi:deploy:verify` may log a harmless OpenSSH socket message after successful output.
@@ -277,7 +285,8 @@ ssh ar-local-pi5 "journalctl -u ar-local-dashboard.service -n 120 --no-pager"
 ssh ar-local-pi5 "journalctl -u ar-local-daily.service -n 160 --no-pager"
 ssh ar-local-pi5 "systemctl list-timers --all 'ar-local-daily*' --no-pager"
 ssh ar-local-pi5 "journalctl -u ar-local-daily-watchdog.service -n 80 --no-pager"
-ssh ar-local-pi5 "ss -ltnp | grep 8808 || true"
+ssh ar-local-pi5 "ss -ltnp | grep -E ':80|:8808' || true"
+ssh ar-local-pi5 "systemctl is-active nginx.service; sudo nginx -t"
 ssh ar-local-pi5 "free -h; df -h / /srv/ar-local /dev/shm"
 ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git status --short --branch && git rev-parse --short HEAD && git rev-parse --short origin/main"
 ```
@@ -285,8 +294,8 @@ ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git status --short --branch && gi
 Useful HTTP probes:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10:8808/ -TimeoutSec 20
-Invoke-RestMethod -Uri http://100.78.28.10:8808/api/latest -TimeoutSec 20
+Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10/ -TimeoutSec 20
+Invoke-RestMethod -Uri http://100.78.28.10/api/latest -TimeoutSec 20
 Invoke-WebRequest -UseBasicParsing -Uri http://127.0.0.1:18808/ -TimeoutSec 20
 Invoke-RestMethod -Uri http://127.0.0.1:18808/api/latest -TimeoutSec 20
 ```
@@ -353,15 +362,25 @@ If a separate `/home/pi/AR-local` checkout exists, treat it as a bootstrap/admin
 
 ## LAN Availability
 
-The dashboard server must bind to `0.0.0.0` on port `8808` for Pi service use and for manual LAN launches. All browser assets and API calls must remain same-origin relative URLs so every PC on the LAN can load the dashboard from the Pi IP address.
+The dashboard Python server binds to `0.0.0.0:8808`. **nginx** on port `80` is the operator-facing URL (no port suffix). Install or refresh the proxy with `deploy/pi/install-pi-dashboard-proxy.sh` (also run from `install-pi-systemd.sh` on greenfield installs). All browser assets and API calls must remain same-origin relative URLs so every PC on the LAN can load the dashboard from the Pi IP address.
 
 Pi setup should also provide a stable LAN name:
 
 - Preferred: router DHCP reservation for the Pi MAC address to keep the current fixed IP.
 - `ar.local`: use Avahi/mDNS or a router DNS override pointing `ar.local` to the Pi IP.
-- Verification: from another PC, open `http://<pi-ip>:8808/` and `http://ar.local:8808/api/latest`.
+- Verification: from another PC, open `http://<pi-ip>/` and `http://ar.local/api/latest`.
 
-Remote note: `.local` mDNS names usually do not traverse Tailscale by default. This is not a dashboard failure if `http://100.78.28.10:8808/` or the SSH tunnel works while travelling.
+Remote note: `.local` mDNS names usually do not traverse Tailscale by default. This is not a dashboard failure if `http://100.78.28.10/` or the SSH tunnel works while travelling.
+
+### Apply port-80 proxy on an existing Pi
+
+```bash
+cd /srv/ar-local/AR-local
+git pull origin main
+sudo bash deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
+curl -fsS http://127.0.0.1/api/latest
+curl -fsS http://127.0.0.1:8808/api/latest
+```
 
 ## Dashboard Parity
 
@@ -402,7 +421,7 @@ Public-shell modules already on the Pi (loaded by `dashboard/index.html`): `them
 
 #### Routing gap
 
-- Public: each section is a real URL — `/`, `/savings/`, `/term-deposits/`, `/economic-data/`. Nav uses `<a href="…">` with `aria-current="page"`.
+- Public: each section is a real URL — `/`, `/savings/`, `/term-deposits/`, `/economic-data/`. Nav uses `<a href="/savings/">` with `aria-current="page"`.
 - Pi: a single page with `<button data-section="Mortgage|Savings|TD|EconomicData">` (Economic Data redirects to `/economic-data/`). The Pi server must also serve per-section URLs and the public shell must own section switching.
 
 #### API surface gap
@@ -471,7 +490,7 @@ Future improvements should:
    3. Implement per-section routing on the Pi server so `/`, `/savings/`, `/term-deposits/`, `/economic-data/` each render the public shell with the right `data-ar-section` value.
    4. Replace `dashboard/index.html` with a thin loader that serves the public shell `index.html` and lets the public JS modules drive the UI; retire the Pi-specific hero/filter strip markup.
    5. Disable Microsoft Clarity for any non-loopback Pi access (modify `siteVariant.isLocalHost` semantics or strip the Clarity tag from the served `site-variant.js`).
-3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1—2.4 land).
+3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1–2.4 land).
 4. Keep historical ribbon values populated from retained DB exports.
 5. Keep LAN access stable on Pi IP and `ar.local`.
 6. Keep SSD portability documentation and systemd unit rendering current.
@@ -515,14 +534,14 @@ The `HEAD` check must be run in the authoritative service checkout, normally `/s
 From another LAN PC:
 
 ```sh
-curl -fsS http://<pi-ip>:8808/api/latest
-curl -fsS http://ar.local:8808/api/latest
+curl -fsS http://<pi-ip>/api/latest
+curl -fsS http://ar.local/api/latest
 ```
 
 From a remote PC over Tailscale:
 
 ```sh
-curl -fsS http://100.78.28.10:8808/api/latest
+curl -fsS http://100.78.28.10/api/latest
 ssh -N ar-local-pi5-dashboard
 curl -fsS http://127.0.0.1:18808/api/latest
 ```

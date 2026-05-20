@@ -11,7 +11,7 @@ Exit codes:
 
 Environment (optional):
   AR_PI_SSH_HOST       SSH target (default: ar-local-pi5)
-  AR_PI_BASE_URL       Dashboard smoke URL (default: http://100.78.28.10:8808/)
+  AR_PI_BASE_URL       Dashboard smoke URL (default: http://100.78.28.10/ via nginx :80)
   AR_PI_AR_LOCAL_REPO  Pi checkout (default: /srv/ar-local/AR-local)
   AR_PI_SITE_REPO      Pi shell checkout (default: /srv/ar-local/australianrates)
   AR_PI_GITHUB_REMOTE  Remote name on Pi (default: origin)
@@ -36,6 +36,7 @@ from typing import Optional, Sequence
 
 from ar_local_pi_runtime import (
     PI_DASHBOARD_PORT,
+    PI_PUBLIC_BASE_URL,
     PI_REPO_ROOT,
     PI_SITE_REPO,
     is_raspberry_pi,
@@ -51,7 +52,7 @@ EXIT_CONFIG = 2
 EXIT_SSH = 3
 
 DEFAULT_SSH_HOST = "ar-local-pi5"
-DEFAULT_BASE_URL = f"http://100.78.28.10:{PI_DASHBOARD_PORT}/"
+DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "dashboard/",
@@ -402,9 +403,19 @@ def deploy_pull_all(*, dry_run: bool = False) -> int:
 
 
 def deploy_services(*, dry_run: bool = False) -> int:
+    ar_repo = pi_ar_repo()
+    install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     script = (
         "sudo systemctl restart ar-local-dashboard.service && "
-        "(sudo systemctl restart ar-local-daily.timer || true)"
+        "(sudo systemctl restart ar-local-daily.timer || true) && "
+        "("
+        "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
+        "sudo nginx -t && sudo systemctl reload-or-restart nginx; "
+        f"elif [ -f {shell_quote(install_proxy)} ]; then "
+        f"sudo sh {shell_quote(install_proxy)} {shell_quote(ar_repo)}; "
+        "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
+        "fi"
+        ")"
     )
     code, _, _ = run_ssh(script, dry_run=dry_run)
     if code != 0 and not dry_run:

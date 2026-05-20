@@ -9,7 +9,7 @@ run_user="$(id -un)"
 run_group="$(id -gn)"
 
 sudo apt-get update
-sudo apt-get install -y git python3 nodejs npm gh rsync avahi-daemon
+sudo apt-get install -y git python3 nodejs npm gh rsync avahi-daemon nginx
 
 sudo mkdir -p "$portable_root"
 sudo chown "$run_user:$run_group" "$portable_root"
@@ -83,5 +83,7 @@ echo "Installed AR-local Pi services for $run_user using portable root $portable
 echo "Repo: $repo_dir"
 echo "Site assets: $site_root"
 echo "Data root: $data_dir"
-echo "LAN dashboard: http://<pi-ip>:8808/ or http://ar.local:8808/ when mDNS is available."
+echo "LAN dashboard (no port in URL): http://<pi-ip>/ or http://ar.local/ when mDNS is available."
+echo "Direct backend (optional): http://<pi-ip>:8808/"
 echo "Run a real ingest before starting ar-local-dashboard.service."
+sudo bash "$repo_dir/deploy/pi/install-pi-dashboard-proxy.sh" "$repo_dir"
