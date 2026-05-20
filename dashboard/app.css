@@ -293,7 +293,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 
 .ar-local-cdr .local-hierarchy-leaf-label {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -320,9 +320,12 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr .local-hierarchy-leaf-text {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0 6px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .ar-local-cdr .local-hierarchy-leaf-meta {
@@ -332,8 +335,8 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr .local-hierarchy-history {
-  display: block;
-  margin-top: 2px;
+  display: inline;
+  margin: 0 0 0 0.35em;
   font-size: 0.66rem;
   font-weight: 600;
   line-height: 1.2;
@@ -487,9 +490,9 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 .ar-local-cdr #hierarchy .ar-report-infobox-trow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) fit-content(15rem);
-  align-items: start;
+  align-items: center;
   gap: 4px 6px;
-  min-height: 30px;
+  min-height: 24px;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
@@ -500,23 +503,26 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-trate {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
-  justify-items: end;
-  align-content: start;
-  gap: 1px 3px;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0 3px;
   max-width: min(15rem, 42vw);
-  min-width: max-content;
+  min-width: 0;
   text-align: right;
-  white-space: normal;
+  white-space: nowrap;
 }
 
-.ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+.ar-local-cdr #hierarchy .ar-report-infobox-trate > span {
   white-space: nowrap;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
-  white-space: normal;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .bank-badge {
@@ -700,9 +706,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr #hierarchy .ar-report-infobox-trow {
     display: grid !important;
     grid-template-columns: auto minmax(0, 1fr) max-content;
-    grid-template-areas:
-      "twist label rate"
-      ". history history";
     align-items: center;
     column-gap: 5px;
     min-height: 0;
@@ -740,14 +743,8 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     line-height: 1.25;
   }
 
-  .ar-local-cdr #hierarchy .ar-report-infobox-trate > span:not(.local-hierarchy-history) {
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate > span {
     line-height: 1.25;
     white-space: nowrap;
-  }
-
-  .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
-    grid-area: history;
-    flex-basis: 100%;
-    justify-self: end;
   }
 }

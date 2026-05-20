@@ -164,6 +164,44 @@
     return '';
   }
 
+  function clickPointFromEvent(event) {
+    if (!event) return null;
+    if (event.point && Array.isArray(event.point) && event.point.length >= 2) {
+      return [event.point[0], event.point[1]];
+    }
+    if (event.offsetX != null && event.offsetY != null) {
+      return [event.offsetX, event.offsetY];
+    }
+    const inner = event.event;
+    if (inner && inner.offsetX != null && inner.offsetY != null) {
+      return [inner.offsetX, inner.offsetY];
+    }
+    return null;
+  }
+
+  function resolveDateFromPixel(chart, dates, pixel) {
+    if (!chart || !pixel || !dates.length) return '';
+    try {
+      if (!chart.containPixel({ gridIndex: 0 }, pixel)) return '';
+      const coord = chart.convertFromPixel({ gridIndex: 0 }, pixel);
+      if (!coord || !coord.length) return '';
+      return resolveDateFromAxisValue(coord[0], dates);
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function sliceDateFromClick(chart, dates, points, event) {
+    const pixel = clickPointFromEvent(event);
+    if (!pixel) return '';
+    const date = resolveDateFromPixel(chart, dates, pixel);
+    if (!date) return '';
+    const idx = dates.indexOf(date);
+    const point = idx >= 0 ? points[idx] : null;
+    if (!point || point.min == null || point.max == null) return '';
+    return date;
+  }
+
   function normProviderKey(name) {
     return String(name || '')
       .trim()
@@ -576,12 +614,20 @@
       if (hoverBox) hoverBox.style.display = 'none';
     }
 
+    function onChartClick(event) {
+      if (typeof model.onSliceClick !== 'function') return;
+      const date = sliceDateFromClick(chart, dates, points, event);
+      model.onSliceClick(date);
+    }
+
     chart.on('updateAxisPointer', onAxisPointer);
     const zr = chart.getZr();
     zr.on('globalout', onGlobalOut);
+    zr.on('click', onChartClick);
     chart._localHoverCleanup = function () {
       chart.off('updateAxisPointer', onAxisPointer);
       zr.off('globalout', onGlobalOut);
+      zr.off('click', onChartClick);
       notifyHoverDate('');
       if (hoverBox) hoverBox.style.display = 'none';
     };

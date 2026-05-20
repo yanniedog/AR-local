@@ -57,6 +57,7 @@
     hoverProvider: '',
     focusedProductKeys: null,
     chartHoverDate: '',
+    chartPinnedDate: '',
     chartDates: [],
     ingestSchedule: null,
     ingestClockOffsetMs: 0,
@@ -84,7 +85,7 @@
   }
 
   async function getJson(url, options) {
-    const response = await fetch(url, { cache: (options && options.cache) || 'force-cache' });
+    const response = await fetch(url, { cache: 'force-cache', ...(options || {}) });
     if (!response.ok) throw new Error(url + ' returned ' + response.status);
     return response.json();
   }
@@ -350,7 +351,9 @@
       currentRange: currentRateRange(rows),
       totalHistoryRows: historyRows.length,
       focusProvider: focusActiveProvider(),
+      chartPinnedDate: state.chartPinnedDate,
       onHoverDateChange: onChartHoverDate,
+      onSliceClick: onChartSliceClick,
     };
   }
 
@@ -390,14 +393,37 @@
       },
       totalHistoryRows: Number((ribbon.counts && ribbon.counts.rates) || 0),
       focusProvider: focusActiveProvider(),
+      chartPinnedDate: state.chartPinnedDate,
       onHoverDateChange: onChartHoverDate,
+      onSliceClick: onChartSliceClick,
     };
+  }
+
+  function chartTableAnchorDate() {
+    const pinned = String(state.chartPinnedDate || '').slice(0, 10);
+    if (pinned) return pinned;
+    const dates = Array.isArray(state.chartDates) ? state.chartDates : [];
+    return dates.length ? String(dates[dates.length - 1]).slice(0, 10) : '';
   }
 
   function onChartHoverDate(dateYmd) {
     const next = String(dateYmd || '').slice(0, 10);
     if (state.chartHoverDate === next) return;
     state.chartHoverDate = next;
+    refreshProviderHighlightUi(undefined, { highlightOnly: true });
+  }
+
+  function onChartSliceClick(dateYmd) {
+    const next = String(dateYmd || '').slice(0, 10);
+    const pinned = String(state.chartPinnedDate || '').slice(0, 10);
+    if (!next) {
+      if (!pinned) return;
+      state.chartPinnedDate = '';
+    } else if (next === pinned) {
+      state.chartPinnedDate = '';
+    } else {
+      state.chartPinnedDate = next;
+    }
     refreshProviderHighlightUi();
   }
 
@@ -411,8 +437,8 @@
     const focus = String(state.focusProvider || '').trim();
     if (focus) return providerMatchKeys(focus);
     const rows = visibleSliceRows();
-    const dates = Array.isArray(state.chartDates) ? state.chartDates : [];
-    const anchor = String(state.chartHoverDate || (dates.length ? dates[dates.length - 1] : '')).slice(0, 10);
+    const chartHover = String(state.chartHoverDate || '').slice(0, 10);
+    const anchor = chartHover || chartTableAnchorDate();
     if (!anchor || !state.bankHistoryIndex || !rows.length) return null;
     const keys = new Set();
     rows.forEach((row) => {
@@ -435,17 +461,21 @@
     return true;
   }
 
-  function refreshProviderHighlightUi(activeProviders) {
+  function refreshProviderHighlightUi(activeProviders, options) {
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
-    refreshHierarchyPanel(active);
+    refreshHierarchyPanel(active, options);
     renderSelectedLogos(active);
   }
 
-  function refreshHierarchyPanel(activeProviders) {
+  function refreshHierarchyPanel(activeProviders, options) {
     if (!$('hierarchy') || $('hierarchy').hidden) return;
-    const rows = applyFocusFilter(normalizeRows(rateRows()));
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
     state.isProviderDimmed = (provider) => isProviderDimmed(provider, active);
+    if (options && options.highlightOnly && window.LocalCdrHierarchy.applyProviderHighlight) {
+      window.LocalCdrHierarchy.applyProviderHighlight($('hierarchy'), state);
+      return;
+    }
+    const rows = applyFocusFilter(normalizeRows(rateRows()));
     window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
       onFocusChange: (productKeys) => {
         state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
@@ -661,7 +691,7 @@
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(rows.length);
     const range = items && items.kind === 'bank-history' ? items.currentRange : currentRateRange(rows);
-    const leader = state.descending ? range.max : range.min;
+    const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
   }
 
@@ -761,7 +791,7 @@
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(counts.rates || 0);
     const range = items && items.currentRange ? items.currentRange : { min: null, max: null };
-    const leader = state.descending ? range.max : range.min;
+    const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
     window.LocalCdrChart.draw($('chart'), items, 'banks');
     setHistoryWindowUi(items);
@@ -806,6 +836,7 @@
       state.hoverProvider = '';
       state.focusedProductKeys = null;
       state.chartHoverDate = '';
+      state.chartPinnedDate = '';
       state.chartDates = [];
     }
     state.section = section;
@@ -877,14 +908,14 @@
       state.hoverProvider = next;
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       btn.classList.add('is-hover');
-      refreshProviderHighlightUi();
+      refreshProviderHighlightUi(undefined, { highlightOnly: true });
       redrawChart();
     });
     logoWrap.addEventListener('mouseleave', () => {
       if (!state.hoverProvider) return;
       state.hoverProvider = '';
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
-      refreshProviderHighlightUi();
+      refreshProviderHighlightUi(undefined, { highlightOnly: true });
       redrawChart();
     });
 
@@ -910,14 +941,14 @@
       const provider = node.getAttribute('data-local-hierarchy-provider') || '';
       if (provider && provider !== state.hoverProvider) {
         state.hoverProvider = provider;
-        refreshProviderHighlightUi();
+        refreshProviderHighlightUi(undefined, { highlightOnly: true });
         redrawChart();
       }
     });
     $('hierarchy').addEventListener('mouseleave', () => {
       if (state.hoverProvider) {
         state.hoverProvider = '';
-        refreshProviderHighlightUi();
+        refreshProviderHighlightUi(undefined, { highlightOnly: true });
         redrawChart();
       }
     });
