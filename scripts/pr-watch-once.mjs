@@ -20,6 +20,14 @@ import { hasGh, ghJson } from './lib/gh-pr-review-threads.mjs';
 const DEFAULT_IDLE_MIN = 5;
 const MAX_IDLE_MIN = 120;
 const POLL_SEC = 60;
+const OPEN_PR_LIST_LIMIT = 100;
+
+/** Human-readable status: stderr when --json so stdout stays pure JSON. */
+function status(msg, { json, quiet }) {
+  if (quiet) return;
+  if (json) console.error(msg);
+  else console.log(msg);
+}
 
 function parseArgs(argv) {
   const out = {
@@ -56,6 +64,8 @@ function listOpenPrs() {
     'list',
     '--state',
     'open',
+    '--limit',
+    String(OPEN_PR_LIST_LIMIT),
     '--json',
     'number,title,headRefName,createdAt,mergeable,mergeStateStatus',
   ]);
@@ -73,12 +83,12 @@ function conflictHint(pr) {
   return null;
 }
 
-function auditPr(prNumber, { quiet }) {
+function auditPr(prNumber, { quiet, json }) {
   const result = evaluateGates(prNumber, { skipFeedbackPlan: false });
   const failed = result.gates.filter((g) => !g.pass);
   if (!quiet) {
     if (result.pass) {
-      console.log(`  PR #${prNumber}: all merge gates passed`);
+      status(`  PR #${prNumber}: all merge gates passed`, { json, quiet: false });
     } else {
       console.error(`  PR #${prNumber}: ${failed.length} gate(s) failing`);
       for (const g of failed) {
@@ -93,7 +103,13 @@ function auditPr(prNumber, { quiet }) {
 async function runCycle(args) {
   let prs;
   if (args.pr) {
-    const view = ghJson(['pr', 'view', String(args.pr), '--json', 'number,title,headRefName,createdAt,state,mergeable,mergeStateStatus']);
+    const view = ghJson([
+      'pr',
+      'view',
+      String(args.pr),
+      '--json',
+      'number,title,headRefName,createdAt,state,mergeable,mergeStateStatus',
+    ]);
     if (view.state !== 'OPEN') {
       return { idle: true, prs: [], results: [], error: `PR #${args.pr} is not open` };
     }
@@ -112,7 +128,7 @@ async function runCycle(args) {
     if (hint && !args.quiet) {
       console.error(`  PR #${pr.number} (${pr.headRefName}): ${hint}`);
     }
-    const gateResult = auditPr(pr.number, { quiet: args.quiet });
+    const gateResult = auditPr(pr.number, { quiet: args.quiet, json: args.json });
     results.push({
       number: pr.number,
       title: pr.title,
@@ -127,8 +143,7 @@ async function runCycle(args) {
   }
 
   const allPass = results.every((r) => r.gatesPass);
-  const anyReady = results.some((r) => r.gatesPass);
-  return { idle: false, prs, results, allPass, anyReady };
+  return { idle: false, prs, results, allPass };
 }
 
 async function main() {
@@ -137,7 +152,7 @@ async function main() {
     console.log(`Usage: npm run pr:watch-once -- [--pr N] [--json] [--quiet] [--watch] [--idle-min M]
 
 One cycle for pr-watch-agent:
-  - Lists open PRs on the current repo (oldest createdAt first)
+  - Lists open PRs on the current repo (oldest createdAt first, up to ${OPEN_PR_LIST_LIMIT})
   - Runs pr:gates:check logic per PR via evaluateGates()
 
 Exit codes:
@@ -159,6 +174,10 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
     process.exit(1);
   }
 
+  const emitJson = (payload) => {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  };
+
   const run = async () => {
     const cycle = await runCycle(args);
     if (cycle.error) {
@@ -167,49 +186,39 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
     }
 
     if (cycle.idle) {
-      if (!args.quiet) console.log('pr:watch-once: idle — no open PRs');
-      if (args.json) console.log(JSON.stringify({ idle: true, prs: [] }, null, 2));
+      status('pr:watch-once: idle — no open PRs', args);
+      if (args.json) emitJson({ idle: true, prs: [] });
       return { exitCode: 0, cycle };
     }
 
-    if (!args.quiet) {
-      console.log(`pr:watch-once: ${cycle.prs.length} open PR(s), oldest-first order`);
-      for (const pr of cycle.prs) {
-        console.log(`  #${pr.number} ${pr.headRefName} — ${pr.title}`);
-      }
+    status(`pr:watch-once: ${cycle.prs.length} open PR(s), oldest-first order`, args);
+    for (const pr of cycle.prs) {
+      status(`  #${pr.number} ${pr.headRefName} — ${pr.title}`, args);
     }
 
     if (args.json) {
-      console.log(
-        JSON.stringify(
-          {
-            idle: false,
-            allPass: cycle.allPass,
-            prs: cycle.results.map((r) => ({
-              number: r.number,
-              title: r.title,
-              headRefName: r.headRefName,
-              gatesPass: r.gatesPass,
-              conflictHint: r.conflictHint,
-              failingGates: r.gates.filter((g) => !g.pass).map((g) => g.id),
-            })),
-          },
-          null,
-          2,
-        ),
-      );
+      emitJson({
+        idle: false,
+        allPass: cycle.allPass,
+        prs: cycle.results.map((r) => ({
+          number: r.number,
+          title: r.title,
+          headRefName: r.headRefName,
+          gatesPass: r.gatesPass,
+          conflictHint: r.conflictHint,
+          failingGates: r.gates.filter((g) => !g.pass).map((g) => g.id),
+        })),
+      });
     }
 
     if (cycle.allPass) {
-      if (!args.quiet) console.log('pr:watch-once: all audited PRs merge-ready (gates exit 0)');
+      status('pr:watch-once: all audited PRs merge-ready (gates exit 0)', args);
       return { exitCode: 0, cycle };
     }
 
     const failing = cycle.results.filter((r) => !r.gatesPass).map((r) => r.number);
-    if (!args.quiet) {
-      console.error(`pr:watch-once: PR(s) not merge-ready: ${failing.join(', ')}`);
-      console.error('>>> Delegate pr-fix-agent per failing gate; re-run pr:watch-once after fixes');
-    }
+    console.error(`pr:watch-once: PR(s) not merge-ready: ${failing.join(', ')}`);
+    console.error('>>> Delegate pr-fix-agent per failing gate; re-run pr:watch-once after fixes');
     return { exitCode: 2, cycle };
   };
 
@@ -221,19 +230,15 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
   for (;;) {
     const { exitCode, cycle } = await run();
     if (cycle.idle) {
-      if (!args.quiet) {
-        console.log(`pr:watch-once: sleeping ${args.idleMin} min (idle poll) — Ctrl+C to stop`);
-      }
+      status(`pr:watch-once: sleeping ${args.idleMin} min (idle poll) — Ctrl+C to stop`, args);
       await sleepMs(args.idleMin * 60 * 1000);
       continue;
     }
     if (exitCode === 0) {
-      if (!args.quiet) console.log('pr:watch-once: all gates green — agent may merge/deploy per skill');
+      status('pr:watch-once: all gates green — agent may merge/deploy per skill', args);
       process.exit(0);
     }
-    if (!args.quiet) {
-      console.log(`pr:watch-once: work remaining (exit 2) — retry in ${POLL_SEC}s or fix and re-run`);
-    }
+    status(`pr:watch-once: work remaining (exit 2) — retry in ${POLL_SEC}s or fix and re-run`, args);
     await sleepMs(POLL_SEC * 1000);
   }
 }
