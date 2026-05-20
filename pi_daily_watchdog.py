@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -17,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 GRACE_MINUTES = 30
 SERVICE_NAME = "ar-local-daily.service"
 SUBPROCESS_STATUS_TIMEOUT_SEC = 10
-SUBPROCESS_START_TIMEOUT_SEC = 60
+SUBPROCESS_INGEST_TIMEOUT_SEC = 2 * 60 * 60
 
 
 def export_root_for(date_text: str) -> Path:
@@ -46,16 +48,17 @@ def service_active() -> bool:
     return result.returncode == 0
 
 
-def start_daily_service(dry_run: bool) -> None:
+def run_daily_ingest(dry_run: bool) -> None:
+    cmd = [sys.executable, str(REPO_ROOT / "pi_daily_sync.py"), "--banks-only"]
     if dry_run:
-        print(f"DRY RUN: would start {SERVICE_NAME}")
+        print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
-    subprocess.run(["systemctl", "start", SERVICE_NAME], check=True, shell=False, timeout=SUBPROCESS_START_TIMEOUT_SEC)
+    subprocess.run(cmd, cwd=REPO_ROOT, check=True, shell=False, timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Start the Pi daily ingest if today's scheduled run is missing.")
-    parser.add_argument("--dry-run", action="store_true", help="Report what would happen without starting systemd.")
+    parser = argparse.ArgumentParser(description="Run Pi daily ingest if today's scheduled run is missing.")
+    parser.add_argument("--dry-run", action="store_true", help="Report what would happen without running ingest.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable status.")
     parser.add_argument("--grace-minutes", type=int, default=GRACE_MINUTES)
     return parser.parse_args(argv)
@@ -73,7 +76,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     current_day_due = run_date == local_today
     should_start = now_utc >= ready_at and current_day_due and not complete and not active
     if should_start:
-        start_daily_service(args.dry_run)
+        run_daily_ingest(args.dry_run)
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),
