@@ -15,8 +15,10 @@ if [ ! -f "$src_conf" ]; then
   exit 1
 fi
 
-sudo apt-get update
-sudo apt-get install -y nginx
+if ! command -v nginx >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y nginx
+fi
 
 sudo install -m 0644 "$src_conf" "$dst_avail"
 if [ -e /etc/nginx/sites-enabled/default ]; then

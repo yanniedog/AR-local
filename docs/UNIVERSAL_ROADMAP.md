@@ -17,7 +17,7 @@ The dashboard must use real generated artifacts only, with banking as the curren
 The Pi runtime must become a **pixel- and feature-identical mirror** of the live public dashboard at `https://australianrates.com/`. That means:
 
 - Same public shell, same JS module set, same per-section URLs (`/`, `/savings/`, `/term-deposits/`, `/economic-data/`), same chart engines (lightweight-charts + echarts), same filter pads, hero cards, executive summary, refresh, snapshot, history controls, and ribbon behavior.
-- The Pi's Python dashboard server must expose the **same HTTP API surface** the public site's JS modules call ??? `/api/home-loan-rates/*` (export.csv, filters, health, etc.), and the equivalent Savings, TD, and Economic Data endpoints ??? backed by retained run-export SQLite instead of the Cloudflare D1 layer.
+- The Pi's Python dashboard server must expose the **same HTTP API surface** the public site's JS modules call — `/api/home-loan-rates/*` (export.csv, filters, health, etc.), and the equivalent Savings, TD, and Economic Data endpoints — backed by retained run-export SQLite instead of the Cloudflare D1 layer.
 - The bespoke `dashboard/index.html` is a transitional artifact, not the long-term parity surface. Treat it as a fallback while the mirror is being built.
 
 This is a multi-PR effort. The roadmap and `Parity Gap Inventory` below are the authoritative shared plan for breaking the work up across agents.
@@ -34,7 +34,7 @@ This section is intentionally practical. It should let a future LLM or human ope
 - Local private key path on the Windows development machine: `%USERPROFILE%\.ssh\pi5`
 - Main repo: `https://github.com/yanniedog/AR-local.git`
 - AustralianRates shell repo: `https://github.com/yanniedog/australianrates.git`
-- Public dashboard (parity target, still live): `https://australianrates.com/` ??? note the apex domain is `australianrates.com`, **not** `australianrates.com.au`. The public site is fronted by Cloudflare; its frontend JS calls `/api/home-loan-rates/*` Cloudflare Worker routes.
+- Public dashboard (parity target, still live): `https://australianrates.com/` — note the apex domain is `australianrates.com`, **not** `australianrates.com.au`. The public site is fronted by Cloudflare; its frontend JS calls `/api/home-loan-rates/*` Cloudflare Worker routes.
 - Expected local Windows workspace for this repo: `C:\code\AR-local`
 - Expected sibling/related Pi checkout root: `/srv/ar-local`
 
@@ -241,10 +241,10 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | Layer | Mechanism |
 |-------|-----------|
 | Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:deploy`, `npm run pi:needs-deploy` (`pi_deploy_verify.py`) |
-| GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` ??? every push to `main`; `workflow_dispatch` |
-| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` ??? cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
-| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` ??? every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
-| On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` ??? every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
+| GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` — every push to `main`; `workflow_dispatch` |
+| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
+| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
+| On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` — every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
 
 **GitHub secrets (Actions):**
 
@@ -252,7 +252,7 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 |-------------------|---------|
 | `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
 | `PI_SSH_USER` | Optional (default `pi`) |
-| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client ??? **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
+| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client — **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
 | `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
 | `AR_PI_AUTO_DEPLOY` (variable) | Set to `1` so scheduled `pi-deploy-watchdog` runs `--deploy` when verify fails |
 
@@ -269,7 +269,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
 ```
 
-Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` ??? invoke **run pi deploy watchdog**.
+Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` — invoke **run pi deploy watchdog**.
 
 ## Live Pi Observability
 
@@ -421,7 +421,7 @@ Public-shell modules already on the Pi (loaded by `dashboard/index.html`): `them
 
 #### Routing gap
 
-- Public: each section is a real URL ??? `/`, `/savings/`, `/term-deposits/`, `/economic-data/`. Nav uses `<a href="???">` with `aria-current="page"`.
+- Public: each section is a real URL — `/`, `/savings/`, `/term-deposits/`, `/economic-data/`. Nav uses `<a href="/savings/">` with `aria-current="page"`.
 - Pi: a single page with `<button data-section="Mortgage|Savings|TD|EconomicData">` (Economic Data redirects to `/economic-data/`). The Pi server must also serve per-section URLs and the public shell must own section switching.
 
 #### API surface gap
@@ -433,7 +433,7 @@ The public JS calls Cloudflare Worker routes including (non-exhaustive):
 - `/api/home-loan-rates/health`
 - (presumed analogues for savings, term deposits, economic data)
 
-The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, the `/exports/` tree, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms ??? no remote calls.
+The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, the `/exports/` tree, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms — no remote calls.
 
 #### Header / chrome gap
 
@@ -447,7 +447,7 @@ The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api
 
 #### Analytics / external services
 
-- Public loads Microsoft Clarity (`https://www.clarity.ms/tag/vt4vtenviy`) and a Cloudflare bot challenge stub. Both must remain disabled on the Pi ??? `site-variant.js` already short-circuits Clarity on `isLocalHost`, but the Pi LAN IPs are not `127.0.0.1`/`localhost`, so a `siteVariant` override or build-time strip is required before shipping `site-variant.js` unchanged.
+- Public loads Microsoft Clarity (`https://www.clarity.ms/tag/vt4vtenviy`) and a Cloudflare bot challenge stub. Both must remain disabled on the Pi — `site-variant.js` already short-circuits Clarity on `isLocalHost`, but the Pi LAN IPs are not `127.0.0.1`/`localhost`, so a `siteVariant` override or build-time strip is required before shipping `site-variant.js` unchanged.
 
 #### Shell checkout drift
 
@@ -459,7 +459,7 @@ The ribbon must surface historical banking values from retained SQLite exports. 
 
 Verified payload shape (2026-05-15, Pi `12caba0`):
 
-- Top-level keys: `rates`, `run_dates`. The earlier draft of this doc referenced `rows`/`dates` ??? that was wrong and has been corrected.
+- Top-level keys: `rates`, `run_dates`. The earlier draft of this doc referenced `rows`/`dates` — that was wrong and has been corrected.
 - Payload size on the Pi today: ~17 MB for 2 retained runs. Treat this number as a budget input when reasoning about future history depth.
 - `/api/latest` keys: `banks_counts`, `energy_counts`, `files`, `generated_at`, `run_date`.
 
@@ -484,13 +484,13 @@ Future improvements should:
 ## Banks-First Work Queue
 
 1. Keep banking ingest/export healthy on Pi. Investigate and record any missing retained-run dates; do **not** re-run ingest with a backdated `--date` (CDR endpoints only serve current state, so a late run stores today's snapshot under the missed date and corrupts ribbon history). Resume normal daily retention from the current day.
-2. Mirror parity track (priority, multi-PR ??? see `Parity Gap Inventory`):
+2. Mirror parity track (priority, multi-PR — see `Parity Gap Inventory`):
    1. Mount `/api/home-loan-rates/*` (and savings/TD/economic-data equivalents) on `cdr_dashboard_server.py`, backed by retained run SQLite. Match request and response shapes the public site's JS modules expect.
    2. Vendor `lightweight-charts.bundle.js` into `australianrates/site/vendor/lightweight-charts/` (ship via the public shell repo) and update the Pi checkout.
    3. Implement per-section routing on the Pi server so `/`, `/savings/`, `/term-deposits/`, `/economic-data/` each render the public shell with the right `data-ar-section` value.
    4. Replace `dashboard/index.html` with a thin loader that serves the public shell `index.html` and lets the public JS modules drive the UI; retire the Pi-specific hero/filter strip markup.
    5. Disable Microsoft Clarity for any non-loopback Pi access (modify `siteVariant.isLocalHost` semantics or strip the Clarity tag from the served `site-variant.js`).
-3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1???2.4 land).
+3. Keep `Mortgage`, `Savings`, and `TD` dashboard sections parity-aligned with AustralianRates (covered by the mirror track once items 2.1–2.4 land).
 4. Keep historical ribbon values populated from retained DB exports.
 5. Keep LAN access stable on Pi IP and `ar.local`.
 6. Keep SSD portability documentation and systemd unit rendering current.
@@ -575,15 +575,15 @@ Last verified: **2026-05-15** (UTC ~13:24).
 | `ar-local-dashboard.service` `WorkingDirectory` | `/srv/ar-local/AR-local` |
 | `ar-local-dashboard.service` `ExecStart` | `/usr/bin/python3 /srv/ar-local/AR-local/cdr_dashboard_server.py --exports latest --runs /srv/ar-local/data/runs --host 0.0.0.0 --port 8808 --site-root /srv/ar-local/australianrates/site --preload` |
 | `/srv/ar-local/AR-local` HEAD | `12caba0` (= `origin/main`) |
-| `/srv/ar-local/australianrates` HEAD | `4a90191e` (behind `origin/main` `bb180cce` by 1 commit ??? worker-API only; refresh on next ship) |
+| `/srv/ar-local/australianrates` HEAD | `4a90191e` (behind `origin/main` `bb180cce` by 1 commit — worker-API only; refresh on next ship) |
 | `ar-local-daily.timer` state | active, enabled; next: Sat 2026-05-16 06:00 AEST; last: Fri 2026-05-15 06:00 AEST |
 | Retained runs with `_exports/local-cdr.sqlite` | `2026-05-13` (37 MB), `2026-05-15` (38 MB) |
-| Missing retained runs in expected sequence | `2026-05-14` ??? investigate; the timer became active 2026-05-13 14:48 AEST so the first scheduled 06:00 fire would have been 2026-05-14 |
+| Missing retained runs in expected sequence | `2026-05-14` — investigate; the timer became active 2026-05-13 14:48 AEST so the first scheduled 06:00 fire would have been 2026-05-14 |
 | `/api/latest` keys | `banks_counts`, `energy_counts`, `files`, `generated_at`, `run_date` |
 | `/api/banks/history` keys | `rates`, `run_dates` |
 | `/api/banks/history` payload size | ~17 MB (loopback `curl` measured `size_download=17088023`, `time_total~5ms`) |
 | Public site reachable | `https://australianrates.com/` returns HTTP 200, 193-line HTML, ~50 JS modules, single SPA mount point `<div id="ar-section-root">` |
-| Public site domain note | `australianrates.com` (apex); `australianrates.com.au` was unreachable from probes ??? do not link to it |
+| Public site domain note | `australianrates.com` (apex); `australianrates.com.au` was unreachable from probes — do not link to it |
 
 ### Re-verification probes
 

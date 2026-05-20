@@ -403,10 +403,19 @@ def deploy_pull_all(*, dry_run: bool = False) -> int:
 
 
 def deploy_services(*, dry_run: bool = False) -> int:
+    ar_repo = pi_ar_repo()
+    install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     script = (
         "sudo systemctl restart ar-local-dashboard.service && "
         "(sudo systemctl restart ar-local-daily.timer || true) && "
-        "(command -v nginx >/dev/null && sudo nginx -t && sudo systemctl reload nginx || true)"
+        "("
+        "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
+        "sudo nginx -t && sudo systemctl reload nginx; "
+        f"elif [ -x {shell_quote(install_proxy)} ]; then "
+        f"sudo sh {shell_quote(install_proxy)} {shell_quote(ar_repo)}; "
+        "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
+        "fi"
+        ")"
     )
     code, _, _ = run_ssh(script, dry_run=dry_run)
     if code != 0 and not dry_run:
