@@ -135,7 +135,7 @@ jobs:
           AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
           AR_PI_SITE_REPO: /srv/ar-local/australianrates
         run: |
-          export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10:8808/}"
+          export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10/}"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python pi_deploy_verify.py --deploy --dry-run
           else

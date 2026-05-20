@@ -116,7 +116,7 @@ The installer renders the systemd units for the current Linux user, repo path,
 adjacent AustralianRates checkout, portable root, and data root before
 installing them under `/etc/systemd/system`. It also installs and enables
 Avahi with mDNS host name `ar`, so the dashboard is available as
-`http://ar.local:8808/` on LANs that pass mDNS. Keep the Pi IP stable with a
+`http://ar.local/` on LANs that pass mDNS (nginx port 80). Keep the Pi IP stable with a
 router DHCP reservation or equivalent static-IP setup.
 
 The Pi daily timer (`deploy/pi/ar-local-daily.timer`) runs banking ingest at
@@ -171,8 +171,9 @@ LAN:
 ```sh
 sudo systemctl start ar-local-dashboard.service
 npm run verify:local -- --base-url=http://127.0.0.1:8808/
-curl -fsS http://<pi-ip>:8808/api/latest
-curl -fsS http://ar.local:8808/api/latest
+curl -fsS http://<pi-ip>/api/latest
+curl -fsS http://ar.local/api/latest
+sudo bash deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
 ```
 
 The dashboard service serves the newest completed export with:

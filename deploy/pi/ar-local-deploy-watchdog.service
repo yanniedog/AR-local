@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
-Environment=AR_PI_BASE_URL=http://127.0.0.1:8808/
+Environment=AR_PI_BASE_URL=http://127.0.0.1/
 ExecStart={{AR_LOCAL_REPO}}/deploy/pi/ar-local-deploy-watchdog.sh
 
 [Install]
