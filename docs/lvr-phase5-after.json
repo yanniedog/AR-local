@@ -1,0 +1,12 @@
+{
+  "mortgage_lending_rows": 5490,
+  "lvr_unspecified_rows": 249,
+  "lvr_classified_rows": 5241,
+  "pct_unspecified": 4.54,
+  "lvr_source_counts": {
+    "rate_structured": 4685,
+    "product_constraints": 524,
+    "none": 249,
+    "context_text": 32
+  }
+}
