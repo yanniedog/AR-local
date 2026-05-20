@@ -412,18 +412,27 @@ def is_dashboard_banking_section_path(url_path: str) -> bool:
 
 
 def inject_local_dashboard_css(html: bytes) -> bytes:
-    """Append local dashboard overrides so /economic-data/ gets nav focus fixes."""
-    if b"/assets/app.css" in html.lower():
-        return html
+    """Inject local dashboard CSS and ar-local-cdr on /economic-data/ shell pages."""
+    out = html
+    if b"ar-section-economic-data" in out.lower() and b"ar-local-cdr" not in out.lower():
+        out, _ = re.subn(
+            br'(<body\s+class="[^"]*\b)(ar-section-economic-data)(\b[^"]*")',
+            br"\1\2 ar-local-cdr\3",
+            out,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    if b"/assets/app.css" in out.lower():
+        return out
     link = b'    <link rel="stylesheet" href="/assets/app.css">\n'
     patched, count = re.subn(
         br"</head>",
         link + br"</head>",
-        html,
+        out,
         count=1,
         flags=re.IGNORECASE,
     )
-    return patched if count else html
+    return patched if count else out
 
 
 class ProxyUpstreamError(Exception):
