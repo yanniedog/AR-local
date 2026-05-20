@@ -612,8 +612,9 @@
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     const sec = String(seconds).padStart(2, '0');
-    if (days > 0) return `${days}d ${hours}h ${minutes}m ${sec}s`;
-    if (hours > 0) return `${hours}h ${minutes}m ${sec}s`;
+    const min = String(minutes).padStart(2, '0');
+    if (days > 0) return `${days}d ${hours}h ${min}m ${sec}s`;
+    if (hours > 0) return `${hours}h ${min}m ${sec}s`;
     return `${minutes}m ${sec}s`;
   }
 
