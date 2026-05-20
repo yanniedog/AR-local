@@ -47,18 +47,25 @@ body.ar-local-cdr.ar-section-savings {
  * Economic Data (/economic-data/): cdr_dashboard_server injects this file after
  * public-polish.css, which sets --ar-section-accent to #a855f7 (purple) on
  * :root[data-theme] body.ar-section-economic-data (higher specificity than body-only).
- * Match banking tabs: blue section tokens, no bg aurora, no #main-content focus rim.
+ * Match banking tabs: blue section tokens, no bg aurora.
  */
-:root[data-theme="dark"] body.ar-public.ar-section-economic-data,
-:root[data-theme="light"] body.ar-public.ar-section-economic-data {
+:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data {
   --ar-section-accent: #3b82f6;
   --ar-section-accent-soft: rgba(59, 130, 246, 0.12);
   --ar-section-soft: rgba(59, 130, 246, 0.1);
   --ar-section-glow: rgba(59, 130, 246, 0.18);
 }
 
-html body.ar-public.ar-section-economic-data .bg-layer {
+html body.ar-public.ar-local-cdr.ar-section-economic-data .bg-layer {
   display: none;
+}
+
+/* Skip-to-content: blue focus ring (no purple shadow from section accent) */
+:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus,
+:root[data-theme] body.ar-public.ar-local-cdr.ar-section-economic-data #main-content:focus-visible {
+  outline: 2px solid color-mix(in srgb, #3b82f6 75%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* Showcase-spark / glow (used by bg-layer gradients) — keep neutral blue. */
