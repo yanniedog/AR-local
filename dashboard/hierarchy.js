@@ -150,6 +150,21 @@
     return node.groups.flatMap((g) => collectRowsUnder(g.child));
   }
 
+  function productKeysForRows(rows) {
+    const keys = new Set();
+    (rows || []).forEach((row) => {
+      const key = rowProductKey(row);
+      if (key) keys.add(key);
+    });
+    return keys.size ? keys : null;
+  }
+
+  function productKeysAtPath(tree, activePath) {
+    const node = nodeAtPath(tree, activePath);
+    if (!node) return null;
+    return productKeysForRows(collectRowsUnder(node));
+  }
+
   /** Provider → plan leaves when energy rows lack taxonomy_path. */
   function buildEnergyProviderTree(rows) {
     if (!rows.length) return { kind: 'empty', rows: [] };
@@ -306,6 +321,9 @@
   function renderLeaf(container, row, depth, best, highlightMax, state) {
     const rateRow = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--leaf ar-report-infobox-row');
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
+    rateRow.dataset.localHierarchyHover = 'leaf';
+    const productKey = rowProductKey(row);
+    if (productKey) rateRow.dataset.localHierarchyProductKey = productKey;
     if (row.provider) rateRow.dataset.localHierarchyProvider = row.provider;
     const dot = child(rateRow, 'span', 'ar-report-infobox-tsw');
     dot.style.setProperty('--ar-swatch-color', swatch(row));
@@ -531,7 +549,8 @@
       },
     });
     restoreScrollTop(scrollContainer(container), savedScrollTop);
+    container.__localHierarchyTree = tree;
   }
 
-  window.LocalCdrHierarchy = { render, applyProviderHighlight };
+  window.LocalCdrHierarchy = { render, applyProviderHighlight, productKeysAtPath, productKeysForRows };
 })();
