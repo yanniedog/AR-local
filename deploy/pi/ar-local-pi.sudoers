@@ -11,9 +11,9 @@ Cmnd_Alias AR_LOCAL_SYSTEMCTL = \
 
 Cmnd_Alias AR_LOCAL_NGINX = /usr/sbin/nginx -t
 
-# Full port-80 proxy install (fixed repo path; no sudoers wildcards)
+# Full port-80 proxy install (matches pi_deploy_verify: sudo sh install-pi-dashboard-proxy.sh <repo>)
 Cmnd_Alias AR_LOCAL_PROXY_INSTALL = \
-    /bin/bash /srv/ar-local/AR-local/deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
+    /bin/sh /srv/ar-local/AR-local/deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
 
 pi ALL=(root) NOPASSWD: AR_LOCAL_SYSTEMCTL
 pi ALL=(root) NOPASSWD: AR_LOCAL_NGINX
