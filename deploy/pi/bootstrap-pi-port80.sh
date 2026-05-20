@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # One-shot Pi operator bootstrap: sudoers (passwordless deploy) + nginx :80 proxy.
 # Requires one interactive sudo password on first run:
 #   ssh -t ar-local-pi5 'bash /srv/ar-local/AR-local/deploy/pi/bootstrap-pi-port80.sh'

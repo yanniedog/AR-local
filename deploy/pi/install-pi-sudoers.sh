@@ -14,6 +14,9 @@ if [ ! -f "$src" ]; then
   exit 1
 fi
 
-sudo install -m 0440 "$src" "$dst"
-sudo visudo -cf "$dst"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+sudo install -m 0440 "$src" "$tmp"
+sudo visudo -cf "$tmp"
+sudo install -m 0440 "$tmp" "$dst"
 echo "install-pi-sudoers: installed $dst (passwordless deploy for user $(id -un))"
