@@ -875,13 +875,8 @@
     // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
     // onFocusChange callback (state only — no redraw inside the callback).
     renderTable(focused);
-<<<<<<< HEAD
-    drawChartFromState(chartSliceRows(allRows));
-    renderSelectedLogos(relevantProviderKeys());
-=======
     renderSelectedLogos(relevantProviderKeys());
     paintChart(chartRows, chartItems);
->>>>>>> 255cfb784 (fix(dashboard): sync chart ribbon state before hierarchy render)
   }
 
   async function loadSection(section) {
