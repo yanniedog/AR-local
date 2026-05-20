@@ -97,6 +97,9 @@
       if (!row.dataset) row.dataset = section;
       if (!row.rate_family) row.rate_family = rateFamily;
       if (runDate && !row.run_date) row.run_date = runDate;
+      if (window.LocalCdrRibbonMap && window.LocalCdrRibbonMap.hydrateCanonicalRibbonFields) {
+        window.LocalCdrRibbonMap.hydrateCanonicalRibbonFields(row, section);
+      }
     });
     return rows;
   }

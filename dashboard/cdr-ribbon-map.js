@@ -415,6 +415,24 @@
     return 'home-loans';
   }
 
+  /** Align section-row ribbon facets with history (cdr_dashboard_server.canonicalize_history_row). */
+  function hydrateCanonicalRibbonFields(rateRow, section) {
+    if (!rateRow || !section) return;
+    var structureRaw = rateRow.ribbon_rate_structure;
+    if (section === 'Mortgage') {
+      var group = rateStructureGroupFromText(structureRaw);
+      rateRow.ribbon_rate_structure = group || '';
+      if (group === 'fixed' && !String(rateRow.ribbon_fixed_term || '').trim()) {
+        var years = fixedTermYearsFromText(structureRaw);
+        if (years) rateRow.ribbon_fixed_term = years;
+      }
+      return;
+    }
+    if (section === 'TD') {
+      rateRow.ribbon_rate_structure = tdRateStructureGroupFromText(structureRaw, rateRow.ribbon_deposit_kind);
+    }
+  }
+
   function productKeyFromRate(rateRow) {
     return (
       String(rateRow.product_key || '') +
@@ -456,6 +474,7 @@
 
   window.LocalCdrRibbonMap = {
     sectionSlug: sectionSlug,
+    hydrateCanonicalRibbonFields: hydrateCanonicalRibbonFields,
     toRibbonProducts: toRibbonProducts,
   };
 })();

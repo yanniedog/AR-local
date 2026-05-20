@@ -393,6 +393,15 @@
     return { ttText: cssVar('--ar-text', '#e5e7eb'), ttBg: cssVar('--ar-surface-2', '#111827'), ttBorder: cssVar('--ar-line', '#334155'), muted: cssVar('--ar-text-muted', '#94a3b8') };
   }
 
+  function setRibbonHierarchyLayoutActive(container, isActive) {
+    if (!container || !container.classList) return;
+    container.classList.toggle('has-ribbon-hierarchy', !!isActive);
+    const side = container.closest('#chart-side-panel');
+    if (side && side.classList) {
+      side.classList.toggle('has-ribbon-hierarchy', !!isActive);
+    }
+  }
+
   function ensurePanel(container) {
     if (container.__localPanel) {
       if (!container.contains(container.__localPanel.el)) container.appendChild(container.__localPanel.el);
@@ -440,7 +449,10 @@
       countEl.textContent = `${num(visible.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
     }
     const panel = ensurePanel(container);
-    if (!panel) return;
+    if (!panel) {
+      setRibbonHierarchyLayoutActive(container, false);
+      return;
+    }
     state.rows = visible;
     state.globalBest = isEnergy ? null : bestRate(visible, state.descending);
     let tree = { kind: 'empty', rows: [] };
@@ -464,6 +476,7 @@
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     if (!visible.length || tree.kind === 'empty') {
+      setRibbonHierarchyLayoutActive(container, false);
       panel.show({
         heading: state.section + ' hierarchy', meta: 'No rows',
         renderBody: (wrap) => child(wrap, 'div', 'chart-series-empty', 'No hierarchy data available.'),
@@ -471,6 +484,7 @@
       emitFocus(options, tree, '');
       return;
     }
+    setRibbonHierarchyLayoutActive(container, true);
     emitFocus(options, tree, state.hierarchyPath || '');
     const metaParts = isEnergy
       ? [`${num(visible.length)} plans`, `${num(providerCount)} providers`]
