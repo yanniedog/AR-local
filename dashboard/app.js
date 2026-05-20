@@ -462,9 +462,31 @@
     return true;
   }
 
+  /** Toggle logo-rail dim/hover/selection without rebuilding badges (avoids logo reload flash). */
+  function applyLogoRailHighlight(activeProviders) {
+    const wrap = $('selectedLogos');
+    if (!wrap || wrap.hidden) return;
+    const focus = String(state.focusProvider || '').toLowerCase();
+    const hover = String(state.hoverProvider || '').toLowerCase();
+    wrap.querySelectorAll('.local-provider-logo-btn').forEach((btn) => {
+      const provider = btn.dataset.providerPick || '';
+      const lc = provider.toLowerCase();
+      btn.classList.toggle('is-selected', !!(focus && lc === focus));
+      btn.classList.toggle('is-hover', !!(hover && lc === hover));
+      const dim = isProviderDimmed(provider, activeProviders);
+      btn.classList.toggle('is-dim', dim);
+      const badge = btn.querySelector('.bank-badge');
+      if (badge) badge.classList.toggle('is-logo-dim', dim);
+    });
+  }
+
   function refreshProviderHighlightUi(activeProviders, options) {
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
     refreshHierarchyPanel(active, options);
+    if (options && options.highlightOnly) {
+      applyLogoRailHighlight(active);
+      return;
+    }
     renderSelectedLogos(active);
   }
 

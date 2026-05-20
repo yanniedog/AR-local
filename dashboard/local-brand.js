@@ -645,6 +645,14 @@
       }
     };
 
+    function revealLoadedLogo(url) {
+      rememberLogoUrlResult(url, true);
+      img.onload = null;
+      img.onerror = null;
+      img.classList.remove('is-logo-loading');
+      if (fallbackEl.parentNode === logoWrap) fallbackEl.remove();
+    }
+
     function attempt(index) {
       if (index >= urls.length) {
         finishNeutral();
@@ -655,18 +663,15 @@
         attempt(index + 1);
         return;
       }
-      img.onload = () => {
-        rememberLogoUrlResult(url, true);
-        img.onload = null;
-        img.onerror = null;
-        img.classList.remove('is-logo-loading');
-        if (fallbackEl.parentNode === logoWrap) fallbackEl.remove();
-      };
+      img.onload = () => revealLoadedLogo(url);
       img.onerror = () => {
         rememberLogoUrlResult(url, false);
         attempt(index + 1);
       };
       img.src = url;
+      if (LOGO_LOAD_CACHE.get(url) === 'ok' && img.complete && img.naturalWidth > 0) {
+        revealLoadedLogo(url);
+      }
     }
     attempt(0);
   }
