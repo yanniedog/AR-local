@@ -51,10 +51,15 @@
     return { min, max };
   }
 
-  function bestRate(rows, descending) {
+  /** Deposit sections highlight highest yield; mortgage highlights lowest rate. */
+  function highlightMaxForSection(section) {
+    return section === 'Savings' || section === 'TD';
+  }
+
+  function bestRate(rows, highlightMax) {
     const mm = minMax(rows);
     if (mm.min == null) return null;
-    return descending ? mm.max : mm.min;
+    return highlightMax ? mm.max : mm.min;
   }
 
   function rangeText(rows) {
@@ -80,7 +85,8 @@
   function chartDatePair(state) {
     const dates = Array.isArray(state.chartDates) ? state.chartDates.filter(Boolean) : [];
     if (dates.length < 2) return { anchor: '', previous: '' };
-    const anchor = String(state.chartHoverDate || dates[dates.length - 1] || '').slice(0, 10);
+    const pinned = String(state.chartPinnedDate || '').slice(0, 10);
+    const anchor = pinned || String(dates[dates.length - 1] || '').slice(0, 10);
     const ix = dates.indexOf(anchor);
     const anchorIx = ix >= 0 ? ix : dates.length - 1;
     const previous = dates[anchorIx - 1] || '';
@@ -100,8 +106,8 @@
     return out;
   }
 
-  function bestHistoryValue(rows, descending) {
-    const best = bestRate(rows, descending);
+  function bestHistoryValue(rows, highlightMax) {
+    const best = bestRate(rows, highlightMax);
     return Number.isFinite(best) ? best : null;
   }
 
@@ -116,8 +122,9 @@
       if (!byDate[date]) byDate[date] = [];
       byDate[date].push(row);
     });
-    const latest = bestHistoryValue(byDate[pair.anchor] || [], state.descending);
-    const previous = bestHistoryValue(byDate[pair.previous] || [], state.descending);
+    const highlightMax = highlightMaxForSection(state.section);
+    const latest = bestHistoryValue(byDate[pair.anchor] || [], highlightMax);
+    const previous = bestHistoryValue(byDate[pair.previous] || [], highlightMax);
     if (latest == null || previous == null) return null;
     const deltaBp = Math.round((latest - previous) * 10000);
     const deltaText = deltaBp > 0 ? '+' + deltaBp + 'bp' : deltaBp + 'bp';
@@ -177,7 +184,7 @@
   }
 
   /** Adapt AustralianRates ribbon tier tree to this panel's shape (groups carry rows + best rate). */
-  function annotateRibbonBranch(node, descending) {
+  function annotateRibbonBranch(node, highlightMax) {
     if (!node || node.kind === 'empty') return { kind: 'empty', rows: [] };
     if (node.kind === 'leaves') {
       const rows = node.products.map((p) => p.__cdrRate).filter(Boolean);
@@ -185,12 +192,12 @@
     }
     const field = node.field;
     const groups = node.groups.map((g) => {
-      const child = annotateRibbonBranch(g.child, descending);
+      const child = annotateRibbonBranch(g.child, highlightMax);
       const rows = collectRowsUnder(child);
       return {
         label: g.label,
         rows,
-        best: bestRate(rows, descending),
+        best: bestRate(rows, highlightMax),
         child,
       };
     });
@@ -256,16 +263,16 @@
     return node;
   }
 
-  function renderRateRange(parent, rows, best, descending) {
+  function renderRateRange(parent, rows, best, highlightMax) {
     const mm = minMax(rows);
     if (mm.min == null) return;
     const showRange = mm.min !== mm.max;
-    const bestValue = descending ? mm.max : mm.min;
+    const bestValue = highlightMax ? mm.max : mm.min;
     const first = child(parent, 'span', best === bestValue ? 'ar-ribbon-best' : '', pct(mm.min));
     if (!showRange) return;
     child(parent, 'span', 'ar-ribbon-rate-sep', '-');
     const last = child(parent, 'span', best === bestValue ? 'ar-ribbon-best' : '', pct(mm.max));
-    if (descending) {
+    if (highlightMax) {
       first.className = '';
       last.className = best === bestValue ? 'ar-ribbon-best' : '';
     }
@@ -296,7 +303,7 @@
     });
   }
 
-  function renderLeaf(container, row, depth, best, descending, state) {
+  function renderLeaf(container, row, depth, best, highlightMax, state) {
     const rateRow = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--leaf ar-report-infobox-row');
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
     if (row.provider) rateRow.dataset.localHierarchyProvider = row.provider;
@@ -322,13 +329,13 @@
     if (row.product_name && metaBits.length) {
       child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
     }
-    appendHistoryCompare(textCol, [row], state);
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
     if (isEnergy && minMax([row]).min == null) {
       if (row.fuel_type) child(rate, 'span', '', row.fuel_type);
     } else {
-      renderRateRange(rate, [row], best, descending);
+      renderRateRange(rate, [row], best, highlightMax);
     }
+    appendHistoryCompare(rate, [row], state);
   }
 
   function renderBranch(container, node, group, path, depth, activePath, state) {
@@ -357,7 +364,7 @@
     const rate = child(row, 'span', 'ar-report-infobox-trate');
     const mm = minMax(group.rows);
     if (mm.min != null) {
-      renderRateRange(rate, group.rows, state.globalBest, state.descending);
+      renderRateRange(rate, group.rows, state.globalBest, state.highlightMax);
     } else {
       child(rate, 'span', '', num(group.rows.length));
     }
@@ -373,7 +380,7 @@
         }
         return state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate);
       });
-      sorted.forEach((row) => renderLeaf(container, row, depth, state.globalBest, state.descending, state));
+      sorted.forEach((row) => renderLeaf(container, row, depth, state.globalBest, state.highlightMax, state));
       return;
     }
     const focusIndex = focusedChildIndex(path, activePath);
@@ -438,7 +445,31 @@
     options.onFocusChange(keys);
   }
 
+  function scrollContainer(container) {
+    return container && container.querySelector('.ar-report-underchart-tree-scroll');
+  }
+
+  function restoreScrollTop(el, scrollTop) {
+    if (!el || scrollTop <= 0) return;
+    el.scrollTop = scrollTop;
+    window.requestAnimationFrame(() => {
+      if (el.isConnected) el.scrollTop = scrollTop;
+    });
+  }
+
+  /** Toggle provider dim on existing rows without rebuilding the tree (hover / chart slice). */
+  function applyProviderHighlight(container, state) {
+    if (!container || !state || typeof state.isProviderDimmed !== 'function') return;
+    container.querySelectorAll('.local-hierarchy-leaf-brand .bank-badge').forEach((badge) => {
+      const row = badge.closest('[data-local-hierarchy-provider]');
+      const provider = row ? row.getAttribute('data-local-hierarchy-provider') || '' : '';
+      badge.classList.toggle('is-logo-dim', state.isProviderDimmed(provider));
+    });
+  }
+
   function render(container, countEl, rows, state, options) {
+    const scrollEl = scrollContainer(container);
+    const savedScrollTop = scrollEl ? scrollEl.scrollTop : 0;
     const visible = rows;
     const isEnergy = state.sector === 'energy';
     const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
@@ -454,12 +485,13 @@
       return;
     }
     state.rows = visible;
-    state.globalBest = isEnergy ? null : bestRate(visible, state.descending);
+    state.highlightMax = highlightMaxForSection(state.section);
+    state.globalBest = isEnergy ? null : bestRate(visible, state.highlightMax);
     let tree = { kind: 'empty', rows: [] };
     const ribbon = window.AR && window.AR.ribbon;
     const hasTaxonomyPath = visible.length > 0 && visible.some((r) => r.taxonomy_path);
     if (isEnergy && hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
-      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
+      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.highlightMax);
     } else if (isEnergy) {
       tree = buildEnergyProviderTree(visible);
     } else if (!isEnergy && ribbon && ribbon.buildRibbonTierTree && window.LocalCdrRibbonMap) {
@@ -469,10 +501,10 @@
         const tierFields = tierFieldsFn(slug);
         const products = window.LocalCdrRibbonMap.toRibbonProducts(visible, state.section);
         const ribbonRoot = ribbon.buildRibbonTierTree(products, tierFields, 0);
-        tree = annotateRibbonBranch(ribbonRoot, state.descending);
+        tree = annotateRibbonBranch(ribbonRoot, state.highlightMax);
       }
     } else if (hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
-      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.descending);
+      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.highlightMax);
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     if (!visible.length || tree.kind === 'empty') {
@@ -498,7 +530,8 @@
         renderTree(wrap, tree, '', 0, state.hierarchyPath || '', state);
       },
     });
+    restoreScrollTop(scrollContainer(container), savedScrollTop);
   }
 
-  window.LocalCdrHierarchy = { render };
+  window.LocalCdrHierarchy = { render, applyProviderHighlight };
 })();
