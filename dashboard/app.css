@@ -100,6 +100,12 @@ body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
   box-shadow: none;
 }
 
+/* Beat foundation.css near-white tile if cascade/order regresses (dark dashboard only). */
+:root[data-theme="dark"] html body.ar-public.ar-local-cdr .bank-badge-logo-wrap {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
 /* Fallback abbreviations when the image is missing or still loading. */
 body.ar-public.ar-local-cdr .local-selected-logos .bank-badge-fallback,
 body.ar-public.ar-local-cdr .local-provider-logo-btn .bank-badge-fallback,
@@ -244,9 +250,10 @@ body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap
   box-shadow: none;
 }
 
-:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
-:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
-  background: transparent;
+:root[data-theme="dark"] html body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
+:root[data-theme="dark"] html body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
+  background-color: transparent !important;
+  box-shadow: none !important;
 }
 
 body.ar-public.ar-local-cdr button.local-provider-logo-btn:focus:not(:focus-visible) {
@@ -293,8 +300,26 @@ body.ar-public.ar-local-cdr button.local-provider-logo-btn:focus-visible {
   background: color-mix(in srgb, var(--ar-surface-2) 40%, transparent);
 }
 
+/* Dark: no surface-2 fill on rail tiles (reads as light blue squares on the panel). */
+:root[data-theme="dark"] .ar-local-cdr button.local-provider-logo-btn,
+:root[data-theme="dark"] .ar-local-cdr button.local-provider-logo-btn:hover,
+:root[data-theme="dark"] .ar-local-cdr button.local-provider-logo-btn.is-hover,
+:root[data-theme="dark"] .ar-local-cdr button.local-provider-logo-btn.is-selected {
+  background-color: transparent !important;
+}
+
 .ar-local-cdr .bank-badge-logo.is-logo-loading {
   opacity: 0;
+}
+
+/* Loading: no tinted wrap or fallback chip while the image is pending. */
+:root[data-theme="dark"] html body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) {
+  background-color: transparent !important;
+}
+
+:root[data-theme="dark"] html body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) .bank-badge-fallback {
+  opacity: 0;
+  visibility: hidden;
 }
 
 body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
