@@ -32,8 +32,6 @@ body.ar-public.ar-local-cdr {
   --ar-accent: var(--ar-local-blue);
   --ar-accent-hover: var(--ar-local-blue-strong);
   --ar-accent-soft: var(--ar-local-blue-soft);
-  --ar-local-logo-tile: transparent;
-  --ar-local-fallback-ink: var(--ar-text-soft);
 }
 
 :root[data-theme="light"] body.ar-public.ar-local-cdr {
@@ -244,6 +242,10 @@ body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
 body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
   outline: none;
   box-shadow: none;
+}
+
+:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
+:root[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
   background: transparent;
 }
 
