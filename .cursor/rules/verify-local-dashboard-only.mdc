@@ -1,19 +1,21 @@
 ---
-description: "Acceptance verification uses the local dashboard URL — not www.australianrates.com"
+description: "Acceptance verification uses the Pi dashboard — not www.australianrates.com or default 127.0.0.1"
 alwaysApply: true
 ---
 
-# Verify on Local Dashboard Only
+# Verify on Pi Dashboard (Not Production, Not Default Localhost)
 
-For **this repository**, verification and acceptance testing target the **local CDR dashboard** served by **`cdr_dashboard_server.py`**, not the public AustralianRates production site.
+For **this repository**, verification and acceptance testing target the **Pi-hosted CDR dashboard**, not the public AustralianRates production site and **not** `127.0.0.1` unless explicitly requested.
 
 ## Rule
 
-- **Default verify:** `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` using the URL/port printed when the server starts.
-- **UI / regressions:** Use **Browser MCP** (`user-browser_agent_cursor`) against that same base URL when requested (console, network, screenshots).
+- **Default verify:** Pi at **`http://100.78.28.10/`** (nginx :80) or **`http://100.78.28.10:8808/`** (direct backend). See **`pi-host-not-localhost.mdc`** and **`docs/UNIVERSAL_ROADMAP.md`**.
+- **Command:** `npm run verify:local -- --base-url=http://100.78.28.10/` or `npm run verify:pi` or `AR_PI_BASE_URL=http://100.78.28.10/ npm run verify:local`.
+- **UI / regressions:** Use **Browser MCP** (`user-browser_agent_cursor`) against the **same Pi base URL** when requested (console, network, screenshots).
+- **Local dev only:** `http://127.0.0.1:<port>/` when the user explicitly runs `cdr_dashboard_server.py` locally — not the default.
 - **Do not** treat www.australianrates.com.au as the sign-off environment for AR-local changes; production Pages/Workers deploy is out of scope here.
 - The dashboard still **reuses** AustralianRates **`site`** CSS/JS from disk when available; fixing styling may require a correct **`site`** checkout or **`--site-root`**.
 
 ## Rationale
 
-AR-local ships as a **local Python server + static dashboard**. The real deploy pipeline on AustralianRates does not apply; verifying on the running local server is the honest acceptance path.
+AR-local ships as a **Pi-hosted Python server + static dashboard** for this deployment. Verifying on the running Pi is the honest acceptance path; loopback is for explicit local development only.

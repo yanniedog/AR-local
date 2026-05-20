@@ -1,6 +1,6 @@
 # AR-local ? Agent configuration
 
-Local CDR ingest, exports, and dashboard. Workflow matches **Australian Rates** for Git/PR/CI/bot/thread closure; **hosting and verification are local only** (no Cloudflare, no www.australianrates.com.au as the acceptance environment).
+Local CDR ingest, exports, and dashboard. Workflow matches **Australian Rates** for Git/PR/CI/bot/thread closure; **hosting and verification target the Pi dashboard** (no Cloudflare, no www.australianrates.com.au as the acceptance environment). **Do not default to `127.0.0.1`** — see **`.cursor/rules/pi-host-not-localhost.mdc`**.
 
 ## Ship bar
 
@@ -35,7 +35,7 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 
 - **Dashboard:** `cdr_dashboard_server.py` serves **`dashboard/`** HTML/JS/CSS and proxies **`/site/*`** from the AustralianRates **`site`** directory when configured (auto-detect prefers a tree that has **`assets/banks/*.png`** when possible).
 - **Canonical public shell assets** still come from the AustralianRates **`site`** folder on disk (clone **`australianrates`** beside this repo or pass **`--site-root`**). There is no Pages deploy from this repo.
-- **Verification:** **`npm run verify:local`** against the running dashboard URL; use **Browser MCP** when validating UI.
+- **Verification (Pi — primary):** **`npm run verify:local -- --base-url=http://100.78.28.10/`** or **`npm run verify:pi`** against the Pi dashboard (Tailscale; nginx :80). Override via **`AR_PI_BASE_URL`** or **`--base-url`**. Use **Browser MCP** against the same Pi URL. Local `127.0.0.1` only when the user explicitly runs the dev server locally.
 - **Branding map:** **`dashboard/ar-bank-brand.js`** is loaded from **`/assets/`** so the dashboard works even when **`/site/ar-bank-brand.js`** is unavailable.
 
 ## Repo commands
@@ -47,7 +47,8 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
-| Local dashboard smoke HTTP | `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` |
+| Pi dashboard smoke HTTP (default acceptance) | `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/` |
+| Local dev smoke (explicit local server only) | `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` |
 | Pi deploy verify / apply | `npm run pi:deploy:verify` / `npm run pi:deploy` |
 | Pi deploy needed (post-merge gate) | `npm run pi:needs-deploy -- --ref origin/main~1` |
 | Prune remote refs | `npm run git:graph-hygiene` |
@@ -78,7 +79,7 @@ Interactive UI QA via Browser MCP for navigation, hierarchy drill-down, screensh
 
 **Invoke:** **deep browser explore**, **browser QA pass**, or **`/deep-browser-explore`**. Read MCP tool schemas under `user-browser_agent_cursor` each session.
 
-**Targets:** `http://127.0.0.1:<port>/` (local) or Pi dashboard per **`docs/UNIVERSAL_ROADMAP.md`** (LAN/Tailscale IP, SSH tunnel). Not production australianrates.com for acceptance unless comparing parity.
+**Targets (default):** **`http://100.78.28.10/`** (Pi Tailscale, nginx :80) per **`pi-host-not-localhost.mdc`** and **`docs/UNIVERSAL_ROADMAP.md`**. Local `127.0.0.1` only when the user explicitly requests local dev. SSH tunnel `127.0.0.1:18808` only when tunneling is required. Not production australianrates.com for acceptance unless comparing parity.
 
 ## Chief agent
 

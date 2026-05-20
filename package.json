@@ -10,6 +10,7 @@
     "close-loop:check": "node scripts/close-loop-check.mjs",
     "ship:closeout:strict": "python ship_closeout_strict.py",
     "verify:local": "python verify_local.py",
+    "verify:pi": "python verify_local.py --base-url=http://100.78.28.10/",
     "pi:deploy:verify": "python pi_deploy_verify.py --verify",
     "pi:deploy": "python pi_deploy_verify.py --deploy",
     "pi:deploy:dry-run": "python pi_deploy_verify.py --deploy --dry-run",
