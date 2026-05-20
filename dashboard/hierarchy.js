@@ -550,6 +550,7 @@
     });
     restoreScrollTop(scrollContainer(container), savedScrollTop);
     container.__localHierarchyTree = tree;
+    delete container.__localHierarchyPathKeys;
   }
 
   window.LocalCdrHierarchy = { render, applyProviderHighlight, productKeysAtPath, productKeysForRows };

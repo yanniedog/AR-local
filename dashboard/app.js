@@ -122,7 +122,7 @@
   }
 
   function focusActiveProvider() {
-    if (state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size) {
+    if (hasHierarchyHover()) {
       return String(state.focusProvider || '').trim();
     }
     return String(state.hoverProvider || state.focusProvider || '').trim();
@@ -162,7 +162,7 @@
       const allowed = state.focusedProductKeys;
       rows = rows.filter((row) => allowed.has(rowProductKey(row)));
     }
-    if (state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size) {
+    if (hasHierarchyHover()) {
       const hoverAllowed = state.hoverHierarchyProductKeys;
       rows = rows.filter((row) => hoverAllowed.has(rowProductKey(row)));
     }
@@ -444,7 +444,7 @@
 
   function relevantProviderKeys() {
     const hover = String(state.hoverProvider || '').trim();
-    if (hover && !(state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size)) {
+    if (hover && !hasHierarchyHover()) {
       return providerMatchKeys(hover);
     }
     const focus = String(state.focusProvider || '').trim();
@@ -901,9 +901,7 @@
     if (state.section !== section) {
       state.hierarchyPath = '';
       state.focusProvider = '';
-      state.hoverProvider = '';
-      state.hoverHierarchyPath = '';
-      state.hoverHierarchyProductKeys = null;
+      resetHierarchyHover();
       state.focusedProductKeys = null;
       state.chartHoverDate = '';
       state.chartPinnedDate = '';
@@ -943,9 +941,19 @@
       });
   }
 
+  function hasHierarchyHover() {
+    return !!(state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size);
+  }
+
   function clearHierarchyHoverState() {
     state.hoverHierarchyPath = '';
     state.hoverHierarchyProductKeys = null;
+  }
+
+  function resetHierarchyHover() {
+    state.hoverProvider = '';
+    clearHierarchyHoverState();
+    lastHierarchyHoverSignature = '';
   }
 
   function hierarchyHoverSignature() {
@@ -958,7 +966,7 @@
 
   let lastHierarchyHoverSignature = '';
 
-  function resolveHierarchyHoverProductKeys(node, tree) {
+  function resolveHierarchyHoverProductKeys(node, tree, hierarchyEl) {
     const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
     if (productKey) return new Set([productKey]);
     const path = node.getAttribute('data-ribbon-tree-path')
@@ -966,6 +974,14 @@
       || '';
     if (!path || !tree || !window.LocalCdrHierarchy || !window.LocalCdrHierarchy.productKeysAtPath) {
       return null;
+    }
+    if (hierarchyEl) {
+      if (!hierarchyEl.__localHierarchyPathKeys) hierarchyEl.__localHierarchyPathKeys = new Map();
+      const cached = hierarchyEl.__localHierarchyPathKeys.get(path);
+      if (cached) return cached;
+      const keys = window.LocalCdrHierarchy.productKeysAtPath(tree, path);
+      if (keys) hierarchyEl.__localHierarchyPathKeys.set(path, keys);
+      return keys;
     }
     return window.LocalCdrHierarchy.productKeysAtPath(tree, path);
   }
@@ -977,7 +993,7 @@
       || node.getAttribute('data-local-hierarchy-path')
       || '';
     const provider = node.getAttribute('data-local-hierarchy-provider') || '';
-    const productKeys = resolveHierarchyHoverProductKeys(node, tree);
+    const productKeys = resolveHierarchyHoverProductKeys(node, tree, hierarchyEl);
     state.hoverHierarchyPath = path;
     state.hoverHierarchyProductKeys = productKeys;
     state.hoverProvider = provider;
@@ -990,9 +1006,7 @@
 
   function clearHierarchyTableHover() {
     if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
-    state.hoverProvider = '';
-    clearHierarchyHoverState();
-    lastHierarchyHoverSignature = '';
+    resetHierarchyHover();
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
     redrawChart();
   }
@@ -1019,9 +1033,7 @@
       const pick = btn.dataset.providerPick || '';
       const current = state.focusProvider;
       state.focusProvider = (current && pick.toLowerCase() === current.toLowerCase()) ? '' : pick;
-      state.hoverProvider = '';
-      clearHierarchyHoverState();
-      lastHierarchyHoverSignature = '';
+      resetHierarchyHover();
       state.hierarchyPath = '';
       state.focusedProductKeys = null;
       render();
@@ -1030,7 +1042,7 @@
       const btn = event.target.closest('[data-provider-pick]');
       if (!btn) return;
       const next = btn.dataset.providerPick || '';
-      if (state.hoverProvider === next && !state.hoverHierarchyProductKeys) return;
+      if (state.hoverProvider === next && !hasHierarchyHover()) return;
       state.hoverProvider = next;
       clearHierarchyHoverState();
       lastHierarchyHoverSignature = '';
@@ -1041,9 +1053,7 @@
     });
     logoWrap.addEventListener('mouseleave', () => {
       if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
-      state.hoverProvider = '';
-      clearHierarchyHoverState();
-      lastHierarchyHoverSignature = '';
+      resetHierarchyHover();
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
       redrawChart();
@@ -1053,9 +1063,7 @@
       const action = event.target.closest('[data-local-hierarchy-action]');
       if (!action) return;
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
-      state.hoverProvider = '';
-      clearHierarchyHoverState();
-      lastHierarchyHoverSignature = '';
+      resetHierarchyHover();
       renderTable(applyFocusFilter(normalizeRows(rateRows())));
       redrawChart();
     });
@@ -1065,9 +1073,7 @@
       if (!action) return;
       event.preventDefault();
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
-      state.hoverProvider = '';
-      clearHierarchyHoverState();
-      lastHierarchyHoverSignature = '';
+      resetHierarchyHover();
       renderTable(applyFocusFilter(normalizeRows(rateRows())));
       redrawChart();
     });
