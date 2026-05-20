@@ -40,6 +40,11 @@ def main() -> int:
     base = args.base_url.strip().rstrip("/") + "/"
     paths = [
         "",
+        "savings/",
+        "savings",
+        "term-deposits/",
+        "term-deposits",
+        "home-loans/",
         "assets/app.css",
         "assets/app.js",
         "assets/ar-bank-brand.js",
