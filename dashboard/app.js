@@ -462,9 +462,62 @@
     return true;
   }
 
+  const logoRailMatchCache = new Map();
+  let logoRailHighlightRaf = 0;
+  let logoRailHighlightPending = null;
+
+  function logoRailProviderDimmed(provider, activeProviders, keys) {
+    if (!activeProviders) return false;
+    const matchKeys = keys || providerMatchKeys(provider);
+    for (const key of matchKeys) {
+      if (activeProviders.has(key)) return false;
+    }
+    return true;
+  }
+
+  /** Toggle logo-rail dim/hover/selection without rebuilding badges (avoids logo reload flash). */
+  function applyLogoRailHighlight(activeProviders) {
+    const wrap = $('selectedLogos');
+    if (!wrap || wrap.hidden) return;
+    const focus = String(state.focusProvider || '').toLowerCase();
+    const hover = String(state.hoverProvider || '').toLowerCase();
+    const buttons = wrap._logoRailButtons
+      || (wrap._logoRailButtons = Array.from(wrap.querySelectorAll('.local-provider-logo-btn')));
+    buttons.forEach((btn) => {
+      const provider = btn.dataset.providerPick || '';
+      const lc = provider.toLowerCase();
+      btn.classList.toggle('is-selected', !!(focus && lc === focus));
+      btn.classList.toggle('is-hover', !!(hover && lc === hover));
+      let keys = logoRailMatchCache.get(provider);
+      if (!keys) {
+        keys = providerMatchKeys(provider);
+        logoRailMatchCache.set(provider, keys);
+      }
+      const dim = logoRailProviderDimmed(provider, activeProviders, keys);
+      btn.classList.toggle('is-dim', dim);
+      const badge = btn.querySelector('.bank-badge');
+      if (badge) badge.classList.toggle('is-logo-dim', dim);
+    });
+  }
+
+  function scheduleLogoRailHighlight(activeProviders) {
+    logoRailHighlightPending = activeProviders;
+    if (logoRailHighlightRaf) return;
+    logoRailHighlightRaf = requestAnimationFrame(() => {
+      logoRailHighlightRaf = 0;
+      const active = logoRailHighlightPending;
+      logoRailHighlightPending = null;
+      applyLogoRailHighlight(active);
+    });
+  }
+
   function refreshProviderHighlightUi(activeProviders, options) {
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
     refreshHierarchyPanel(active, options);
+    if (options && options.highlightOnly) {
+      scheduleLogoRailHighlight(active);
+      return;
+    }
     renderSelectedLogos(active);
   }
 
@@ -646,6 +699,7 @@
   function renderSelectedLogos(activeProviders) {
     const wrap = $('selectedLogos');
     clear(wrap);
+    delete wrap._logoRailButtons;
     const sectionPayload = state.bankSections[state.section];
     if (!window.LocalCdrBrand || !sectionPayload || !sectionPayload.rates) { wrap.hidden = true; return; }
 
