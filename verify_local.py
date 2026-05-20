@@ -39,10 +39,7 @@ def main() -> int:
     parser.add_argument(
         "--base-url",
         default=default_base,
-        help=(
-            "Dashboard root URL (trailing slash optional). "
-            "Defaults to AR_PI_BASE_URL when set, else http://127.0.0.1:8808/"
-        ),
+        help="Dashboard root URL (trailing slash optional). Default: %(default)s (AR_PI_BASE_URL when set).",
     )
     parser.add_argument(
         "--require-banks-rates",
