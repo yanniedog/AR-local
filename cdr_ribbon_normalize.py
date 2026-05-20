@@ -217,6 +217,92 @@ def normalize_lvr_tier(context_text: str, min_lvr: Any, max_lvr: Any) -> str:
     return "lvr_unspecified"
 
 
+def parse_lvr_bounds_from_text_blob(text: str) -> Tuple[Optional[float], Optional[float]]:
+    """Parse LVR-ish percent bounds from free text (product name, rate hints)."""
+    txt = _lower(text)
+    if not txt.strip():
+        return (None, None)
+
+    bp = _BOUNDS_PAIR.search(txt)
+    if bp:
+        lo, hi = float(bp.group(1)), float(bp.group(2))
+        if math.isfinite(lo) and math.isfinite(hi):
+            return (lo, hi)
+
+    le2 = _BOUND_LE.search(txt)
+    if le2:
+        return (None, float(le2.group(1)))
+
+    ge = _BOUND_GE.search(txt)
+    if ge:
+        return (float(ge.group(1)), None)
+
+    sg = _BOUND_SINGLE.search(txt)
+    if sg:
+        return (None, float(sg.group(1)))
+
+    return (None, None)
+
+
+def extract_product_lvr_constraints(product_rec: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """CDR product-level constraints that mention LVR/LTV."""
+    out: List[Dict[str, Any]] = []
+    raw = product_rec.get("constraints")
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        blob = _lower_join(
+            item.get("constraintType"),
+            item.get("additionalInfo"),
+            item.get("additionalValue"),
+            item.get("name"),
+        )
+        if "lvr" in blob or "loan to value" in blob or "ltv" in blob:
+            out.append(dict(item))
+    return out
+
+
+def resolve_lvr_tier(
+    context_text: str,
+    rate_item: Mapping[str, Any],
+    product_constraints: Optional[List[Mapping[str, Any]]] = None,
+) -> Tuple[str, str]:
+    """Return (lvr_tier slug, lvr_source) for a mortgage lending rate."""
+    product_constraints = product_constraints or []
+    l_min, l_max = parse_lvr_bounds_from_rate_item(rate_item)
+    source = "none"
+
+    if l_min is not None or l_max is not None:
+        source = "rate_structured"
+    elif product_constraints:
+        parsed = parse_lvr_bounds_from_constraints(
+            [x for x in product_constraints if isinstance(x, Mapping)]
+        )
+        if parsed is not None:
+            l_min, l_max = parsed
+            if l_min is not None or l_max is not None:
+                source = "product_constraints"
+
+    tier = normalize_lvr_tier(context_text, l_min, l_max)
+    if tier != "lvr_unspecified":
+        if source == "none":
+            source = "context_text"
+        return tier, source
+
+    if context_text.strip():
+        ctx_min, ctx_max = parse_lvr_bounds_from_text_blob(context_text)
+        if ctx_min is not None or ctx_max is not None:
+            tier2 = normalize_lvr_tier("", ctx_min, ctx_max)
+            if tier2 != "lvr_unspecified":
+                return tier2, "context_text"
+
+    if product_constraints:
+        return "lvr_unspecified", "product_unparsed"
+    return "lvr_unspecified", source
+
+
 def parse_numeric(value: Any) -> Optional[float]:
     if value is None or value == "":
         return None
@@ -232,8 +318,10 @@ def parse_lvr_bounds_from_constraints(constraints: List[Mapping[str, Any]]) -> O
     max_hi: Optional[float] = None
     for c in constraints:
         ctype = _lower(c.get("constraintType") or "")
-        if "lvr" not in ctype:
-            continue
+        info = _lower(c.get("additionalInfo") or "")
+        if "lvr" not in ctype and "loan to value" not in ctype and "ltv" not in ctype:
+            if "lvr" not in info and "loan to value" not in info and "ltv" not in info:
+                continue
         additional = parse_numeric(c.get("additionalValue"))
         min_value = parse_numeric(c.get("minValue"))
         max_value = parse_numeric(c.get("maxValue"))
@@ -407,6 +495,8 @@ def ribbon_columns_for_bank_rate_row(
     rate_family: str,
     flat_base: Mapping[str, Any],
     cleaned_item: Mapping[str, Any],
+    *,
+    product_lvr_constraints: Optional[List[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Return discrete ribbon-aligned columns merged into export bank rate rows."""
     from cdr_taxonomy import classify_bank_rate_row as _classify
@@ -416,6 +506,7 @@ def ribbon_columns_for_bank_rate_row(
         "security_purpose": "",
         "ribbon_repayment_type": "",
         "lvr_tier": "",
+        "lvr_source": "",
         "ribbon_rate_structure": "",
         "ribbon_fixed_term": "",
         "account_type": "",
@@ -453,9 +544,12 @@ def ribbon_columns_for_bank_rate_row(
             )
             if p
         ).strip()
-        l_min, l_max = parse_lvr_bounds_from_rate_item(cleaned_item)
         full_context = " ".join(p for p in (context_text, flat_base.get("product_name") or "") if p)
-        lvr_tier = normalize_lvr_tier(full_context, l_min, l_max)
+        lvr_tier, lvr_source = resolve_lvr_tier(
+            full_context,
+            cleaned_item,
+            product_lvr_constraints,
+        )
         feature_set = normalize_feature_set(full_context, None)
         rate_structure_group = normalize_rate_structure_group(rate_structure_text)
         fixed_term = (
@@ -468,6 +562,7 @@ def ribbon_columns_for_bank_rate_row(
                 "security_purpose": security_purpose,
                 "ribbon_repayment_type": ribbon_repayment,
                 "lvr_tier": lvr_tier,
+                "lvr_source": lvr_source,
                 "ribbon_rate_structure": rate_structure_group,
                 "ribbon_fixed_term": fixed_term,
                 "feature_set": feature_set,

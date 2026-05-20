@@ -147,6 +147,55 @@
     return 'lvr_unspecified';
   }
 
+  function parseLvrBoundsFromTextBlob(text) {
+    var t = lower(text);
+    if (!t.trim()) return { min: null, max: null };
+    var range = t.match(/(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?/);
+    if (range) {
+      var lo = Number(range[1]);
+      var hi = Number(range[2]);
+      if (Number.isFinite(lo) && Number.isFinite(hi)) return { min: lo, max: hi };
+    }
+    var le2 = t.match(/(?:<=|under|up to|maximum|max|below)\s*(\d{1,3}(?:\.\d+)?)\s*%?/);
+    if (le2) return { min: null, max: Number(le2[1]) };
+    var ge = t.match(/(?:>=|over|above|from)\s*(\d{1,3}(?:\.\d+)?)\s*%?/);
+    if (ge) return { min: Number(ge[1]), max: null };
+    var single = t.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
+    if (single) return { min: null, max: Number(single[1]) };
+    return { min: null, max: null };
+  }
+
+  function resolveLvrTier(contextText, item, productConstraints) {
+    var bounds = parseLvrBoundsFromRateItem(item);
+    var min = bounds.min;
+    var max = bounds.max;
+    var source = 'none';
+    if (min != null || max != null) {
+      source = 'rate_structured';
+    } else if (productConstraints && productConstraints.length) {
+      var pb = parseLvrBoundsFromConstraints(productConstraints);
+      if (pb) {
+        min = pb.min;
+        max = pb.max;
+        if (min != null || max != null) source = 'product_constraints';
+      }
+    }
+    var tier = normalizeLvrTier(contextText, min, max);
+    if (tier !== 'lvr_unspecified') {
+      if (source === 'none') source = 'context_text';
+      return { tier: tier, source: source };
+    }
+    var ctx = parseLvrBoundsFromTextBlob(contextText);
+    if (ctx.min != null || ctx.max != null) {
+      var tier2 = normalizeLvrTier('', ctx.min, ctx.max);
+      if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
+    }
+    if (productConstraints && productConstraints.length) {
+      return { tier: 'lvr_unspecified', source: 'product_unparsed' };
+    }
+    return { tier: 'lvr_unspecified', source: source };
+  }
+
   function parseNumeric(value) {
     var n = Number(value);
     return Number.isFinite(n) ? n : null;
@@ -159,7 +208,17 @@
     for (var i = 0; i < constraints.length; i += 1) {
       var c = constraints[i];
       var ctype = lower(c.constraintType || '');
-      if (!ctype.includes('lvr')) continue;
+      var info = lower(c.additionalInfo || '');
+      if (
+        !ctype.includes('lvr') &&
+        !ctype.includes('loan to value') &&
+        !ctype.includes('ltv') &&
+        !info.includes('lvr') &&
+        !info.includes('loan to value') &&
+        !info.includes('ltv')
+      ) {
+        continue;
+      }
       var additional = parseNumeric(c.additionalValue);
       var minValue = parseNumeric(c.minValue);
       var maxValue = parseNumeric(c.maxValue);
@@ -278,9 +337,10 @@
     var contextParts = [item.additionalInfo, item.additionalValue, item.name];
     var contextText = contextParts.filter(Boolean).join(' | ');
     var rateStructureText = [lendingRateType, item.name || '', rateRow.term || '', contextText].filter(Boolean).join(' ');
-    var lvrBounds = parseLvrBoundsFromRateItem(item);
     var fullContext = [contextText, rateRow.product_name].join(' ');
-    var lvrTier = normalizeLvrTier(fullContext, lvrBounds.min, lvrBounds.max);
+    var productLvr = Array.isArray(item.productLvrConstraints) ? item.productLvrConstraints : [];
+    var lvrResolved = resolveLvrTier(fullContext, item, productLvr);
+    var lvrTier = lvrResolved.tier;
     var featureSet = normalizeFeatureSet(fullContext, null);
     var rateStructureGroup = rateStructureGroupFromText(rateStructureText);
     return {
@@ -291,6 +351,7 @@
       ribbon_fixed_term:
         rateStructureGroup === 'fixed' ? fixedTermYearsFromText(rateStructureText) : '',
       lvr_tier: lvrTier,
+      lvr_source: lvrResolved.source,
       feature_set: featureSet,
       product_name: trimProduct(rateRow.product_name),
       product_id: String(rateRow.product_id || ''),
@@ -374,6 +435,7 @@
         rate_structure: structureGroup,
         ribbon_fixed_term: String(rateRow.ribbon_fixed_term || '').trim(),
         lvr_tier: rateRow.lvr_tier,
+        lvr_source: rateRow.lvr_source,
         feature_set: rateRow.feature_set,
         product_name: trimProduct(rateRow.product_name),
         product_id: String(rateRow.product_id || ''),

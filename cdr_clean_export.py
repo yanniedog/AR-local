@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
-from cdr_ribbon_normalize import ribbon_columns_for_bank_rate_row
+from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 from cdr_taxonomy import classify_energy_plan
 
 NOISE_KEYS = {
@@ -169,6 +169,9 @@ def append_bank_details(
     rec: Mapping[str, Any],
 ) -> None:
     wanted = {"Mortgage": {"lending"}, "Savings": {"deposit"}, "TD": {"deposit"}}.get(base.get("dataset", ""), {"deposit", "lending"})
+    product_lvr_constraints: List[Dict[str, Any]] = []
+    if base.get("dataset") == "Mortgage":
+        product_lvr_constraints = [clean_value(x) for x in extract_product_lvr_constraints(rec)]
     for family, key in (("deposit", "depositRates"), ("lending", "lendingRates")):
         if family not in wanted:
             continue
@@ -196,6 +199,7 @@ def append_bank_details(
                 family,
                 rate_row,
                 cleaned,
+                product_lvr_constraints=product_lvr_constraints if family == "lending" else None,
             )
             rate_row.update(ribbons)
             dataset["rates"].append(rate_row)
