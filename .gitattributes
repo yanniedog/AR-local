@@ -1,0 +1,2 @@
+deploy/pi/*.sh text eol=lf
+deploy/pi/*.sudoers text eol=lf
