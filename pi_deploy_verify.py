@@ -411,7 +411,7 @@ def deploy_services(*, dry_run: bool = False) -> int:
         "("
         "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
         "sudo nginx -t && sudo systemctl reload nginx; "
-        f"elif [ -x {shell_quote(install_proxy)} ]; then "
+        f"elif [ -f {shell_quote(install_proxy)} ]; then "
         f"sudo sh {shell_quote(install_proxy)} {shell_quote(ar_repo)}; "
         "else echo 'pi_deploy_verify: nginx proxy not installed (run deploy/pi/install-pi-dashboard-proxy.sh)' >&2; "
         "fi"
