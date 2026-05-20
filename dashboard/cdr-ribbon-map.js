@@ -147,9 +147,14 @@
     return 'lvr_unspecified';
   }
 
+  function textHasLvrSignal(text) {
+    var t = lower(text);
+    return t.includes('lvr') || t.includes('loan to value') || t.includes('ltv');
+  }
+
   function parseLvrBoundsFromTextBlob(text) {
     var t = lower(text);
-    if (!t.trim()) return { min: null, max: null };
+    if (!t.trim() || !textHasLvrSignal(t)) return { min: null, max: null };
     var range = t.match(/(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?/);
     if (range) {
       var lo = Number(range[1]);
@@ -185,10 +190,12 @@
       if (source === 'none') source = 'context_text';
       return { tier: tier, source: source };
     }
-    var ctx = parseLvrBoundsFromTextBlob(contextText);
-    if (ctx.min != null || ctx.max != null) {
-      var tier2 = normalizeLvrTier('', ctx.min, ctx.max);
-      if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
+    if (textHasLvrSignal(contextText)) {
+      var ctx = parseLvrBoundsFromTextBlob(contextText);
+      if (ctx.min != null || ctx.max != null) {
+        var tier2 = normalizeLvrTier('', ctx.min, ctx.max);
+        if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
+      }
     }
     if (productConstraints && productConstraints.length) {
       return { tier: 'lvr_unspecified', source: 'product_unparsed' };

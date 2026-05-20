@@ -217,10 +217,15 @@ def normalize_lvr_tier(context_text: str, min_lvr: Any, max_lvr: Any) -> str:
     return "lvr_unspecified"
 
 
+def _text_has_lvr_signal(text: str) -> bool:
+    t = _lower(text)
+    return "lvr" in t or "loan to value" in t or "ltv" in t
+
+
 def parse_lvr_bounds_from_text_blob(text: str) -> Tuple[Optional[float], Optional[float]]:
-    """Parse LVR-ish percent bounds from free text (product name, rate hints)."""
+    """Parse LVR-ish percent bounds from free text that already mentions LVR/LTV."""
     txt = _lower(text)
-    if not txt.strip():
+    if not txt.strip() or not _text_has_lvr_signal(txt):
         return (None, None)
 
     bp = _BOUNDS_PAIR.search(txt)
@@ -291,7 +296,7 @@ def resolve_lvr_tier(
             source = "context_text"
         return tier, source
 
-    if context_text.strip():
+    if context_text.strip() and _text_has_lvr_signal(context_text):
         ctx_min, ctx_max = parse_lvr_bounds_from_text_blob(context_text)
         if ctx_min is not None or ctx_max is not None:
             tier2 = normalize_lvr_tier("", ctx_min, ctx_max)
