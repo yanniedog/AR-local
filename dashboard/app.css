@@ -35,12 +35,25 @@ body.ar-public.ar-local-cdr {
   --ar-accent-soft: var(--ar-local-blue-soft);
 }
 
-/* Savings: replace green/teal section accent with blue (Economic Data is /economic-data/). */
-body.ar-local-cdr.ar-section-savings {
+/* Savings/TD: beat public-polish section greens (same specificity pattern as economic-data). */
+:root[data-theme="dark"] body.ar-public.ar-local-cdr.ar-section-savings,
+:root[data-theme="light"] body.ar-public.ar-local-cdr.ar-section-savings,
+:root[data-theme="dark"] body.ar-public.ar-local-cdr.ar-section-term-deposits,
+:root[data-theme="light"] body.ar-public.ar-local-cdr.ar-section-term-deposits {
   --ar-section-accent: var(--ar-local-blue-strong);
   --ar-section-accent-soft: var(--ar-local-section-fill);
   --ar-section-soft: var(--ar-local-section-tint);
   --ar-section-glow: var(--ar-local-section-glow);
+}
+
+/* public-results.css decor blob overlaps the provider rail on the right. */
+body.ar-public.ar-local-cdr .market-intro::after {
+  display: none;
+}
+
+body.ar-public.ar-local-cdr .local-selected-logos {
+  position: relative;
+  z-index: 2;
 }
 
 /*
