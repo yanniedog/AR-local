@@ -236,7 +236,7 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` — every push to `main`; `workflow_dispatch` |
 | GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
 | On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
-| On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` — every 15m: starts `ar-local-daily.service` if the scheduled daily banking export is missing after the grace period |
+| On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` — every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
 
 **GitHub secrets (Actions):**
 

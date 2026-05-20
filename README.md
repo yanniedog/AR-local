@@ -127,7 +127,15 @@ unit instead of treating an empty export as success.
 `deploy/pi/ar-local-daily-watchdog.timer` runs every 15 minutes and checks
 whether the most recent scheduled daily ingest has produced a valid banking
 export. If the 20:00 UTC run is missing after a 30-minute grace period and the
-daily service is not already active, it starts `ar-local-daily.service`.
+daily service is not already active, it runs the same `pi_daily_sync.py
+--banks-only` path directly as the Pi app user.
+
+When sudo is not available for installing root units, install the catch-up
+watchdog as the lingering Pi user with:
+
+```sh
+sh deploy/pi/install-user-daily-watchdog.sh /srv/ar-local/AR-local
+```
 
 ```sh
 python3 pi_daily_sync.py --banks-only

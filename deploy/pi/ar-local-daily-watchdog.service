@@ -1,5 +1,5 @@
 [Unit]
-Description=AR-local daily ingest watchdog
+Description=AR-local daily ingest watchdog catch-up
 After=network-online.target
 Wants=network-online.target
 
