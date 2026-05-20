@@ -20,7 +20,9 @@ import { hasGh, ghJson } from './lib/gh-pr-review-threads.mjs';
 const DEFAULT_IDLE_MIN = 5;
 const MAX_IDLE_MIN = 120;
 const POLL_SEC = 60;
-const OPEN_PR_LIST_LIMIT = 100;
+const OPEN_PR_PAGE_SIZE = 100;
+const GH_TIMEOUT_MS = 120_000;
+const GH_MAX_BUFFER = 4 * 1024 * 1024;
 
 /** Human-readable status: stderr when --json so stdout stays pure JSON. */
 function status(msg, { json, quiet }) {
@@ -59,17 +61,24 @@ function parseArgs(argv) {
 }
 
 function listOpenPrs() {
-  const rows = ghJson([
-    'pr',
-    'list',
-    '--state',
-    'open',
-    '--limit',
-    String(OPEN_PR_LIST_LIMIT),
-    '--json',
-    'number,title,headRefName,createdAt,mergeable,mergeStateStatus',
-  ]);
-  if (!Array.isArray(rows)) return [];
+  const rows = [];
+  for (let page = 1; page < 1000; page += 1) {
+    const batch = ghJson([
+      'pr',
+      'list',
+      '--state',
+      'open',
+      '--limit',
+      String(OPEN_PR_PAGE_SIZE),
+      '--page',
+      String(page),
+      '--json',
+      'number,title,headRefName,createdAt,mergeable,mergeStateStatus',
+    ]);
+    if (!Array.isArray(batch) || !batch.length) break;
+    rows.push(...batch);
+    if (batch.length < OPEN_PR_PAGE_SIZE) break;
+  }
   return rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 }
 
@@ -111,7 +120,7 @@ async function runCycle(args) {
       'number,title,headRefName,createdAt,state,mergeable,mergeStateStatus',
     ]);
     if (view.state !== 'OPEN') {
-      return { idle: true, prs: [], results: [], error: `PR #${args.pr} is not open` };
+      return { idle: false, prs: [], results: [], error: `PR #${args.pr} is not open (state=${view.state})` };
     }
     prs = [view];
   } else {
@@ -152,7 +161,7 @@ async function main() {
     console.log(`Usage: npm run pr:watch-once -- [--pr N] [--json] [--quiet] [--watch] [--idle-min M]
 
 One cycle for pr-watch-agent:
-  - Lists open PRs on the current repo (oldest createdAt first, up to ${OPEN_PR_LIST_LIMIT})
+  - Lists open PRs on the current repo (oldest createdAt first, paginated)
   - Runs pr:gates:check logic per PR via evaluateGates()
 
 Exit codes:
@@ -229,7 +238,15 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
 
   for (;;) {
     const { exitCode, cycle } = await run();
+    if (cycle.error) {
+      console.error(`pr:watch-once: ${cycle.error}`);
+      process.exit(1);
+    }
     if (cycle.idle) {
+      if (args.pr) {
+        console.error(`pr:watch-once: PR #${args.pr} is not open — watch mode stopping`);
+        process.exit(1);
+      }
       status(`pr:watch-once: sleeping ${args.idleMin} min (idle poll) — Ctrl+C to stop`, args);
       await sleepMs(args.idleMin * 60 * 1000);
       continue;
