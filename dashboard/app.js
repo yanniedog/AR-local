@@ -154,19 +154,20 @@
   }
 
   function rowProductKey(row) {
-    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    const raw = row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    return raw === '' || raw == null ? '' : String(raw);
   }
 
   function applyHierarchyFilter(rows) {
-    if (state.focusedProductKeys) {
-      const allowed = state.focusedProductKeys;
-      rows = rows.filter((row) => allowed.has(rowProductKey(row)));
-    }
-    if (hasHierarchyHover()) {
-      const hoverAllowed = state.hoverHierarchyProductKeys;
-      rows = rows.filter((row) => hoverAllowed.has(rowProductKey(row)));
-    }
-    return rows;
+    const focus = state.focusedProductKeys;
+    const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
+    if (!focus && !hover) return rows;
+    return rows.filter((row) => {
+      const key = rowProductKey(row);
+      if (focus && !focus.has(key)) return false;
+      if (hover && !hover.has(key)) return false;
+      return true;
+    });
   }
 
   function historyRowMatchesLiveTable(row) {
@@ -956,19 +957,20 @@
     lastHierarchyHoverSignature = '';
   }
 
-  function hierarchyHoverSignature() {
-    const path = String(state.hoverHierarchyPath || '');
-    const provider = String(state.hoverProvider || '');
-    const keys = state.hoverHierarchyProductKeys;
-    const keyStr = keys && keys.size ? Array.from(keys).sort().join('\u0001') : '';
-    return `${path}|${provider}|${keyStr}`;
+  function hierarchyHoverDomSignature(node) {
+    const path = node.getAttribute('data-ribbon-tree-path')
+      || node.getAttribute('data-local-hierarchy-path')
+      || '';
+    const provider = node.getAttribute('data-local-hierarchy-provider') || '';
+    const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
+    return `${path}|${provider}|${productKey}`;
   }
 
   let lastHierarchyHoverSignature = '';
 
   function resolveHierarchyHoverProductKeys(node, tree, hierarchyEl) {
     const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
-    if (productKey) return new Set([productKey]);
+    if (productKey) return new Set([rowProductKey({ product_key: productKey })]);
     const path = node.getAttribute('data-ribbon-tree-path')
       || node.getAttribute('data-local-hierarchy-path')
       || '';
@@ -987,6 +989,8 @@
   }
 
   function applyHierarchyTableHover(node) {
+    const domSig = hierarchyHoverDomSignature(node);
+    if (domSig === lastHierarchyHoverSignature) return;
     const hierarchyEl = $('hierarchy');
     const tree = hierarchyEl && hierarchyEl.__localHierarchyTree;
     const path = node.getAttribute('data-ribbon-tree-path')
@@ -997,9 +1001,7 @@
     state.hoverHierarchyPath = path;
     state.hoverHierarchyProductKeys = productKeys;
     state.hoverProvider = provider;
-    const signature = hierarchyHoverSignature();
-    if (signature === lastHierarchyHoverSignature) return;
-    lastHierarchyHoverSignature = signature;
+    lastHierarchyHoverSignature = domSig;
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
     redrawChart();
   }

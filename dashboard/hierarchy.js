@@ -36,7 +36,8 @@
   }
 
   function rowProductKey(row) {
-    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    const raw = row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    return raw === '' || raw == null ? '' : String(raw);
   }
 
   function minMax(rows) {
