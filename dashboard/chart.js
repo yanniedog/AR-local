@@ -628,7 +628,7 @@
       chart.off('updateAxisPointer', onAxisPointer);
       zr.off('globalout', onGlobalOut);
       zr.off('click', onChartClick);
-      notifyHoverDate('');
+      // Do not notifyHoverDate('') here — immediate redraw would flash logo dim state.
       if (hoverBox) hoverBox.style.display = 'none';
     };
     notifyHoverDate(dates.length ? dates[dates.length - 1] : '');
