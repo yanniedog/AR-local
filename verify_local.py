@@ -51,6 +51,7 @@ def main() -> int:
         "site/ar-ribbon-format.js",
         "site/ar-ribbon-tree.js",
         "api/latest",
+        "api/ingest-schedule",
     ]
     failures: list[tuple[str, int]] = []
     for path in paths:

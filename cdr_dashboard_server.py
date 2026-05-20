@@ -12,7 +12,7 @@ import os
 import re
 import socket
 import sys
-from datetime import date as calendar_date
+from datetime import date as calendar_date, datetime, timezone
 import sqlite3
 import threading
 import time
@@ -25,6 +25,7 @@ from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
+from ar_local_ingest_schedule import DAILY_INGEST_SCHEDULE_LABEL, latest_daily_due_utc, next_daily_due_utc
 from ar_local_sectors import energy_dormant
 from cdr_ribbon_normalize import (
     extract_fixed_rate_term_years,
@@ -214,6 +215,20 @@ def parse_bank_section_param(raw: str) -> str:
     if value not in VALID_BANK_SECTIONS:
         raise BadRequestError("section must be one of Mortgage, Savings, TD")
     return value
+
+
+def ingest_schedule_payload() -> bytes:
+    now_utc = datetime.now(timezone.utc)
+    last_due = latest_daily_due_utc(now_utc)
+    next_due = next_daily_due_utc(now_utc)
+    payload = {
+        "now_utc": now_utc.isoformat(),
+        "last_due_utc": last_due.isoformat(),
+        "next_due_utc": next_due.isoformat(),
+        "schedule": DAILY_INGEST_SCHEDULE_LABEL,
+        "timezone": time.tzname[0] if time.tzname else "",
+    }
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
 def bank_rate_columns(con: sqlite3.Connection) -> set[str]:
@@ -911,6 +926,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
                 return self._serve_file(cache, exports_root / "dashboard-cache" / "latest.json", "application/json")
+            if path == "/api/ingest-schedule":
+                body = ingest_schedule_payload()
+                return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
             if path == "/api/energy":
                 if energy_dormant():
                     body = json.dumps(

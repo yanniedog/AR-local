@@ -236,6 +236,7 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` — every push to `main`; `workflow_dispatch` |
 | GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
 | On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
+| On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` — every 15m: starts `ar-local-daily.service` if the scheduled daily banking export is missing after the grace period |
 
 **GitHub secrets (Actions):**
 
@@ -274,6 +275,8 @@ ssh ar-local-pi5 "systemctl is-active ar-local-dashboard.service; systemctl is-e
 ssh ar-local-pi5 "systemctl status --no-pager ar-local-dashboard.service"
 ssh ar-local-pi5 "journalctl -u ar-local-dashboard.service -n 120 --no-pager"
 ssh ar-local-pi5 "journalctl -u ar-local-daily.service -n 160 --no-pager"
+ssh ar-local-pi5 "systemctl list-timers --all 'ar-local-daily*' --no-pager"
+ssh ar-local-pi5 "journalctl -u ar-local-daily-watchdog.service -n 80 --no-pager"
 ssh ar-local-pi5 "ss -ltnp | grep 8808 || true"
 ssh ar-local-pi5 "free -h; df -h / /srv/ar-local /dev/shm"
 ssh ar-local-pi5 "cd /srv/ar-local/AR-local && git status --short --branch && git rev-parse --short HEAD && git rev-parse --short origin/main"

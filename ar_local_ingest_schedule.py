@@ -1,0 +1,23 @@
+"""Shared schedule constants for Pi banking ingest."""
+
+from __future__ import annotations
+
+from datetime import datetime, time as datetime_time, timedelta, timezone
+
+DAILY_INGEST_UTC_HOUR = 20
+DAILY_INGEST_SCHEDULE_LABEL = f"{DAILY_INGEST_UTC_HOUR:02d}:00 UTC daily"
+
+
+def latest_daily_due_utc(now_utc: datetime) -> datetime:
+    due = datetime.combine(now_utc.date(), datetime_time(DAILY_INGEST_UTC_HOUR, 0), tzinfo=timezone.utc)
+    if now_utc < due:
+        due -= timedelta(days=1)
+    return due
+
+
+def next_daily_due_utc(now_utc: datetime) -> datetime:
+    return latest_daily_due_utc(now_utc) + timedelta(days=1)
+
+
+def expected_run_date_for_due(due_utc: datetime) -> str:
+    return due_utc.astimezone().date().isoformat()
