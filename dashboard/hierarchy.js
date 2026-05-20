@@ -36,7 +36,8 @@
   }
 
   function rowProductKey(row) {
-    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    const raw = row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    return raw === '' || raw == null ? '' : String(raw);
   }
 
   function minMax(rows) {
@@ -148,6 +149,21 @@
     if (!node || node.kind === 'empty') return [];
     if (node.kind === 'leaves') return node.rows.slice();
     return node.groups.flatMap((g) => collectRowsUnder(g.child));
+  }
+
+  function productKeysForRows(rows) {
+    const keys = new Set();
+    (rows || []).forEach((row) => {
+      const key = rowProductKey(row);
+      if (key) keys.add(key);
+    });
+    return keys.size ? keys : null;
+  }
+
+  function productKeysAtPath(tree, activePath) {
+    const node = nodeAtPath(tree, activePath);
+    if (!node) return null;
+    return productKeysForRows(collectRowsUnder(node));
   }
 
   /** Provider → plan leaves when energy rows lack taxonomy_path. */
@@ -306,6 +322,9 @@
   function renderLeaf(container, row, depth, best, highlightMax, state) {
     const rateRow = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--leaf ar-report-infobox-row');
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
+    rateRow.dataset.localHierarchyHover = 'leaf';
+    const productKey = rowProductKey(row);
+    if (productKey) rateRow.dataset.localHierarchyProductKey = productKey;
     if (row.provider) rateRow.dataset.localHierarchyProvider = row.provider;
     const dot = child(rateRow, 'span', 'ar-report-infobox-tsw');
     dot.style.setProperty('--ar-swatch-color', swatch(row));
@@ -531,7 +550,15 @@
       },
     });
     restoreScrollTop(scrollContainer(container), savedScrollTop);
+    container.__localHierarchyTree = tree;
+    delete container.__localHierarchyPathKeys;
   }
 
-  window.LocalCdrHierarchy = { render, applyProviderHighlight };
+  window.LocalCdrHierarchy = {
+    render,
+    applyProviderHighlight,
+    productKeysAtPath,
+    productKeysForRows,
+    rowProductKey,
+  };
 })();

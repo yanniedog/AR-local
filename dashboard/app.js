@@ -55,10 +55,13 @@
     hierarchyPath: '',
     focusProvider: '',
     hoverProvider: '',
+    hoverHierarchyPath: '',
+    hoverHierarchyProductKeys: null,
     focusedProductKeys: null,
     chartHoverDate: '',
     chartPinnedDate: '',
     chartDates: [],
+    _chartFocusPainted: '',
     ingestSchedule: null,
     ingestClockOffsetMs: 0,
     ingestScheduleFetchedAtMs: 0,
@@ -120,6 +123,9 @@
   }
 
   function focusActiveProvider() {
+    if (hasHierarchyHover()) {
+      return String(state.focusProvider || '').trim();
+    }
     return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
@@ -148,14 +154,18 @@
     return rows.filter((row) => rowMatchesProvider(row, focus));
   }
 
-  function rowProductKey(row) {
-    return row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
-  }
+  const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
-    if (!state.focusedProductKeys) return rows;
-    const allowed = state.focusedProductKeys;
-    return rows.filter((row) => allowed.has(rowProductKey(row)));
+    const focus = state.focusedProductKeys;
+    const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
+    if (!focus && !hover) return rows;
+    return rows.filter((row) => {
+      const key = rowProductKey(row);
+      if (focus && !focus.has(key)) return false;
+      if (hover && !hover.has(key)) return false;
+      return true;
+    });
   }
 
   function historyRowMatchesLiveTable(row) {
@@ -433,7 +443,9 @@
 
   function relevantProviderKeys() {
     const hover = String(state.hoverProvider || '').trim();
-    if (hover) return providerMatchKeys(hover);
+    if (hover && !hasHierarchyHover()) {
+      return providerMatchKeys(hover);
+    }
     const focus = String(state.focusProvider || '').trim();
     if (focus) return providerMatchKeys(focus);
     const rows = visibleSliceRows();
@@ -806,6 +818,7 @@
 
   function paintChart(finalRows, items) {
     window.LocalCdrChart.draw($('chart'), items, 'banks');
+    state._chartFocusPainted = focusActiveProvider();
     setHistoryWindowUi(items);
     updateHero(finalRows, items);
     if (items && items.kind === 'bank-history') {
@@ -822,6 +835,13 @@
 
   function redrawChart() {
     drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
+  }
+
+  /** Hover paths: skip full ECharts rebuild when ribbon focus is unchanged. */
+  function redrawChartIfFocusChanged() {
+    const focus = focusActiveProvider();
+    if (focus === state._chartFocusPainted) return;
+    redrawChart();
   }
 
   function renderEmptySection() {
@@ -888,7 +908,7 @@
     if (state.section !== section) {
       state.hierarchyPath = '';
       state.focusProvider = '';
-      state.hoverProvider = '';
+      resetHierarchyHover();
       state.focusedProductKeys = null;
       state.chartHoverDate = '';
       state.chartPinnedDate = '';
@@ -928,6 +948,77 @@
       });
   }
 
+  function hasHierarchyHover() {
+    return !!(state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size);
+  }
+
+  function clearHierarchyHoverState() {
+    state.hoverHierarchyPath = '';
+    state.hoverHierarchyProductKeys = null;
+  }
+
+  function resetHierarchyHover() {
+    state.hoverProvider = '';
+    clearHierarchyHoverState();
+    lastHierarchyHoverSignature = '';
+  }
+
+  function hierarchyHoverDomSignature(node) {
+    const path = node.getAttribute('data-ribbon-tree-path')
+      || node.getAttribute('data-local-hierarchy-path')
+      || '';
+    const provider = node.getAttribute('data-local-hierarchy-provider') || '';
+    const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
+    return `${path}|${provider}|${productKey}`;
+  }
+
+  let lastHierarchyHoverSignature = '';
+
+  function resolveHierarchyHoverProductKeys(node, tree, hierarchyEl) {
+    const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
+    if (productKey) return new Set([rowProductKey({ product_key: productKey })]);
+    const path = node.getAttribute('data-ribbon-tree-path')
+      || node.getAttribute('data-local-hierarchy-path')
+      || '';
+    if (!path || !tree || !window.LocalCdrHierarchy || !window.LocalCdrHierarchy.productKeysAtPath) {
+      return null;
+    }
+    if (hierarchyEl) {
+      if (!hierarchyEl.__localHierarchyPathKeys) hierarchyEl.__localHierarchyPathKeys = new Map();
+      const cached = hierarchyEl.__localHierarchyPathKeys.get(path);
+      if (cached) return cached;
+      const keys = window.LocalCdrHierarchy.productKeysAtPath(tree, path);
+      if (keys) hierarchyEl.__localHierarchyPathKeys.set(path, keys);
+      return keys;
+    }
+    return window.LocalCdrHierarchy.productKeysAtPath(tree, path);
+  }
+
+  function applyHierarchyTableHover(node) {
+    const domSig = hierarchyHoverDomSignature(node);
+    if (domSig === lastHierarchyHoverSignature) return;
+    const hierarchyEl = $('hierarchy');
+    const tree = hierarchyEl && hierarchyEl.__localHierarchyTree;
+    const path = node.getAttribute('data-ribbon-tree-path')
+      || node.getAttribute('data-local-hierarchy-path')
+      || '';
+    const provider = node.getAttribute('data-local-hierarchy-provider') || '';
+    const productKeys = resolveHierarchyHoverProductKeys(node, tree, hierarchyEl);
+    state.hoverHierarchyPath = path;
+    state.hoverHierarchyProductKeys = productKeys;
+    state.hoverProvider = provider;
+    lastHierarchyHoverSignature = domSig;
+    refreshProviderHighlightUi(undefined, { highlightOnly: true });
+    redrawChartIfFocusChanged();
+  }
+
+  function clearHierarchyTableHover() {
+    if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
+    resetHierarchyHover();
+    refreshProviderHighlightUi(undefined, { highlightOnly: true });
+    redrawChartIfFocusChanged();
+  }
+
   function bind() {
     let resizeFrame = 0;
     const scheduleChartResize = () => {
@@ -950,7 +1041,7 @@
       const pick = btn.dataset.providerPick || '';
       const current = state.focusProvider;
       state.focusProvider = (current && pick.toLowerCase() === current.toLowerCase()) ? '' : pick;
-      state.hoverProvider = '';
+      resetHierarchyHover();
       state.hierarchyPath = '';
       state.focusedProductKeys = null;
       render();
@@ -959,25 +1050,28 @@
       const btn = event.target.closest('[data-provider-pick]');
       if (!btn) return;
       const next = btn.dataset.providerPick || '';
-      if (state.hoverProvider === next) return;
+      if (state.hoverProvider === next && !hasHierarchyHover()) return;
       state.hoverProvider = next;
+      clearHierarchyHoverState();
+      lastHierarchyHoverSignature = '';
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       btn.classList.add('is-hover');
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
-      redrawChart();
+      redrawChartIfFocusChanged();
     });
     logoWrap.addEventListener('mouseleave', () => {
-      if (!state.hoverProvider) return;
-      state.hoverProvider = '';
+      if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
+      resetHierarchyHover();
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
-      redrawChart();
+      redrawChartIfFocusChanged();
     });
 
     $('hierarchy').addEventListener('click', (event) => {
       const action = event.target.closest('[data-local-hierarchy-action]');
       if (!action) return;
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
+      resetHierarchyHover();
       renderTable(applyFocusFilter(normalizeRows(rateRows())));
       redrawChart();
     });
@@ -987,25 +1081,17 @@
       if (!action) return;
       event.preventDefault();
       state.hierarchyPath = action.dataset.localHierarchyPath || '';
+      resetHierarchyHover();
       renderTable(applyFocusFilter(normalizeRows(rateRows())));
       redrawChart();
     });
     $('hierarchy').addEventListener('mouseover', (event) => {
-      const node = event.target.closest('[data-local-hierarchy-action]');
+      const node = event.target.closest('[data-local-hierarchy-action], [data-local-hierarchy-hover]');
       if (!node) return;
-      const provider = node.getAttribute('data-local-hierarchy-provider') || '';
-      if (provider && provider !== state.hoverProvider) {
-        state.hoverProvider = provider;
-        refreshProviderHighlightUi(undefined, { highlightOnly: true });
-        redrawChart();
-      }
+      applyHierarchyTableHover(node);
     });
     $('hierarchy').addEventListener('mouseleave', () => {
-      if (state.hoverProvider) {
-        state.hoverProvider = '';
-        refreshProviderHighlightUi(undefined, { highlightOnly: true });
-        redrawChart();
-      }
+      clearHierarchyTableHover();
     });
 
     $('chart-toggle-sort').addEventListener('click', () => {
