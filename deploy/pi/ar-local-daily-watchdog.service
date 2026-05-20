@@ -1,0 +1,13 @@
+[Unit]
+Description=AR-local daily ingest watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_watchdog.py

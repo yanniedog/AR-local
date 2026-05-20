@@ -1,0 +1,11 @@
+[Unit]
+Description=Check AR-local daily ingest completion
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=ar-local-daily-watchdog.service
+
+[Install]
+WantedBy=timers.target

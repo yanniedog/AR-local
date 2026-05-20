@@ -124,6 +124,11 @@ The Pi daily timer (`deploy/pi/ar-local-daily.timer`) runs banking ingest at
 non-zero when the banking export has zero rates, so systemd records a failed
 unit instead of treating an empty export as success.
 
+`deploy/pi/ar-local-daily-watchdog.timer` runs every 15 minutes and checks
+whether the most recent scheduled daily ingest has produced a valid banking
+export. If the 20:00 UTC run is missing after a 30-minute grace period and the
+daily service is not already active, it starts `ar-local-daily.service`.
+
 ```sh
 python3 pi_daily_sync.py --banks-only
 ```

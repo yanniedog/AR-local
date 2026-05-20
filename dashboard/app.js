@@ -58,6 +58,10 @@
     focusedProductKeys: null,
     chartHoverDate: '',
     chartDates: [],
+    ingestSchedule: null,
+    ingestClockOffsetMs: 0,
+    ingestScheduleFetchedAtMs: 0,
+    ingestScheduleIntervalsStarted: false,
   };
   const $ = (id) => document.getElementById(id);
   const { bankRateMatchesSection, historyIndexKey, normalizeRows, pct } = window.LocalCdrUtils;
@@ -79,8 +83,8 @@
     return section !== 'Mortgage';
   }
 
-  async function getJson(url) {
-    const response = await fetch(url, { cache: 'force-cache' });
+  async function getJson(url, options) {
+    const response = await fetch(url, { cache: (options && options.cache) || 'force-cache' });
     if (!response.ok) throw new Error(url + ' returned ' + response.status);
     return response.json();
   }
@@ -512,6 +516,68 @@
     status.textContent = `Visible window: ${label}. ${num(inRange)} in range, ${num(retained)} retained.`;
   }
 
+  function parseIsoMs(value) {
+    const ts = Date.parse(String(value || ''));
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  function formatCountdown(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+    return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  }
+
+  function renderIngestCountdown() {
+    const el = $('ingestCountdown');
+    if (!el) return;
+    const schedule = state.ingestSchedule || {};
+    const nextMs = parseIsoMs(schedule.next_due_utc);
+    if (nextMs == null) {
+      el.textContent = 'Next ingest: unavailable';
+      return;
+    }
+    if (state.ingestScheduleFetchedAtMs && Date.now() - state.ingestScheduleFetchedAtMs > 15 * 60 * 1000) {
+      el.textContent = 'Next ingest: schedule stale';
+      return;
+    }
+    const serverNowMs = Date.now() + state.ingestClockOffsetMs;
+    const remaining = nextMs - serverNowMs;
+    const nextText = new Date(nextMs).toLocaleString('en-AU', {
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+    el.textContent = `Next ingest in ${formatCountdown(remaining)} (${nextText})`;
+  }
+
+  async function refreshIngestSchedule() {
+    try {
+      const data = await getJson('/api/ingest-schedule', { cache: 'no-store' });
+      const serverNow = parseIsoMs(data.now_utc);
+      state.ingestSchedule = data;
+      state.ingestClockOffsetMs = serverNow == null ? state.ingestClockOffsetMs : serverNow - Date.now();
+      state.ingestScheduleFetchedAtMs = Date.now();
+    } catch (_err) {
+      // renderIngestCountdown will keep "unavailable" or mark an old value stale.
+    }
+    renderIngestCountdown();
+  }
+
+  function loadIngestSchedule() {
+    if (state.ingestScheduleIntervalsStarted) return;
+    state.ingestScheduleIntervalsStarted = true;
+    renderIngestCountdown();
+    window.setInterval(renderIngestCountdown, 1000);
+    window.setInterval(refreshIngestSchedule, 5 * 60 * 1000);
+    refreshIngestSchedule();
+  }
+
   function warmProviderLogoCache() {
     const sectionPayload = state.bankSections[state.section];
     if (!window.LocalCdrBrand || !window.LocalCdrBrand.preloadRailProviders || !sectionPayload || !sectionPayload.rates) {
@@ -885,6 +951,7 @@
 
   async function init() {
     state.manifest = await getJson('/api/latest');
+    loadIngestSchedule();
     bind();
     await loadSection(sectionFromPathname());
   }

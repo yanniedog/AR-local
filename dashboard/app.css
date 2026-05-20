@@ -632,6 +632,19 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   background: color-mix(in srgb, var(--ar-surface-3) 88%, #020617);
 }
 
+.ar-local-cdr .local-ingest-footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.ar-local-cdr .local-ingest-countdown {
+  color: var(--ar-text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  opacity: 0.78;
+}
+
 @media (max-width: 900px) {
   .ar-local-cdr .site-header-inner {
     grid-template-columns: 1fr;
