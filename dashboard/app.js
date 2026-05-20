@@ -921,7 +921,7 @@
     syncSectionUrl();
     const cachedSection = state.bankSections[section];
     if (cachedSection && Array.isArray(cachedSection.rates)) {
-      renderSelectedLogos(relevantProviderKeys());
+      renderSelectedLogos(null);
       warmProviderLogoCache();
     } else {
       const logoWrap = $('selectedLogos');
