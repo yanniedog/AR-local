@@ -15,14 +15,12 @@
  */
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import { evaluateGates } from './lib/pr-gates-lib.mjs';
-import { hasGh, ghJson } from './lib/gh-pr-review-threads.mjs';
+import { hasGh, ghJson, repoSlug } from './lib/gh-pr-review-threads.mjs';
 
 const DEFAULT_IDLE_MIN = 5;
 const MAX_IDLE_MIN = 120;
 const POLL_SEC = 60;
 const OPEN_PR_PAGE_SIZE = 100;
-const GH_TIMEOUT_MS = 120_000;
-const GH_MAX_BUFFER = 4 * 1024 * 1024;
 
 /** Human-readable status: stderr when --json so stdout stays pure JSON. */
 function status(msg, { json, quiet }) {
@@ -48,10 +46,9 @@ function parseArgs(argv) {
     else if (a === '--watch' || a === '-w') out.watch = true;
     else if (a === '--pr' && argv[i + 1]) out.pr = Number(argv[++i]);
     else if (a.startsWith('--pr=')) out.pr = Number(a.slice(5));
-    else if (a === '--idle-min' && argv[i + 1]) {
-      out.idleMin = Math.min(Math.max(1, Number(argv[++i]) || DEFAULT_IDLE_MIN), MAX_IDLE_MIN);
-    } else if (a.startsWith('--idle-min=')) {
-      out.idleMin = Math.min(Math.max(1, Number(a.slice(11)) || DEFAULT_IDLE_MIN), MAX_IDLE_MIN);
+    else if (a === '--idle-min' || a.startsWith('--idle-min=')) {
+      const valStr = a.includes('=') ? a.slice(a.indexOf('=') + 1) : argv[++i];
+      out.idleMin = Math.min(Math.max(1, Number(valStr) || DEFAULT_IDLE_MIN), MAX_IDLE_MIN);
     }
   }
   if (out.pr != null && (!Number.isInteger(out.pr) || out.pr <= 0)) {
@@ -61,22 +58,30 @@ function parseArgs(argv) {
 }
 
 function listOpenPrs() {
+  const { owner, name } = repoSlug();
   const rows = [];
-  for (let page = 1; page < 1000; page += 1) {
+  for (let page = 1; page <= 50; page += 1) {
     const batch = ghJson([
-      'pr',
-      'list',
-      '--state',
-      'open',
-      '--limit',
-      String(OPEN_PR_PAGE_SIZE),
-      '--page',
-      String(page),
-      '--json',
-      'number,title,headRefName,createdAt,mergeable,mergeStateStatus',
+      'api',
+      `repos/${owner}/${name}/pulls`,
+      '-f',
+      'state=open',
+      '-f',
+      `per_page=${OPEN_PR_PAGE_SIZE}`,
+      '-f',
+      `page=${String(page)}`,
     ]);
     if (!Array.isArray(batch) || !batch.length) break;
-    rows.push(...batch);
+    for (const pr of batch) {
+      rows.push({
+        number: pr.number,
+        title: pr.title,
+        headRefName: pr.head?.ref || '',
+        createdAt: pr.created_at,
+        mergeable: pr.mergeable,
+        mergeStateStatus: pr.merge_state_status,
+      });
+    }
     if (batch.length < OPEN_PR_PAGE_SIZE) break;
   }
   return rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
