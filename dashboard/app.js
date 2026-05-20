@@ -868,6 +868,7 @@
     const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
     window.LocalCdrChart.draw($('chart'), items, 'banks');
+    state._chartFocusPainted = focusActiveProvider();
     setHistoryWindowUi(items);
     $('chart-status').textContent = `${num(counts.rates || 0)} current rows / details loading`;
     $('table-count').textContent = counts.products || counts.providers
