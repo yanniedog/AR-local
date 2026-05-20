@@ -611,9 +611,12 @@
     const hours = Math.floor((totalSeconds % 86400) / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-    return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+    const sec = String(seconds).padStart(2, '0');
+    const min = String(minutes).padStart(2, '0');
+    const hr = String(hours).padStart(2, '0');
+    if (days > 0) return `${days}d ${hr}h ${min}m ${sec}s`;
+    if (hours > 0) return `${hours}h ${min}m ${sec}s`;
+    return `${minutes}m ${sec}s`;
   }
 
   function renderIngestCountdown() {
@@ -792,12 +795,16 @@
     return applyHierarchyFilter(allRows);
   }
 
-  function drawChartFromState(finalRows) {
+  function syncChartRibbonState(finalRows) {
     const items = chartItems(finalRows);
     state.chartDates = items && items.kind === 'bank-history' ? (items.dates || []) : [];
     if (!state.chartHoverDate && state.chartDates.length) {
       state.chartHoverDate = state.chartDates[state.chartDates.length - 1];
     }
+    return items;
+  }
+
+  function paintChart(finalRows, items) {
     window.LocalCdrChart.draw($('chart'), items, 'banks');
     setHistoryWindowUi(items);
     updateHero(finalRows, items);
@@ -806,6 +813,11 @@
     } else {
       $('chart-status').textContent = `${num(finalRows.length)} local rate rows loaded`;
     }
+  }
+
+  function drawChartFromState(finalRows) {
+    const items = syncChartRibbonState(finalRows);
+    paintChart(finalRows, items);
   }
 
   function redrawChart() {
@@ -857,12 +869,19 @@
       return;
     }
     const focused = applyFocusFilter(allRows);
+    const chartRows = chartSliceRows(allRows);
+    const chartItems = syncChartRibbonState(chartRows);
     setLinks();
     // renderTable runs the hierarchy, which sets state.focusedProductKeys via its
     // onFocusChange callback (state only — no redraw inside the callback).
     renderTable(focused);
+<<<<<<< HEAD
     drawChartFromState(chartSliceRows(allRows));
     renderSelectedLogos(relevantProviderKeys());
+=======
+    renderSelectedLogos(relevantProviderKeys());
+    paintChart(chartRows, chartItems);
+>>>>>>> 255cfb784 (fix(dashboard): sync chart ribbon state before hierarchy render)
   }
 
   async function loadSection(section) {
