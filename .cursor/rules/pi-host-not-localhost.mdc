@@ -1,0 +1,55 @@
+---
+description: "Default verify/browser/smoke base URL is the Pi — NOT 127.0.0.1"
+alwaysApply: true
+---
+
+# Pi Host Is the Acceptance Target — NOT 127.0.0.1
+
+**This deployment is hosted on the Raspberry Pi. Do not default to `127.0.0.1` for verification, browser QA, smoke tests, curl checks, or MCP navigation.**
+
+## Default base URL (mandatory)
+
+Use the **Pi Tailscale dashboard** unless the user explicitly asks for local dev or the Pi is unreachable:
+
+| Entry | URL |
+|-------|-----|
+| **Primary (nginx :80)** | `http://100.78.28.10/` |
+| Direct backend (:8808) | `http://100.78.28.10:8808/` |
+
+Canonical details: **`docs/UNIVERSAL_ROADMAP.md`** (Pi dashboard URLs, SSH tunnel `127.0.0.1:18808` only when tunneling is required).
+
+## Commands
+
+```sh
+# Preferred — Pi nginx entry
+npm run verify:local -- --base-url=http://100.78.28.10/
+
+# Or set once per shell / CI
+export AR_PI_BASE_URL=http://100.78.28.10/
+npm run verify:local
+
+# Shorthand script (same URL)
+npm run verify:pi
+```
+
+## Browser MCP
+
+Point **`user-browser_agent_cursor`** at **`http://100.78.28.10/`** (or `:8808` when testing the backend directly). **Do not** open `http://127.0.0.1:<port>/` unless the user explicitly requests local dev server testing.
+
+## When 127.0.0.1 is allowed
+
+Only when **all** of the following are true:
+
+1. The user **explicitly** requests local dev / loopback testing, **or**
+2. The Pi is confirmed unreachable and the user agrees to local fallback, **or**
+3. You are starting or debugging **`cdr_dashboard_server.py`** on the dev machine (then use the port from server stdout).
+
+## Forbidden defaults
+
+- `http://127.0.0.1:8808/` as the first choice for ship-bar verify or browser QA
+- Assuming the dashboard runs on the agent's machine
+- Treating www.australianrates.com as acceptance (see **`verify-local-dashboard-only.mdc`**)
+
+## Rationale
+
+AR-local for this operator runs continuously on the Pi. Local loopback is a **developer override**, not the deployed acceptance environment.

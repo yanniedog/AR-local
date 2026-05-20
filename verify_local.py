@@ -1,13 +1,21 @@
 ﻿#!/usr/bin/env python3
-"""HTTP smoke checks for the local CDR dashboard (replaces verify:prod for this repo)."""
+"""HTTP smoke checks for the CDR dashboard (replaces verify:prod for this repo).
+
+Default base URL: http://127.0.0.1:8808/ (local dev). For Pi acceptance, set
+AR_PI_BASE_URL (e.g. http://100.78.28.10/) or pass --base-url. See
+.cursor/rules/pi-host-not-localhost.mdc and npm run verify:pi.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
+
+_DEFAULT_LOCAL = "http://127.0.0.1:8808/"
 
 from ar_local_pi_runtime import manifest_banks_rate_count
 
@@ -26,10 +34,12 @@ def http_get(url: str, timeout: float = 30.0) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-verify local CDR dashboard HTTP endpoints.")
+    env_base = os.environ.get("AR_PI_BASE_URL", "").strip()
+    default_base = env_base if env_base else _DEFAULT_LOCAL
     parser.add_argument(
         "--base-url",
-        default="http://127.0.0.1:8808/",
-        help="Dashboard root URL (include trailing slash optional)",
+        default=default_base,
+        help="Dashboard root URL (trailing slash optional). Default: %(default)s (AR_PI_BASE_URL when set).",
     )
     parser.add_argument(
         "--require-banks-rates",

@@ -1,6 +1,6 @@
 # Workflow — AR-local
 
-Same ship bar as **Australian Rates** (branch → PR → CI → bot wait → synthesis → thread closure → merge). **Difference:** there is **no Cloudflare** deployment and **no www.australianrates.com** verification for this repo. Steps **8–9** are **local dashboard server** + **`npm run verify:local`** (and Browser MCP when the user asks for UI verification).
+Same ship bar as **Australian Rates** (branch → PR → CI → bot wait → synthesis → thread closure → merge). **Difference:** there is **no Cloudflare** deployment and **no www.australianrates.com** verification for this repo. Steps **8–9** are **Pi dashboard** (primary) + **`npm run verify:local`** against **`http://100.78.28.10/`** (and Browser MCP when the user asks for UI verification). **Do not default to `127.0.0.1`** — see **`.cursor/rules/pi-host-not-localhost.mdc`**.
 
 Single authoritative source for agents (Cursor, Codex, Claude Code). Self-contained — critical steps are listed here in full.
 
@@ -159,15 +159,21 @@ Use Tailscale URL from `docs/UNIVERSAL_ROADMAP.md` via `AR_PI_BASE_URL` when not
 
 **Actions secrets (repo Settings → Secrets → Actions):** `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST`; optional `PI_SSH_USER`. Optional variable `AR_PI_BASE_URL` (default `http://100.78.28.10/` on port 80). Test deploy manually: Actions → **pi-deploy-on-main** → **Run workflow**.
 
-### 9. Local verify
+### 9. Dashboard verify (Pi — default)
 
 ```sh
-npm run verify:local -- --base-url=http://127.0.0.1:<port>/
+npm run verify:pi
+# equivalent:
+npm run verify:local -- --base-url=http://100.78.28.10/
+# or:
+AR_PI_BASE_URL=http://100.78.28.10/ npm run verify:local
 ```
 
-Use the dashboard URL printed at server startup (port may not be 8808). From repo root. Report exit code.
+**Default acceptance target is the Pi** at Tailscale `100.78.28.10` (nginx :80). Direct backend: `http://100.78.28.10:8808/`. See **`docs/UNIVERSAL_ROADMAP.md`**.
 
-For **UI** regressions (layout, logos, hierarchy, console errors), use **Browser MCP** (`user-browser_agent_cursor`) against that same base URL when the user requires it.
+Use `http://127.0.0.1:<port>/` **only** when the user explicitly runs `cdr_dashboard_server.py` locally. From repo root. Report exit code.
+
+For **UI** regressions (layout, logos, hierarchy, console errors), use **Browser MCP** (`user-browser_agent_cursor`) against the **Pi base URL** when the user requires it.
 
 For workflow / verification-script changes, broaden checks manually (e.g. extra paths, ingest smoke) and document what you ran.
 
@@ -206,7 +212,7 @@ Only an explicit written waiver for that specific PR waives bot closeout for tha
 
 ## Exception
 
-`main` hotfix (user must explicitly request): push directly to `main`; still do steps **8–9** (local server + `verify:local`).
+`main` hotfix (user must explicitly request): push directly to `main`; still do steps **8–9** (Pi dashboard + `verify:pi` / `verify:local` against Pi URL).
 
 ---
 
