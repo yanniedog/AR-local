@@ -102,8 +102,8 @@
     if (!Array.isArray(rows) || !section) return rows;
     const rateFamily = section === 'Mortgage' ? 'lending' : 'deposit';
     rows.forEach((row) => {
-      if (!row.dataset) row.dataset = section;
-      if (!row.rate_family) row.rate_family = rateFamily;
+      row.dataset = section;
+      row.rate_family = rateFamily;
       if (runDate && !row.run_date) row.run_date = runDate;
       if (window.LocalCdrRibbonMap && window.LocalCdrRibbonMap.hydrateCanonicalRibbonFields) {
         window.LocalCdrRibbonMap.hydrateCanonicalRibbonFields(row, section);
@@ -919,6 +919,14 @@
     state.descending = preferredDescending(section);
     setSectionUi();
     syncSectionUrl();
+    const cachedSection = state.bankSections[section];
+    if (cachedSection && Array.isArray(cachedSection.rates)) {
+      renderSelectedLogos(null);
+      warmProviderLogoCache();
+    } else {
+      const logoWrap = $('selectedLogos');
+      if (logoWrap) logoWrap.hidden = true;
+    }
     $('chart-status').textContent = 'Loading local CDR data';
     $('table-count').textContent = '';
     clear($('table'));

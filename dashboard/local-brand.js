@@ -453,11 +453,16 @@
     return seg.replace(ICON_EXTENSION_RE, '');
   }
 
-  /** True on typical local dashboard hosts: try CDN bank URLs before same-origin /assets/banks/. */
+  /** True when same-origin /assets/banks/ is often incomplete: try CDN before local slugs. */
   function preferBankCdnFirst() {
     try {
-      const h = window.location.hostname || '';
-      return h === '127.0.0.1' || h === 'localhost' || h === '[::1]';
+      const h = String(window.location.hostname || '').trim().toLowerCase();
+      if (!h || h === '127.0.0.1' || h === 'localhost' || h === '[::1]') return true;
+      // Pi / LAN / Tailscale (100.64.0.0/10): mirror may lack full site/assets/banks set.
+      if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h)) return true;
+      if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return true;
+      if (h.endsWith('.local')) return true;
+      return false;
     } catch (_e) {
       return false;
     }
