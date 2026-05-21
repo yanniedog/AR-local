@@ -54,8 +54,9 @@ def service_active() -> bool:
     return result.returncode == 0
 
 
-def run_daily_ingest(dry_run: bool) -> None:
-    cmd = [sys.executable, str(REPO_ROOT / "pi_daily_sync.py"), "--banks-only"]
+def run_daily_ingest(date_text: str, dry_run: bool) -> None:
+    date_text = str(date_text)
+    cmd = [sys.executable, str(REPO_ROOT / "pi_daily_sync.py"), "--banks-only", "--date", date_text]
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
@@ -89,9 +90,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     complete = run_complete(run_date)
     active = service_active()
     current_day_due = run_date == local_today
-    should_start = not writable_error and now_utc >= ready_at and current_day_due and not complete and not active
+    should_start = not writable_error and now_utc >= ready_at and not complete and not active
     if should_start:
-        run_daily_ingest(args.dry_run)
+        run_daily_ingest(run_date, args.dry_run)
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),

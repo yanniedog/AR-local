@@ -5,8 +5,8 @@ portable_root="${1:-/srv/ar-local}"
 repo_dir="${2:-$portable_root/AR-local}"
 site_dir="${3:-$portable_root/australianrates}"
 data_dir="${4:-$portable_root/data}"
-run_user="$(id -un)"
-run_group="$(id -gn)"
+run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
+run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
 
 sudo apt-get update
 sudo apt-get install -y git python3 nodejs npm gh rsync avahi-daemon nginx

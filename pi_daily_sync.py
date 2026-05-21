@@ -60,7 +60,8 @@ class DailyIngestLock:
             except OSError:
                 age = 0
             owner_pid = self._owner_pid()
-            if age > LOCK_STALE_SECONDS and not (owner_pid and self._pid_is_alive(owner_pid)):
+            owner_alive = bool(owner_pid and self._pid_is_alive(owner_pid))
+            if (owner_pid and not owner_alive) or (age > LOCK_STALE_SECONDS and not owner_alive):
                 self.path.unlink(missing_ok=True)
                 self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             else:
@@ -112,6 +113,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Forward --force to cdr_daily.py, ignoring today's completion marker.",
     )
+    parser.add_argument("--date", default="", help="Run date YYYY-MM-DD; defaults to cdr_daily.py local date.")
     parser.add_argument("--banks-only", action="store_true", help="Run the daily banking ingest only.")
     return parser.parse_args(argv)
 
@@ -133,6 +135,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.banks_only:
                 sector_args = ["--banks-only"]
             force_args = ["--force"] if args.force else []
+            date_args = ["--date", args.date] if args.date else []
             run_checked(
                 [
                     sys.executable,
@@ -141,6 +144,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     str(DAILY_WORKER_COUNT),
                     *sector_args,
                     *force_args,
+                    *date_args,
                 ],
                 cwd=REPO_ROOT,
             )
