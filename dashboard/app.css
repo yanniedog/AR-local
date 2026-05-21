@@ -402,6 +402,27 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   line-height: 1.25;
 }
 
+.ar-local-cdr .local-hierarchy-node-name {
+  min-width: 0;
+}
+
+.ar-local-cdr .local-hierarchy-node-count {
+  flex-shrink: 0;
+  margin-left: 0.15em;
+  font-size: 0.82em;
+  font-weight: 400;
+  color: var(--ar-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-tlabel,
+.ar-local-cdr #hierarchy .ar-report-underchart-tree-crumb {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.12em;
+}
+
 .ar-local-cdr .local-hierarchy-history {
   display: inline;
   margin: 0 0 0 0.35em;
