@@ -55,8 +55,6 @@
     hierarchyPath: '',
     focusProvider: '',
     hoverProvider: '',
-    hoverHierarchyPath: '',
-    hoverHierarchyProductKeys: null,
     focusedProductKeys: null,
     chartHoverDate: '',
     chartPinnedDate: '',
@@ -124,9 +122,6 @@
   }
 
   function focusActiveProvider() {
-    if (hasHierarchyHover()) {
-      return String(state.focusProvider || '').trim();
-    }
     return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
@@ -158,9 +153,7 @@
   const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
-    const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
-    const focus = hover ? null : state.focusedProductKeys;
-    const keys = hover || focus;
+    const keys = state.focusedProductKeys;
     if (!keys) return rows;
     return rows.filter((row) => keys.has(rowProductKey(row)));
   }
@@ -413,6 +406,35 @@
     return dates.length ? String(dates[dates.length - 1]).slice(0, 10) : '';
   }
 
+  /** Ribbon hover / pin date (hover wins over default timeline end). */
+  function chartAnchorDate() {
+    const pinned = String(state.chartPinnedDate || '').slice(0, 10);
+    if (pinned) return pinned;
+    const hover = String(state.chartHoverDate || '').slice(0, 10);
+    if (hover) return hover;
+    return chartTableAnchorDate();
+  }
+
+  /** Rebuild hierarchy rows for a historical chart slice (per-date product counts). */
+  function rateRowsForChartAnchor(baseRows) {
+    const anchor = chartAnchorDate();
+    const manifest = String((state.manifest && state.manifest.run_date) || '');
+    if (!anchor || !state.bankHistoryIndex || anchor === manifest) return baseRows;
+    const out = [];
+    (baseRows || []).forEach((row) => {
+      const key = historyIndexKey(row);
+      const series = state.bankHistoryIndex[key] || [];
+      for (let i = 0; i < series.length; i += 1) {
+        const historyRow = series[i];
+        if (String(historyRow.run_date || '') === anchor) {
+          out.push(historyRow);
+          return;
+        }
+      }
+    });
+    return normalizeRows(out);
+  }
+
   function onChartHoverDate(dateYmd) {
     const next = String(dateYmd || '').slice(0, 10);
     if (state.chartHoverDate === next) return;
@@ -442,7 +464,7 @@
 
   function relevantProviderKeys() {
     const hover = String(state.hoverProvider || '').trim();
-    if (hover && !hasHierarchyHover()) {
+    if (hover) {
       return providerMatchKeys(hover);
     }
     const focus = String(state.focusProvider || '').trim();
@@ -550,7 +572,10 @@
       window.LocalCdrHierarchy.applyProviderHighlight($('hierarchy'), state);
       return;
     }
-    const rows = applyFocusFilter(normalizeRows(rateRows()));
+    let rows = applyFocusFilter(normalizeRows(rateRows()));
+    if (options && options.slicePreview) {
+      rows = rateRowsForChartAnchor(rows);
+    }
     window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, hierarchyRenderOptions(options));
   }
 
