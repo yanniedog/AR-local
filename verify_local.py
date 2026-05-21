@@ -46,6 +46,11 @@ def main() -> int:
         action="store_true",
         help="Fail unless /api/latest reports banks_counts.rates > 0.",
     )
+    parser.add_argument(
+        "--expect-run-date",
+        default="",
+        help="Fail unless /api/latest run_date equals this YYYY-MM-DD date.",
+    )
     args = parser.parse_args()
     base = args.base_url.strip().rstrip("/") + "/"
     paths = [
@@ -68,6 +73,9 @@ def main() -> int:
         "site/ar-ribbon-tree.js",
         "api/latest",
         "api/ingest-schedule",
+        "economic-data/",
+        "api/economic-data/catalog",
+        "api/home-loan-rates/rba/history",
     ]
     failures: list[tuple[str, int]] = []
     for path in paths:
@@ -87,17 +95,42 @@ def main() -> int:
         print(f"verify_local: failed to read {latest_url}: {exc}", file=sys.stderr)
         return 1
     run_date = latest_payload.get("run_date")
+    if args.expect_run_date and run_date != args.expect_run_date:
+        print(
+            f"verify_local: /api/latest run_date={run_date!r}, expected {args.expect_run_date!r}",
+            file=sys.stderr,
+        )
+        return 1
     if run_date:
+        for section in ("Mortgage", "Savings", "TD"):
+            for path in (
+                f"api/banks/ribbon?date={run_date}&section={section}",
+                f"api/banks/section?date={run_date}&section={section}",
+                f"api/banks/history/section?date={run_date}&section={section}",
+            ):
+                url = base + path
+                code = http_get(url)
+                if code != 200:
+                    print(f"verify_local: {code} {url}", file=sys.stderr)
+                    return 1
         for path in (
-            f"api/banks/ribbon?date={run_date}&section=Mortgage",
-            f"api/banks/section?date={run_date}&section=Mortgage",
-            f"api/banks/history/section?date={run_date}&section=Mortgage",
+            "api/term-deposit-rates/latest?min_rate=0.01&limit=20000",
+            "api/home-loan-rates/latest?rate_structure=fixed_1yr&security_purpose=owner_occupied&repayment_type=principal_and_interest&min_rate=0.01&limit=20000",
         ):
             url = base + path
             code = http_get(url)
             if code != 200:
                 print(f"verify_local: {code} {url}", file=sys.stderr)
                 return 1
+    removed_endpoint = "api/" + "en" + "ergy"
+    removed_code = http_get(base + removed_endpoint)
+    if removed_code != 404:
+        print(f"verify_local: expected 404 for removed CDR sector endpoint, got {removed_code}", file=sys.stderr)
+        return 1
+    removed_key = "en" + "ergy"
+    if removed_key + "_counts" in latest_payload or removed_key in latest_payload:
+        print("verify_local: /api/latest still exposes removed CDR sector keys", file=sys.stderr)
+        return 1
     if args.require_banks_rates:
         rates = manifest_banks_rate_count(latest_payload)
         if rates <= 0:

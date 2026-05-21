@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /** Banking sections only; Economic Data is the public /economic-data/ page (macro API, not energy CDR). */
+  /** Banking sections only; Economic Data is the public macro page. */
   const SECTION = {
     Mortgage: 'Mortgage',
     Savings: 'Savings',
@@ -766,7 +766,7 @@
   }
 
   function renderFlatTable(rows) {
-    const keys = ['provider', 'plan_name', 'fuel_type', 'last_updated', 'description'];
+    const keys = ['provider', 'product_name', 'rate', 'rate_type', 'last_updated'];
     const visible = rows.slice(0, 1500);
     $('table-count').textContent = num(visible.length) + ' visible';
     const table = $('table');

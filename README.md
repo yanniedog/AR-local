@@ -7,7 +7,7 @@ Agent workflow (Git/PR/bots/local verify - aligned with AustralianRates, no Clou
 Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). CI required checks: **`bot-presence-gate`**, **`bot-feedback-gate`**. Apply branch protection: `npm run branch-protection:apply` (see **`WORKFLOW.md`** → Branch protection).
 
 Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
-captures the Pi/LAN/SSD portability model, the banks-first scope, and the
+captures the Pi/LAN/SSD portability model, the banking-only scope, and the
 AustralianRates dashboard parity contract.
 
 ## Easiest Start
@@ -98,7 +98,8 @@ The app reads `AR_LOCAL_PORTABLE_ROOT` and `AR_LOCAL_DATA_ROOT`. If
 Install system packages and systemd units from any bootstrap checkout:
 
 ```sh
-cd /home/pi/AR-local
+git clone https://github.com/yanniedog/AR-local.git /tmp/AR-local-bootstrap
+cd /tmp/AR-local-bootstrap
 sh deploy/pi/install-pi-systemd.sh /srv/ar-local
 ```
 
@@ -143,11 +144,7 @@ python3 pi_daily_sync.py --banks-only
 
 Use `python3 pi_daily_sync.py --banks-only --force` for a one-off same-day
 banking rerun after the daily marker exists. A marker is ignored when it records
-zero rates or the on-disk `latest.json` manifest is empty. Remove `--banks-only`
-from `deploy/pi/ar-local-daily.service` before reinstalling the unit if you want
-daily banking and energy again.
-
-`--exports latest` skips run folders whose dashboard manifest has
+zero rates or the on-disk `latest.json` manifest is empty. `--exports latest` skips run folders whose dashboard manifest has
 `banks_counts.rates == 0`, so a same-day empty export cannot hide an older valid
 run.
 
@@ -193,7 +190,7 @@ rebuild_exports.cmd rebuild exports from the latest run without fetching
 ```
 
 The dashboard opens in your browser with the same public AustralianRates shell:
-dark/light mode, Mortgage, Savings, Term Deposits, and Energy tabs; clear
+dark/light mode, Mortgage, Savings, and Term Deposits tabs; clear
 banking section cards; selected-section lender logos; the familiar hero metrics;
 the chart workspace; export links; and the same compact drill-down hierarchy
 tree used by the AustralianRates report ribbon. If the usual port is busy, the
@@ -210,15 +207,12 @@ runs\<date>\_exports\
 Files:
 
 - `banks-<date>.json`
-- `energy-<date>.json`
 - `banks-<date>.xlsx`
-- `energy-<date>.xlsx`
 - `local-cdr.sqlite`
 - `dashboard-cache\`
 
 Generated JSON strips CDR links, URI/URL fields, and URLs embedded in text while
-retaining rates, fees, constraints, eligibility, features, contract sections, and
-cleaned full detail JSON.
+retaining rates, fees, constraints, eligibility, features, clean banking detail JSON.
 
 ## Command Line
 

@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Optional
 
 from ar_local_ingest_schedule import expected_run_date_for_due, latest_daily_due_utc
-from ar_local_pi_runtime import data_runs_root, data_state_root, load_exports_manifest, manifest_banks_rate_count
+from ar_local_pi_runtime import (
+    data_runs_root,
+    data_state_root,
+    ensure_runtime_data_writable,
+    load_exports_manifest,
+    manifest_banks_rate_count,
+)
 from cdr_daily import marker_is_trustworthy, marker_path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -66,6 +72,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+    try:
+        ensure_runtime_data_writable(REPO_ROOT)
+        writable_error = ""
+    except RuntimeError as exc:
+        writable_error = str(exc)
+        if not args.json:
+            print(f"pi_daily_watchdog: {writable_error}", file=sys.stderr)
+        if not args.dry_run:
+            return 1
     now_utc = datetime.now(timezone.utc)
     due_utc = latest_daily_due_utc(now_utc)
     run_date = expected_run_date_for_due(due_utc)
@@ -74,7 +89,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     complete = run_complete(run_date)
     active = service_active()
     current_day_due = run_date == local_today
-    should_start = now_utc >= ready_at and current_day_due and not complete and not active
+    should_start = not writable_error and now_utc >= ready_at and current_day_due and not complete and not active
     if should_start:
         run_daily_ingest(args.dry_run)
     payload = {
@@ -85,6 +100,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         "complete": complete,
         "service_active": active,
         "current_day_due": current_day_due,
+        "runtime_writable": not bool(writable_error),
+        "runtime_writable_error": writable_error,
         "started": should_start and not args.dry_run,
         "dry_run": bool(args.dry_run),
     }

@@ -28,8 +28,8 @@ When a `Task` subagent returns after **implementation**, **ingest**, **dashboard
 
 ## One PR per task (hard)
 
-- **Do not** bundle energy ingest, economic data UI, docs, and unrelated banking fixes in one PR.
-- Partition by disjoint file sets; see skill table `agent/energy-dormant-*`, `agent/economic-data-ui-*`, etc.
+- **Do not** bundle removed-sector cleanup, economic data UI, docs, and unrelated banking fixes in one PR.
+- Partition by disjoint file sets; see skill table patterns such as `agent/economic-data-ui-*` and `agent/dashboard-*`.
 - Meta orchestrator plumbing stays its own PR (`agent/workflow-orchestrator-*`).
 
 ## Manual invoke

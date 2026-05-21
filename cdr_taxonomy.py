@@ -1,10 +1,6 @@
-"""Single-path taxonomy classifiers for CDR banking rate rows and energy plans.
+"""Single-path taxonomy classifiers for CDR banking rate rows.
 
-Each row maps to exactly one dot-separated path.  The splits mirror the
-taxonomies defined in the project design docs:
-
-  Banking:  PRODUCT_CLASS.{axes...}
-  Energy:   FUEL.SEGMENT.OFFER_TYPE.PRICING_MODEL[.SOLAR]
+Each row maps to exactly one dot-separated banking path.
 """
 
 from __future__ import annotations
@@ -220,63 +216,6 @@ def classify_bank_rate_row(
     return ".".join(parts)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Energy taxonomy
-# ──────────────────────────────────────────────────────────────────────────────
-
-_ELEC_PM_MAP: dict[str, str] = {
-    "SINGLE_RATE": "FLAT",
-    "FLAT_RATE": "FLAT",
-    "SINGLE_RATE_CONT_LOAD": "FLAT_CL",
-    "TIME_OF_USE": "TOU",
-    "TIME_OF_USE_CONT_LOAD": "TOU_CL",
-    "FLEXIBLE": "DEMAND",
-    "FLEXIBLE_CONT_LOAD": "DEMAND_CL",
-    "CONTROLLED_LOAD": "CL_ONLY",
-    "MARKET_VARYING": "WHOLESALE",
-}
-
-_GAS_PM_MAP: dict[str, str] = {
-    "SINGLE_RATE": "FLAT",
-    "FLAT_RATE": "FLAT",
-    "FLEXIBLE": "DEMAND",
-    "MARKET_VARYING": "WHOLESALE",
-}
-
-
-def classify_energy_plan(rec: Mapping[str, Any]) -> str:
-    """Return a dot-separated taxonomy path from a raw CDR energy plan record."""
-    fuel = str(rec.get("fuelType") or "").strip().upper()
-    if fuel not in ("ELECTRICITY", "GAS", "DUAL"):
-        fuel = "ELECTRICITY"
-
-    seg_raw = str(rec.get("customerType") or "").strip().upper()
-    seg = "BUSINESS" if seg_raw == "BUSINESS" else "RESIDENTIAL"
-
-    # List endpoint returns "STANDING_OFFER"/"MARKET_OFFER"; detail returns "STANDING"/"MARKET".
-    offer_raw = str(rec.get("type") or "").strip().upper()
-    offer = "STANDING" if "STANDING" in offer_raw else "MARKET"
-
-    if fuel in ("ELECTRICITY", "DUAL"):
-        contract = rec.get("electricityContract")
-        if not isinstance(contract, dict):
-            contract = {}
-        pm_raw = str(contract.get("pricingModel") or "").strip().upper()
-        pm = _ELEC_PM_MAP.get(pm_raw, "UNKNOWN")
-        fit = contract.get("solarFeedInTariff")
-        solar = "SOLAR" if isinstance(fit, list) and fit else "NO_SOLAR"
-        return ".".join([fuel, seg, offer, pm, solar])
-
-    # GAS
-    contract = rec.get("gasContract")
-    if not isinstance(contract, dict):
-        contract = {}
-    pm_raw = str(contract.get("pricingModel") or "").strip().upper()
-    pm = _GAS_PM_MAP.get(pm_raw, "FLAT")
-    return ".".join([fuel, seg, offer, pm])
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Summary helper (used by xlsx builder)
 # ──────────────────────────────────────────────────────────────────────────────
 

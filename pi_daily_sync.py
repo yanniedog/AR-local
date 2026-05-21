@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
-from ar_local_pi_runtime import data_state_root
+from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
 from ar_local_subprocess import run_checked
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -118,6 +118,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+    ensure_runtime_data_writable(REPO_ROOT)
     lock_path = data_state_root(REPO_ROOT) / "daily-ingest.lock"
     try:
         lock_context = DailyIngestLock(lock_path)

@@ -36,7 +36,7 @@
   }
 
   function rowProductKey(row) {
-    const raw = row.product_key || row.product_id || row.plan_id || row.product_name || row.plan_name || '';
+    const raw = row.product_key || row.product_id || row.product_name || '';
     return raw === '' || raw == null ? '' : String(raw);
   }
 
@@ -164,29 +164,6 @@
     const node = nodeAtPath(tree, activePath);
     if (!node) return null;
     return productKeysForRows(collectRowsUnder(node));
-  }
-
-  /** Provider → plan leaves when energy rows lack taxonomy_path. */
-  function buildEnergyProviderTree(rows) {
-    if (!rows.length) return { kind: 'empty', rows: [] };
-    const byProvider = {};
-    rows.forEach((row) => {
-      const provider = row.provider || 'Unknown';
-      if (!byProvider[provider]) byProvider[provider] = [];
-      byProvider[provider].push(row);
-    });
-    const providers = Object.keys(byProvider).sort((a, b) => a.localeCompare(b));
-    return {
-      kind: 'branch',
-      field: 'bank_name',
-      groups: providers.map((label) => ({
-        label,
-        rows: byProvider[label],
-        best: null,
-        child: { kind: 'leaves', rows: byProvider[label] },
-      })),
-      rows: rows.slice(),
-    };
   }
 
   function singleProviderUnder(node) {
@@ -329,9 +306,8 @@
     const dot = child(rateRow, 'span', 'ar-report-infobox-tsw');
     dot.style.setProperty('--ar-swatch-color', swatch(row));
     const label = child(rateRow, 'span', 'ar-report-infobox-tlabel local-hierarchy-leaf-label');
-    const isEnergy = Boolean(row.plan_name && !row.product_name);
     const lvrSourceHint =
-      !isEnergy && row.lvr_tier === 'lvr_unspecified' && row.lvr_source
+      row.lvr_tier === 'lvr_unspecified' && row.lvr_source
         ? {
             product_constraints: 'LVR: product constraint (rate row empty)',
             product_unparsed: 'LVR: product signal not parsed',
@@ -340,9 +316,7 @@
             context_text: '',
           }[row.lvr_source] || ''
         : '';
-    const metaBits = isEnergy
-      ? [row.fuel_type, row.last_updated && row.last_updated.slice(0, 10)].filter(Boolean)
-      : [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose, lvrSourceHint].filter(Boolean);
+    const metaBits = [row.rate_type, row.application_type, row.repayment_type || row.loan_purpose, lvrSourceHint].filter(Boolean);
     if (window.LocalCdrBrand && row.provider) {
       const brandSlot = child(label, 'span', 'local-hierarchy-leaf-brand');
       const badge = window.LocalCdrBrand.appendProviderBadge(brandSlot, row.provider, false, {
@@ -354,16 +328,12 @@
       }
     }
     const textCol = child(label, 'span', 'local-hierarchy-leaf-text');
-    child(textCol, 'span', 'ar-ribbon-tleaf-product', row.product_name || row.plan_name || metaBits.join(' - ') || 'Rate');
+    child(textCol, 'span', 'ar-ribbon-tleaf-product', row.product_name || metaBits.join(' - ') || 'Rate');
     if (row.product_name && metaBits.length) {
       child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
     }
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
-    if (isEnergy && minMax([row]).min == null) {
-      if (row.fuel_type) child(rate, 'span', '', row.fuel_type);
-    } else {
-      renderRateRange(rate, [row], best, highlightMax);
-    }
+    renderRateRange(rate, [row], best, highlightMax);
     appendHistoryCompare(rate, [row], state);
   }
 
@@ -403,12 +373,9 @@
   function renderTree(container, node, path, depth, activePath, state) {
     if (!node || node.kind === 'empty') return;
     if (node.kind === 'leaves') {
-      const sorted = node.rows.slice().sort((a, b) => {
-        if (state.sector === 'energy') {
-          return String(a.plan_name || '').localeCompare(String(b.plan_name || ''));
-        }
-        return state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate);
-      });
+      const sorted = node.rows.slice().sort((a, b) => (
+        state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate)
+      ));
       sorted.forEach((row) => renderLeaf(container, row, depth, state.globalBest, state.highlightMax, state));
       return;
     }
@@ -500,14 +467,9 @@
     const scrollEl = scrollContainer(container);
     const savedScrollTop = scrollEl ? scrollEl.scrollTop : 0;
     const visible = rows;
-    const isEnergy = state.sector === 'energy';
     const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
-    const productCount = isEnergy ? 0 : new Set(visible.map((row) => row.product_key || row.product_id || row.plan_id || row.product_name)).size;
-    if (isEnergy) {
-      countEl.textContent = `${num(visible.length)} plans / ${num(providerCount)} providers`;
-    } else {
-      countEl.textContent = `${num(visible.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
-    }
+    const productCount = new Set(visible.map((row) => row.product_key || row.product_id || row.product_name)).size;
+    countEl.textContent = `${num(visible.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
     const panel = ensurePanel(container);
     if (!panel) {
       setRibbonHierarchyLayoutActive(container, false);
@@ -515,15 +477,11 @@
     }
     state.rows = visible;
     state.highlightMax = highlightMaxForSection(state.section);
-    state.globalBest = isEnergy ? null : bestRate(visible, state.highlightMax);
+    state.globalBest = bestRate(visible, state.highlightMax);
     let tree = { kind: 'empty', rows: [] };
     const ribbon = window.AR && window.AR.ribbon;
     const hasTaxonomyPath = visible.length > 0 && visible.some((r) => r.taxonomy_path);
-    if (isEnergy && hasTaxonomyPath && window.LocalCdrTaxonomyTree) {
-      tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.highlightMax);
-    } else if (isEnergy) {
-      tree = buildEnergyProviderTree(visible);
-    } else if (!isEnergy && ribbon && ribbon.buildRibbonTierTree && window.LocalCdrRibbonMap) {
+    if (ribbon && ribbon.buildRibbonTierTree && window.LocalCdrRibbonMap) {
       const slug = window.LocalCdrRibbonMap.sectionSlug(state.section);
       const tierFieldsFn = ribbon.ribbonInitialTierFieldsForSection || ribbon.ribbonTierFieldsForSection;
       if (tierFieldsFn) {
@@ -547,9 +505,7 @@
     }
     setRibbonHierarchyLayoutActive(container, true);
     emitFocus(options, tree, state.hierarchyPath || '');
-    const metaParts = isEnergy
-      ? [`${num(visible.length)} plans`, `${num(providerCount)} providers`]
-      : [`${rangeText(visible)}`, `${num(productCount)} products`, `${num(providerCount)} providers`];
+    const metaParts = [`${rangeText(visible)}`, `${num(productCount)} products`, `${num(providerCount)} providers`];
     panel.show({
       heading: 'Current slice',
       meta: `${state.manifest.run_date} • ${metaParts.join(' • ')}`,
