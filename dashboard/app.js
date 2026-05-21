@@ -1137,17 +1137,6 @@
       renderTable(applyFocusFilter(normalizeRows(rateRows())));
       redrawChart();
     });
-    $('hierarchy').addEventListener('mouseover', (event) => {
-      const node = event.target.closest('[data-local-hierarchy-action], [data-local-hierarchy-hover]');
-      if (!node) return;
-      scheduleHierarchyTableHover(node);
-    });
-    $('hierarchy').addEventListener('mouseleave', (event) => {
-      const related = event.relatedTarget;
-      if (related && $('hierarchy').contains(related)) return;
-      clearHierarchyTableHover();
-    });
-
     $('chart-toggle-sort').addEventListener('click', () => {
       state.descending = !state.descending;
       $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
