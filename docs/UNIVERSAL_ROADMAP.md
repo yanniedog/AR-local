@@ -121,6 +121,55 @@ http://127.0.0.1:18808/
 
 Use the tunnel when a tool, browser, or test runner needs a local loopback URL. The tunnel maps Windows `127.0.0.1:18808` to the Pi dashboard at `127.0.0.1:8808` and enables SSH compression for large JSON responses.
 
+### Netdata (Pi host metrics)
+
+Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19999**. **nginx** on port **80** exposes the UI at a fixed subpath (same host as the dashboard; works over Tailscale without mDNS).
+
+| Entry | URL |
+| --- | --- |
+| **Primary (local metrics UI)** | `http://100.78.28.10/netdata/v3/` |
+| Short redirect (same UI) | `http://100.78.28.10/netdata/` |
+| LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
+| Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
+
+No Netdata Cloud account is required for **metrics** (overview charts, nodes, alerts). Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled v3 UI loads from the agent instead of `app.netdata.cloud`.
+
+**Logs tab:** the v3 Logs Explorer calls the `systemd-journal` Netdata Function, which requires **Netdata Cloud sign-in** (HTTP 412 without it). With Cloud disabled you will see an empty Logs pane and a Sign in control — that is expected. Use **`http://100.78.28.10/netdata/v3/`** (overview/metrics), not `/netdata/v3/spaces/.../logs`. nginx redirects `/netdata/.../logs` to `/netdata/v3/`. For raw journal on the Pi: `journalctl` (install script adds `netdata` to the `systemd-journal` group for when Cloud is enabled later).
+
+Deep links under `/netdata/spaces/...` (without `/logs`) redirect to `/netdata/v3/`.
+
+Install or refresh:
+
+```sh
+ssh ar-local-pi5
+cd /srv/ar-local/AR-local
+sudo bash deploy/pi/install-pi-netdata.sh
+sudo bash deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
+```
+
+Verify:
+
+```sh
+systemctl is-active netdata
+du -sh /srv/ar-local/data/netdata/cache /srv/ar-local/data/netdata/lib
+curl -fsS http://127.0.0.1:19999/api/v3/info | head -c 120
+curl -fsS http://100.78.28.10/netdata/api/v3/info | head -c 120
+curl -fsS "http://100.78.28.10/netdata/api/v1/data?chart=system.cpu&format=json&points=3" | head -c 200
+curl -fsSI http://100.78.28.10/netdata/v3/ | head -3
+curl -fsSI http://100.78.28.10/netdata/v3/spaces/pi5/rooms/local/logs | head -3
+# expect 302 Location: .../netdata/v3/
+```
+
+After `install-pi-dashboard-proxy.sh`, the public API path is `/netdata/api/v3/...` (nginx strips `/netdata/` before proxying).
+
+From Windows (Tailscale):
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10/netdata/v3/ -TimeoutSec 20
+```
+
+The agent is **not** intended for the public internet; do not port-forward `:19999` or expose Netdata outside the LAN/Tailscale trust boundary without separate auth.
+
 `ar.local` is a LAN convenience name, not guaranteed over remote Tailscale unless Tailscale DNS, MagicDNS, or a split-DNS rule is explicitly configured and verified. When travelling, prefer the Tailscale IP or the SSH tunnel URL.
 
 ## Current Deployed Shape
@@ -134,6 +183,7 @@ The current Pi deployment is portable-root based. The systemd service does not r
 - dashboard service: `ar-local-dashboard.service`
 - dashboard bind: `0.0.0.0:8808` (Python; unprivileged high port)
 - public HTTP entry: `nginx` site `ar-local-dashboard` on port `80` ? `127.0.0.1:8808`
+- Netdata metrics UI: `nginx` `/netdata/` ? `127.0.0.1:19999` (`netdata.service`, localhost bind); durable state under `/srv/ar-local/data/netdata/`
 
 ### Authoritative service checkout
 
@@ -350,7 +400,13 @@ The portable root is the single tree that can move from microSD to USB SSD or Pi
   data/
     runs/<date>/_exports/
     state/
+    netdata/
+      cache/    # dbengine metrics DB (was /var/cache/netdata)
+      lib/      # registry, keys, cloud.d (was /var/lib/netdata)
+      log/      # agent logs (was /var/log/netdata)
 ```
+
+**Netdata on SSD:** `deploy/pi/install-pi-netdata.sh` sets `[directories]` in `/etc/netdata/netdata.conf`, migrates existing `/var/{cache,lib,log}/netdata` into `/srv/ar-local/data/netdata/{cache,lib,log}`, and symlinks those `/var` paths to the portable tree for package compatibility. Override with `NETDATA_DATA_ROOT` or `PORTABLE_ROOT` when rendering units for a non-default portable root. `/etc/netdata` stays on the OS volume (stock config only); durable agent state must not live under microSD-only paths when `/srv/ar-local` is the SSD mount.
 
 Services must be rendered against this portable root and must not bake in microSD-specific paths. To migrate to SSD:
 
