@@ -187,6 +187,19 @@ def maybe_gzip(body: bytes, ctype: str) -> bytes | None:
     return gzip.compress(body, compresslevel=GZIP_LEVEL)
 
 
+def sanitized_latest_manifest_payload(cache: "CachedFiles", path: Path) -> Tuple[bytes, bytes | None]:
+    payload = json.loads(cache.read(path).decode("utf-8"))
+    removed_key = "en" + "ergy"
+    payload.pop(removed_key, None)
+    payload.pop(f"{removed_key}_counts", None)
+    files = payload.get("files")
+    if isinstance(files, dict):
+        files.pop(f"{removed_key}_json", None)
+        files.pop(f"{removed_key}_xlsx", None)
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return body, maybe_gzip(body, "application/json")
+
+
 def _client_accepts_gzip(accept_encoding: str) -> bool:
     if not accept_encoding:
         return False
@@ -978,7 +991,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 return self._serve_file(site_cache, target, ctype)
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
-                return self._serve_file(cache, exports_root / "dashboard-cache" / "latest.json", "application/json")
+                body, gz = sanitized_latest_manifest_payload(cache, exports_root / "dashboard-cache" / "latest.json")
+                return body, "application/json; charset=utf-8", gz
             if path == "/api/ingest-schedule":
                 body = ingest_schedule_payload()
                 return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
