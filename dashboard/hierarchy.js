@@ -569,9 +569,11 @@
       emitFocus(options, tree, state.hierarchyPath || '');
     }
     const metaParts = [`${rangeText(visible)}`, `${num(visibleStats.products)} products`, `${num(visibleStats.providers)} providers`];
+    const slicePair = options && options.slicePreview ? chartDatePair(state) : null;
+    const metaDate = (slicePair && slicePair.anchor) || state.manifest.run_date;
     panel.show({
       heading: 'Current slice',
-      meta: `${state.manifest.run_date} • ${metaParts.join(' • ')}`,
+      meta: `${metaDate} • ${metaParts.join(' • ')}`,
       compact: true,
       renderBody: (wrap) => {
         renderBreadcrumbs(wrap, tree, activePath);
