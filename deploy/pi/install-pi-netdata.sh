@@ -3,7 +3,7 @@
 # Run on the Pi: sudo bash deploy/pi/install-pi-netdata.sh
 set -eu
 
-NETDATA_PREFIX="${NETDATA_PREFIX:-/netdata/}"
+# Subpath /netdata/ is handled by nginx (strip prefix); do not set web server prefix here.
 NETDATA_BIND="${NETDATA_BIND:-127.0.0.1}"
 MARKER="# AR-local nginx proxy (install-pi-netdata.sh)"
 
@@ -26,8 +26,12 @@ if ! grep -qF "$MARKER" "$conf" 2>/dev/null; then
 $MARKER
 [web]
     bind to = ${NETDATA_BIND}
-    web server prefix = ${NETDATA_PREFIX}
 EOF
+fi
+
+# Older installs appended web server prefix = /netdata/; that breaks API paths behind nginx.
+if grep -qF 'web server prefix = /netdata/' "$conf" 2>/dev/null; then
+  sed -i '/web server prefix = \/netdata\//d' "$conf"
 fi
 
 systemctl enable netdata.service
@@ -39,5 +43,5 @@ if ! systemctl is-active --quiet netdata.service; then
   exit 1
 fi
 
-echo "install-pi-netdata: active (bind ${NETDATA_BIND}:19999, prefix ${NETDATA_PREFIX})"
+echo "install-pi-netdata: active (bind ${NETDATA_BIND}:19999; browser URL via nginx /netdata/)"
 echo "Browser URL (via nginx): http://<pi-tailscale-ip>/netdata/"
