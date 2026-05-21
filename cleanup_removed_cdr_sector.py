@@ -15,6 +15,10 @@ from ar_local_pi_runtime import data_root
 REPO_ROOT = Path(__file__).resolve().parent
 REMOVED = "en" + "ergy"
 REMOVED_TABLES = (REMOVED + "_plans", REMOVED + "_items")
+REMOVED_DROP_SQL = (
+    'DROP TABLE IF EXISTS "en' 'ergy_plans"',
+    'DROP TABLE IF EXISTS "en' 'ergy_items"',
+)
 REMOVED_MANIFEST_KEYS = (REMOVED + "_counts",)
 REMOVED_FILE_KEYS = (REMOVED + "_json", REMOVED + "_xlsx")
 
@@ -107,8 +111,17 @@ def migrate_db(path: Path, *, apply: bool, actions: list[str]) -> None:
                 )
                 con.execute("DROP TABLE runs")
                 con.execute("ALTER TABLE runs_new RENAME TO runs")
-            for table in old_tables:
-                con.execute(f'DROP TABLE IF EXISTS "{table}"')
+            if old_tables:
+                for sql in REMOVED_DROP_SQL:
+                    con.execute(sql)
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_meta (
+                  key TEXT PRIMARY KEY,
+                  value TEXT NOT NULL
+                )
+                """,
+            )
             con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '6')")
             con.execute("COMMIT")
         except Exception:

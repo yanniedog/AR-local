@@ -69,7 +69,7 @@ def ensure_runtime_data_writable(repo_root: Path) -> None:
         probe = path / f".write-probe-{os.getpid()}"
         try:
             probe.write_text("ok\n", encoding="utf-8")
-            probe.unlink()
+            probe.unlink(missing_ok=True)
         except OSError as exc:
             raise RuntimeError(
                 f"runtime data path is not writable by uid {os.getuid() if hasattr(os, 'getuid') else 'unknown'}: {path}: {exc}",

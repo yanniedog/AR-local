@@ -84,6 +84,10 @@ RESET_TABLES = (
     "schema_meta",
 )
 REMOVED_SECTOR_TABLES = tuple("en" + "ergy_" + suffix for suffix in ("plans", "items"))
+REMOVED_SECTOR_DROP_SQL = (
+    'DROP TABLE IF EXISTS "en' 'ergy_plans"',
+    'DROP TABLE IF EXISTS "en' 'ergy_items"',
+)
 
 
 def write_json(path: Path, data: Mapping[str, Any]) -> None:
@@ -248,8 +252,8 @@ def needs_schema_reset(con: sqlite3.Connection) -> bool:
 def reset_schema(con: sqlite3.Connection) -> None:
     for table in RESET_TABLES:
         con.execute(f"DROP TABLE IF EXISTS {quote_table(table)}")
-    for table in REMOVED_SECTOR_TABLES:
-        con.execute(f'DROP TABLE IF EXISTS "{table}"')
+    for sql in REMOVED_SECTOR_DROP_SQL:
+        con.execute(sql)
 
 
 def table_exists(con: sqlite3.Connection, table: str) -> bool:

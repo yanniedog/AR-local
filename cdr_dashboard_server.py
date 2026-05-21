@@ -268,14 +268,13 @@ def compact_bank_row(row: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in row.items() if value not in (None, "")}
 
 
-def canonicalize_history_row(item: dict[str, object]) -> None:
+def canonicalize_rate_structure_fields(item: dict[str, object], section: str) -> None:
     # Legacy run DBs stored verbose CDR text in ribbon_rate_structure and had no
     # ribbon_fixed_term column; today's ingest writes canonical 'variable'/'fixed'
     # plus a separate term. Realign legacy rows so historyIndexKey matches across
     # the ribbon's full retention window.
     raw_structure = str(item.get("ribbon_rate_structure") or "")
-    dataset = str(item.get("dataset") or "")
-    if dataset == "Mortgage":
+    if section == "Mortgage":
         canonical = normalize_rate_structure_group(raw_structure)
         if canonical == "fixed" and not str(item.get("ribbon_fixed_term") or ""):
             years = extract_fixed_rate_term_years(raw_structure)
@@ -287,15 +286,12 @@ def canonicalize_history_row(item: dict[str, object]) -> None:
         item["ribbon_rate_structure"] = normalize_td_rate_structure_group(raw_structure, deposit_kind)
 
 
+def canonicalize_history_row(item: dict[str, object]) -> None:
+    canonicalize_rate_structure_fields(item, str(item.get("dataset") or ""))
+
+
 def canonicalize_section_row(item: dict[str, object], section: str) -> None:
-    if section == "Mortgage":
-        item["ribbon_rate_structure"] = normalize_rate_structure_group(
-            str(item.get("ribbon_rate_structure") or ""),
-        )
-        return
-    raw_structure = str(item.get("ribbon_rate_structure") or "")
-    deposit_kind = str(item.get("ribbon_deposit_kind") or "")
-    item["ribbon_rate_structure"] = normalize_td_rate_structure_group(raw_structure, deposit_kind)
+    canonicalize_rate_structure_fields(item, section)
 
 
 def fill_history_gaps(
@@ -744,15 +740,35 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         manifest = json.loads(latest.decode("utf-8"))
         return parse_run_date_param(str(manifest.get("run_date") or ""))
 
-    def latest_term_deposit_rows(query: Dict[str, list[str]]) -> Tuple[bytes, bytes | None]:
-        run_date = latest_manifest_run_date()
-        body = build_latest_term_deposit_rows(bank_db_for_date(run_date), run_date, query)
+    def local_public_api_error(exc: Exception) -> Tuple[bytes, bytes | None]:
+        body = json.dumps(
+            {
+                "ok": False,
+                "error": {
+                    "code": "local_sql_unavailable",
+                    "message": str(exc),
+                },
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
         return body, maybe_gzip(body, "application/json")
 
+    def latest_term_deposit_rows(query: Dict[str, list[str]]) -> Tuple[bytes, bytes | None]:
+        try:
+            run_date = latest_manifest_run_date()
+            body = build_latest_term_deposit_rows(bank_db_for_date(run_date), run_date, query)
+            return body, maybe_gzip(body, "application/json")
+        except (sqlite3.Error, FileNotFoundError, KeyError, ValueError) as exc:
+            return local_public_api_error(exc)
+
     def latest_home_loan_rows(query: Dict[str, list[str]]) -> Tuple[bytes, bytes | None]:
-        run_date = latest_manifest_run_date()
-        body = build_latest_home_loan_rows(bank_db_for_date(run_date), run_date, query)
-        return body, maybe_gzip(body, "application/json")
+        try:
+            run_date = latest_manifest_run_date()
+            body = build_latest_home_loan_rows(bank_db_for_date(run_date), run_date, query)
+            return body, maybe_gzip(body, "application/json")
+        except (sqlite3.Error, FileNotFoundError, KeyError, ValueError) as exc:
+            return local_public_api_error(exc)
 
     def local_rba_history_rows() -> Tuple[bytes, bytes | None]:
         body = build_local_rba_history_rows()
@@ -909,7 +925,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if parsed.path == "/api/economic-data/debug-log":
                 length = int(self.headers.get("Content-Length") or "0")
                 if length > 0:
-                    self.rfile.read(length)
+                    cap = 1024 * 1024
+                    self.rfile.read(min(length, cap))
+                    if length > cap:
+                        self.close_connection = True
                 body = b'{"ok":true}'
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
