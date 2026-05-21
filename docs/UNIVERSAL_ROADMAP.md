@@ -38,7 +38,9 @@ This section is intentionally practical. It should let a future LLM or human ope
 - Expected local Windows workspace for this repo: `C:\code\AR-local`
 - Expected sibling/related Pi checkout root: `/srv/ar-local`
 
-Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo password to this repository. Sudo may require an interactive password supplied by the operator in the current session; use it only when OS package, mount, or systemd changes require root.
+Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo password to this repository.
+
+**Passwordless sudo (agents):** after one-time `deploy/pi/install-pi-sudoers.sh` (or `bootstrap-pi-port80.sh`), user `pi` has `NOPASSWD: ALL` in `/etc/sudoers.d/ar-local-pi` so `ssh -o BatchMode=yes` and `npm run pi:deploy` never prompt for sudo. Greenfield: run install once with an interactive sudo password; do not store that password in git.
 
 ### Rediscovering current addresses
 
