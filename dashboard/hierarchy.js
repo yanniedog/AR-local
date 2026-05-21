@@ -160,10 +160,32 @@
     return keys.size ? keys : null;
   }
 
+  function rowsUnderNode(node) {
+    if (!node || node.kind === 'empty') return [];
+    if (Array.isArray(node.rows)) return node.rows;
+    return collectRowsUnder(node);
+  }
+
+  /** Unique products in a subtree (same keys as header meta / chart focus). */
+  function productCountForRows(rows) {
+    const keys = productKeysForRows(rows);
+    return keys ? keys.size : 0;
+  }
+
+  function appendNodeLabel(parent, text, productCount) {
+    child(parent, 'span', 'local-hierarchy-node-name', text);
+    if (productCount > 0) {
+      const countText = num(productCount);
+      const productWord = productCount === 1 ? 'product' : 'products';
+      const countEl = child(parent, 'span', 'local-hierarchy-node-count', '\u00b7 ' + countText);
+      countEl.setAttribute('aria-label', countText + ' ' + productWord);
+    }
+  }
+
   function productKeysAtPath(tree, activePath) {
     const node = nodeAtPath(tree, activePath);
     if (!node) return null;
-    return productKeysForRows(collectRowsUnder(node));
+    return productKeysForRows(rowsUnderNode(node));
   }
 
   function singleProviderUnder(node) {
@@ -273,10 +295,11 @@
 
   function renderBreadcrumbs(container, tree, activePath) {
     const bar = child(container, 'div', 'ar-report-underchart-tree-breadcrumbs');
-    const root = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (!activePath ? ' is-current' : ''), 'All');
+    const root = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (!activePath ? ' is-current' : ''));
     root.type = 'button';
     root.dataset.localHierarchyAction = 'root';
     root.dataset.localHierarchyPath = '';
+    appendNodeLabel(root, 'All', productCountForRows(rowsUnderNode(tree)));
     let node = tree;
     let path = '';
     const pathParts = String(activePath || '').split('>').filter(Boolean);
@@ -287,9 +310,10 @@
       path = path ? path + '>' + groupIndex : String(groupIndex);
       child(bar, 'span', 'ar-report-underchart-tree-crumb-sep', '›');
       const crumbText = formatBranchLabel(node.field, group.label, 'crumb');
-      const crumb = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (index === pathParts.length - 1 ? ' is-current' : ''), crumbText);
+      const crumb = child(bar, 'button', 'ar-report-underchart-tree-crumb secondary' + (index === pathParts.length - 1 ? ' is-current' : ''));
       crumb.type = 'button';
       crumb.title = formatBranchLabel(node.field, group.label, 'branch');
+      appendNodeLabel(crumb, crumbText, productCountForRows(group.rows));
       crumb.dataset.localHierarchyAction = 'crumb';
       crumb.dataset.localHierarchyPath = path;
       node = group.child;
@@ -358,8 +382,8 @@
     }
     child(row, 'span', 'ar-report-infobox-twist', expanded ? '▾' : '▸');
     const label = child(row, 'span', 'ar-report-infobox-tlabel');
-    label.textContent = fullLabel;
     label.title = fullLabel;
+    appendNodeLabel(label, fullLabel, productCountForRows(group.rows));
     const rate = child(row, 'span', 'ar-report-infobox-trate');
     const mm = minMax(group.rows);
     if (mm.min != null) {
@@ -525,6 +549,7 @@
     applyProviderHighlight,
     productKeysAtPath,
     productKeysForRows,
+    productCountForRows,
     rowProductKey,
   };
 })();
