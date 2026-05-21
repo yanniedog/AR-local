@@ -149,6 +149,14 @@ $MARKER
     bind to = $NETDATA_BIND
 EOF
 fi
+if [ -d /etc/netdata/netdata.conf.d ]; then
+  for f in /etc/netdata/netdata.conf.d/*.conf; do
+    [ -f "$f" ] || continue
+    if grep -qF 'bind to' "$f" 2>/dev/null; then
+      sed -i "s|^[[:space:]]*bind to =.*|    bind to = $NETDATA_BIND|" "$f" 2>/dev/null || true
+    fi
+  done
+fi
 
 # Subpath /netdata/ is nginx-only (strip prefix). Agent must not use web server prefix.
 for f in "$conf"; do
