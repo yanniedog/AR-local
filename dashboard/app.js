@@ -62,6 +62,7 @@
     chartPinnedDate: '',
     chartDates: [],
     _chartFocusPainted: '',
+    _chartRedrawFrame: 0,
     ingestSchedule: null,
     ingestClockOffsetMs: 0,
     ingestScheduleFetchedAtMs: 0,
@@ -533,11 +534,11 @@
 
   function hierarchyRenderOptions(overrides) {
     return {
+      ...(overrides || {}),
       onFocusChange: (productKeys) => {
         if (state._hierarchySlicePreview) return;
         state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
       },
-      ...(overrides || {}),
     };
   }
 
@@ -558,7 +559,7 @@
     state._hierarchySlicePreview = true;
     try {
       refreshHierarchyPanel(undefined, { slicePreview: true });
-      redrawChartIfFocusChanged();
+      scheduleChartRedraw();
     } finally {
       state._hierarchySlicePreview = false;
     }
@@ -854,6 +855,15 @@
 
   function redrawChart() {
     drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
+  }
+
+  function scheduleChartRedraw() {
+    if (state._chartRedrawFrame) return;
+    const raf = window.requestAnimationFrame || ((fn) => window.setTimeout(fn, 0));
+    state._chartRedrawFrame = raf(() => {
+      state._chartRedrawFrame = 0;
+      redrawChart();
+    });
   }
 
   /** Hover paths: skip full ECharts rebuild when ribbon focus is unchanged. */

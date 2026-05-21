@@ -189,6 +189,30 @@
     }
   }
 
+  function statsForRows(rows) {
+    const products = new Set();
+    const providers = new Set();
+    (rows || []).forEach((row) => {
+      const product = rowProductKey(row);
+      if (product) products.add(product);
+      if (row.provider) providers.add(row.provider);
+    });
+    return {
+      rates: (rows || []).length,
+      products: products.size,
+      providers: providers.size,
+    };
+  }
+
+  function indexNodeStats(node, statsMap) {
+    if (!node || node.kind === 'empty') return statsMap;
+    if (node.rows) statsMap.set(node, statsForRows(node.rows));
+    if (node.kind === 'branch') {
+      node.groups.forEach((group) => indexNodeStats(group.child, statsMap));
+    }
+    return statsMap;
+  }
+
   function productKeysAtPath(tree, activePath) {
     const node = nodeAtPath(tree, activePath);
     if (!node) return null;
@@ -499,8 +523,7 @@
     const savedScrollTop = scrollEl ? scrollEl.scrollTop : 0;
     const visible = rows;
     let countRows = visible;
-    const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
-    const productCount = new Set(visible.map((row) => row.product_key || row.product_id || row.product_name)).size;
+    const visibleStats = statsForRows(visible);
     const panel = ensurePanel(container);
     if (!panel) {
       setRibbonHierarchyLayoutActive(container, false);
@@ -527,8 +550,11 @@
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     const activePath = prunePath(tree, displayHierarchyPath(state)) || displayHierarchyPath(state);
     const sliceNode = activePath ? nodeAtPath(tree, activePath) : null;
-    if (sliceNode) countRows = collectRowsUnder(sliceNode);
-    countEl.textContent = `${num(countRows.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
+    const statsMap = indexNodeStats(tree, new WeakMap());
+    const treeStats = statsMap.get(tree) || visibleStats;
+    const sliceStats = sliceNode ? statsMap.get(sliceNode) : null;
+    if (sliceNode) countRows = rowsUnderNode(sliceNode);
+    countEl.textContent = `${num(sliceStats ? sliceStats.rates : countRows.length)} rates / ${num(sliceStats ? sliceStats.products : treeStats.products)} products / ${num(sliceStats ? sliceStats.providers : treeStats.providers)} providers`;
     if (!visible.length || tree.kind === 'empty') {
       setRibbonHierarchyLayoutActive(container, false);
       panel.show({
@@ -542,7 +568,7 @@
     if (!options || !options.slicePreview) {
       emitFocus(options, tree, state.hierarchyPath || '');
     }
-    const metaParts = [`${rangeText(visible)}`, `${num(productCount)} products`, `${num(providerCount)} providers`];
+    const metaParts = [`${rangeText(visible)}`, `${num(visibleStats.products)} products`, `${num(visibleStats.providers)} providers`];
     panel.show({
       heading: 'Current slice',
       meta: `${state.manifest.run_date} • ${metaParts.join(' • ')}`,
