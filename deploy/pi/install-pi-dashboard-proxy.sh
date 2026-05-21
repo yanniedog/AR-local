@@ -31,4 +31,5 @@ sudo systemctl enable nginx.service
 sudo systemctl restart nginx.service
 
 echo "Dashboard proxy: http://<pi-ip>/  (nginx :80 -> 127.0.0.1:8808)"
+echo "Netdata (if installed): http://<pi-ip>/netdata/  (nginx :80 -> 127.0.0.1:19999)"
 echo "Direct backend (optional): http://<pi-ip>:8808/"

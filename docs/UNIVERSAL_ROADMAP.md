@@ -121,6 +121,40 @@ http://127.0.0.1:18808/
 
 Use the tunnel when a tool, browser, or test runner needs a local loopback URL. The tunnel maps Windows `127.0.0.1:18808` to the Pi dashboard at `127.0.0.1:8808` and enables SSH compression for large JSON responses.
 
+### Netdata (Pi host metrics)
+
+Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19999**. **nginx** on port **80** exposes the UI at a fixed subpath (same host as the dashboard; works over Tailscale without mDNS).
+
+| Entry | URL |
+| --- | --- |
+| **Primary (Tailscale / LAN)** | `http://100.78.28.10/netdata/` |
+| LAN IP equivalent | `http://10.0.0.92/netdata/` |
+| Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/netdata/` |
+
+Install or refresh:
+
+```sh
+ssh ar-local-pi5
+cd /srv/ar-local/AR-local
+sudo bash deploy/pi/install-pi-netdata.sh
+sudo bash deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
+```
+
+Verify:
+
+```sh
+systemctl is-active netdata
+curl -fsSI http://127.0.0.1:19999/netdata/ | head -3
+```
+
+From Windows (Tailscale):
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10/netdata/ -TimeoutSec 20
+```
+
+The agent is **not** intended for the public internet; do not port-forward `:19999` or expose Netdata outside the LAN/Tailscale trust boundary without separate auth.
+
 `ar.local` is a LAN convenience name, not guaranteed over remote Tailscale unless Tailscale DNS, MagicDNS, or a split-DNS rule is explicitly configured and verified. When travelling, prefer the Tailscale IP or the SSH tunnel URL.
 
 ## Current Deployed Shape
@@ -134,6 +168,7 @@ The current Pi deployment is portable-root based. The systemd service does not r
 - dashboard service: `ar-local-dashboard.service`
 - dashboard bind: `0.0.0.0:8808` (Python; unprivileged high port)
 - public HTTP entry: `nginx` site `ar-local-dashboard` on port `80` ? `127.0.0.1:8808`
+- Netdata metrics UI: `nginx` `/netdata/` ? `127.0.0.1:19999` (`netdata.service`, localhost bind)
 
 ### Authoritative service checkout
 
