@@ -144,8 +144,13 @@ Verify:
 
 ```sh
 systemctl is-active netdata
+du -sh /srv/ar-local/data/netdata/cache /srv/ar-local/data/netdata/lib
+curl -fsS http://127.0.0.1:19999/api/v3/info | head -c 120
+curl -fsS http://100.78.28.10/netdata/api/v3/info | head -c 120
 curl -fsSI http://127.0.0.1:19999/netdata/ | head -3
 ```
+
+After `install-pi-dashboard-proxy.sh`, the public API path is `/netdata/api/v3/...` (nginx strips `/netdata/` before proxying).
 
 From Windows (Tailscale):
 
@@ -168,7 +173,7 @@ The current Pi deployment is portable-root based. The systemd service does not r
 - dashboard service: `ar-local-dashboard.service`
 - dashboard bind: `0.0.0.0:8808` (Python; unprivileged high port)
 - public HTTP entry: `nginx` site `ar-local-dashboard` on port `80` ? `127.0.0.1:8808`
-- Netdata metrics UI: `nginx` `/netdata/` ? `127.0.0.1:19999` (`netdata.service`, localhost bind)
+- Netdata metrics UI: `nginx` `/netdata/` ? `127.0.0.1:19999` (`netdata.service`, localhost bind); durable state under `/srv/ar-local/data/netdata/`
 
 ### Authoritative service checkout
 
@@ -385,7 +390,13 @@ The portable root is the single tree that can move from microSD to USB SSD or Pi
   data/
     runs/<date>/_exports/
     state/
+    netdata/
+      cache/    # dbengine metrics DB (was /var/cache/netdata)
+      lib/      # registry, keys, cloud.d (was /var/lib/netdata)
+      log/      # agent logs (was /var/log/netdata)
 ```
+
+**Netdata on SSD:** `deploy/pi/install-pi-netdata.sh` sets `[directories]` in `/etc/netdata/netdata.conf`, migrates existing `/var/{cache,lib,log}/netdata` into `/srv/ar-local/data/netdata/{cache,lib,log}`, and symlinks those `/var` paths to the portable tree for package compatibility. Override with `NETDATA_DATA_ROOT` or `PORTABLE_ROOT` when rendering units for a non-default portable root. `/etc/netdata` stays on the OS volume (stock config only); durable agent state must not live under microSD-only paths when `/srv/ar-local` is the SSD mount.
 
 Services must be rendered against this portable root and must not bake in microSD-specific paths. To migrate to SSD:
 
