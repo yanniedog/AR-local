@@ -738,9 +738,13 @@
       const btn = child(rail, 'button', 'local-provider-logo-btn');
       btn.type = 'button';
       btn.dataset.providerPick = provider;
-      btn.title = window.LocalCdrBrand.providerTooltip
-        ? window.LocalCdrBrand.providerTooltip(provider)
+      const railMeta = window.LocalCdrBrand.providerMeta
+        ? window.LocalCdrBrand.providerMeta(provider)
+        : null;
+      const railTip = window.LocalCdrBrand.providerTooltip
+        ? window.LocalCdrBrand.providerTooltip(provider, railMeta)
         : provider;
+      btn.setAttribute('aria-label', railTip);
       const lc = provider.toLowerCase();
       if (focus && lc === focus) btn.classList.add('is-selected');
       if (hover && lc === hover) btn.classList.add('is-hover');
@@ -752,6 +756,7 @@
       }
       const badge = window.LocalCdrBrand.appendProviderBadge(btn, provider, false, {
         logoOnly: true,
+        suppressTitle: true,
         rateRow: sampleByProvider[provider],
         logoFetchPriority: index < 16 ? 'high' : 'low',
       });

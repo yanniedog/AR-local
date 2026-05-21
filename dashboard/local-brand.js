@@ -635,9 +635,9 @@
   }
 
   /** Logo/tooltip label: CDR provider name plus table abbrev when it adds information. */
-  function providerTooltip(provider) {
+  function providerTooltip(provider, metaIn) {
     const raw = String(provider || '').trim();
-    const meta = providerMeta(provider);
+    const meta = metaIn || providerMeta(provider);
     const displayName = raw || String(meta.name || '').trim() || 'Provider';
     const abbrev = String(meta.short || '').trim();
     if (!abbrev || abbrev === '-' || abbrev.toLowerCase() === displayName.toLowerCase()) {
@@ -664,7 +664,7 @@
     const classes = ['bank-badge', 'local-bank-badge'];
     if (opts.logoOnly) classes.push('local-bank-badge--logo-only');
     const badge = child(parent, 'span', classes.join(' '));
-    badge.title = providerTooltip(provider);
+    if (!opts.suppressTitle) badge.title = providerTooltip(provider, meta);
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
     mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, {

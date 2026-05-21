@@ -125,9 +125,9 @@
         return getMeta(value).name;
     }
 
-    function tooltipLabel(value) {
+    function tooltipLabel(value, metaIn) {
         var raw = String(value == null ? '' : value).trim();
-        var meta = getMeta(value);
+        var meta = metaIn || getMeta(value);
         var displayName = raw || meta.name;
         var abbrev = String(meta.short || '').trim();
         if (!abbrev || abbrev === '-' || abbrev.toLowerCase() === displayName.toLowerCase()) {
@@ -166,7 +166,7 @@
         if (opts.className) classes.push(String(opts.className));
 
         return '' +
-            '<span class="' + classes.join(' ') + '" title="' + esc(tooltipLabel(value)) + '">' +
+            '<span class="' + classes.join(' ') + '" title="' + esc(tooltipLabel(value, meta)) + '">' +
                 '<span class="bank-badge-logo-wrap" aria-hidden="true">' +
                     (meta.icon
                         ? '<img class="bank-badge-logo" src="' + esc(meta.icon) + '" alt="" width="32" height="32" loading="eager" fetchpriority="low" draggable="false">'
