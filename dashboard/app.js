@@ -462,7 +462,7 @@
     } else {
       state.chartPinnedDate = next;
     }
-    refreshProviderHighlightUi();
+    refreshProviderHighlightUi(undefined, { slicePreview: true });
   }
 
   function visibleSliceRows() {
