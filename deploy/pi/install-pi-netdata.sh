@@ -140,7 +140,7 @@ if grep -qF "$SSD_MARKER" "$conf" 2>/dev/null; then
     "$conf" 2>/dev/null || true
 fi
 if grep -qF 'bind to' "$conf" 2>/dev/null; then
-  sed -i "s|^[[:space:]]*bind to =.*|    bind to = $NETDATA_BIND|" "$conf" 2>/dev/null || true
+  sed -i "s|^[[:space:]]*bind to[[:space:]]*=.*|    bind to = $NETDATA_BIND|" "$conf"
 elif ! grep -qF "$MARKER" "$conf" 2>/dev/null; then
   cat >>"$conf" <<EOF
 
@@ -153,7 +153,7 @@ if [ -d /etc/netdata/netdata.conf.d ]; then
   for f in /etc/netdata/netdata.conf.d/*.conf; do
     [ -f "$f" ] || continue
     if grep -qF 'bind to' "$f" 2>/dev/null; then
-      sed -i "s|^[[:space:]]*bind to =.*|    bind to = $NETDATA_BIND|" "$f" 2>/dev/null || true
+      sed -i "s|^[[:space:]]*bind to[[:space:]]*=.*|    bind to = $NETDATA_BIND|" "$f"
     fi
   done
 fi
