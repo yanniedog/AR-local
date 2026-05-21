@@ -160,25 +160,32 @@
     return keys.size ? keys : null;
   }
 
+  function rowsUnderNode(node) {
+    if (!node || node.kind === 'empty') return [];
+    if (Array.isArray(node.rows)) return node.rows;
+    return collectRowsUnder(node);
+  }
+
   /** Unique products in a subtree (same keys as header meta / chart focus). */
   function productCountForRows(rows) {
     const keys = productKeysForRows(rows);
-    if (keys) return keys.size;
-    return (rows || []).length;
+    return keys ? keys.size : 0;
   }
 
   function appendNodeLabel(parent, text, productCount) {
     child(parent, 'span', 'local-hierarchy-node-name', text);
     if (productCount > 0) {
-      const countEl = child(parent, 'span', 'local-hierarchy-node-count', '\u00b7 ' + num(productCount));
-      countEl.setAttribute('aria-label', num(productCount) + ' products');
+      const countText = num(productCount);
+      const productWord = productCount === 1 ? 'product' : 'products';
+      const countEl = child(parent, 'span', 'local-hierarchy-node-count', '\u00b7 ' + countText);
+      countEl.setAttribute('aria-label', countText + ' ' + productWord);
     }
   }
 
   function productKeysAtPath(tree, activePath) {
     const node = nodeAtPath(tree, activePath);
     if (!node) return null;
-    return productKeysForRows(collectRowsUnder(node));
+    return productKeysForRows(rowsUnderNode(node));
   }
 
   function singleProviderUnder(node) {
@@ -292,7 +299,7 @@
     root.type = 'button';
     root.dataset.localHierarchyAction = 'root';
     root.dataset.localHierarchyPath = '';
-    appendNodeLabel(root, 'All', productCountForRows(collectRowsUnder(tree)));
+    appendNodeLabel(root, 'All', productCountForRows(rowsUnderNode(tree)));
     let node = tree;
     let path = '';
     const pathParts = String(activePath || '').split('>').filter(Boolean);

@@ -415,7 +415,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   font-variant-numeric: tabular-nums;
 }
 
-.ar-local-cdr #hierarchy .ar-report-infobox-tlabel,
+.ar-local-cdr #hierarchy .ar-report-infobox-trow--branch .ar-report-infobox-tlabel,
 .ar-local-cdr #hierarchy .ar-report-underchart-tree-crumb {
   display: inline-flex;
   flex-wrap: wrap;
