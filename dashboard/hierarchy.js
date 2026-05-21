@@ -84,8 +84,6 @@
   }
 
   function displayHierarchyPath(state) {
-    const hover = String(state.hoverHierarchyPath || '').trim();
-    if (hover) return hover;
     return String(state.hierarchyPath || '');
   }
 

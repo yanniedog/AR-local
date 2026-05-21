@@ -55,8 +55,6 @@
     hierarchyPath: '',
     focusProvider: '',
     hoverProvider: '',
-    hoverHierarchyPath: '',
-    hoverHierarchyProductKeys: null,
     focusedProductKeys: null,
     chartHoverDate: '',
     chartPinnedDate: '',
@@ -124,9 +122,6 @@
   }
 
   function focusActiveProvider() {
-    if (hasHierarchyHover()) {
-      return String(state.focusProvider || '').trim();
-    }
     return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
@@ -158,9 +153,7 @@
   const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
-    const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
-    const focus = hover ? null : state.focusedProductKeys;
-    const keys = hover || focus;
+    const keys = state.focusedProductKeys;
     if (!keys) return rows;
     return rows.filter((row) => keys.has(rowProductKey(row)));
   }
@@ -471,7 +464,7 @@
 
   function relevantProviderKeys() {
     const hover = String(state.hoverProvider || '').trim();
-    if (hover && !hasHierarchyHover()) {
+    if (hover) {
       return providerMatchKeys(hover);
     }
     const focus = String(state.focusProvider || '').trim();
@@ -584,17 +577,6 @@
       rows = rateRowsForChartAnchor(rows);
     }
     window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, hierarchyRenderOptions(options));
-  }
-
-  function renderHierarchySlicePreview() {
-    if (!$('hierarchy') || $('hierarchy').hidden) return;
-    state._hierarchySlicePreview = true;
-    try {
-      refreshHierarchyPanel(undefined, { slicePreview: true });
-      scheduleChartRedraw();
-    } finally {
-      state._hierarchySlicePreview = false;
-    }
   }
 
   function setLinks() {
@@ -1018,89 +1000,8 @@
       });
   }
 
-  function hasHierarchyHover() {
-    return !!(state.hoverHierarchyProductKeys && state.hoverHierarchyProductKeys.size);
-  }
-
-  function clearHierarchyHoverState() {
-    state.hoverHierarchyPath = '';
-    state.hoverHierarchyProductKeys = null;
-  }
-
   function resetHierarchyHover() {
     state.hoverProvider = '';
-    clearHierarchyHoverState();
-    lastHierarchyHoverSignature = '';
-  }
-
-  function hierarchyHoverDomSignature(node) {
-    const path = node.getAttribute('data-ribbon-tree-path')
-      || node.getAttribute('data-local-hierarchy-path')
-      || '';
-    const provider = node.getAttribute('data-local-hierarchy-provider') || '';
-    const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
-    return `${path}|${provider}|${productKey}`;
-  }
-
-  let lastHierarchyHoverSignature = '';
-  let hierarchyHoverDebounceTimer = 0;
-
-  function resolveHierarchyHoverProductKeys(node, tree, hierarchyEl) {
-    const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
-    if (productKey) return new Set([rowProductKey({ product_key: productKey })]);
-    const path = node.getAttribute('data-ribbon-tree-path')
-      || node.getAttribute('data-local-hierarchy-path')
-      || '';
-    if (!path || !tree || !window.LocalCdrHierarchy || !window.LocalCdrHierarchy.productKeysAtPath) {
-      return null;
-    }
-    if (hierarchyEl) {
-      if (!hierarchyEl.__localHierarchyPathKeys) hierarchyEl.__localHierarchyPathKeys = new Map();
-      const cached = hierarchyEl.__localHierarchyPathKeys.get(path);
-      if (cached) return cached;
-      const keys = window.LocalCdrHierarchy.productKeysAtPath(tree, path);
-      if (keys) hierarchyEl.__localHierarchyPathKeys.set(path, keys);
-      return keys;
-    }
-    return window.LocalCdrHierarchy.productKeysAtPath(tree, path);
-  }
-
-  function applyHierarchyTableHover(node) {
-    const domSig = hierarchyHoverDomSignature(node);
-    if (domSig === lastHierarchyHoverSignature) return;
-    const hierarchyEl = $('hierarchy');
-    const tree = hierarchyEl && hierarchyEl.__localHierarchyTree;
-    const path = node.getAttribute('data-ribbon-tree-path')
-      || node.getAttribute('data-local-hierarchy-path')
-      || '';
-    const provider = node.getAttribute('data-local-hierarchy-provider') || '';
-    const productKeys = resolveHierarchyHoverProductKeys(node, tree, hierarchyEl);
-    state.hoverHierarchyPath = path;
-    state.hoverHierarchyProductKeys = productKeys;
-    state.hoverProvider = provider;
-    lastHierarchyHoverSignature = domSig;
-    refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    renderHierarchySlicePreview();
-  }
-
-  function scheduleHierarchyTableHover(node) {
-    if (hierarchyHoverDebounceTimer) clearTimeout(hierarchyHoverDebounceTimer);
-    hierarchyHoverDebounceTimer = window.setTimeout(() => {
-      hierarchyHoverDebounceTimer = 0;
-      applyHierarchyTableHover(node);
-    }, 100);
-  }
-
-  function clearHierarchyTableHover() {
-    if (hierarchyHoverDebounceTimer) {
-      clearTimeout(hierarchyHoverDebounceTimer);
-      hierarchyHoverDebounceTimer = 0;
-    }
-    if (!state.hoverProvider && !state.hoverHierarchyProductKeys && !state.hoverHierarchyPath) return;
-    resetHierarchyHover();
-    lastHierarchyHoverSignature = '';
-    refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    renderHierarchySlicePreview();
   }
 
   function bind() {
@@ -1134,17 +1035,15 @@
       const btn = event.target.closest('[data-provider-pick]');
       if (!btn) return;
       const next = btn.dataset.providerPick || '';
-      if (state.hoverProvider === next && !hasHierarchyHover()) return;
+      if (state.hoverProvider === next) return;
       state.hoverProvider = next;
-      clearHierarchyHoverState();
-      lastHierarchyHoverSignature = '';
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       btn.classList.add('is-hover');
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
       redrawChartIfFocusChanged();
     });
     logoWrap.addEventListener('mouseleave', () => {
-      if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
+      if (!state.hoverProvider) return;
       resetHierarchyHover();
       logoWrap.querySelectorAll('.local-provider-logo-btn.is-hover').forEach((el) => el.classList.remove('is-hover'));
       refreshProviderHighlightUi(undefined, { highlightOnly: true });
