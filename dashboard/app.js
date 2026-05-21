@@ -62,6 +62,7 @@
     chartPinnedDate: '',
     chartDates: [],
     _chartFocusPainted: '',
+    _chartRedrawFrame: 0,
     ingestSchedule: null,
     ingestClockOffsetMs: 0,
     ingestScheduleFetchedAtMs: 0,
@@ -157,15 +158,11 @@
   const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
-    const focus = state.focusedProductKeys;
     const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
-    if (!focus && !hover) return rows;
-    return rows.filter((row) => {
-      const key = rowProductKey(row);
-      if (focus && !focus.has(key)) return false;
-      if (hover && !hover.has(key)) return false;
-      return true;
-    });
+    const focus = hover ? null : state.focusedProductKeys;
+    const keys = hover || focus;
+    if (!keys) return rows;
+    return rows.filter((row) => keys.has(rowProductKey(row)));
   }
 
   function historyRowMatchesLiveTable(row) {
@@ -421,6 +418,8 @@
     if (state.chartHoverDate === next) return;
     state.chartHoverDate = next;
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
+    refreshHierarchyPanel(undefined, { highlightOnly: false, slicePreview: true });
+    redrawChartIfFocusChanged();
   }
 
   function onChartSliceClick(dateYmd) {
@@ -533,6 +532,16 @@
     renderSelectedLogos(active);
   }
 
+  function hierarchyRenderOptions(overrides) {
+    return {
+      ...(overrides || {}),
+      onFocusChange: (productKeys) => {
+        if (state._hierarchySlicePreview) return;
+        state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
+      },
+    };
+  }
+
   function refreshHierarchyPanel(activeProviders, options) {
     if (!$('hierarchy') || $('hierarchy').hidden) return;
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
@@ -542,11 +551,18 @@
       return;
     }
     const rows = applyFocusFilter(normalizeRows(rateRows()));
-    window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
-      onFocusChange: (productKeys) => {
-        state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
-      },
-    });
+    window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, hierarchyRenderOptions(options));
+  }
+
+  function renderHierarchySlicePreview() {
+    if (!$('hierarchy') || $('hierarchy').hidden) return;
+    state._hierarchySlicePreview = true;
+    try {
+      refreshHierarchyPanel(undefined, { slicePreview: true });
+      scheduleChartRedraw();
+    } finally {
+      state._hierarchySlicePreview = false;
+    }
   }
 
   function setLinks() {
@@ -801,11 +817,7 @@
       $('hierarchy').hidden = false;
       const activeProviders = relevantProviderKeys();
       state.isProviderDimmed = (provider) => isProviderDimmed(provider, activeProviders);
-      window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, {
-        onFocusChange: (productKeys) => {
-          state.focusedProductKeys = productKeys && productKeys.size ? productKeys : null;
-        },
-      });
+      window.LocalCdrHierarchy.render($('hierarchy'), $('table-count'), rows, state, hierarchyRenderOptions());
     } else {
       renderFlatTable(rows);
     }
@@ -843,6 +855,15 @@
 
   function redrawChart() {
     drawChartFromState(chartSliceRows(normalizeRows(rateRows())));
+  }
+
+  function scheduleChartRedraw() {
+    if (state._chartRedrawFrame) return;
+    const raf = window.requestAnimationFrame || ((fn) => window.setTimeout(fn, 0));
+    state._chartRedrawFrame = raf(() => {
+      state._chartRedrawFrame = 0;
+      redrawChart();
+    });
   }
 
   /** Hover paths: skip full ECharts rebuild when ribbon focus is unchanged. */
@@ -990,6 +1011,7 @@
   }
 
   let lastHierarchyHoverSignature = '';
+  let hierarchyHoverDebounceTimer = 0;
 
   function resolveHierarchyHoverProductKeys(node, tree, hierarchyEl) {
     const productKey = node.getAttribute('data-local-hierarchy-product-key') || '';
@@ -1026,14 +1048,27 @@
     state.hoverProvider = provider;
     lastHierarchyHoverSignature = domSig;
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    redrawChartIfFocusChanged();
+    renderHierarchySlicePreview();
+  }
+
+  function scheduleHierarchyTableHover(node) {
+    if (hierarchyHoverDebounceTimer) clearTimeout(hierarchyHoverDebounceTimer);
+    hierarchyHoverDebounceTimer = window.setTimeout(() => {
+      hierarchyHoverDebounceTimer = 0;
+      applyHierarchyTableHover(node);
+    }, 100);
   }
 
   function clearHierarchyTableHover() {
-    if (!state.hoverProvider && !state.hoverHierarchyProductKeys) return;
+    if (hierarchyHoverDebounceTimer) {
+      clearTimeout(hierarchyHoverDebounceTimer);
+      hierarchyHoverDebounceTimer = 0;
+    }
+    if (!state.hoverProvider && !state.hoverHierarchyProductKeys && !state.hoverHierarchyPath) return;
     resetHierarchyHover();
+    lastHierarchyHoverSignature = '';
     refreshProviderHighlightUi(undefined, { highlightOnly: true });
-    redrawChartIfFocusChanged();
+    renderHierarchySlicePreview();
   }
 
   function bind() {
@@ -1105,9 +1140,11 @@
     $('hierarchy').addEventListener('mouseover', (event) => {
       const node = event.target.closest('[data-local-hierarchy-action], [data-local-hierarchy-hover]');
       if (!node) return;
-      applyHierarchyTableHover(node);
+      scheduleHierarchyTableHover(node);
     });
-    $('hierarchy').addEventListener('mouseleave', () => {
+    $('hierarchy').addEventListener('mouseleave', (event) => {
+      const related = event.relatedTarget;
+      if (related && $('hierarchy').contains(related)) return;
       clearHierarchyTableHover();
     });
 
