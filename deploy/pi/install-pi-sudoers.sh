@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
-# Install passwordless sudo rules for AR-local deploy (nginx + systemd restarts).
-# Run once on the Pi with an interactive sudo session:
+# Install passwordless sudo for user pi (full NOPASSWD for agent automation).
+# Run once on the Pi with one interactive sudo password:
 #   sudo bash /srv/ar-local/AR-local/deploy/pi/install-pi-sudoers.sh
+# Or from Windows: ssh -t ar-local-pi5 'bash /srv/ar-local/AR-local/deploy/pi/bootstrap-pi-port80.sh'
 set -eu
 
 repo_dir="${1:-/srv/ar-local/AR-local}"

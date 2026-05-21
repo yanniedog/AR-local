@@ -1,20 +1,5 @@
-# Passwordless AR-local Pi deploy (install: deploy/pi/install-pi-sudoers.sh)
+# Passwordless sudo for Pi user pi (agents / npm run pi:deploy).
+# Install: deploy/pi/install-pi-sudoers.sh  (one interactive sudo on first run)
 # Validates with: sudo visudo -cf /etc/sudoers.d/ar-local-pi
 
-Cmnd_Alias AR_LOCAL_SYSTEMCTL = \
-    /usr/bin/systemctl restart ar-local-dashboard.service, \
-    /usr/bin/systemctl restart ar-local-daily.timer, \
-    /usr/bin/systemctl reload-or-restart nginx, \
-    /usr/bin/systemctl reload-or-restart nginx.service, \
-    /usr/bin/systemctl restart nginx.service, \
-    /usr/bin/systemctl enable nginx.service
-
-Cmnd_Alias AR_LOCAL_NGINX = /usr/sbin/nginx -t
-
-# Full port-80 proxy install (matches pi_deploy_verify: sudo sh install-pi-dashboard-proxy.sh <repo>)
-Cmnd_Alias AR_LOCAL_PROXY_INSTALL = \
-    /bin/sh /srv/ar-local/AR-local/deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
-
-pi ALL=(root) NOPASSWD: AR_LOCAL_SYSTEMCTL
-pi ALL=(root) NOPASSWD: AR_LOCAL_NGINX
-pi ALL=(root) NOPASSWD: AR_LOCAL_PROXY_INSTALL
+pi ALL=(ALL) NOPASSWD: ALL
