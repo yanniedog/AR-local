@@ -46,6 +46,7 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Bot thread closure gate | `npm run pr:bot-feedback-check -- --pr <n>` |
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
 | PR watch one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = gates failing) |
+| PR watch 24/7 autopilot | `npm run pr:watch:autopilot` (Cursor invoke + merge/Pi; see `.cursor/rules/pr-watch-persistent.mdc`) |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Pi dashboard smoke HTTP (default acceptance) | `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/` |
