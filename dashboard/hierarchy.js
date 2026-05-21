@@ -83,11 +83,18 @@
     return PALETTE[hashText(row && row.provider) % PALETTE.length];
   }
 
+  function displayHierarchyPath(state) {
+    const hover = String(state.hoverHierarchyPath || '').trim();
+    if (hover) return hover;
+    return String(state.hierarchyPath || '');
+  }
+
   function chartDatePair(state) {
     const dates = Array.isArray(state.chartDates) ? state.chartDates.filter(Boolean) : [];
     if (dates.length < 2) return { anchor: '', previous: '' };
     const pinned = String(state.chartPinnedDate || '').slice(0, 10);
-    const anchor = pinned || String(dates[dates.length - 1] || '').slice(0, 10);
+    const hover = String(state.chartHoverDate || '').slice(0, 10);
+    const anchor = pinned || hover || String(dates[dates.length - 1] || '').slice(0, 10);
     const ix = dates.indexOf(anchor);
     const anchorIx = ix >= 0 ? ix : dates.length - 1;
     const previous = dates[anchorIx - 1] || '';
@@ -491,9 +498,9 @@
     const scrollEl = scrollContainer(container);
     const savedScrollTop = scrollEl ? scrollEl.scrollTop : 0;
     const visible = rows;
+    let countRows = visible;
     const providerCount = new Set(visible.map((row) => row.provider).filter(Boolean)).size;
     const productCount = new Set(visible.map((row) => row.product_key || row.product_id || row.product_name)).size;
-    countEl.textContent = `${num(visible.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
     const panel = ensurePanel(container);
     if (!panel) {
       setRibbonHierarchyLayoutActive(container, false);
@@ -518,6 +525,10 @@
       tree = window.LocalCdrTaxonomyTree.buildAnnotatedTree(visible, state.highlightMax);
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
+    const activePath = prunePath(tree, displayHierarchyPath(state)) || displayHierarchyPath(state);
+    const sliceNode = activePath ? nodeAtPath(tree, activePath) : null;
+    if (sliceNode) countRows = collectRowsUnder(sliceNode);
+    countEl.textContent = `${num(countRows.length)} rates / ${num(productCount)} products / ${num(providerCount)} providers`;
     if (!visible.length || tree.kind === 'empty') {
       setRibbonHierarchyLayoutActive(container, false);
       panel.show({
@@ -528,15 +539,17 @@
       return;
     }
     setRibbonHierarchyLayoutActive(container, true);
-    emitFocus(options, tree, state.hierarchyPath || '');
+    if (!options || !options.slicePreview) {
+      emitFocus(options, tree, state.hierarchyPath || '');
+    }
     const metaParts = [`${rangeText(visible)}`, `${num(productCount)} products`, `${num(providerCount)} providers`];
     panel.show({
       heading: 'Current slice',
       meta: `${state.manifest.run_date} • ${metaParts.join(' • ')}`,
       compact: true,
       renderBody: (wrap) => {
-        renderBreadcrumbs(wrap, tree, state.hierarchyPath || '');
-        renderTree(wrap, tree, '', 0, state.hierarchyPath || '', state);
+        renderBreadcrumbs(wrap, tree, activePath);
+        renderTree(wrap, tree, '', 0, activePath, state);
       },
     });
     restoreScrollTop(scrollContainer(container), savedScrollTop);
