@@ -55,6 +55,7 @@ def service_active() -> bool:
 
 
 def run_daily_ingest(date_text: str, dry_run: bool) -> None:
+    date_text = str(date_text)
     cmd = [sys.executable, str(REPO_ROOT / "pi_daily_sync.py"), "--banks-only", "--date", date_text]
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")

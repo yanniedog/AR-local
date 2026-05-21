@@ -60,10 +60,8 @@ class DailyIngestLock:
             except OSError:
                 age = 0
             owner_pid = self._owner_pid()
-            if owner_pid and not self._pid_is_alive(owner_pid):
-                self.path.unlink(missing_ok=True)
-                self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            elif age > LOCK_STALE_SECONDS and not (owner_pid and self._pid_is_alive(owner_pid)):
+            owner_alive = bool(owner_pid and self._pid_is_alive(owner_pid))
+            if (owner_pid and not owner_alive) or (age > LOCK_STALE_SECONDS and not owner_alive):
                 self.path.unlink(missing_ok=True)
                 self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             else:
