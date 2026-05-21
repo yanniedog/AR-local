@@ -1,0 +1,35 @@
+---
+description: 24/7 PR watch autopilot — enable persistent gate scan, Cursor remediation, merge, Pi deploy.
+globs:
+alwaysApply: false
+---
+
+# PR watch autopilot (24/7)
+
+When the user wants **continuous PR babysitting without manual "run pr watch"**:
+
+1. Read [`.cursor/skills/pr-watch-agent/SKILL.md`](../skills/pr-watch-agent/SKILL.md) § Autopilot.
+2. Run **`npm run pr:watch:autopilot`** (or register Windows task via `scripts/install-pr-watch-task.ps1`).
+3. Autopilot calls **`npm run pr:watch:tick`** on an interval; writes **`.ar-pr-watch/state.json`** (`remediateFirst`, `needsAgent`).
+4. On failing gates, autopilot **invokes Cursor** (CLI `agent -p --force`, or `@cursor/sdk` if `CURSOR_API_KEY`, or `AGENT_LOOP_WAKE_PR_WATCH` sentinel for IDE loop monitors).
+5. On all gates green (oldest PR first), tick may **squash merge** + **`pi:deploy`** + **`verify:pi`** (`http://100.78.28.10/`).
+
+## Env
+
+| Variable | Purpose |
+|----------|---------|
+| `AR_PR_WATCH_AUTOPILOT=1` | Mark host process (install script sets this) |
+| `AR_CURSOR_AGENT_CMD` | Full override, e.g. `agent` or path to CLI |
+| `CURSOR_API_KEY` | Enables `@cursor/sdk` fallback (`npm install @cursor/sdk`) |
+| `AR_PR_WATCH_SKIP_CURSOR=1` | Gate scan + merge only; no agent invoke |
+| `AR_PR_WATCH_SKIP_MERGE=1` | Never merge from autopilot |
+| `AR_PR_WATCH_TICK_SEC` | Idle poll seconds (default 120) |
+| `AR_PR_WATCH_BUSY_SEC` | Poll when remediation needed (default 60) |
+
+## Limits
+
+- Machine must stay on; **one** autopilot instance (`.ar-pr-watch/autopilot.lock`).
+- Requires **`gh auth login`**; does not bypass **`WORKFLOW.md`** (bot wait, feedback plan, thread closure).
+- Cursor CLI may be absent — install from [Cursor CLI docs](https://cursor.com/docs/cli/install) or use SDK/sentinel fallback.
+
+**Probe:** `npm run pr:watch:autopilot -- --probe-cursor`

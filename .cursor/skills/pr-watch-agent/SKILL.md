@@ -133,10 +133,50 @@ Optional: **post-merge-verify-agent** for evidence (Browser MCP on Pi URL).
 | Agent loop | Re-invoke skill after each cycle until idle |
 | Script poll | `npm run pr:watch-once -- --watch --idle-min 5` |
 | Chief background | `Task` + this skill when open PRs exist; one pr-watch worker at a time |
+| **24/7 autopilot** | `npm run pr:watch:autopilot` — no manual "run pr watch" each cycle |
 
 ```sh
 npm run ship:closeout:strict && npm run wait-for-bots   # session idle only when no open PR work
 ```
+
+## Autopilot (24/7, Cursor-invoked fixes)
+
+**Goal:** Gate scan, **programmatic Cursor remediation** on failing PRs, merge oldest when green, Pi deploy — without babysitting.
+
+| Command | Role |
+|---------|------|
+| `npm run pr:watch:autopilot` | Daemon loop (single-instance lock) |
+| `npm run pr:watch:tick` | One tick: state.json, optional merge/Pi, optional `--invoke` Cursor |
+| `npm run pr:watch:autopilot -- --probe-cursor` | Show resolved Cursor backend |
+
+**State:** `.ar-pr-watch/state.json` — `remediateFirst` (oldest failing PRs), `needsAgent`, last invoke metadata.
+
+**Cursor invocation order:**
+
+1. `AR_CURSOR_AGENT_CMD` if set (e.g. `agent`)
+2. `agent` on PATH (Cursor CLI — [install](https://cursor.com/docs/cli/install))
+3. `CURSOR_API_KEY` + `@cursor/sdk` (`Agent.create` local cwd)
+4. Fallback: print `AGENT_LOOP_WAKE_PR_WATCH {"prompt":...}` and write `.ar-pr-watch/wake.json` for a monitored Cursor `/loop` shell
+
+Typical headless fix command (when CLI installed):
+
+```sh
+agent -p --force "<pr-watch prompt with remediateFirst PR numbers>"
+```
+
+**Windows 24/7 host:**
+
+```powershell
+# Foreground (logs append to .ar-pr-watch/autopilot.log)
+powershell -NoProfile -File scripts/ar-local-pr-watch-autopilot.ps1
+
+# Scheduled task at logon (admin)
+powershell -ExecutionPolicy Bypass -File scripts/install-pr-watch-task.ps1
+```
+
+**Env:** `AR_PR_WATCH_AUTOPILOT=1`, `AR_PR_WATCH_TICK_SEC`, `AR_PR_WATCH_BUSY_SEC`, `AR_PR_WATCH_SKIP_CURSOR`, `AR_PR_WATCH_SKIP_MERGE`. See `.cursor/rules/pr-watch-persistent.mdc`.
+
+**Limits:** PC must stay on; one worker; `gh` auth required; autopilot does not waive bot wait / feedback plan / thread closure — Cursor agent must complete WORKFLOW.md steps 5b–6 before merge gates pass.
 
 ## Return format
 

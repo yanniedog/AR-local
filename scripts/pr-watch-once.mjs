@@ -14,14 +14,13 @@
  *   npm run pr:watch-once -- --watch --idle-min 5
  */
 import { setTimeout as sleepMs } from 'node:timers/promises';
-import { evaluateGates } from './lib/pr-gates-lib.mjs';
-import { hasGh, ghJson, repoSlug } from './lib/gh-pr-review-threads.mjs';
+import { hasGh } from './lib/gh-pr-review-threads.mjs';
+import { runWatchCycle, cycleToState } from './lib/pr-watch-cycle.mjs';
+import { writeState, DEFAULT_PROMPT } from './lib/pr-watch-state.mjs';
 
 const DEFAULT_IDLE_MIN = 5;
 const MAX_IDLE_MIN = 120;
 const POLL_SEC = 60;
-const OPEN_PR_PAGE_SIZE = 100;
-
 /** Human-readable status: stderr when --json so stdout stays pure JSON. */
 function status(msg, { json, quiet }) {
   if (quiet) return;
@@ -57,107 +56,23 @@ function parseArgs(argv) {
   return out;
 }
 
-function listOpenPrs() {
-  const { owner, name } = repoSlug();
-  const rows = [];
-  for (let page = 1; page <= 50; page += 1) {
-    const batch = ghJson([
-      'api',
-      `repos/${owner}/${name}/pulls`,
-      '-f',
-      'state=open',
-      '-f',
-      `per_page=${OPEN_PR_PAGE_SIZE}`,
-      '-f',
-      `page=${String(page)}`,
-    ]);
-    if (!Array.isArray(batch) || !batch.length) break;
-    for (const pr of batch) {
-      rows.push({
-        number: pr.number,
-        title: pr.title,
-        headRefName: pr.head?.ref || '',
-        createdAt: pr.created_at,
-        mergeable: pr.mergeable,
-        mergeStateStatus: pr.merge_state_status,
-      });
+function logGateResults(cycle, args) {
+  for (const r of cycle.results || []) {
+    if (r.conflictHint && !args.quiet) {
+      console.error(`  PR #${r.number} (${r.headRefName}): ${r.conflictHint}`);
     }
-    if (batch.length < OPEN_PR_PAGE_SIZE) break;
-  }
-  return rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-}
-
-function conflictHint(pr) {
-  const ms = pr.mergeStateStatus;
-  const m = pr.mergeable;
-  if (ms === 'DIRTY' || m === 'CONFLICTING') {
-    return 'merge conflict — rebase onto origin/main before gates can pass';
-  }
-  if (ms === 'BEHIND') return 'branch behind base — rebase origin/main';
-  return null;
-}
-
-function auditPr(prNumber, { quiet, json }) {
-  const result = evaluateGates(prNumber, { skipFeedbackPlan: false });
-  const failed = result.gates.filter((g) => !g.pass);
-  if (!quiet) {
-    if (result.pass) {
-      status(`  PR #${prNumber}: all merge gates passed`, { json, quiet: false });
+    if (args.quiet) continue;
+    if (r.gatesPass) {
+      status(`  PR #${r.number}: all merge gates passed`, { json: args.json, quiet: false });
     } else {
-      console.error(`  PR #${prNumber}: ${failed.length} gate(s) failing`);
+      const failed = (r.gates || []).filter((g) => !g.pass);
+      console.error(`  PR #${r.number}: ${failed.length} gate(s) failing`);
       for (const g of failed) {
         console.error(`    [${g.id}] ${g.detail}`);
         if (g.action) console.error(`      → ${g.action}`);
       }
     }
   }
-  return result;
-}
-
-async function runCycle(args) {
-  let prs;
-  if (args.pr) {
-    const view = ghJson([
-      'pr',
-      'view',
-      String(args.pr),
-      '--json',
-      'number,title,headRefName,createdAt,state,mergeable,mergeStateStatus',
-    ]);
-    if (view.state !== 'OPEN') {
-      return { idle: false, prs: [], results: [], error: `PR #${args.pr} is not open (state=${view.state})` };
-    }
-    prs = [view];
-  } else {
-    prs = listOpenPrs();
-  }
-
-  if (prs.length === 0) {
-    return { idle: true, prs: [], results: [] };
-  }
-
-  const results = [];
-  for (const pr of prs) {
-    const hint = conflictHint(pr);
-    if (hint && !args.quiet) {
-      console.error(`  PR #${pr.number} (${pr.headRefName}): ${hint}`);
-    }
-    const gateResult = auditPr(pr.number, { quiet: args.quiet, json: args.json });
-    results.push({
-      number: pr.number,
-      title: pr.title,
-      headRefName: pr.headRefName,
-      createdAt: pr.createdAt,
-      mergeable: pr.mergeable,
-      mergeStateStatus: pr.mergeStateStatus,
-      conflictHint: hint,
-      gatesPass: gateResult.pass,
-      gates: gateResult.gates,
-    });
-  }
-
-  const allPass = results.every((r) => r.gatesPass);
-  return { idle: false, prs, results, allPass };
 }
 
 async function main() {
@@ -193,7 +108,7 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
   };
 
   const run = async () => {
-    const cycle = await runCycle(args);
+    const cycle = await runWatchCycle({ pr: args.pr || null });
     if (cycle.error) {
       console.error(`pr:watch-once: ${cycle.error}`);
       return { exitCode: 1, cycle };
@@ -209,6 +124,8 @@ Delegate remediation to pr-fix-agent; merge/deploy per .cursor/skills/pr-watch-a
     for (const pr of cycle.prs) {
       status(`  #${pr.number} ${pr.headRefName} — ${pr.title}`, args);
     }
+    logGateResults(cycle, args);
+    writeState(cycleToState(cycle, { prompt: DEFAULT_PROMPT }));
 
     if (args.json) {
       emitJson({
