@@ -55,6 +55,8 @@
     hierarchyPath: '',
     focusProvider: '',
     hoverProvider: '',
+    hoverHierarchyPath: '',
+    hoverHierarchyProductKeys: null,
     focusedProductKeys: null,
     chartHoverDate: '',
     chartPinnedDate: '',
@@ -122,6 +124,9 @@
   }
 
   function focusActiveProvider() {
+    if (hasHierarchyHover()) {
+      return String(state.focusProvider || '').trim();
+    }
     return String(state.hoverProvider || state.focusProvider || '').trim();
   }
 
@@ -153,7 +158,9 @@
   const rowProductKey = (row) => window.LocalCdrHierarchy.rowProductKey(row);
 
   function applyHierarchyFilter(rows) {
-    const keys = state.focusedProductKeys;
+    const hover = hasHierarchyHover() ? state.hoverHierarchyProductKeys : null;
+    const focus = hover ? null : state.focusedProductKeys;
+    const keys = hover || focus;
     if (!keys) return rows;
     return rows.filter((row) => keys.has(rowProductKey(row)));
   }
@@ -432,7 +439,7 @@
         }
       }
     });
-    return normalizeRows(out);
+    return out;
   }
 
   function onChartHoverDate(dateYmd) {
@@ -464,7 +471,7 @@
 
   function relevantProviderKeys() {
     const hover = String(state.hoverProvider || '').trim();
-    if (hover) {
+    if (hover && !hasHierarchyHover()) {
       return providerMatchKeys(hover);
     }
     const focus = String(state.focusProvider || '').trim();
