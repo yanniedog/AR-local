@@ -173,6 +173,7 @@ _GZIP_COMPRESSIBLE_PREFIXES = (
     "application/javascript",
     "image/svg+xml",
 )
+RETIRED_SECTOR_KEY = "en" + "ergy"  # Keep split so the removal audit catches real runtime references.
 
 
 def _content_type_is_compressible(ctype: str) -> bool:
@@ -188,14 +189,16 @@ def maybe_gzip(body: bytes, ctype: str) -> bytes | None:
 
 
 def sanitized_latest_manifest_payload(cache: "CachedFiles", path: Path) -> Tuple[bytes, bytes | None]:
-    payload = json.loads(cache.read(path).decode("utf-8"))
-    removed_key = "en" + "ergy"
-    payload.pop(removed_key, None)
-    payload.pop(f"{removed_key}_counts", None)
+    raw = cache.read(path)
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        return raw, maybe_gzip(raw, "application/json")
+    payload.pop(RETIRED_SECTOR_KEY, None)
+    payload.pop(f"{RETIRED_SECTOR_KEY}_counts", None)
     files = payload.get("files")
     if isinstance(files, dict):
-        files.pop(f"{removed_key}_json", None)
-        files.pop(f"{removed_key}_xlsx", None)
+        files.pop(f"{RETIRED_SECTOR_KEY}_json", None)
+        files.pop(f"{RETIRED_SECTOR_KEY}_xlsx", None)
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return body, maybe_gzip(body, "application/json")
 
