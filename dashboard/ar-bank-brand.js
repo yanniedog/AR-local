@@ -125,6 +125,17 @@
         return getMeta(value).name;
     }
 
+    function tooltipLabel(value) {
+        var raw = String(value == null ? '' : value).trim();
+        var meta = getMeta(value);
+        var displayName = raw || meta.name;
+        var abbrev = String(meta.short || '').trim();
+        if (!abbrev || abbrev === '-' || abbrev.toLowerCase() === displayName.toLowerCase()) {
+            return displayName;
+        }
+        return displayName + ' (' + abbrev + ')';
+    }
+
     function matchesQuery(value, query) {
         var needle = normalizeSearch(query);
         if (!needle) return true;
@@ -155,7 +166,7 @@
         if (opts.className) classes.push(String(opts.className));
 
         return '' +
-            '<span class="' + classes.join(' ') + '" title="' + esc(meta.name) + '">' +
+            '<span class="' + classes.join(' ') + '" title="' + esc(tooltipLabel(value)) + '">' +
                 '<span class="bank-badge-logo-wrap" aria-hidden="true">' +
                     (meta.icon
                         ? '<img class="bank-badge-logo" src="' + esc(meta.icon) + '" alt="" width="32" height="32" loading="eager" fetchpriority="low" draggable="false">'
@@ -175,5 +186,6 @@
         matchesQuery: matchesQuery,
         preloadIcons: preloadIcons,
         shortLabel: shortLabel,
+        tooltipLabel: tooltipLabel,
     };
 })();

@@ -738,7 +738,9 @@
       const btn = child(rail, 'button', 'local-provider-logo-btn');
       btn.type = 'button';
       btn.dataset.providerPick = provider;
-      btn.title = provider;
+      btn.title = window.LocalCdrBrand.providerTooltip
+        ? window.LocalCdrBrand.providerTooltip(provider)
+        : provider;
       const lc = provider.toLowerCase();
       if (focus && lc === focus) btn.classList.add('is-selected');
       if (hover && lc === hover) btn.classList.add('is-hover');

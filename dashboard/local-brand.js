@@ -634,6 +634,18 @@
     return brand && brand.getMeta ? brand.getMeta(canonical) : { name: value || 'Provider', short: value || '-', icon: '' };
   }
 
+  /** Logo/tooltip label: CDR provider name plus table abbrev when it adds information. */
+  function providerTooltip(provider) {
+    const raw = String(provider || '').trim();
+    const meta = providerMeta(provider);
+    const displayName = raw || String(meta.name || '').trim() || 'Provider';
+    const abbrev = String(meta.short || '').trim();
+    if (!abbrev || abbrev === '-' || abbrev.toLowerCase() === displayName.toLowerCase()) {
+      return displayName;
+    }
+    return `${displayName} (${abbrev})`;
+  }
+
   /**
    * @param {HTMLElement} parent
    * @param {string} provider
@@ -652,7 +664,7 @@
     const classes = ['bank-badge', 'local-bank-badge'];
     if (opts.logoOnly) classes.push('local-bank-badge--logo-only');
     const badge = child(parent, 'span', classes.join(' '));
-    badge.title = provider || meta.name;
+    badge.title = providerTooltip(provider);
     const logo = child(badge, 'span', 'bank-badge-logo-wrap');
     logo.setAttribute('aria-hidden', 'true');
     mountLogoIntoWrap(logo, meta.icon || '', slugBasenames, meta, provider, {
@@ -676,5 +688,6 @@
     preloadRailProviders,
     providerDomain,
     providerMeta,
+    providerTooltip,
   };
 })();
