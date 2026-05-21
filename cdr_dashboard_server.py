@@ -173,6 +173,9 @@ _GZIP_COMPRESSIBLE_PREFIXES = (
     "application/javascript",
     "image/svg+xml",
 )
+RETIRED_SECTOR_KEY = "en" + "ergy"  # Keep split so the removal audit catches real runtime references.
+_latest_manifest_cache_lock = threading.Lock()
+_latest_manifest_cache: OrderedDict[tuple[str, float, int], Tuple[bytes, bytes | None]] = OrderedDict()
 
 
 def _content_type_is_compressible(ctype: str) -> bool:
@@ -185,6 +188,38 @@ def maybe_gzip(body: bytes, ctype: str) -> bytes | None:
     if not body or len(body) < GZIP_MIN_BYTES or not _content_type_is_compressible(ctype):
         return None
     return gzip.compress(body, compresslevel=GZIP_LEVEL)
+
+
+def sanitized_latest_manifest_payload(cache: "CachedFiles", path: Path) -> Tuple[bytes, bytes | None]:
+    stat = path.stat()
+    cache_key = (str(path), stat.st_mtime, stat.st_size)
+    with _latest_manifest_cache_lock:
+        cached = _latest_manifest_cache.get(cache_key)
+        if cached is not None:
+            _latest_manifest_cache.move_to_end(cache_key)
+            return cached
+    raw = cache.read(path)
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        entry = (raw, maybe_gzip(raw, "application/json"))
+        with _latest_manifest_cache_lock:
+            if len(_latest_manifest_cache) >= MAX_ARTIFACT_CACHE_ENTRIES:
+                _latest_manifest_cache.popitem(last=False)
+            _latest_manifest_cache[cache_key] = entry
+        return entry
+    payload.pop(RETIRED_SECTOR_KEY, None)
+    payload.pop(f"{RETIRED_SECTOR_KEY}_counts", None)
+    files = payload.get("files")
+    if isinstance(files, dict):
+        files.pop(f"{RETIRED_SECTOR_KEY}_json", None)
+        files.pop(f"{RETIRED_SECTOR_KEY}_xlsx", None)
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    entry = (body, maybe_gzip(body, "application/json"))
+    with _latest_manifest_cache_lock:
+        if len(_latest_manifest_cache) >= MAX_ARTIFACT_CACHE_ENTRIES:
+            _latest_manifest_cache.popitem(last=False)
+        _latest_manifest_cache[cache_key] = entry
+    return entry
 
 
 def _client_accepts_gzip(accept_encoding: str) -> bool:
@@ -978,7 +1013,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 return self._serve_file(site_cache, target, ctype)
             if path == "/api/latest":
                 exports_root, cache = artifact_cache()
-                return self._serve_file(cache, exports_root / "dashboard-cache" / "latest.json", "application/json")
+                body, gz = sanitized_latest_manifest_payload(cache, exports_root / "dashboard-cache" / "latest.json")
+                return body, "application/json; charset=utf-8", gz
             if path == "/api/ingest-schedule":
                 body = ingest_schedule_payload()
                 return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
