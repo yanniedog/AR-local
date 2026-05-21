@@ -127,9 +127,12 @@ Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19
 
 | Entry | URL |
 | --- | --- |
-| **Primary (Tailscale / LAN)** | `http://100.78.28.10/netdata/` |
-| LAN IP equivalent | `http://10.0.0.92/netdata/` |
-| Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/netdata/` |
+| **Primary (local metrics UI)** | `http://100.78.28.10/netdata/v3/` |
+| Short redirect (same UI) | `http://100.78.28.10/netdata/` |
+| LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
+| Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
+
+No Netdata Cloud account is required. Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled UI loads from the agent instead of `app.netdata.cloud`. Deep links under `/netdata/spaces/...` redirect to `/netdata/v3/` (the Cloud SPA breaks when unclaimed).
 
 Install or refresh:
 
@@ -147,7 +150,8 @@ systemctl is-active netdata
 du -sh /srv/ar-local/data/netdata/cache /srv/ar-local/data/netdata/lib
 curl -fsS http://127.0.0.1:19999/api/v3/info | head -c 120
 curl -fsS http://100.78.28.10/netdata/api/v3/info | head -c 120
-curl -fsSI http://127.0.0.1:19999/netdata/ | head -3
+curl -fsS "http://100.78.28.10/netdata/api/v1/data?chart=system.cpu&format=json&points=3" | head -c 200
+curl -fsSI http://100.78.28.10/netdata/v3/ | head -3
 ```
 
 After `install-pi-dashboard-proxy.sh`, the public API path is `/netdata/api/v3/...` (nginx strips `/netdata/` before proxying).
@@ -155,7 +159,7 @@ After `install-pi-dashboard-proxy.sh`, the public API path is `/netdata/api/v3/.
 From Windows (Tailscale):
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10/netdata/ -TimeoutSec 20
+Invoke-WebRequest -UseBasicParsing -Uri http://100.78.28.10/netdata/v3/ -TimeoutSec 20
 ```
 
 The agent is **not** intended for the public internet; do not port-forward `:19999` or expose Netdata outside the LAN/Tailscale trust boundary without separate auth.

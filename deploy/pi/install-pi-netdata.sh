@@ -10,10 +10,15 @@ NETDATA_CACHE="${NETDATA_CACHE:-$NETDATA_DATA_ROOT/cache}"
 NETDATA_LIB="${NETDATA_LIB:-$NETDATA_DATA_ROOT/lib}"
 NETDATA_LOG="${NETDATA_LOG:-$NETDATA_DATA_ROOT/log}"
 NETDATA_BIND="${NETDATA_BIND:-127.0.0.1}"
+NETDATA_PUBLIC_BASE="${NETDATA_PUBLIC_BASE:-http://100.78.28.10/netdata}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 
 MARKER="# AR-local nginx proxy (install-pi-netdata.sh)"
 SSD_MARKER="# AR-local portable SSD data (install-pi-netdata.sh)"
+CLOUD_MARKER="# AR-local local-only UI (install-pi-netdata.sh)"
 conf="/etc/netdata/netdata.conf"
+CLOUD_DROPIN="/etc/netdata/netdata.conf.d/ar-local-cloud.conf"
+CLOUD_D_CONF="$NETDATA_LIB/cloud.d/cloud.conf"
 SYSTEMD_DROPIN="/etc/systemd/system/netdata.service.d/ar-local-ssd.conf"
 
 if ! command -v netdata >/dev/null 2>&1; then
@@ -127,6 +132,23 @@ if [ -d /etc/netdata/netdata.conf.d ]; then
   done
 fi
 
+mkdir -p "$(dirname "$CLOUD_DROPIN")" "$NETDATA_LIB/cloud.d"
+if [ -f "$SCRIPT_DIR/ar-local-netdata-cloud.conf" ]; then
+  install -m 0644 "$SCRIPT_DIR/ar-local-netdata-cloud.conf" "$CLOUD_DROPIN"
+else
+  echo "install-pi-netdata: missing $SCRIPT_DIR/ar-local-netdata-cloud.conf" >&2
+  exit 1
+fi
+
+cat >"$CLOUD_D_CONF" <<EOF
+$CLOUD_MARKER
+[global]
+    enabled = no
+    cloud base url = $NETDATA_PUBLIC_BASE
+EOF
+chown netdata:netdata "$CLOUD_D_CONF"
+chmod 0644 "$CLOUD_D_CONF"
+
 mkdir -p "$(dirname "$SYSTEMD_DROPIN")"
 cat >"$SYSTEMD_DROPIN" <<EOF
 # AR-local: allow metrics DB under portable root ($NETDATA_DATA_ROOT)
@@ -150,4 +172,5 @@ echo "install-pi-netdata: SSD data root ${NETDATA_DATA_ROOT}"
 echo "  cache=${NETDATA_CACHE}"
 echo "  lib=${NETDATA_LIB}"
 echo "  log=${NETDATA_LOG}"
-echo "Browser URL (via nginx strip-prefix): http://<pi-tailscale-ip>/netdata/"
+echo "Browser URL (local metrics, no Cloud account): ${NETDATA_PUBLIC_BASE%/}/v3/"
+echo "  (nginx redirects /netdata/ and /netdata/spaces/... to /v3/)"

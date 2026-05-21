@@ -6,7 +6,9 @@ set -eu
 repo_dir="${1:-/srv/ar-local/AR-local}"
 repo_dir="$(cd "$repo_dir" && pwd)"
 src_conf="$repo_dir/deploy/pi/ar-local-dashboard-nginx.conf"
+src_map="$repo_dir/deploy/pi/ar-local-dashboard-nginx-netdata-map.conf"
 dst_name="ar-local-dashboard"
+dst_map="/etc/nginx/conf.d/ar-local-netdata-map.conf"
 dst_avail="/etc/nginx/sites-available/$dst_name"
 dst_enabled="/etc/nginx/sites-enabled/$dst_name"
 
@@ -21,6 +23,9 @@ if ! command -v nginx >/dev/null 2>&1; then
 fi
 
 sudo install -m 0644 "$src_conf" "$dst_avail"
+if [ -f "$src_map" ]; then
+  sudo install -m 0644 "$src_map" "$dst_map"
+fi
 if [ -e /etc/nginx/sites-enabled/default ]; then
   sudo rm -f /etc/nginx/sites-enabled/default
 fi
@@ -31,5 +36,5 @@ sudo systemctl enable nginx.service
 sudo systemctl restart nginx.service
 
 echo "Dashboard proxy: http://<pi-ip>/  (nginx :80 -> 127.0.0.1:8808)"
-echo "Netdata (if installed): http://<pi-ip>/netdata/  (nginx :80 -> 127.0.0.1:19999)"
+echo "Netdata (if installed): http://<pi-ip>/netdata/v3/  (local UI; /netdata/ redirects here)"
 echo "Direct backend (optional): http://<pi-ip>:8808/"
