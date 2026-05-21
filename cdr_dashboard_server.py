@@ -16,21 +16,24 @@ from datetime import date as calendar_date, datetime, timezone
 import sqlite3
 import threading
 import time
-import urllib.error
-import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Tuple
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
 from ar_local_ingest_schedule import DAILY_INGEST_SCHEDULE_LABEL, latest_daily_due_utc, next_daily_due_utc
-from ar_local_sectors import energy_dormant
+from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
     extract_fixed_rate_term_years,
     normalize_rate_structure_group,
     normalize_td_rate_structure_group,
+)
+from cdr_public_api_shims import (
+    latest_home_loan_rows as build_latest_home_loan_rows,
+    latest_term_deposit_rows as build_latest_term_deposit_rows,
+    local_rba_history_rows as build_local_rba_history_rows,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,8 +45,8 @@ DEFAULT_HISTORY_RUN_LIMIT = 90
 # Columns dropped from the wire vs. earlier revisions: run_date and dataset (constant
 # per response — the envelope already names both), rate_family (server now applies the
 # section filter, so the client no longer needs it), comparison_rate (never rendered
-# anywhere in the dashboard), taxonomy_path (only used by the energy panel which has
-# its own endpoint), and brand_name/brand (not real columns — the legacy SELECT
+# anywhere in the dashboard), taxonomy_path (not rendered by the section table),
+# and brand_name/brand (not real columns — the legacy SELECT
 # emitted them as '' and compact_bank_row stripped them anyway). The client hydrates
 # dataset/rate_family per-row from the response section so existing filters and the
 # history identity hash keep matching.
@@ -284,6 +287,17 @@ def canonicalize_history_row(item: dict[str, object]) -> None:
         item["ribbon_rate_structure"] = normalize_td_rate_structure_group(raw_structure, deposit_kind)
 
 
+def canonicalize_section_row(item: dict[str, object], section: str) -> None:
+    if section == "Mortgage":
+        item["ribbon_rate_structure"] = normalize_rate_structure_group(
+            str(item.get("ribbon_rate_structure") or ""),
+        )
+        return
+    raw_structure = str(item.get("ribbon_rate_structure") or "")
+    deposit_kind = str(item.get("ribbon_deposit_kind") or "")
+    item["ribbon_rate_structure"] = normalize_td_rate_structure_group(raw_structure, deposit_kind)
+
+
 def fill_history_gaps(
     rows: list[dict[str, object]],
     run_dates: list[str],
@@ -374,33 +388,6 @@ def resolve_site_public_file(site_root: Path, url_path: str) -> Path:
     return target
 
 
-def proxy_upstream_get(upstream_base: str, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str]:
-    upstream_path = path if path.startswith("/") else "/" + path
-    qs = urlencode([(key, value) for key, values in query.items() for value in values], doseq=True)
-    url = upstream_base + upstream_path + (("?" + qs) if qs else "")
-    req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60.0) as resp:
-            body = resp.read()
-            ctype = resp.headers.get("Content-Type", "application/json")
-            return body, ctype.split(";")[0] + ("; charset=utf-8" if "charset" not in ctype.lower() else "")
-    except urllib.error.HTTPError as exc:
-        body = exc.read()
-        ctype = exc.headers.get("Content-Type", "application/json") if exc.headers else "application/json"
-        raise ProxyUpstreamError(int(exc.code), body, ctype) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        payload = json.dumps(
-            {
-                "error": "economic_data_upstream_unavailable",
-                "message": str(exc),
-                "upstream": upstream_base,
-            },
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        raise ProxyUpstreamError(HTTPStatus.BAD_GATEWAY, payload, "application/json; charset=utf-8") from exc
-
-
 def is_economic_data_page_path(url_path: str) -> bool:
     path = url_path.split("?", 1)[0]
     return path == "/economic-data" or path == "/economic-data/" or path.startswith("/economic-data/")
@@ -435,16 +422,8 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
     return patched if count else out
 
 
-class ProxyUpstreamError(Exception):
-    def __init__(self, status: int, body: bytes, content_type: str) -> None:
-        super().__init__(status)
-        self.status = status
-        self.body = body
-        self.content_type = content_type
-
-
 def resolve_site_root(explicit: Path | None) -> Path:
-    """Locate AustralianRates public shell assets (foundation.css, theme.js, …)."""
+    """Locate AustralianRates public shell assets (foundation.css, theme.js, etc.)."""
     if explicit is not None:
         root = explicit.expanduser().resolve()
         marker = root / "foundation.css"
@@ -466,9 +445,7 @@ def resolve_site_root(explicit: Path | None) -> Path:
         banks = root / "assets" / "banks"
         if not banks.is_dir():
             return 0
-        return sum(
-            sum(1 for p in banks.glob(f"*{suf}") if p.is_file()) for suf in bank_icon_suffixes
-        )
+        return sum(sum(1 for p in banks.glob(f"*{suf}") if p.is_file()) for suf in bank_icon_suffixes)
 
     resolved = [c.resolve() for c in candidates]
     with_banks = [r for r in resolved if (r / "foundation.css").is_file() and bank_icon_file_count(r) > 0]
@@ -488,9 +465,6 @@ def resolve_site_root(explicit: Path | None) -> Path:
 class CachedFiles:
     def __init__(self, exports_root: Path):
         self.exports_root = exports_root.resolve()
-        # (mtime, raw_bytes, gz_or_None). gz is computed lazily by gz_for() when
-        # the response handler signals the content-type is compressible — keeps
-        # binary assets (PNGs, woff2) from wasting CPU on pointless gzip.
         self.memory: Dict[Path, Tuple[float, bytes, bytes | None]] = {}
 
     def _entry(self, path: Path) -> Tuple[Path, float, bytes, bytes | None]:
@@ -510,7 +484,6 @@ class CachedFiles:
         return data
 
     def gz_for(self, path: Path, ctype: str) -> bytes | None:
-        """Return the precomputed gz for path, lazily compressing on first call."""
         resolved, mtime, data, gz = self._entry(path)
         if gz is not None:
             return gz
@@ -524,9 +497,7 @@ class ExportResolver:
     def __init__(self, exports_value: str, runs_root: Path):
         self.exports_value = exports_value
         self.runs_root = runs_root.expanduser().resolve()
-        self.fixed_root = (
-            None if exports_value == "latest" else Path(exports_value).expanduser().resolve()
-        )
+        self.fixed_root = None if exports_value == "latest" else Path(exports_value).expanduser().resolve()
         self.cached_root: Path | None = None
         self.cached_until = 0.0
         self.lock = threading.Lock()
@@ -640,6 +611,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             out = []
             for row in rows:
                 item = {col: row[index] for index, col in enumerate(BANK_SECTION_COLUMNS)}
+                canonicalize_section_row(item, section)
                 out.append(compact_bank_row(item))
             return out
 
@@ -766,6 +738,26 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             section_cache[cache_key] = entry
         return entry
 
+    def latest_manifest_run_date() -> str:
+        exports_root, cache = artifact_cache()
+        latest = cache.read(exports_root / "dashboard-cache" / "latest.json")
+        manifest = json.loads(latest.decode("utf-8"))
+        return parse_run_date_param(str(manifest.get("run_date") or ""))
+
+    def latest_term_deposit_rows(query: Dict[str, list[str]]) -> Tuple[bytes, bytes | None]:
+        run_date = latest_manifest_run_date()
+        body = build_latest_term_deposit_rows(bank_db_for_date(run_date), run_date, query)
+        return body, maybe_gzip(body, "application/json")
+
+    def latest_home_loan_rows(query: Dict[str, list[str]]) -> Tuple[bytes, bytes | None]:
+        run_date = latest_manifest_run_date()
+        body = build_latest_home_loan_rows(bank_db_for_date(run_date), run_date, query)
+        return body, maybe_gzip(body, "application/json")
+
+    def local_rba_history_rows() -> Tuple[bytes, bytes | None]:
+        body = build_local_rba_history_rows()
+        return body, maybe_gzip(body, "application/json")
+
     def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
         with sqlite3.connect(db_path) as con:
             available = bank_rate_columns(con)
@@ -876,8 +868,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if run_date:
                 bank_ribbon_payload(run_date, "Mortgage")
                 bank_section_payload(run_date, "Mortgage")
-                if not energy_dormant():
-                    cache.read(exports_root / "dashboard-cache" / run_date / "energy.json")
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 
@@ -913,6 +903,22 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 self.send_error(HTTPStatus.BAD_REQUEST, explain=str(exc))
             except FileNotFoundError:
                 self.send_error(HTTPStatus.NOT_FOUND)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/economic-data/debug-log":
+                length = int(self.headers.get("Content-Length") or "0")
+                if length > 0:
+                    self.rfile.read(length)
+                body = b'{"ok":true}'
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_error(HTTPStatus.NOT_FOUND)
 
         def log_message(self, fmt: str, *args: object) -> None:
             print(fmt % args)
@@ -957,24 +963,6 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/ingest-schedule":
                 body = ingest_schedule_payload()
                 return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
-            if path == "/api/energy":
-                if energy_dormant():
-                    body = json.dumps(
-                        {
-                            "run_date": "",
-                            "plans": [],
-                            "counts": {},
-                            "dormant": True,
-                            "message": "Energy CDR sector is dormant (set AR_ENERGY_DORMANT=0 and use cdr_daily.py --energy to re-enable).",
-                        },
-                        separators=(",", ":"),
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
-                date = parse_run_date_param(query.get("date", [""])[0])
-                exports_root = export_resolver.root_for_date(date)
-                exports_root, cache = artifact_cache(exports_root)
-                return self._serve_file(cache, exports_root / "dashboard-cache" / date / "energy.json", "application/json")
             if path == "/api/banks":
                 date = parse_run_date_param(query.get("date", [""])[0])
                 exports_root = export_resolver.root_for_date(date)
@@ -989,6 +977,15 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 date = parse_run_date_param(query.get("date", [""])[0])
                 section = parse_bank_section_param(query.get("section", [""])[0])
                 body, gz = bank_ribbon_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
+            if path == "/api/term-deposit-rates/latest":
+                body, gz = latest_term_deposit_rows(query)
+                return body, "application/json; charset=utf-8", gz
+            if path == "/api/home-loan-rates/latest":
+                body, gz = latest_home_loan_rows(query)
+                return body, "application/json; charset=utf-8", gz
+            if path == "/api/home-loan-rates/rba/history":
+                body, gz = local_rba_history_rows()
                 return body, "application/json; charset=utf-8", gz
             if path.startswith("/api/economic-data"):
                 body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)

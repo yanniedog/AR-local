@@ -439,11 +439,6 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
             "SELECT COUNT(DISTINCT provider) FROM bank_products WHERE run_date = ?",
             (run_date,),
         )
-        energy_providers = cnt(
-            "SELECT COUNT(DISTINCT provider) FROM energy_plans WHERE run_date = ?",
-            (run_date,),
-        )
-        energy_products = cnt("SELECT COUNT(*) FROM energy_plans WHERE run_date = ?", (run_date,))
         bank_products_n = cnt("SELECT COUNT(*) FROM bank_products WHERE run_date = ?", (run_date,))
         mort_p = cnt(
             "SELECT COUNT(*) FROM bank_products WHERE run_date = ? AND dataset = 'Mortgage'",
@@ -474,8 +469,6 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
             "bank_products",
             "bank_rates",
             "bank_items",
-            "energy_plans",
-            "energy_items",
         )
         total_rows = 0
         for t in tables:
@@ -543,8 +536,6 @@ def collect_db_stats(db_path: Path) -> Dict[str, Any]:
         ("Latest run_date in DB", run_date),
         ("runs.generated_at", generated_at),
         ("Distinct banks (providers)", str(banks)),
-        ("Energy providers", str(energy_providers)),
-        ("Energy products (plans)", str(energy_products)),
         ("Bank products (all)", str(bank_products_n)),
         ("Mortgage products (bank_products)", str(mort_p)),
         ("Savings products (bank_products)", str(sav_p)),

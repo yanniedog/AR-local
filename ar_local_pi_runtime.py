@@ -58,6 +58,24 @@ def data_state_root(repo_root: Path) -> Path:
     return data_root(repo_root) / "state"
 
 
+def ensure_runtime_data_writable(repo_root: Path) -> None:
+    """Fail early when the configured runtime data tree cannot be written by this user."""
+    root = data_root(repo_root)
+    for path in (root, data_runs_root(repo_root), data_state_root(repo_root)):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(f"runtime data path is not creatable: {path}: {exc}") from exc
+        probe = path / f".write-probe-{os.getpid()}"
+        try:
+            probe.write_text("ok\n", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise RuntimeError(
+                f"runtime data path is not writable by uid {os.getuid() if hasattr(os, 'getuid') else 'unknown'}: {path}: {exc}",
+            ) from exc
+
+
 def prepare_empty_dir(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path)

@@ -83,7 +83,7 @@ Call tools via **`CallMcpTool`** with `server: "user-browser_agent_cursor"` and 
 | Local dashboard | `http://127.0.0.1:<port>/` (port from `cdr_dashboard_server.py` stdout; often `8808`) |
 | Pi / tunnel | See **Pi dashboard URLs** in `docs/UNIVERSAL_ROADMAP.md` (LAN/Tailscale IP, SSH tunnel `127.0.0.1:18808`) |
 
-**Sections to cover:** Mortgage, Savings, TD (Term Deposits), Economic Data (`data-section` / `data-section-card`). Energy may be dormant — note if absent.
+**Sections to cover:** Mortgage, Savings, TD (Term Deposits), Economic Data (`data-section` / `data-section-card`). No non-banking CDR UI should be present.
 
 **Do not** use `www.australianrates.com.au` as acceptance sign-off unless the task is explicit **parity comparison**; ship bar still uses local/Pi + `verify:local`.
 

@@ -497,7 +497,7 @@
       }
       return;
     }
-    if (section === 'TD') {
+    if (section === 'Savings' || section === 'TD') {
       rateRow.ribbon_rate_structure = tdRateStructureGroupFromText(structureRaw, rateRow.ribbon_deposit_kind);
     }
   }

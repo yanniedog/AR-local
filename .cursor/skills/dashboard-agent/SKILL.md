@@ -62,7 +62,7 @@ npm run verify:local -- --base-url=http://127.0.0.1:8808/
 - Keep routing **explicit**; preserve path traversal checks.
 - `/assets/ar-bank-brand.js` served from `dashboard/ar-bank-brand.js` when `/site/` unavailable.
 - Auto-detect `--site-root` preferring trees with `assets/banks/*.png`.
-- Economic Data may proxy macro APIs (`AR_ECONOMIC_API_UPSTREAM`); do not conflate with dormant Energy CDR.
+- Economic Data may proxy macro APIs (`AR_ECONOMIC_API_UPSTREAM`); it is not a CDR ingest sector.
 
 ## PR scope
 

@@ -45,7 +45,7 @@ python cdr_daily.py --help
 python cdr_outputs.py --help
 ```
 
-Energy is **dormant by default** (`AR_ENERGY_DORMANT=1`). Opt in only when explicitly requested: `cdr_daily.py --energy`.
+AR-local CDR ingest is banking-only: Mortgage, Savings, and TD. Do not add non-banking CDR ingest paths.
 
 ### Expected artifact layout
 
@@ -53,7 +53,7 @@ Energy is **dormant by default** (`AR_ENERGY_DORMANT=1`). Opt in only when expli
 runs/<YYYY-MM-DD>/_exports/
   dashboard-cache/
     latest.json        # manifest; cdr_dashboard_server /api/latest reads this path
-    <YYYY-MM-DD>/      # per-date banks.json, energy.json, …
+    <YYYY-MM-DD>/      # per-date banks.json, local-cdr.sqlite, …
   local-cdr.sqlite
   … (other export files from cdr_outputs.py)
 ```

@@ -16,59 +16,6 @@
   ];
 
   /**
-   * Domain lookup for Australian energy retailers. Used to fetch a Clearbit
-   * logo when no local/CDN asset exists. Only populated for well-known
-   * retailers to avoid spurious lookups for obscure providers.
-   */
-  const ENERGY_DOMAINS = {
-    'agl': 'agl.com.au',
-    'origin energy': 'originenergy.com.au',
-    'energyaustralia': 'energyaustralia.com.au',
-    'alinta energy': 'alintaenergy.com.au',
-    'red energy': 'redenergy.com.au',
-    'lumo energy': 'lumoenergy.com.au',
-    'momentum energy': 'momentum.com.au',
-    'dodo power & gas': 'dodo.com',
-    'dodo': 'dodo.com',
-    'engie': 'engie.com.au',
-    'amber': 'amber.com.au',
-    'powershop': 'powershop.com.au',
-    'actewagl': 'actewagl.com.au',
-    'aurora energy': 'auroraenergy.com.au',
-    'ergon energy': 'ergon.com.au',
-    'ergon energy retail': 'ergon.com.au',
-    'simply energy': 'simplyenergy.com.au',
-    'tango energy': 'tangoenergy.com',
-    'sumo power': 'sumo.com.au',
-    'diamond energy': 'diamondenergy.com.au',
-    'nectr': 'nectr.com.au',
-    'real utilities': 'realutilities.com.au',
-    'kogan energy': 'kogan.com',
-    'ovo energy': 'ovoenergy.com.au',
-    'flow power': 'flowpower.com.au',
-    'globird energy': 'globirdenergy.com.au',
-    'zen energy': 'zenenergy.com.au',
-    '1st energy': '1stenergy.com.au',
-    'racv': 'racv.com.au',
-    'arcline by racv': 'racv.com.au',
-    'blue nrg': 'bluenrg.com.au',
-    'covau': 'covau.com.au',
-    'future x power': 'futurexpower.com.au',
-    'energy locals': 'energylocals.com.au',
-    'energy locals urban': 'energylocals.com.au',
-    'solstice energy': 'solsticeenergy.com.au',
-    'radian energy': 'radianenergy.com.au',
-    'raa energy': 'raa.com.au',
-    'flipped energy': 'flippedenergy.com.au',
-    'gee energy': 'geeenergy.com.au',
-    'next business energy': 'nextbusinessenergy.com.au',
-    'myob powered by ovo': 'myob.com',
-    'io energy': 'ioenergy.com.au',
-    'perpetual energy': 'perpetualenergy.com.au',
-    'erc energy': 'ercenergy.com.au',
-  };
-
-  /**
    * Additional domain lookup for bank providers that aren't covered by the
    * australianrates CDN logo pack. Clearbit is tried as a final fallback.
    */
@@ -216,7 +163,7 @@
   function providerDomain(label) {
     const raw = String(label || '').trim().toLowerCase();
     const canonical = canonicalProviderKey(label);
-    return BANK_DOMAINS[raw] || BANK_DOMAINS[canonical] || ENERGY_DOMAINS[raw] || ENERGY_DOMAINS[canonical] || '';
+    return BANK_DOMAINS[raw] || BANK_DOMAINS[canonical] || '';
   }
 
   function domainUrl(domain) {

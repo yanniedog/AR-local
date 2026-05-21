@@ -635,88 +635,6 @@
     chart.resize();
   }
 
-  function drawEnergy(chart, payload) {
-    const t = theme();
-    const rows = (payload && payload.items) || [];
-    const focus = String((payload && payload.focusProvider) || '').trim().toLowerCase();
-    const mount = chart.getDom();
-    const hoverBox = ensureReportHoverBox(mount, t);
-    if (!rows.length) {
-      chart.clear();
-      if (hoverBox) hoverBox.style.display = 'none';
-      return;
-    }
-    if (chart._localHoverCleanup) {
-      try { chart._localHoverCleanup(); } catch (_e) {}
-      chart._localHoverCleanup = null;
-    }
-    const sorted = rows.slice();
-    const bw = Math.max(6, Math.min(20, Math.floor(380 / Math.max(sorted.length, 1))));
-    chart.setOption({
-      backgroundColor: 'transparent',
-      animation: false,
-      grid: { top: 8, bottom: 44, left: 8, right: 60, containLabel: true },
-      xAxis: {
-        type: 'value',
-        axisLabel: { color: t.muted, fontSize: 11 },
-        splitLine: { lineStyle: { color: t.line } },
-        axisLine: { show: false }, axisTick: { show: false },
-      },
-      yAxis: {
-        type: 'category',
-        data: sorted.map((d) => d.label),
-        inverse: false,
-        axisLabel: {
-          color: t.text, fontSize: 11,
-          formatter: (v) => v.length > 24 ? v.slice(0, 22) + '…' : v,
-        },
-        axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
-      },
-      tooltip: { trigger: 'item', showContent: false },
-      series: [{
-        type: 'bar', barWidth: bw,
-        data: sorted.map((d, i) => {
-          const dimmed = focus && String(d.label || '').toLowerCase() !== focus;
-          const color = PALETTE[i % PALETTE.length];
-          return {
-            value: d.value,
-            name: d.label,
-            itemStyle: {
-              color: dimmed ? hexToRgba(color, 0.28) : color,
-              borderRadius: 2,
-            },
-          };
-        }),
-        label: { show: true, position: 'right', formatter: '{c}', color: t.muted, fontSize: 10 },
-      }],
-    }, true);
-
-    function onBarHover(params) {
-      if (!params || params.componentType !== 'series') return;
-      const label = String(params.name || sorted[params.dataIndex]?.label || '');
-      const value = params.value;
-      showReportHoverBox(hoverBox, {
-        heading: label || 'Provider',
-        date: 'Plan count',
-        rows: [{ label: 'Plans', value: String(value), color: t.text }],
-      }, t);
-    }
-    function onGlobalOut() {
-      if (hoverBox) hoverBox.style.display = 'none';
-    }
-    chart.on('mouseover', onBarHover);
-    chart.on('globalout', onGlobalOut);
-    const zr = chart.getZr();
-    zr.on('globalout', onGlobalOut);
-    chart._localHoverCleanup = function () {
-      chart.off('mouseover', onBarHover);
-      chart.off('globalout', onGlobalOut);
-      zr.off('globalout', onGlobalOut);
-      if (hoverBox) hoverBox.style.display = 'none';
-    };
-    chart.resize();
-  }
-
   function draw(container, items, sector) {
     const chart = getChart(container);
     if (!chart) return;
@@ -724,13 +642,8 @@
       drawBankHistory(chart, items);
       return;
     }
-    if (items && items.kind === 'energy-counts') {
-      drawEnergy(chart, items);
-      return;
-    }
     if (!items || !items.length) { chart.clear(); return; }
-    if (sector === 'energy') drawEnergy(chart, { items: items, focusProvider: '' });
-    else { chart.clear(); }
+    chart.clear();
   }
 
   window.LocalCdrChart = { draw };

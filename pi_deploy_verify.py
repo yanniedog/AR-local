@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from ar_local_pi_runtime import (
+    PI_DATA_ROOT,
     PI_DASHBOARD_PORT,
     PI_PUBLIC_BASE_URL,
     PI_REPO_ROOT,
@@ -53,6 +54,7 @@ EXIT_SSH = 3
 
 DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
+FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "dashboard/",
@@ -86,6 +88,10 @@ def pi_ar_repo() -> str:
 
 def pi_site_repo() -> str:
     return posix_repo_path(_env("AR_PI_SITE_REPO", "/srv/ar-local/australianrates"))
+
+
+def pi_data_root() -> str:
+    return posix_repo_path(_env("AR_PI_DATA_ROOT", str(PI_DATA_ROOT)))
 
 
 def pi_base_url() -> str:
@@ -228,9 +234,11 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
     remote = pi_remote()
     ar = pi_ar_repo()
     site = pi_site_repo()
+    data = pi_data_root()
     q_remote = shell_quote(remote)
     q_ar = shell_quote(ar)
     q_site = shell_quote(site)
+    q_data = shell_quote(data)
     q_remote_main = shell_quote(f"{remote}/main")
     script = (
         f"set +e; "
@@ -243,8 +251,19 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"site_o=$(git -C {q_site} rev-parse {q_remote_main} 2>/dev/null); "
         f"site_d=$(git -C {q_site} status --porcelain | tr '\\n' ';'); "
         f"dash=$(systemctl is-active ar-local-dashboard.service 2>/dev/null || echo inactive); "
+        f"dash_wd=$(systemctl show ar-local-dashboard.service -p WorkingDirectory --value 2>/dev/null); "
+        f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
+        f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
+        f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
+        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
+        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
+        f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
+        f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
+        f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
-        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\""
+        f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
+        f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
+        f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
     code, stdout, _ = run_ssh(script, dry_run=dry_run)
     if dry_run:
@@ -256,6 +275,15 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "AR_DIRTY": "",
             "SITE_DIRTY": "",
             "DASHBOARD": "active",
+            "DASHBOARD_WD": "dry",
+            "DASHBOARD_EXEC": "dry",
+            "DAILY_WD": "dry",
+            "DAILY_EXEC": "dry",
+            "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
+            "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
+            "DF_AR": "dry",
+            "DF_SITE": "dry",
+            "DF_DATA": "dry",
         }
     snap = _parse_kv_lines(stdout)
     required = ("AR_HEAD", "AR_ORIGIN", "SITE_HEAD", "SITE_ORIGIN", "DASHBOARD")
@@ -289,6 +317,37 @@ def dashboard_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = 
     if snap is None:
         return False
     return snap.get("DASHBOARD") == "active"
+
+
+def pi_service_paths_ok(snap: dict[str, str]) -> bool:
+    ok = True
+    fields = {
+        "dashboard WorkingDirectory": snap.get("DASHBOARD_WD", ""),
+        "dashboard ExecStart": snap.get("DASHBOARD_EXEC", ""),
+        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
+        "daily WorkingDirectory": snap.get("DAILY_WD", ""),
+        "daily ExecStart": snap.get("DAILY_EXEC", ""),
+        "daily Environment": snap.get("DAILY_ENV", ""),
+    }
+    for label, value in fields.items():
+        print(f"pi_deploy_verify: {label}: {value}")
+        if FORBIDDEN_PI_BOOTSTRAP_PATH in value:
+            print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
+            ok = False
+
+    dash_exec = snap.get("DASHBOARD_EXEC", "")
+    repo_local_runs = f"{pi_ar_repo().rstrip('/')}/runs"
+    bad_runs_tokens = ("--runs runs", "--runs=.", "--runs ./runs", f"--runs {repo_local_runs}", f"--runs={repo_local_runs}")
+    if any(token in dash_exec for token in bad_runs_tokens):
+        print(f"pi_deploy_verify: dashboard --runs points inside the service checkout: {dash_exec}", file=sys.stderr)
+        ok = False
+    if "AR_LOCAL_DATA_ROOT=" not in (snap.get("DASHBOARD_ENV", "") + ";" + snap.get("DAILY_ENV", "")):
+        print("pi_deploy_verify: AR_LOCAL_DATA_ROOT missing from Pi service environments", file=sys.stderr)
+        ok = False
+
+    for label, key in (("repo", "DF_AR"), ("site", "DF_SITE"), ("data", "DF_DATA")):
+        print(f"pi_deploy_verify: df {label}: {snap.get(key, '')}")
+    return ok
 
 
 def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
@@ -339,6 +398,11 @@ def verify_sync(*, dry_run: bool = False) -> int:
 
     if _snap_has_dirty_repos(snap):
         return EXIT_VERIFY_FAIL
+    if not pi_service_paths_ok(snap):
+        return EXIT_VERIFY_FAIL
+    if dry_run:
+        print(f"pi_deploy_verify: dry-run local origin/main={local_main[:12]}")
+        return EXIT_OK
 
     print(f"pi_deploy_verify: local origin/main={local_main[:12]}")
     print(f"pi_deploy_verify: Pi AR-local HEAD={head_ar[:12]} origin/main={origin_ar[:12]}")
@@ -404,8 +468,11 @@ def deploy_pull_all(*, dry_run: bool = False) -> int:
 
 def deploy_services(*, dry_run: bool = False) -> int:
     ar_repo = pi_ar_repo()
+    data = pi_data_root()
     install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     script = (
+        f"sudo mkdir -p {shell_quote(data)}/runs {shell_quote(data)}/state && "
+        f"sudo chown -R $(id -un):$(id -gn) {shell_quote(data)} && "
         "sudo systemctl restart ar-local-dashboard.service && "
         "(sudo systemctl restart ar-local-daily.timer || true) && "
         "("

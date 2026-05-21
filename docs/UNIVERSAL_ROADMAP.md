@@ -10,7 +10,7 @@ AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data
 - `http://ar.local/` when local DNS or mDNS is configured for the Pi
 - Optional direct backend: `http://<pi-ip>:8808/`
 
-The dashboard must use real generated artifacts only, with banking as the current priority. **Energy CDR ingest is dormant by default** (`AR_ENERGY_DORMANT=1`; opt in with `cdr_daily.py --energy`). **Economic Data is not Energy**: the nav opens `/economic-data/` and macro APIs proxy to production (`AR_ECONOMIC_API_UPSTREAM`, default `https://www.australianrates.com`).
+The dashboard must use real generated artifacts only. This project is banking-only CDR: Mortgage, Savings, and Term Deposits. Economic Data is macro/RBA data, not a CDR ingest sector; the nav opens `/economic-data/` and macro APIs proxy to production (`AR_ECONOMIC_API_UPSTREAM`, default `https://www.australianrates.com`).
 
 ### Target parity (operator-confirmed 2026-05-15)
 
@@ -123,7 +123,7 @@ Use the tunnel when a tool, browser, or test runner needs a local loopback URL. 
 
 ## Current Deployed Shape
 
-The current Pi deployment is portable-root based. The systemd service does not run from the old bootstrap checkout under `/home/pi`; it runs from the portable tree:
+The current Pi deployment is portable-root based. The systemd service does not run from the old bootstrap checkout outside the portable root; it runs from the portable tree:
 
 - authoritative app checkout: `/srv/ar-local/AR-local`
 - authoritative AustralianRates shell checkout: `/srv/ar-local/australianrates`
@@ -146,7 +146,7 @@ Check these fields:
 - `WorkingDirectory`: the checkout where `git rev-parse HEAD` must equal `origin/main`.
 - `ExecStart`: the Python script path, `--runs` root, `--site-root`, host, and port that the live dashboard actually uses.
 
-Updating `/home/pi/AR-local` alone is not enough if `WorkingDirectory` points at `/srv/ar-local/AR-local`.
+Updating any bootstrap checkout alone is not enough if `WorkingDirectory` points at `/srv/ar-local/AR-local`.
 
 ## Development Bootstrap
 
@@ -358,7 +358,7 @@ Services must be rendered against this portable root and must not bake in microS
 4. Start the timer and dashboard service.
 5. Verify `git rev-parse HEAD` equals `origin/main` and run `npm run verify:local -- --base-url=http://127.0.0.1:8808/`.
 
-If a separate `/home/pi/AR-local` checkout exists, treat it as a bootstrap/admin convenience unless the authoritative service checkout proves the installed unit is using it.
+If a separate bootstrap checkout exists, treat it as an admin convenience unless the authoritative service checkout proves the installed unit is using it.
 
 ## LAN Availability
 
@@ -442,7 +442,7 @@ The public JS calls Cloudflare Worker routes including (non-exhaustive):
 - `/api/home-loan-rates/health`
 - (presumed analogues for savings, term deposits, economic data)
 
-The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, `/api/energy`, the `/exports/` tree, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms ? no remote calls.
+The Pi currently exposes a different surface: `/api/latest`, `/api/banks`, `/api/banks/history`, the `/exports/` tree, plus the static `/site/` and `/assets/` trees. To run the public JS unmodified, the Pi `cdr_dashboard_server.py` must be extended to mount the public `/api/home-loan-rates/*` (and equivalent) routes, backed by the latest retained `runs/<date>/_exports/local-cdr.sqlite`. Pure SQL transforms ? no remote calls.
 
 #### Header / chrome gap
 
@@ -470,7 +470,7 @@ Verified payload shape (2026-05-15, Pi `12caba0`):
 
 - Top-level keys: `rates`, `run_dates`. The earlier draft of this doc referenced `rows`/`dates` ? that was wrong and has been corrected.
 - Payload size on the Pi today: ~17 MB for 2 retained runs. Treat this number as a budget input when reasoning about future history depth.
-- `/api/latest` keys: `banks_counts`, `energy_counts`, `files`, `generated_at`, `run_date`.
+- `/api/latest` keys: `banks_counts`, `files`, `generated_at`, `run_date`.
 
 Current implemented behavior:
 
@@ -503,7 +503,7 @@ Future improvements should:
 4. Keep historical ribbon values populated from retained DB exports.
 5. Keep LAN access stable on Pi IP and `ar.local`.
 6. Keep SSD portability documentation and systemd unit rendering current.
-7. Economic Data: `/economic-data/` shell + proxied `/api/economic-data/*` (production upstream until local macro SQLite exists). Energy CDR stays dormant unless explicitly re-enabled.
+7. Economic Data: `/economic-data/` shell + proxied `/api/economic-data/*` (production upstream until local macro SQLite exists). There is no non-banking CDR ingest surface.
 
 ## Verification Checklist
 
@@ -588,7 +588,7 @@ Last verified: **2026-05-15** (UTC ~13:24).
 | `ar-local-daily.timer` state | active, enabled; next: Sat 2026-05-16 06:00 AEST; last: Fri 2026-05-15 06:00 AEST |
 | Retained runs with `_exports/local-cdr.sqlite` | `2026-05-13` (37 MB), `2026-05-15` (38 MB) |
 | Missing retained runs in expected sequence | `2026-05-14` ? investigate; the timer became active 2026-05-13 14:48 AEST so the first scheduled 06:00 fire would have been 2026-05-14 |
-| `/api/latest` keys | `banks_counts`, `energy_counts`, `files`, `generated_at`, `run_date` |
+| `/api/latest` keys | `banks_counts`, `files`, `generated_at`, `run_date` |
 | `/api/banks/history` keys | `rates`, `run_dates` |
 | `/api/banks/history` payload size | ~17 MB (loopback `curl` measured `size_download=17088023`, `time_total~5ms`) |
 | Public site reachable | `https://australianrates.com/` returns HTTP 200, 193-line HTML, ~50 JS modules, single SPA mount point `<div id="ar-section-root">` |

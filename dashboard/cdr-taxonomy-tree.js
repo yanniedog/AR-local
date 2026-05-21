@@ -50,19 +50,6 @@
     // Interest payment
     AT_MATURITY: 'At maturity', MONTHLY: 'Monthly',
     QUARTERLY: 'Quarterly', ANNUALLY: 'Annually',
-    // Energy fuel
-    ELECTRICITY: 'Electricity', GAS: 'Gas', DUAL: 'Dual fuel',
-    // Customer type
-    RESIDENTIAL: 'Residential', BUSINESS: 'Business',
-    // Offer type
-    STANDING: 'Standing offer', MARKET: 'Market offer',
-    // Energy pricing models
-    FLAT_CL: 'Single rate + controlled load',
-    TOU: 'Time of use', TOU_CL: 'Time of use + controlled load',
-    DEMAND: 'Demand / flexible', DEMAND_CL: 'Demand + controlled load',
-    CL_ONLY: 'Controlled load only', WHOLESALE: 'Wholesale',
-    // Solar
-    SOLAR: 'Solar export (FiT)', NO_SOLAR: 'No solar export',
     // Fallbacks
     OTHER_TERM: 'Other term', OTHER: 'Other', UNKNOWN: 'Unknown',
   };

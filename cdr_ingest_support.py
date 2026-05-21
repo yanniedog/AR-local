@@ -75,9 +75,7 @@ DATASET_TO_FOLDER = {
 class RegisterSnapshot:
     register_ok: bool
     banking_brands: List[Dict[str, str]]
-    energy_brands: List[Dict[str, str]]
     banking_count_before_filter: int
-    energy_count_before_filter: int
 
 
 # -----------------------------------------------------------------------------
@@ -274,15 +272,8 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     return safe_url(raw) + "/cds-au/v1/banking/products"
 
 
-def normalize_energy_plans_url(endpoint_raw: str) -> str:
-    raw = str(endpoint_raw or "").strip()
-    if "/cds-au/v1/energy/plans" in raw:
-        return safe_url(raw.split("?")[0])
-    return safe_url(raw) + "/cds-au/v1/energy/plans"
-
-
-def iter_sector_brands_from_payload(payload: Any) -> Iterable[Tuple[str, Dict[str, str]]]:
-    """Yield (``banking`` | ``energy``, brand dict) from one register payload."""
+def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
+    """Yield banking PRD brand rows from one register payload."""
     if is_record(payload):
         data_array = as_array(payload.get("data"))
     else:
@@ -303,23 +294,11 @@ def iter_sector_brands_from_payload(payload: Any) -> Iterable[Tuple[str, Dict[st
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
             if "banking" in inds:
-                yield (
-                    "banking",
-                    {
-                        "brand_name": brand_name,
-                        "legal_entity_name": legal_name,
-                        "endpoint_url": normalize_banking_products_url(base),
-                    },
-                )
-            if "energy" in inds:
-                yield (
-                    "energy",
-                    {
-                        "brand_name": brand_name,
-                        "legal_entity_name": legal_name,
-                        "endpoint_url": normalize_energy_plans_url(base),
-                    },
-                )
+                yield {
+                    "brand_name": brand_name,
+                    "legal_entity_name": legal_name,
+                    "endpoint_url": normalize_banking_products_url(base),
+                }
             continue
 
         # Legacy register row (e.g. banking data-holders/brands) — no industries array.
@@ -337,14 +316,11 @@ def iter_sector_brands_from_payload(payload: Any) -> Iterable[Tuple[str, Dict[st
         if is_record(legal_entity):
             legal_name = pick_text(legal_entity, ["legalEntityName"])
         endpoint_url = normalize_banking_products_url(endpoint_raw)
-        yield (
-            "banking",
-            {
-                "brand_name": brand_name,
-                "legal_entity_name": legal_name,
-                "endpoint_url": endpoint_url,
-            },
-        )
+        yield {
+            "brand_name": brand_name,
+            "legal_entity_name": legal_name,
+            "endpoint_url": endpoint_url,
+        }
 
 
 def extract_products(payload: Any) -> List[Dict[str, Any]]:
@@ -353,18 +329,6 @@ def extract_products(payload: Any) -> List[Dict[str, Any]]:
     data = payload.get("data")
     if is_record(data):
         inner = data.get("products")
-        seq = as_array(inner)
-    else:
-        seq = as_array(data)
-    return [x for x in seq if is_record(x)]
-
-
-def extract_energy_plans(payload: Any) -> List[Dict[str, Any]]:
-    if not is_record(payload):
-        return []
-    data = payload.get("data")
-    if is_record(data):
-        inner = data.get("plans")
         seq = as_array(inner)
     else:
         seq = as_array(data)
@@ -638,9 +602,8 @@ def collect_register_snapshot(
     sleep_ms: int,
     holders_filter: Optional[str],
 ) -> RegisterSnapshot:
-    """Merge banking + energy holder rows from all register URLs."""
+    """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
-    merged_energy: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
 
     attempts: List[Tuple[str, str]] = [
@@ -665,21 +628,16 @@ def collect_register_snapshot(
         if not res.ok or data is None or has_cdr_errors(data):
             continue
         register_payload_ok = True
-        for sector, b in iter_sector_brands_from_payload(data):
+        for b in iter_banking_brands_from_payload(data):
             key = (
                 b["endpoint_url"].lower(),
                 (b["brand_name"] or "").lower(),
                 (b["legal_entity_name"] or "").lower(),
             )
-            if sector == "banking":
-                merged_banking[key] = b
-            else:
-                merged_energy[key] = b
+            merged_banking[key] = b
 
     banking_all = list(merged_banking.values())
-    energy_all = list(merged_energy.values())
     count_banking = len(banking_all)
-    count_energy = len(energy_all)
 
     if holders_filter:
         hf = holders_filter.lower()
@@ -694,22 +652,15 @@ def collect_register_snapshot(
             ]
 
         banking_brands = filt(banking_all)
-        energy_brands = filt(energy_all)
     else:
         banking_brands = banking_all
-        energy_brands = energy_all
 
     banking_brands.sort(
-        key=lambda x: (x["brand_name"] or x["legal_entity_name"] or "").lower(),
-    )
-    energy_brands.sort(
         key=lambda x: (x["brand_name"] or x["legal_entity_name"] or "").lower(),
     )
     return RegisterSnapshot(
         register_ok=register_payload_ok,
         banking_brands=banking_brands,
-        energy_brands=energy_brands,
         banking_count_before_filter=count_banking,
-        energy_count_before_filter=count_energy,
     )
 
