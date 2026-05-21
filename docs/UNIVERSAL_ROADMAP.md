@@ -132,7 +132,11 @@ Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19
 | LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
 | Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
 
-No Netdata Cloud account is required. Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled UI loads from the agent instead of `app.netdata.cloud`. Deep links under `/netdata/spaces/...` redirect to `/netdata/v3/` (the Cloud SPA breaks when unclaimed).
+No Netdata Cloud account is required for **metrics** (overview charts, nodes, alerts). Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled v3 UI loads from the agent instead of `app.netdata.cloud`.
+
+**Logs tab:** the v3 Logs Explorer calls the `systemd-journal` Netdata Function, which requires **Netdata Cloud sign-in** (HTTP 412 without it). With Cloud disabled you will see an empty Logs pane and a Sign in control — that is expected. Use **`http://100.78.28.10/netdata/v3/`** (overview/metrics), not `/netdata/v3/spaces/.../logs`. nginx redirects `/netdata/.../logs` to `/netdata/v3/`. For raw journal on the Pi: `journalctl` (install script adds `netdata` to the `systemd-journal` group for when Cloud is enabled later).
+
+Deep links under `/netdata/spaces/...` (without `/logs`) redirect to `/netdata/v3/`.
 
 Install or refresh:
 
@@ -152,6 +156,8 @@ curl -fsS http://127.0.0.1:19999/api/v3/info | head -c 120
 curl -fsS http://100.78.28.10/netdata/api/v3/info | head -c 120
 curl -fsS "http://100.78.28.10/netdata/api/v1/data?chart=system.cpu&format=json&points=3" | head -c 200
 curl -fsSI http://100.78.28.10/netdata/v3/ | head -3
+curl -fsSI http://100.78.28.10/netdata/v3/spaces/pi5/rooms/local/logs | head -3
+# expect 302 Location: .../netdata/v3/
 ```
 
 After `install-pi-dashboard-proxy.sh`, the public API path is `/netdata/api/v3/...` (nginx strips `/netdata/` before proxying).

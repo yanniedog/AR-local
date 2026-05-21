@@ -33,6 +33,14 @@ if ! id netdata >/dev/null 2>&1; then
   exit 1
 fi
 
+# systemd-journal.plugin reads journald; group membership is required even when Cloud SSO is off.
+if getent group systemd-journal >/dev/null 2>&1; then
+  if ! id -nG netdata | tr ' ' '\n' | grep -qx systemd-journal; then
+    usermod -aG systemd-journal netdata
+    echo "install-pi-netdata: added netdata to systemd-journal group"
+  fi
+fi
+
 if [ ! -f "$conf" ]; then
   echo "install-pi-netdata: missing $conf" >&2
   exit 1
@@ -173,4 +181,6 @@ echo "  cache=${NETDATA_CACHE}"
 echo "  lib=${NETDATA_LIB}"
 echo "  log=${NETDATA_LOG}"
 echo "Browser URL (local metrics, no Cloud account): ${NETDATA_PUBLIC_BASE%/}/v3/"
-echo "  (nginx redirects /netdata/ and /netdata/spaces/... to /v3/)"
+echo "  opens Agent Console overview with live charts (CPU, memory, disk, network)."
+echo "  /netdata/ and /netdata/spaces/... redirect to /v3/; /.../logs redirects to /v3/ (Logs tab needs Netdata Cloud sign-in)."
+echo "  Pi journal on SSH: journalctl -u ar-local-dashboard.service -n 80 --no-pager"
