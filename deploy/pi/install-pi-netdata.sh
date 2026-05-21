@@ -1,8 +1,13 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Install Netdata on the Pi (127.0.0.1:19999) for nginx /netdata/ (strip-prefix proxy).
 # Persistent cache/lib/log live under the portable SSD root (default /srv/ar-local/data/netdata).
 # Run on the Pi: sudo bash deploy/pi/install-pi-netdata.sh
-set -eu
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "install-pi-netdata: please run as root (sudo)" >&2
+  exit 1
+fi
 
 PORTABLE_ROOT="${PORTABLE_ROOT:-/srv/ar-local}"
 NETDATA_DATA_ROOT="${NETDATA_DATA_ROOT:-$PORTABLE_ROOT/data/netdata}"
@@ -18,14 +23,36 @@ SSD_MARKER="# AR-local portable SSD data (install-pi-netdata.sh)"
 CLOUD_MARKER="# AR-local local-only UI (install-pi-netdata.sh)"
 conf="/etc/netdata/netdata.conf"
 CLOUD_DROPIN="/etc/netdata/netdata.conf.d/ar-local-cloud.conf"
+WEB_DROPIN="/etc/netdata/netdata.conf.d/ar-local-web.conf"
+SSD_DROPIN="/etc/netdata/netdata.conf.d/ar-local-ssd.conf"
 CLOUD_D_CONF="$NETDATA_LIB/cloud.d/cloud.conf"
 SYSTEMD_DROPIN="/etc/systemd/system/netdata.service.d/ar-local-ssd.conf"
 
+install_dropin() {
+  template="$1"
+  dest="$2"
+  if [ ! -f "$template" ]; then
+    echo "install-pi-netdata: missing $template" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$dest")"
+  sed \
+    -e "s|@NETDATA_CACHE@|$NETDATA_CACHE|g" \
+    -e "s|@NETDATA_LIB@|$NETDATA_LIB|g" \
+    -e "s|@NETDATA_LOG@|$NETDATA_LOG|g" \
+    -e "s|@NETDATA_BIND@|$NETDATA_BIND|g" \
+    "$template" >"$dest"
+  chmod 0644 "$dest"
+}
+
 if ! command -v netdata >/dev/null 2>&1; then
   echo "install-pi-netdata: downloading kickstart..."
-  tmp_kick="/tmp/netdata-kickstart.sh"
-  curl -fsSL https://get.netdata.cloud/kickstart.sh -o "$tmp_kick"
+  tmp_kick="$(mktemp /tmp/netdata-kickstart.XXXXXX.sh)"
+  trap 'rm -f "$tmp_kick"' EXIT
+  curl -fsSL --connect-timeout 10 https://get.netdata.cloud/kickstart.sh -o "$tmp_kick"
   sh "$tmp_kick" --non-interactive --dont-wait --no-updates
+  rm -f "$tmp_kick"
+  trap - EXIT
 fi
 
 if ! id netdata >/dev/null 2>&1; then
@@ -56,7 +83,13 @@ migrate_dir() {
   [ -L "$src" ] && return 0
   [ "$(ls -A "$src" 2>/dev/null || true)" ] || return 0
   if [ -d "$dst" ] && [ "$(ls -A "$dst" 2>/dev/null || true)" ]; then
-    echo "install-pi-netdata: skip migrate $src -> $dst (destination not empty)"
+    echo "install-pi-netdata: merge $src -> $dst (destination already has data)"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a "$src/" "$dst/"
+    else
+      cp -a "$src/." "$dst/"
+    fi
+    chown -R netdata:netdata "$dst"
     return 0
   fi
   echo "install-pi-netdata: migrate $src -> $dst"
@@ -95,33 +128,26 @@ link_var_dir /var/lib/netdata "$NETDATA_LIB"
 link_var_dir /var/cache/netdata "$NETDATA_CACHE"
 link_var_dir /var/log/netdata "$NETDATA_LOG"
 
-# Debian package reads /etc/netdata/netdata.conf only (not netdata.conf.d/).
-if ! grep -qF "$SSD_MARKER" "$conf" 2>/dev/null; then
-  cat >>"$conf" <<EOF
+install_dropin "$SCRIPT_DIR/ar-local-netdata-ssd.conf" "$SSD_DROPIN"
+install_dropin "$SCRIPT_DIR/ar-local-netdata-web.conf" "$WEB_DROPIN"
 
-$SSD_MARKER
-[directories]
-    cache = $NETDATA_CACHE
-    lib = $NETDATA_LIB
-    log = $NETDATA_LOG
-EOF
-else
+# Legacy: normalize [directories] / [web] in main netdata.conf if a prior install appended there.
+if grep -qF "$SSD_MARKER" "$conf" 2>/dev/null; then
   sed -i \
     -e "s|^[[:space:]]*cache =.*|    cache = $NETDATA_CACHE|" \
     -e "s|^[[:space:]]*lib =.*|    lib = $NETDATA_LIB|" \
     -e "s|^[[:space:]]*log =.*|    log = $NETDATA_LOG|" \
     "$conf" 2>/dev/null || true
 fi
-
-if ! grep -qF "$MARKER" "$conf" 2>/dev/null; then
-  if ! grep -qF 'bind to' "$conf" 2>/dev/null; then
-    cat >>"$conf" <<EOF
+if grep -qF 'bind to' "$conf" 2>/dev/null; then
+  sed -i "s|^[[:space:]]*bind to =.*|    bind to = $NETDATA_BIND|" "$conf" 2>/dev/null || true
+elif ! grep -qF "$MARKER" "$conf" 2>/dev/null; then
+  cat >>"$conf" <<EOF
 
 $MARKER
 [web]
     bind to = $NETDATA_BIND
 EOF
-  fi
 fi
 
 # Subpath /netdata/ is nginx-only (strip prefix). Agent must not use web server prefix.
