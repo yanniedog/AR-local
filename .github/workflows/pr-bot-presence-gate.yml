@@ -1,10 +1,15 @@
 name: pr-bot-presence-gate
 
-# Single-shot bot presence check on PR lifecycle only. Bot wait polling (--watch) is local
-# (npm run wait-for-bots) — do not poll GraphQL from Actions (installation quota).
+# Single-shot bot presence check. Re-fires on PR lifecycle + bot review/comment events,
+# so a miss while bots are still in flight self-heals when they post (no GraphQL polling from
+# Actions — installation quota). Local --watch (npm run wait-for-bots) remains the pre-merge gate.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -15,14 +20,21 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 concurrency:
-  group: bot-presence-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: bot-presence-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   bot-presence-gate:
-    if: github.event.pull_request != null || github.event_name == 'workflow_dispatch'
+    # Re-evaluate on bot reviews/comments so a single-shot miss self-heals.
+    # issue_comment fires for both issues and PRs - gate on PR-only.
+    if: >-
+      github.event.pull_request != null
+      || github.event.review != null
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request != null)
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -40,11 +52,12 @@ jobs:
           # CI has no .ar-bot-wait state; anchor falls back to PR createdAt (long-open PRs exceed 28m).
           BOT_WAIT_MAX_MIN: "240"
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PR="${{ inputs.pr_number }}"
-          else
-            PR="${{ github.event.pull_request.number }}"
-          fi
+          case "${{ github.event_name }}" in
+            workflow_dispatch) PR="${{ inputs.pr_number }}" ;;
+            issue_comment)     PR="${{ github.event.issue.number }}" ;;
+            pull_request_review) PR="${{ github.event.pull_request.number }}" ;;
+            *)                 PR="${{ github.event.pull_request.number }}" ;;
+          esac
           set +e
           npm run wait-for-bots -- --pr "$PR"
           code=$?
