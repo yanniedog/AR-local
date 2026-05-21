@@ -744,6 +744,7 @@
       const railTip = window.LocalCdrBrand.providerTooltip
         ? window.LocalCdrBrand.providerTooltip(provider, railMeta)
         : provider;
+      btn.title = railTip;
       btn.setAttribute('aria-label', railTip);
       const lc = provider.toLowerCase();
       if (focus && lc === focus) btn.classList.add('is-selected');
