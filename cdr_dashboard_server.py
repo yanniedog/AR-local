@@ -24,7 +24,12 @@ from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
 from ar_local_ingest_schedule import DAILY_INGEST_SCHEDULE_LABEL, latest_daily_due_utc, next_daily_due_utc
-from cdr_economic_local import economic_catalog_payload, economic_health_payload
+from cdr_economic_local import (
+    economic_catalog_payload,
+    economic_health_payload,
+    economic_series_payload,
+    is_series_request_local,
+)
 from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
     extract_fixed_rate_term_years,
@@ -1050,6 +1055,24 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/economic-data/health":
                 body, ctype = economic_health_payload()
                 return body, ctype, maybe_gzip(body, ctype)
+            if path == "/api/economic-data/series":
+                # Mixed-mode dispatcher: serve locally only when *every*
+                # requested id is in LOCAL_SERIES_IDS *and* the local store
+                # actually has data for each. Otherwise proxy so any unmapped
+                # id (or a fresh Pi where ingest has not yet populated the
+                # store) still resolves through the upstream. This keeps
+                # the page working continuously through the migration.
+                ids_raw = (query.get("ids", [""])[0] or "").strip()
+                ids = [i.strip() for i in ids_raw.split(",") if i.strip()]
+                if ids and is_series_request_local(ids):
+                    start = (query.get("start_date", [""])[0] or "").strip() or None
+                    end = (query.get("end_date", [""])[0] or "").strip() or None
+                    local_result = economic_series_payload(ids, start, end)
+                    if local_result is not None:
+                        body, ctype = local_result
+                        return body, ctype, maybe_gzip(body, ctype)
+                body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
+                return body, ctype, None
             if path.startswith("/api/economic-data"):
                 body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
                 return body, ctype, None
