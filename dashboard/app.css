@@ -860,3 +860,59 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     min-height: 32px;
   }
 }
+
+/* ── /economic-data/ mobile audit fixes (PR2) ────────────────────────────
+ * Browser audit on the live Pi (iPhone 14 / Pro Max / Pixel 7) found:
+ *   - .economic-component-table and .economic-forward-table both ~680px
+ *     wide overflow the 390px mobile viewport by 264–304px without a
+ *     visible scroll indicator — the site shell's `*-table-wrap` div was
+ *     not scoping horizontal scroll on small screens.
+ *   - 30 small (<32px) interactive tap targets per viewport, dominated
+ *     by the brand anchor (110×21) and the indicator-selection
+ *     checkboxes (~15–20px wide).
+ * The dashboard server already injects this stylesheet into /economic-data/
+ * via inject_local_dashboard_css (cdr_dashboard_server.py), so these
+ * rules override the sibling site stylesheet without touching it. */
+
+body.ar-public.ar-section-economic-data {
+  --ar-economic-table-min-width: 680px;
+}
+
+body.ar-public.ar-section-economic-data .economic-component-table-wrap,
+body.ar-public.ar-section-economic-data .economic-forward-table-wrap {
+  /* Give each wrap an explicit horizontal scroll context so the table can
+     extend past the wrap's box without pushing the document past viewport
+     width. */
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.ar-public.ar-section-economic-data .economic-component-table,
+body.ar-public.ar-section-economic-data .economic-forward-table {
+  /* Without an explicit min-width the browser tries to shrink columns to
+     fit a narrower wrap on mobile, producing illegible text. Keep at the
+     natural width so horizontal scrolling reveals full columns. */
+  min-width: var(--ar-economic-table-min-width);
+}
+
+@media (max-width: 520px) and (pointer: coarse) {
+  /* Brand anchor on the public shell is a thin text link; bump the hit
+     target to the Apple HIG 44px floor on touch devices. */
+  body.ar-public.ar-section-economic-data .site-brand a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-block: 4px;
+  }
+
+  /* Indicator-selection checkboxes are 15–20px native; expand the option
+     label into a 44px-tall hit area so the whole row is tappable. */
+  body.ar-public.ar-section-economic-data .economic-option,
+  body.ar-public.ar-section-economic-data label.economic-mode-toggle {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+}

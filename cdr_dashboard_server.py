@@ -437,7 +437,25 @@ def is_dashboard_banking_section_path(url_path: str) -> bool:
 
 
 def inject_local_dashboard_css(html: bytes) -> bytes:
-    """Inject local dashboard CSS and ar-local-cdr on /economic-data/ shell pages."""
+    """Inject local dashboard CSS, the ar-local-cdr body class, and a small
+    inline shim that suppresses Microsoft Clarity script insertion on the
+    /economic-data/ shell page.
+
+    The sibling site's ``site-variant.js`` initialises Clarity unconditionally
+    unless ``window.location.hostname`` is ``localhost`` / ``127.0.0.1`` /
+    ``::1``. Pi LAN (10.0.0.92) and Tailscale (100.78.28.10) addresses do
+    not match, so without this shim the page emits a console error
+    ``Failed to load resource: net::ERR_NAME_NOT_RESOLVED`` for
+    ``https://www.clarity.ms/tag/...`` on every load. UNIVERSAL_ROADMAP
+    explicitly flagged this as needing either a siteVariant override or a
+    build-time strip; this is the runtime override.
+
+    The shim patches ``Element.prototype.appendChild`` and ``insertBefore``
+    to silently drop any ``<script>`` whose ``src`` matches ``clarity.ms``
+    *before* it reaches the DOM, so no fetch attempt occurs. Other
+    ``AR.siteVariant`` consumers (donate networks, host variant attribute,
+    etc.) keep working because site-variant.js is otherwise untouched.
+    """
     out = html
     if b"ar-section-economic-data" in out.lower() and b"ar-local-cdr" not in out.lower():
         out, _ = re.subn(
@@ -447,6 +465,19 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
             count=1,
             flags=re.IGNORECASE,
         )
+    # Block third-party trackers before any other script runs. Must come
+    # before the site-variant.js include, so target the <head> open tag.
+    if b"ar-clarity-block" not in out.lower():
+        shim = (
+            br"\1\n"
+            b'    <script id="ar-clarity-block">/*ar-local*/(function(){'
+            b'var ap=Element.prototype.appendChild,ib=Element.prototype.insertBefore;'
+            b'function bad(n){return n&&n.tagName==="SCRIPT"&&/clarity\\.ms/i.test(n.src||"");}'
+            b'Element.prototype.appendChild=function(n){return bad(n)?n:ap.call(this,n);};'
+            b'Element.prototype.insertBefore=function(n,r){return bad(n)?n:ib.call(this,n,r);};'
+            b'})();</script>\n'
+        )
+        out, _ = re.subn(br"(<head\b[^>]*>)", shim, out, count=1, flags=re.IGNORECASE)
     if b"/assets/app.css" in out.lower():
         return out
     link = b'    <link rel="stylesheet" href="/assets/app.css">\n'
