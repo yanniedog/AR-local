@@ -59,34 +59,33 @@ RBA_H5_COLUMNS: dict[str, str] = {
 # ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
 # key fetches every series in the dataflow; we filter client-side against
 # ``ABS_CPI_M_SERIES`` so the URL is stable even if dimension ordering
-# changes. Codes per ABS data-structure definition for CPI_M v1.0.0:
+# changes. Codes verified against a live response from CPI_M v1.2.0:
 #   MEASURE=3   Percentage change from corresponding month previous year
-#   INDEX=10001 All groups CPI
-#   INDEX=999902 Trimmed mean (annual % change variant)
-#   TSEST=20    Original (no seasonal adjustment published for the indicator)
-#   REGION=AUS  Australia (national, not capital-city splits)
+#   INDEX=10001  All groups CPI
+#   INDEX=999905 Annual trimmed mean
+#   TSEST=10    Original (only TSEST published for these % change measures)
+#   REGION=50   Australia (the only REGION present in CPI_M)
 #   FREQ=M      Monthly
-# These are best-effort; if upstream renames a code the ingest reports
-# zero rows for the affected series and `ingest_runs.status` flips to
-# error -- same drift-detection pattern as RBA H5.
-# ABS user guide: data requests live under /rest/data/[query]; the older
-# /data path is being phased out. Codex P1 PR #120.
+# The dataflow identifier is bare ``CPI_M``; the fully-qualified form
+# ``ABS,CPI_M,<version>`` 404s on the /rest/data endpoint. If upstream
+# renames or removes a code, the affected series matches zero rows and
+# ingest_runs.status flips to error -- same drift-detection pattern as
+# RBA H5.
 ABS_DATA_API_BASE = "https://data.api.abs.gov.au/rest/data"
-ABS_CPI_M_DATAFLOW = "ABS,CPI_M,1.0.0"
-ABS_CPI_M_URL = f"{ABS_DATA_API_BASE}/{ABS_CPI_M_DATAFLOW}/all?format=csv"
+ABS_CPI_M_URL = f"{ABS_DATA_API_BASE}/CPI_M/all?format=csv"
 ABS_CPI_M_SERIES: dict[str, dict[str, str]] = {
     "monthly_cpi_indicator": {
         "MEASURE": "3",
         "INDEX": "10001",
-        "TSEST": "20",
-        "REGION": "AUS",
+        "TSEST": "10",
+        "REGION": "50",
         "FREQ": "M",
     },
     "monthly_trimmed_mean_cpi": {
         "MEASURE": "3",
-        "INDEX": "999902",
-        "TSEST": "20",
-        "REGION": "AUS",
+        "INDEX": "999905",
+        "TSEST": "10",
+        "REGION": "50",
         "FREQ": "M",
     },
 }
