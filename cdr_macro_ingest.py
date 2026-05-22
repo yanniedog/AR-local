@@ -10,7 +10,7 @@ then reads from that store to build the wire response.
 Each ingest source is registered in a per-family mapping (``RBA_H5_COLUMNS``,
 ``ABS_CPI_M_SERIES`` etc.). PR1b shipped RBA H5 (unemployment_rate,
 participation_rate); PR1c adds ABS Indicator API via the open ABS Data API
-(SDMX-JSON), starting with monthly_cpi_indicator and monthly_trimmed_mean_cpi
+(SDMX-CSV), starting with monthly_cpi_indicator and monthly_trimmed_mean_cpi
 from the CPI_M dataflow. PR1c.x and PR1d/PR1e extend the same pattern.
 
 Run standalone to populate the store:
@@ -69,7 +69,9 @@ RBA_H5_COLUMNS: dict[str, str] = {
 # These are best-effort; if upstream renames a code the ingest reports
 # zero rows for the affected series and `ingest_runs.status` flips to
 # error -- same drift-detection pattern as RBA H5.
-ABS_DATA_API_BASE = "https://data.api.abs.gov.au/data"
+# ABS user guide: data requests live under /rest/data/[query]; the older
+# /data path is being phased out. Codex P1 PR #120.
+ABS_DATA_API_BASE = "https://data.api.abs.gov.au/rest/data"
 ABS_CPI_M_DATAFLOW = "ABS,CPI_M,1.0.0"
 ABS_CPI_M_URL = f"{ABS_DATA_API_BASE}/{ABS_CPI_M_DATAFLOW}/all?format=csv"
 ABS_CPI_M_SERIES: dict[str, dict[str, str]] = {
@@ -486,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         "--source",
         choices=["rba_h5", "abs_cpi_m", "all"],
         default="all",
-        help="Which source family to ingest",
+        help="Which source family to ingest (default: %(default)s)",
     )
     args = parser.parse_args(argv)
 
