@@ -2,24 +2,42 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
 from pathlib import Path
 
 
-def connect_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open a SQLite file in immutable read-only mode.
+@contextlib.contextmanager
+def connect_readonly(db_path: Path):
+    """Open a SQLite file read-only without attempting to create lock files.
 
     Default ``sqlite3.connect(path)`` opens for read+write and tries to create
     a ``-journal`` or ``-wal`` sibling on first statement, which fails with
     "attempt to write a readonly database" when the parent directory is not
-    writable by the dashboard service user. The dashboard never mutates the
-    run-export DBs, so ``immutable=1`` skips lock files entirely and survives
-    mixed-ownership ``runs/`` trees (e.g. when an ingest is invoked via sudo
-    and leaves files owned by root).
+    writable by the dashboard service user (e.g. when an ingest invoked via
+    sudo leaves a runs/<date>/_exports/ directory owned by root). The
+    dashboard only ever reads from these DBs, so ``mode=ro&nolock=1`` skips
+    the lock-file write attempt entirely while preserving SQLite's change
+    detection (unlike ``immutable=1``, which assumes the file never
+    changes and would return undefined data if an ingest rewrote the file
+    mid-read).
+
+    Yields a connection wrapped in a context manager so the caller's
+    ``with`` block actually closes it — Python's default ``sqlite3``
+    context manager only commits/rolls back the transaction and leaks
+    the file descriptor.
+
+    ``Path.as_uri()`` handles paths with spaces and other reserved URI
+    characters so the URI form is robust on every platform.
     """
-    return sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&nolock=1"
+    con = sqlite3.connect(uri, uri=True)
+    try:
+        yield con
+    finally:
+        con.close()
 
 
 def response_rows(rows: list[dict[str, object]]) -> bytes:
