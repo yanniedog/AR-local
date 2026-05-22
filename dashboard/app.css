@@ -797,7 +797,6 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     grid-template-columns: auto minmax(0, 1fr) max-content;
     align-items: center;
     column-gap: 5px;
-    min-height: 0;
     padding-top: 4px;
     padding-bottom: 4px;
     margin-bottom: 0;
@@ -835,5 +834,19 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr #hierarchy .ar-report-infobox-trate > span {
     line-height: 1.25;
     white-space: nowrap;
+  }
+}
+
+/* Comfortable tap targets for hierarchy rows on touch devices.
+   Higher specificity than site-shell rule so the dashboard's own row layout still wins. */
+@media (max-width: 520px) and (pointer: coarse) {
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+    min-height: 36px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow--leaf {
+    min-height: 32px;
   }
 }
