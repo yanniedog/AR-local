@@ -13,26 +13,53 @@ from pathlib import Path
 def connect_readonly(db_path: Path):
     """Open a SQLite file read-only without attempting to create lock files.
 
-    Default ``sqlite3.connect(path)`` opens for read+write and tries to create
-    a ``-journal`` or ``-wal`` sibling on first statement, which fails with
-    "attempt to write a readonly database" when the parent directory is not
-    writable by the dashboard service user (e.g. when an ingest invoked via
-    sudo leaves a runs/<date>/_exports/ directory owned by root). The
-    dashboard only ever reads from these DBs, so ``mode=ro&nolock=1`` skips
-    the lock-file write attempt entirely while preserving SQLite's change
-    detection (unlike ``immutable=1``, which assumes the file never
-    changes and would return undefined data if an ingest rewrote the file
-    mid-read).
+    Default ``sqlite3.connect(path)`` opens for read+write and tries to
+    create a ``-journal`` or ``-wal`` sibling on first statement, which
+    fails with "attempt to write a readonly database" when the parent
+    ``_exports/`` directory is not writable by the dashboard service
+    user (e.g. when an ingest invoked via sudo leaves a
+    ``runs/<date>/_exports/`` tree owned by root).
 
-    Yields a connection wrapped in a context manager so the caller's
-    ``with`` block actually closes it — Python's default ``sqlite3``
-    context manager only commits/rolls back the transaction and leaks
-    the file descriptor.
+    ``mode=ro`` alone is insufficient on the deployed Pi (SQLite 3.46.1
+    with default compile options) — even ``mode=ro`` still tries to
+    acquire a SHARED lock that needs to write a lock file into the
+    parent dir. ``nolock=1`` is the URI flag that would skip locking,
+    but this SQLite build was not compiled with the option enabled.
+    ``immutable=1`` is the remaining workaround that lets the open
+    succeed on root-owned directories.
 
-    ``Path.as_uri()`` handles paths with spaces and other reserved URI
-    characters so the URI form is robust on every platform.
+    Trade-off (Codex review feedback on PR #114): ``immutable=1`` tells
+    SQLite the file will not change while open, so it skips change
+    detection. If an ingest rewrote the same DB file during a read,
+    the result would be undefined. In practice this is safe for the
+    bank-history payload because:
+
+    - Run-export DBs are per-date artifacts: ``runs/<date>/_exports/
+      local-cdr.sqlite`` is written once during the ingest of that
+      date and never rewritten afterwards.
+    - The history endpoint reads PAST dates' DBs, which are static.
+    - The only file that could be written while being read is the
+      current date's DB during the ~5 minutes of scheduled ingest at
+      06:00 AEST. Mitigations: nightly traffic is near zero, and
+      ``bank_history_payload`` already catches ``sqlite3.Error`` and
+      skips unreadable DBs rather than failing the whole request.
+
+    If the ingest pipeline ever starts rewriting historical DBs, this
+    helper must be revisited.
+
+    Wrapped with ``@contextlib.contextmanager`` so the caller's ``with``
+    block actually closes the connection — Python's default ``sqlite3``
+    context manager only commits/rolls back the transaction (Gemini
+    review feedback on PR #114).
+
+    ``Path.resolve().as_uri()`` is used for the path portion so a
+    filename containing ``?`` or ``#`` is encoded safely; the
+    ``file:///`` 3-slash RFC form is accepted by Pi SQLite once
+    ``immutable=1`` is the locking-bypass flag (the earlier
+    misdiagnosis on PR #115 conflated this with the unrelated
+    ``nolock=1`` failure).
     """
-    uri = f"{db_path.resolve().as_uri()}?mode=ro&nolock=1"
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&immutable=1"
     con = sqlite3.connect(uri, uri=True)
     try:
         yield con
