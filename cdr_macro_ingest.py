@@ -256,7 +256,10 @@ ABS_BA_GCCSA_SERIES: dict[str, dict[str, str]] = {
 # INDUSTRY=TOT (All Industries), TSEST=20 (SA), REGION=AUS, FREQ=Q.
 # Note: INDEX=THRPIB (including bonuses) is published only as TSEST=10
 # at this aggregate, so the headline SA wage measure uses THRPEB.
-ABS_WPI_URL = f"{ABS_DATA_API_BASE}/WPI/all?format=csv"
+# URL key pins all 7 dimensions (MEASURE.INDEX.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
+# so the server returns only this series, mirroring the BA_GCCSA pattern
+# (Gemini PR #126). Drops the response from ~11 MB to ~7 KB.
+ABS_WPI_URL = f"{ABS_DATA_API_BASE}/WPI/3.THRPEB.7.TOT.20.AUS.Q?format=csv"
 ABS_WPI_SERIES: dict[str, dict[str, str]] = {
     "abs_wage_price_index": {
         "MEASURE": "3",
@@ -272,7 +275,10 @@ ABS_WPI_SERIES: dict[str, dict[str, str]] = {
 # ABS Data API dataflow JV (Job Vacancies). Codes verified against
 # JV v1.0.0: MEASURE=M1 (Job Vacancies, '000), SECTOR=7 (Private and
 # Public), INDUSTRY=TOT, TSEST=20 (SA), REGION=AUS, FREQ=Q.
-ABS_JV_URL = f"{ABS_DATA_API_BASE}/JV/all?format=csv"
+# URL key pins all 6 dimensions (MEASURE.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
+# so the server returns only this series (Gemini PR #126). Drops the
+# response from ~2.5 MB to ~10 KB.
+ABS_JV_URL = f"{ABS_DATA_API_BASE}/JV/M1.7.TOT.20.AUS.Q?format=csv"
 ABS_JV_SERIES: dict[str, dict[str, str]] = {
     "job_vacancies": {
         "MEASURE": "M1",
