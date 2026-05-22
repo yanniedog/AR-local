@@ -14,7 +14,9 @@ participation_rate); PR1c added ABS CPI_M (monthly_cpi_indicator,
 monthly_trimmed_mean_cpi); PR1c.2 adds ABS labour-force coverage
 (employment_to_population, underemployment_rate, underutilisation_rate,
 hours_worked); PR1c.3 adds household_spending_indicator (HSI_M, monthly)
-and lending_indicator_housing (LEND_HOUSING, quarterly). PR1d/PR1e
+and lending_indicator_housing (LEND_HOUSING, quarterly); PR1c.4 adds
+building_approvals_abs (BA_GCCSA, monthly, fetched via an SDMX REST
+key-filtered URL because the unfiltered dataflow is ~3.6 GB). PR1d/PR1e
 extend the same pattern.
 
 Run standalone to populate the store:
@@ -196,6 +198,41 @@ ABS_LEND_HOUSING_SERIES: dict[str, dict[str, str]] = {
         "TSEST": "20",
         "REGION": "AUS",
         "FREQ": "Q",
+    },
+}
+
+# ABS Data API dataflow BA_GCCSA (Building Approvals by GCCSA and above).
+# Unlike the other ABS dataflows we already ingest, the unfiltered ``/all``
+# response is ~3.6 GB (every measure x value-range x sector x work-type x
+# building-type x TSEST x region x freq combination). We pin specific
+# dimension values in the URL key (SDMX REST: positional dim values
+# separated by ``.``) so the server returns only the headline residential
+# approvals time series -- 53 KB, ~844 monthly observations since 1956.
+#
+# Codes verified against BA_GCCSA v1.0.0:
+#   MEASURE=1        Number of dwelling units
+#   VALUE=1          Total (i.e. not the $50K+/$1M+ value-range slices)
+#   SECTOR=9         Total Sectors
+#   WORK_TYPE=1      New (excludes alterations/additions/conversions)
+#   BUILDING_TYPE=100  Total Residential
+#   TSEST=10         Original (no SA published at AUS national monthly)
+#   REGION=AUS
+#   FREQ=M
+# Key order matches the dataflow's dimension order:
+# MEASURE.VALUE.SECTOR.WORK_TYPE.BUILDING_TYPE.TSEST.REGION.FREQ
+ABS_BA_GCCSA_URL = (
+    f"{ABS_DATA_API_BASE}/BA_GCCSA/1.1.9.1.100.10.AUS.M?format=csv"
+)
+ABS_BA_GCCSA_SERIES: dict[str, dict[str, str]] = {
+    "building_approvals_abs": {
+        "MEASURE": "1",
+        "VALUE": "1",
+        "SECTOR": "9",
+        "WORK_TYPE": "1",
+        "BUILDING_TYPE": "100",
+        "TSEST": "10",
+        "REGION": "AUS",
+        "FREQ": "M",
     },
 }
 
@@ -516,6 +553,11 @@ def ingest_abs_lend_housing(con: sqlite3.Connection) -> dict[str, dict[str, obje
     return _ingest_abs_sdmx_csv(con, ABS_LEND_HOUSING_URL, ABS_LEND_HOUSING_SERIES)
 
 
+def ingest_abs_ba_gccsa(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch the key-filtered ABS BA_GCCSA slice for ``building_approvals_abs``."""
+    return _ingest_abs_sdmx_csv(con, ABS_BA_GCCSA_URL, ABS_BA_GCCSA_SERIES)
+
+
 def upsert_observations(
     con: sqlite3.Connection,
     series_id: str,
@@ -652,6 +694,7 @@ def main(argv: list[str] | None = None) -> int:
             "abs_lf_hours",
             "abs_hsi_m",
             "abs_lend_housing",
+            "abs_ba_gccsa",
             "all",
         ],
         default="all",
@@ -674,6 +717,8 @@ def main(argv: list[str] | None = None) -> int:
             report["abs_hsi_m"] = ingest_abs_hsi_m(con)
         if args.source in ("abs_lend_housing", "all"):
             report["abs_lend_housing"] = ingest_abs_lend_housing(con)
+        if args.source in ("abs_ba_gccsa", "all"):
+            report["abs_ba_gccsa"] = ingest_abs_ba_gccsa(con)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     finally:
