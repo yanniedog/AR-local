@@ -2,10 +2,42 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
 from pathlib import Path
+
+
+@contextlib.contextmanager
+def connect_readonly(db_path: Path):
+    """Open a SQLite file read-only without attempting to create lock files.
+
+    Default ``sqlite3.connect(path)`` opens for read+write and tries to create
+    a ``-journal`` or ``-wal`` sibling on first statement, which fails with
+    "attempt to write a readonly database" when the parent directory is not
+    writable by the dashboard service user (e.g. when an ingest invoked via
+    sudo leaves a runs/<date>/_exports/ directory owned by root). The
+    dashboard only ever reads from these DBs, so ``mode=ro&nolock=1`` skips
+    the lock-file write attempt entirely while preserving SQLite's change
+    detection (unlike ``immutable=1``, which assumes the file never
+    changes and would return undefined data if an ingest rewrote the file
+    mid-read).
+
+    Yields a connection wrapped in a context manager so the caller's
+    ``with`` block actually closes it — Python's default ``sqlite3``
+    context manager only commits/rolls back the transaction and leaks
+    the file descriptor.
+
+    ``Path.as_uri()`` handles paths with spaces and other reserved URI
+    characters so the URI form is robust on every platform.
+    """
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&nolock=1"
+    con = sqlite3.connect(uri, uri=True)
+    try:
+        yield con
+    finally:
+        con.close()
 
 
 def response_rows(rows: list[dict[str, object]]) -> bytes:
@@ -46,7 +78,7 @@ def min_rate_filter(query: dict[str, list[str]]) -> float:
 def latest_term_deposit_rows(db_path: Path, run_date: str, query: dict[str, list[str]]) -> bytes:
     min_rate = min_rate_filter(query)
     limit = query_limit(query)
-    with sqlite3.connect(db_path) as con:
+    with connect_readonly(db_path) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """
@@ -93,7 +125,7 @@ def latest_home_loan_rows(db_path: Path, run_date: str, query: dict[str, list[st
     match = re.fullmatch(r"fixed_(\d+)yr", structure)
     if match:
         fixed_years = match.group(1)
-    with sqlite3.connect(db_path) as con:
+    with connect_readonly(db_path) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """

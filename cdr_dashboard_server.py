@@ -32,6 +32,7 @@ from cdr_ribbon_normalize import (
     normalize_td_rate_structure_group,
 )
 from cdr_public_api_shims import (
+    connect_readonly,
     latest_home_loan_rows as build_latest_home_loan_rows,
     latest_term_deposit_rows as build_latest_term_deposit_rows,
     local_rba_history_rows as build_local_rba_history_rows,
@@ -629,7 +630,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         # post-fetch (and that /api/banks/ribbon already applies). Saves the wire
         # cost of every Mortgage DISCOUNT row that the dashboard discards anyway.
         filter_sql, filter_params = bank_section_rate_filter(section)
-        with sqlite3.connect(db_path) as con:
+        with connect_readonly(db_path) as con:
             available = bank_rate_columns(con)
             select_list = bank_rate_select_list(available, BANK_SECTION_COLUMNS)
             sql = (
@@ -721,7 +722,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
 
     def bank_ribbon_payload(run_date: str, section: str) -> bytes:
         db_path = bank_db_for_date(run_date)
-        with sqlite3.connect(db_path) as con:
+        with connect_readonly(db_path) as con:
             con.row_factory = sqlite3.Row
             filter_sql, filter_params = bank_section_rate_filter(section)
             where = (
@@ -811,7 +812,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         return body, maybe_gzip(body, "application/json")
 
     def read_bank_history_db(db_path: Path, max_run_date: str, section: str) -> list[dict[str, object]]:
-        with sqlite3.connect(db_path) as con:
+        with connect_readonly(db_path) as con:
             available = bank_rate_columns(con)
             select_list = bank_rate_select_list(available, BANK_HISTORY_COLUMNS)
             sql = f"SELECT {select_list} FROM bank_rates WHERE rate IS NOT NULL AND rate != ''"
