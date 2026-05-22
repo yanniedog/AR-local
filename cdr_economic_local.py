@@ -16,15 +16,18 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "dashboard" / "economic-data-catalog.json"
+_CATALOG_TTL_SECONDS = 5.0
 
 _catalog_lock = threading.Lock()
 _catalog_cache: dict | None = None
 _catalog_mtime: float | None = None
+_catalog_last_check: float = 0.0
 
 
 class CatalogUnavailableError(Exception):
@@ -36,14 +39,29 @@ def _now_iso() -> str:
 
 
 def _load_catalog() -> dict:
-    global _catalog_cache, _catalog_mtime
-    try:
-        stat = _CATALOG_PATH.stat()
-    except OSError as exc:
-        raise CatalogUnavailableError(
-            f"economic-data catalog file is missing: {_CATALOG_PATH}"
-        ) from exc
+    """Return the catalog dict, refreshing from disk only when the cache TTL
+    has expired and the file mtime has changed.
+
+    Double-checked locking avoids the race where two threads observe a stale
+    cache simultaneously and both re-read from disk. The TTL skips the
+    filesystem ``stat()`` call entirely while warm, matching the
+    ``LATEST_EXPORTS_TTL_SECONDS`` pattern used elsewhere in the server.
+    """
+    global _catalog_cache, _catalog_mtime, _catalog_last_check
+    now = time.monotonic()
+    if _catalog_cache is not None and (now - _catalog_last_check) < _CATALOG_TTL_SECONDS:
+        return _catalog_cache
+
     with _catalog_lock:
+        now = time.monotonic()
+        if _catalog_cache is not None and (now - _catalog_last_check) < _CATALOG_TTL_SECONDS:
+            return _catalog_cache
+        try:
+            stat = _CATALOG_PATH.stat()
+        except OSError as exc:
+            raise CatalogUnavailableError(
+                f"economic-data catalog file is missing: {_CATALOG_PATH}"
+            ) from exc
         if _catalog_cache is None or _catalog_mtime != stat.st_mtime:
             try:
                 with _CATALOG_PATH.open("r", encoding="utf-8") as handle:
@@ -53,6 +71,7 @@ def _load_catalog() -> dict:
                     f"economic-data catalog file is not valid JSON: {_CATALOG_PATH}"
                 ) from exc
             _catalog_mtime = stat.st_mtime
+        _catalog_last_check = now
         return _catalog_cache
 
 
