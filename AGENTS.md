@@ -131,6 +131,41 @@ Chief assigns **one writer per path prefix and branch** when invoked. Each skill
 
 **Also see:** chief, orchestrator, deep-browser-explore, agent-auditor (tables above).
 
+## agentmemory is local — do NOT SSH to Pi for agentmemory
+
+agentmemory (`@agentmemory/agentmemory`) is an npm package installed **globally on the Windows development machine**. Its engine, viewer, REST API, logs, config, and all data are local.
+
+- **Never SSH into `ar-local-pi5` or any Pi host for agentmemory work.**
+- Never treat the Pi as the agentmemory host or run agentmemory CLI commands over SSH.
+- Config and data: `C:\Users\jkoka\.agentmemory\` — REST API: `http://localhost:3111` (local only).
+- The Pi hosts only the CDR dashboard (`cdr_dashboard_server.py`) and ingest jobs.
+
+Rule file: `.cursor/rules/agentmemory-is-local.mdc` (this workspace) and `C:\Users\jkoka\.cursor\rules\agentmemory-is-local.mdc` (global).
+
+## Agent memory (agentmemory MCP)
+
+All three agents (Cursor, Claude Code, Codex) share a local agentmemory server at `http://127.0.0.1:3111`. Context from previous sessions is **automatically injected** at session start via hooks — you do not need to request it manually.
+
+**MCP tools available** (via `user-agentmemory` server in Cursor, `agentmemory` in Claude/Codex):
+
+| Tool | When to use |
+|------|-------------|
+| `memory_recall` | Look up past decisions, file edits, or patterns by keyword |
+| `memory_save` | Explicitly pin an important insight, architecture decision, or bug fix |
+| `memory_lesson_save` | Record a reusable lesson (e.g. "always escape X before Y") |
+| `memory_smart_search` | Semantic search across all stored observations |
+| `memory_sessions` | Browse past sessions for this project |
+| `memory_reflect` | Trigger consolidation of recent observations into long-term memory |
+| `memory_consolidate` | Force a full consolidation cycle |
+| `memory_diagnose` | Debug memory health or retrieval issues |
+
+**Use proactively:**
+- After a non-obvious fix or architectural decision → `memory_save`
+- When starting work on a file you last touched in a prior session → `memory_recall`
+- When context injection at session start is empty → prior sessions may not yet be consolidated; use `memory_smart_search` directly
+
+**Config:** `%USERPROFILE%\.agentmemory\.env`, viewer at `http://127.0.0.1:3113`. Do not point agentmemory at the Pi — it is localhost-only.
+
 ## Debugging
 
 - Use **fresh ingest/export outputs** and **dashboard server stdout/stderr**, not stale cached assumptions.
