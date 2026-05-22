@@ -7,23 +7,27 @@ public CSV/JSON sources, parses them, and persists observations into
 ``state/local-macro.sqlite``. ``cdr_economic_local.economic_series_payload``
 then reads from that store to build the wire response.
 
-Each ingest source is registered in ``RBA_H5_COLUMNS`` (etc., one mapping per
-source family). PR1b implements the RBA H5 labour-force CSV; PR1c will add
-ABS Indicator API, PR1d RBNZ/FRED, PR1e derived series.
+Each ingest source is registered in a per-family mapping (``RBA_H5_COLUMNS``,
+``ABS_CPI_M_SERIES`` etc.). PR1b shipped RBA H5 (unemployment_rate,
+participation_rate); PR1c adds ABS Indicator API via the open ABS Data API
+(SDMX-JSON), starting with monthly_cpi_indicator and monthly_trimmed_mean_cpi
+from the CPI_M dataflow. PR1c.x and PR1d/PR1e extend the same pattern.
 
 Run standalone to populate the store:
 
-    python cdr_macro_ingest.py
+    python cdr_macro_ingest.py                  # all sources
+    python cdr_macro_ingest.py --source abs_cpi_m
 
-Or import ``ingest_rba_h5(store_path)`` from elsewhere (e.g. the daily timer
-script) to refresh just one source family. The ingest is idempotent: rows
-are upserted by ``(series_id, observation_date)``, so re-running with no
-upstream change is a no-op.
+Or import ``ingest_rba_h5(con)`` / ``ingest_abs_cpi_m(con)`` from elsewhere
+(e.g. the daily timer script) to refresh just one source family. The ingest
+is idempotent: rows are upserted by ``(series_id, observation_date)``, so
+re-running with no upstream change is a no-op.
 """
 
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
 import io
 import json
@@ -50,6 +54,39 @@ RBA_H5_URL = "https://www.rba.gov.au/statistics/tables/csv/h5-data.csv"
 RBA_H5_COLUMNS: dict[str, str] = {
     "unemployment_rate": "Unemployment rate",
     "participation_rate": "Participation rate",
+}
+
+# ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
+# key fetches every series in the dataflow; we filter client-side against
+# ``ABS_CPI_M_SERIES`` so the URL is stable even if dimension ordering
+# changes. Codes per ABS data-structure definition for CPI_M v1.0.0:
+#   MEASURE=3   Percentage change from corresponding month previous year
+#   INDEX=10001 All groups CPI
+#   INDEX=999902 Trimmed mean (annual % change variant)
+#   TSEST=20    Original (no seasonal adjustment published for the indicator)
+#   REGION=AUS  Australia (national, not capital-city splits)
+#   FREQ=M      Monthly
+# These are best-effort; if upstream renames a code the ingest reports
+# zero rows for the affected series and `ingest_runs.status` flips to
+# error -- same drift-detection pattern as RBA H5.
+ABS_DATA_API_BASE = "https://data.api.abs.gov.au/data"
+ABS_CPI_M_DATAFLOW = "ABS,CPI_M,1.0.0"
+ABS_CPI_M_URL = f"{ABS_DATA_API_BASE}/{ABS_CPI_M_DATAFLOW}/all?format=csv"
+ABS_CPI_M_SERIES: dict[str, dict[str, str]] = {
+    "monthly_cpi_indicator": {
+        "MEASURE": "3",
+        "INDEX": "10001",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "M",
+    },
+    "monthly_trimmed_mean_cpi": {
+        "MEASURE": "3",
+        "INDEX": "999902",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "M",
+    },
 }
 
 
@@ -180,10 +217,142 @@ def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[st
     return out
 
 
-def _fetch_url(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/csv"})
+def _fetch_url(url: str, accept: str = "text/csv") -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
     with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
         return resp.read().decode("utf-8-sig")
+
+
+def _parse_abs_period(raw: str) -> str | None:
+    """SDMX TIME_PERIOD for monthly ABS data is ``YYYY-MM``.
+
+    Returned as end-of-month ISO date so daily forward-fill (in
+    ``cdr_economic_local._build_series_points``) doesn't surface a month's
+    value before the month is even complete. Matches the RBA H5 convention.
+    """
+    raw = (raw or "").strip()
+    if len(raw) != 7 or raw[4] != "-":
+        return None
+    try:
+        year = int(raw[0:4])
+        month = int(raw[5:7])
+        last_day = calendar.monthrange(year, month)[1]
+        return f"{year:04d}-{month:02d}-{last_day:02d}"
+    except ValueError:
+        return None
+
+
+def parse_abs_sdmx_csv(
+    text: str, series_filters: dict[str, dict[str, str]]
+) -> dict[str, list[tuple[str, float | None, str | None]]]:
+    """Parse an ABS Data API SDMX-CSV response.
+
+    The header row contains both dimension columns (FREQ, MEASURE, INDEX, ...)
+    and TIME_PERIOD + OBS_VALUE. For each filter in ``series_filters`` we
+    accept any row whose dimension columns match every key/value pair.
+    Unknown filter columns are treated as a non-match (drift detection:
+    the caller will see zero rows and record an error).
+
+    Release date is left as None -- the SDMX-CSV doesn't carry per-row
+    release dates and the catalog metadata covers source attribution.
+    """
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        return {sid: [] for sid in series_filters}
+    col_for = {name: idx for idx, name in enumerate(h.strip() for h in header)}
+    if "TIME_PERIOD" not in col_for or "OBS_VALUE" not in col_for:
+        return {sid: [] for sid in series_filters}
+    time_idx = col_for["TIME_PERIOD"]
+    value_idx = col_for["OBS_VALUE"]
+
+    # Precompute per-series (column_index, expected_value) pairs; if any
+    # filter column is missing from the response, that series cannot match.
+    matchers: dict[str, list[tuple[int, str]] | None] = {}
+    for sid, filt in series_filters.items():
+        pairs: list[tuple[int, str]] = []
+        ok = True
+        for dim_name, expected in filt.items():
+            idx = col_for.get(dim_name)
+            if idx is None:
+                ok = False
+                break
+            pairs.append((idx, expected))
+        matchers[sid] = pairs if ok else None
+
+    out: dict[str, list[tuple[str, float | None, str | None]]] = {sid: [] for sid in series_filters}
+    for row in reader:
+        if not row or len(row) <= max(time_idx, value_idx):
+            continue
+        obs_date = _parse_abs_period(row[time_idx])
+        if not obs_date:
+            continue
+        cell = (row[value_idx] or "").strip()
+        if not cell:
+            continue
+        try:
+            value = float(cell)
+        except ValueError:
+            continue
+        for sid, pairs in matchers.items():
+            if pairs is None:
+                continue
+            if all(idx < len(row) and (row[idx] or "").strip() == expected for idx, expected in pairs):
+                out[sid].append((obs_date, value, None))
+    for sid in out:
+        out[sid].sort(key=lambda r: r[0])
+    return out
+
+
+def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS CPI_M dataflow and upsert series mapped in ``ABS_CPI_M_SERIES``."""
+    results: dict[str, dict[str, object]] = {}
+    try:
+        text = _fetch_url(ABS_CPI_M_URL, accept="text/csv, application/vnd.sdmx.data+csv")
+        parsed = parse_abs_sdmx_csv(text, ABS_CPI_M_SERIES)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        message = f"fetch or parse failed: {exc}"
+        for series_id in ABS_CPI_M_SERIES:
+            record_run(
+                con,
+                series_id,
+                status="error",
+                message=message,
+                source_url=ABS_CPI_M_URL,
+                success=False,
+            )
+            results[series_id] = {"status": "error", "message": message, "rows": 0}
+        con.commit()
+        return results
+
+    for series_id in ABS_CPI_M_SERIES:
+        rows = parsed.get(series_id, [])
+        if not rows:
+            message = "no rows matched filter (upstream schema or codes may have changed)"
+            record_run(con, series_id, status="error", message=message, source_url=ABS_CPI_M_URL, success=False)
+            results[series_id] = {"status": "error", "message": message, "rows": 0}
+            continue
+        upsert_observations(con, series_id, rows)
+        last_obs_date, last_value, _ = rows[-1]
+        record_run(
+            con,
+            series_id,
+            status="ok",
+            message=f"Source checked; {len(rows)} observations ingested.",
+            source_url=ABS_CPI_M_URL,
+            last_observation_date=last_obs_date,
+            last_value=last_value,
+            success=True,
+        )
+        results[series_id] = {
+            "status": "ok",
+            "rows": len(rows),
+            "last_observation_date": last_obs_date,
+            "last_value": last_value,
+        }
+    con.commit()
+    return results
 
 
 def upsert_observations(
@@ -313,7 +482,12 @@ def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
-    parser.add_argument("--source", choices=["rba_h5", "all"], default="all", help="Which source family to ingest")
+    parser.add_argument(
+        "--source",
+        choices=["rba_h5", "abs_cpi_m", "all"],
+        default="all",
+        help="Which source family to ingest",
+    )
     args = parser.parse_args(argv)
 
     con = open_store(args.store)
@@ -321,6 +495,8 @@ def main(argv: list[str] | None = None) -> int:
         report: dict[str, object] = {}
         if args.source in ("rba_h5", "all"):
             report["rba_h5"] = ingest_rba_h5(con)
+        if args.source in ("abs_cpi_m", "all"):
+            report["abs_cpi_m"] = ingest_abs_cpi_m(con)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     finally:
