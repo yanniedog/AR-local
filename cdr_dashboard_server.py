@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ar_local_pi_runtime import latest_exports_root
 from ar_local_ingest_schedule import DAILY_INGEST_SCHEDULE_LABEL, latest_daily_due_utc, next_daily_due_utc
+from cdr_economic_local import economic_catalog_payload, economic_health_payload
 from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
     extract_fixed_rate_term_years,
@@ -1042,6 +1043,12 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/home-loan-rates/rba/history":
                 body, gz = local_rba_history_rows()
                 return body, "application/json; charset=utf-8", gz
+            if path == "/api/economic-data/catalog":
+                body, ctype = economic_catalog_payload()
+                return body, ctype, maybe_gzip(body, ctype)
+            if path == "/api/economic-data/health":
+                body, ctype = economic_health_payload()
+                return body, ctype, maybe_gzip(body, ctype)
             if path.startswith("/api/economic-data"):
                 body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
                 return body, ctype, None

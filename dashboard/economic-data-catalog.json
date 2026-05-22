@@ -1,0 +1,1072 @@
+{
+  "presets": [
+    {
+      "id": "rba_signal_dashboard",
+      "label": "RBA Signal Dashboard",
+      "description": "Directional policy-pressure dashboard built from inflation, labour, demand, housing, markets, and global signals.",
+      "seriesIds": [
+        "rba_signal_index",
+        "market_implied_cash_rate_gap",
+        "inflation_gap",
+        "labour_slack",
+        "wage_growth",
+        "housing_credit_growth"
+      ]
+    },
+    {
+      "id": "rba_watchlist",
+      "label": "RBA Watchlist",
+      "description": "Core labour, inflation, expectations, neutral-rate, and money-market indicators.",
+      "seriesIds": [
+        "unemployment_rate",
+        "trimmed_mean_cpi",
+        "inflation_expectations",
+        "neutral_rate",
+        "bank_bill_90d"
+      ]
+    },
+    {
+      "id": "housing_transmission",
+      "label": "Housing Transmission",
+      "description": "Housing finance, credit, household demand, and wage channels most exposed to policy changes.",
+      "seriesIds": [
+        "major_bank_lending_rates",
+        "housing_credit_growth",
+        "household_consumption",
+        "consumer_sentiment",
+        "wage_growth"
+      ]
+    },
+    {
+      "id": "global_pulse",
+      "label": "Global Pulse",
+      "description": "External policy, FX, commodity, and China-growth signals that can move the RBA reaction function.",
+      "seriesIds": [
+        "rbnz_ocr",
+        "fed_funds_proxy",
+        "aud_twi",
+        "commodity_prices",
+        "major_trading_partner_growth_proxy"
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "id": "labour",
+      "label": "Labour market",
+      "series": [
+        {
+          "id": "unemployment_rate",
+          "label": "Unemployment rate",
+          "short_label": "Unemployment",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA H5",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h5-data.csv",
+          "description": "Seasonally adjusted unemployment rate from the RBA H5 labour-force table.",
+          "presets": [
+            "rba_watchlist"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 4.3,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "participation_rate",
+          "label": "Participation rate",
+          "short_label": "Participation",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA H5",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h5-data.csv",
+          "description": "Seasonally adjusted labour-force participation rate from the RBA H5 table.",
+          "presets": [],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 66.8,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "wage_growth",
+          "label": "Wage price index growth",
+          "short_label": "WPI growth",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA H4",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h4-data.csv",
+          "description": "Year-ended wage growth from the RBA H4 labour-costs table.",
+          "presets": [
+            "housing_transmission"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2025-12-31",
+            "last_value": 3.4,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "abs_wage_price_index",
+          "label": "ABS wage price index",
+          "short_label": "ABS WPI",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS Wage Price Index annual movement from the official Indicator API.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "underemployment_rate",
+          "label": "Underemployment rate",
+          "short_label": "Underemployment",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS labour-force underemployment rate, a broader slack signal than unemployment alone.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "underutilisation_rate",
+          "label": "Labour underutilisation rate",
+          "short_label": "Underutilisation",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS labour underutilisation rate: unemployment plus underemployment.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "employment_to_population",
+          "label": "Employment-to-population ratio",
+          "short_label": "Employment/pop",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS employment-to-population ratio, used as a labour tightness signal.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "hours_worked",
+          "label": "Monthly hours worked",
+          "short_label": "Hours worked",
+          "category": "labour",
+          "unit": "Million hours",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS monthly hours worked, a labour demand and income-pressure signal.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "job_vacancies",
+          "label": "Job vacancies",
+          "short_label": "Vacancies",
+          "category": "labour",
+          "unit": "'000",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS job vacancies, a leading labour-demand indicator.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "capacity_utilisation_proxy",
+          "label": "Capacity utilisation proxy",
+          "short_label": "Capacity proxy",
+          "category": "labour",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": true,
+          "source_label": "RBA J1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/j1-star-variables.csv",
+          "description": "Output-gap median from the RBA J1 survey, used as a public capacity-pressure proxy.",
+          "presets": [],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-02-01",
+            "last_value": 0,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "labour_slack",
+          "label": "Labour slack pressure",
+          "short_label": "Labour slack",
+          "category": "labour",
+          "unit": "Score",
+          "frequency": "monthly",
+          "proxy": true,
+          "source_label": "Derived from ABS/RBA labour data",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "Labour-market pressure score from unemployment, underutilisation, and employment-to-population signals.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": null,
+          "quarantine": {
+            "quarantined": true,
+            "reason": "missing_status"
+          }
+        },
+        {
+          "id": "vacancies_to_unemployed_ratio",
+          "label": "Vacancies-to-unemployed ratio",
+          "short_label": "Vacancies/unemp",
+          "category": "labour",
+          "unit": "Ratio",
+          "frequency": "quarterly",
+          "proxy": true,
+          "source_label": "Derived from ABS labour data",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "Job vacancies divided by unemployed persons where ABS inputs are available.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": null,
+          "quarantine": {
+            "quarantined": true,
+            "reason": "missing_status"
+          }
+        }
+      ]
+    },
+    {
+      "id": "inflation",
+      "label": "Inflation and expectations",
+      "series": [
+        {
+          "id": "trimmed_mean_cpi",
+          "label": "Trimmed mean CPI",
+          "short_label": "Trimmed mean CPI",
+          "category": "inflation",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA G1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/g1-data.csv",
+          "description": "Year-ended trimmed mean inflation, the RBA's preferred core CPI measure.",
+          "presets": [
+            "rba_watchlist"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2025-12-31",
+            "last_value": 3.4,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "monthly_cpi_indicator",
+          "label": "Monthly CPI indicator",
+          "short_label": "Monthly CPI",
+          "category": "inflation",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS headline monthly CPI annual movement, loaded from the official ABS Indicator API when an API key is configured.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "monthly_trimmed_mean_cpi",
+          "label": "Monthly trimmed mean CPI",
+          "short_label": "Monthly trimmed CPI",
+          "category": "inflation",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS monthly trimmed mean inflation if available from the official Indicator API.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "inflation_expectations",
+          "label": "Inflation expectations",
+          "short_label": "Inflation expectations",
+          "category": "inflation",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA G3",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/g3-data.csv",
+          "description": "Consumer inflation expectations one year ahead from the RBA G3 survey table.",
+          "presets": [
+            "rba_watchlist"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 5.2,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "neutral_rate",
+          "label": "Neutral interest rate (R*)",
+          "short_label": "Neutral rate",
+          "category": "inflation",
+          "unit": "Per cent",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA J1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/j1-star-variables.csv",
+          "description": "Median nominal neutral interest rate estimate from the RBA J1 market-economist survey.",
+          "presets": [
+            "rba_watchlist"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-02-01",
+            "last_value": 3.5,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "inflation_gap",
+          "label": "Inflation gap to RBA midpoint",
+          "short_label": "Inflation gap",
+          "category": "inflation",
+          "unit": "Percentage points",
+          "frequency": "monthly",
+          "proxy": true,
+          "source_label": "Derived from CPI",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/g1-data.csv",
+          "description": "Latest preferred CPI signal less the 2.5 per cent midpoint of the RBA target band.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": null,
+          "quarantine": {
+            "quarantined": true,
+            "reason": "missing_status"
+          }
+        }
+      ]
+    },
+    {
+      "id": "demand",
+      "label": "Demand and confidence",
+      "series": [
+        {
+          "id": "household_consumption",
+          "label": "Household consumption",
+          "short_label": "Household consumption",
+          "category": "demand",
+          "unit": "$ million",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA H2",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h2-data.csv",
+          "description": "Quarterly household final consumption expenditure from the RBA H2 demand table.",
+          "presets": [
+            "housing_transmission"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2025-12-31",
+            "last_value": 355694,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "household_spending_indicator",
+          "label": "Monthly household spending",
+          "short_label": "Household spending",
+          "category": "demand",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS monthly household spending annual movement from the Indicator API when configured.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "business_conditions",
+          "label": "Business conditions",
+          "short_label": "Business conditions",
+          "category": "demand",
+          "unit": "Percentage points",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA H3",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h3-data.csv",
+          "description": "NAB business-conditions index as carried in the RBA H3 activity table.",
+          "presets": [],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 2.3,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "consumer_sentiment",
+          "label": "Consumer sentiment",
+          "short_label": "Consumer sentiment",
+          "category": "demand",
+          "unit": "Index",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA H3",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h3-data.csv",
+          "description": "Westpac-Melbourne Institute consumer-sentiment index from the RBA H3 table.",
+          "presets": [
+            "housing_transmission"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-04-30",
+            "last_value": 80.1,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "public_demand",
+          "label": "Public demand",
+          "short_label": "Public demand",
+          "category": "demand",
+          "unit": "$ million",
+          "frequency": "quarterly",
+          "proxy": false,
+          "source_label": "RBA H2",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h2-data.csv",
+          "description": "Quarterly public demand from the RBA H2 demand-and-income table.",
+          "presets": [],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2025-12-31",
+            "last_value": 196885.4,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "housing",
+      "label": "Housing and credit",
+      "series": [
+        {
+          "id": "housing_credit_growth",
+          "label": "Housing credit growth",
+          "short_label": "Housing credit",
+          "category": "housing",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA D1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/d1-data.csv",
+          "description": "Twelve-month housing-credit growth from the RBA D1 financial-aggregates table.",
+          "presets": [
+            "housing_transmission"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-02-28",
+            "last_value": 7.1,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "building_approvals_abs",
+          "label": "ABS building approvals",
+          "short_label": "ABS approvals",
+          "category": "housing",
+          "unit": "Number",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS building approvals, a forward housing-activity signal.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "lending_indicator_housing",
+          "label": "Housing lending indicator",
+          "short_label": "Housing lending",
+          "category": "housing",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "ABS Indicator API",
+          "source_url": "https://indicator.api.abs.gov.au",
+          "description": "ABS lending indicator for housing credit impulse when the Indicator API is configured.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": null,
+            "last_observation_date": null,
+            "last_value": null,
+            "status": "error",
+            "message": "abs_indicator_api_key_missing"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_error"
+          }
+        },
+        {
+          "id": "dwelling_approvals",
+          "label": "Dwelling approvals",
+          "short_label": "Dwelling approvals",
+          "category": "housing",
+          "unit": "'000",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA H3",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/h3-data.csv",
+          "description": "Private dwelling approvals from the RBA H3 monthly-activity table.",
+          "presets": [],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-02-28",
+            "last_value": 18.8,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "major_bank_lending_rates",
+          "label": "Major bank lending rates proxy",
+          "short_label": "Lending rates proxy",
+          "category": "housing",
+          "unit": "Per cent per annum",
+          "frequency": "monthly",
+          "proxy": true,
+          "source_label": "RBA F5 + F7",
+          "source_url": "https://www.rba.gov.au/statistics/tables/index.html",
+          "description": "Composite proxy averaging major-bank housing and small-business lending rates from RBA F5 and F7.",
+          "presets": [
+            "housing_transmission"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 6.79,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "markets",
+      "label": "Market rates and FX",
+      "series": [
+        {
+          "id": "bank_bill_30d",
+          "label": "30-day bank bill yield",
+          "short_label": "30-day bank bill",
+          "category": "markets",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA F1.1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv",
+          "description": "RBA F1.1 monthly-average one-month BAB/NCD yield for near-term policy expectations.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 3.96,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "bank_bill_90d",
+          "label": "90-day bank bill yield",
+          "short_label": "90-day bank bill",
+          "category": "markets",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA F1.1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv",
+          "description": "RBA F1.1 monthly-average three-month BAB/NCD yield, a maintained money-market proxy for expected policy moves.",
+          "presets": [
+            "rba_watchlist"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 4.19,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "bank_bill_180d",
+          "label": "180-day bank bill yield",
+          "short_label": "180-day bank bill",
+          "category": "markets",
+          "unit": "Per cent",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA F1.1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv",
+          "description": "RBA F1.1 monthly-average six-month BAB/NCD yield for money-market curve pressure.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 4.6,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "market_implied_cash_rate_gap",
+          "label": "Market-implied cash-rate gap",
+          "short_label": "Market gap",
+          "category": "markets",
+          "unit": "Basis points",
+          "frequency": "monthly",
+          "proxy": true,
+          "source_label": "Derived from RBA F1.1",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv",
+          "description": "Difference between 90-day bank bill yield and cash-rate target, expressed in basis points.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": null,
+          "quarantine": {
+            "quarantined": true,
+            "reason": "missing_status"
+          }
+        },
+        {
+          "id": "rba_signal_index",
+          "label": "RBA signal index",
+          "short_label": "RBA signal",
+          "category": "markets",
+          "unit": "Score",
+          "frequency": "monthly",
+          "proxy": true,
+          "source_label": "AustralianRates derived",
+          "source_url": "https://www.australianrates.com/economic-data/",
+          "description": "Composite directional policy-pressure score. Positive means tighter-policy pressure; negative means easier-policy pressure.",
+          "presets": [
+            "rba_signal_dashboard"
+          ],
+          "freshness": null,
+          "quarantine": {
+            "quarantined": true,
+            "reason": "missing_status"
+          }
+        },
+        {
+          "id": "aud_twi",
+          "label": "AUD trade-weighted index",
+          "short_label": "AUD TWI",
+          "category": "markets",
+          "unit": "Index",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA F11",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/f11-data.csv",
+          "description": "Australian dollar trade-weighted index from the RBA F11 exchange-rate table.",
+          "presets": [
+            "global_pulse"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 64.3,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "global",
+      "label": "Global context",
+      "series": [
+        {
+          "id": "rbnz_ocr",
+          "label": "RBNZ official cash rate",
+          "short_label": "RBNZ OCR",
+          "category": "global",
+          "unit": "Per cent",
+          "frequency": "policy",
+          "proxy": false,
+          "source_label": "RBNZ decisions",
+          "source_url": "https://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions",
+          "description": "Official Cash Rate decisions from the Reserve Bank of New Zealand policy-decision history.",
+          "presets": [
+            "global_pulse"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-12T08:00:59.879Z",
+            "last_observation_date": "2026-04-08",
+            "last_value": 2.25,
+            "status": "ok",
+            "message": "Transient upstream failure; retained last successful observation from 2026-04-08. Last error: upstream_not_ok:429:https://r.jina.ai/http://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions"
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "major_trading_partner_growth_proxy",
+          "label": "China GDP growth proxy",
+          "short_label": "China GDP proxy",
+          "category": "global",
+          "unit": "Per cent",
+          "frequency": "annual",
+          "proxy": true,
+          "source_label": "OECD via FRED",
+          "source_url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CHNGDPRAPSMEI",
+          "description": "Annual China GDP growth proxy from the OECD MEI feed delivered via FRED.",
+          "presets": [
+            "global_pulse"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-06 03:41:22",
+            "last_observation_date": "2025-01-01",
+            "last_value": 5,
+            "status": "stale",
+            "message": "Transient upstream failure; retained observation 2025-01-01 is now stale. Last error: upstream_not_ok:520:https://fred.stlouisfed.org/graph/fredgraph.csv?id=CHNGDPRAPSMEI"
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "status_stale"
+          }
+        },
+        {
+          "id": "commodity_prices",
+          "label": "Bulk commodity prices",
+          "short_label": "Commodity prices",
+          "category": "global",
+          "unit": "Index",
+          "frequency": "monthly",
+          "proxy": false,
+          "source_label": "RBA I2",
+          "source_url": "https://www.rba.gov.au/statistics/tables/csv/i2-data.csv",
+          "description": "RBA I2 bulk-commodity price index in SDR terms.",
+          "presets": [
+            "global_pulse"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2026-03-31",
+            "last_value": 101.2,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": false,
+            "reason": null
+          }
+        },
+        {
+          "id": "fed_funds_proxy",
+          "label": "Fed funds target proxy",
+          "short_label": "Fed funds proxy",
+          "category": "global",
+          "unit": "Per cent",
+          "frequency": "policy",
+          "proxy": true,
+          "source_label": "Federal Reserve open market",
+          "source_url": "https://www.federalreserve.gov/monetarypolicy/openmarket.htm?os=shmmfp",
+          "description": "Midpoint of the FOMC federal-funds target range, parsed from the Federal Reserve open-market history page.",
+          "presets": [
+            "global_pulse"
+          ],
+          "freshness": {
+            "last_checked_at": "2026-04-28T06:10:24.765Z",
+            "last_success_at": "2026-04-28T06:10:24.765Z",
+            "last_observation_date": "2025-12-11",
+            "last_value": 3.625,
+            "status": "ok",
+            "message": "Source checked; no new observations."
+          },
+          "quarantine": {
+            "quarantined": true,
+            "reason": "stale_162d"
+          }
+        }
+      ]
+    }
+  ]
+}
