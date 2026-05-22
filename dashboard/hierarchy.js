@@ -2,6 +2,8 @@
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
+  const RATE_EPS = 1e-9;
+  const DELTA_PCT_MIN = 0.005;
   const { historyIndexKey, pct, rateValue } = window.LocalCdrUtils;
 
   function clear(element) {
@@ -119,7 +121,7 @@
 
   function formatDeltaPct(latest, previous) {
     const delta = (latest - previous) * 100;
-    if (!Number.isFinite(delta) || Math.abs(delta) < 0.00005) return '';
+    if (!Number.isFinite(delta) || Math.abs(delta) < DELTA_PCT_MIN) return '';
     const sign = delta > 0 ? '+' : '';
     return `(${sign}${delta.toFixed(2)}%)`;
   }
@@ -138,7 +140,7 @@
     const highlightMax = highlightMaxForSection(state.section);
     const latest = bestHistoryValue(byDate[pair.anchor] || [], highlightMax);
     const previous = bestHistoryValue(byDate[pair.previous] || [], highlightMax);
-    if (latest == null || previous == null || latest === previous) return null;
+    if (latest == null || previous == null) return null;
     const deltaText = formatDeltaPct(latest, previous);
     if (!deltaText) return null;
     const delta = latest - previous;
@@ -323,14 +325,14 @@
   function isBestRow(rows, sliceBest, highlightMax) {
     if (sliceBest == null) return false;
     const bestValue = rowBestValue(rows, highlightMax);
-    return bestValue != null && bestValue === sliceBest;
+    return bestValue != null && Math.abs(bestValue - sliceBest) <= RATE_EPS;
   }
 
   function renderRateRange(parent, rows, sliceBest, highlightMax) {
     const mm = minMax(rows);
     if (mm.min == null) return;
     const showRange = mm.min !== mm.max;
-    const bestValue = highlightMax ? mm.max : mm.min;
+    const bestValue = rowBestValue(rows, highlightMax);
     const first = child(parent, 'span', sliceBest === bestValue ? 'ar-ribbon-best' : '', pct(mm.min));
     if (!showRange) return;
     child(parent, 'span', 'ar-ribbon-rate-sep', '-');
@@ -414,7 +416,7 @@
     const expanded = isExpanded(path, activePath);
     const targetPath = expanded ? parentPath(path) : path;
     const row = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--branch');
-    if (isBestRow(group.rows, state.sliceBest, state.highlightMax)) row.classList.add('ar-ribbon-best-row');
+    if (state.sliceBest != null && group.best === state.sliceBest) row.classList.add('ar-ribbon-best-row');
     row.style.setProperty('--ar-ribbon-depth', String(depth));
     row.dataset.localHierarchyAction = 'toggle';
     row.dataset.localHierarchyPath = targetPath;
@@ -567,7 +569,7 @@
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     const activePath = prunePath(tree, displayHierarchyPath(state)) || displayHierarchyPath(state);
-    const sliceNode = activePath ? nodeAtPath(tree, activePath) : tree;
+    const sliceNode = activePath ? nodeAtPath(tree, activePath) : (tree.kind === 'empty' ? null : tree);
     state.sliceBest = bestRate(rowsUnderNode(sliceNode), state.highlightMax);
     const statsMap = indexNodeStats(tree, new WeakMap());
     const treeStats = statsMap.get(tree) || visibleStats;
