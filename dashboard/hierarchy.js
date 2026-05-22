@@ -331,16 +331,14 @@
   function renderRateRange(parent, rows, sliceBest, highlightMax) {
     const mm = minMax(rows);
     if (mm.min == null) return;
-    const showRange = mm.min !== mm.max;
-    const bestValue = rowBestValue(rows, highlightMax);
-    const first = child(parent, 'span', sliceBest === bestValue ? 'ar-ribbon-best' : '', pct(mm.min));
+    const showRange = Math.abs(mm.max - mm.min) > RATE_EPS;
+    const isBest = (val) => sliceBest != null && Math.abs(val - sliceBest) <= RATE_EPS;
+    const minClass = isBest(mm.min) && (!showRange || !highlightMax) ? 'ar-ribbon-best' : '';
+    const maxClass = isBest(mm.max) && highlightMax ? 'ar-ribbon-best' : '';
+    child(parent, 'span', minClass, pct(mm.min));
     if (!showRange) return;
     child(parent, 'span', 'ar-ribbon-rate-sep', '-');
-    const last = child(parent, 'span', sliceBest === bestValue ? 'ar-ribbon-best' : '', pct(mm.max));
-    if (highlightMax) {
-      first.className = '';
-      last.className = sliceBest === bestValue ? 'ar-ribbon-best' : '';
-    }
+    child(parent, 'span', maxClass, pct(mm.max));
   }
 
   function renderBreadcrumbs(container, tree, activePath) {
@@ -416,7 +414,7 @@
     const expanded = isExpanded(path, activePath);
     const targetPath = expanded ? parentPath(path) : path;
     const row = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--branch');
-    if (state.sliceBest != null && group.best === state.sliceBest) row.classList.add('ar-ribbon-best-row');
+    if (state.sliceBest != null && group.best != null && Math.abs(group.best - state.sliceBest) <= RATE_EPS) row.classList.add('ar-ribbon-best-row');
     row.style.setProperty('--ar-ribbon-depth', String(depth));
     row.dataset.localHierarchyAction = 'toggle';
     row.dataset.localHierarchyPath = targetPath;
