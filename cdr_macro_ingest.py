@@ -17,8 +17,9 @@ hours_worked); PR1c.3 adds household_spending_indicator (HSI_M, monthly)
 and lending_indicator_housing (LEND_HOUSING, quarterly); PR1c.4 adds
 building_approvals_abs (BA_GCCSA, monthly, fetched via an SDMX REST
 key-filtered URL because the unfiltered dataflow is ~3.6 GB); PR1b.x
-adds RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions).
-PR1d/PR1e extend the same pattern.
+adds RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions);
+PR1c.5 adds ABS WPI + JV (abs_wage_price_index, job_vacancies). PR1d/PR1e
+extend the same pattern.
 
 Run standalone to populate the store:
 
@@ -245,6 +246,47 @@ ABS_BA_GCCSA_SERIES: dict[str, dict[str, str]] = {
         "TSEST": "10",
         "REGION": "AUS",
         "FREQ": "M",
+    },
+}
+
+# ABS Data API dataflow WPI (Wage Price Index). Codes verified against
+# WPI v1.0.0: MEASURE=3 (% change YoY), INDEX=THRPEB (Total hourly rates
+# excluding bonuses -- the only INDEX with TSEST=20 published at the
+# AUS combined-sector aggregate), SECTOR=7 (Private and Public),
+# INDUSTRY=TOT (All Industries), TSEST=20 (SA), REGION=AUS, FREQ=Q.
+# Note: INDEX=THRPIB (including bonuses) is published only as TSEST=10
+# at this aggregate, so the headline SA wage measure uses THRPEB.
+# URL key pins all 7 dimensions (MEASURE.INDEX.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
+# so the server returns only this series, mirroring the BA_GCCSA pattern
+# (Gemini PR #126). Drops the response from ~11 MB to ~7 KB.
+ABS_WPI_URL = f"{ABS_DATA_API_BASE}/WPI/3.THRPEB.7.TOT.20.AUS.Q?format=csv"
+ABS_WPI_SERIES: dict[str, dict[str, str]] = {
+    "abs_wage_price_index": {
+        "MEASURE": "3",
+        "INDEX": "THRPEB",
+        "SECTOR": "7",
+        "INDUSTRY": "TOT",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "Q",
+    },
+}
+
+# ABS Data API dataflow JV (Job Vacancies). Codes verified against
+# JV v1.0.0: MEASURE=M1 (Job Vacancies, '000), SECTOR=7 (Private and
+# Public), INDUSTRY=TOT, TSEST=20 (SA), REGION=AUS, FREQ=Q.
+# URL key pins all 6 dimensions (MEASURE.SECTOR.INDUSTRY.TSEST.REGION.FREQ)
+# so the server returns only this series (Gemini PR #126). Drops the
+# response from ~2.5 MB to ~10 KB.
+ABS_JV_URL = f"{ABS_DATA_API_BASE}/JV/M1.7.TOT.20.AUS.Q?format=csv"
+ABS_JV_SERIES: dict[str, dict[str, str]] = {
+    "job_vacancies": {
+        "MEASURE": "M1",
+        "SECTOR": "7",
+        "INDUSTRY": "TOT",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "Q",
     },
 }
 
@@ -570,6 +612,16 @@ def ingest_abs_ba_gccsa(con: sqlite3.Connection) -> dict[str, dict[str, object]]
     return _ingest_abs_sdmx_csv(con, ABS_BA_GCCSA_URL, ABS_BA_GCCSA_SERIES)
 
 
+def ingest_abs_wpi(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS WPI and upsert series mapped in ``ABS_WPI_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_WPI_URL, ABS_WPI_SERIES)
+
+
+def ingest_abs_jv(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS JV and upsert series mapped in ``ABS_JV_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_JV_URL, ABS_JV_SERIES)
+
+
 def upsert_observations(
     con: sqlite3.Connection,
     series_id: str,
@@ -724,6 +776,8 @@ def main(argv: list[str] | None = None) -> int:
             "abs_hsi_m",
             "abs_lend_housing",
             "abs_ba_gccsa",
+            "abs_wpi",
+            "abs_jv",
             "all",
         ],
         default="all",
@@ -750,6 +804,10 @@ def main(argv: list[str] | None = None) -> int:
             report["abs_lend_housing"] = ingest_abs_lend_housing(con)
         if args.source in ("abs_ba_gccsa", "all"):
             report["abs_ba_gccsa"] = ingest_abs_ba_gccsa(con)
+        if args.source in ("abs_wpi", "all"):
+            report["abs_wpi"] = ingest_abs_wpi(con)
+        if args.source in ("abs_jv", "all"):
+            report["abs_jv"] = ingest_abs_jv(con)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     finally:
