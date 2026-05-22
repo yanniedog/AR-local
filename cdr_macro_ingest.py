@@ -7,21 +7,25 @@ public CSV/JSON sources, parses them, and persists observations into
 ``state/local-macro.sqlite``. ``cdr_economic_local.economic_series_payload``
 then reads from that store to build the wire response.
 
-Each ingest source is registered in a per-family mapping (``RBA_H5_COLUMNS``,
-``ABS_CPI_M_SERIES`` etc.). PR1b shipped RBA H5 (unemployment_rate,
-participation_rate); PR1c adds ABS Indicator API via the open ABS Data API
-(SDMX-CSV), starting with monthly_cpi_indicator and monthly_trimmed_mean_cpi
-from the CPI_M dataflow. PR1c.x and PR1d/PR1e extend the same pattern.
+Each ingest source is registered in a per-family mapping
+(``RBA_H5_COLUMNS``, ``ABS_CPI_M_SERIES``, ``ABS_LF_UNDER_SERIES``,
+``ABS_LF_HOURS_SERIES`` etc.). PR1b shipped RBA H5 (unemployment_rate,
+participation_rate); PR1c added ABS CPI_M (monthly_cpi_indicator,
+monthly_trimmed_mean_cpi); PR1c.2 adds ABS labour-force coverage
+(employment_to_population, underemployment_rate, underutilisation_rate,
+hours_worked). PR1d/PR1e extend the same pattern.
 
 Run standalone to populate the store:
 
-    python cdr_macro_ingest.py                  # all sources
-    python cdr_macro_ingest.py --source abs_cpi_m
+    python cdr_macro_ingest.py                       # all sources
+    python cdr_macro_ingest.py --source abs_lf_under
 
-Or import ``ingest_rba_h5(con)`` / ``ingest_abs_cpi_m(con)`` from elsewhere
-(e.g. the daily timer script) to refresh just one source family. The ingest
-is idempotent: rows are upserted by ``(series_id, observation_date)``, so
-re-running with no upstream change is a no-op.
+Or import ``ingest_rba_h5(con)`` / ``ingest_abs_cpi_m(con)`` /
+``ingest_abs_lf_under(con)`` / ``ingest_abs_lf_hours(con)`` from
+elsewhere (e.g. the daily timer script) to refresh just one source
+family. The ingest is idempotent: rows are upserted by
+``(series_id, observation_date)``, so re-running with no upstream
+change is a no-op.
 """
 
 from __future__ import annotations
@@ -86,6 +90,57 @@ ABS_CPI_M_SERIES: dict[str, dict[str, str]] = {
         "INDEX": "999905",
         "TSEST": "10",
         "REGION": "50",
+        "FREQ": "M",
+    },
+}
+
+# ABS Data API dataflow LF_UNDER (Labour Force: underemployment and
+# underutilisation). Same dimension layout as LF but with PARM_ITEM
+# instead of MEASURE for the measure axis; carries the standard M*
+# labour codes (M16 employment-to-pop, M23 underemployment rate,
+# M24 underutilisation rate). Codes verified against LF_UNDER v1.0.1.
+ABS_LF_UNDER_URL = f"{ABS_DATA_API_BASE}/LF_UNDER/all?format=csv"
+ABS_LF_UNDER_SERIES: dict[str, dict[str, str]] = {
+    "employment_to_population": {
+        "PARM_ITEM": "M16",
+        "SEX": "3",  # Persons
+        "AGE": "1599",  # Total
+        "TSEST": "20",  # Seasonally Adjusted (headline reporting convention)
+        "REGION": "AUS",
+        "FREQ": "M",
+    },
+    "underemployment_rate": {
+        "PARM_ITEM": "M23",
+        "SEX": "3",
+        "AGE": "1599",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "M",
+    },
+    "underutilisation_rate": {
+        "PARM_ITEM": "M24",
+        "SEX": "3",
+        "AGE": "1599",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "M",
+    },
+}
+
+# ABS Data API dataflow LF_HOURS (Hours worked by sector). Adds a
+# HOURS dimension on top of LF's layout; we filter to HOURS=TOT
+# (Industry Total). M18 = Employed Persons - Monthly hours worked
+# in all jobs (the standard "hours worked" headline). Codes verified
+# against LF_HOURS v1.0.0.
+ABS_LF_HOURS_URL = f"{ABS_DATA_API_BASE}/LF_HOURS/all?format=csv"
+ABS_LF_HOURS_SERIES: dict[str, dict[str, str]] = {
+    "hours_worked": {
+        "MEASURE": "M18",
+        "SEX": "3",
+        "AGE": "1599",
+        "HOURS": "TOT",
+        "TSEST": "20",
+        "REGION": "AUS",
         "FREQ": "M",
     },
 }
@@ -306,32 +361,42 @@ def parse_abs_sdmx_csv(
     return out
 
 
-def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
-    """Fetch ABS CPI_M dataflow and upsert series mapped in ``ABS_CPI_M_SERIES``."""
+def _ingest_abs_sdmx_csv(
+    con: sqlite3.Connection,
+    source_url: str,
+    series_filters: dict[str, dict[str, str]],
+) -> dict[str, dict[str, object]]:
+    """Common ingest loop for any ABS Data API SDMX-CSV dataflow.
+
+    Fetches ``source_url``, runs ``parse_abs_sdmx_csv`` against the
+    provided per-series dimension filters, upserts observations, and
+    records freshness rows. On fetch/parse failure every expected
+    series_id is marked errored (same shape as RBA H5).
+    """
     results: dict[str, dict[str, object]] = {}
     try:
-        text = _fetch_url(ABS_CPI_M_URL, accept="text/csv, application/vnd.sdmx.data+csv")
-        parsed = parse_abs_sdmx_csv(text, ABS_CPI_M_SERIES)
+        text = _fetch_url(source_url, accept="text/csv, application/vnd.sdmx.data+csv")
+        parsed = parse_abs_sdmx_csv(text, series_filters)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         message = f"fetch or parse failed: {exc}"
-        for series_id in ABS_CPI_M_SERIES:
+        for series_id in series_filters:
             record_run(
                 con,
                 series_id,
                 status="error",
                 message=message,
-                source_url=ABS_CPI_M_URL,
+                source_url=source_url,
                 success=False,
             )
             results[series_id] = {"status": "error", "message": message, "rows": 0}
         con.commit()
         return results
 
-    for series_id in ABS_CPI_M_SERIES:
+    for series_id in series_filters:
         rows = parsed.get(series_id, [])
         if not rows:
             message = "no rows matched filter (upstream schema or codes may have changed)"
-            record_run(con, series_id, status="error", message=message, source_url=ABS_CPI_M_URL, success=False)
+            record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
             results[series_id] = {"status": "error", "message": message, "rows": 0}
             continue
         upsert_observations(con, series_id, rows)
@@ -341,7 +406,7 @@ def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
             series_id,
             status="ok",
             message=f"Source checked; {len(rows)} observations ingested.",
-            source_url=ABS_CPI_M_URL,
+            source_url=source_url,
             last_observation_date=last_obs_date,
             last_value=last_value,
             success=True,
@@ -354,6 +419,21 @@ def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
         }
     con.commit()
     return results
+
+
+def ingest_abs_cpi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS CPI_M dataflow and upsert series mapped in ``ABS_CPI_M_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_CPI_M_URL, ABS_CPI_M_SERIES)
+
+
+def ingest_abs_lf_under(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS LF_UNDER and upsert series mapped in ``ABS_LF_UNDER_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_LF_UNDER_URL, ABS_LF_UNDER_SERIES)
+
+
+def ingest_abs_lf_hours(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS LF_HOURS and upsert series mapped in ``ABS_LF_HOURS_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_LF_HOURS_URL, ABS_LF_HOURS_SERIES)
 
 
 def upsert_observations(
@@ -485,7 +565,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
     parser.add_argument(
         "--source",
-        choices=["rba_h5", "abs_cpi_m", "all"],
+        choices=["rba_h5", "abs_cpi_m", "abs_lf_under", "abs_lf_hours", "all"],
         default="all",
         help="Which source family to ingest (default: %(default)s)",
     )
@@ -498,6 +578,10 @@ def main(argv: list[str] | None = None) -> int:
             report["rba_h5"] = ingest_rba_h5(con)
         if args.source in ("abs_cpi_m", "all"):
             report["abs_cpi_m"] = ingest_abs_cpi_m(con)
+        if args.source in ("abs_lf_under", "all"):
+            report["abs_lf_under"] = ingest_abs_lf_under(con)
+        if args.source in ("abs_lf_hours", "all"):
+            report["abs_lf_hours"] = ingest_abs_lf_hours(con)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     finally:
