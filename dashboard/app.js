@@ -759,7 +759,11 @@
     }
 
     wrap.hidden = false;
-    child(wrap, 'span', 'local-selected-logos-title', `${label} providers — hover to preview, click to filter`);
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const hint = coarse
+      ? `${label} providers — tap to filter`
+      : `${label} providers — hover to preview, click to filter`;
+    child(wrap, 'span', 'local-selected-logos-title', hint);
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
     const focus = String(state.focusProvider || '').toLowerCase();
     const hover = String(state.hoverProvider || '').toLowerCase();
