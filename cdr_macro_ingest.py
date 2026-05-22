@@ -16,8 +16,9 @@ monthly_trimmed_mean_cpi); PR1c.2 adds ABS labour-force coverage
 hours_worked); PR1c.3 adds household_spending_indicator (HSI_M, monthly)
 and lending_indicator_housing (LEND_HOUSING, quarterly); PR1c.4 adds
 building_approvals_abs (BA_GCCSA, monthly, fetched via an SDMX REST
-key-filtered URL because the unfiltered dataflow is ~3.6 GB). PR1d/PR1e
-extend the same pattern.
+key-filtered URL because the unfiltered dataflow is ~3.6 GB); PR1b.x
+adds RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions).
+PR1d/PR1e extend the same pattern.
 
 Run standalone to populate the store:
 
@@ -62,6 +63,17 @@ RBA_H5_URL = "https://www.rba.gov.au/statistics/tables/csv/h5-data.csv"
 RBA_H5_COLUMNS: dict[str, str] = {
     "unemployment_rate": "Unemployment rate",
     "participation_rate": "Participation rate",
+}
+
+# RBA H3 "Monthly Activity Indicators". Same CSV layout as H5; the
+# "Title" header row carries the human column names we map from. The
+# three series we expose are all seasonally-adjusted monthly headlines
+# the dashboard already references.
+RBA_H3_URL = "https://www.rba.gov.au/statistics/tables/csv/h3-data.csv"
+RBA_H3_COLUMNS: dict[str, str] = {
+    "dwelling_approvals": "Private dwelling approvals",
+    "consumer_sentiment": "Consumer sentiment",
+    "business_conditions": "Business conditions",
 }
 
 # ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
@@ -620,44 +632,50 @@ def record_run(
     )
 
 
-def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
-    """Fetch RBA H5 and upsert the columns mapped in ``RBA_H5_COLUMNS``."""
+def _ingest_rba_csv(
+    con: sqlite3.Connection,
+    source_url: str,
+    columns: dict[str, str],
+) -> dict[str, dict[str, object]]:
+    """Common ingest loop for any RBA statistical-tables CSV.
+
+    Fetches ``source_url``, parses with ``parse_rba_csv`` against the
+    given AR-series-id -> CSV-column-header mapping, upserts
+    observations, and records freshness rows. Schema-drift handling
+    matches PR #118 review feedback: parse failures error every
+    expected series; columns missing from the upstream CSV error
+    only the affected series; columns present but empty also error
+    only the affected series.
+    """
     results: dict[str, dict[str, object]] = {}
     try:
-        text = _fetch_url(RBA_H5_URL)
-        parsed = parse_rba_csv(text, RBA_H5_COLUMNS)
+        text = _fetch_url(source_url)
+        parsed = parse_rba_csv(text, columns)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        # Wrap parse alongside fetch (Gemini PR #118): a malformed CSV
-        # should surface as ingest errors for every expected series, not
-        # crash the script with an unhandled exception.
         message = f"fetch or parse failed: {exc}"
-        for series_id in RBA_H5_COLUMNS:
+        for series_id in columns:
             record_run(
                 con,
                 series_id,
                 status="error",
                 message=message,
-                source_url=RBA_H5_URL,
+                source_url=source_url,
                 success=False,
             )
             results[series_id] = {"status": "error", "message": message, "rows": 0}
         con.commit()
         return results
 
-    # Schema-drift detection (Codex P2 PR #118): if the upstream CSV
-    # renames or removes a column we expected, parse_rba_csv silently omits
-    # that series_id from `parsed`. Surface it as an ingest error rather
-    # than letting the dashboard keep serving stale prior-run data.
-    missing_columns = set(RBA_H5_COLUMNS) - set(parsed)
+    missing_columns = set(columns) - set(parsed)
     for series_id in missing_columns:
-        message = f"upstream column missing: {RBA_H5_COLUMNS[series_id]!r}"
-        record_run(con, series_id, status="error", message=message, source_url=RBA_H5_URL, success=False)
+        message = f"upstream column missing: {columns[series_id]!r}"
+        record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
         results[series_id] = {"status": "error", "message": message, "rows": 0}
 
     for series_id, rows in parsed.items():
         if not rows:
             message = "column present but no rows parsed"
-            record_run(con, series_id, status="error", message=message, source_url=RBA_H5_URL, success=False)
+            record_run(con, series_id, status="error", message=message, source_url=source_url, success=False)
             results[series_id] = {"status": "error", "message": message, "rows": 0}
             continue
         upsert_observations(con, series_id, rows)
@@ -667,7 +685,7 @@ def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
             series_id,
             status="ok",
             message=f"Source checked; {len(rows)} observations ingested.",
-            source_url=RBA_H5_URL,
+            source_url=source_url,
             last_observation_date=last_obs_date,
             last_value=last_value,
             success=True,
@@ -682,6 +700,16 @@ def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     return results
 
 
+def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA H5 and upsert the columns mapped in ``RBA_H5_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_H5_URL, RBA_H5_COLUMNS)
+
+
+def ingest_rba_h3(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA H3 and upsert the columns mapped in ``RBA_H3_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_H3_URL, RBA_H3_COLUMNS)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
@@ -689,6 +717,7 @@ def main(argv: list[str] | None = None) -> int:
         "--source",
         choices=[
             "rba_h5",
+            "rba_h3",
             "abs_cpi_m",
             "abs_lf_under",
             "abs_lf_hours",
@@ -707,6 +736,8 @@ def main(argv: list[str] | None = None) -> int:
         report: dict[str, object] = {}
         if args.source in ("rba_h5", "all"):
             report["rba_h5"] = ingest_rba_h5(con)
+        if args.source in ("rba_h3", "all"):
+            report["rba_h3"] = ingest_rba_h3(con)
         if args.source in ("abs_cpi_m", "all"):
             report["abs_cpi_m"] = ingest_abs_cpi_m(con)
         if args.source in ("abs_lf_under", "all"):
