@@ -51,8 +51,15 @@ def connect_readonly(db_path: Path):
     block actually closes the connection — Python's default ``sqlite3``
     context manager only commits/rolls back the transaction (Gemini
     review feedback on PR #114).
+
+    ``Path.resolve().as_uri()`` is used for the path portion so a
+    filename containing ``?`` or ``#`` is encoded safely; the
+    ``file:///`` 3-slash RFC form is accepted by Pi SQLite once
+    ``immutable=1`` is the locking-bypass flag (the earlier
+    misdiagnosis on PR #115 conflated this with the unrelated
+    ``nolock=1`` failure).
     """
-    uri = f"file:{db_path}?mode=ro&immutable=1"
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&immutable=1"
     con = sqlite3.connect(uri, uri=True)
     try:
         yield con
