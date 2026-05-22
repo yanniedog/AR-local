@@ -35,12 +35,18 @@ _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sql
 # upstream proxy via cdr_economic_proxy.
 #   PR1b: RBA H5 (unemployment_rate, participation_rate)
 #   PR1c: ABS CPI_M (monthly_cpi_indicator, monthly_trimmed_mean_cpi)
+#   PR1c.2: ABS LF_UNDER + LF_HOURS (employment_to_population,
+#           underemployment_rate, underutilisation_rate, hours_worked)
 LOCAL_SERIES_IDS: frozenset[str] = frozenset(
     {
         "unemployment_rate",
         "participation_rate",
         "monthly_cpi_indicator",
         "monthly_trimmed_mean_cpi",
+        "employment_to_population",
+        "underemployment_rate",
+        "underutilisation_rate",
+        "hours_worked",
     }
 )
 
