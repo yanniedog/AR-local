@@ -80,9 +80,14 @@ def _schema_sql() -> list[str]:
 
 
 def open_store(store_path: Path = DEFAULT_STORE_PATH) -> sqlite3.Connection:
-    """Open (creating if needed) the local-macro SQLite store and ensure schema."""
+    """Open (creating if needed) the local-macro SQLite store and ensure schema.
+
+    Uses the URI form ``file:<resolved-path>`` (Gemini PR #118) so a path
+    with reserved URI characters round-trips safely. The caller is
+    responsible for ``con.close()``.
+    """
     store_path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(store_path))
+    con = sqlite3.connect(store_path.resolve().as_uri(), uri=True)
     con.execute("PRAGMA journal_mode=WAL")
     for stmt in _schema_sql():
         con.execute(stmt)
@@ -248,8 +253,12 @@ def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     results: dict[str, dict[str, object]] = {}
     try:
         text = _fetch_url(RBA_H5_URL)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        message = f"fetch failed: {exc}"
+        parsed = parse_rba_csv(text, RBA_H5_COLUMNS)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        # Wrap parse alongside fetch (Gemini PR #118): a malformed CSV
+        # should surface as ingest errors for every expected series, not
+        # crash the script with an unhandled exception.
+        message = f"fetch or parse failed: {exc}"
         for series_id in RBA_H5_COLUMNS:
             record_run(
                 con,
@@ -263,7 +272,16 @@ def ingest_rba_h5(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
         con.commit()
         return results
 
-    parsed = parse_rba_csv(text, RBA_H5_COLUMNS)
+    # Schema-drift detection (Codex P2 PR #118): if the upstream CSV
+    # renames or removes a column we expected, parse_rba_csv silently omits
+    # that series_id from `parsed`. Surface it as an ingest error rather
+    # than letting the dashboard keep serving stale prior-run data.
+    missing_columns = set(RBA_H5_COLUMNS) - set(parsed)
+    for series_id in missing_columns:
+        message = f"upstream column missing: {RBA_H5_COLUMNS[series_id]!r}"
+        record_run(con, series_id, status="error", message=message, source_url=RBA_H5_URL, success=False)
+        results[series_id] = {"status": "error", "message": message, "rows": 0}
+
     for series_id, rows in parsed.items():
         if not rows:
             message = "column present but no rows parsed"

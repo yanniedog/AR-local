@@ -1072,7 +1072,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                         body, ctype = local_result
                         return body, ctype, maybe_gzip(body, ctype)
                 body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
-                return body, ctype, None
+                return body, ctype, maybe_gzip(body, ctype)
             if path.startswith("/api/economic-data"):
                 body, ctype = proxy_upstream_get(ECONOMIC_API_UPSTREAM, path, query)
                 return body, ctype, None

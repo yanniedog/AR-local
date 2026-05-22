@@ -134,11 +134,22 @@ def _parse_iso_date(value: str | None) -> date | None:
         return None
 
 
+def _years_before(d: date, years: int) -> date:
+    """``d`` minus ``years`` calendar years, clamping Feb 29 to Feb 28 when
+    the target year is not a leap year. Plain ``date.replace(year=...)``
+    raises ValueError for ``2024-02-29`` -> ``2019-02-29`` (Codex P1 PR #118
+    would 500 the endpoint on a leap-day end_date)."""
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        return d.replace(year=d.year - years, month=2, day=28)
+
+
 def _resolve_window(start: str | None, end: str | None) -> tuple[date, date]:
     """Pick a [start, end] window. Defaults: last 5 years through today (UTC)."""
     today_utc = datetime.now(timezone.utc).date()
     end_date = _parse_iso_date(end) or today_utc
-    start_date = _parse_iso_date(start) or end_date.replace(year=end_date.year - 5)
+    start_date = _parse_iso_date(start) or _years_before(end_date, 5)
     if start_date > end_date:
         start_date = end_date
     return start_date, end_date
