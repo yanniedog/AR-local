@@ -8,6 +8,20 @@ import sqlite3
 from pathlib import Path
 
 
+def connect_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite file in immutable read-only mode.
+
+    Default ``sqlite3.connect(path)`` opens for read+write and tries to create
+    a ``-journal`` or ``-wal`` sibling on first statement, which fails with
+    "attempt to write a readonly database" when the parent directory is not
+    writable by the dashboard service user. The dashboard never mutates the
+    run-export DBs, so ``immutable=1`` skips lock files entirely and survives
+    mixed-ownership ``runs/`` trees (e.g. when an ingest is invoked via sudo
+    and leaves files owned by root).
+    """
+    return sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
+
+
 def response_rows(rows: list[dict[str, object]]) -> bytes:
     return json.dumps(
         {"ok": True, "rows": rows},
@@ -46,7 +60,7 @@ def min_rate_filter(query: dict[str, list[str]]) -> float:
 def latest_term_deposit_rows(db_path: Path, run_date: str, query: dict[str, list[str]]) -> bytes:
     min_rate = min_rate_filter(query)
     limit = query_limit(query)
-    with sqlite3.connect(db_path) as con:
+    with connect_readonly(db_path) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """
@@ -93,7 +107,7 @@ def latest_home_loan_rows(db_path: Path, run_date: str, query: dict[str, list[st
     match = re.fullmatch(r"fixed_(\d+)yr", structure)
     if match:
         fixed_years = match.group(1)
-    with sqlite3.connect(db_path) as con:
+    with connect_readonly(db_path) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """
