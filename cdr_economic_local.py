@@ -37,6 +37,8 @@ _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sql
 #   PR1c: ABS CPI_M (monthly_cpi_indicator, monthly_trimmed_mean_cpi)
 #   PR1c.2: ABS LF_UNDER + LF_HOURS (employment_to_population,
 #           underemployment_rate, underutilisation_rate, hours_worked)
+#   PR1c.3: ABS HSI_M + LEND_HOUSING (household_spending_indicator,
+#           lending_indicator_housing)
 LOCAL_SERIES_IDS: frozenset[str] = frozenset(
     {
         "unemployment_rate",
@@ -47,6 +49,8 @@ LOCAL_SERIES_IDS: frozenset[str] = frozenset(
         "underemployment_rate",
         "underutilisation_rate",
         "hours_worked",
+        "household_spending_indicator",
+        "lending_indicator_housing",
     }
 )
 

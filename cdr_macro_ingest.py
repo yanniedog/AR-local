@@ -13,7 +13,9 @@ Each ingest source is registered in a per-family mapping
 participation_rate); PR1c added ABS CPI_M (monthly_cpi_indicator,
 monthly_trimmed_mean_cpi); PR1c.2 adds ABS labour-force coverage
 (employment_to_population, underemployment_rate, underutilisation_rate,
-hours_worked). PR1d/PR1e extend the same pattern.
+hours_worked); PR1c.3 adds household_spending_indicator (HSI_M, monthly)
+and lending_indicator_housing (LEND_HOUSING, quarterly). PR1d/PR1e
+extend the same pattern.
 
 Run standalone to populate the store:
 
@@ -142,6 +144,58 @@ ABS_LF_HOURS_SERIES: dict[str, dict[str, str]] = {
         "TSEST": "20",
         "REGION": "AUS",
         "FREQ": "M",
+    },
+}
+
+# ABS Data API dataflow HSI_M (Monthly Household Spending Indicator).
+# Codes verified against HSI_M v1.6.0:
+#   MEASURE=9       Through the year percentage change (headline reporting)
+#   CATEGORY=TOT    Total household spending
+#   PRICE_ADJUSTMENT=CUR  Current Price (only option published)
+#   TSEST=20        Seasonally Adjusted
+#   STATE=AUS       Australia
+#   FREQ=M          Monthly
+# Note this dataflow uses ``STATE`` (not ``REGION``) for geography.
+ABS_HSI_M_URL = f"{ABS_DATA_API_BASE}/HSI_M/all?format=csv"
+ABS_HSI_M_SERIES: dict[str, dict[str, str]] = {
+    "household_spending_indicator": {
+        "MEASURE": "9",
+        "CATEGORY": "TOT",
+        "PRICE_ADJUSTMENT": "CUR",
+        "TSEST": "20",
+        "STATE": "AUS",
+        "FREQ": "M",
+    },
+}
+
+# ABS Data API dataflow LEND_HOUSING (Lending Indicators Housing
+# Finance). Codes verified against LEND_HOUSING v1.1:
+#   MEASURE=FIN_VAL    Value ($m)
+#   DATA_ITEM=NEWCOMMITS  New loan commitments
+#   LOAN_TYPE=DV8368   Total fixed term loans and revolving credit
+#   LOAN_PURPOSE=TOTDWELL  Total dwellings excluding refinancing
+#                       (the only purpose combinable with HOUSING_PURPOSE=TOT)
+#   LENDER_TYPE=TOT    Total lender type
+#   HOUSING_PURPOSE=TOT  Total housing purpose
+#   TSEST=20           Seasonally Adjusted
+#   REGION=AUS         Australia
+#   FREQ=Q             Quarterly (ABS discontinued the monthly series in 2024)
+# The catalog describes ``lending_indicator_housing`` as monthly; ABS
+# now publishes only the quarterly aggregate -- the forward-fill in
+# cdr_economic_local handles arbitrary observation cadences so this
+# does not require a contract change.
+ABS_LEND_HOUSING_URL = f"{ABS_DATA_API_BASE}/LEND_HOUSING/all?format=csv"
+ABS_LEND_HOUSING_SERIES: dict[str, dict[str, str]] = {
+    "lending_indicator_housing": {
+        "MEASURE": "FIN_VAL",
+        "DATA_ITEM": "NEWCOMMITS",
+        "LOAN_TYPE": "DV8368",
+        "LOAN_PURPOSE": "TOTDWELL",
+        "LENDER_TYPE": "TOT",
+        "HOUSING_PURPOSE": "TOT",
+        "TSEST": "20",
+        "REGION": "AUS",
+        "FREQ": "Q",
     },
 }
 
@@ -280,17 +334,33 @@ def _fetch_url(url: str, accept: str = "text/csv") -> str:
 
 
 def _parse_abs_period(raw: str) -> str | None:
-    """SDMX TIME_PERIOD for monthly ABS data is ``YYYY-MM``.
+    """SDMX TIME_PERIOD for ABS data: monthly ``YYYY-MM`` or quarterly
+    ``YYYY-Qn``.
 
-    Returned as end-of-month ISO date so daily forward-fill (in
-    ``cdr_economic_local._build_series_points``) doesn't surface a month's
-    value before the month is even complete. Matches the RBA H5 convention.
+    Returned as end-of-period ISO date so daily forward-fill (in
+    ``cdr_economic_local._build_series_points``) doesn't surface a
+    period's value before the period is complete. Matches the RBA H5
+    convention. Quarter endings: Q1=Mar 31, Q2=Jun 30, Q3=Sep 30,
+    Q4=Dec 31.
     """
     raw = (raw or "").strip()
     if len(raw) != 7 or raw[4] != "-":
         return None
     try:
         year = int(raw[0:4])
+    except ValueError:
+        return None
+    if raw[5] == "Q":
+        try:
+            quarter = int(raw[6])
+        except ValueError:
+            return None
+        if quarter not in (1, 2, 3, 4):
+            return None
+        end_month = quarter * 3
+        last_day = calendar.monthrange(year, end_month)[1]
+        return f"{year:04d}-{end_month:02d}-{last_day:02d}"
+    try:
         month = int(raw[5:7])
         last_day = calendar.monthrange(year, month)[1]
         return f"{year:04d}-{month:02d}-{last_day:02d}"
@@ -436,6 +506,16 @@ def ingest_abs_lf_hours(con: sqlite3.Connection) -> dict[str, dict[str, object]]
     return _ingest_abs_sdmx_csv(con, ABS_LF_HOURS_URL, ABS_LF_HOURS_SERIES)
 
 
+def ingest_abs_hsi_m(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS HSI_M and upsert series mapped in ``ABS_HSI_M_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_HSI_M_URL, ABS_HSI_M_SERIES)
+
+
+def ingest_abs_lend_housing(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch ABS LEND_HOUSING and upsert series mapped in ``ABS_LEND_HOUSING_SERIES``."""
+    return _ingest_abs_sdmx_csv(con, ABS_LEND_HOUSING_URL, ABS_LEND_HOUSING_SERIES)
+
+
 def upsert_observations(
     con: sqlite3.Connection,
     series_id: str,
@@ -565,7 +645,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
     parser.add_argument(
         "--source",
-        choices=["rba_h5", "abs_cpi_m", "abs_lf_under", "abs_lf_hours", "all"],
+        choices=[
+            "rba_h5",
+            "abs_cpi_m",
+            "abs_lf_under",
+            "abs_lf_hours",
+            "abs_hsi_m",
+            "abs_lend_housing",
+            "all",
+        ],
         default="all",
         help="Which source family to ingest (default: %(default)s)",
     )
@@ -582,6 +670,10 @@ def main(argv: list[str] | None = None) -> int:
             report["abs_lf_under"] = ingest_abs_lf_under(con)
         if args.source in ("abs_lf_hours", "all"):
             report["abs_lf_hours"] = ingest_abs_lf_hours(con)
+        if args.source in ("abs_hsi_m", "all"):
+            report["abs_hsi_m"] = ingest_abs_hsi_m(con)
+        if args.source in ("abs_lend_housing", "all"):
+            report["abs_lend_housing"] = ingest_abs_lend_housing(con)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     finally:
