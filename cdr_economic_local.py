@@ -31,9 +31,18 @@ _CATALOG_PATH = Path(__file__).resolve().parent / "dashboard" / "economic-data-c
 _CATALOG_TTL_SECONDS = 5.0
 _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sqlite"
 
-# Series IDs that this PR (PR1b) supplies locally. Anything else still
-# round-trips to the upstream proxy via cdr_economic_proxy.
-LOCAL_SERIES_IDS: frozenset[str] = frozenset({"unemployment_rate", "participation_rate"})
+# Series IDs supplied locally. Anything else still round-trips to the
+# upstream proxy via cdr_economic_proxy.
+#   PR1b: RBA H5 (unemployment_rate, participation_rate)
+#   PR1c: ABS CPI_M (monthly_cpi_indicator, monthly_trimmed_mean_cpi)
+LOCAL_SERIES_IDS: frozenset[str] = frozenset(
+    {
+        "unemployment_rate",
+        "participation_rate",
+        "monthly_cpi_indicator",
+        "monthly_trimmed_mean_cpi",
+    }
+)
 
 _catalog_lock = threading.Lock()
 _catalog_cache: dict | None = None
