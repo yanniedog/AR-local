@@ -469,7 +469,7 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
     # before the site-variant.js include, so target the <head> open tag.
     if b"ar-clarity-block" not in out.lower():
         shim = (
-            b'<head>\n'
+            br"\1\n"
             b'    <script id="ar-clarity-block">/*ar-local*/(function(){'
             b'var ap=Element.prototype.appendChild,ib=Element.prototype.insertBefore;'
             b'function bad(n){return n&&n.tagName==="SCRIPT"&&/clarity\\.ms/i.test(n.src||"");}'
@@ -477,7 +477,7 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
             b'Element.prototype.insertBefore=function(n,r){return bad(n)?n:ib.call(this,n,r);};'
             b'})();</script>\n'
         )
-        out, _ = re.subn(br"<head[^>]*>", shim, out, count=1, flags=re.IGNORECASE)
+        out, _ = re.subn(br"(<head\b[^>]*>)", shim, out, count=1, flags=re.IGNORECASE)
     if b"/assets/app.css" in out.lower():
         return out
     link = b'    <link rel="stylesheet" href="/assets/app.css">\n'

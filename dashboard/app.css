@@ -874,6 +874,10 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
  * via inject_local_dashboard_css (cdr_dashboard_server.py), so these
  * rules override the sibling site stylesheet without touching it. */
 
+body.ar-public.ar-section-economic-data {
+  --ar-economic-table-min-width: 680px;
+}
+
 body.ar-public.ar-section-economic-data .economic-component-table-wrap,
 body.ar-public.ar-section-economic-data .economic-forward-table-wrap {
   /* Give each wrap an explicit horizontal scroll context so the table can
@@ -889,7 +893,7 @@ body.ar-public.ar-section-economic-data .economic-forward-table {
   /* Without an explicit min-width the browser tries to shrink columns to
      fit a narrower wrap on mobile, producing illegible text. Keep at the
      natural width so horizontal scrolling reveals full columns. */
-  min-width: 680px;
+  min-width: var(--ar-economic-table-min-width);
 }
 
 @media (max-width: 520px) and (pointer: coarse) {
