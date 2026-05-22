@@ -434,7 +434,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 }
 
 .ar-local-cdr .local-hierarchy-history--up {
-  color: var(--ar-warning, #eab308);
+  color: var(--ar-negative, #ef4444);
 }
 
 .ar-local-cdr .local-hierarchy-history--down {
@@ -582,6 +582,16 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   align-items: center;
   gap: 4px 6px;
   min-height: 24px;
+}
+
+.ar-local-cdr #hierarchy .ar-report-infobox-trow.ar-ribbon-best-row {
+  background: color-mix(in srgb, var(--ar-warning, #eab308) 16%, transparent);
+  border-radius: 4px;
+}
+
+.ar-local-cdr #hierarchy .ar-ribbon-best {
+  color: var(--ar-warning, #eab308);
+  font-weight: 700;
 }
 
 .ar-local-cdr #hierarchy .ar-report-infobox-tlabel {

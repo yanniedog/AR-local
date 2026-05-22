@@ -2,6 +2,8 @@
   'use strict';
 
   const PALETTE = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#0891b2', '#ca8a04', '#db2777', '#64748b'];
+  const RATE_EPS = 1e-9;
+  const DELTA_PCT_MIN = 0.005;
   const { historyIndexKey, pct, rateValue } = window.LocalCdrUtils;
 
   function clear(element) {
@@ -117,6 +119,13 @@
     return Number.isFinite(best) ? best : null;
   }
 
+  function formatDeltaPct(latest, previous) {
+    const delta = (latest - previous) * 100;
+    if (!Number.isFinite(delta) || Math.abs(delta) < DELTA_PCT_MIN) return '';
+    const sign = delta > 0 ? '+' : '';
+    return `(${sign}${delta.toFixed(2)}%)`;
+  }
+
   function historyCompare(rows, state) {
     const pair = chartDatePair(state);
     if (!pair.anchor || !pair.previous) return null;
@@ -132,14 +141,14 @@
     const latest = bestHistoryValue(byDate[pair.anchor] || [], highlightMax);
     const previous = bestHistoryValue(byDate[pair.previous] || [], highlightMax);
     if (latest == null || previous == null) return null;
-    const deltaBp = Math.round((latest - previous) * 10000);
-    const deltaText = deltaBp > 0 ? '+' + deltaBp + 'bp' : deltaBp + 'bp';
+    const deltaText = formatDeltaPct(latest, previous);
+    if (!deltaText) return null;
+    const delta = latest - previous;
     const isDeposit = state.section === 'Savings' || state.section === 'TD';
-    const favorable = isDeposit ? deltaBp > 0 : deltaBp < 0;
-    const tone = deltaBp === 0 ? 'flat' : favorable ? 'down' : 'up';
+    const favorable = isDeposit ? delta > 0 : delta < 0;
     return {
-      text: `${pct(previous)} \u2192 ${pct(latest)} (${deltaText})`,
-      tone,
+      text: `${pct(previous)} \u2192 ${pct(latest)} ${deltaText}`,
+      tone: favorable ? 'down' : 'up',
     };
   }
 
@@ -307,19 +316,29 @@
     return node;
   }
 
-  function renderRateRange(parent, rows, best, highlightMax) {
+  function rowBestValue(rows, highlightMax) {
+    const mm = minMax(rows);
+    if (mm.min == null) return null;
+    return highlightMax ? mm.max : mm.min;
+  }
+
+  function isBestRow(rows, sliceBest, highlightMax) {
+    if (sliceBest == null) return false;
+    const bestValue = rowBestValue(rows, highlightMax);
+    return bestValue != null && Math.abs(bestValue - sliceBest) <= RATE_EPS;
+  }
+
+  function renderRateRange(parent, rows, sliceBest, highlightMax) {
     const mm = minMax(rows);
     if (mm.min == null) return;
-    const showRange = mm.min !== mm.max;
-    const bestValue = highlightMax ? mm.max : mm.min;
-    const first = child(parent, 'span', best === bestValue ? 'ar-ribbon-best' : '', pct(mm.min));
+    const showRange = Math.abs(mm.max - mm.min) > RATE_EPS;
+    const isBest = (val) => sliceBest != null && Math.abs(val - sliceBest) <= RATE_EPS;
+    const minClass = isBest(mm.min) && (!showRange || !highlightMax) ? 'ar-ribbon-best' : '';
+    const maxClass = isBest(mm.max) && highlightMax ? 'ar-ribbon-best' : '';
+    child(parent, 'span', minClass, pct(mm.min));
     if (!showRange) return;
     child(parent, 'span', 'ar-ribbon-rate-sep', '-');
-    const last = child(parent, 'span', best === bestValue ? 'ar-ribbon-best' : '', pct(mm.max));
-    if (highlightMax) {
-      first.className = '';
-      last.className = best === bestValue ? 'ar-ribbon-best' : '';
-    }
+    child(parent, 'span', maxClass, pct(mm.max));
   }
 
   function renderBreadcrumbs(container, tree, activePath) {
@@ -349,8 +368,9 @@
     });
   }
 
-  function renderLeaf(container, row, depth, best, highlightMax, state) {
+  function renderLeaf(container, row, depth, sliceBest, highlightMax, state) {
     const rateRow = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--leaf ar-report-infobox-row');
+    if (isBestRow([row], sliceBest, highlightMax)) rateRow.classList.add('ar-ribbon-best-row');
     rateRow.style.setProperty('--ar-ribbon-depth', String(depth));
     rateRow.dataset.localHierarchyHover = 'leaf';
     const productKey = rowProductKey(row);
@@ -386,7 +406,7 @@
       child(textCol, 'span', 'local-hierarchy-leaf-meta', metaBits.join(' · '));
     }
     const rate = child(rateRow, 'span', 'ar-report-infobox-trate');
-    renderRateRange(rate, [row], best, highlightMax);
+    renderRateRange(rate, [row], sliceBest, highlightMax);
     appendHistoryCompare(rate, [row], state);
   }
 
@@ -394,6 +414,7 @@
     const expanded = isExpanded(path, activePath);
     const targetPath = expanded ? parentPath(path) : path;
     const row = child(container, 'div', 'ar-report-infobox-trow ar-report-infobox-trow--branch');
+    if (state.sliceBest != null && group.best != null && Math.abs(group.best - state.sliceBest) <= RATE_EPS) row.classList.add('ar-ribbon-best-row');
     row.style.setProperty('--ar-ribbon-depth', String(depth));
     row.dataset.localHierarchyAction = 'toggle';
     row.dataset.localHierarchyPath = targetPath;
@@ -416,7 +437,7 @@
     const rate = child(row, 'span', 'ar-report-infobox-trate');
     const mm = minMax(group.rows);
     if (mm.min != null) {
-      renderRateRange(rate, group.rows, state.globalBest, state.highlightMax);
+      renderRateRange(rate, group.rows, state.sliceBest, state.highlightMax);
     } else {
       child(rate, 'span', '', num(group.rows.length));
     }
@@ -429,7 +450,7 @@
       const sorted = node.rows.slice().sort((a, b) => (
         state.descending ? rateValue(b.rate) - rateValue(a.rate) : rateValue(a.rate) - rateValue(b.rate)
       ));
-      sorted.forEach((row) => renderLeaf(container, row, depth, state.globalBest, state.highlightMax, state));
+      sorted.forEach((row) => renderLeaf(container, row, depth, state.sliceBest, state.highlightMax, state));
       return;
     }
     const focusIndex = focusedChildIndex(path, activePath);
@@ -529,7 +550,6 @@
     }
     state.rows = visible;
     state.highlightMax = highlightMaxForSection(state.section);
-    state.globalBest = bestRate(visible, state.highlightMax);
     let tree = { kind: 'empty', rows: [] };
     const ribbon = window.AR && window.AR.ribbon;
     const hasTaxonomyPath = visible.length > 0 && visible.some((r) => r.taxonomy_path);
@@ -547,7 +567,8 @@
     }
     state.hierarchyPath = prunePath(tree, state.hierarchyPath || '');
     const activePath = prunePath(tree, displayHierarchyPath(state)) || displayHierarchyPath(state);
-    const sliceNode = activePath ? nodeAtPath(tree, activePath) : null;
+    const sliceNode = activePath ? nodeAtPath(tree, activePath) : (tree.kind === 'empty' ? null : tree);
+    state.sliceBest = bestRate(rowsUnderNode(sliceNode), state.highlightMax);
     const statsMap = indexNodeStats(tree, new WeakMap());
     const treeStats = statsMap.get(tree) || visibleStats;
     const sliceStats = sliceNode ? statsMap.get(sliceNode) : null;
