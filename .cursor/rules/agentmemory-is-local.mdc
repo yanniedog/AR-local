@@ -1,0 +1,21 @@
+# agentmemory runs on the LOCAL PC — NOT on the Pi
+
+agentmemory (`@agentmemory/agentmemory`) is an npm package installed **globally on the Windows development machine** (this PC). Its engine, viewer, REST API, logs, config, and all data live locally.
+
+## Hard rule
+
+- **Never SSH into `ar-local-pi5` or any Pi host for agentmemory work.**
+- Never treat the Pi as the agentmemory host.
+- Never run agentmemory CLI commands over SSH.
+
+## Locations (all local/Windows)
+
+| Resource | Path |
+|----------|------|
+| Config / data | `C:\Users\jkoka\.agentmemory\` |
+| REST API | `http://localhost:3111` (local only) |
+| CLI | `agentmemory` (globally installed on Windows) |
+
+## Rationale
+
+agentmemory is a developer-side memory tool, not a Pi service. The Pi hosts the CDR dashboard (`cdr_dashboard_server.py`) and ingest jobs only. Any task involving agentmemory status, memory recall, memory save, config, or logs must target the local Windows machine.
