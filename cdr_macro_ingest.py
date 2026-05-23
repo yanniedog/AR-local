@@ -20,8 +20,10 @@ key-filtered URL because the unfiltered dataflow is ~3.6 GB); PR1b.x
 adds RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions);
 PR1c.5 adds ABS WPI + JV (abs_wage_price_index, job_vacancies); PR1b.y
 adds RBA G1 + G3 (trimmed_mean_cpi, inflation_expectations); PR1b.z
-adds RBA H4 (wage_growth) and H2 (household_consumption, public_demand).
-PR1d/PR1e extend the same pattern.
+adds RBA H4 (wage_growth) and H2 (household_consumption, public_demand);
+PR1b.aa adds RBA F1.1 (bank_bill_30d/90d/180d), F11 (aud_twi), I2
+(commodity_prices), and D1 (housing_credit_growth). PR1d/PR1e extend
+the same pattern.
 
 Run standalone to populate the store:
 
@@ -47,7 +49,7 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -109,6 +111,38 @@ RBA_H2_URL = "https://www.rba.gov.au/statistics/tables/csv/h2-data.csv"
 RBA_H2_COLUMNS: dict[str, str] = {
     "household_consumption": "Household consumption",
     "public_demand": "Public demand",
+}
+
+# RBA F1.1 "Interest Rates and Yields - Money Market - Daily". Despite
+# the name the catalog treats bank bills as monthly headlines; the
+# upserter's PK is (series_id, observation_date) so daily upserts are
+# safe and the dashboard forward-fill works either way.
+RBA_F1_1_URL = "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv"
+RBA_F1_1_COLUMNS: dict[str, str] = {
+    "bank_bill_30d": "1-month BABs/NCDs",
+    "bank_bill_90d": "3-month BABs/NCDs",
+    "bank_bill_180d": "6-month BABs/NCDs",
+}
+
+# RBA F11 "Exchange Rates - Monthly". Date column is DD-Mon-YYYY
+# (handled by the dual-format _parse_rba_date).
+RBA_F11_URL = "https://www.rba.gov.au/statistics/tables/csv/f11-data.csv"
+RBA_F11_COLUMNS: dict[str, str] = {
+    "aud_twi": "Trade-weighted Index May 1970 = 100",
+}
+
+# RBA I2 "Commodity Prices" (monthly). Catalog wants the A$-denominated
+# headline index.
+RBA_I2_URL = "https://www.rba.gov.au/statistics/tables/csv/i2-data.csv"
+RBA_I2_COLUMNS: dict[str, str] = {
+    "commodity_prices": "Commodity prices – A$",
+}
+
+# RBA D1 "Growth in Selected Financial Aggregates" (monthly). Catalog
+# wants the housing-credit YoY growth rate.
+RBA_D1_URL = "https://www.rba.gov.au/statistics/tables/csv/d1-data.csv"
+RBA_D1_COLUMNS: dict[str, str] = {
+    "housing_credit_growth": "Credit; Housing; 12-month ended growth",
 }
 
 # ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
@@ -367,15 +401,46 @@ def open_store(store_path: Path = DEFAULT_STORE_PATH) -> sqlite3.Connection:
     return con
 
 
+_MONTH_ABBR = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
+
+
 def _parse_rba_date(raw: str) -> str | None:
-    """RBA tables date column is DD/MM/YYYY. Return ISO YYYY-MM-DD or None."""
+    """Parse an RBA tables date column.
+
+    Most RBA statistical tables use ``DD/MM/YYYY`` for the obs-date
+    column. A handful (e.g. F11 exchange rates) instead use
+    ``DD-Mon-YYYY`` -- the same format the header-row publication date
+    uses. Try both. Returns ISO ``YYYY-MM-DD`` or None.
+
+    Month-abbrev parsing uses a hand-rolled lookup rather than
+    ``%b``/``%B`` strptime so non-English ``LC_TIME`` hosts still
+    parse the English RBA month names (Codex P2 PR #129).
+    """
     raw = (raw or "").strip()
     if not raw:
         return None
     try:
         return datetime.strptime(raw, "%d/%m/%Y").date().isoformat()
     except ValueError:
-        return None
+        pass
+    parts = raw.split("-")
+    if len(parts) == 3:
+        try:
+            day = int(parts[0])
+            month = _MONTH_ABBR.get(parts[1].capitalize())
+            year = int(parts[2])
+        except ValueError:
+            return None
+        if month is None:
+            return None
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            return None
+    return None
 
 
 def _parse_publication_date(raw: str) -> str | None:
@@ -816,6 +881,26 @@ def ingest_rba_h2(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     return _ingest_rba_csv(con, RBA_H2_URL, RBA_H2_COLUMNS)
 
 
+def ingest_rba_f1_1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA F1.1 (money market rates) and upsert the columns mapped in ``RBA_F1_1_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_F1_1_URL, RBA_F1_1_COLUMNS)
+
+
+def ingest_rba_f11(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA F11 (exchange rates) and upsert the columns mapped in ``RBA_F11_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_F11_URL, RBA_F11_COLUMNS)
+
+
+def ingest_rba_i2(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA I2 (commodity prices) and upsert the columns mapped in ``RBA_I2_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_I2_URL, RBA_I2_COLUMNS)
+
+
+def ingest_rba_d1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA D1 (financial aggregates) and upsert the columns mapped in ``RBA_D1_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_D1_URL, RBA_D1_COLUMNS)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
@@ -828,6 +913,10 @@ def main(argv: list[str] | None = None) -> int:
             "rba_g3",
             "rba_h4",
             "rba_h2",
+            "rba_f1_1",
+            "rba_f11",
+            "rba_i2",
+            "rba_d1",
             "abs_cpi_m",
             "abs_lf_under",
             "abs_lf_hours",
@@ -858,6 +947,14 @@ def main(argv: list[str] | None = None) -> int:
             report["rba_h4"] = ingest_rba_h4(con)
         if args.source in ("rba_h2", "all"):
             report["rba_h2"] = ingest_rba_h2(con)
+        if args.source in ("rba_f1_1", "all"):
+            report["rba_f1_1"] = ingest_rba_f1_1(con)
+        if args.source in ("rba_f11", "all"):
+            report["rba_f11"] = ingest_rba_f11(con)
+        if args.source in ("rba_i2", "all"):
+            report["rba_i2"] = ingest_rba_i2(con)
+        if args.source in ("rba_d1", "all"):
+            report["rba_d1"] = ingest_rba_d1(con)
         if args.source in ("abs_cpi_m", "all"):
             report["abs_cpi_m"] = ingest_abs_cpi_m(con)
         if args.source in ("abs_lf_under", "all"):
