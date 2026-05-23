@@ -469,7 +469,7 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
     # power users hitting the LAN/Tailscale dashboard directly; the "Choose a
     # market / STEP 1 OF 5" coachmark just gets in the way.
     out, _ = re.subn(
-        br'<script[^>]*\bsrc="[^"]*\bar-guide\.js[^"]*"[^>]*>\s*</script>\s*',
+        br'''<script\b[^>]*\bsrc\s*=\s*["'][^"']*?\bar-guide\.js[^"']*?["'][^>]*>\s*</script>\s*''',
         b"",
         out,
         flags=re.IGNORECASE,
