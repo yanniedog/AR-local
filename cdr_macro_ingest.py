@@ -421,6 +421,38 @@ _MONTH_ABBR = {
 }
 
 
+def _parse_dd_mon_yyyy(raw: str) -> str | None:
+    """Parse a strict ``DD-Mon-YYYY`` token (e.g. ``22-May-2026``) to ISO.
+
+    Enforces 1–2 digit day, 3-letter English month, 4-digit year — so
+    inputs like ``22-May-26`` or ``22-May-+2026`` (which ``strptime`` would
+    also reject) are returned as None instead of silently producing
+    ``0026-05-22``. Month-abbrev lookup is hand-rolled (not strptime
+    ``%b``) so non-English ``LC_TIME`` hosts still parse the English RBA
+    month names — Codex P2 locale-safety lesson from PR #129.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    parts = raw.split("-")
+    if len(parts) != 3:
+        return None
+    day_str, mon_str, year_str = parts
+    if not (1 <= len(day_str) <= 2 and day_str.isdigit()):
+        return None
+    if len(mon_str) != 3:
+        return None
+    if len(year_str) != 4 or not year_str.isdigit():
+        return None
+    month = _MONTH_ABBR.get(mon_str.capitalize())
+    if month is None:
+        return None
+    try:
+        return date(int(year_str), month, int(day_str)).isoformat()
+    except ValueError:
+        return None
+
+
 def _parse_rba_date(raw: str) -> str | None:
     """Parse an RBA tables date column.
 
@@ -428,10 +460,6 @@ def _parse_rba_date(raw: str) -> str | None:
     column. A handful (e.g. F11 exchange rates) instead use
     ``DD-Mon-YYYY`` -- the same format the header-row publication date
     uses. Try both. Returns ISO ``YYYY-MM-DD`` or None.
-
-    Month-abbrev parsing uses a hand-rolled lookup rather than
-    ``%b``/``%B`` strptime so non-English ``LC_TIME`` hosts still
-    parse the English RBA month names (Codex P2 PR #129).
     """
     raw = (raw or "").strip()
     if not raw:
@@ -440,32 +468,12 @@ def _parse_rba_date(raw: str) -> str | None:
         return datetime.strptime(raw, "%d/%m/%Y").date().isoformat()
     except ValueError:
         pass
-    parts = raw.split("-")
-    if len(parts) == 3:
-        try:
-            day = int(parts[0])
-            month = _MONTH_ABBR.get(parts[1].capitalize())
-            year = int(parts[2])
-        except ValueError:
-            return None
-        if month is None:
-            return None
-        try:
-            return date(year, month, day).isoformat()
-        except ValueError:
-            return None
-    return None
+    return _parse_dd_mon_yyyy(raw)
 
 
 def _parse_publication_date(raw: str) -> str | None:
     """RBA tables publication date is DD-Mon-YYYY (e.g. 22-May-2026)."""
-    raw = (raw or "").strip()
-    if not raw:
-        return None
-    try:
-        return datetime.strptime(raw, "%d-%b-%Y").date().isoformat()
-    except ValueError:
-        return None
+    return _parse_dd_mon_yyyy(raw)
 
 
 def parse_rba_csv(text: str, columns: dict[str, str]) -> dict[str, list[tuple[str, float | None, str | None]]]:
