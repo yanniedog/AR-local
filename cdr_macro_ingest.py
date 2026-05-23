@@ -18,7 +18,8 @@ and lending_indicator_housing (LEND_HOUSING, quarterly); PR1c.4 adds
 building_approvals_abs (BA_GCCSA, monthly, fetched via an SDMX REST
 key-filtered URL because the unfiltered dataflow is ~3.6 GB); PR1b.x
 adds RBA H3 (dwelling_approvals, consumer_sentiment, business_conditions);
-PR1c.5 adds ABS WPI + JV (abs_wage_price_index, job_vacancies). PR1d/PR1e
+PR1c.5 adds ABS WPI + JV (abs_wage_price_index, job_vacancies); PR1b.y
+adds RBA G1 + G3 (trimmed_mean_cpi, inflation_expectations). PR1d/PR1e
 extend the same pattern.
 
 Run standalone to populate the store:
@@ -75,6 +76,23 @@ RBA_H3_COLUMNS: dict[str, str] = {
     "dwelling_approvals": "Private dwelling approvals",
     "consumer_sentiment": "Consumer sentiment",
     "business_conditions": "Business conditions",
+}
+
+# RBA G1 "Consumer Price Inflation" (quarterly). The Title row uses an
+# en-dash (U+2013) in several column headers -- copy verbatim from the
+# CSV to avoid a silent missing-column error. Column 10 is the headline
+# RBA-trimmed-mean YoY measure the RBA tracks for monetary policy.
+RBA_G1_URL = "https://www.rba.gov.au/statistics/tables/csv/g1-data.csv"
+RBA_G1_COLUMNS: dict[str, str] = {
+    "trimmed_mean_cpi": "Year-ended trimmed mean inflation – excluding interest charges and tax changes",
+}
+
+# RBA G3 "Inflation Expectations" (quarterly). Headline column is the
+# Westpac-MI consumer 1-year-ahead measure (trimmed mean for 1-year
+# ahead annual inflation rate; end-quarter observation).
+RBA_G3_URL = "https://www.rba.gov.au/statistics/tables/csv/g3-data.csv"
+RBA_G3_COLUMNS: dict[str, str] = {
+    "inflation_expectations": "Consumer inflation expectations – 1-year ahead",
 }
 
 # ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
@@ -762,6 +780,16 @@ def ingest_rba_h3(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     return _ingest_rba_csv(con, RBA_H3_URL, RBA_H3_COLUMNS)
 
 
+def ingest_rba_g1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA G1 (CPI inflation) and upsert the columns mapped in ``RBA_G1_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_G1_URL, RBA_G1_COLUMNS)
+
+
+def ingest_rba_g3(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA G3 (inflation expectations) and upsert the columns mapped in ``RBA_G3_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_G3_URL, RBA_G3_COLUMNS)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
@@ -770,6 +798,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=[
             "rba_h5",
             "rba_h3",
+            "rba_g1",
+            "rba_g3",
             "abs_cpi_m",
             "abs_lf_under",
             "abs_lf_hours",
@@ -792,6 +822,10 @@ def main(argv: list[str] | None = None) -> int:
             report["rba_h5"] = ingest_rba_h5(con)
         if args.source in ("rba_h3", "all"):
             report["rba_h3"] = ingest_rba_h3(con)
+        if args.source in ("rba_g1", "all"):
+            report["rba_g1"] = ingest_rba_g1(con)
+        if args.source in ("rba_g3", "all"):
+            report["rba_g3"] = ingest_rba_g3(con)
         if args.source in ("abs_cpi_m", "all"):
             report["abs_cpi_m"] = ingest_abs_cpi_m(con)
         if args.source in ("abs_lf_under", "all"):
