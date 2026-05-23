@@ -49,7 +49,7 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -117,7 +117,6 @@ RBA_H2_COLUMNS: dict[str, str] = {
 # the name the catalog treats bank bills as monthly headlines; the
 # upserter's PK is (series_id, observation_date) so daily upserts are
 # safe and the dashboard forward-fill works either way.
-RBA_F11_URL = "https://www.rba.gov.au/statistics/tables/csv/f11-data.csv"
 RBA_F1_1_URL = "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv"
 RBA_F1_1_COLUMNS: dict[str, str] = {
     "bank_bill_30d": "1-month BABs/NCDs",
@@ -127,6 +126,7 @@ RBA_F1_1_COLUMNS: dict[str, str] = {
 
 # RBA F11 "Exchange Rates - Monthly". Date column is DD-Mon-YYYY
 # (handled by the dual-format _parse_rba_date).
+RBA_F11_URL = "https://www.rba.gov.au/statistics/tables/csv/f11-data.csv"
 RBA_F11_COLUMNS: dict[str, str] = {
     "aud_twi": "Trade-weighted Index May 1970 = 100",
 }
@@ -401,6 +401,12 @@ def open_store(store_path: Path = DEFAULT_STORE_PATH) -> sqlite3.Connection:
     return con
 
 
+_MONTH_ABBR = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
+
+
 def _parse_rba_date(raw: str) -> str | None:
     """Parse an RBA tables date column.
 
@@ -408,15 +414,32 @@ def _parse_rba_date(raw: str) -> str | None:
     column. A handful (e.g. F11 exchange rates) instead use
     ``DD-Mon-YYYY`` -- the same format the header-row publication date
     uses. Try both. Returns ISO ``YYYY-MM-DD`` or None.
+
+    Month-abbrev parsing uses a hand-rolled lookup rather than
+    ``%b``/``%B`` strptime so non-English ``LC_TIME`` hosts still
+    parse the English RBA month names (Codex P2 PR #129).
     """
     raw = (raw or "").strip()
     if not raw:
         return None
-    for fmt in ("%d/%m/%Y", "%d-%b-%Y"):
+    try:
+        return datetime.strptime(raw, "%d/%m/%Y").date().isoformat()
+    except ValueError:
+        pass
+    parts = raw.split("-")
+    if len(parts) == 3:
         try:
-            return datetime.strptime(raw, fmt).date().isoformat()
+            day = int(parts[0])
+            month = _MONTH_ABBR.get(parts[1].capitalize())
+            year = int(parts[2])
         except ValueError:
-            continue
+            return None
+        if month is None:
+            return None
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            return None
     return None
 
 
