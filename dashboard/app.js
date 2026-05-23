@@ -823,24 +823,25 @@
       ]);
       hydrateSectionRows(sectionPayload.rates, sectionName, latest.run_date);
       hydrateSectionRows(historyPayload.rates, sectionName);
-      // Update the manifest signature and cache the section's data
-      // regardless of whether the user has navigated away mid-refresh
-      // (Codex P2 PR #131): otherwise the next 30s poll re-fetches
-      // identical data, and switching back to ``sectionName`` would
-      // show stale cached rows until the second poll fires.
-      state.manifest = latest;
-      state.manifestSignature = nextSignature;
+      // Cache the fetched section data for ``sectionName`` regardless of
+      // whether the user has navigated away (Codex P2 PR #131) -- if they
+      // navigate back, those rows are fresh.
       state.bankRibbons[sectionName] = ribbon;
       state.bankSections[sectionName] = {
         ...sectionPayload,
         rates: Array.isArray(sectionPayload.rates) ? normalizeRows(sectionPayload.rates) : [],
       };
       if (state.section !== sectionName) {
-        // User switched sections while we were fetching. The new
-        // section's loadSection() flow will pick up the updated
-        // manifest on its own; do not stomp the active view.
+        // User switched sections while we were fetching. Do NOT advance
+        // state.manifestSignature here (Codex P1 PR #131): the next poll
+        // needs to refetch for the now-active section, and that loop
+        // short-circuits when nextSignature === state.manifestSignature.
+        // Updating state.manifest is fine; the signature is the gate.
+        state.manifest = latest;
         return;
       }
+      state.manifest = latest;
+      state.manifestSignature = nextSignature;
       state.bankHistory = {
         ...historyPayload,
         rates: Array.isArray(historyPayload.rates) ? normalizeRows(historyPayload.rates) : [],
