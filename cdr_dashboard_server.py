@@ -465,6 +465,15 @@ def inject_local_dashboard_css(html: bytes) -> bytes:
             count=1,
             flags=re.IGNORECASE,
         )
+    # Strip the upstream onboarding tour (ar-guide.js). AR-local users are
+    # power users hitting the LAN/Tailscale dashboard directly; the "Choose a
+    # market / STEP 1 OF 5" coachmark just gets in the way.
+    out, _ = re.subn(
+        br'''<script\b[^>]*\bsrc\s*=\s*["'][^"']*?\bar-guide\.js[^"']*?["'][^>]*>\s*</script>\s*''',
+        b"",
+        out,
+        flags=re.IGNORECASE,
+    )
     # Block third-party trackers before any other script runs. Must come
     # before the site-variant.js include, so target the <head> open tag.
     if b"ar-clarity-block" not in out.lower():
