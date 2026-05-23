@@ -377,7 +377,13 @@
     }
     if (state.hoverProvider) {
       const hoverValid = rateRows().some((row) => rowMatchesProvider(row, state.hoverProvider));
-      if (!hoverValid) state.hoverProvider = state.focusProvider || fallback;
+      // Clear hover rather than substitute a deterministic provider
+      // (Codex P2 PR #131): hover is a transient pointer state, not
+      // user intent. Substituting would leave the chart dimmed to a
+      // provider the user never hovered, with no mouseleave to fire
+      // the natural reset because the pointer may no longer be on
+      // the logo rail when the polling refresh lands.
+      if (!hoverValid) state.hoverProvider = '';
     }
   }
 
