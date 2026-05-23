@@ -208,13 +208,17 @@
   }
 
   function sortedValidRunDates(values) {
+    // Single parseYmd per input value (Gemini PR #131): the previous
+    // path called parseYmd inside normalizeRunDate AND again here for
+    // the sort key, which is the hot path on every realtime refresh.
     const seen = new Set();
     const rows = [];
     (values || []).forEach((value) => {
-      const date = normalizeRunDate(value);
-      if (!date || seen.has(date)) return;
+      const date = String(value || '').slice(0, 10);
+      const ts = parseYmd(date);
+      if (ts == null || seen.has(date)) return;
       seen.add(date);
-      rows.push({ date, ts: parseYmd(date) });
+      rows.push({ date, ts });
     });
     rows.sort((a, b) => a.ts - b.ts);
     return rows.map((row) => row.date);
@@ -401,38 +405,6 @@
     if (hover && dates.indexOf(hover) < 0) state.chartHoverDate = closestRetainedDate(dates, hover);
     else state.chartHoverDate = hover;
     if (!state.chartHoverDate && dates.length) state.chartHoverDate = dates[dates.length - 1];
-  }
-
-  function captureUiStateSnapshot() {
-    return {
-      descending: !!state.descending,
-      historyWindow: String(state.historyWindow || '30D'),
-      hierarchyPath: String(state.hierarchyPath || ''),
-      focusProvider: String(state.focusProvider || ''),
-      hoverProvider: String(state.hoverProvider || ''),
-      focusedProductKeys: state.focusedProductKeys ? Array.from(state.focusedProductKeys) : null,
-      chartHoverDate: normalizeRunDate(state.chartHoverDate),
-      chartPinnedDate: normalizeRunDate(state.chartPinnedDate),
-    };
-  }
-
-  function restoreUiStateSnapshot(snapshot) {
-    if (!snapshot) return;
-    state.descending = !!snapshot.descending;
-    state.historyWindow = Object.prototype.hasOwnProperty.call(HISTORY_WINDOWS, snapshot.historyWindow) || snapshot.historyWindow === 'All'
-      ? snapshot.historyWindow
-      : '30D';
-    state.hierarchyPath = String(snapshot.hierarchyPath || '');
-    state.focusProvider = String(snapshot.focusProvider || '');
-    state.hoverProvider = String(snapshot.hoverProvider || '');
-    state.chartHoverDate = normalizeRunDate(snapshot.chartHoverDate);
-    state.chartPinnedDate = normalizeRunDate(snapshot.chartPinnedDate);
-    if (Array.isArray(snapshot.focusedProductKeys) && snapshot.focusedProductKeys.length) {
-      const keys = new Set(snapshot.focusedProductKeys.map((value) => String(value || '')).filter(Boolean));
-      state.focusedProductKeys = keys.size ? keys : null;
-    } else {
-      state.focusedProductKeys = null;
-    }
   }
 
   function sanitizeFocusedProductKeys() {
@@ -838,19 +810,24 @@
     state.realtimeRefreshInFlight = true;
     try {
       const latest = await getJson('/api/latest', { cache: 'no-store' });
+      if (!latest || !latest.run_date) return;
       const nextSignature = manifestSignature(latest);
       if (!nextSignature || nextSignature === state.manifestSignature) return;
       const sectionName = state.section;
-      const uiSnapshot = captureUiStateSnapshot();
       const encoded = encodeURIComponent(sectionName);
+      const dateEncoded = encodeURIComponent(latest.run_date);
       const [ribbon, sectionPayload, historyPayload] = await Promise.all([
-        getJson(`/api/banks/ribbon?date=${latest.run_date}&section=${encoded}`),
-        getJson(`/api/banks/section?date=${latest.run_date}&section=${encoded}`),
-        getJson(`/api/banks/history/section?date=${latest.run_date}&section=${encoded}`),
+        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/section?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/history/section?date=${dateEncoded}&section=${encoded}`),
       ]);
-      if (state.section !== sectionName) return;
       hydrateSectionRows(sectionPayload.rates, sectionName, latest.run_date);
       hydrateSectionRows(historyPayload.rates, sectionName);
+      // Update the manifest signature and cache the section's data
+      // regardless of whether the user has navigated away mid-refresh
+      // (Codex P2 PR #131): otherwise the next 30s poll re-fetches
+      // identical data, and switching back to ``sectionName`` would
+      // show stale cached rows until the second poll fires.
       state.manifest = latest;
       state.manifestSignature = nextSignature;
       state.bankRibbons[sectionName] = ribbon;
@@ -858,6 +835,12 @@
         ...sectionPayload,
         rates: Array.isArray(sectionPayload.rates) ? normalizeRows(sectionPayload.rates) : [],
       };
+      if (state.section !== sectionName) {
+        // User switched sections while we were fetching. The new
+        // section's loadSection() flow will pick up the updated
+        // manifest on its own; do not stomp the active view.
+        return;
+      }
       state.bankHistory = {
         ...historyPayload,
         rates: Array.isArray(historyPayload.rates) ? normalizeRows(historyPayload.rates) : [],
@@ -865,7 +848,11 @@
       };
       state.bankHistorySection = sectionName;
       refreshBankHistoryIndex();
-      restoreUiStateSnapshot(uiSnapshot);
+      // No snapshot/restore here (Gemini + Codex PR #131): UI fields
+      // (descending, hoverProvider, chartPinnedDate, etc.) are
+      // persistent on ``state`` and are not touched by the data
+      // refresh above. Snapshotting before the await and restoring
+      // after would clobber any in-flight user interaction.
       sanitizeFocusedProviders();
       sanitizeFocusedProductKeys();
       sanitizeChartDateState(state.bankHistory.run_dates);
