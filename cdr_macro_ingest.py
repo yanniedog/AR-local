@@ -781,12 +781,12 @@ def ingest_rba_h3(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
 
 
 def ingest_rba_g1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
-    """Fetch RBA G1 (CPI inflation) and upsert ``RBA_G1_COLUMNS``."""
+    """Fetch RBA G1 (CPI inflation) and upsert the columns mapped in ``RBA_G1_COLUMNS``."""
     return _ingest_rba_csv(con, RBA_G1_URL, RBA_G1_COLUMNS)
 
 
 def ingest_rba_g3(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
-    """Fetch RBA G3 (inflation expectations) and upsert ``RBA_G3_COLUMNS``."""
+    """Fetch RBA G3 (inflation expectations) and upsert the columns mapped in ``RBA_G3_COLUMNS``."""
     return _ingest_rba_csv(con, RBA_G3_URL, RBA_G3_COLUMNS)
 
 
