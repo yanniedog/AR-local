@@ -458,12 +458,28 @@ def _parse_rba_date(raw: str) -> str | None:
 
 
 def _parse_publication_date(raw: str) -> str | None:
-    """RBA tables publication date is DD-Mon-YYYY (e.g. 22-May-2026)."""
+    """RBA tables publication date is DD-Mon-YYYY (e.g. 22-May-2026).
+
+    Uses the hand-rolled _MONTH_ABBR lookup (not strptime ``%b``) so
+    non-English ``LC_TIME`` hosts still parse the English month names —
+    same locale-safety lesson as _parse_rba_date (Codex P2 PR #129).
+    """
     raw = (raw or "").strip()
     if not raw:
         return None
+    parts = raw.split("-")
+    if len(parts) != 3:
+        return None
     try:
-        return datetime.strptime(raw, "%d-%b-%Y").date().isoformat()
+        day = int(parts[0])
+        month = _MONTH_ABBR.get(parts[1].capitalize())
+        year = int(parts[2])
+    except ValueError:
+        return None
+    if month is None:
+        return None
+    try:
+        return date(year, month, day).isoformat()
     except ValueError:
         return None
 
