@@ -80,6 +80,55 @@
   function pct(v) { return (v * 100).toFixed(2) + '%'; }
   function pctAxis(v) { return (Number(v) * 100).toFixed(1) + '%'; }
   function pct2(v) { return (Number(v) * 100).toFixed(2); }
+  const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  function canonicalYmd(value) {
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    const match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:$|[T\s])/);
+    if (!match) return '';
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return '';
+    const ts = Date.UTC(year, month - 1, day);
+    const check = new Date(ts);
+    if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return '';
+    const yyyy = String(year).padStart(4, '0');
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function parseYmdParts(value) {
+    const text = canonicalYmd(value);
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { year, month, day };
+  }
+
+  function formatAxisDateLabel(value) {
+    const parts = parseYmdParts(value);
+    if (!parts) return '';
+    return String(parts.day) + ' ' + MONTH_SHORT[parts.month - 1] + ' ' + String(parts.year);
+  }
+
+  function axisLabelIntervalForCount(count) {
+    const n = Number(count) || 0;
+    if (n <= 0) return 0;
+    const width = window.innerWidth || 1280;
+    let target = 10;
+    if (width < 640) target = 4;
+    else if (width < 960) target = 6;
+    else if (width < 1280) target = 8;
+    const shown = Math.max(1, Math.min(target, n));
+    return Math.max(0, Math.ceil(n / shown) - 1);
+  }
 
   function escHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
@@ -214,6 +263,59 @@
     const focus = normProviderKey(model && model.focusProvider);
     if (!focus || !model || !Array.isArray(model.providers)) return null;
     return model.providers.find((p) => normProviderKey(p.label) === focus) || null;
+  }
+
+  function normalizeTimelineDates(rawDates) {
+    const seen = new Set();
+    const dates = [];
+    (rawDates || []).forEach((value) => {
+      const date = String(value == null ? '' : value).slice(0, 10);
+      if (!parseYmdParts(date) || seen.has(date)) return;
+      seen.add(date);
+      dates.push(date);
+    });
+    dates.sort();
+    return dates;
+  }
+
+  function finiteOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function sanitizeRibbonPoint(date, point) {
+    const source = point || {};
+    let min = finiteOrNull(source.min);
+    let max = finiteOrNull(source.max);
+    let mean = finiteOrNull(source.mean);
+    if (min != null && max != null && min > max) {
+      const swap = min;
+      min = max;
+      max = swap;
+    }
+    if (mean != null && min != null && max != null) {
+      mean = Math.min(Math.max(mean, min), max);
+    } else if (mean == null && min != null && max != null) {
+      mean = (min + max) / 2;
+    }
+    if (min == null || max == null) {
+      min = null;
+      max = null;
+    }
+    const countRaw = Number(source.count);
+    const count = Number.isFinite(countRaw) && countRaw > 0 ? Math.round(countRaw) : 0;
+    return { date, min, max, mean, count };
+  }
+
+  function alignPointsToTimeline(dates, rawPoints) {
+    const byDate = {};
+    (rawPoints || []).forEach((point, index) => {
+      const fallback = dates[index] || '';
+      const date = String((point && point.date) || fallback).slice(0, 10);
+      if (!date || !parseYmdParts(date)) return;
+      if (!byDate[date]) byDate[date] = point;
+    });
+    return dates.map((date) => sanitizeRibbonPoint(date, byDate[date]));
   }
 
   function pointsFromProviderSeries(dates, providerSeries) {
@@ -404,9 +506,10 @@
 
   function drawBankHistory(chart, model) {
     const t = theme();
-    const dates = model.dates || [];
+    const dates = normalizeTimelineDates(model.dates || []);
     const focused = resolveFocusedProvider(model);
-    const points = focused ? pointsFromProviderSeries(dates, focused) : (model.points || []);
+    const rawPoints = focused ? pointsFromProviderSeries(dates, focused) : (model.points || []);
+    const points = alignPointsToTimeline(dates, rawPoints);
     const hoverHeading = ribbonHeadingForModel(model);
     if (!dates.length || !points.length) {
       chart.clear();
@@ -542,6 +645,7 @@
       chart._localHoverCleanup = null;
     }
 
+    const xAxisLabelInterval = axisLabelIntervalForCount(dates.length);
     chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
@@ -555,6 +659,7 @@
           color: t.ttText,
           fontSize: 10,
           padding: [3, 6],
+          formatter: (params) => formatAxisDateLabel(params && params.value),
         },
         lineStyle: { color: t.crosshair, width: 1.4, type: 'dashed' },
       },
@@ -565,8 +670,12 @@
         axisLabel: {
           color: t.muted,
           fontSize: 11,
-          hideOverlap: true,
-          formatter: (v) => String(v).slice(5),
+          hideOverlap: false,
+          interval: xAxisLabelInterval,
+          formatter: (v, i) => {
+            const candidate = i != null && i >= 0 && i < dates.length ? dates[i] : v;
+            return formatAxisDateLabel(candidate);
+          },
         },
         axisLine: { lineStyle: { color: t.line } },
         axisTick: { show: false },
@@ -575,8 +684,14 @@
       yAxis: {
         type: 'value',
         scale: true,
-        min: (v) => Math.max(0, Math.floor((v.min - 0.003) * 1000) / 1000),
-        max: (v) => Math.ceil((v.max + 0.003) * 1000) / 1000,
+        min: (v) => {
+          const base = Number.isFinite(v && v.min) ? v.min : 0;
+          return Math.max(0, Math.floor((base - 0.003) * 1000) / 1000);
+        },
+        max: (v) => {
+          const base = Number.isFinite(v && v.max) ? v.max : 0;
+          return Math.max(0.001, Math.ceil((base + 0.003) * 1000) / 1000);
+        },
         axisLabel: { formatter: pctAxis, color: t.muted, fontSize: 11 },
         splitLine: { lineStyle: { color: t.grid } },
         axisLine: { show: false },
