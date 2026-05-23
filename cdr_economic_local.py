@@ -44,6 +44,8 @@ _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sql
 #   PR1c.5: ABS WPI + JV (abs_wage_price_index, job_vacancies)
 #   PR1b.y: RBA G1 + G3 (trimmed_mean_cpi, inflation_expectations)
 #   PR1b.z: RBA H4 + H2 (wage_growth, household_consumption, public_demand)
+#   PR1b.aa: RBA F1.1 + F11 + I2 + D1 (bank_bill_30d/90d/180d, aud_twi,
+#            commodity_prices, housing_credit_growth)
 LOCAL_SERIES_IDS: frozenset[str] = frozenset(
     {
         "unemployment_rate",
@@ -67,6 +69,12 @@ LOCAL_SERIES_IDS: frozenset[str] = frozenset(
         "wage_growth",
         "household_consumption",
         "public_demand",
+        "bank_bill_30d",
+        "bank_bill_90d",
+        "bank_bill_180d",
+        "aud_twi",
+        "commodity_prices",
+        "housing_credit_growth",
     }
 )
 
