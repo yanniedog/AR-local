@@ -44,6 +44,7 @@
   const state = {
     section: SECTION.Mortgage,
     manifest: null,
+    manifestSignature: '',
     bankRibbons: {},
     bankSections: {},
     bankHistory: null,
@@ -65,6 +66,8 @@
     ingestClockOffsetMs: 0,
     ingestScheduleFetchedAtMs: 0,
     ingestScheduleIntervalsStarted: false,
+    realtimeIntervalsStarted: false,
+    realtimeRefreshInFlight: false,
   };
   const $ = (id) => document.getElementById(id);
   const { bankRateMatchesSection, historyIndexKey, normalizeRows, pct } = window.LocalCdrUtils;
@@ -180,10 +183,7 @@
       state.retainedRunDatesSorted = [];
       return;
     }
-    state.retainedRunDatesSorted = raw
-      .map((date) => String(date || ''))
-      .filter((date) => parseYmd(date) != null)
-      .sort();
+    state.retainedRunDatesSorted = sortedValidRunDates(raw);
   }
 
   function refreshBankHistoryIndex() {
@@ -200,6 +200,28 @@
     const check = new Date(ts);
     if (check.getUTCFullYear() !== parts[0] || check.getUTCMonth() !== parts[1] - 1 || check.getUTCDate() !== parts[2]) return null;
     return ts;
+  }
+
+  function normalizeRunDate(value) {
+    const date = String(value || '').slice(0, 10);
+    return parseYmd(date) == null ? '' : date;
+  }
+
+  function sortedValidRunDates(values) {
+    // Single parseYmd per input value (Gemini PR #131): the previous
+    // path called parseYmd inside normalizeRunDate AND again here for
+    // the sort key, which is the hot path on every realtime refresh.
+    const seen = new Set();
+    const rows = [];
+    (values || []).forEach((value) => {
+      const date = String(value || '').slice(0, 10);
+      const ts = parseYmd(date);
+      if (ts == null || seen.has(date)) return;
+      seen.add(date);
+      rows.push({ date, ts });
+    });
+    rows.sort((a, b) => a.ts - b.ts);
+    return rows.map((row) => row.date);
   }
 
   function historyDatesInWindow(dates) {
@@ -238,7 +260,7 @@
     state.bankHistory = {
       ...data,
       rates,
-      run_dates: Array.isArray(data.run_dates) ? data.run_dates : [],
+      run_dates: sortedValidRunDates(Array.isArray(data.run_dates) ? data.run_dates : []),
     };
     state.bankHistorySection = sectionName;
     refreshBankHistoryIndex();
@@ -247,7 +269,7 @@
   function seedCurrentHistory(section, rows) {
     const normalized = normalizeRows(rows || []);
     state.bankHistory = {
-      run_dates: state.manifest && state.manifest.run_date ? [state.manifest.run_date] : [],
+      run_dates: sortedValidRunDates(state.manifest && state.manifest.run_date ? [state.manifest.run_date] : []),
       rates: normalized,
       carry_forward_count: 0,
       section,
@@ -289,7 +311,7 @@
     const sliceDates = new Set();
     const byDate = {};
     historyRows.forEach((row) => {
-      const date = String(row.run_date || '');
+      const date = normalizeRunDate(row.run_date);
       const provider = row.provider || 'Unknown';
       const rate = Number(row.rate);
       if (!date || !Number.isFinite(rate) || rate <= 0) return;
@@ -306,7 +328,7 @@
         : { min: rate, max: rate, sum: rate, count: 1 };
     });
     const retained = retainedRunDates();
-    const sliceDatesSorted = Array.from(sliceDates).sort();
+    const sliceDatesSorted = sortedValidRunDates(Array.from(sliceDates));
     const timelineSource = retained.length ? retained : sliceDatesSorted;
     const dates = historyDatesInWindow(timelineSource);
     const points = dates.map((date) => {
@@ -336,6 +358,78 @@
     };
   }
 
+  function availableProvidersInSection() {
+    const rows = normalizeRows(rateRows());
+    return [...new Set(rows.map((row) => String(row.provider || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function deterministicProviderFallback() {
+    const providers = availableProvidersInSection();
+    return providers.length ? providers[0] : '';
+  }
+
+  function sanitizeFocusedProviders() {
+    const fallback = deterministicProviderFallback();
+    if (state.focusProvider) {
+      const focusValid = rateRows().some((row) => rowMatchesProvider(row, state.focusProvider));
+      if (!focusValid) state.focusProvider = fallback;
+    }
+    if (state.hoverProvider) {
+      const hoverValid = rateRows().some((row) => rowMatchesProvider(row, state.hoverProvider));
+      // Clear hover rather than substitute a deterministic provider
+      // (Codex P2 PR #131): hover is a transient pointer state, not
+      // user intent. Substituting would leave the chart dimmed to a
+      // provider the user never hovered, with no mouseleave to fire
+      // the natural reset because the pointer may no longer be on
+      // the logo rail when the polling refresh lands.
+      if (!hoverValid) state.hoverProvider = '';
+    }
+  }
+
+  function closestRetainedDate(dates, target) {
+    const tsTarget = parseYmd(target);
+    if (!dates.length) return '';
+    if (tsTarget == null) return dates[dates.length - 1];
+    let best = dates[0];
+    for (let i = 0; i < dates.length; i += 1) {
+      const date = dates[i];
+      const ts = parseYmd(date);
+      if (ts == null) continue;
+      if (ts > tsTarget) break;
+      best = date;
+    }
+    return best;
+  }
+
+  function sanitizeChartDateState(validDates) {
+    const dates = sortedValidRunDates(validDates);
+    const pinned = normalizeRunDate(state.chartPinnedDate);
+    const hover = normalizeRunDate(state.chartHoverDate);
+    if (pinned && dates.indexOf(pinned) < 0) state.chartPinnedDate = closestRetainedDate(dates, pinned);
+    else state.chartPinnedDate = pinned;
+    if (hover && dates.indexOf(hover) < 0) state.chartHoverDate = closestRetainedDate(dates, hover);
+    else state.chartHoverDate = hover;
+    if (!state.chartHoverDate && dates.length) state.chartHoverDate = dates[dates.length - 1];
+  }
+
+  function sanitizeFocusedProductKeys() {
+    if (!state.focusedProductKeys || !state.focusedProductKeys.size) {
+      state.focusedProductKeys = null;
+      return;
+    }
+    const live = new Set();
+    normalizeRows(rateRows()).forEach((row) => {
+      const key = rowProductKey(row);
+      if (key) live.add(key);
+    });
+    const retained = new Set();
+    state.focusedProductKeys.forEach((key) => {
+      if (live.has(key)) retained.add(key);
+    });
+    state.focusedProductKeys = retained.size ? retained : null;
+  }
+
   function chartItems(rows) {
     const historyRows = filteredHistoryRows(rows);
     const aggregate = buildAggregateRibbon(historyRows);
@@ -359,7 +453,8 @@
 
   function ribbonChartItems(ribbon) {
     if (!ribbon || !ribbon.run_date) return null;
-    const date = String(ribbon.run_date);
+    const date = normalizeRunDate(ribbon.run_date);
+    if (!date) return null;
     const range = ribbon.range || {};
     const providers = (ribbon.providers || []).map((row) => ({
       label: row.provider || 'Unknown',
@@ -707,6 +802,82 @@
     refreshIngestSchedule();
   }
 
+  function manifestSignature(manifest) {
+    const runDate = String((manifest && manifest.run_date) || '');
+    const counts = manifest && manifest.banks_counts ? manifest.banks_counts : {};
+    const rates = Number(counts.rates || 0);
+    const providers = Number(counts.providers || 0);
+    const products = Number(counts.products || 0);
+    return `${runDate}|${rates}|${providers}|${products}`;
+  }
+
+  async function refreshRealtimeSectionData() {
+    if (state.realtimeRefreshInFlight) return;
+    state.realtimeRefreshInFlight = true;
+    try {
+      const latest = await getJson('/api/latest', { cache: 'no-store' });
+      if (!latest || !latest.run_date) return;
+      const nextSignature = manifestSignature(latest);
+      if (!nextSignature || nextSignature === state.manifestSignature) return;
+      const sectionName = state.section;
+      const encoded = encodeURIComponent(sectionName);
+      const dateEncoded = encodeURIComponent(latest.run_date);
+      const [ribbon, sectionPayload, historyPayload] = await Promise.all([
+        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/section?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/history/section?date=${dateEncoded}&section=${encoded}`),
+      ]);
+      hydrateSectionRows(sectionPayload.rates, sectionName, latest.run_date);
+      hydrateSectionRows(historyPayload.rates, sectionName);
+      // Cache the fetched section data for ``sectionName`` regardless of
+      // whether the user has navigated away (Codex P2 PR #131) -- if they
+      // navigate back, those rows are fresh.
+      state.bankRibbons[sectionName] = ribbon;
+      state.bankSections[sectionName] = {
+        ...sectionPayload,
+        rates: Array.isArray(sectionPayload.rates) ? normalizeRows(sectionPayload.rates) : [],
+      };
+      if (state.section !== sectionName) {
+        // User switched sections while we were fetching. Do NOT advance
+        // state.manifestSignature here (Codex P1 PR #131): the next poll
+        // needs to refetch for the now-active section, and that loop
+        // short-circuits when nextSignature === state.manifestSignature.
+        // Updating state.manifest is fine; the signature is the gate.
+        state.manifest = latest;
+        return;
+      }
+      state.manifest = latest;
+      state.manifestSignature = nextSignature;
+      state.bankHistory = {
+        ...historyPayload,
+        rates: Array.isArray(historyPayload.rates) ? normalizeRows(historyPayload.rates) : [],
+        run_dates: sortedValidRunDates(Array.isArray(historyPayload.run_dates) ? historyPayload.run_dates : []),
+      };
+      state.bankHistorySection = sectionName;
+      refreshBankHistoryIndex();
+      // No snapshot/restore here (Gemini + Codex PR #131): UI fields
+      // (descending, hoverProvider, chartPinnedDate, etc.) are
+      // persistent on ``state`` and are not touched by the data
+      // refresh above. Snapshotting before the await and restoring
+      // after would clobber any in-flight user interaction.
+      sanitizeFocusedProviders();
+      sanitizeFocusedProductKeys();
+      sanitizeChartDateState(state.bankHistory.run_dates);
+      warmProviderLogoCache();
+      render();
+    } catch (_err) {
+      // Keep current dashboard view and retry on next poll.
+    } finally {
+      state.realtimeRefreshInFlight = false;
+    }
+  }
+
+  function loadRealtimeSectionData() {
+    if (state.realtimeIntervalsStarted) return;
+    state.realtimeIntervalsStarted = true;
+    window.setInterval(refreshRealtimeSectionData, 30 * 1000);
+  }
+
   function warmProviderLogoCache() {
     const sectionPayload = state.bankSections[state.section];
     if (!window.LocalCdrBrand || !window.LocalCdrBrand.preloadRailProviders || !sectionPayload || !sectionPayload.rates) {
@@ -848,9 +1019,7 @@
   function syncChartRibbonState(finalRows) {
     const items = chartItems(finalRows);
     state.chartDates = items && items.kind === 'bank-history' ? (items.dates || []) : [];
-    if (!state.chartHoverDate && state.chartDates.length) {
-      state.chartHoverDate = state.chartDates[state.chartDates.length - 1];
-    }
+    sanitizeChartDateState(state.chartDates);
     return items;
   }
 
@@ -961,9 +1130,9 @@
       state.chartHoverDate = '';
       state.chartPinnedDate = '';
       state.chartDates = [];
+      state.descending = preferredDescending(section);
     }
     state.section = section;
-    state.descending = preferredDescending(section);
     setSectionUi();
     syncSectionUrl();
     const cachedSection = state.bankSections[section];
@@ -993,6 +1162,7 @@
     }
     if (token !== loadSectionToken) return;
     seedCurrentHistory(section, rateRows());
+    sanitizeFocusedProviders();
     render();
     loadBankHistory()
       .then(() => {
@@ -1101,7 +1271,9 @@
 
   async function init() {
     state.manifest = await getJson('/api/latest', { cache: 'no-store' });
+    state.manifestSignature = manifestSignature(state.manifest);
     loadIngestSchedule();
+    loadRealtimeSectionData();
     bind();
     await loadSection(sectionFromPathname());
   }
