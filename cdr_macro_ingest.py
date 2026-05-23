@@ -22,8 +22,9 @@ PR1c.5 adds ABS WPI + JV (abs_wage_price_index, job_vacancies); PR1b.y
 adds RBA G1 + G3 (trimmed_mean_cpi, inflation_expectations); PR1b.z
 adds RBA H4 (wage_growth) and H2 (household_consumption, public_demand);
 PR1b.aa adds RBA F1.1 (bank_bill_30d/90d/180d), F11 (aud_twi), I2
-(commodity_prices), and D1 (housing_credit_growth). PR1d/PR1e extend
-the same pattern.
+(commodity_prices), and D1 (housing_credit_growth); PR1b.bb adds RBA
+J1 star-variables (neutral_rate, capacity_utilisation_proxy). PR1d/PR1e
+extend the same pattern.
 
 Run standalone to populate the store:
 
@@ -143,6 +144,19 @@ RBA_I2_COLUMNS: dict[str, str] = {
 RBA_D1_URL = "https://www.rba.gov.au/statistics/tables/csv/d1-data.csv"
 RBA_D1_COLUMNS: dict[str, str] = {
     "housing_credit_growth": "Credit; Housing; 12-month ended growth",
+}
+
+# RBA J1 star-variables (RBA survey of professional forecasters, ~45
+# semi-annual rows since 2015). Each row records the median, mean and
+# range of forecaster estimates for the medium-to-long-term inflation,
+# potential GDP growth, NAIRU, neutral interest rate and output gap.
+# We expose the medians: neutral_rate (nominal neutral interest rate)
+# and capacity_utilisation_proxy (output gap -- positive means demand
+# is above capacity).
+RBA_J1_URL = "https://www.rba.gov.au/statistics/tables/csv/j1-star-variables.csv"
+RBA_J1_COLUMNS: dict[str, str] = {
+    "neutral_rate": "Nominal neutral interest rate estimates – median",
+    "capacity_utilisation_proxy": "Output gap – median",
 }
 
 # ABS Data API (SDMX), dataflow CPI_M (Monthly CPI Indicator). The "all"
@@ -901,6 +915,11 @@ def ingest_rba_d1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
     return _ingest_rba_csv(con, RBA_D1_URL, RBA_D1_COLUMNS)
 
 
+def ingest_rba_j1(con: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Fetch RBA J1 star-variables and upsert the columns mapped in ``RBA_J1_COLUMNS``."""
+    return _ingest_rba_csv(con, RBA_J1_URL, RBA_J1_COLUMNS)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest macro time series into state/local-macro.sqlite")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH, help="Path to the local-macro SQLite store")
@@ -917,6 +936,7 @@ def main(argv: list[str] | None = None) -> int:
             "rba_f11",
             "rba_i2",
             "rba_d1",
+            "rba_j1",
             "abs_cpi_m",
             "abs_lf_under",
             "abs_lf_hours",
@@ -955,6 +975,8 @@ def main(argv: list[str] | None = None) -> int:
             report["rba_i2"] = ingest_rba_i2(con)
         if args.source in ("rba_d1", "all"):
             report["rba_d1"] = ingest_rba_d1(con)
+        if args.source in ("rba_j1", "all"):
+            report["rba_j1"] = ingest_rba_j1(con)
         if args.source in ("abs_cpi_m", "all"):
             report["abs_cpi_m"] = ingest_abs_cpi_m(con)
         if args.source in ("abs_lf_under", "all"):

@@ -46,6 +46,7 @@ _MACRO_STORE_PATH = Path(__file__).resolve().parent / "state" / "local-macro.sql
 #   PR1b.z: RBA H4 + H2 (wage_growth, household_consumption, public_demand)
 #   PR1b.aa: RBA F1.1 + F11 + I2 + D1 (bank_bill_30d/90d/180d, aud_twi,
 #            commodity_prices, housing_credit_growth)
+#   PR1b.bb: RBA J1 star-variables (neutral_rate, capacity_utilisation_proxy)
 LOCAL_SERIES_IDS: frozenset[str] = frozenset(
     {
         "unemployment_rate",
@@ -75,6 +76,8 @@ LOCAL_SERIES_IDS: frozenset[str] = frozenset(
         "aud_twi",
         "commodity_prices",
         "housing_credit_growth",
+        "neutral_rate",
+        "capacity_utilisation_proxy",
     }
 )
 
