@@ -456,6 +456,13 @@
    */
   function buildRbaChangeMarkAreaPairs(dates, changes) {
     const out = [];
+    // On narrow viewports, "+25 bps" centred over the leftmost band extends
+    // left of the plot area and collides with the y-axis tick labels. Anchor
+    // left-aligned inside the band's top-left so the text grows away from
+    // the y-axis gutter, and reduce the arrow stack so the annotation block
+    // doesn't dominate the chart height.
+    const isNarrow = (window.innerWidth || 1280) < 520;
+    const arrowCount = isNarrow ? 2 : 5;
     (changes || []).forEach((row) => {
       const d = String(row.snap || row.date || '').slice(0, 10);
       const ix = dates.indexOf(d);
@@ -468,31 +475,34 @@
         const sign = change > 0 ? '+' : '-';
         const headText = sign + bps + ' bps';
         const arrowGlyph = change > 0 ? '\u25b2' : '\u25bc';
-        const arrowBlock = Array(5).fill(arrowGlyph).join('\n');
+        const arrowBlock = Array(arrowCount).fill(arrowGlyph).join('\n');
+        const labelAlign = isNarrow ? 'left' : 'center';
+        const labelPosition = isNarrow ? 'insideTopLeft' : 'insideTop';
         start.name = headText;
         start.label = {
           show: true,
-          position: 'insideTop',
+          position: labelPosition,
           distance: 2,
-          align: 'center',
+          align: labelAlign,
           verticalAlign: 'top',
+          padding: isNarrow ? [0, 0, 0, 3] : 0,
           formatter: () => '{head|' + headText + '}\n{arr|' + arrowBlock + '}',
           rich: {
             head: {
-              fontSize: 11,
+              fontSize: isNarrow ? 10 : 11,
               fontWeight: 700,
               color: '#fef9c3',
-              lineHeight: 16,
-              align: 'center',
+              lineHeight: 14,
+              align: labelAlign,
               textBorderColor: 'rgba(15,23,42,0.75)',
               textBorderWidth: 2,
             },
             arr: {
-              fontSize: 13,
+              fontSize: isNarrow ? 11 : 13,
               fontWeight: 700,
               color: '#fde047',
-              lineHeight: 12,
-              align: 'center',
+              lineHeight: 11,
+              align: labelAlign,
               textBorderColor: 'rgba(15,23,42,0.65)',
               textBorderWidth: 1,
             },
@@ -649,7 +659,13 @@
     chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
-      grid: { top: rbaMarkPairs.length ? 36 : 14, bottom: 28, left: 52, right: 16, containLabel: true },
+      grid: {
+        top: rbaMarkPairs.length ? ((window.innerWidth || 1280) < 520 ? 44 : 36) : 14,
+        bottom: 28,
+        left: (window.innerWidth || 1280) < 520 ? 44 : 52,
+        right: (window.innerWidth || 1280) < 520 ? 10 : 16,
+        containLabel: true,
+      },
       axisPointer: {
         link: [{ xAxisIndex: [0] }],
         label: {

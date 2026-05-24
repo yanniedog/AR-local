@@ -790,7 +790,10 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
 @media (max-width: 520px) {
   body.ar-public.ar-local-cdr .chart-workspace {
     display: grid;
-    grid-template-rows: clamp(220px, var(--ar-chart-mobile-top-height, 240px), 260px) 12px minmax(220px, 1fr);
+    /* Let the hierarchy panel size to its content instead of reserving 220px
+       of empty space below short slices (caused a visible gap above the
+       footer on narrow viewports). */
+    grid-template-rows: clamp(220px, var(--ar-chart-mobile-top-height, 240px), 260px) 8px auto;
   }
 
   body.ar-public.ar-local-cdr .terminal-chart-surface {
@@ -802,48 +805,111 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     margin-top: 12px;
   }
 
+  /* Resizer is non-functional on touch / stacked layout — hide and reclaim its row. */
+  body.ar-public.ar-local-cdr .chart-workspace-resizer {
+    display: none;
+  }
+
+  /* Row layout: positional 3-col grid. Previously named `grid-area: twist|label|rate`
+     was set on children with NO `grid-template-areas` defined — the browser fell
+     back to auto-placement and items stacked on top of each other. */
   .ar-local-cdr #hierarchy .ar-report-infobox-trow {
     display: grid !important;
-    grid-template-columns: auto minmax(0, 1fr) max-content;
+    grid-template-columns: 16px minmax(0, 1fr) minmax(0, auto);
     align-items: center;
-    column-gap: 5px;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    column-gap: 6px;
+    padding: 6px 4px;
     margin-bottom: 0;
+    overflow: hidden;
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-twist,
   .ar-local-cdr #hierarchy .ar-report-infobox-tsw {
-    display: inline-grid !important;
-    grid-area: twist;
-    vertical-align: top;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    min-width: 0;
+    vertical-align: middle;
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-tlabel {
-    display: block !important;
-    grid-area: label;
+    display: inline-flex !important;
+    flex-wrap: wrap;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Long category names wrap rather than push the rate column off-screen. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-tlabel .local-hierarchy-node-name,
+  .ar-local-cdr #hierarchy .local-hierarchy-leaf-text .ar-ribbon-tleaf-product {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-width: 0;
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-trate {
     display: inline-flex !important;
-    grid-area: rate;
-    flex-wrap: nowrap;
-    gap: 2px 4px;
-    width: auto;
-    margin-left: 0;
-    margin-top: 0;
-    margin-bottom: 0;
+    flex-wrap: wrap;
+    gap: 0 4px;
+    justify-content: flex-end;
     justify-self: end;
-    justify-items: end;
-    max-width: 100%;
+    /* Hard cap so the rate cell can never overrun the label column. */
+    max-width: 38vw;
     min-width: 0;
     text-align: right;
     line-height: 1.25;
+    font-variant-numeric: tabular-nums;
   }
 
   .ar-local-cdr #hierarchy .ar-report-infobox-trate > span {
     line-height: 1.25;
     white-space: nowrap;
+  }
+
+  /* History compare (e.g. "5.99% → 6.79% (-0.10%)") used to force the rate cell
+     wide enough to overlap the label. Allow it to drop to its own line. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate .local-hierarchy-history {
+    flex-basis: 100%;
+    margin: 0;
+    text-align: right;
+    font-size: 0.62rem;
+  }
+
+  /* Constrain the logo-only leaf badge (and its fallback chip) so a long
+     fallback abbreviation can't render as a wide white pill that overruns the
+     row — observed on Pixel 8 Pro before logo images load. */
+  .ar-local-cdr #hierarchy .local-hierarchy-leaf-brand,
+  .ar-local-cdr #hierarchy .local-hierarchy-leaf-brand .bank-badge,
+  .ar-local-cdr #hierarchy .local-hierarchy-leaf-brand .bank-badge-logo-wrap {
+    width: 22px;
+    min-width: 22px;
+    max-width: 22px;
+    overflow: hidden;
+  }
+
+  .ar-local-cdr #hierarchy .local-hierarchy-leaf-brand .bank-badge-fallback {
+    max-width: 22px;
+    overflow: hidden;
+    text-overflow: clip;
+    font-size: 0.58rem;
+    line-height: 1;
+  }
+
+  /* Tighter footer spacing on mobile + bigger tap targets. */
+  body.ar-public.ar-local-cdr .site-footer .site-footer-inner {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    gap: 8px;
+  }
+
+  body.ar-public.ar-local-cdr .site-footer-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 6px 4px;
   }
 }
 
