@@ -1248,7 +1248,7 @@ body.ar-public [data-anchor-id] {
   }
 }
 
-/* ── PR4: RBA label clarification + dark-logo contrast ──
+/* ── PR4: RBA label clarification ──
    - The "RBA" stat in Bank Pricing Path is the forecast RBA cash rate
      AT THE CURRENT MATURITY (model.rba.cashRate per
      economic-forward-pricing.js:514). When no forward expectation exists
@@ -1257,8 +1257,13 @@ body.ar-public [data-anchor-id] {
      current cash rate shown elsewhere (CASH RATE 4.1% in the KPI strip,
      "RBA target 4.35%" in chart tooltips). Append " · at maturity"
      after the RBA label via ::after so readers know they're looking at
-     a maturity-conditioned figure, not the live policy rate. */
-body.ar-public.ar-section-economic-data .economic-forward-stats article > span abbr[title="Reserve Bank of Australia"]::after {
+     a maturity-conditioned figure, not the live policy rate.
+
+   The ::after attaches to the PARENT <span> (via :has) rather than the
+   <abbr> itself: screen readers read the abbr's title attribute and
+   skip its inner text + pseudo-content, so the suffix has to live on
+   an element they actually voice (gemini PR #138). */
+body.ar-public.ar-section-economic-data .economic-forward-stats article > span:has(> abbr[title="Reserve Bank of Australia"])::after {
   content: " · at maturity";
   margin-left: 4px;
   color: var(--ar-text-muted);
