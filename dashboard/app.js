@@ -931,12 +931,23 @@
 
     wrap.hidden = false;
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    const hint = coarse
+    const focus = String(state.focusProvider || '').toLowerCase();
+    const headRow = child(wrap, 'div', 'local-selected-logos-head');
+    const baseHint = coarse
       ? `${label} providers — tap to filter`
       : `${label} providers — hover to preview, click to filter`;
-    child(wrap, 'span', 'local-selected-logos-title', hint);
+    const titleText = focus
+      ? `Filtered: ${state.focusProvider} (1 of ${providers.length})`
+      : `${baseHint} (${providers.length})`;
+    child(headRow, 'span', 'local-selected-logos-title', titleText);
+    if (focus) {
+      const clearBtn = child(headRow, 'button', 'local-selected-logos-clear');
+      clearBtn.type = 'button';
+      clearBtn.dataset.providerClear = '1';
+      clearBtn.setAttribute('aria-label', 'Clear provider filter');
+      clearBtn.textContent = 'Clear ×';
+    }
     const rail = child(wrap, 'span', 'local-section-logo-rail local-section-logo-rail-full');
-    const focus = String(state.focusProvider || '').toLowerCase();
     const hover = String(state.hoverProvider || '').toLowerCase();
     const active = activeProviders !== undefined ? activeProviders : relevantProviderKeys();
     providers.forEach((provider, index) => {
@@ -952,7 +963,9 @@
       btn.title = railTip;
       btn.setAttribute('aria-label', railTip);
       const lc = provider.toLowerCase();
-      if (focus && lc === focus) btn.classList.add('is-selected');
+      const isSelected = !!(focus && lc === focus);
+      btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      if (isSelected) btn.classList.add('is-selected');
       if (hover && lc === hover) btn.classList.add('is-hover');
       if (active) {
         const keys = providerMatchKeys(provider);
@@ -1198,6 +1211,15 @@
 
     const logoWrap = $('selectedLogos');
     logoWrap.addEventListener('click', (event) => {
+      const clearBtn = event.target.closest('[data-provider-clear]');
+      if (clearBtn) {
+        state.focusProvider = '';
+        resetHierarchyHover();
+        state.hierarchyPath = '';
+        state.focusedProductKeys = null;
+        render();
+        return;
+      }
       const btn = event.target.closest('[data-provider-pick]');
       if (!btn) return;
       const pick = btn.dataset.providerPick || '';

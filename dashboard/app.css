@@ -254,6 +254,42 @@ body.ar-public .site-header-actions .site-action-refresh .site-action-icon svg {
   font-weight: 700;
 }
 
+.ar-local-cdr .local-selected-logos-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.ar-local-cdr button.local-selected-logos-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--ar-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ar-accent) 16%, var(--ar-surface));
+  color: var(--ar-text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ar-local-cdr button.local-selected-logos-clear:hover {
+  background: color-mix(in srgb, var(--ar-accent) 28%, var(--ar-surface));
+  border-color: var(--ar-accent);
+}
+
+@media (max-width: 520px) {
+  .ar-local-cdr button.local-selected-logos-clear {
+    min-height: 36px;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+  }
+}
+
 .ar-local-cdr .local-section-logo-rail-full .bank-badge {
   width: 28px;
   min-width: 28px;
