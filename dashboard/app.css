@@ -1079,9 +1079,15 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
 
 /* When a provider is selected, the unselected ones fade to make the
    selection unambiguous. is-dim is already JS-toggled when a provider is
-   not present in the active filter; we just make it visibly dim. */
+   not present in the active filter; we just make it visibly dim.
+   The child .bank-badge-logo already gets opacity:0.22 elsewhere — if we
+   compound 0.45 on the parent the logo ends at ~10% (gemini PR #136). So
+   we dim the parent and reset the child to 1 to avoid the double-dim. */
 .ar-local-cdr button.local-provider-logo-btn.is-dim {
   opacity: 0.45;
+}
+.ar-local-cdr button.local-provider-logo-btn.is-dim .bank-badge-logo {
+  opacity: 1;
 }
 
 @media (max-width: 520px) {
@@ -1127,9 +1133,12 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
     padding: 4px;
   }
   /* Allow the right-side value column more space when the label is
-     short, less when it's long, so the rate range never gets cut. */
+     short, less when it's long, so the rate range never gets cut.
+     Keep the first column at 16px (matches the existing mobile rule at
+     line ~859 — preserves alignment of expand/collapse twisties and
+     colour swatch dots across rows). gemini PR #136. */
   .ar-local-cdr #hierarchy .ar-report-infobox-trow {
-    grid-template-columns: auto minmax(0, 1fr) fit-content(10rem);
+    grid-template-columns: 16px minmax(0, 1fr) fit-content(10rem);
     gap: 2px 6px;
   }
   /* Tighten the value box so percentages stay on one line. */
@@ -1139,19 +1148,16 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
   }
 }
 
-/* 3. Chart tooltip — echarts inline-styles the tooltip box, but the
-   container can be constrained so word-wrap kicks in before the
-   tooltip pushes off-screen. echarts respects max-width when explicitly
-   set on the tooltip dom element. We can't reach it directly, but the
-   surrounding .terminal-chart-output keeps the tooltip inside its
-   bounds when overflow:hidden is set on the immediate parent. */
+/* 3. Chart tooltip — ECharts' built-in tooltip is disabled in this
+   codebase (showContent: false); the visible hover panel is built by
+   chart.js::ensureReportHoverBox as a div with class .ar-report-hoverbox
+   (codex PR #136). On narrow viewports cap its width with overflow-wrap
+   so it stops bleeding off-screen. */
 @media (max-width: 520px) {
-  /* echarts tooltip dom uses inline z-index + position:absolute. Cap
-     its width via a descendant rule that applies after echarts mounts. */
-  body.ar-public .terminal-chart-output > div[style*="position: absolute"][style*="z-index"] {
+  .ar-local-cdr .terminal-chart-output .ar-report-hoverbox {
     max-width: 78vw !important;
     white-space: normal !important;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     font-size: 0.72rem !important;
   }
 }
@@ -1171,11 +1177,26 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
 
 /* 5. /economic-data/ Component Scores + Forward table — these wraps
    have overflow-x: auto but no visible affordance so users don't know
-   to swipe. Add a right-edge fade only on small screens. */
+   to swipe. Use a pseudo-element fade attached to a positioned wrap
+   instead of a mask-image. The mask approach permanently fades the
+   right edge even when scrolled to the end (gemini PR #136); a
+   pseudo-element on a sticky-right anchor falls outside the table area
+   so it doesn't obscure the rightmost column once the user reaches it. */
 @media (max-width: 520px) {
   body.ar-public.ar-section-economic-data .economic-component-table-wrap,
   body.ar-public.ar-section-economic-data .economic-forward-table-wrap {
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+    position: relative;
+  }
+  body.ar-public.ar-section-economic-data .economic-component-table-wrap::after,
+  body.ar-public.ar-section-economic-data .economic-forward-table-wrap::after {
+    content: "";
+    position: sticky;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    float: right;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--ar-surface, #0e1726));
   }
 }
