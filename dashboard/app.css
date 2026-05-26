@@ -1211,9 +1211,9 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
      disclaimer row on banking pages. It reads as an accidental list
      marker rather than intentional design.
    - scroll-margin-top: section headings should not anchor underneath
-     the sticky header. Adds 64px (matches --ar-header-height + 4px)
-     to every h2/h3 inside the public shell so in-page anchor jumps
-     land below the sticky bar.
+     the sticky header. Adds --ar-header-height + 8px (= 68px at the
+     default 60px header) to every anchorable element inside the public
+     shell so in-page anchor jumps land below the sticky bar.
    - Disclaimer paragraph (.disclaimer / .site-footer-meta) bumps to
      0.78rem on mobile so the legal copy is readable. */
 
@@ -1239,7 +1239,11 @@ body.ar-public [data-anchor-id] {
     font-size: 0.78rem;
     line-height: 1.45;
   }
-  body.ar-public .site-footer-inner {
+  /* Specificity must beat the existing `.ar-local-cdr .site-footer
+     .site-footer-inner` rule (banking pages) so the mobile gap applies
+     consistently across all four sections. */
+  body.ar-public.ar-local-cdr .site-footer .site-footer-inner,
+  body.ar-public.ar-section-economic-data .site-footer .site-footer-inner {
     gap: 10px;
   }
 }
