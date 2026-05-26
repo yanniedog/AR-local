@@ -1018,3 +1018,128 @@ body.ar-public {
     gap: 6px;
   }
 }
+
+/* ── PR2: mobile design pass (CSS-only, no markup or JS changes) ──
+   Targets the highest-impact issues visible in the mobile screenshots:
+     1. Provider logo grid: barely-visible selected state, too-small tap area.
+     2. Current-slice tree: muddy yellow→brown selected row.
+     3. Chart tooltip overflow on narrow viewports.
+     4. /economic-data/ KPI strip clipping the 4th card off the right edge.
+     5. /economic-data/ Component Scores horizontal-scroll affordance.
+*/
+
+/* 1. Provider logo grid — stronger selected + dim, larger mobile tile. */
+.ar-local-cdr button.local-provider-logo-btn.is-selected {
+  border-color: var(--ar-accent);
+  background: color-mix(in srgb, var(--ar-accent) 18%, var(--ar-surface));
+  box-shadow: 0 0 0 1px var(--ar-accent);
+}
+
+/* Currently selected gets stronger visual contrast even in dark theme. */
+html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn.is-selected {
+  border-color: var(--ar-accent) !important;
+  background: color-mix(in srgb, var(--ar-accent) 22%, var(--ar-surface)) !important;
+}
+
+/* When a provider is selected, the unselected ones fade to make the
+   selection unambiguous. is-dim is already JS-toggled when a provider is
+   not present in the active filter; we just make it visibly dim. */
+.ar-local-cdr button.local-provider-logo-btn.is-dim {
+  opacity: 0.45;
+}
+
+@media (max-width: 520px) {
+  /* Bump tile size and gap on mobile — current 28px is below the WCAG
+     tap-target floor and visually cramped. The dashboard's flex-wrap
+     grid still flows to ~8 per row at 360px width. */
+  .ar-local-cdr .local-section-logo-rail-full .bank-badge,
+  .ar-local-cdr .local-section-logo-rail-full .bank-badge-logo-wrap {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+  .ar-local-cdr button.local-provider-logo-btn {
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .ar-local-cdr .local-section-logo-rail {
+    gap: 4px;
+  }
+  /* Title row absorbs the new selected-state info via aria; keep it tight. */
+  .ar-local-cdr .local-selected-logos-title {
+    font-size: 0.7rem;
+  }
+}
+
+/* 2. Current-slice tree — replace the warning-yellow (muddy brown on
+   dark) best-row tint with the section accent, and tighten the mobile
+   layout so values don't clip. */
+.ar-local-cdr #hierarchy .ar-report-infobox-trow.ar-ribbon-best-row {
+  background: color-mix(in srgb, var(--ar-accent) 14%, transparent);
+}
+
+.ar-local-cdr #hierarchy .ar-ribbon-best {
+  color: var(--ar-accent);
+}
+
+@media (max-width: 520px) {
+  /* Reduce the wrap-padding so values have more horizontal room. */
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree {
+    padding: 8px;
+  }
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+    padding: 4px;
+  }
+  /* Allow the right-side value column more space when the label is
+     short, less when it's long, so the rate range never gets cut. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+    grid-template-columns: auto minmax(0, 1fr) fit-content(10rem);
+    gap: 2px 6px;
+  }
+  /* Tighten the value box so percentages stay on one line. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    max-width: 48vw;
+    font-size: 0.78rem;
+  }
+}
+
+/* 3. Chart tooltip — echarts inline-styles the tooltip box, but the
+   container can be constrained so word-wrap kicks in before the
+   tooltip pushes off-screen. echarts respects max-width when explicitly
+   set on the tooltip dom element. We can't reach it directly, but the
+   surrounding .terminal-chart-output keeps the tooltip inside its
+   bounds when overflow:hidden is set on the immediate parent. */
+@media (max-width: 520px) {
+  /* echarts tooltip dom uses inline z-index + position:absolute. Cap
+     its width via a descendant rule that applies after echarts mounts. */
+  body.ar-public .terminal-chart-output > div[style*="position: absolute"][style*="z-index"] {
+    max-width: 78vw !important;
+    white-space: normal !important;
+    word-break: break-word;
+    font-size: 0.72rem !important;
+  }
+}
+
+/* 4. /economic-data/ KPI strip — 3-col upstream rule overflows when a
+   4th card is present at narrow widths. Force 2-col below 520px so
+   labels don't clip and the row never scrolls horizontally. */
+@media (max-width: 520px) {
+  body.ar-public.ar-section-economic-data .economic-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+  }
+  body.ar-public.ar-section-economic-data .economic-hero-stats .terminal-stat {
+    min-height: 64px;
+  }
+}
+
+/* 5. /economic-data/ Component Scores + Forward table — these wraps
+   have overflow-x: auto but no visible affordance so users don't know
+   to swipe. Add a right-edge fade only on small screens. */
+@media (max-width: 520px) {
+  body.ar-public.ar-section-economic-data .economic-component-table-wrap,
+  body.ar-public.ar-section-economic-data .economic-forward-table-wrap {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+  }
+}
