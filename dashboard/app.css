@@ -147,22 +147,24 @@ body.ar-public.ar-local-cdr .local-bank-fallback-neutral {
   justify-content: center;
 }
 
-.ar-local-cdr button.site-header-segment-link {
-  border: 0;
+.ar-local-cdr .site-header-segment-link {
+  border: 1px solid transparent;
   background: transparent;
   color: var(--ar-text-soft);
   box-shadow: none;
 }
 
-.ar-local-cdr button.site-header-segment-link:hover {
+.ar-local-cdr .site-header-segment-link:hover {
   color: var(--ar-text);
   background: color-mix(in srgb, var(--ar-surface-2) 88%, transparent);
 }
 
-.ar-local-cdr button.site-header-segment-link.is-active {
-  border: 1px solid color-mix(in srgb, var(--ar-line-strong) 90%, transparent);
-  background: color-mix(in srgb, var(--ar-surface) 80%, transparent);
+.ar-local-cdr .site-header-segment-link.is-active,
+.ar-local-cdr .site-header-segment-link[aria-current="page"] {
+  border: 1px solid var(--ar-accent, color-mix(in srgb, var(--ar-line-strong) 90%, transparent));
+  background: color-mix(in srgb, var(--ar-accent, var(--ar-text)) 14%, var(--ar-surface));
   color: var(--ar-text);
+  font-weight: 700;
 }
 
 /* Suppress public-polish section-tinted focus ring on pointer click; keep keyboard ring. */
@@ -980,5 +982,35 @@ body.ar-public.ar-section-economic-data .economic-forward-table {
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+}
+
+/* ── PR1 mobile shell hardening (applies to all four sections) ──
+   These rules also load on the upstream /economic-data/ shell because
+   cdr_dashboard_server.inject_local_dashboard_css() injects /assets/app.css
+   into that page (see cdr_dashboard_server.py:490). Keep that injection
+   path intact when modifying these rules.
+*/
+
+/* Body-level horizontal overflow guard. No legitimate element should
+   exceed 100vw; if one does, this clamps the damage so the whole page
+   doesn't gain a horizontal scrollbar. Inner tables/charts that need
+   horizontal scroll already use bounded wrappers (.local-table-wrap etc.). */
+html,
+body {
+  overflow-x: clip;
+  max-width: 100vw;
+}
+
+/* 44px tap-target floor on mobile for header tabs. The upstream rules
+   set 32–36px which is below WCAG 2.5.5 (24px AAA / 44px Apple HIG). */
+@media (max-width: 520px) {
+  body.ar-public .site-header-segment-link {
+    min-height: 44px;
+    padding-inline: 14px;
+    font-size: 0.78rem;
+  }
+  body.ar-public .site-header-segment {
+    gap: 6px;
   }
 }
