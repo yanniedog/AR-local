@@ -1247,3 +1247,23 @@ body.ar-public [data-anchor-id] {
     gap: 10px;
   }
 }
+
+/* ── PR4: RBA label clarification + dark-logo contrast ──
+   - The "RBA" stat in Bank Pricing Path is the forecast RBA cash rate
+     AT THE CURRENT MATURITY (model.rba.cashRate per
+     economic-forward-pricing.js:514). When no forward expectation exists
+     for that maturity (e.g. TD 49M is 4+ years out — beyond the RBA
+     curve), it renders as "n/a", which conflicts visually with the
+     current cash rate shown elsewhere (CASH RATE 4.1% in the KPI strip,
+     "RBA target 4.35%" in chart tooltips). Append " · at maturity"
+     after the RBA label via ::after so readers know they're looking at
+     a maturity-conditioned figure, not the live policy rate. */
+body.ar-public.ar-section-economic-data .economic-forward-stats article > span abbr[title="Reserve Bank of Australia"]::after {
+  content: " · at maturity";
+  margin-left: 4px;
+  color: var(--ar-text-muted);
+  font-weight: 400;
+  font-size: 0.85em;
+  text-transform: none;
+}
+
