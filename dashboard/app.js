@@ -1189,6 +1189,9 @@
     };
 
     document.querySelectorAll('[data-section]').forEach((el) => el.addEventListener('click', (e) => {
+      // Preserve open-in-new-tab/window: skip JS handling on modified clicks
+      // (Ctrl/Cmd/Shift/Alt/middle-click) so the anchor's native behaviour wins.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
       e.preventDefault();
       loadSection(el.dataset.section);
     }));
