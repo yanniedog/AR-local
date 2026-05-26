@@ -35,6 +35,9 @@ body.ar-public.ar-local-cdr {
 }
 
 :root[data-theme="light"] body.ar-public.ar-local-cdr {
+  --ar-accent: var(--ar-local-blue-strong);
+  --ar-accent-hover: var(--ar-local-blue);
+  --ar-accent-soft: var(--ar-local-blue-soft);
   --ar-local-logo-tile: rgba(255, 255, 255, 0.97);
   --ar-local-logo-tile-border: rgba(0, 0, 0, 0.07);
   --ar-local-fallback-ink: #1e293b;
@@ -992,14 +995,15 @@ body.ar-public.ar-section-economic-data .economic-forward-table {
    path intact when modifying these rules.
 */
 
-/* Body-level horizontal overflow guard. No legitimate element should
-   exceed 100vw; if one does, this clamps the damage so the whole page
-   doesn't gain a horizontal scrollbar. Inner tables/charts that need
-   horizontal scroll already use bounded wrappers (.local-table-wrap etc.). */
-html,
-body {
+/* Body-level horizontal overflow guard, scoped to the public AR shells
+   (ar-public covers banking sections + the upstream economic-data shell
+   after inject_local_dashboard_css adds /assets/app.css to it). No
+   legitimate element should exceed 100vw; if one does, this clamps the
+   damage so the whole page doesn't gain a horizontal scrollbar. Inner
+   tables/charts that need horizontal scroll already use bounded wrappers
+   (.local-table-wrap etc.). */
+body.ar-public {
   overflow-x: clip;
-  max-width: 100vw;
 }
 
 /* 44px tap-target floor on mobile for header tabs. The upstream rules
