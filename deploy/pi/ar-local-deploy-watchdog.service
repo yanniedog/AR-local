@@ -4,6 +4,16 @@ After=network-online.target ar-local-dashboard.service
 Wants=network-online.target
 
 [Service]
+# Run as the repo owner so `git fetch` / `git pull` work without
+# "fatal: detected dubious ownership in repository" — git refuses to
+# operate when the calling user doesn't own the .git directory. The
+# repo is owned by `pi` (install-pi-systemd.sh:`$run_user`); the
+# default (root via systemd) was failing every tick. `pi` has
+# passwordless sudo via /etc/sudoers.d/ar-local-pi, so the deploy
+# step's `sudo systemctl restart ar-local-dashboard.service` still
+# works after the swap.
+User=pi
+Group=pi
 Type=oneshot
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
