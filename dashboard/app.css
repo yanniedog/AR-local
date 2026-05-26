@@ -254,6 +254,42 @@ body.ar-public .site-header-actions .site-action-refresh .site-action-icon svg {
   font-weight: 700;
 }
 
+.ar-local-cdr .local-selected-logos-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.ar-local-cdr button.local-selected-logos-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--ar-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ar-accent) 16%, var(--ar-surface));
+  color: var(--ar-text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ar-local-cdr button.local-selected-logos-clear:hover {
+  background: color-mix(in srgb, var(--ar-accent) 28%, var(--ar-surface));
+  border-color: var(--ar-accent);
+}
+
+@media (max-width: 520px) {
+  .ar-local-cdr button.local-selected-logos-clear {
+    min-height: 36px;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+  }
+}
+
 .ar-local-cdr .local-section-logo-rail-full .bank-badge {
   width: 28px;
   min-width: 28px;
@@ -1016,5 +1052,151 @@ body.ar-public {
   }
   body.ar-public .site-header-segment {
     gap: 6px;
+  }
+}
+
+/* ── PR2: mobile design pass (CSS-only, no markup or JS changes) ──
+   Targets the highest-impact issues visible in the mobile screenshots:
+     1. Provider logo grid: barely-visible selected state, too-small tap area.
+     2. Current-slice tree: muddy yellow→brown selected row.
+     3. Chart tooltip overflow on narrow viewports.
+     4. /economic-data/ KPI strip clipping the 4th card off the right edge.
+     5. /economic-data/ Component Scores horizontal-scroll affordance.
+*/
+
+/* 1. Provider logo grid — stronger selected + dim, larger mobile tile. */
+.ar-local-cdr button.local-provider-logo-btn.is-selected {
+  border-color: var(--ar-accent);
+  background: color-mix(in srgb, var(--ar-accent) 18%, var(--ar-surface));
+  box-shadow: 0 0 0 1px var(--ar-accent);
+}
+
+/* Currently selected gets stronger visual contrast even in dark theme. */
+html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn.is-selected {
+  border-color: var(--ar-accent) !important;
+  background: color-mix(in srgb, var(--ar-accent) 22%, var(--ar-surface)) !important;
+}
+
+/* When a provider is selected, the unselected ones fade to make the
+   selection unambiguous. is-dim is already JS-toggled when a provider is
+   not present in the active filter; we just make it visibly dim.
+   The child .bank-badge-logo already gets opacity:0.22 elsewhere — if we
+   compound 0.45 on the parent the logo ends at ~10% (gemini PR #136). So
+   we dim the parent and reset the child to 1 to avoid the double-dim. */
+.ar-local-cdr button.local-provider-logo-btn.is-dim {
+  opacity: 0.45;
+}
+.ar-local-cdr button.local-provider-logo-btn.is-dim .bank-badge-logo {
+  opacity: 1;
+}
+
+@media (max-width: 520px) {
+  /* Bump tile size and gap on mobile — current 28px is below the WCAG
+     tap-target floor and visually cramped. The dashboard's flex-wrap
+     grid still flows to ~8 per row at 360px width. */
+  .ar-local-cdr .local-section-logo-rail-full .bank-badge,
+  .ar-local-cdr .local-section-logo-rail-full .bank-badge-logo-wrap {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+  .ar-local-cdr button.local-provider-logo-btn {
+    padding: 4px;
+    border-radius: 8px;
+  }
+  .ar-local-cdr .local-section-logo-rail {
+    gap: 4px;
+  }
+  /* Title row absorbs the new selected-state info via aria; keep it tight. */
+  .ar-local-cdr .local-selected-logos-title {
+    font-size: 0.7rem;
+  }
+}
+
+/* 2. Current-slice tree — replace the warning-yellow (muddy brown on
+   dark) best-row tint with the section accent, and tighten the mobile
+   layout so values don't clip. */
+.ar-local-cdr #hierarchy .ar-report-infobox-trow.ar-ribbon-best-row {
+  background: color-mix(in srgb, var(--ar-accent) 14%, transparent);
+}
+
+.ar-local-cdr #hierarchy .ar-ribbon-best {
+  color: var(--ar-accent);
+}
+
+@media (max-width: 520px) {
+  /* Reduce the wrap-padding so values have more horizontal room. */
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree {
+    padding: 8px;
+  }
+  .ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+    padding: 4px;
+  }
+  /* Allow the right-side value column more space when the label is
+     short, less when it's long, so the rate range never gets cut.
+     Keep the first column at 16px (matches the existing mobile rule at
+     line ~859 — preserves alignment of expand/collapse twisties and
+     colour swatch dots across rows). gemini PR #136. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-trow {
+    grid-template-columns: 16px minmax(0, 1fr) fit-content(10rem);
+    gap: 2px 6px;
+  }
+  /* Tighten the value box so percentages stay on one line. */
+  .ar-local-cdr #hierarchy .ar-report-infobox-trate {
+    max-width: 48vw;
+    font-size: 0.78rem;
+  }
+}
+
+/* 3. Chart tooltip — ECharts' built-in tooltip is disabled in this
+   codebase (showContent: false); the visible hover panel is built by
+   chart.js::ensureReportHoverBox as a div with class .ar-report-hoverbox
+   (codex PR #136). On narrow viewports cap its width with overflow-wrap
+   so it stops bleeding off-screen. */
+@media (max-width: 520px) {
+  .ar-local-cdr .terminal-chart-output .ar-report-hoverbox {
+    max-width: 78vw !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    font-size: 0.72rem !important;
+  }
+}
+
+/* 4. /economic-data/ KPI strip — 3-col upstream rule overflows when a
+   4th card is present at narrow widths. Force 2-col below 520px so
+   labels don't clip and the row never scrolls horizontally. */
+@media (max-width: 520px) {
+  body.ar-public.ar-section-economic-data .economic-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+  }
+  body.ar-public.ar-section-economic-data .economic-hero-stats .terminal-stat {
+    min-height: 64px;
+  }
+}
+
+/* 5. /economic-data/ Component Scores + Forward table — these wraps
+   have overflow-x: auto but no visible affordance so users don't know
+   to swipe. Use a pseudo-element fade attached to a positioned wrap
+   instead of a mask-image. The mask approach permanently fades the
+   right edge even when scrolled to the end (gemini PR #136); a
+   pseudo-element on a sticky-right anchor falls outside the table area
+   so it doesn't obscure the rightmost column once the user reaches it. */
+@media (max-width: 520px) {
+  body.ar-public.ar-section-economic-data .economic-component-table-wrap,
+  body.ar-public.ar-section-economic-data .economic-forward-table-wrap {
+    position: relative;
+  }
+  body.ar-public.ar-section-economic-data .economic-component-table-wrap::after,
+  body.ar-public.ar-section-economic-data .economic-forward-table-wrap::after {
+    content: "";
+    position: sticky;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    float: right;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--ar-surface, #0e1726));
   }
 }
