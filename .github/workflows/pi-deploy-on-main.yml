@@ -149,4 +149,5 @@ jobs:
             steps.runner_env.outputs.requires_tailscale != 'true' ||
             steps.tailscale.outputs.configured == 'true'
           )
-        run: echo "pi-deploy-on-main: finished (see Deploy Pi step log)"
+        run: |
+          echo "pi-deploy-on-main: finished (see Deploy Pi step log)"
