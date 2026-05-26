@@ -1200,3 +1200,46 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
     background: linear-gradient(to right, transparent, var(--ar-surface, #0e1726));
   }
 }
+
+/* ── PR3: section-code badges, footer dot, sticky scroll-margin ──
+   - Hide CHT / SET / SIG / FWD .panel-code labels on /economic-data/.
+     They're decorative section codes inherited from the upstream
+     terminal-style shell; the adjacent section titles (RBA Signal,
+     Indicators, Component Scores, Bank Pricing Path) already describe
+     each panel, so the codes add noise on a small screen.
+   - Hide the lone .site-footer-dot bullet at the start of the footer
+     disclaimer row on banking pages. It reads as an accidental list
+     marker rather than intentional design.
+   - scroll-margin-top: section headings should not anchor underneath
+     the sticky header. Adds 64px (matches --ar-header-height + 4px)
+     to every h2/h3 inside the public shell so in-page anchor jumps
+     land below the sticky bar.
+   - Disclaimer paragraph (.disclaimer / .site-footer-meta) bumps to
+     0.78rem on mobile so the legal copy is readable. */
+
+body.ar-public.ar-section-economic-data .panel-code {
+  display: none;
+}
+
+body.ar-public .site-footer-dot {
+  display: none;
+}
+
+body.ar-public h1[id],
+body.ar-public h2[id],
+body.ar-public h3[id],
+body.ar-public section[id],
+body.ar-public [data-anchor-id] {
+  scroll-margin-top: calc(var(--ar-header-height, 60px) + 8px);
+}
+
+@media (max-width: 520px) {
+  body.ar-public .site-footer-meta,
+  body.ar-public .disclaimer {
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+  body.ar-public .site-footer-inner {
+    gap: 10px;
+  }
+}
