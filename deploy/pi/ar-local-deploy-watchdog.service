@@ -7,13 +7,15 @@ Wants=network-online.target
 # Run as the repo owner so `git fetch` / `git pull` work without
 # "fatal: detected dubious ownership in repository" — git refuses to
 # operate when the calling user doesn't own the .git directory. The
-# repo is owned by `pi` (install-pi-systemd.sh:`$run_user`); the
-# default (root via systemd) was failing every tick. `pi` has
-# passwordless sudo via /etc/sudoers.d/ar-local-pi, so the deploy
-# step's `sudo systemctl restart ar-local-dashboard.service` still
-# works after the swap.
-User=pi
-Group=pi
+# default (root via systemd) was failing every tick; the repo is
+# owned by whichever account install-pi-systemd.sh ran under
+# (AR_LOCAL_USER / $SUDO_USER, typically `pi`). The same template
+# substitution pattern is used by ar-local-dashboard.service and
+# ar-local-daily.service. The configured user has passwordless sudo
+# via /etc/sudoers.d/ar-local-pi, so deploy_services'
+# `sudo systemctl restart ar-local-dashboard.service` still works.
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
 Type=oneshot
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_PI_VERIFY_LOCAL=1
