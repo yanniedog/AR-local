@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -69,14 +70,24 @@ def _bucket(rows: List[Tuple[Any, ...]]) -> Dict[Tuple[str, str, str, str], Dict
     return out
 
 
+def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
+    """Open a read-only connection and return bucketed ladders.
+
+    Uses ``Path.resolve().as_uri()`` so paths with spaces/reserved characters
+    encode correctly, and ``contextlib.closing`` because the sqlite3 connection
+    context manager only commits/rolls back — it does not close the handle.
+    """
+    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True)) as con:
+        return _bucket(_ladder_query(con))
+
+
 def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     """Return a list of finding dicts. Empty list means no concerns."""
     if not curr_db.is_file() or not prev_db.is_file():
         return []
-    with sqlite3.connect(f"file:{curr_db}?mode=ro", uri=True) as con:
-        curr = _bucket(_ladder_query(con))
-    with sqlite3.connect(f"file:{prev_db}?mode=ro", uri=True) as con:
-        prev = _bucket(_ladder_query(con))
+    curr = _read_ladders(curr_db)
+    prev = _read_ladders(prev_db)
     findings: List[Dict[str, Any]] = []
     for key, slot in curr.items():
         prev_slot = prev.get(key)

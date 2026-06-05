@@ -15,6 +15,7 @@ Run with --dry-run first to print what would change.
 """
 from __future__ import annotations
 import argparse, json, sqlite3, shutil, sys, datetime
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path('/srv/ar-local/data/runs')
@@ -46,31 +47,33 @@ def backup(path: Path, stamp: str) -> Path:
     return bak
 
 def patch_sqlite(db_path: Path, name_like: str, old_sorted: list[float], new_sorted: list[float], dry_run: bool) -> tuple[int, list]:
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
-        "select rowid, rate from bank_rates where provider='CommBank' and product_name=? order by cast(rate as real)",
-        (name_like,),
-    ).fetchall()
-    actual = [float(r['rate']) for r in rows]
-    if actual != old_sorted:
-        con.close()
-        return 0, [f'WARN: ladder mismatch for {db_path} / {name_like}: got {actual}, expected {old_sorted}']
-    changes = []
-    if not dry_run:
+    # Guard: sqlite3.connect() would silently CREATE an empty DB if the path
+    # is wrong, then crash on the missing bank_rates table. Skip cleanly.
+    if not db_path.exists():
+        return 0, [f'skip (not present): {db_path}']
+    with closing(sqlite3.connect(db_path)) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "select rowid, rate from bank_rates where provider='CommBank' and product_name=? order by cast(rate as real)",
+            (name_like,),
+        ).fetchall()
+        actual = [float(r['rate']) for r in rows]
+        if actual != old_sorted:
+            return 0, [f'WARN: ladder mismatch for {db_path} / {name_like}: got {actual}, expected {old_sorted}']
+        changes = []
+        if not dry_run:
+            for row, new_val in zip(rows, new_sorted):
+                con.execute('update bank_rates set rate=? where rowid=?', (str(new_val), row['rowid']))
+            con.commit()
         for row, new_val in zip(rows, new_sorted):
-            con.execute('update bank_rates set rate=? where rowid=?', (str(new_val), row['rowid']))
-        con.commit()
-    for row, new_val in zip(rows, new_sorted):
-        if float(row['rate']) != new_val:
-            changes.append(f"  rowid={row['rowid']:>5}  {row['rate']:>8} -> {new_val}")
-    con.close()
+            if float(row['rate']) != new_val:
+                changes.append(f"  rowid={row['rowid']:>5}  {row['rate']:>8} -> {new_val}")
     return len(changes), changes
 
 def patch_json(json_path: Path, name_like: str, old_sorted: list[float], new_sorted: list[float], dry_run: bool) -> tuple[int, list]:
     if not json_path.exists():
         return 0, [f'skip (not present): {json_path}']
-    data = json.loads(json_path.read_text())
+    data = json.loads(json_path.read_text(encoding="utf-8"))
     # locate the rates list — either top-level "rates" or nested
     rates = data.get('rates') if isinstance(data, dict) else None
     if not isinstance(rates, list):
@@ -87,16 +90,37 @@ def patch_json(json_path: Path, name_like: str, old_sorted: list[float], new_sor
             if not dry_run:
                 r['rate'] = str(new_val)
     if not dry_run and changes:
-        json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return len(changes), changes
+
+
+def regenerate_xlsx(exports: Path, date: str, dry_run: bool) -> tuple[int, list]:
+    """Rebuild banks-<date>.xlsx from the (already patched) raw banks JSON so
+    the downloadable workbook matches the corrected SQLite/JSON. The dashboard
+    serves SQLite/JSON, but the XLSX export is a public download and must not
+    keep stale FX values (codex review, PR #141)."""
+    raw = exports / f'banks-{date}.json'
+    xlsx = exports / f'banks-{date}.xlsx'
+    if not raw.exists() or not xlsx.exists():
+        return 0, [f'skip xlsx (raw or xlsx missing): {xlsx.name}']
+    if dry_run:
+        return 1, [f'  would regenerate {xlsx.name} from patched {raw.name}']
+    # Import lazily: this pulls openpyxl via cdr_outputs and is only needed
+    # when actually writing. Repo root is the script's parent's parent.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from cdr_outputs import write_sector_workbooks
+    banks = json.loads(raw.read_text(encoding="utf-8"))
+    write_sector_workbooks(exports, date, banks)
+    return 1, [f'  regenerated {xlsx.name} from patched {raw.name}']
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
-    stamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     print(f'patch run @ {stamp}  dry_run={args.dry_run}\n')
     total = 0
+    affected_dates: dict[str, Path] = {}
     for p in PATCHES:
         run_dir = ROOT / p['date']
         exports = run_dir / '_exports'
@@ -115,7 +139,20 @@ def main():
         n_cache, ch_cache = patch_json(cache, p['product_name_like'], p['old_sorted'], p['new_sorted'], args.dry_run)
         for line in ch_cache: print(line)
         total += n_db + n_raw + n_cache
+        if (n_db or n_raw or n_cache):
+            affected_dates[p['date']] = exports
         print(f'  changes for this patch: sqlite={n_db}, raw={n_raw}, cache={n_cache}\n')
+
+    # Regenerate the XLSX workbook once per affected date, from the patched raw
+    # JSON, so the downloadable export matches the corrected data.
+    for date, exports in affected_dates.items():
+        xlsx = exports / f'banks-{date}.xlsx'
+        if xlsx.exists() and not args.dry_run:
+            bak = backup(xlsx, stamp)
+            print(f'--- {date} xlsx ---\n  backup: {bak.name}')
+        n_xlsx, ch_xlsx = regenerate_xlsx(exports, date, args.dry_run)
+        for line in ch_xlsx: print(line)
+
     print(f'TOTAL row changes: {total}')
 
 if __name__ == '__main__':
