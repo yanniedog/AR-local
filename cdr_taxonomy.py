@@ -229,3 +229,90 @@ def build_taxonomy_summary(
         path = str(row.get(path_col) or "UNKNOWN")
         counts[path] = counts.get(path, 0) + 1
     return [{"taxonomy_path": p, "count": c} for p, c in sorted(counts.items())]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Standard vs non-standard account classification
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Goal: keep the dashboard's default view to mainstream retail products (plain
+# savings / transaction / at-call accounts, vanilla personal term deposits, home
+# loans, etc.) while letting the user opt in to everything else — foreign-currency
+# accounts, farm/agribusiness accounts, business/commercial accounts, trust & SMSF
+# accounts, and so on.
+#
+# Two complementary signals make this FUTURE-PROOF rather than a fixed blocklist —
+# a product is "non_standard" if EITHER fires:
+#
+#   1. Its name matches a non-standard marker below. This catches products the
+#      bank mis-files under a standard category (e.g. CommBank's "Foreign Currency
+#      Account" is published under TRANS_AND_SAVINGS_ACCOUNTS).
+#   2. Its CDR productCategory is not one of the standard retail categories we
+#      model. This auto-flags both today's other categories (FOREIGN_CURRENCY,
+#      BUSINESS_LOANS, MARGIN_LOANS, LEASES, TRADE_FINANCE, REGULATED_TRUST_ACCOUNTS,
+#      …) AND any new category enum value the CDR adds in future — i.e. account
+#      types that are not yet in our data.
+#
+# TO EXTEND: add a phrase to ``_NON_STANDARD_NAME_TERMS`` (the single source of
+# truth for name markers). Standard categories are reused from ``_CATEGORY_TO_PC``.
+
+ACCOUNT_CLASS_STANDARD = "standard"
+ACCOUNT_CLASS_NON_STANDARD = "non_standard"
+
+# The retail CDR product categories we treat as standard. Reuses the canonical
+# alias keys already maintained in _CATEGORY_TO_PC so the two never drift apart.
+STANDARD_CATEGORIES: frozenset[str] = frozenset(_CATEGORY_TO_PC)
+
+# Name markers that flag an account as non-standard. Word-boundary anchored so
+# "business" does not match inside another word. Add new phrases here.
+_NON_STANDARD_NAME_TERMS: tuple[str, ...] = (
+    # Foreign exchange / multi-currency
+    r"foreign[\s_-]*currenc(?:y|ies)", r"foreign[\s_-]*exchange", r"\bfx\b", r"\bforex\b",
+    r"multi[\s_-]*currency", r"non[\s_-]*resident", r"migrant", r"expat", r"overseas",
+    r"offshore",
+    # Farm / agribusiness / rural
+    r"farm", r"agri", r"agribusiness", r"rural", r"primary[\s_-]*producer",
+    # Business / commercial / corporate
+    r"business", r"commercial", r"corporate", r"company", r"\bsme\b", r"merchant",
+    r"wholesale", r"institutional",
+    # Trust / SMSF / super / statutory
+    r"trust", r"trustee", r"smsf", r"self[\s_-]*managed", r"super[\s_-]*fund",
+    r"statutory", r"regulated[\s_-]*trust", r"escrow", r"settlement",
+    # Community / not-for-profit
+    r"community", r"\bclub\b", r"association", r"society", r"charit", r"not[\s_-]*for[\s_-]*profit",
+)
+
+_NON_STANDARD_NAME_RE = re.compile(
+    r"(?:" + r"|".join(_NON_STANDARD_NAME_TERMS) + r")",
+    re.IGNORECASE,
+)
+
+
+def _normalize_category_token(value: Any) -> str:
+    """Upper-snake category token (e.g. 'Trans and Savings' -> 'TRANS_AND_SAVINGS').
+
+    Kept local so cdr_taxonomy stays a no-upward-import leaf module; mirrors
+    cdr_ingest_support.normalize_category_token.
+    """
+    text = str(value or "").strip().upper()
+    text = re.sub(r"[^A-Z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def classify_account_standardness(
+    product_name: Any,
+    category: Any = "",
+    dataset: Optional[str] = None,
+) -> str:
+    """Return 'standard' or 'non_standard' for a product/account.
+
+    ``dataset`` is accepted for forward-compatibility (e.g. section-specific
+    tuning) but is not required by the current rules.
+    """
+    name = str(product_name or "")
+    if name and _NON_STANDARD_NAME_RE.search(name):
+        return ACCOUNT_CLASS_NON_STANDARD
+    token = _normalize_category_token(category)
+    if token and token not in STANDARD_CATEGORIES:
+        return ACCOUNT_CLASS_NON_STANDARD
+    return ACCOUNT_CLASS_STANDARD

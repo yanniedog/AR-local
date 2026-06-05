@@ -588,6 +588,24 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   margin: 4px 0 0;
 }
 
+.ar-local-cdr .local-account-class-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ar-local-cdr .local-account-class-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--ar-accent, #2563eb);
+}
+
 /* ── Table ──────────────────────────────────────────────────────────────── */
 
 .ar-local-cdr .local-table-panel {

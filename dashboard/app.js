@@ -52,6 +52,7 @@
     bankHistoryIndex: null,
     retainedRunDatesSorted: [],
     descending: false,
+    includeNonStandard: false,
     historyWindow: '30D',
     hierarchyPath: '',
     focusProvider: '',
@@ -118,10 +119,20 @@
     return Number(value || 0).toLocaleString('en-AU');
   }
 
+  // Non-standard accounts (foreign-currency, farm, business, trust/SMSF, …) are
+  // hidden by default; the chart-toggle-nonstandard checkbox opts them in. Legacy
+  // rows with no account_class read '' and are always treated as standard.
+  function accountClassVisible(row) {
+    if (state.includeNonStandard) return true;
+    return String(row.account_class || '') !== 'non_standard';
+  }
+
   function rateRows() {
     const sectionPayload = state.bankSections[state.section];
     if (!sectionPayload || !Array.isArray(sectionPayload.rates)) return [];
-    return sectionPayload.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+    return sectionPayload.rates.filter(
+      (row) => row.dataset === state.section && bankRateMatchesSection(row) && accountClassVisible(row),
+    );
   }
 
   function focusActiveProvider() {
@@ -162,7 +173,7 @@
   }
 
   function historyRowMatchesLiveTable(row) {
-    return row.dataset === state.section && bankRateMatchesSection(row);
+    return row.dataset === state.section && bankRateMatchesSection(row) && accountClassVisible(row);
   }
 
   function buildHistoryIndex(rows) {
@@ -1272,6 +1283,17 @@
       $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
       render();
     });
+    const nonStandardToggle = $('chart-toggle-nonstandard');
+    if (nonStandardToggle) {
+      nonStandardToggle.checked = state.includeNonStandard;
+      nonStandardToggle.addEventListener('change', () => {
+        state.includeNonStandard = nonStandardToggle.checked;
+        // The history index is built through historyRowMatchesLiveTable, which now
+        // honours the toggle — rebuild it so non-standard series appear/disappear.
+        refreshBankHistoryIndex();
+        render();
+      });
+    }
     document.querySelectorAll('[data-history-window]').forEach((button) => {
       button.addEventListener('click', () => {
         state.historyWindow = button.dataset.historyWindow || '30D';
