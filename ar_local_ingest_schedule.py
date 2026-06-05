@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, time as datetime_time, timedelta, timezone
 
-DAILY_INGEST_UTC_HOUR = 20
+# 07:00 UTC == 17:00 AEST (UTC+10). During AEDT summer (UTC+11) this lands at
+# 18:00 local — the schedule is intentionally pinned to UTC, matching the systemd
+# timer in deploy/pi/ar-local-daily.timer (keep the two in lockstep).
+DAILY_INGEST_UTC_HOUR = 7
 DAILY_INGEST_SCHEDULE_LABEL = f"{DAILY_INGEST_UTC_HOUR:02d}:00 UTC daily"
 
 
