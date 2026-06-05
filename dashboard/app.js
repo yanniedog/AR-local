@@ -129,12 +129,18 @@
     return String(row.account_class || '') !== ACCOUNT_CLASS_NON_STANDARD;
   }
 
-  function rateRows() {
+  // Section-scoped rows WITHOUT the account-class filter. Used to seed the
+  // current-only history so the seed always carries every product; visibility is
+  // applied when the history index is (re)built via historyRowMatchesLiveTable,
+  // so toggling the checkbox works even before the full history payload arrives.
+  function sectionRows() {
     const sectionPayload = state.bankSections[state.section];
     if (!sectionPayload || !Array.isArray(sectionPayload.rates)) return [];
-    return sectionPayload.rates.filter(
-      (row) => row.dataset === state.section && bankRateMatchesSection(row) && accountClassVisible(row),
-    );
+    return sectionPayload.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+  }
+
+  function rateRows() {
+    return sectionRows().filter(accountClassVisible);
   }
 
   function focusActiveProvider() {
@@ -1187,7 +1193,9 @@
       warmProviderLogoCache();
     }
     if (token !== loadSectionToken) return;
-    seedCurrentHistory(section, rateRows());
+    // Seed from unfiltered section rows so the current-only history retains
+    // non-standard products; accountClassVisible is applied at index-build time.
+    seedCurrentHistory(section, sectionRows());
     sanitizeFocusedProviders();
     render();
     loadBankHistory()
