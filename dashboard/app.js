@@ -1301,6 +1301,10 @@
         // The history index is built through historyRowMatchesLiveTable, which now
         // honours the toggle — rebuild it so non-standard series appear/disappear.
         refreshBankHistoryIndex();
+        // Hiding non-standard rows can strand a provider focus/hover that only
+        // matched a now-hidden product; drop it so the table/hierarchy aren't
+        // left empty (Codex P2).
+        sanitizeFocusedProviders();
         render();
       });
     }
