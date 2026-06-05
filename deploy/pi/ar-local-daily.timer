@@ -2,7 +2,7 @@
 Description=Run AR-local CDR ingest/export daily
 
 [Timer]
-OnCalendar=*-*-* 20:00:00 UTC
+OnCalendar=*-*-* 07:00:00 UTC
 Persistent=true
 Unit=ar-local-daily.service
 
