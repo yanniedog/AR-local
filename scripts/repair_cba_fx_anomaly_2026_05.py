@@ -94,6 +94,27 @@ def patch_json(json_path: Path, name_like: str, old_sorted: list[float], new_sor
     return len(changes), changes
 
 
+def raw_json_is_corrected(raw: Path, name_like: str, new_sorted: list[float]) -> bool:
+    """True if the raw banks JSON already holds the corrected FX ladder for
+    this product. Lets re-runs regenerate the XLSX even when SQLite/JSON are
+    already patched (so n_* are zero) — the XLSX-consistency repair must be
+    idempotent (codex review, PR #141)."""
+    if not raw.exists():
+        return False
+    try:
+        data = json.loads(raw.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    rates = data.get('rates') if isinstance(data, dict) else None
+    if not isinstance(rates, list):
+        return False
+    matched = sorted(
+        (float(r.get('rate') or 0) for r in rates
+         if isinstance(r, dict) and r.get('provider') == 'CommBank' and r.get('product_name') == name_like)
+    )
+    return matched == new_sorted
+
+
 def regenerate_xlsx(exports: Path, date: str, dry_run: bool) -> tuple[int, list]:
     """Rebuild banks-<date>.xlsx from the (already patched) raw banks JSON so
     the downloadable workbook matches the corrected SQLite/JSON. The dashboard
@@ -139,7 +160,10 @@ def main():
         n_cache, ch_cache = patch_json(cache, p['product_name_like'], p['old_sorted'], p['new_sorted'], args.dry_run)
         for line in ch_cache: print(line)
         total += n_db + n_raw + n_cache
-        if (n_db or n_raw or n_cache):
+        # Queue the date for XLSX regen if this run changed something OR the raw
+        # JSON is already in the corrected state (idempotent re-run / XLSX-only
+        # repair on an already-patched system).
+        if (n_db or n_raw or n_cache) or raw_json_is_corrected(raw, p['product_name_like'], p['new_sorted']):
             affected_dates[p['date']] = exports
         print(f'  changes for this patch: sqlite={n_db}, raw={n_raw}, cache={n_cache}\n')
 
