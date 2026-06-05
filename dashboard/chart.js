@@ -776,17 +776,35 @@
       }
       return true;
     }
+    // Direction lock: a drag that starts on the plot must still scroll the page
+    // when it's primarily vertical. Decide horizontal (scrub) vs vertical
+    // (scroll) once the finger passes a small threshold, then stick with it for
+    // the gesture. Only horizontal scrubs preventDefault, so vertical swipes
+    // that begin over the chart are never stolen from the page (gemini, codex).
+    const TOUCH_DECIDE_PX = 8;
+    let touchMode = null; // null = undecided, 'h' = scrub, 'v' = page scroll
+    let touchStartX = 0;
+    let touchStartY = 0;
     function onTouchStartScrub(e) {
-      if (e.touches && e.touches.length === 1) showTipAtTouch(e.touches[0]);
+      if (!e.touches || e.touches.length !== 1) { touchMode = 'v'; return; }
+      touchMode = null;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
     }
     function onTouchMoveScrub(e) {
       if (!e.touches || e.touches.length !== 1) return;
-      // Only claim the gesture (block page scroll) while the finger is over the
-      // plot and actually scrubbing; touch-action: pan-y keeps vertical scroll.
-      if (showTipAtTouch(e.touches[0]) && e.cancelable) e.preventDefault();
+      const touch = e.touches[0];
+      if (touchMode === null) {
+        const dx = Math.abs(touch.clientX - touchStartX);
+        const dy = Math.abs(touch.clientY - touchStartY);
+        if (dx < TOUCH_DECIDE_PX && dy < TOUCH_DECIDE_PX) return; // not yet decided
+        touchMode = dx > dy ? 'h' : 'v';
+      }
+      if (touchMode !== 'h') return; // vertical: let the page scroll
+      if (showTipAtTouch(touch) && e.cancelable) e.preventDefault();
     }
     if (chartDom) {
-      chartDom.addEventListener('touchstart', onTouchStartScrub, { passive: false });
+      chartDom.addEventListener('touchstart', onTouchStartScrub, { passive: true });
       chartDom.addEventListener('touchmove', onTouchMoveScrub, { passive: false });
     }
 
