@@ -755,10 +755,49 @@
     const zr = chart.getZr();
     zr.on('globalout', onGlobalOut);
     zr.on('click', onChartClick);
+
+    // Touch scrubbing: ECharts' built-in touch handling moves the axisPointer
+    // on tap but NOT during a finger drag, so on mobile the hierarchy slice
+    // preview (driven by updateAxisPointer → onHoverDateChange) only updated on
+    // tap. Translate touchmove into a showTip dispatch at the finger position;
+    // that moves the axisPointer and fires updateAxisPointer, so the existing
+    // hover→hierarchy chain runs continuously as the finger drags across slices.
+    // A pure tap (no move) still falls through to zr 'click' → onSliceClick (pin).
+    const chartDom = typeof chart.getDom === 'function' ? chart.getDom() : null;
+    function showTipAtTouch(touch) {
+      if (!touch || !chartDom) return false;
+      const rect = chartDom.getBoundingClientRect();
+      const px = [touch.clientX - rect.left, touch.clientY - rect.top];
+      try {
+        if (!chart.containPixel({ gridIndex: 0 }, px)) return false;
+        chart.dispatchAction({ type: 'showTip', x: px[0], y: px[1] });
+      } catch (_e) {
+        return false;
+      }
+      return true;
+    }
+    function onTouchStartScrub(e) {
+      if (e.touches && e.touches.length === 1) showTipAtTouch(e.touches[0]);
+    }
+    function onTouchMoveScrub(e) {
+      if (!e.touches || e.touches.length !== 1) return;
+      // Only claim the gesture (block page scroll) while the finger is over the
+      // plot and actually scrubbing; touch-action: pan-y keeps vertical scroll.
+      if (showTipAtTouch(e.touches[0]) && e.cancelable) e.preventDefault();
+    }
+    if (chartDom) {
+      chartDom.addEventListener('touchstart', onTouchStartScrub, { passive: false });
+      chartDom.addEventListener('touchmove', onTouchMoveScrub, { passive: false });
+    }
+
     chart._localHoverCleanup = function () {
       chart.off('updateAxisPointer', onAxisPointer);
       zr.off('globalout', onGlobalOut);
       zr.off('click', onChartClick);
+      if (chartDom) {
+        chartDom.removeEventListener('touchstart', onTouchStartScrub);
+        chartDom.removeEventListener('touchmove', onTouchMoveScrub);
+      }
       // Do not notifyHoverDate('') here — immediate redraw would flash logo dim state.
       if (hoverBox) hoverBox.style.display = 'none';
     };
