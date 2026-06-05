@@ -862,9 +862,20 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
     overflow: visible;
   }
 
-  body.ar-public.ar-local-cdr .chart-side-panel {
+  /* #hierarchy carried at body.ar-public.ar-local-cdr specificity too, in
+     case upstream ever constrains the rail container directly (gemini). */
+  body.ar-public.ar-local-cdr .chart-side-panel,
+  body.ar-public.ar-local-cdr #hierarchy {
     flex: 0 0 auto;
     height: auto;
+    max-height: none;
+    /* overflow:visible (both axes) is required: per spec, mixing
+       overflow-x:clip with overflow-y:visible forces visible→auto, which
+       would re-introduce the inner vertical scroll we're removing. Horizontal
+       bleed is contained by (a) the body-level `overflow-x: clip` guard and
+       (b) per-row label/rate width caps below; max-width:100% keeps the rail
+       inside its grid column as belt-and-braces (sourcery). */
+    max-width: 100%;
     overflow: visible;
   }
 
@@ -873,6 +884,7 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   body.ar-public.ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
     height: auto;
     max-height: none;
+    max-width: 100%;
     overflow: visible;
   }
 }
