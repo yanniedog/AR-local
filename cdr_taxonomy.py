@@ -289,6 +289,18 @@ _NON_STANDARD_NAME_TERMS: tuple[str, ...] = (
     r"\bstatutory\b", r"regulated[\s_-]*trust", r"\bescrow\b", r"\bsettlement\b",
     # Club / association / charity (organisation accounts)
     r"\bclub\b", r"\bassociation\b", r"\bcharit", r"not[\s_-]*for[\s_-]*profit",
+    # At-call savings — depositors can withdraw on demand; treated as non-standard.
+    r"at[\s_-]*call",
+    # Non-standard lending — filed under RESIDENTIAL_MORTGAGES by banks but not a
+    # standard owner-occupier/investor home loan: line-of-credit / equity release
+    # (e.g. Bank of Sydney "Home Equity Maximiser"), bridging finance, green /
+    # clean-energy purchase loans (e.g. RACQ "Green Home Loan"), and
+    # construction / land loans.
+    r"home[\s_-]*equity", r"equity[\s_-]*(?:maximiser|maximizer|release|access|line|loan)",
+    r"line[\s_-]*of[\s_-]*credit", r"\bheloc\b",
+    r"\bbridging\b", r"bridge[\s_-]*loan",
+    r"\bgreen\b", r"\bsolar\b", r"clean[\s_-]*energy",
+    r"\bconstruction\b", r"\bland[\s_-]*loan", r"vacant[\s_-]*land",
 )
 
 _NON_STANDARD_NAME_RE = re.compile(

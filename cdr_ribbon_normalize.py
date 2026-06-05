@@ -183,6 +183,64 @@ def tier_for_boundary(percent: Any) -> str:
     return "lvr_90-95%"
 
 
+# LVR/LTV encoded in free text with a BARE number (no % sign) and plain </>/<=/>=
+# operators — the %-anchored regexes above miss these. Real examples from the feed:
+# Cairns Bank "CLASSIC HOME LOAN VARIABLE <60 LVR IO", "... >90 LVR PI".
+_LVR_SIGNAL_RE = re.compile(r"\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b", re.IGNORECASE)
+_LVR_NAME_RANGE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
+    r"|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_LVR_NAME_OP = re.compile(
+    r"([<>]=?|under|below|over|above|max(?:imum)?|up[\s_-]*to|min(?:imum)?)\s*"
+    r"(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
+    r"|(?:lvr|ltv)\s*:?\s*([<>]=?|under|below|over|above|max(?:imum)?|up[\s_-]*to|min(?:imum)?)?\s*"
+    r"(\d{1,3}(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_LVR_TIER_ORDER = ("lvr_=60%", "lvr_60-70%", "lvr_70-80%", "lvr_80-85%", "lvr_85-90%", "lvr_90-95%")
+
+
+def _bump_tier_up(tier: str) -> str:
+    try:
+        i = _LVR_TIER_ORDER.index(tier)
+    except ValueError:
+        return tier
+    return _LVR_TIER_ORDER[min(i + 1, len(_LVR_TIER_ORDER) - 1)]
+
+
+def _is_lower_bound_op(op: Optional[str]) -> bool:
+    o = (op or "").strip().lower()
+    return o in (">", ">=", "over", "above", "min", "minimum")
+
+
+def named_lvr_tier(text: str) -> str:
+    """Tier from LVR/LTV stated with a bare number, e.g. '<60 LVR', '>90 LVR',
+    '70-80 LVR'. Returns '' when there is no LVR signal or no parseable number.
+
+    A range or an upper-bound operator (``<``/``<=``/under/max) maps on its upper
+    value; a lower-bound operator (``>``/``>=``/over/min) bumps one tier up so
+    '>90 LVR' lands in lvr_90-95% rather than lvr_85-90%.
+    """
+    txt = _lower(text)
+    if not txt or not _LVR_SIGNAL_RE.search(txt):
+        return ""
+    m = _LVR_NAME_RANGE.search(txt)
+    if m:
+        hi = m.group(2) or m.group(4)
+        if hi is not None:
+            return tier_for_boundary(float(hi))
+    m = _LVR_NAME_OP.search(txt)
+    if m:
+        op = m.group(1) or m.group(3)
+        num = m.group(2) or m.group(4)
+        if num is not None:
+            base = tier_for_boundary(float(num))
+            return _bump_tier_up(base) if _is_lower_bound_op(op) else base
+    return ""
+
+
 def normalize_lvr_tier(context_text: str, min_lvr: Any, max_lvr: Any) -> str:
     hi_finite = isinstance(max_lvr, (int, float)) and math.isfinite(float(max_lvr))
     lo_finite = isinstance(min_lvr, (int, float)) and math.isfinite(float(min_lvr))
@@ -302,6 +360,11 @@ def resolve_lvr_tier(
             tier2 = normalize_lvr_tier("", ctx_min, ctx_max)
             if tier2 != "lvr_unspecified":
                 return tier2, "context_text"
+        # Bare-number LVR encoded in the product/rate name (e.g. "<60 LVR", ">90 LVR")
+        # that the %-anchored parsers above miss.
+        named = named_lvr_tier(context_text)
+        if named:
+            return named, "context_text"
 
     if product_constraints:
         return "lvr_unspecified", "product_unparsed"
@@ -616,6 +679,10 @@ def ribbon_columns_for_bank_rate_row(
                 "feature_set": feature_set,
             }
         )
+        # All at-call savings accounts are non-standard, keyed on the authoritative
+        # normalized account_type (not just the name marker) so none slip through.
+        if account_type == "at_call":
+            out["account_class"] = "non_standard"
         out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
