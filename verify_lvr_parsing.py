@@ -24,6 +24,12 @@ NAMED_CASES = [
     ("LVR <= 80%", "lvr_70-80%", "<=80 with %"),
     (">80 LVR", "lvr_80-85%", ">80 bumps one tier"),
     ("LVR 95", "lvr_90-95%", "bare 'LVR 95'"),
+    ("80 LVR", "lvr_70-80%", "bare number before LVR, no operator"),
+    ("LVR less than 70", "lvr_60-70%", "natural-language 'less than'"),
+    ("greater than 90 LVR", "lvr_90-95%", "natural-language 'greater than' bumps up"),
+    ("more than 80 LVR", "lvr_80-85%", "natural-language 'more than' bumps up"),
+    ("no more than 80 LVR", "lvr_70-80%", "'no more than' is an upper bound"),
+    ("at least 90 LVR", "lvr_90-95%", "'at least' is a lower bound"),
     ("Basic Home Loan", "", "no LVR signal -> blank"),
     ("Bridging Loan 6 months", "", "number but no LVR signal -> blank"),
 ]

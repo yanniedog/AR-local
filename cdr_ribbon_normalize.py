@@ -192,14 +192,24 @@ _LVR_NAME_RANGE = re.compile(
     r"|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)",
     re.IGNORECASE,
 )
+# Operator alternation: symbols, natural-language comparators, and bound words.
+# Operator is OPTIONAL in both forms below so a bare "80 LVR" / "LVR 80" parses.
+_LVR_OP = (
+    r"<=|>=|<|>|less[\s_-]*than[\s_-]*or[\s_-]*equal[\s_-]*to|greater[\s_-]*than[\s_-]*or[\s_-]*equal[\s_-]*to"
+    r"|less[\s_-]*than|greater[\s_-]*than|more[\s_-]*than|no[\s_-]*more[\s_-]*than"
+    r"|at[\s_-]*least|at[\s_-]*most|under|below|over|above|from"
+    r"|max(?:imum)?|min(?:imum)?|up[\s_-]*to"
+)
 _LVR_NAME_OP = re.compile(
-    r"([<>]=?|under|below|over|above|max(?:imum)?|up[\s_-]*to|min(?:imum)?)\s*"
-    r"(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
-    r"|(?:lvr|ltv)\s*:?\s*([<>]=?|under|below|over|above|max(?:imum)?|up[\s_-]*to|min(?:imum)?)?\s*"
-    r"(\d{1,3}(?:\.\d+)?)",
+    rf"(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
+    rf"|(?:lvr|ltv)\s*:?\s*(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)",
     re.IGNORECASE,
 )
 _LVR_TIER_ORDER = ("lvr_=60%", "lvr_60-70%", "lvr_70-80%", "lvr_80-85%", "lvr_85-90%", "lvr_90-95%")
+_LVR_LOWER_BOUND_OPS = frozenset(
+    {">", ">=", "over", "above", "greater than", "greater than or equal to",
+     "more than", "at least", "from", "min", "minimum"}
+)
 
 
 def _bump_tier_up(tier: str) -> str:
@@ -211,17 +221,20 @@ def _bump_tier_up(tier: str) -> str:
 
 
 def _is_lower_bound_op(op: Optional[str]) -> bool:
-    o = (op or "").strip().lower()
-    return o in (">", ">=", "over", "above", "min", "minimum")
+    # Normalize whitespace/underscore/hyphen joins so "greater_than" == "greater than".
+    o = re.sub(r"[\s_-]+", " ", (op or "").strip().lower())
+    return o in _LVR_LOWER_BOUND_OPS
 
 
 def named_lvr_tier(text: str) -> str:
     """Tier from LVR/LTV stated with a bare number, e.g. '<60 LVR', '>90 LVR',
-    '70-80 LVR'. Returns '' when there is no LVR signal or no parseable number.
+    '70-80 LVR', '80 LVR', 'LVR less than 70', 'greater than 90 LVR'. Returns ''
+    when there is no LVR signal or no parseable number.
 
-    A range or an upper-bound operator (``<``/``<=``/under/max) maps on its upper
-    value; a lower-bound operator (``>``/``>=``/over/min) bumps one tier up so
-    '>90 LVR' lands in lvr_90-95% rather than lvr_85-90%.
+    A range, a bare number, or an upper-bound operator (``<``/``<=``/under/max/
+    'less than') maps on its upper value; a lower-bound operator (``>``/``>=``/
+    over/min/'greater than'/'more than') bumps one tier up so '>90 LVR' lands in
+    lvr_90-95% rather than lvr_85-90%.
     """
     txt = _lower(text)
     if not txt or not _LVR_SIGNAL_RE.search(txt):
