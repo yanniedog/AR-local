@@ -755,10 +755,67 @@
     const zr = chart.getZr();
     zr.on('globalout', onGlobalOut);
     zr.on('click', onChartClick);
+
+    // Touch scrubbing: ECharts' built-in touch handling moves the axisPointer
+    // on tap but NOT during a finger drag, so on mobile the hierarchy slice
+    // preview (driven by updateAxisPointer → onHoverDateChange) only updated on
+    // tap. Translate touchmove into a showTip dispatch at the finger position;
+    // that moves the axisPointer and fires updateAxisPointer, so the existing
+    // hover→hierarchy chain runs continuously as the finger drags across slices.
+    // A pure tap (no move) still falls through to zr 'click' → onSliceClick (pin).
+    const chartDom = typeof chart.getDom === 'function' ? chart.getDom() : null;
+    function showTipAtTouch(touch) {
+      if (!touch || !chartDom) return false;
+      const rect = chartDom.getBoundingClientRect();
+      const px = [touch.clientX - rect.left, touch.clientY - rect.top];
+      try {
+        if (!chart.containPixel({ gridIndex: 0 }, px)) return false;
+        chart.dispatchAction({ type: 'showTip', x: px[0], y: px[1] });
+      } catch (_e) {
+        return false;
+      }
+      return true;
+    }
+    // Direction lock: a drag that starts on the plot must still scroll the page
+    // when it's primarily vertical. Decide horizontal (scrub) vs vertical
+    // (scroll) once the finger passes a small threshold, then stick with it for
+    // the gesture. Only horizontal scrubs preventDefault, so vertical swipes
+    // that begin over the chart are never stolen from the page (gemini, codex).
+    const TOUCH_DECIDE_PX = 8;
+    let touchMode = null; // null = undecided, 'h' = scrub, 'v' = page scroll
+    let touchStartX = 0;
+    let touchStartY = 0;
+    function onTouchStartScrub(e) {
+      if (!e.touches || e.touches.length !== 1) { touchMode = 'v'; return; }
+      touchMode = null;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+    function onTouchMoveScrub(e) {
+      if (!e.touches || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      if (touchMode === null) {
+        const dx = Math.abs(touch.clientX - touchStartX);
+        const dy = Math.abs(touch.clientY - touchStartY);
+        if (dx < TOUCH_DECIDE_PX && dy < TOUCH_DECIDE_PX) return; // not yet decided
+        touchMode = dx > dy ? 'h' : 'v';
+      }
+      if (touchMode !== 'h') return; // vertical: let the page scroll
+      if (showTipAtTouch(touch) && e.cancelable) e.preventDefault();
+    }
+    if (chartDom) {
+      chartDom.addEventListener('touchstart', onTouchStartScrub, { passive: true });
+      chartDom.addEventListener('touchmove', onTouchMoveScrub, { passive: false });
+    }
+
     chart._localHoverCleanup = function () {
       chart.off('updateAxisPointer', onAxisPointer);
       zr.off('globalout', onGlobalOut);
       zr.off('click', onChartClick);
+      if (chartDom) {
+        chartDom.removeEventListener('touchstart', onTouchStartScrub);
+        chartDom.removeEventListener('touchmove', onTouchMoveScrub);
+      }
       // Do not notifyHoverDate('') here — immediate redraw would flash logo dim state.
       if (hoverBox) hoverBox.style.display = 'none';
     };

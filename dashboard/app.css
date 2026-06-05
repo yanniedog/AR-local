@@ -559,6 +559,14 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   height: 100%;
 }
 
+/* Let a horizontal finger drag scrub the ribbon (chart.js translates touchmove
+   into a showTip dispatch that drives the hierarchy slice preview), while a
+   vertical drag still scrolls the page. */
+.ar-local-cdr .terminal-chart-output,
+.ar-local-cdr #chart {
+  touch-action: pan-y;
+}
+
 .ar-local-cdr .local-history-window {
   display: flex;
   flex-wrap: wrap;
