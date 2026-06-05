@@ -25,6 +25,7 @@ from ar_local_pi_runtime import (
     prepare_empty_dir,
 )
 from cdr_outputs import build_outputs
+from cdr_ingest_sanity import write_sanity_report
 
 
 def local_date() -> str:
@@ -134,6 +135,34 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Post-ingest sanity check (non-blocking). Flags per-product rate
+    # ladders that moved >= LOW_BP vs the previous day's export. See
+    # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
+    # CommBank repricing-window incident that motivated this guard.
+    try:
+        report_path = write_sanity_report(export_root, date, persistent_runs_root)
+    except Exception as exc:  # never let the guard fail the ingest
+        print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
+    else:
+        if report_path is not None:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            counts = report.get("counts", {})
+            high = counts.get("HIGH", 0)
+            structural = counts.get("STRUCTURAL", 0)
+            low = counts.get("LOW", 0)
+            print(
+                f"sanity-check vs {report.get('compared_against')}: "
+                f"HIGH={high} STRUCTURAL={structural} LOW={low}  ({report_path})"
+            )
+            for finding in report.get("findings", [])[:10]:
+                if finding["severity"] in ("HIGH", "STRUCTURAL"):
+                    print(
+                        f"  {finding['severity']}: {finding['provider']} "
+                        f"{finding.get('product_name','')[:50]} "
+                        f"worst_delta={finding.get('worst_delta_bp', '-')}bp",
+                        file=sys.stderr,
+                    )
 
     marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
