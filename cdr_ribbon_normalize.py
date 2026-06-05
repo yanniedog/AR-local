@@ -504,7 +504,10 @@ def ribbon_columns_for_bank_rate_row(
     product_lvr_constraints: Optional[List[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Return discrete ribbon-aligned columns merged into export bank rate rows."""
-    from cdr_taxonomy import classify_bank_rate_row as _classify
+    from cdr_taxonomy import (
+        classify_account_standardness as _classify_standardness,
+        classify_bank_rate_row as _classify,
+    )
 
     defaults: Dict[str, Any] = {
         "ribbon_normalized": False,
@@ -522,7 +525,16 @@ def ribbon_columns_for_bank_rate_row(
         "interest_payment": "",
         "feature_set": "",
         "taxonomy_path": "",
+        "account_class": "",
     }
+    # Standard vs non-standard applies to every section/dataset (loans included).
+    # Set on defaults so it rides through each branch's `dict(defaults)` copy and
+    # the fallthrough return without per-branch wiring.
+    defaults["account_class"] = _classify_standardness(
+        flat_base.get("product_name"),
+        flat_base.get("category"),
+        dataset,
+    )
 
     if dataset == "Mortgage" and rate_family == "lending":
         structured = _lower_join(flat_base.get("loan_purpose") or "", str(cleaned_item.get("loanPurpose") or ""))

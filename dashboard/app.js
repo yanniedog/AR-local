@@ -52,6 +52,7 @@
     bankHistoryIndex: null,
     retainedRunDatesSorted: [],
     descending: false,
+    includeNonStandard: false,
     historyWindow: '30D',
     hierarchyPath: '',
     focusProvider: '',
@@ -118,10 +119,28 @@
     return Number(value || 0).toLocaleString('en-AU');
   }
 
-  function rateRows() {
+  // Non-standard accounts (foreign-currency, farm, business, trust/SMSF, …) are
+  // hidden by default; the chart-toggle-nonstandard checkbox opts them in. Legacy
+  // rows with no account_class read '' and are always treated as standard.
+  // 'non_standard' is the wire value emitted by cdr_taxonomy.ACCOUNT_CLASS_NON_STANDARD.
+  const ACCOUNT_CLASS_NON_STANDARD = 'non_standard';
+  function accountClassVisible(row) {
+    if (state.includeNonStandard) return true;
+    return String(row.account_class || '') !== ACCOUNT_CLASS_NON_STANDARD;
+  }
+
+  // Section-scoped rows WITHOUT the account-class filter. Used to seed the
+  // current-only history so the seed always carries every product; visibility is
+  // applied when the history index is (re)built via historyRowMatchesLiveTable,
+  // so toggling the checkbox works even before the full history payload arrives.
+  function sectionRows() {
     const sectionPayload = state.bankSections[state.section];
     if (!sectionPayload || !Array.isArray(sectionPayload.rates)) return [];
     return sectionPayload.rates.filter((row) => row.dataset === state.section && bankRateMatchesSection(row));
+  }
+
+  function rateRows() {
+    return sectionRows().filter(accountClassVisible);
   }
 
   function focusActiveProvider() {
@@ -162,7 +181,7 @@
   }
 
   function historyRowMatchesLiveTable(row) {
-    return row.dataset === state.section && bankRateMatchesSection(row);
+    return row.dataset === state.section && bankRateMatchesSection(row) && accountClassVisible(row);
   }
 
   function buildHistoryIndex(rows) {
@@ -1174,7 +1193,9 @@
       warmProviderLogoCache();
     }
     if (token !== loadSectionToken) return;
-    seedCurrentHistory(section, rateRows());
+    // Seed from unfiltered section rows so the current-only history retains
+    // non-standard products; accountClassVisible is applied at index-build time.
+    seedCurrentHistory(section, sectionRows());
     sanitizeFocusedProviders();
     render();
     loadBankHistory()
@@ -1272,6 +1293,21 @@
       $('chart-toggle-sort').textContent = state.descending ? 'Lowest first' : 'Highest first';
       render();
     });
+    const nonStandardToggle = $('chart-toggle-nonstandard');
+    if (nonStandardToggle) {
+      nonStandardToggle.checked = state.includeNonStandard;
+      nonStandardToggle.addEventListener('change', () => {
+        state.includeNonStandard = nonStandardToggle.checked;
+        // The history index is built through historyRowMatchesLiveTable, which now
+        // honours the toggle — rebuild it so non-standard series appear/disappear.
+        refreshBankHistoryIndex();
+        // Hiding non-standard rows can strand a provider focus/hover that only
+        // matched a now-hidden product; drop it so the table/hierarchy aren't
+        // left empty (Codex P2).
+        sanitizeFocusedProviders();
+        render();
+      });
+    }
     document.querySelectorAll('[data-history-window]').forEach((button) => {
       button.addEventListener('click', () => {
         state.historyWindow = button.dataset.historyWindow || '30D';

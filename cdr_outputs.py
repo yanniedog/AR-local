@@ -12,7 +12,7 @@ from cdr_clean_export import parse_banks_run, summary_counts, utc_now
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "7"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json"],
@@ -59,6 +59,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "interest_payment",
         "feature_set",
         "taxonomy_path",
+        "account_class",
         "details_json",
     ],
     "bank_items": [
@@ -206,6 +207,7 @@ def ensure_db(con: sqlite3.Connection) -> None:
           interest_payment TEXT,
           feature_set TEXT,
           taxonomy_path TEXT,
+          account_class TEXT,
           details_json TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS bank_items (

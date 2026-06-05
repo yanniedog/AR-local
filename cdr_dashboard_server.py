@@ -82,6 +82,7 @@ BANK_SECTION_COLUMNS = (
     "term_months",
     "interest_payment",
     "feature_set",
+    "account_class",
     "rate_index",
 )
 BANK_HISTORY_COLUMNS = (
@@ -117,6 +118,13 @@ BANK_HISTORY_COLUMNS = (
     "term_months",
     "interest_payment",
     "feature_set",
+    # account_class is deterministic from product_name + category (already in the
+    # identity below), so it is intentionally NOT a HISTORY_IDENTITY_FIELD — adding
+    # it would split every product's history line at the schema-7 cutover where
+    # legacy rows read '' and new rows read 'standard'/'non_standard'. Carry-forward
+    # synth rows copy it via dict(template) in fill_history_gaps, so the value still
+    # rides through on gap-fill days.
+    "account_class",
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
