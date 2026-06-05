@@ -826,6 +826,55 @@ body.ar-public.ar-local-cdr .local-bank-badge--logo-only .bank-badge-copy {
   .ar-local-cdr #hierarchy .ar-report-infobox-trate {
     max-width: 44vw;
   }
+
+  /* Current-slice tree must expand to ALL tiers on mobile (no inner scroll).
+     Upstream public-showcase-workspace.css (@media max-width:760px) pins
+     .chart-figure to a fixed --ar-mobile-workspace-height (clamp 480–720px)
+     with overflow:hidden, then lays the workspace out as
+     [chart][resizer][hierarchy minmax(0,1fr)] — so the tree only gets the
+     leftover space and scrolls inside a short frame, clipping deeper tiers.
+     Free the figure/workspace/side-panel so the tree grows to its content
+     height and the PAGE scrolls instead of a nested frame.
+
+     Specificity note: upstream uses `body.ar-public .chart-figure`
+     (0,2,1); the `.ar-local-cdr .chart-side-panel` override above is only
+     (0,2,0) and loses, so these rules carry the `body.ar-public.ar-local-cdr`
+     prefix (0,3,1) to win the cascade.
+
+     flex note: upstream gives .chart-figure / .chart-workspace
+     `flex: 1 1 0; min-height: 0` so they fill a fixed-height parent. Once
+     we remove that fixed height the flex basis of 0 collapses the column to
+     ~0px. We switch each to `flex: 0 0 auto` so they take their content
+     height instead. The chart keeps a definite height from the clamped
+     first grid row of the workspace, so ECharts still renders. */
+  body.ar-public.ar-local-cdr .chart-figure {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.ar-public.ar-local-cdr .chart-workspace {
+    flex: 0 0 auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.ar-public.ar-local-cdr .chart-side-panel {
+    flex: 0 0 auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  body.ar-public.ar-local-cdr #hierarchy .ar-report-underchart-tree,
+  body.ar-public.ar-local-cdr #hierarchy .ar-report-underchart-tree-body,
+  body.ar-public.ar-local-cdr #hierarchy .ar-report-underchart-tree-scroll {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 520px) {
