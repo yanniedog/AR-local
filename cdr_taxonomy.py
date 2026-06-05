@@ -260,26 +260,35 @@ ACCOUNT_CLASS_STANDARD = "standard"
 ACCOUNT_CLASS_NON_STANDARD = "non_standard"
 
 # The retail CDR product categories we treat as standard. Reuses the canonical
-# alias keys already maintained in _CATEGORY_TO_PC so the two never drift apart.
-STANDARD_CATEGORIES: frozenset[str] = frozenset(_CATEGORY_TO_PC)
+# alias keys maintained in _CATEGORY_TO_PC (so the two never drift) but EXCLUDES
+# the business-lending keys — a business loan with a neutral name (e.g. "Equipment
+# Finance") must fall through to non_standard via the category catch-all rather
+# than passing as standard.
+STANDARD_CATEGORIES: frozenset[str] = frozenset(
+    key for key in _CATEGORY_TO_PC if "BUSINESS" not in key
+)
 
-# Name markers that flag an account as non-standard. Word-boundary anchored so
-# "business" does not match inside another word. Add new phrases here.
+# Name markers that flag an account as non-standard. Generic words are anchored
+# with \b so they never match inside an unrelated word ("farm" in "Platform",
+# "agri" in a brand name). Multi-word phrases tolerate space/underscore/hyphen
+# joins. Deliberately NOT included: "community" / "society" — they collide with
+# Australian mutual-ADI brand names (building societies, community credit unions)
+# whose ordinary retail savers must stay standard. Add new phrases here.
 _NON_STANDARD_NAME_TERMS: tuple[str, ...] = (
     # Foreign exchange / multi-currency
     r"foreign[\s_-]*currenc(?:y|ies)", r"foreign[\s_-]*exchange", r"\bfx\b", r"\bforex\b",
-    r"multi[\s_-]*currency", r"non[\s_-]*resident", r"migrant", r"expat", r"overseas",
-    r"offshore",
+    r"multi[\s_-]*currency", r"non[\s_-]*resident", r"\bmigrant\b", r"\bexpat\b",
+    r"\boverseas\b", r"\boffshore\b",
     # Farm / agribusiness / rural
-    r"farm", r"agri", r"agribusiness", r"rural", r"primary[\s_-]*producer",
+    r"\bfarm\b", r"\bagri\b", r"\bagribusiness\b", r"\brural\b", r"primary[\s_-]*producer",
     # Business / commercial / corporate
-    r"business", r"commercial", r"corporate", r"company", r"\bsme\b", r"merchant",
-    r"wholesale", r"institutional",
+    r"\bbusiness\b", r"\bcommercial\b", r"\bcorporate\b", r"\bcompany\b", r"\bsme\b",
+    r"\bmerchant\b", r"\bwholesale\b", r"\binstitutional\b",
     # Trust / SMSF / super / statutory
-    r"trust", r"trustee", r"smsf", r"self[\s_-]*managed", r"super[\s_-]*fund",
-    r"statutory", r"regulated[\s_-]*trust", r"escrow", r"settlement",
-    # Community / not-for-profit
-    r"community", r"\bclub\b", r"association", r"society", r"charit", r"not[\s_-]*for[\s_-]*profit",
+    r"\btrust\b", r"\btrustee\b", r"\bsmsf\b", r"self[\s_-]*managed", r"super[\s_-]*fund",
+    r"\bstatutory\b", r"regulated[\s_-]*trust", r"\bescrow\b", r"\bsettlement\b",
+    # Club / association / charity (organisation accounts)
+    r"\bclub\b", r"\bassociation\b", r"\bcharit", r"not[\s_-]*for[\s_-]*profit",
 )
 
 _NON_STANDARD_NAME_RE = re.compile(

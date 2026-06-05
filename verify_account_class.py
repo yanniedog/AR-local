@@ -29,6 +29,11 @@ CASES: list[tuple[str, str, str, str]] = [
     ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_STANDARD, "home loan"),
     ("Low Rate Credit Card", "CRED_AND_CHRG_CARDS", ACCOUNT_CLASS_STANDARD, "credit card"),
     ("Personal Loan", "PERS_LOANS", ACCOUNT_CLASS_STANDARD, "personal loan"),
+    # False-positive guards: generic markers must not match inside unrelated words
+    # or collide with Australian mutual-ADI brand names (building societies, etc.).
+    ("Platform Saver", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_STANDARD, "'farm' inside 'Platform'"),
+    ("Community First Credit Union Pocket Saver", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_STANDARD, "mutual brand, not an org account"),
+    ("Greater Building Society Select Saver", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_STANDARD, "building society brand"),
     # --- Non-standard by NAME (mis-filed under a standard category) ---------
     ("Foreign Currency Account (Retail)", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "FX — the CBA incident"),
     ("FX Settlement Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "fx token"),
@@ -38,10 +43,12 @@ CASES: list[tuple[str, str, str, str]] = [
     ("Commercial Term Deposit", "TERM_DEPOSITS", ACCOUNT_CLASS_NON_STANDARD, "commercial"),
     ("SMSF Cash Hub", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "smsf"),
     ("Statutory Trust Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "trust"),
-    ("Community Saver", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "community"),
+    ("Sailing Club Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "club / org account"),
     ("Non-Resident Savings", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "non-resident"),
     # --- Non-standard by CATEGORY (future-proofing) ------------------------
-    ("Business Overdraft", "BUSINESS_LOANS", ACCOUNT_CLASS_NON_STANDARD, "non-standard category"),
+    # Neutral name (no marker) so this genuinely exercises the category path:
+    # BUSINESS_LOANS must NOT be a standard category.
+    ("Equipment Finance", "BUSINESS_LOANS", ACCOUNT_CLASS_NON_STANDARD, "business loan, neutral name -> category catch"),
     ("CommSec Margin Loan", "MARGIN_LOANS", ACCOUNT_CLASS_NON_STANDARD, "margin loan category"),
     ("Trade Finance Facility", "TRADE_FINANCE", ACCOUNT_CLASS_NON_STANDARD, "trade finance category"),
     # A brand-new account whose category the CDR has not published before and

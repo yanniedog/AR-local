@@ -122,9 +122,11 @@
   // Non-standard accounts (foreign-currency, farm, business, trust/SMSF, …) are
   // hidden by default; the chart-toggle-nonstandard checkbox opts them in. Legacy
   // rows with no account_class read '' and are always treated as standard.
+  // 'non_standard' is the wire value emitted by cdr_taxonomy.ACCOUNT_CLASS_NON_STANDARD.
+  const ACCOUNT_CLASS_NON_STANDARD = 'non_standard';
   function accountClassVisible(row) {
     if (state.includeNonStandard) return true;
-    return String(row.account_class || '') !== 'non_standard';
+    return String(row.account_class || '') !== ACCOUNT_CLASS_NON_STANDARD;
   }
 
   function rateRows() {
