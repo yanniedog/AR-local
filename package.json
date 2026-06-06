@@ -8,6 +8,7 @@
     "pr:gates:check": "node scripts/pr-gates-check.mjs",
     "pr:watch-once": "node scripts/pr-watch-once.mjs",
     "pr:bot-feedback-audit": "node scripts/pr-bot-feedback-check.mjs --audit-merged --limit 20",
+    "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
     "close-loop:check": "node scripts/close-loop-check.mjs",
     "ship:closeout:strict": "python ship_closeout_strict.py",
     "verify:local": "python verify_local.py",

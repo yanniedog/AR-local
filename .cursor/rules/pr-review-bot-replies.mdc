@@ -7,6 +7,8 @@ alwaysApply: true
 
 Same standard as Australian Rates: **`WORKFLOW.md`** step 6.
 
-**Summary:** for every substantive thread from automated reviewers — reply in-thread before merge: implemented (+ SHA) / deferred (reason) / declined (reason). Do not merge with unanswered threads. Green CI alone does not replace thread closure.
+**Summary:** for every substantive thread from automated reviewers, close it before merge by **EITHER** resolving it on GitHub **OR** an in-thread disposition reply: implemented (+ SHA) / deferred (reason) / declined (reason). Resolving alone is sufficient — you do not also need a keyword reply, and reply wording is matched forgivingly (fixed / addressed / done / resolved / applied / deferred / declined). Do not merge with unanswered threads. Green CI alone does not replace thread closure.
 
-**Gate:** `npm run pr:bot-feedback-check -- --pr <n>` must exit **0** before squash merge. `ship:closeout:strict` invokes it for the open PR on the current branch. CI jobs **`bot-presence-gate`** and **`pr-bot-feedback-check`** must be green when branch protection is enabled. Post-merge: `npm run pr:bot-feedback-audit` then in-thread replies + fix PR if needed.
+**Self-healing — never push empty "re-trigger" commits.** `bot-feedback-gate` re-runs on review-comment activity, so your reply re-evaluates it automatically; and the gates run `cancel-in-progress: false`, so a `BLOCKED`-but-all-green PR with 0 unresolved threads just needs a moment / the next event (or `gh pr merge --auto`), not a synthetic commit.
+
+**Gate:** `npm run pr:bot-feedback-check -- --pr <n>` must exit **0** before squash merge. Check overall readiness in one call with `npm run pr:gates:check -- --pr <n>` instead of hand-polling `gh`. CI jobs **`bot-presence-gate`** and **`bot-feedback-gate`** must be green when branch protection is enabled. Post-merge: `npm run pr:bot-feedback-audit` then in-thread replies + fix PR if needed.

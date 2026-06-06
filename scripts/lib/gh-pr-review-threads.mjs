@@ -7,8 +7,12 @@ import { isBotNoise } from './bot-noise.mjs';
 const BOT_LOGIN_RE =
   /(?:gemini|codex|sourcery|coderabbit|copilot|greptile|chatgpt|github-actions\[bot\])/i;
 
+// A disposition reply lets an UNRESOLVED thread pass (defer/decline without a
+// resolve click). Intentionally forgiving of how agents/humans actually phrase
+// it — "Fixed in <sha>", "Done", "Addressed", etc. — so a real reply is not
+// rejected for missing a magic word (resolution alone also satisfies the gate).
 const CLOSURE_BODY_RE =
-  /\b(implemented|deferred|declined|won't fix|wontfix|post-merge|not applicable|n\/a)\b/i;
+  /\b(implemented|fixed|address(?:ed|ing)|resolv(?:ed|ing)|done|applied|handled|acknowledged|deferred|declin(?:ed|ing)|won'?t fix|wontfix|will not fix|by design|as designed|no change|not a bug|post-merge|follow[- ]?up|not applicable|n\/a)\b/i;
 
 const REVIEW_THREADS_QUERY = `
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -145,7 +149,7 @@ export function fetchPullRequestThreads(owner, name, prNumber) {
   return { ...prMeta, threads };
 }
 
-const BOT_SELF_ADDRESSED_RE = /\baddressed in [0-9a-f]{7,40}\b/i;
+const BOT_SELF_ADDRESSED_RE = /\b(addressed|fixed|implemented|resolved|done|applied) in [0-9a-f]{7,40}\b/i;
 
 function threadHasBotSelfAddressed(comments) {
   for (const c of comments) {
@@ -175,45 +179,39 @@ export function classifyThreads(threads, opts = {}) {
     const comments = (t.comments?.nodes || []).filter((c) => c?.author?.login);
     if (!comments.length) continue;
 
+    // Resolving a thread on GitHub is a deliberate acknowledgement and satisfies
+    // the gate on its own — no separate "closure reply" keyword is also required.
+    // (Previously a resolved thread still failed without a magic-word reply, which
+    // forced agents to repost "Implemented in <sha>" and burn a whole CI cycle.)
+    if (t.isResolved) continue;
+
     const first = comments[0];
     const starterLogin = first.author.login;
     const starterIsBot = isBotLogin(starterLogin) || first.author.__typename === 'Bot';
     const excerpt = (first.body || '').replace(/\s+/g, ' ').slice(0, 120);
     const botAt = new Date(first.createdAt).getTime();
-    const hasClosure =
-      starterIsBot && !isLowSignalBotThread(comments)
-        ? threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments)
-        : false;
 
-    if (!t.isResolved) {
-      // mergedAudit: ignore unresolved non-bot threads only; unresolved bot threads still fail.
-      if (mergedAudit && !starterIsBot) continue;
-      // Low-signal bot threads (quota notices, "Useful? React with..." tails,
-      // emoji-only acks) carry no actionable feedback and must not block merge
-      // even when nobody resolved them on GitHub.
-      if (starterIsBot && isLowSignalBotThread(comments)) continue;
-      violations.push({
-        threadIndex: i + 1,
-        kind: 'unresolved',
-        starter: starterLogin,
-        isBot: starterIsBot,
-        excerpt,
-      });
+    // Low-signal bot threads (quota notices, "Useful? React with..." tails,
+    // emoji-only acks) carry no actionable feedback and never block merge.
+    if (starterIsBot && isLowSignalBotThread(comments)) continue;
+    // mergedAudit: only unresolved bot threads block (ignore human threads).
+    if (mergedAudit && !starterIsBot) continue;
+
+    // An unresolved thread still passes if it carries an explicit disposition
+    // reply (fixed / implemented / deferred / declined / by design …) — so
+    // declining or deferring does not force a resolve click. Resolution OR a
+    // disposition reply == satisfied.
+    if (starterIsBot && (threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments))) {
       continue;
     }
 
-    if (!starterIsBot) continue;
-    if (isLowSignalBotThread(comments)) continue;
-
-    if (!hasClosure) {
-      violations.push({
-        threadIndex: i + 1,
-        kind: 'missing_closure_reply',
-        starter: starterLogin,
-        isBot: true,
-        excerpt,
-      });
-    }
+    violations.push({
+      threadIndex: i + 1,
+      kind: 'unresolved',
+      starter: starterLogin,
+      isBot: starterIsBot,
+      excerpt,
+    });
   }
 
   return violations;
