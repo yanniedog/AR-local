@@ -325,10 +325,26 @@
     return out;
   }
 
+  function medianOf(values) {
+    if (!values || !values.length) return null;
+    const sorted = values.slice().sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
   function buildAggregateRibbon(historyRows) {
     const byProvider = {};
     const sliceDates = new Set();
     const byDate = {};
+    const accumulate = (slot, rate) => {
+      if (!slot) return { min: rate, max: rate, sum: rate, count: 1, rates: [rate] };
+      slot.min = Math.min(slot.min, rate);
+      slot.max = Math.max(slot.max, rate);
+      slot.sum += rate;
+      slot.count += 1;
+      slot.rates.push(rate);
+      return slot;
+    };
     historyRows.forEach((row) => {
       const date = normalizeRunDate(row.run_date);
       const provider = row.provider || 'Unknown';
@@ -337,14 +353,8 @@
       sliceDates.add(date);
       if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {} };
       const p = byProvider[provider];
-      const existing = p.byDate[date];
-      p.byDate[date] = existing
-        ? { min: Math.min(existing.min, rate), max: Math.max(existing.max, rate), count: existing.count + 1, sum: existing.sum + rate }
-        : { min: rate, max: rate, count: 1, sum: rate };
-      const agg = byDate[date];
-      byDate[date] = agg
-        ? { min: Math.min(agg.min, rate), max: Math.max(agg.max, rate), sum: agg.sum + rate, count: agg.count + 1 }
-        : { min: rate, max: rate, sum: rate, count: 1 };
+      p.byDate[date] = accumulate(p.byDate[date], rate);
+      byDate[date] = accumulate(byDate[date], rate);
     });
     const retained = retainedRunDates();
     const sliceDatesSorted = sortedValidRunDates(Array.from(sliceDates));
@@ -352,8 +362,15 @@
     const dates = historyDatesInWindow(timelineSource);
     const points = dates.map((date) => {
       const agg = byDate[date];
-      if (!agg) return { date, min: null, max: null, mean: null, count: 0 };
-      return { date, min: agg.min, max: agg.max, mean: agg.sum / Math.max(1, agg.count), count: agg.count };
+      if (!agg) return { date, min: null, max: null, mean: null, median: null, count: 0 };
+      return {
+        date,
+        min: agg.min,
+        max: agg.max,
+        mean: agg.sum / Math.max(1, agg.count),
+        median: medianOf(agg.rates),
+        count: agg.count,
+      };
     });
     const providers = Object.values(byProvider).map((p) => {
       const visible = {};
@@ -364,6 +381,7 @@
           min: point.min,
           max: point.max,
           mean: point.sum / Math.max(1, point.count),
+          median: medianOf(point.rates),
           count: point.count,
         };
       });
@@ -482,6 +500,7 @@
           min: Number(row.min),
           max: Number(row.max),
           mean: Number(row.mean),
+          median: row.median == null ? null : Number(row.median),
           count: Number(row.rates || 0),
         },
       },
@@ -496,6 +515,7 @@
         min: range.min == null ? null : Number(range.min),
         max: range.max == null ? null : Number(range.max),
         mean: range.mean == null ? null : Number(range.mean),
+        median: range.median == null ? null : Number(range.median),
         count: Number((ribbon.counts && ribbon.counts.rates) || 0),
       }],
       providers,

@@ -748,11 +748,16 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
 
         def stats(values: list[float]) -> dict[str, float | None]:
             if not values:
-                return {"min": None, "max": None, "mean": None}
+                return {"min": None, "max": None, "mean": None, "median": None}
+            ordered = sorted(values)
+            n = len(ordered)
+            mid = n // 2
+            median = ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
             return {
-                "min": min(values),
-                "max": max(values),
-                "mean": sum(values) / len(values),
+                "min": ordered[0],
+                "max": ordered[-1],
+                "mean": sum(ordered) / n,
+                "median": median,
             }
 
         return {

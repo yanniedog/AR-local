@@ -288,6 +288,7 @@
     let min = finiteOrNull(source.min);
     let max = finiteOrNull(source.max);
     let mean = finiteOrNull(source.mean);
+    let median = finiteOrNull(source.median);
     if (min != null && max != null && min > max) {
       const swap = min;
       min = max;
@@ -298,13 +299,16 @@
     } else if (mean == null && min != null && max != null) {
       mean = (min + max) / 2;
     }
+    if (median != null && min != null && max != null) {
+      median = Math.min(Math.max(median, min), max);
+    }
     if (min == null || max == null) {
       min = null;
       max = null;
     }
     const countRaw = Number(source.count);
     const count = Number.isFinite(countRaw) && countRaw > 0 ? Math.round(countRaw) : 0;
-    return { date, min, max, mean, count };
+    return { date, min, max, mean, median, count };
   }
 
   function alignPointsToTimeline(dates, rawPoints) {
@@ -322,12 +326,13 @@
     if (!providerSeries || !providerSeries.byDate) return [];
     return (dates || []).map((date) => {
       const point = providerSeries.byDate[date];
-      if (!point) return { date, min: null, max: null, mean: null, count: 0 };
+      if (!point) return { date, min: null, max: null, mean: null, median: null, count: 0 };
       return {
         date,
         min: point.min,
         max: point.max,
         mean: point.mean,
+        median: point.median == null ? null : point.median,
         count: point.count || 0,
       };
     });
@@ -357,12 +362,14 @@
     if (!point || point.min == null || point.max == null) {
       rows.push(
         { label: 'Min', value: emDash },
+        { label: 'Median', value: emDash },
         { label: 'Mean', value: emDash },
         { label: 'Max', value: emDash },
       );
     } else {
       rows.push(
         { label: 'Min', value: fmtHoverRate(point.min) },
+        { label: 'Median', value: point.median == null ? emDash : fmtHoverRate(point.median) },
         { label: 'Mean', value: fmtHoverRate(point.mean) },
         { label: 'Max', value: fmtHoverRate(point.max) },
       );
