@@ -340,6 +340,21 @@ _RESTRICTED_COHORT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# CDR eligibility can state who is excluded as well as who qualifies. A cohort token
+# after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
+# flip an otherwise standard product to non_standard.
+_COHORT_EXCLUSION_PREFIX_RE = re.compile(
+    r"(?:"
+    r"not\s+(?:available|eligible|open|offered|applicable|accessible)(?:\s+to|\s+for)?\b"
+    r"|not\s+for\s+"
+    r"|unavailable\s+to\b"
+    r"|excluding\b"
+    r"|except\s+(?:for\s+)?"
+    r"|does\s+not\s+(?:apply|extend)(?:\s+to|\s+for)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _eligibility_text(eligibility: Any) -> str:
     """Join CDR eligibility free-text (additionalInfo/additionalValue) for scanning."""
@@ -355,6 +370,16 @@ def _eligibility_text(eligibility: Any) -> str:
             if val is not None and val != "":
                 parts.append(str(val))
     return " ".join(parts)
+
+
+def _eligibility_restricted_cohort(text: str) -> bool:
+    """True when eligibility text requires a restricted cohort (not merely excludes one)."""
+    for match in _RESTRICTED_COHORT_RE.finditer(text):
+        prefix = text[max(0, match.start() - 100):match.start()]
+        if _COHORT_EXCLUSION_PREFIX_RE.search(prefix):
+            continue
+        return True
+    return False
 
 
 def _normalize_category_token(value: Any) -> str:
@@ -397,7 +422,7 @@ def classify_account_standardness(
         return ACCOUNT_CLASS_NON_STANDARD
     if eligibility:
         elig_text = _eligibility_text(eligibility)
-        if elig_text and _RESTRICTED_COHORT_RE.search(elig_text):
+        if elig_text and _eligibility_restricted_cohort(elig_text):
             return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD

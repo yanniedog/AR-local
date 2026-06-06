@@ -95,6 +95,13 @@ ELIGIBILITY_CASES = [
      _elig("Members only"), ACCOUNT_CLASS_STANDARD, "mutual membership is standard, not a restriction"),
     ("Police Bank Goal Saver", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings",
      _elig("Membership required"), ACCOUNT_CLASS_STANDARD, "credit-union brand + membership = standard"),
+    # Exclusion wording must not flip standard products (Codex P1).
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("This product is not available to SMSF borrowers"),
+     ACCOUNT_CLASS_STANDARD, "SMSF mentioned in exclusion text, not a requirement"),
+    ("Everyday Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Not eligible for self-managed super funds or trusts"),
+     ACCOUNT_CLASS_STANDARD, "SMSF/self-managed-super exclusion, not restriction"),
 ]
 
 
