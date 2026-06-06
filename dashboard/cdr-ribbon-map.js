@@ -230,20 +230,23 @@
         if (min != null || max != null) source = 'product_constraints';
       }
     }
-    var tier = normalizeLvrTier(contextText, min, max);
-    if (tier !== 'lvr_unspecified') {
-      if (source === 'none') source = 'context_text';
-      return { tier: tier, source: source };
+    // Structured bounds are authoritative.
+    if (min != null || max != null) {
+      var tier = normalizeLvrTier(contextText, min, max);
+      if (tier !== 'lvr_unspecified') return { tier: tier, source: source };
     }
     if (textHasLvrSignal(contextText)) {
-      var ctx = parseLvrBoundsFromTextBlob(contextText);
-      if (ctx.min != null || ctx.max != null) {
-        var tier2 = normalizeLvrTier('', ctx.min, ctx.max);
-        if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
-      }
-      // Bare-number LVR in the name (e.g. "<60 LVR", ">90 LVR") — mirror of Python.
+      // Operator-aware name parser FIRST so lower-bound forms ("over 80 LVR",
+      // ">90 LVR") are not mis-read as upper bounds (mirror of Python, Codex PR #146).
       var named = namedLvrTier(contextText);
       if (named) return { tier: named, source: 'context_text' };
+      var tier2 = normalizeLvrTier(contextText, null, null);
+      if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
+      var ctx = parseLvrBoundsFromTextBlob(contextText);
+      if (ctx.min != null || ctx.max != null) {
+        var tier3 = normalizeLvrTier('', ctx.min, ctx.max);
+        if (tier3 !== 'lvr_unspecified') return { tier: tier3, source: 'context_text' };
+      }
     }
     if (productConstraints && productConstraints.length) {
       return { tier: 'lvr_unspecified', source: 'product_unparsed' };

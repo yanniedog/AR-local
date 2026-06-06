@@ -361,23 +361,28 @@ def resolve_lvr_tier(
             if l_min is not None or l_max is not None:
                 source = "product_constraints"
 
-    tier = normalize_lvr_tier(context_text, l_min, l_max)
-    if tier != "lvr_unspecified":
-        if source == "none":
-            source = "context_text"
-        return tier, source
+    # Structured bounds (from the rate item or product constraints) are
+    # authoritative — resolve directly from them.
+    if l_min is not None or l_max is not None:
+        tier = normalize_lvr_tier(context_text, l_min, l_max)
+        if tier != "lvr_unspecified":
+            return tier, source
 
     if context_text.strip() and _text_has_lvr_signal(context_text):
+        # Operator-aware name parser FIRST: it handles lower-bound forms
+        # ("over 80 LVR", ">90 LVR", "from 80 LVR") that the %-bounds heuristics
+        # below would otherwise mis-read as an upper bound (Codex PR #146).
+        named = named_lvr_tier(context_text)
+        if named:
+            return named, "context_text"
+        tier = normalize_lvr_tier(context_text, None, None)
+        if tier != "lvr_unspecified":
+            return tier, "context_text"
         ctx_min, ctx_max = parse_lvr_bounds_from_text_blob(context_text)
         if ctx_min is not None or ctx_max is not None:
             tier2 = normalize_lvr_tier("", ctx_min, ctx_max)
             if tier2 != "lvr_unspecified":
                 return tier2, "context_text"
-        # Bare-number LVR encoded in the product/rate name (e.g. "<60 LVR", ">90 LVR")
-        # that the %-anchored parsers above miss.
-        named = named_lvr_tier(context_text)
-        if named:
-            return named, "context_text"
 
     if product_constraints:
         return "lvr_unspecified", "product_unparsed"

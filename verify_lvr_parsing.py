@@ -52,12 +52,18 @@ def main() -> int:
     if tier2 != "lvr_unspecified":
         failures.append(f"LVR-free product should stay unspecified, got {tier2!r}")
 
+    # Lower-bound name with a % must NOT be mis-read as an upper bound by the
+    # %-bounds heuristics — named_lvr_tier runs first (Codex PR #146).
+    tier3, _ = resolve_lvr_tier("Investment over 80% LVR", {}, [])
+    if tier3 != "lvr_80-85%":
+        failures.append(f"lower-bound 'over 80% LVR': got {tier3!r}, expected lvr_80-85%")
+
     if failures:
         print("FAIL verify_lvr_parsing:")
         for line in failures:
             print("  -", line)
         return 1
-    print(f"PASS verify_lvr_parsing: {len(NAMED_CASES)} named cases + 2 e2e")
+    print(f"PASS verify_lvr_parsing: {len(NAMED_CASES)} named cases + 3 e2e")
     return 0
 
 
