@@ -132,8 +132,8 @@
   // The /api/banks/ribbon aggregate now depends on the non-standard toggle, so the
   // bootstrap cache must be keyed by it too — otherwise switching the toggle and
   // re-entering a section would replay a stale (wrongly-filtered) ribbon.
-  function ribbonCacheKey(section) {
-    return state.includeNonStandard ? `${section}|ns` : section;
+  function ribbonCacheKey(section, includeNonStandard = state.includeNonStandard) {
+    return includeNonStandard ? `${section}|ns` : section;
   }
 
   // Section-scoped rows WITHOUT the account-class filter. Used to seed the
@@ -868,8 +868,11 @@
       const sectionName = state.section;
       const encoded = encodeURIComponent(sectionName);
       const dateEncoded = encodeURIComponent(latest.run_date);
+      // Capture the toggle BEFORE awaiting so the response is cached under the key
+      // matching the request, even if the user toggles mid-flight (Codex PR #149).
+      const ribIncludeNs = state.includeNonStandard;
       const [ribbon, sectionPayload, historyPayload] = await Promise.all([
-        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}${state.includeNonStandard ? '&include_non_standard=1' : ''}`),
+        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}${ribIncludeNs ? '&include_non_standard=1' : ''}`),
         getJson(`/api/banks/section?date=${dateEncoded}&section=${encoded}`),
         getJson(`/api/banks/history/section?date=${dateEncoded}&section=${encoded}`),
       ]);
@@ -878,7 +881,7 @@
       // Cache the fetched section data for ``sectionName`` regardless of
       // whether the user has navigated away (Codex P2 PR #131) -- if they
       // navigate back, those rows are fresh.
-      state.bankRibbons[ribbonCacheKey(sectionName)] = ribbon;
+      state.bankRibbons[ribbonCacheKey(sectionName, ribIncludeNs)] = ribbon;
       state.bankSections[sectionName] = {
         ...sectionPayload,
         rates: Array.isArray(sectionPayload.rates) ? normalizeRows(sectionPayload.rates) : [],
@@ -1206,9 +1209,11 @@
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
-    if (!state.bankRibbons[ribbonCacheKey(section)]) {
+    const ribIncludeNs = state.includeNonStandard;
+    const ribKey = ribbonCacheKey(section, ribIncludeNs);
+    if (!state.bankRibbons[ribKey]) {
       const encodedSection = encodeURIComponent(section);
-      state.bankRibbons[ribbonCacheKey(section)] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}${state.includeNonStandard ? '&include_non_standard=1' : ''}`);
+      state.bankRibbons[ribKey] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}${ribIncludeNs ? '&include_non_standard=1' : ''}`);
     }
     if (token !== loadSectionToken) return;
     renderRibbonBootstrap();
