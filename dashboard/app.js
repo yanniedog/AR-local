@@ -862,7 +862,7 @@
       const encoded = encodeURIComponent(sectionName);
       const dateEncoded = encodeURIComponent(latest.run_date);
       const [ribbon, sectionPayload, historyPayload] = await Promise.all([
-        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}${state.includeNonStandard ? '&include_non_standard=1' : ''}`),
         getJson(`/api/banks/section?date=${dateEncoded}&section=${encoded}`),
         getJson(`/api/banks/history/section?date=${dateEncoded}&section=${encoded}`),
       ]);
@@ -1201,7 +1201,7 @@
     clear($('hierarchy'));
     if (!state.bankRibbons[section]) {
       const encodedSection = encodeURIComponent(section);
-      state.bankRibbons[section] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}`);
+      state.bankRibbons[section] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}${state.includeNonStandard ? '&include_non_standard=1' : ''}`);
     }
     if (token !== loadSectionToken) return;
     renderRibbonBootstrap();
