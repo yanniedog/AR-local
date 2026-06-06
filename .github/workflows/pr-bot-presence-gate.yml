@@ -23,8 +23,14 @@ permissions:
   issues: read
 
 concurrency:
+  # cancel-in-progress MUST stay false for a required check. Cancelling an
+  # in-flight run leaves a "cancelled" check-run that branch protection reads as
+  # the latest required status, blocking the PR even when a later run succeeds
+  # (the "BLOCKED but all-green" trap that forced empty re-trigger commits on
+  # every PR). With false, the newest event still runs to completion, so the
+  # latest required check-run is always success/failure — never a stale cancel.
   group: bot-presence-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bot-presence-gate:

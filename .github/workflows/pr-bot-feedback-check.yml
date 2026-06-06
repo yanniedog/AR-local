@@ -1,9 +1,25 @@
 name: pr-bot-feedback-check
 
-# Thread closure gate on PR lifecycle only — not on every review/comment (GraphQL heavy).
+# Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
+# in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
+# — no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
+# per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
+# Self-heal triggers are limited to events whose check-run attaches to the PR
+# HEAD: pull_request (push) and pull_request_review[_comment] (these run with
+# GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch — those run
+# against the default branch, so their check records against main, not the PR
+# head, and would leave a failed required check stale (Codex P1 PR #148).
+# NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
+# (no reply, no push) won't auto-re-run a previously-failed gate. After resolving,
+# reply inline on a review thread, push, or re-run THIS run on the PR head with
+# `gh run rerun <run-id>` (a top-level PR comment will NOT refresh the PR-head check).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -16,12 +32,20 @@ permissions:
   pull-requests: read
 
 concurrency:
+  # MUST be false for a required check — cancelling an in-flight run leaves a
+  # "cancelled" check-run that branch protection reads as the latest required
+  # status, blocking the PR even when a later run succeeds (the "BLOCKED but
+  # all-green" trap). With false the newest event runs to completion, so the
+  # latest required check-run is always success/failure, never a stale cancel.
   group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bot-feedback-gate:
-    if: github.event.pull_request != null || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event.pull_request != null
+      || github.event.review != null
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

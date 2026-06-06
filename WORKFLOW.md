@@ -97,7 +97,9 @@ After `wait-for-bots` exits 0, and before replying to any thread:
 
 ### 6. Thread closure
 
-Reply in-thread on GitHub for every substantive thread: `implemented in <sha>` / `deferred — <reason>` / `declined — <reason>`. If inline replies unavailable: `## Feedback responses` section in PR body. Do NOT merge with unanswered threads.
+**Reply to explain the disposition, then RESOLVE the thread on GitHub.** Reply `implemented in <sha>` / `deferred — <reason>` / `declined — <reason>` / `by design`, then click **Resolve conversation**. Resolution is what satisfies the gate **and** branch protection: this repo enables `required_conversation_resolution`, so an unresolved thread blocks merge even with a disposition reply — never leave a thread replied-but-unresolved expecting the gate to pass. Resolution alone is sufficient for the gate (you do **not** also need a magic-word reply). If inline replies are unavailable, record the dispositions in a `## Feedback responses` section in the PR body and still resolve the threads. Do NOT merge with unanswered/unresolved threads.
+
+**Self-healing — do NOT manufacture empty commits.** `bot-feedback-gate` re-runs automatically on review/review-comment activity, so an in-thread reply re-evaluates it hands-free. The gates use `cancel-in-progress: false`, so the latest required check-run is never a stale "cancelled" — if a PR shows `BLOCKED` while every check is green and there are 0 unresolved threads, **wait a few seconds / let the next event re-fire**, or re-run the gate's run on the PR head with `gh run rerun <run-id>` — never push an empty "re-trigger" commit. (`gh pr merge --auto` only *enables* auto-merge; it does not re-run a failed/stale gate, so it won't clear a stuck check.) **Caveat:** GitHub emits no webhook when you *resolve* a thread, so a resolve-only round (no reply, no push) won't auto-re-run a previously-failed gate. After resolving, do any one of: post an **inline reply on a review thread** (a `pull_request_review_comment`, which runs against the PR head — a top-level PR comment does **not**, it records against `main`), push, or **re-run the gate's existing run on the PR head** — `gh run rerun <run-id>` (find it with `gh run list --workflow=pr-bot-feedback-check.yml`). Do **not** use a bare `gh workflow run … -f pr_number=<n>`: like `issue_comment`, it runs against the default branch, so its check attaches to main's HEAD, not the PR head, and the PR stays blocked.
 
 **Substantive thread:** an inline or review comment that proposes a code/doc change, reports a likely bug, or asks a blocking question. Exclude auto-generated summaries, reviewer guides, and low-signal one-liners (under ~40 characters, emoji-only, or “Useful? React with …” nudges). When in doubt, reply and resolve rather than skip.
 
@@ -117,12 +119,16 @@ Do **not** `gh pr merge --squash` while the gate fails. If a PR merged early, ru
 
 ### 7. Merge
 
-`gh pr merge --squash` — only after steps 5–6 **and**:
+Prefer **`gh pr merge --auto --squash`** once steps 5–6 are done and threads are closed: auto-merge lands the PR the moment required checks pass, and for stacked/sequential PRs it also handles the strict-mode "branch out of date" update+re-check without a manual `gh pr update-branch` + poll loop. Plain `gh pr merge --squash` is fine for a single ready PR.
+
+Merge only after steps 5–6 **and**:
 
 - GitHub required checks **`bot-presence-gate`** and **`bot-feedback-gate`** are green (when branch protection is enabled), **and**
 - `npm run pr:bot-feedback-check -- --pr <n>` exit **0** locally (sanity check).
 
-Do NOT enable auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies.
+**Check status in ONE call — don't hand-poll `gh`.** `npm run pr:gates:check -- --pr <n>` (optionally `--watch`) returns the consolidated verdict (CI, bot wait, thread closure, `bot-*` checks) in a single command. Avoid burning tokens on repeated ad-hoc `gh pr view` / `gh api` polling.
+
+Only withhold auto-merge before thread closure if your repo uses CI-only auto-merge that bypasses bot replies — here the required `bot-feedback-gate` enforces closure, so `--auto` is safe.
 
 ### 8. Local server / assets confirmed
 
