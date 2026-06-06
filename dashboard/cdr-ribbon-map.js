@@ -115,6 +115,51 @@
     return 'lvr_90-95%';
   }
 
+  // Mirror of cdr_ribbon_normalize.named_lvr_tier: LVR/LTV stated as a bare
+  // number with plain or natural-language operators and no % sign — e.g.
+  // "<60 LVR", ">90 LVR", "80 LVR", "LVR less than 70". Keep in sync with Python.
+  var LVR_SIGNAL_RE = /\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b/i;
+  var LVR_NAME_RANGE = /(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)/i;
+  var LVR_OP = '<=|>=|<|>|less[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|greater[\\s_-]*than[\\s_-]*or[\\s_-]*equal[\\s_-]*to|less[\\s_-]*than|greater[\\s_-]*than|more[\\s_-]*than|no[\\s_-]*more[\\s_-]*than|at[\\s_-]*least|at[\\s_-]*most|under|below|over|above|from|max(?:imum)?|min(?:imum)?|up[\\s_-]*to';
+  var LVR_NAME_OP = new RegExp('(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)\\s*%?\\s*(?:lvr|ltv)|(?:lvr|ltv)\\s*:?\\s*(?:(' + LVR_OP + ')\\s*)?(\\d{1,3}(?:\\.\\d+)?)', 'i');
+  var LVR_TIER_ORDER = ['lvr_=60%', 'lvr_60-70%', 'lvr_70-80%', 'lvr_80-85%', 'lvr_85-90%', 'lvr_90-95%'];
+  var LVR_LOWER_BOUND_OPS = {
+    '>': 1, '>=': 1, 'over': 1, 'above': 1, 'greater than': 1,
+    'greater than or equal to': 1, 'more than': 1, 'at least': 1, 'from': 1,
+    'min': 1, 'minimum': 1,
+  };
+
+  function bumpTierUp(tier) {
+    var i = LVR_TIER_ORDER.indexOf(tier);
+    if (i < 0) return tier;
+    return LVR_TIER_ORDER[Math.min(i + 1, LVR_TIER_ORDER.length - 1)];
+  }
+
+  function isLowerBoundOp(op) {
+    var o = String(op || '').trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    return !!LVR_LOWER_BOUND_OPS[o];
+  }
+
+  function namedLvrTier(text) {
+    var t = lower(text);
+    if (!t || !LVR_SIGNAL_RE.test(t)) return '';
+    var r = t.match(LVR_NAME_RANGE);
+    if (r) {
+      var hi = r[2] != null ? r[2] : r[4];
+      if (hi != null) return tierForBoundary(Number(hi));
+    }
+    var m = t.match(LVR_NAME_OP);
+    if (m) {
+      var op = m[1] != null ? m[1] : m[3];
+      var num = m[2] != null ? m[2] : m[4];
+      if (num != null) {
+        var base = tierForBoundary(Number(num));
+        return isLowerBoundOp(op) ? bumpTierUp(base) : base;
+      }
+    }
+    return '';
+  }
+
   function normalizeLvrTier(text, minLvr, maxLvr) {
     var hiFinite = Number.isFinite(Number(maxLvr));
     var loFinite = Number.isFinite(Number(minLvr));
@@ -185,16 +230,22 @@
         if (min != null || max != null) source = 'product_constraints';
       }
     }
-    var tier = normalizeLvrTier(contextText, min, max);
-    if (tier !== 'lvr_unspecified') {
-      if (source === 'none') source = 'context_text';
-      return { tier: tier, source: source };
+    // Structured bounds are authoritative.
+    if (min != null || max != null) {
+      var tier = normalizeLvrTier(contextText, min, max);
+      if (tier !== 'lvr_unspecified') return { tier: tier, source: source };
     }
     if (textHasLvrSignal(contextText)) {
+      // Operator-aware name parser FIRST so lower-bound forms ("over 80 LVR",
+      // ">90 LVR") are not mis-read as upper bounds (mirror of Python, Codex PR #146).
+      var named = namedLvrTier(contextText);
+      if (named) return { tier: named, source: 'context_text' };
+      var tier2 = normalizeLvrTier(contextText, null, null);
+      if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
       var ctx = parseLvrBoundsFromTextBlob(contextText);
       if (ctx.min != null || ctx.max != null) {
-        var tier2 = normalizeLvrTier('', ctx.min, ctx.max);
-        if (tier2 !== 'lvr_unspecified') return { tier: tier2, source: 'context_text' };
+        var tier3 = normalizeLvrTier('', ctx.min, ctx.max);
+        if (tier3 !== 'lvr_unspecified') return { tier: tier3, source: 'context_text' };
       }
     }
     if (productConstraints && productConstraints.length) {

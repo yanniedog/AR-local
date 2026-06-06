@@ -289,11 +289,40 @@ _NON_STANDARD_NAME_TERMS: tuple[str, ...] = (
     r"\bstatutory\b", r"regulated[\s_-]*trust", r"\bescrow\b", r"\bsettlement\b",
     # Club / association / charity (organisation accounts)
     r"\bclub\b", r"\bassociation\b", r"\bcharit", r"not[\s_-]*for[\s_-]*profit",
+    # At-call savings — depositors can withdraw on demand; treated as non-standard.
+    # (Only ever appears in deposit product names, so it is safe to keep universal.)
+    r"at[\s_-]*call",
 )
 
 _NON_STANDARD_NAME_RE = re.compile(
     r"(?:" + r"|".join(_NON_STANDARD_NAME_TERMS) + r")",
     re.IGNORECASE,
+)
+
+# Lending-only markers — these are applied ONLY to home-lending products
+# (dataset "Mortgage" or a HOME_LOAN category). They flag products that banks
+# file under RESIDENTIAL_MORTGAGES but are not standard owner-occupier/investor
+# home loans: line-of-credit / equity release (e.g. Bank of Sydney "Home Equity
+# Maximiser"), bridging finance, green / clean-energy purchase loans (e.g. RACQ
+# "Green Home Loan"), and construction / land loans. Scoping them to lending
+# avoids false hits on deposit products such as a "Green Saver" (Codex PR #146).
+_NON_STANDARD_LENDING_TERMS: tuple[str, ...] = (
+    r"home[\s_-]*equity", r"equity[\s_-]*(?:maximiser|maximizer|release|access|line|loan)",
+    r"line[\s_-]*of[\s_-]*credit", r"\bheloc\b",
+    r"\bbridging\b", r"bridge[\s_-]*loan",
+    r"\bgreen\b", r"\bsolar\b", r"clean[\s_-]*energy",
+    r"\bconstruction\b", r"\bland[\s_-]*loan", r"vacant[\s_-]*land",
+)
+
+_NON_STANDARD_LENDING_RE = re.compile(
+    r"(?:" + r"|".join(_NON_STANDARD_LENDING_TERMS) + r")",
+    re.IGNORECASE,
+)
+
+# Categories that resolve to a home loan — used to scope the lending-only markers
+# when the caller does not pass dataset="Mortgage".
+_HOME_LOAN_CATEGORIES: frozenset[str] = frozenset(
+    key for key, pc in _CATEGORY_TO_PC.items() if pc == "HOME_LOAN"
 )
 
 
@@ -315,13 +344,17 @@ def classify_account_standardness(
 ) -> str:
     """Return 'standard' or 'non_standard' for a product/account.
 
-    ``dataset`` is accepted for forward-compatibility (e.g. section-specific
-    tuning) but is not required by the current rules.
+    ``dataset`` scopes the lending-only markers: they are applied only to
+    home-lending products (dataset "Mortgage" or a HOME_LOAN category), so a
+    deposit product like "Green Saver" is not caught by the loan markers.
     """
     name = str(product_name or "")
+    token = _normalize_category_token(category)
     if name and _NON_STANDARD_NAME_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
-    token = _normalize_category_token(category)
+    is_home_lending = dataset == "Mortgage" or token in _HOME_LOAN_CATEGORIES
+    if is_home_lending and name and _NON_STANDARD_LENDING_RE.search(name):
+        return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
     return ACCOUNT_CLASS_STANDARD
