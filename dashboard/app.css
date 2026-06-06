@@ -121,8 +121,7 @@ body.ar-public.ar-local-cdr .local-bank-badge .bank-badge-logo-wrap {
 }
 
 /* Beat foundation.css near-white tile if cascade/order regresses. */
-html[data-theme="dark"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap,
-html[data-theme="light"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap {
+:root[data-theme] body.ar-public.ar-local-cdr .bank-badge-logo-wrap {
   background-color: transparent !important;
   box-shadow: none !important;
 }
@@ -316,10 +315,8 @@ body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap
   box-shadow: none;
 }
 
-html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
-html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap,
-html[data-theme="light"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
-html[data-theme="light"] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
+:root[data-theme] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge,
+:root[data-theme] body.ar-public.ar-local-cdr button.local-provider-logo-btn .bank-badge-logo-wrap {
   background-color: transparent !important;
   box-shadow: none !important;
 }
@@ -381,13 +378,11 @@ html[data-theme="dark"] body.ar-public.ar-local-cdr button.local-provider-logo-b
 }
 
 /* Loading: no tinted wrap or fallback chip while the image is pending. */
-html[data-theme="dark"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading),
-html[data-theme="light"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) {
+:root[data-theme] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) {
   background-color: transparent !important;
 }
 
-html[data-theme="dark"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) .bank-badge-fallback,
-html[data-theme="light"] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) .bank-badge-fallback {
+:root[data-theme] body.ar-public.ar-local-cdr .bank-badge-logo-wrap:has(.bank-badge-logo.is-logo-loading) .bank-badge-fallback {
   opacity: 0;
   visibility: hidden;
 }
