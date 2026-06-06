@@ -359,15 +359,18 @@ _COHORT_EXCLUSION_PREFIX_RE = re.compile(
 # Postfix exclusion within the same clause as the cohort token.
 _COHORT_EXCLUSION_SUFFIX_RE = re.compile(
     r"(?:"
-    r"\s+(?:are\s+)?not\s+(?:eligible|available|open|offered|permitted|allowed|accepted)\b"
-    r"|\s+(?:are\s+)?excluded\b"
+    r"\s+(?:is\s+|are\s+)?not\s+(?:eligible|available|open|offered|permitted|allowed|accepted)\b"
+    r"|\s+(?:is\s+|are\s+)?excluded\b"
     r"|\s+must\s+not\s+be\b"
     r"|\s+(?:is|are)\s+unavailable\b"
     r")",
     re.IGNORECASE,
 )
 
-_CLAUSE_BOUNDARY_RE = re.compile(r"[.;!?]\s+")
+_CLAUSE_BOUNDARY_RE = re.compile(
+    r"(?<!e\.g)(?<!i\.e)(?<!p\.a)(?<!etc)[.;!?]\s+|\s*[\r\n]\s*",
+    re.IGNORECASE,
+)
 
 
 def _clause_bounds(text: str, match_start: int, match_end: int) -> tuple[int, int]:
@@ -418,7 +421,8 @@ def _eligibility_restricted_cohort(text: str) -> bool:
         suffix = clause[rel_end:]
         if _COHORT_EXCLUSION_PREFIX_RE.search(prefix):
             continue
-        if _COHORT_EXCLUSION_SUFFIX_RE.search(suffix):
+        m_suffix = _COHORT_EXCLUSION_SUFFIX_RE.search(suffix)
+        if m_suffix and m_suffix.start() < 30:
             continue
         return True
     return False
