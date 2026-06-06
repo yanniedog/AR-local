@@ -32,7 +32,7 @@
     const localBrand = window.LocalCdrBrand;
     if (localBrand && localBrand.providerMeta) {
       const meta = localBrand.providerMeta(name);
-      if (meta && meta.short && meta.short !== '-') return meta.short;
+      if (meta && meta.short && meta.short !== '-' && meta.short !== name) return meta.short;
     }
     const brand = window.AR && window.AR.bankBrand;
     if (brand && brand.shortLabel) {
