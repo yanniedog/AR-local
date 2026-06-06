@@ -129,6 +129,13 @@
     return String(row.account_class || '') !== ACCOUNT_CLASS_NON_STANDARD;
   }
 
+  // The /api/banks/ribbon aggregate now depends on the non-standard toggle, so the
+  // bootstrap cache must be keyed by it too — otherwise switching the toggle and
+  // re-entering a section would replay a stale (wrongly-filtered) ribbon.
+  function ribbonCacheKey(section) {
+    return state.includeNonStandard ? `${section}|ns` : section;
+  }
+
   // Section-scoped rows WITHOUT the account-class filter. Used to seed the
   // current-only history so the seed always carries every product; visibility is
   // applied when the history index is (re)built via historyRowMatchesLiveTable,
@@ -871,7 +878,7 @@
       // Cache the fetched section data for ``sectionName`` regardless of
       // whether the user has navigated away (Codex P2 PR #131) -- if they
       // navigate back, those rows are fresh.
-      state.bankRibbons[sectionName] = ribbon;
+      state.bankRibbons[ribbonCacheKey(sectionName)] = ribbon;
       state.bankSections[sectionName] = {
         ...sectionPayload,
         rates: Array.isArray(sectionPayload.rates) ? normalizeRows(sectionPayload.rates) : [],
@@ -1124,7 +1131,7 @@
   }
 
   function renderRibbonBootstrap() {
-    const ribbon = state.bankRibbons[state.section];
+    const ribbon = state.bankRibbons[ribbonCacheKey(state.section)];
     if (!ribbon) return;
     const counts = ribbon.counts || {};
     const items = ribbonChartItems(ribbon);
@@ -1199,9 +1206,9 @@
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
-    if (!state.bankRibbons[section]) {
+    if (!state.bankRibbons[ribbonCacheKey(section)]) {
       const encodedSection = encodeURIComponent(section);
-      state.bankRibbons[section] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}${state.includeNonStandard ? '&include_non_standard=1' : ''}`);
+      state.bankRibbons[ribbonCacheKey(section)] = await getJson(`/api/banks/ribbon?date=${state.manifest.run_date}&section=${encodedSection}${state.includeNonStandard ? '&include_non_standard=1' : ''}`);
     }
     if (token !== loadSectionToken) return;
     renderRibbonBootstrap();

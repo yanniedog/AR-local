@@ -778,7 +778,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             ],
         }
 
-    def bank_ribbon_payload(run_date: str, section: str, include_non_standard: bool = False) -> bytes:
+    def bank_ribbon_payload(run_date: str, section: str, include_non_standard: bool = False) -> Tuple[bytes, bytes | None]:
         db_path = bank_db_for_date(run_date)
         with connect_readonly(db_path) as con:
             con.row_factory = sqlite3.Row
@@ -1098,7 +1098,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             if path == "/api/banks/ribbon":
                 date = parse_run_date_param(query.get("date", [""])[0])
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                include_ns = (query.get("include_non_standard", [""])[0] or "").strip() in ("1", "true", "yes")
+                include_ns = ((query.get("include_non_standard") or [""])[0] or "").strip() in ("1", "true", "yes")
                 body, gz = bank_ribbon_payload(date, section, include_ns)
                 return body, "application/json; charset=utf-8", gz
             if path == "/api/term-deposit-rates/latest":
