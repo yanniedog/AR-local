@@ -6,15 +6,19 @@ name: pr-bot-feedback-check
 # per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
 # NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
 # (no reply, no push) won't auto-re-run a previously-failed gate. After resolving,
-# post a reply/comment, push, or re-run THIS run on the PR head: `gh run rerun
-# <run-id>`. A bare `gh workflow run … -f pr_number` dispatches on the default
-# branch (omitting --ref), so its check attaches to main's HEAD, not the PR head.
+# post a reply or any PR comment, push, or re-run THIS run on the PR head:
+# `gh run rerun <run-id>`. A bare `gh workflow run … -f pr_number` dispatches on
+# the default branch (omitting --ref), so its check attaches to main's HEAD, not
+# the PR head. Triggers cover review, inline review-comment, AND top-level
+# issue_comment so any of those documented actions re-evaluate the gate.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
+    types: [created]
+  issue_comment:
     types: [created]
   workflow_dispatch:
     inputs:
@@ -26,6 +30,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 concurrency:
   # MUST be false for a required check — cancelling an in-flight run leaves a
@@ -33,12 +38,17 @@ concurrency:
   # status, blocking the PR even when a later run succeeds (the "BLOCKED but
   # all-green" trap). With false the newest event runs to completion, so the
   # latest required check-run is always success/failure, never a stale cancel.
-  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: bot-feedback-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   bot-feedback-gate:
-    if: github.event.pull_request != null || github.event_name == 'workflow_dispatch'
+    # issue_comment fires for both issues and PRs — gate on PR-only.
+    if: >-
+      github.event.pull_request != null
+      || github.event.review != null
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request != null)
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -53,6 +63,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR="${{ inputs.pr_number }}"
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR="${{ github.event.issue.number }}"
           else
             PR="${{ github.event.pull_request.number }}"
           fi
