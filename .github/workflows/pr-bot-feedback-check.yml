@@ -6,7 +6,9 @@ name: pr-bot-feedback-check
 # per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
 # NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
 # (no reply, no push) won't auto-re-run a previously-failed gate. After resolving,
-# post a reply/comment, push, or re-dispatch via `gh workflow run` / the Actions UI.
+# post a reply/comment, push, or re-run THIS run on the PR head: `gh run rerun
+# <run-id>`. A bare `gh workflow run … -f pr_number` dispatches on the default
+# branch (omitting --ref), so its check attaches to main's HEAD, not the PR head.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
