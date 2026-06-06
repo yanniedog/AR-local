@@ -102,6 +102,34 @@ ELIGIBILITY_CASES = [
     ("Everyday Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
      _elig("Not eligible for self-managed super funds or trusts"),
      ACCOUNT_CLASS_STANDARD, "SMSF/self-managed-super exclusion, not restriction"),
+    # Codex P2: clause-scoped prefix — unrelated exclusion must not suppress later restriction.
+    ("Defence Force Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Not eligible for applicants under 18. Available to current Defence Force members"),
+     ACCOUNT_CLASS_NON_STANDARD, "defence restriction in second clause, not negated by first"),
+    ("Defence Force Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Not eligible for applicants under 18\nAvailable to current Defence Force members"),
+     ACCOUNT_CLASS_NON_STANDARD, "defence restriction in second clause separated by newline, not negated by first"),
+    # Codex P2: per-entry scan — exclusion in one eligibility row must not suppress another row.
+    ("Defence Force Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     [{"eligibilityType": "OTHER", "additionalInfo": "Not eligible for applicants under 18"},
+      {"eligibilityType": "OTHER", "additionalInfo": "Available to current Defence Force members"}],
+     ACCOUNT_CLASS_NON_STANDARD, "defence restriction in separate eligibility entry"),
+    # Codex P2: postfix exclusion after cohort token.
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("SMSF borrowers are not eligible"),
+     ACCOUNT_CLASS_STANDARD, "postfix SMSF exclusion"),
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("SMSF is not eligible"),
+     ACCOUNT_CLASS_STANDARD, "postfix SMSF singular exclusion"),
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("SMSF borrowers are excluded"),
+     ACCOUNT_CLASS_STANDARD, "postfix SMSF excluded wording"),
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("SMSF is excluded"),
+     ACCOUNT_CLASS_STANDARD, "postfix SMSF singular excluded wording"),
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Applicants must not be veterans"),
+     ACCOUNT_CLASS_STANDARD, "postfix veterans exclusion"),
 ]
 
 
