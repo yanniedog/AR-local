@@ -325,6 +325,62 @@ _HOME_LOAN_CATEGORIES: frozenset[str] = frozenset(
     key for key, pc in _CATEGORY_TO_PC.items() if pc == "HOME_LOAN"
 )
 
+# Eligibility-restricted cohorts → non-standard, matched on the genuine RESTRICTION
+# (in the product name OR the CDR eligibility free-text), NOT the bank name. This
+# is deliberate: "Defence Bank", "Australian Military Bank", "Police Bank",
+# "Teachers Mutual" are ordinary ADIs whose standard products must stay standard,
+# so we never flag on a brand — only on a real restriction like "served in the
+# Defence Force", a veterans'-affairs requirement, or an SMSF/self-managed-super
+# trust. High precision (validated against the live feed: veterans / DHOAS / SMSF
+# specials only, no credit-union "members only" or company-borrower false hits).
+_RESTRICTED_COHORT_RE = re.compile(
+    r"\bveterans?\b|served\s+in\s+the\s+defence|defence[\s_-]*force"
+    r"|armed[\s_-]*forces|military[\s_-]*service|\bdhoas\b"
+    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)",
+    re.IGNORECASE,
+)
+
+# CDR eligibility can state who is excluded as well as who qualifies. A cohort token
+# after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
+# flip an otherwise standard product to non_standard.
+_COHORT_EXCLUSION_PREFIX_RE = re.compile(
+    r"(?:"
+    r"not\s+(?:available|eligible|open|offered|applicable|accessible)(?:\s+to|\s+for)?\b"
+    r"|not\s+for\s+"
+    r"|unavailable\s+to\b"
+    r"|excluding\b"
+    r"|except\s+(?:for\s+)?"
+    r"|does\s+not\s+(?:apply|extend)(?:\s+to|\s+for)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _eligibility_text(eligibility: Any) -> str:
+    """Join CDR eligibility free-text (additionalInfo/additionalValue) for scanning."""
+    if not isinstance(eligibility, (list, tuple)):
+        return ""
+    parts: list[str] = []
+    for item in eligibility:
+        if isinstance(item, Mapping):
+            info = item.get("additionalInfo")
+            if info is not None and info != "":
+                parts.append(str(info))
+            val = item.get("additionalValue")
+            if val is not None and val != "":
+                parts.append(str(val))
+    return " ".join(parts)
+
+
+def _eligibility_restricted_cohort(text: str) -> bool:
+    """True when eligibility text requires a restricted cohort (not merely excludes one)."""
+    for match in _RESTRICTED_COHORT_RE.finditer(text):
+        prefix = text[max(0, match.start() - 100):match.start()]
+        if _COHORT_EXCLUSION_PREFIX_RE.search(prefix):
+            continue
+        return True
+    return False
+
 
 def _normalize_category_token(value: Any) -> str:
     """Upper-snake category token (e.g. 'Trans and Savings' -> 'TRANS_AND_SAVINGS').
@@ -341,12 +397,17 @@ def classify_account_standardness(
     product_name: Any,
     category: Any = "",
     dataset: Optional[str] = None,
+    eligibility: Any = None,
 ) -> str:
     """Return 'standard' or 'non_standard' for a product/account.
 
     ``dataset`` scopes the lending-only markers: they are applied only to
     home-lending products (dataset "Mortgage" or a HOME_LOAN category), so a
     deposit product like "Green Saver" is not caught by the loan markers.
+    ``eligibility`` is the CDR eligibility array; a restricted cohort there
+    (veterans / defence service / SMSF) flags the product non-standard even when
+    the name looks ordinary (e.g. Westpac "Flexi First … Veterans" at 3.25%, AMP
+    Superedge SMSF, DHOAS, NAB Defence Force Home Loan).
     """
     name = str(product_name or "")
     token = _normalize_category_token(category)
@@ -355,6 +416,14 @@ def classify_account_standardness(
     is_home_lending = dataset == "Mortgage" or token in _HOME_LOAN_CATEGORIES
     if is_home_lending and name and _NON_STANDARD_LENDING_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
+    # Eligibility-restricted cohorts — by the restriction in the name OR the CDR
+    # eligibility text, never the bank brand.
+    if _RESTRICTED_COHORT_RE.search(name):
+        return ACCOUNT_CLASS_NON_STANDARD
+    if eligibility:
+        elig_text = _eligibility_text(eligibility)
+        if elig_text and _eligibility_restricted_cohort(elig_text):
+            return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
     return ACCOUNT_CLASS_STANDARD

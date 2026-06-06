@@ -70,6 +70,41 @@ CASES: list[tuple[str, str, str, str]] = [
 ]
 
 
+# Eligibility-restricted cohorts → non_standard via the CDR eligibility text, and
+# brand-safety: an ordinary product FROM a defence/military/teachers/police ADI
+# must stay standard (we flag the restriction, never the bank brand).
+# (name, category, dataset, eligibility-list, expected, why)
+def _elig(*texts):
+    return [{"eligibilityType": "OTHER", "additionalInfo": t} for t in texts]
+
+
+ELIGIBILITY_CASES = [
+    ("Flexi First Option Home Loan - Veterans", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Applicant must have served in the Defence Force; per Department of Veterans' Affairs"),
+     ACCOUNT_CLASS_NON_STANDARD, "veterans / defence service"),
+    ("AMP Superedge Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Must be an ATO regulated SMSF trust"), ACCOUNT_CLASS_NON_STANDARD, "SMSF eligibility"),
+    ("NAB Defence Force Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Available to current and former Defence Force members"),
+     ACCOUNT_CLASS_NON_STANDARD, "defence-force product restriction (not brand)"),
+    # Brand-safety: these must NOT be flagged just because of the bank's name.
+    ("Defence Bank Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Must be 18+, a permanent resident, a natural person"),
+     ACCOUNT_CLASS_STANDARD, "defence-brand ADI, standard eligibility"),
+    ("Teachers Mutual Bank Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Members only"), ACCOUNT_CLASS_STANDARD, "mutual membership is standard, not a restriction"),
+    ("Police Bank Goal Saver", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings",
+     _elig("Membership required"), ACCOUNT_CLASS_STANDARD, "credit-union brand + membership = standard"),
+    # Exclusion wording must not flip standard products (Codex P1).
+    ("Standard Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("This product is not available to SMSF borrowers"),
+     ACCOUNT_CLASS_STANDARD, "SMSF mentioned in exclusion text, not a requirement"),
+    ("Everyday Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage",
+     _elig("Not eligible for self-managed super funds or trusts"),
+     ACCOUNT_CLASS_STANDARD, "SMSF/self-managed-super exclusion, not restriction"),
+]
+
+
 def main() -> int:
     failures: list[str] = []
     for name, category, expected, why in CASES:
@@ -78,6 +113,10 @@ def main() -> int:
             failures.append(
                 f"{why}: classify({name!r}, {category!r}) = {got!r}, expected {expected!r}"
             )
+    for name, category, dataset, eligibility, expected, why in ELIGIBILITY_CASES:
+        got = classify_account_standardness(name, category, dataset, eligibility=eligibility)
+        if got != expected:
+            failures.append(f"{why}: classify({name!r}, …, eligibility) = {got!r}, expected {expected!r}")
 
     # A name marker must win even when the category looks standard (the FX case).
     if classify_account_standardness("Foreign Currency Account", "SAVINGS") != ACCOUNT_CLASS_NON_STANDARD:
@@ -88,7 +127,7 @@ def main() -> int:
         for line in failures:
             print("  -", line)
         return 1
-    print(f"PASS verify_account_class: {len(CASES)} cases")
+    print(f"PASS verify_account_class: {len(CASES)} name/category + {len(ELIGIBILITY_CASES)} eligibility cases")
     return 0
 
 
