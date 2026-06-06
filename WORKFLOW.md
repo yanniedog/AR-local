@@ -57,7 +57,7 @@ Run this after creating a new PR (or after tagging bots). The script polls GitHu
 **Ready when** (since the wait anchor — PR creation, or `--bot-tag` / `--since`):
 
 - Required CI checks are not pending, **and**
-- **Every required bot** has at least one review or issue comment since the anchor (default: **gemini**, **codex**, **sourcery**), **and**
+- **Every required bot** has at least one review, issue comment, or thumbs-up no-findings reaction since the anchor (default: **gemini**, **codex**, **sourcery**). An eyes reaction means review is in progress and does not satisfy the gate, **and**
 - **90s** quiet window after the last bot activity, **and**
 - At least **60s** since anchor
 
