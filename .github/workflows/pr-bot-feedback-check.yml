@@ -4,6 +4,9 @@ name: pr-bot-feedback-check
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
 # — no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
 # per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
+# NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
+# (no reply, no push) won't auto-re-run a previously-failed gate. After resolving,
+# post a reply/comment, push, or re-dispatch via `gh workflow run` / the Actions UI.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]

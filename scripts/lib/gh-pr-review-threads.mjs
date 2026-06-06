@@ -7,12 +7,18 @@ import { isBotNoise } from './bot-noise.mjs';
 const BOT_LOGIN_RE =
   /(?:gemini|codex|sourcery|coderabbit|copilot|greptile|chatgpt|github-actions\[bot\])/i;
 
-// A disposition reply lets an UNRESOLVED thread pass (defer/decline without a
-// resolve click). Intentionally forgiving of how agents/humans actually phrase
-// it — "Fixed in <sha>", "Done", "Addressed", etc. — so a real reply is not
-// rejected for missing a magic word (resolution alone also satisfies the gate).
-const CLOSURE_BODY_RE =
-  /\b(implemented|fixed|address(?:ed|ing)|resolv(?:ed|ing)|done|applied|handled|acknowledged|deferred|declin(?:ed|ing)|won'?t fix|wontfix|will not fix|by design|as designed|no change|not a bug|post-merge|follow[- ]?up|not applicable|n\/a)\b/i;
+// Disposition reply detection. Used by the merged-PR audit (a historical PR may
+// have replied-but-not-resolved threads); the LIVE gate requires resolution, so
+// a reply alone does not pass it (see classifyThreads). Forgiving of phrasing
+// ("Fixed in <sha>", "Done", "Deferred", "by design") but NEGATION-AWARE so
+// "not fixed" / "isn't resolved" do NOT count as closed (Gemini PR #148).
+const DISPOSITION_BODY_RE =
+  /\b(deferred|declin(?:ed|ing)|won'?t\s*fix|wontfix|will\s*not\s*fix|by\s*design|as\s*designed|no\s*change|not\s*a\s*bug|post[- ]?merge|follow[- ]?up|not\s*applicable|n\/a)\b/i;
+const ADDRESSED_BODY_RE =
+  /\b(implemented|fixed|address(?:ed|ing)|resolv(?:ed|ing)|done|applied|handled|acknowledged)\b/i;
+// Negation within ~2 words before an "addressed" verb → reply is NOT a closure.
+const NEGATED_ADDRESSED_RE =
+  /\b(?:not|isn'?t|wasn'?t|aren'?t|haven'?t|hasn'?t|never|no\s+longer|still\s+not)\s+(?:\w+\s+){0,2}?(?:implemented|fixed|address(?:ed|ing)?|resolv(?:ed|ing)?|done|applied|handled|acknowledged)\b/i;
 
 const REVIEW_THREADS_QUERY = `
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -91,7 +97,12 @@ export function isBotLogin(login) {
 }
 
 export function isClosureReply(body) {
-  return CLOSURE_BODY_RE.test(body || '');
+  const b = String(body || '');
+  // Explicit dispositions (incl. "won't fix" / "not applicable") always count.
+  if (DISPOSITION_BODY_RE.test(b)) return true;
+  // A negated "addressed" verb ("not fixed", "isn't resolved") is NOT a closure.
+  if (NEGATED_ADDRESSED_RE.test(b)) return false;
+  return ADDRESSED_BODY_RE.test(b);
 }
 
 export function isLowSignalBotThread(comments) {
@@ -194,17 +205,20 @@ export function classifyThreads(threads, opts = {}) {
     // Low-signal bot threads (quota notices, "Useful? React with..." tails,
     // emoji-only acks) carry no actionable feedback and never block merge.
     if (starterIsBot && isLowSignalBotThread(comments)) continue;
-    // mergedAudit: only unresolved bot threads block (ignore human threads).
-    if (mergedAudit && !starterIsBot) continue;
 
-    // An unresolved thread still passes if it carries an explicit disposition
-    // reply (fixed / implemented / deferred / declined / by design …) — so
-    // declining or deferring does not force a resolve click. Resolution OR a
-    // disposition reply == satisfied.
-    if (starterIsBot && (threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments))) {
-      continue;
+    // Merged-PR audit is lenient: a historical PR may legitimately have
+    // replied-but-not-resolved threads, and only bot threads are audited.
+    if (mergedAudit) {
+      if (!starterIsBot) continue;
+      if (threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments)) continue;
     }
 
+    // LIVE gate: an unresolved thread is always a violation. This repo enables
+    // required_conversation_resolution, so a disposition reply alone does NOT
+    // unblock merge — the thread must be RESOLVED on GitHub. Keeping unresolved
+    // = fail keeps this gate consistent with branch protection so the PR is never
+    // "all-green but permanently blocked" (Codex P1 PR #148). Resolution remains
+    // sufficient on its own (handled by the early `continue` above).
     violations.push({
       threadIndex: i + 1,
       kind: 'unresolved',

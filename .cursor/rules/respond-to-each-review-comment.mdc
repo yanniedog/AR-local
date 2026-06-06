@@ -17,11 +17,11 @@ Full bot reply standard matches Australian Rates: **`WORKFLOW.md`** step 6 and *
 
 1. Enumerate distinct threads (merge verbatim duplicates into one reply).
 2. Judge: implement / defer / decline (with reason — not silence).
-3. Close the thread by **resolving it on GitHub OR replying in-thread** (either satisfies the gate). If inline replies are unavailable: `## Feedback responses` section in the PR body.
+3. Reply in-thread with the disposition, then **Resolve** the thread on GitHub. `required_conversation_resolution` is enabled, so resolution is what unblocks merge — a reply alone does not. If inline replies are unavailable: `## Feedback responses` section in the PR body, and still resolve.
 
 ## Do not
 
 - Claim "no actionable feedback" from a top-level summary without checking all inline file-level threads.
 - Dismiss any bot as "non-blocking noise" without per-item resolution.
 - Merge with identified threads unaddressed and un-declined.
-- Push empty "re-trigger" commits: the feedback gate self-heals on your reply, and `cancel-in-progress: false` means a `BLOCKED`-but-green PR with 0 unresolved threads just needs the next event or `gh pr merge --auto`.
+- Push empty "re-trigger" commits: the feedback gate self-heals on review/comment events, and `cancel-in-progress: false` means a `BLOCKED`-but-green PR with 0 unresolved threads just needs the next event or `gh pr merge --auto`. After a resolve-only round, re-run via a reply/comment, a push, or `gh workflow run pr-bot-feedback-check.yml -f pr_number=<n>` (GitHub emits no webhook on resolve).

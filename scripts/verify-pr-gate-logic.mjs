@@ -30,20 +30,27 @@ const cases = [
     thread(true, [c(BOT, FINDING)]), 0],
   ['unresolved bot thread, no reply -> 1 violation',
     thread(false, [c(BOT, FINDING)]), 1],
-  ['unresolved bot thread + "Fixed in 6f3f466" -> pass',
-    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Fixed in 6f3f466', T1)]), 0],
-  ['unresolved bot thread + "Deferred — follow-up" -> pass',
-    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Deferred to a follow-up', T1)]), 0],
-  ['unresolved bot thread + "Done" -> pass',
-    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Done', T1)]), 0],
-  ['unresolved bot thread + plain "thanks" -> 1 violation',
-    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'thanks', T1)]), 1],
+  // LIVE gate: an unresolved thread fails even WITH a disposition reply, because
+  // required_conversation_resolution means it must actually be resolved to merge.
+  ['unresolved bot thread + "Fixed in 6f3f466" -> still 1 (must resolve)',
+    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Fixed in 6f3f466', T1)]), 1],
+  ['unresolved bot thread + "Deferred" -> still 1 (must resolve)',
+    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Deferred to a follow-up', T1)]), 1],
   ['low-signal unresolved bot thread -> pass',
     thread(false, [c(BOT, 'Useful? React with 👍 / 👎')]), 0],
   ['unresolved human thread, no reply -> 1 violation',
     thread(false, [c(HUMAN, 'please change this blocking thing in the parser now')]), 1],
-  ['bot self-addressed "fixed in <sha>" unresolved -> pass',
-    thread(false, [c(BOT, FINDING, T0), c(BOT, 'fixed in abc1234', T1)]), 0],
+];
+
+// mergedAudit is lenient: a historical PR with a disposition reply (but not
+// resolved) is acceptable; plain "thanks" is not.
+const auditCases = [
+  ['[audit] unresolved bot + "Fixed in <sha>" -> pass',
+    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Fixed in abc1234', T1)]), 0],
+  ['[audit] unresolved bot + "thanks" -> 1 violation',
+    thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'thanks', T1)]), 1],
+  ['[audit] resolved bot -> pass',
+    thread(true, [c(BOT, FINDING)]), 0],
 ];
 
 const failures = [];
@@ -51,15 +58,21 @@ for (const [name, t, expected] of cases) {
   const got = classifyThreads([t]).length;
   if (got !== expected) failures.push(`${name}: got ${got} violations, expected ${expected}`);
 }
+for (const [name, t, expected] of auditCases) {
+  const got = classifyThreads([t], { mergedAudit: true }).length;
+  if (got !== expected) failures.push(`${name}: got ${got} violations, expected ${expected}`);
+}
 
-// isClosureReply phrasing coverage
+// isClosureReply phrasing coverage — incl. negation rejection (Gemini PR #148).
 for (const [body, want] of [
   ['Fixed in abc123', true], ['Addressed', true], ['Implemented', true],
   ['Resolved', true], ['Declined — by design', true], ['Deferred', true],
-  ['done', true], ["won't fix", true], ['not applicable', true],
+  ['done', true], ["won't fix", true], ['not applicable', true], ['this is not a bug', true],
+  ['not fixed', false], ['not done yet', false], ["isn't resolved", false],
+  ['this was never addressed', false], ['still not implemented', false],
   ['thanks', false], ['ok', false], ['', false],
 ]) {
-  if (isClosureReply(body) !== want) failures.push(`isClosureReply(${body!=='' ? body : '<empty>'}) !== ${want}`);
+  if (isClosureReply(body) !== want) failures.push(`isClosureReply(${body !== '' ? body : '<empty>'}) !== ${want}`);
 }
 
 if (failures.length) {
@@ -67,4 +80,4 @@ if (failures.length) {
   for (const f of failures) console.error('  -', f);
   process.exit(1);
 }
-console.log(`PASS verify-pr-gate-logic: ${cases.length} classify cases + closure-phrasing checks`);
+console.log(`PASS verify-pr-gate-logic: ${cases.length} live + ${auditCases.length} audit cases + closure-phrasing checks`);
