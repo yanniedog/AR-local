@@ -334,9 +334,9 @@ _HOME_LOAN_CATEGORIES: frozenset[str] = frozenset(
 # trust. High precision (validated against the live feed: veterans / DHOAS / SMSF
 # specials only, no credit-union "members only" or company-borrower false hits).
 _RESTRICTED_COHORT_RE = re.compile(
-    r"\bveterans?\b|veterans'?\s*affairs|served\s+in\s+the\s+defence|defence[\s_-]*force"
+    r"\bveterans?\b|served\s+in\s+the\s+defence|defence[\s_-]*force"
     r"|armed[\s_-]*forces|military[\s_-]*service|\bdhoas\b"
-    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|smsf|self)",
+    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)",
     re.IGNORECASE,
 )
 
@@ -348,8 +348,13 @@ def _eligibility_text(eligibility: Any) -> str:
     parts: list[str] = []
     for item in eligibility:
         if isinstance(item, Mapping):
-            parts.extend((str(item.get("additionalInfo") or ""), str(item.get("additionalValue") or "")))
-    return " ".join(p for p in parts if p)
+            info = item.get("additionalInfo")
+            if info is not None and info != "":
+                parts.append(str(info))
+            val = item.get("additionalValue")
+            if val is not None and val != "":
+                parts.append(str(val))
+    return " ".join(parts)
 
 
 def _normalize_category_token(value: Any) -> str:
@@ -388,8 +393,12 @@ def classify_account_standardness(
         return ACCOUNT_CLASS_NON_STANDARD
     # Eligibility-restricted cohorts — by the restriction in the name OR the CDR
     # eligibility text, never the bank brand.
-    if _RESTRICTED_COHORT_RE.search(name) or _RESTRICTED_COHORT_RE.search(_eligibility_text(eligibility)):
+    if _RESTRICTED_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
+    if eligibility:
+        elig_text = _eligibility_text(eligibility)
+        if elig_text and _RESTRICTED_COHORT_RE.search(elig_text):
+            return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
     return ACCOUNT_CLASS_STANDARD
