@@ -351,9 +351,34 @@ _COHORT_EXCLUSION_PREFIX_RE = re.compile(
     r"|excluding\b"
     r"|except\s+(?:for\s+)?"
     r"|does\s+not\s+(?:apply|extend)(?:\s+to|\s+for)?\b"
+    r"|must\s+not\s+be\b"
     r")",
     re.IGNORECASE,
 )
+
+# Postfix exclusion within the same clause as the cohort token.
+_COHORT_EXCLUSION_SUFFIX_RE = re.compile(
+    r"(?:"
+    r"\s+(?:are\s+)?not\s+(?:eligible|available|open|offered|permitted|allowed|accepted)\b"
+    r"|\s+(?:are\s+)?excluded\b"
+    r"|\s+must\s+not\s+be\b"
+    r"|\s+(?:is|are)\s+unavailable\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_CLAUSE_BOUNDARY_RE = re.compile(r"[.;!?]\s+")
+
+
+def _clause_bounds(text: str, match_start: int, match_end: int) -> tuple[int, int]:
+    """Return [start, end) slice bounds for the clause containing the cohort match."""
+    clause_start = 0
+    for m in _CLAUSE_BOUNDARY_RE.finditer(text[:match_start]):
+        clause_start = m.end()
+    tail = text[match_end:]
+    m = _CLAUSE_BOUNDARY_RE.search(tail)
+    clause_end = match_end + m.start() + 1 if m else len(text)
+    return clause_start, clause_end
 
 
 def _eligibility_text(eligibility: Any) -> str:
@@ -372,11 +397,28 @@ def _eligibility_text(eligibility: Any) -> str:
     return " ".join(parts)
 
 
+def _eligibility_item_text(item: Mapping[str, Any]) -> str:
+    """Free-text from one CDR eligibility dict (info + value, same entry only)."""
+    parts: list[str] = []
+    for key in ("additionalInfo", "additionalValue"):
+        val = item.get(key)
+        if val is not None and val != "":
+            parts.append(str(val))
+    return " ".join(parts)
+
+
 def _eligibility_restricted_cohort(text: str) -> bool:
     """True when eligibility text requires a restricted cohort (not merely excludes one)."""
     for match in _RESTRICTED_COHORT_RE.finditer(text):
-        prefix = text[max(0, match.start() - 100):match.start()]
+        clause_start, clause_end = _clause_bounds(text, match.start(), match.end())
+        clause = text[clause_start:clause_end]
+        rel_start = match.start() - clause_start
+        rel_end = match.end() - clause_start
+        prefix = clause[:rel_start]
+        suffix = clause[rel_end:]
         if _COHORT_EXCLUSION_PREFIX_RE.search(prefix):
+            continue
+        if _COHORT_EXCLUSION_SUFFIX_RE.search(suffix):
             continue
         return True
     return False
@@ -420,10 +462,12 @@ def classify_account_standardness(
     # eligibility text, never the bank brand.
     if _RESTRICTED_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
-    if eligibility:
-        elig_text = _eligibility_text(eligibility)
-        if elig_text and _eligibility_restricted_cohort(elig_text):
-            return ACCOUNT_CLASS_NON_STANDARD
+    if eligibility and isinstance(eligibility, (list, tuple)):
+        for item in eligibility:
+            if isinstance(item, Mapping):
+                item_text = _eligibility_item_text(item)
+                if item_text and _eligibility_restricted_cohort(item_text):
+                    return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
     return ACCOUNT_CLASS_STANDARD
