@@ -583,6 +583,7 @@ def ribbon_columns_for_bank_rate_row(
     cleaned_item: Mapping[str, Any],
     *,
     product_lvr_constraints: Optional[List[Mapping[str, Any]]] = None,
+    product_eligibility: Optional[List[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Return discrete ribbon-aligned columns merged into export bank rate rows."""
     from cdr_taxonomy import (
@@ -615,6 +616,7 @@ def ribbon_columns_for_bank_rate_row(
         flat_base.get("product_name"),
         flat_base.get("category"),
         dataset,
+        eligibility=product_eligibility,
     )
 
     if dataset == "Mortgage" and rate_family == "lending":

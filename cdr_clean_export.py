@@ -198,6 +198,7 @@ def append_bank_details(
                 rate_row,
                 cleaned,
                 product_lvr_constraints=product_lvr_constraints if family == "lending" else None,
+                product_eligibility=as_items(rec.get("eligibility")),
             )
             rate_row.update(ribbons)
             dataset["rates"].append(rate_row)
