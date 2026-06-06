@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env node
 /**
  * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
- * Exit 0 only when CI is settled, every required bot has posted since anchor,
+ * Exit 0 only when CI is settled, every required bot has completed since anchor,
  * and the quiet window has passed after the last bot activity.
  * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
@@ -28,7 +28,7 @@ const MAX_WAIT_MIN = Number(process.env.BOT_WAIT_MAX_MIN || 28);
 // otherwise a chatty bot looping on "out of credits" notices holds the cap
 // timeout open until merge gets blocked.
 const COMMENTS_QUERY =
-  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){comments(last:100){nodes{author{login}createdAt body}}reviews(last:30){nodes{author{login}submittedAt body}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt body}}}}}}}';
+  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){reactions(last:100){nodes{user{login}content createdAt}}comments(last:100){nodes{author{login}createdAt body reactions(last:100){nodes{user{login}content createdAt}}}}reviews(last:30){nodes{author{login}submittedAt body}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt body}}}}}}}';
 
 function sh(cmd) {
   try {
@@ -152,6 +152,11 @@ function fetchBotActivity(owner, name, prNumber) {
   };
   for (const c of pr.comments?.nodes || []) {
     pushEvent(c.author?.login, c.createdAt, c.body);
+    for (const reaction of c.reactions?.nodes || []) {
+      if (reaction.content === 'THUMBS_UP') {
+        pushEvent(reaction.user?.login, reaction.createdAt, 'thumbs-up no-findings reaction');
+      }
+    }
   }
   for (const rev of pr.reviews?.nodes || []) {
     pushEvent(rev.author?.login, rev.submittedAt, rev.body);
@@ -159,6 +164,11 @@ function fetchBotActivity(owner, name, prNumber) {
   for (const t of pr.reviewThreads?.nodes || []) {
     for (const c of t.comments?.nodes || []) {
       pushEvent(c.author?.login, c.createdAt, c.body);
+    }
+  }
+  for (const reaction of pr.reactions?.nodes || []) {
+    if (reaction.content === 'THUMBS_UP') {
+      pushEvent(reaction.user?.login, reaction.createdAt, 'thumbs-up no-findings reaction');
     }
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
@@ -422,7 +432,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Poll GitHub until every required bot has posted since the wait anchor and activity is quiet.
+Poll GitHub until every required bot has posted or reacted with thumbs-up since the wait anchor and activity is quiet.
 
 Options:
   --pr <n>              Pull request number (default: open PR for current branch)
