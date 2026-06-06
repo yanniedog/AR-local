@@ -45,6 +45,17 @@ CASES: list[tuple[str, str, str, str]] = [
     ("Statutory Trust Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "trust"),
     ("Sailing Club Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "club / org account"),
     ("Non-Resident Savings", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "non-resident"),
+    ("At Call Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "at-call savings"),
+    # --- Non-standard LENDING filed under RESIDENTIAL_MORTGAGES ----------------
+    ("Green Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "RACQ clean-energy loan"),
+    ("Home Equity Maximiser Investment", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "equity line of credit"),
+    ("Bridging Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "bridging finance"),
+    ("Land Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "land loan"),
+    ("Construction Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "construction loan"),
+    ("Solar Upgrade Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "solar"),
+    # Guard: 'green'/'land' markers must not collide with mainstream brand/product names.
+    ("Greater Bank Variable Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_STANDARD, "'green' not in 'Greater'"),
+    ("Maitland Mutual Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_STANDARD, "'land' not in 'Maitland'"),
     # --- Non-standard by CATEGORY (future-proofing) ------------------------
     # Neutral name (no marker) so this genuinely exercises the category path:
     # BUSINESS_LOANS must NOT be a standard category.

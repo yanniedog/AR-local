@@ -183,6 +183,77 @@ def tier_for_boundary(percent: Any) -> str:
     return "lvr_90-95%"
 
 
+# LVR/LTV encoded in free text with a BARE number (no % sign) and plain </>/<=/>=
+# operators — the %-anchored regexes above miss these. Real examples from the feed:
+# Cairns Bank "CLASSIC HOME LOAN VARIABLE <60 LVR IO", "... >90 LVR PI".
+_LVR_SIGNAL_RE = re.compile(r"\b(?:lvr|ltv|loan[\s_-]*to[\s_-]*value)\b", re.IGNORECASE)
+_LVR_NAME_RANGE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
+    r"|(?:lvr|ltv)\s*:?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{1,3}(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+# Operator alternation: symbols, natural-language comparators, and bound words.
+# Operator is OPTIONAL in both forms below so a bare "80 LVR" / "LVR 80" parses.
+_LVR_OP = (
+    r"<=|>=|<|>|less[\s_-]*than[\s_-]*or[\s_-]*equal[\s_-]*to|greater[\s_-]*than[\s_-]*or[\s_-]*equal[\s_-]*to"
+    r"|less[\s_-]*than|greater[\s_-]*than|more[\s_-]*than|no[\s_-]*more[\s_-]*than"
+    r"|at[\s_-]*least|at[\s_-]*most|under|below|over|above|from"
+    r"|max(?:imum)?|min(?:imum)?|up[\s_-]*to"
+)
+_LVR_NAME_OP = re.compile(
+    rf"(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)\s*%?\s*(?:lvr|ltv)"
+    rf"|(?:lvr|ltv)\s*:?\s*(?:({_LVR_OP})\s*)?(\d{{1,3}}(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_LVR_TIER_ORDER = ("lvr_=60%", "lvr_60-70%", "lvr_70-80%", "lvr_80-85%", "lvr_85-90%", "lvr_90-95%")
+_LVR_LOWER_BOUND_OPS = frozenset(
+    {">", ">=", "over", "above", "greater than", "greater than or equal to",
+     "more than", "at least", "from", "min", "minimum"}
+)
+
+
+def _bump_tier_up(tier: str) -> str:
+    try:
+        i = _LVR_TIER_ORDER.index(tier)
+    except ValueError:
+        return tier
+    return _LVR_TIER_ORDER[min(i + 1, len(_LVR_TIER_ORDER) - 1)]
+
+
+def _is_lower_bound_op(op: Optional[str]) -> bool:
+    # Normalize whitespace/underscore/hyphen joins so "greater_than" == "greater than".
+    o = re.sub(r"[\s_-]+", " ", (op or "").strip().lower())
+    return o in _LVR_LOWER_BOUND_OPS
+
+
+def named_lvr_tier(text: str) -> str:
+    """Tier from LVR/LTV stated with a bare number, e.g. '<60 LVR', '>90 LVR',
+    '70-80 LVR', '80 LVR', 'LVR less than 70', 'greater than 90 LVR'. Returns ''
+    when there is no LVR signal or no parseable number.
+
+    A range, a bare number, or an upper-bound operator (``<``/``<=``/under/max/
+    'less than') maps on its upper value; a lower-bound operator (``>``/``>=``/
+    over/min/'greater than'/'more than') bumps one tier up so '>90 LVR' lands in
+    lvr_90-95% rather than lvr_85-90%.
+    """
+    txt = _lower(text)
+    if not txt or not _LVR_SIGNAL_RE.search(txt):
+        return ""
+    m = _LVR_NAME_RANGE.search(txt)
+    if m:
+        hi = m.group(2) or m.group(4)
+        if hi is not None:
+            return tier_for_boundary(float(hi))
+    m = _LVR_NAME_OP.search(txt)
+    if m:
+        op = m.group(1) or m.group(3)
+        num = m.group(2) or m.group(4)
+        if num is not None:
+            base = tier_for_boundary(float(num))
+            return _bump_tier_up(base) if _is_lower_bound_op(op) else base
+    return ""
+
+
 def normalize_lvr_tier(context_text: str, min_lvr: Any, max_lvr: Any) -> str:
     hi_finite = isinstance(max_lvr, (int, float)) and math.isfinite(float(max_lvr))
     lo_finite = isinstance(min_lvr, (int, float)) and math.isfinite(float(min_lvr))
@@ -290,13 +361,23 @@ def resolve_lvr_tier(
             if l_min is not None or l_max is not None:
                 source = "product_constraints"
 
-    tier = normalize_lvr_tier(context_text, l_min, l_max)
-    if tier != "lvr_unspecified":
-        if source == "none":
-            source = "context_text"
-        return tier, source
+    # Structured bounds (from the rate item or product constraints) are
+    # authoritative — resolve directly from them.
+    if l_min is not None or l_max is not None:
+        tier = normalize_lvr_tier(context_text, l_min, l_max)
+        if tier != "lvr_unspecified":
+            return tier, source
 
     if context_text.strip() and _text_has_lvr_signal(context_text):
+        # Operator-aware name parser FIRST: it handles lower-bound forms
+        # ("over 80 LVR", ">90 LVR", "from 80 LVR") that the %-bounds heuristics
+        # below would otherwise mis-read as an upper bound (Codex PR #146).
+        named = named_lvr_tier(context_text)
+        if named:
+            return named, "context_text"
+        tier = normalize_lvr_tier(context_text, None, None)
+        if tier != "lvr_unspecified":
+            return tier, "context_text"
         ctx_min, ctx_max = parse_lvr_bounds_from_text_blob(context_text)
         if ctx_min is not None or ctx_max is not None:
             tier2 = normalize_lvr_tier("", ctx_min, ctx_max)
@@ -616,6 +697,10 @@ def ribbon_columns_for_bank_rate_row(
                 "feature_set": feature_set,
             }
         )
+        # All at-call savings accounts are non-standard, keyed on the authoritative
+        # normalized account_type (not just the name marker) so none slip through.
+        if account_type == "at_call":
+            out["account_class"] = "non_standard"
         out["taxonomy_path"] = _classify(dataset, flat_base, out)
         return out
 
