@@ -5,10 +5,16 @@ import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ErrorScreen } from '../src/components/ErrorScreen';
 import { useStore } from '../src/data/store';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// expo-router renders this when a child route throws during render.
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return <ErrorScreen error={error} retry={retry} />;
+}
 
 function RootNavigator() {
   const theme = useTheme();

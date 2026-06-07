@@ -110,21 +110,79 @@ cd mobile && npm run sample      # decompress payload → assets/sample/*.json
 npm run icons                    # regenerate icon/splash from scripts/make-icons.py
 ```
 
-## 4. Store builds (EAS)
+## 4. Run it on your phone / iPad
 
-Requires your Expo, Apple Developer, and Google Play accounts.
+The app ships with a real bundled sample, so it shows live-looking data on a device
+**even before** the GitHub release exists; once the Pi publishes, it upgrades to live.
+
+### Option A — Expo Go (fastest; no accounts, both devices)
+
+Best for trying the UI/data immediately. One caveat: background refresh needs a real
+build (Option B), but everything else — browse, filters, charts, compare, watchlist,
+detail, theme, offline cache, and tapping "Refresh now" — works in Expo Go.
+
+1. On the **iPad** install **Expo Go** from the App Store; on the **Android phone**
+   install **Expo Go** from the Play Store.
+2. On your computer:
+   ```bash
+   cd mobile
+   npm install
+   npx expo start            # shows a QR code
+   # if phone and computer aren't on the same Wi-Fi:
+   npx expo start --tunnel
+   ```
+3. **Android:** open Expo Go → "Scan QR code" → scan the terminal QR.
+   **iPad:** open the Camera app → point at the QR → tap the "Open in Expo Go" banner.
+
+### Option B — Installable builds with EAS (production-like)
+
+Needs a free **Expo account** (`eas login`). Android needs no store account; iPad
+needs an **Apple Developer** membership ($99/yr) to install a real build.
 
 ```bash
 cd mobile
 npm i -g eas-cli && eas login
-eas build:configure
-eas build --platform android --profile preview     # internal APK
-eas build --platform all --profile production
-eas submit --platform ios     # / android
+eas build:configure          # one-time; links the project to your Expo account
 ```
 
-`eas.json` defines `development` / `preview` / `production` profiles. Update the
-`bundleIdentifier` / `package` in `app.json` if you use different store identifiers.
+**Android phone — direct-install APK (no Google account needed):**
+
+```bash
+eas build --platform android --profile preview
+```
+
+EAS prints a build URL; open it on the phone (or scan its QR) and tap **Install** the
+`.apk`. Allow "install from unknown sources" if prompted.
+
+**iPad — via TestFlight (recommended) or ad-hoc:**
+
+```bash
+eas build --platform ios --profile production
+eas submit --platform ios        # uploads to App Store Connect → TestFlight
+```
+
+Then add yourself as an internal tester in App Store Connect and install via the
+**TestFlight** app on the iPad. (Ad-hoc alternative: register the iPad's UDID with
+`eas device:create`, then `eas build -p ios --profile preview`.)
+
+`eas.json` defines `development` / `preview` / `production` profiles. The
+`bundleIdentifier` (`com.yanniedog.arlocalrates`) / Android `package` live in
+`app.json` — change them if you use different store identifiers.
+
+### Pointing at live data
+
+By default the app reads `app.json` → `expo.extra.manifestUrl`
+(`…/releases/download/app-payload-latest/manifest.json`). Until the Pi publishes (or
+you run the `app-payload-publish` Action to seed it), the app serves the bundled
+sample and shows a "sample data" banner — that's expected.
+
+## 5. Store submission (later)
+
+```bash
+eas build --platform all --profile production
+eas submit --platform ios        # App Store Connect
+eas submit --platform android     # Google Play
+```
 
 ## Notes & follow-ups
 
