@@ -596,15 +596,20 @@ def publish_payload(
     # --clobber deletes the live manifest before re-uploading; back it up first and
     # restore it if the replacement fails, so the stable manifest URL is never left missing.
     backup_dir = payload_dir / ".prev-manifest"
+    backup_manifest = backup_dir / "manifest.json"
     backup_dir.mkdir(exist_ok=True)
+    # Clear any stale backup from a previous attempt so a failed download can never
+    # leave us restoring an old manifest (which may point at already-pruned assets).
+    if backup_manifest.exists():
+        backup_manifest.unlink()
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    subprocess.run(
+    dl = subprocess.run(
         [gh, "release", "download", tag, "--repo", repo, "--pattern", "manifest.json",
          "--dir", str(backup_dir), "--clobber"],
         capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
     )
-    backup_manifest = backup_dir / "manifest.json"
-    has_backup = backup_manifest.exists()
+    # Only a fresh, successful download is a valid restore source.
+    has_backup = dl.returncode == 0 and backup_manifest.exists()
     try:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
         subprocess.run(
