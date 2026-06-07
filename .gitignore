@@ -21,3 +21,17 @@ node_modules/
 *.log
 .tmp*.*
 *.png
+
+# Mobile app build artifacts
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/ios/
+mobile/android/
+**/app-payload/
+
+# Track the mobile app's committed assets despite the global *.png ignore above.
+!mobile/assets/icon.png
+!mobile/assets/adaptive-icon.png
+!mobile/assets/splash.png
+!mobile/assets/favicon.png

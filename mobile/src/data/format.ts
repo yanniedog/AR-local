@@ -1,0 +1,111 @@
+import type { RateRow } from '../types';
+
+/** Parse a rate that may be a normalized fraction ("0.0634") or a raw percent ("6.34"). */
+export function toFraction(rate: string | number | null | undefined): number | null {
+  if (rate === null || rate === undefined || rate === '') return null;
+  const n = typeof rate === 'number' ? rate : Number(rate);
+  if (!isFinite(n) || n <= 0) return null;
+  return n > 1 ? n / 100 : n;
+}
+
+/** Format a fraction (0.0634) as a percentage string ("6.34%"). */
+export function formatRate(rate: string | number | null | undefined, digits = 2): string {
+  const f = toFraction(rate);
+  if (f === null) return '—';
+  return `${(f * 100).toFixed(digits)}%`;
+}
+
+export function ratePercentValue(rate: string | number | null | undefined): number | null {
+  const f = toFraction(rate);
+  return f === null ? null : f * 100;
+}
+
+/** Difference between two fractions expressed in basis points. */
+export function bpsBetween(a: number | null, b: number | null): number | null {
+  if (a === null || b === null) return null;
+  return Math.round((a - b) * 10000);
+}
+
+const ACRONYMS = new Set(['LVR', 'TD', 'PI', 'IO', 'FX', 'SMSF', 'P&I']);
+
+/** Humanize a CDR enum like "PRINCIPAL_AND_INTEREST" -> "Principal & interest". */
+export function humanizeEnum(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const withAmp = raw.replace(/_AND_/gi, ' & ');
+  const words = withAmp.replace(/_/g, ' ').toLowerCase().split(/\s+/);
+  return words
+    .map((w, i) => {
+      const upper = w.toUpperCase();
+      if (ACRONYMS.has(upper)) return upper;
+      if (w === '&') return '&';
+      return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+    })
+    .join(' ');
+}
+
+function toNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return isFinite(n) ? n : null;
+}
+
+export function formatMoneyShort(value: string | number | null | undefined): string {
+  const n = toNumber(value);
+  if (n === null) return '';
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}m`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(n % 1_000 ? 1 : 0)}k`;
+  return `$${n.toLocaleString()}`;
+}
+
+export function formatBalanceRange(
+  min: string | number | null | undefined,
+  max: string | number | null | undefined,
+): string {
+  const lo = toNumber(min);
+  const hi = toNumber(max);
+  if (lo === null && hi === null) return '';
+  if (lo !== null && hi !== null) return `${formatMoneyShort(lo)}–${formatMoneyShort(hi)}`;
+  if (lo !== null) return `${formatMoneyShort(lo)}+`;
+  return `Up to ${formatMoneyShort(hi)}`;
+}
+
+export function formatTerm(row: RateRow): string {
+  const months = toNumber(row.term_months);
+  if (months !== null && months > 0) {
+    if (months % 12 === 0) {
+      const years = months / 12;
+      return `${years} yr${years > 1 ? 's' : ''}`;
+    }
+    return `${months} mo`;
+  }
+  const fixed = toNumber(row.ribbon_fixed_term);
+  if (fixed !== null && fixed > 0) return `${fixed} yr${fixed > 1 ? 's' : ''} fixed`;
+  return '';
+}
+
+export function isNonStandard(row: RateRow): boolean {
+  return (row.account_class ?? '') === 'non_standard';
+}
+
+/** Short, friendly "Updated 3 days ago" / "Updated today". */
+export function relativeDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return '';
+  const days = Math.floor((Date.now() - then) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months} mo ago`;
+  return `${Math.round(months / 12)} yr ago`;
+}
+
+export function formatRunDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}

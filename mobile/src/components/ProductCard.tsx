@@ -1,0 +1,159 @@
+import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { Pressable, View } from 'react-native';
+
+import { SECTIONS } from '../constants';
+import {
+  formatBalanceRange,
+  formatRate,
+  formatTerm,
+  humanizeEnum,
+  isNonStandard,
+} from '../data/format';
+import { useStore } from '../data/store';
+import type { RateRow, SectionKey } from '../types';
+import { useTheme } from '../theme/ThemeProvider';
+import { BankAvatar } from './BankAvatar';
+import { AppText, Row } from './ui';
+
+function chips(row: RateRow, section: SectionKey): string[] {
+  const out: string[] = [];
+  if (section === 'Mortgage') {
+    if (row.ribbon_rate_structure) out.push(humanizeEnum(row.ribbon_rate_structure));
+    const term = formatTerm(row);
+    if (term) out.push(term);
+    if (row.ribbon_repayment_type ?? row.repayment_type)
+      out.push(humanizeEnum(row.ribbon_repayment_type ?? row.repayment_type));
+    if (row.lvr_tier) out.push(humanizeEnum(row.lvr_tier));
+  } else if (section === 'TD') {
+    const term = formatTerm(row);
+    if (term) out.push(term);
+    const bal = formatBalanceRange(row.balance_min, row.balance_max);
+    if (bal) out.push(bal);
+  } else {
+    if (row.ribbon_deposit_kind) out.push(humanizeEnum(row.ribbon_deposit_kind));
+    const bal = formatBalanceRange(row.balance_min, row.balance_max);
+    if (bal) out.push(bal);
+  }
+  return out.slice(0, 3);
+}
+
+export function ProductCard({
+  row,
+  section,
+  onPress,
+  selectMode,
+  selected,
+}: {
+  row: RateRow;
+  section: SectionKey;
+  onPress?: () => void;
+  selectMode?: boolean;
+  selected?: boolean;
+}) {
+  const theme = useTheme();
+  const favorite = useStore((s) => s.favorites.includes(row.product_key));
+  const toggleFavorite = useStore((s) => s.toggleFavorite);
+  const tags = chips(row, section);
+  const nonStandard = isNonStandard(row);
+  const lowerIsBetter = SECTIONS[section].lowerIsBetter;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        backgroundColor: selected ? theme.colors.primaryMuted : theme.colors.card,
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: selected ? theme.colors.primary : theme.colors.border,
+        marginBottom: 10,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      {selectMode ? (
+        <Ionicons
+          name={selected ? 'checkbox' : 'square-outline'}
+          size={24}
+          color={selected ? theme.colors.primary : theme.colors.textFaint}
+        />
+      ) : (
+        <BankAvatar provider={row.provider} />
+      )}
+
+      <View style={{ flex: 1 }}>
+        <AppText variant="body" weight="700" numberOfLines={1}>
+          {row.product_name}
+        </AppText>
+        <AppText variant="small" color="textMuted" numberOfLines={1}>
+          {row.provider}
+        </AppText>
+        {tags.length ? (
+          <Row gap={6} style={{ flexWrap: 'wrap', marginTop: 6 }}>
+            {tags.map((t, i) => (
+              <View
+                key={`${t}-${i}`}
+                style={{
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: theme.colors.chip,
+                }}
+              >
+                <AppText variant="tiny" color="chipText">
+                  {t}
+                </AppText>
+              </View>
+            ))}
+            {nonStandard ? (
+              <View
+                style={{
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: theme.colors.chip,
+                }}
+              >
+                <AppText variant="tiny" style={{ color: theme.colors.warning }} weight="700">
+                  Non-standard
+                </AppText>
+              </View>
+            ) : null}
+          </Row>
+        ) : null}
+      </View>
+
+      <View style={{ alignItems: 'flex-end', minWidth: 76 }}>
+        <AppText
+          variant="h3"
+          weight="800"
+          style={{ color: lowerIsBetter ? theme.colors.success : theme.colors.primary }}
+        >
+          {formatRate(row.rate)}
+        </AppText>
+        {row.comparison_rate ? (
+          <AppText variant="tiny" color="textFaint">
+            {formatRate(row.comparison_rate)} cmp
+          </AppText>
+        ) : null}
+        {!selectMode ? (
+          <Pressable
+            onPress={() => toggleFavorite(row.product_key)}
+            hitSlop={10}
+            style={{ marginTop: 4 }}
+          >
+            <Ionicons
+              name={favorite ? 'star' : 'star-outline'}
+              size={18}
+              color={favorite ? theme.colors.warning : theme.colors.textFaint}
+            />
+          </Pressable>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}

@@ -1,0 +1,52 @@
+name: app-ci
+
+# Typecheck + lint + unit tests for the mobile app and the Python payload builder.
+# Scoped to the relevant paths so it stays out of the way of the banking pipeline.
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'app_payload.py'
+      - 'tests/test_app_payload.py'
+      - '.github/workflows/app-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'app_payload.py'
+
+jobs:
+  mobile:
+    name: mobile (typecheck · lint · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test -- --ci
+
+  payload:
+    name: payload builder (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pytest
+        run: python -m pip install --quiet pytest
+      - name: Test
+        run: python -m pytest tests/test_app_payload.py -q

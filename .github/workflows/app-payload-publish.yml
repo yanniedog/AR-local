@@ -1,0 +1,36 @@
+name: app-payload-publish
+
+# Manual fallback publisher. The Raspberry Pi is the PRIMARY daily publisher
+# (pi_daily_sync.py -> app_payload build+publish). This workflow re-seeds the
+# rolling release from the committed sample so the app's release URL resolves
+# immediately (e.g. to bootstrap before the Pi's first run). It does NOT have
+# live bank data — the Pi overwrites these assets on its next ingest.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Rolling release tag
+        default: app-payload-latest
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build payload from committed sample
+        run: |
+          python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
+            seed --sample mobile/assets/sample --out build/app-payload
+      - name: Publish to rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
+            publish --dir build/app-payload --require-token
