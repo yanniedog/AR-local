@@ -243,18 +243,29 @@ export const useStore = create<AppState>()(
               manifest.files.details.url,
               manifest.files.details.sha256,
             );
+            // A concurrent refresh may have swapped the dataset while we awaited.
+            if (get().core?.run_date !== core.run_date) return;
             await cache.writeDetails(text);
-            if (meta) await cache.writeMeta({ ...meta, detailsSha: manifest.files.details.sha256 });
+            // Persist the manifest these details belong to (not the stale on-disk
+            // meta), so an offline cold launch treats the cached details as fresh.
+            await cache.writeMeta({
+              manifest,
+              source: 'remote',
+              savedAt: new Date().toISOString(),
+              coreSha: manifest.files.core.sha256,
+              detailsSha: manifest.files.details.sha256,
+            });
             set({ details: fresh });
             return;
           }
-          // Only fall back to the bundled sample when we are actually on sample data.
-          if (source === 'sample') set({ details: sampleDetails as DetailsPayload });
+          // Only fall back to the bundled sample when we are *still* on sample data
+          // (re-read source — a refresh may have switched us to remote mid-flight).
+          if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } catch {
           // A live details download failed: leave details unavailable rather than
           // show stale sample fees/features next to current rates. Only use the
           // bundled sample when the rest of the data is also the sample.
-          if (source === 'sample') set({ details: sampleDetails as DetailsPayload });
+          if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } finally {
           set({ detailsLoading: false });
         }

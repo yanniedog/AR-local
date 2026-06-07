@@ -7,8 +7,11 @@ import type { SectionKey } from '../types';
 // pre-encoded strings caused double-decode crashes for keys containing '%' and
 // ambiguous splits for keys containing ','. useLocalSearchParams returns the
 // original (decoded) values on the other side.
-export const openProduct = (productKey: string) =>
-  router.push({ pathname: '/product/[key]', params: { key: productKey } });
+export const openProduct = (productKey: string, rateIndex?: number) =>
+  router.push({
+    pathname: '/product/[key]',
+    params: { key: productKey, ...(rateIndex != null ? { ri: String(rateIndex) } : {}) },
+  });
 
 export const openBank = (provider: string) =>
   router.push({ pathname: '/bank/[provider]', params: { provider } });

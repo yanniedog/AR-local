@@ -25,9 +25,10 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 export default function ProductDetail() {
   const theme = useTheme();
   // expo-router already returns the decoded param — do NOT decode again (keys can
-  // contain a literal '%', which would throw URIError).
-  const { key } = useLocalSearchParams<{ key: string }>();
+  // contain a literal '%', which would throw URIError). `ri` pins the tapped rate row.
+  const { key, ri } = useLocalSearchParams<{ key: string; ri?: string }>();
   const productKey = key ?? '';
+  const rateIndex = ri != null && ri !== '' ? Number(ri) : null;
   const core = useStore((s) => s.core);
   const ensureDetails = useStore((s) => s.ensureDetails);
   const detail = useStore((s) => s.details?.products[productKey] ?? null);
@@ -50,7 +51,11 @@ export default function ProductDetail() {
     );
   }
 
-  const { row, section, siblings } = found;
+  const { section, siblings } = found;
+  // Headline = the exact row the user tapped (by rate_index), falling back to the
+  // product's first row when navigated without one (e.g. from search).
+  const row =
+    (rateIndex != null ? siblings.find((s) => s.rate_index === rateIndex) : undefined) ?? found.row;
   const meta = SECTIONS[section];
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const rateRows = sortRows(siblings, 'rate', section);

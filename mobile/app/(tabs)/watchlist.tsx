@@ -52,7 +52,7 @@ export default function Watchlist() {
           key={row.product_key}
           row={row}
           section={section}
-          onPress={() => openProduct(row.product_key)}
+          onPress={() => openProduct(row.product_key, row.rate_index)}
         />
       ))}
       <View style={{ height: 8 }} />

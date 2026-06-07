@@ -134,7 +134,7 @@ export default function Browse() {
             selectMode={selectMode}
             selected={selected.includes(rowToken(item))}
             onPress={() =>
-              selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key)
+              selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key, item.rate_index)
             }
           />
         )}

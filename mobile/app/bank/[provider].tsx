@@ -62,7 +62,7 @@ export default function BankDetail() {
                   key={r.product_key}
                   row={r}
                   section={section}
-                  onPress={() => openProduct(r.product_key)}
+                  onPress={() => openProduct(r.product_key, r.rate_index)}
                 />
               ))}
             </View>

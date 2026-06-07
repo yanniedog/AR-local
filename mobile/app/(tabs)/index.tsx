@@ -100,7 +100,7 @@ export default function Home() {
             <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4, marginLeft: 4 }}>
               {SECTIONS[key].title.toUpperCase()}
             </AppText>
-            <ProductCard row={best} section={key} onPress={() => openProduct(best.product_key)} />
+            <ProductCard row={best} section={key} onPress={() => openProduct(best.product_key, best.rate_index)} />
           </View>
         );
       })}
