@@ -23,8 +23,9 @@ import { openCompare, openProduct } from '../../src/lib/nav';
 import type { RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
-// A product can have several rate rows; encode the exact selected row so Compare
-// shows that row, not just the product's first one. '' can't occur in a key.
+// A product can have several rate rows; encode the exact selected row as
+// "<rate_index>#<product_key>" so Compare shows that exact row, not just the
+// product's first one (rate_index is numeric, so the first '#' is the separator).
 const rowToken = (r: RateRow) => `${r.rate_index ?? ''}#${r.product_key}`;
 
 const SECTION_SEG = [
@@ -36,7 +37,7 @@ const SECTION_SEG = [
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'rate', label: 'Best rate' },
   { key: 'comparison', label: 'Comparison' },
-  { key: 'bank', label: 'Bank Aâ€“Z' },
+  { key: 'bank', label: 'Bank A-Z' },
 ];
 
 export default function Browse() {
@@ -48,9 +49,15 @@ export default function Browse() {
 
   const initial = (params.section && sectionFromSlug(params.section)) || defaultSection;
   const [section, setSection] = useState<SectionKey>(initial);
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('rate');
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
 
   // Re-tapping a category from Home/Trends re-navigates to this mounted tab with a
-  // new ?section= — sync local state (and clear section-specific filters) to it.
+  // new ?section= param - sync local state (and clear section-specific filters) to it.
   useEffect(() => {
     const routed = params.section && sectionFromSlug(params.section);
     if (routed && routed !== section) {
@@ -60,12 +67,6 @@ export default function Browse() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.section]);
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('rate');
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
 
   const sectionRows = core?.sections[section]?.rates;
   const ribbon = core?.sections[section]?.ribbon;
@@ -90,8 +91,8 @@ export default function Browse() {
           value={section}
           onChange={(v) => {
             setSection(v);
-            // Filters are section-specific (LVR tiers, deposit kinds, â€¦) â€” clear them
-            // so the new category isn't filtered to empty by an incompatible facet.
+            // Filters are section-specific (LVR tiers, deposit kinds, etc.) - clear
+            // them so the new category isn't filtered to empty by an incompatible facet.
             setFilters(EMPTY_FILTERS);
             setSelected([]);
           }}
@@ -133,7 +134,7 @@ export default function Browse() {
           ribbon && ribbon.range.min !== null ? (
             <Card style={{ marginBottom: 12 }}>
               <AppText variant="small" color="textMuted" style={{ marginBottom: 10 }}>
-                {SECTIONS[section].title} Â· rate distribution
+                {SECTIONS[section].title} rate distribution
               </AppText>
               <RibbonBar ribbon={ribbon} section={section} />
             </Card>

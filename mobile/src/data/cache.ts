@@ -3,10 +3,11 @@ import * as FileSystem from 'expo-file-system';
 import type { CorePayload, DetailsPayload, Manifest, PayloadSource } from '../types';
 
 const DIR = `${FileSystem.documentDirectory}payload/`;
-// Core + metadata live in ONE file written atomically, so they can never disagree
-// (a crash can't leave a new core paired with an old manifest). Details are separate
-// because they're downloaded lazily and validated by sha against the manifest.
+// Core + metadata live in ONE file written atomically (temp file + move), so they can
+// never disagree and an interrupted write can't truncate the live bundle. Details are
+// separate because they're downloaded lazily and validated by sha against the manifest.
 const BUNDLE = `${DIR}core-bundle.json`;
+const BUNDLE_TMP = `${BUNDLE}.tmp`;
 const DETAILS = `${DIR}details.json`;
 
 export interface CacheMeta {
@@ -40,9 +41,35 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
+// Serialize all bundle writes so a refresh's writeBundle and ensureDetails' updateMeta
+// (a read-modify-write) can never interleave and clobber each other.
+let writeChain: Promise<void> = Promise.resolve();
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function atomicWriteBundle(contents: string): Promise<void> {
+  await ensureDir();
+  await FileSystem.writeAsStringAsync(BUNDLE_TMP, contents);
+  // rename is atomic on the same filesystem; delete the old target first since native
+  // move rejects an existing destination. If interrupted here, readBundle recovers
+  // from the .tmp that's already complete.
+  await FileSystem.deleteAsync(BUNDLE, { idempotent: true });
+  await FileSystem.moveAsync({ from: BUNDLE_TMP, to: BUNDLE });
+}
+
 export const cache = {
   async readBundle(): Promise<CoreBundle | null> {
-    const b = await readJson<CoreBundle>(BUNDLE);
+    let b = await readJson<CoreBundle>(BUNDLE);
+    if (!b) {
+      // Recover from a half-finished atomic write (live file deleted, tmp complete).
+      b = await readJson<CoreBundle>(BUNDLE_TMP);
+    }
     if (!b || !b.meta || !b.core) return null;
     return b;
   },
@@ -55,16 +82,17 @@ export const cache = {
   async readDetails(): Promise<DetailsPayload | null> {
     return readJson<DetailsPayload>(DETAILS);
   },
-  /** Write core + meta together in a single file. `coreText` is the raw core JSON. */
+  /** Write core + meta together atomically. `coreText` is the raw core JSON. */
   async writeBundle(meta: CacheMeta, coreText: string): Promise<void> {
-    await ensureDir();
-    await FileSystem.writeAsStringAsync(BUNDLE, `{"meta":${JSON.stringify(meta)},"core":${coreText}}`);
+    return serialize(() => atomicWriteBundle(`{"meta":${JSON.stringify(meta)},"core":${coreText}}`));
   },
-  /** Update only the metadata, preserving the cached core (re-writes the bundle). */
+  /** Update only the metadata, preserving the cached core (serialized read-modify-write). */
   async updateMeta(meta: CacheMeta): Promise<void> {
-    const b = await cache.readBundle();
-    if (!b) return;
-    await cache.writeBundle(meta, JSON.stringify(b.core));
+    return serialize(async () => {
+      const b = await cache.readBundle();
+      if (!b) return;
+      await atomicWriteBundle(`{"meta":${JSON.stringify(meta)},"core":${JSON.stringify(b.core)}}`);
+    });
   },
   async writeDetails(json: string): Promise<void> {
     await ensureDir();
