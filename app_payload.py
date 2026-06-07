@@ -526,9 +526,8 @@ def publish_payload(
             print(f"  - {a.name}")
         return False
 
-    # Ensure the release/tag exists (idempotent), then clobber-upload the assets.
-    # All calls use a fixed argv with shell=False and a timeout; repo/tag/paths are
-    # operator-controlled (env/CLI), not untrusted input.
+    # Ensure the release/tag exists (idempotent). All calls use a fixed argv with
+    # shell=False and a timeout; repo/tag/paths are operator-controlled, not untrusted.
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     view = subprocess.run(
         [gh, "release", "view", tag, "--repo", repo],
@@ -541,19 +540,33 @@ def publish_payload(
              "--notes", notes, "--latest=false"],
             check=True, timeout=SUBPROCESS_TIMEOUT_SEC,
         )
-    # Upload data assets first...
+
+    # Data assets are content-addressed, so a same-name asset already on the release is
+    # byte-identical. Upload only the MISSING ones, WITHOUT --clobber — never delete an
+    # asset the current manifest still references (an interrupted clobber could lose it).
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    subprocess.run(
-        [gh, "release", "upload", tag, *[str(a) for a in data_assets], "--repo", repo, "--clobber"],
-        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+    listed = subprocess.run(
+        [gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q", ".assets[].name"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
     )
+    existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    to_upload = [a for a in data_assets if a.name not in existing]
+    if to_upload:
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+        subprocess.run(
+            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo],
+            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+        )
     # ...then replace manifest.json last, so it only ever points at assets already live.
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     subprocess.run(
         [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
         check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
     )
-    print(f"[app_payload] published {len(assets)} assets to {repo}@{tag} (run_date={manifest.get('run_date')})")
+    print(
+        f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
+        f"to {repo}@{tag} (run_date={manifest.get('run_date')})"
+    )
     return True
 
 

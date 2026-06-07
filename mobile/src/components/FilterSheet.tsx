@@ -52,7 +52,8 @@ export function FilterSheet({
   }, [visible, filters]);
 
   const groups = groupsFor(section);
-  const providers = useMemo(() => distinctValues(rows, 'provider').slice(0, 40), [rows]);
+  // Show every lender (50+ per section) — the sheet scrolls, so don't truncate.
+  const providers = useMemo(() => distinctValues(rows, 'provider'), [rows]);
 
   const toggle = (key: keyof Filters, value: string) => {
     setDraft((d) => {

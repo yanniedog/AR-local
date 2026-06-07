@@ -62,7 +62,7 @@ interface AppState {
   bootstrap: () => Promise<void>;
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
-  refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
+  refresh: (opts?: { force?: boolean; manual?: boolean; background?: boolean }) => Promise<boolean>;
   ensureDetails: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
@@ -114,7 +114,15 @@ export const useStore = create<AppState>()(
 
         const meta = await cache.readMeta();
         const cachedCore = await cache.readCore();
-        if (meta && cachedCore) {
+        // Only trust the cache when core and metadata agree: a crash between
+        // writeCore() and writeMeta() can leave a new core paired with an old
+        // manifest, which would later mis-pair rates with another run's details.
+        const cacheConsistent =
+          !!meta &&
+          !!cachedCore &&
+          cachedCore.run_date === meta.manifest.run_date &&
+          cachedCore.schema_version === meta.manifest.schema_version;
+        if (meta && cachedCore && cacheConsistent) {
           set({
             core: cachedCore,
             manifest: meta.manifest,
@@ -154,7 +162,14 @@ export const useStore = create<AppState>()(
       },
 
       async refresh(opts = {}) {
-        const { force = false, manual = false } = opts;
+        const { force = false, manual = false, background = false } = opts;
+        // In a headless background run, warm details synchronously so the OS can't
+        // suspend the app before fees/features are cached; in the foreground it stays
+        // a non-blocking background warm.
+        const warmDetails = async () => {
+          const p = get().ensureDetails();
+          if (background) await p;
+        };
         if (get().refreshing) return false;
         const prefs = get().prefs;
         if (prefs.wifiOnly && !manual && !(await onWifi())) {
@@ -177,10 +192,10 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             // Core already matches, so adopting this manifest keeps them aligned.
-            set({ manifest: remote, refreshing: false });
+            set({ manifest: remote });
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
-            void get().ensureDetails();
+            await warmDetails();
             return false;
           }
 
@@ -212,8 +227,8 @@ export const useStore = create<AppState>()(
             await notify(messages);
           }
 
-          // Warm details in the background.
-          void get().ensureDetails();
+          // Warm details (awaited only for headless background runs).
+          await warmDetails();
           return true;
         } catch (err) {
           // Keep whatever data we already have; just flag offline.
@@ -374,7 +389,7 @@ try {
         // persist excludes core/manifest — load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
-        const changed = await useStore.getState().refresh({});
+        const changed = await useStore.getState().refresh({ background: true });
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
           : BackgroundFetch.BackgroundFetchResult.NoData;
