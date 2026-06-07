@@ -60,6 +60,19 @@ describe('selectors', () => {
     expect(filterRows(mortgage, { ...EMPTY_FILTERS, query: 'green', includeNonStandard: true })).toHaveLength(1);
   });
 
+  test('filterRows applies depositKinds for deposit sections', () => {
+    const deposits = [
+      mk({ provider: 'Bank A', product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'at_call' }),
+      mk({ provider: 'Bank B', product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus' }),
+      mk({ provider: 'Bank C', product_key: 'C|S', rate: '0.048', ribbon_deposit_kind: 'bonus' }),
+    ];
+    expect(filterRows(deposits, EMPTY_FILTERS)).toHaveLength(3);
+    const bonus = filterRows(deposits, { ...EMPTY_FILTERS, depositKinds: ['bonus'] });
+    expect(bonus.map((r) => r.product_key)).toEqual(['B|S', 'C|S']);
+    const byProvider = filterRows(deposits, { ...EMPTY_FILTERS, providers: ['Bank A'] });
+    expect(byProvider).toHaveLength(1);
+  });
+
   test('queryAndSort end-to-end', () => {
     const out = queryAndSort(mortgage, { ...EMPTY_FILTERS, query: 'loan' }, 'rate', 'Mortgage');
     expect(out.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);

@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as BackgroundFetch from 'expo-background-fetch';
 import * as Network from 'expo-network';
+import * as TaskManager from 'expo-task-manager';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -13,7 +15,7 @@ import type {
   SectionKey,
 } from '../types';
 import { cache, type CacheMeta } from './cache';
-import { computeChanges, notify, setBackgroundRefreshHandler } from './notifications';
+import { BACKGROUND_TASK, computeChanges, notify } from './notifications';
 import { downloadCore, downloadDetails, fetchManifest } from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
 import type { ThemeMode } from '../theme/theme';
@@ -51,6 +53,8 @@ interface AppState {
   error: string | null;
   offline: boolean;
   lastCheckedAt: string | null;
+  /** True once persisted prefs/favorites have rehydrated from AsyncStorage. */
+  hydrated: boolean;
 
   prefs: Prefs;
   favorites: string[];
@@ -88,6 +92,7 @@ export const useStore = create<AppState>()(
       error: null,
       offline: false,
       lastCheckedAt: null,
+      hydrated: false,
 
       prefs: DEFAULT_PREFS,
       favorites: [],
@@ -124,7 +129,6 @@ export const useStore = create<AppState>()(
           });
         }
 
-        setBackgroundRefreshHandler(() => get().refresh({}));
         // Try the network in the background; never blocks first paint.
         void get().refresh({});
       },
@@ -150,6 +154,9 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             set({ refreshing: false });
+            // Core is unchanged, but details may have been republished for the same
+            // run_date (e.g. corrected fees) — ensureDetails re-checks the details sha.
+            void get().ensureDetails();
             return false;
           }
 
@@ -196,19 +203,25 @@ export const useStore = create<AppState>()(
 
       async ensureDetails() {
         const { details, core, manifest, source, detailsLoading } = get();
-        if (detailsLoading) return;
-        if (details && core && details.run_date === core.run_date) return;
+        if (!core || detailsLoading) return;
+
+        // Details are fresh only when run_date AND the manifest's details sha match.
+        const wantSha = manifest?.files.details.sha256 ?? null;
+        const meta = await cache.readMeta();
+        const shaOk = !wantSha || meta?.detailsSha === wantSha;
+        if (details && details.run_date === core.run_date && shaOk) return;
 
         set({ detailsLoading: true });
         try {
           const cached = await cache.readDetails();
-          if (cached && core && cached.run_date === core.run_date) {
+          if (cached && cached.run_date === core.run_date && shaOk) {
             set({ details: cached });
             return;
           }
           if (source === 'remote' && manifest) {
             const { text, details: fresh } = await downloadDetails(manifest.files.details.url);
             await cache.writeDetails(text);
+            if (meta) await cache.writeMeta({ ...meta, detailsSha: manifest.files.details.sha256 });
             set({ details: fresh });
             return;
           }
@@ -222,7 +235,7 @@ export const useStore = create<AppState>()(
       },
 
       getDetail(productKey: string) {
-        return get().details?.products[productKey] ?? null;
+        return get().details?.products?.[productKey] ?? null;
       },
 
       toggleFavorite(key: string) {
@@ -264,6 +277,36 @@ export const useStore = create<AppState>()(
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites }),
+      // Flip `hydrated` once persisted state is restored, so the initial route
+      // doesn't redirect returning users to onboarding before prefs load.
+      onRehydrateStorage: () => () => {
+        useStore.setState({ hydrated: true });
+      },
     },
   ),
 );
+
+// OS-scheduled background refresh. Defined here (not in notifications.ts) so it can
+// rehydrate persisted prefs/favorites and call refresh() directly — important when
+// the app is launched headless (terminated) and the UI never mounted.
+try {
+  if (typeof TaskManager.isTaskDefined === 'function' && !TaskManager.isTaskDefined(BACKGROUND_TASK)) {
+    TaskManager.defineTask(BACKGROUND_TASK, async () => {
+      try {
+        try {
+          await useStore.persist?.rehydrate?.();
+        } catch {
+          // proceed with defaults if rehydrate fails
+        }
+        const changed = await useStore.getState().refresh({});
+        return changed
+          ? BackgroundFetch.BackgroundFetchResult.NewData
+          : BackgroundFetch.BackgroundFetchResult.NoData;
+      } catch {
+        return BackgroundFetch.BackgroundFetchResult.Failed;
+      }
+    });
+  }
+} catch {
+  // TaskManager unavailable (e.g. web / test env) — background refresh is optional.
+}

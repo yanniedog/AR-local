@@ -13,6 +13,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 function RootNavigator() {
   const theme = useTheme();
   const status = useStore((s) => s.status);
+  const hydrated = useStore((s) => s.hydrated);
   const bootstrap = useStore((s) => s.bootstrap);
 
   useEffect(() => {
@@ -20,10 +21,12 @@ function RootNavigator() {
   }, [bootstrap]);
 
   useEffect(() => {
-    if (status === 'ready' || status === 'error') {
+    // Hold the splash until prefs have rehydrated AND data is ready, so the first
+    // frame is the correct route with the correct theme (no onboarding flash).
+    if (hydrated && (status === 'ready' || status === 'error')) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [status]);
+  }, [status, hydrated]);
 
   return (
     <>

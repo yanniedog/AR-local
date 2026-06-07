@@ -28,7 +28,7 @@ export default function Home() {
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
 
   if (!core) return null;
-  const sections = interests.length ? interests : SECTION_ORDER;
+  const sections = interests?.length ? interests : SECTION_ORDER;
   const currentRba = core.rba.at(-1);
 
   return (

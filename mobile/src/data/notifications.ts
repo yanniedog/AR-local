@@ -1,6 +1,5 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
-import * as TaskManager from 'expo-task-manager';
 
 import { SECTIONS, SECTION_ORDER } from '../constants';
 import type { CorePayload, RateRow, SectionKey } from '../types';
@@ -31,7 +30,7 @@ function bestFraction(core: CorePayload, section: SectionKey): number | null {
 
 function findRate(core: CorePayload, productKey: string): { row: RateRow; fraction: number | null } | null {
   for (const section of SECTION_ORDER) {
-    const row = core.sections[section]?.rates.find((r) => r.product_key === productKey);
+    const row = (core.sections[section]?.rates ?? []).find((r) => r.product_key === productKey);
     if (row) return { row, fraction: toFraction(row.rate) };
   }
   return null;
@@ -115,31 +114,8 @@ export async function notify(messages: NotifyMessage[]): Promise<void> {
 }
 
 // --- Background refresh ---------------------------------------------------- //
-// The store registers its refresh handler here; the OS-scheduled task calls it.
-type RefreshHandler = () => Promise<boolean>;
-let refreshHandler: RefreshHandler | null = null;
-
-export function setBackgroundRefreshHandler(fn: RefreshHandler): void {
-  refreshHandler = fn;
-}
-
-try {
-  if (typeof TaskManager.isTaskDefined === 'function' && !TaskManager.isTaskDefined(BACKGROUND_TASK)) {
-    TaskManager.defineTask(BACKGROUND_TASK, async () => {
-      try {
-        const changed = refreshHandler ? await refreshHandler() : false;
-        return changed
-          ? BackgroundFetch.BackgroundFetchResult.NewData
-          : BackgroundFetch.BackgroundFetchResult.NoData;
-      } catch {
-        return BackgroundFetch.BackgroundFetchResult.Failed;
-      }
-    });
-  }
-} catch {
-  // TaskManager unavailable (e.g. web / test env) — background refresh is optional.
-}
-
+// The OS-scheduled task is defined in store.ts (where it can rehydrate persisted
+// state and call refresh() directly, even on a headless/terminated launch).
 export async function registerBackgroundRefresh(): Promise<void> {
   try {
     await BackgroundFetch.registerTaskAsync(BACKGROUND_TASK, {

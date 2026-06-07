@@ -56,6 +56,13 @@ describe('computeChanges', () => {
     expect(msgs.some((m) => m.title.includes('RBA'))).toBe(true);
   });
 
+  test('RBA date-only change (same rate) is ignored', () => {
+    const before = core('0.05', 4.35, '2026-05-06');
+    const after = core('0.05', 4.35, '2026-06-10');
+    const msgs = computeChanges(before, after, [], 5);
+    expect(msgs.some((m) => m.title.includes('RBA'))).toBe(false);
+  });
+
   test('watchlisted product change notifies', () => {
     const msgs = computeChanges(core('0.0579'), core('0.0574'), ['A|1'], 5);
     expect(msgs.some((m) => m.body.includes('→'))).toBe(true);

@@ -42,6 +42,10 @@ SCHEMA_VERSION = 1
 DEFAULT_REPO = os.environ.get("AR_LOCAL_REPO", "yanniedog/AR-local")
 DEFAULT_TAG = os.environ.get("AR_LOCAL_APP_PAYLOAD_TAG", "app-payload-latest")
 APP_MIN_VERSION = "1.0.0"
+# Bound every gh subprocess so a network/CLI stall can never hang the Pi's daily
+# pipeline. Uploads get a longer budget than metadata calls.
+SUBPROCESS_TIMEOUT_SEC = 30
+SUBPROCESS_UPLOAD_TIMEOUT_SEC = 600
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 
@@ -461,7 +465,10 @@ def _gh_authed(gh: str) -> bool:
     if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
         return True
     try:
-        res = subprocess.run([gh, "auth", "status"], capture_output=True, text=True, timeout=30)
+        # nosemgrep: dangerous-subprocess-use-audit - fixed argv, shell=False, no user input.
+        res = subprocess.run(
+            [gh, "auth", "status"], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC
+        )
         return res.returncode == 0
     except Exception:
         return False
@@ -510,18 +517,24 @@ def publish_payload(
         return False
 
     # Ensure the release/tag exists (idempotent), then clobber-upload the assets.
+    # All calls use a fixed argv with shell=False and a timeout; repo/tag/paths are
+    # operator-controlled (env/CLI), not untrusted input.
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     view = subprocess.run(
-        [gh, "release", "view", tag, "--repo", repo], capture_output=True, text=True
+        [gh, "release", "view", tag, "--repo", repo],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
     )
     if view.returncode != 0:
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
         subprocess.run(
             [gh, "release", "create", tag, "--repo", repo, "--title", title,
              "--notes", notes, "--latest=false"],
-            check=True,
+            check=True, timeout=SUBPROCESS_TIMEOUT_SEC,
         )
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     subprocess.run(
         [gh, "release", "upload", tag, *[str(a) for a in assets], "--repo", repo, "--clobber"],
-        check=True,
+        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
     )
     print(f"[app_payload] published {len(assets)} assets to {repo}@{tag} (run_date={manifest.get('run_date')})")
     return True
@@ -597,8 +610,8 @@ def _cmd_seed(args: argparse.Namespace) -> int:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Build/publish the AR-local mobile app payload.")
-    parser.add_argument("--repo", default=DEFAULT_REPO, help=f"GitHub repo (default {DEFAULT_REPO})")
-    parser.add_argument("--tag", default=DEFAULT_TAG, help=f"Rolling release tag (default {DEFAULT_TAG})")
+    parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo (default: %(default)s)")
+    parser.add_argument("--tag", default=DEFAULT_TAG, help="Rolling release tag (default: %(default)s)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("build", help="Build manifest + core + details from a run export.")
@@ -615,7 +628,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.set_defaults(func=_cmd_publish)
 
     s = sub.add_parser("seed", help="Repackage the committed app sample into a publishable payload.")
-    s.add_argument("--sample", default="mobile/assets/sample", help="Dir with core.json/details.json.")
+    s.add_argument("--sample", default="mobile/assets/sample", help="Dir with core.json/details.json (default: %(default)s).")
     s.add_argument("--out", required=True, help="Output payload dir.")
     s.add_argument("--publish", action="store_true", help="Publish after seeding.")
     s.add_argument("--dry-run", action="store_true", help="With --publish, only print intended uploads.")
