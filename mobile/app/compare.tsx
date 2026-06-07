@@ -30,8 +30,14 @@ export default function Compare() {
 
   const entries = useMemo<Entry[]>(() => {
     if (!core || !keys) return [];
-    return decodeURIComponent(keys)
-      .split(',')
+    let list: string[];
+    try {
+      // Keys are serialized as a JSON array (product keys can contain commas).
+      list = JSON.parse(keys);
+    } catch {
+      list = keys.split(',');
+    }
+    return list
       .map((k) => findByKey(core.sections, k))
       .filter((x): x is { row: RateRow; section: SectionKey; siblings: RateRow[] } => x !== null)
       .map(({ row, section }) => ({ row, section }));

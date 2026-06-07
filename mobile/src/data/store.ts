@@ -225,10 +225,13 @@ export const useStore = create<AppState>()(
             set({ details: fresh });
             return;
           }
-          // Sample / offline fallback.
-          set({ details: sampleDetails as DetailsPayload });
+          // Only fall back to the bundled sample when we are actually on sample data.
+          if (source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } catch {
-          set({ details: sampleDetails as DetailsPayload });
+          // A live details download failed: leave details unavailable rather than
+          // show stale sample fees/features next to current rates. Only use the
+          // bundled sample when the rest of the data is also the sample.
+          if (source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } finally {
           set({ detailsLoading: false });
         }

@@ -13,8 +13,9 @@ import { openProduct } from '../../src/lib/nav';
 import type { RateRow, SectionKey } from '../../src/types';
 
 export default function BankDetail() {
+  // Already decoded by expo-router — decoding again would throw on a literal '%'.
   const { provider: raw } = useLocalSearchParams<{ provider: string }>();
-  const provider = decodeURIComponent(raw ?? '');
+  const provider = raw ?? '';
   const core = useStore((s) => s.core);
 
   const bySection = useMemo(() => {

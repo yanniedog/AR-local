@@ -24,8 +24,10 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function ProductDetail() {
   const theme = useTheme();
+  // expo-router already returns the decoded param — do NOT decode again (keys can
+  // contain a literal '%', which would throw URIError).
   const { key } = useLocalSearchParams<{ key: string }>();
-  const productKey = decodeURIComponent(key ?? '');
+  const productKey = key ?? '';
   const core = useStore((s) => s.core);
   const ensureDetails = useStore((s) => s.ensureDetails);
   const detail = useStore((s) => s.details?.products[productKey] ?? null);
