@@ -28,12 +28,18 @@ function bestFraction(core: CorePayload, section: SectionKey): number | null {
   return best ? toFraction(best.rate) : null;
 }
 
-function findRate(core: CorePayload, productKey: string): { row: RateRow; fraction: number | null } | null {
+/** All rate rows for a product, keyed by rate_index, so changes can be matched
+ *  row-for-row (a product can have many rows; comparing only the first misses
+ *  changes and a row-order change would create false alerts). */
+function ratesByIndex(core: CorePayload, productKey: string): Map<number, { row: RateRow; fraction: number | null }> {
+  const out = new Map<number, { row: RateRow; fraction: number | null }>();
   for (const section of SECTION_ORDER) {
-    const row = (core.sections[section]?.rates ?? []).find((r) => r.product_key === productKey);
-    if (row) return { row, fraction: toFraction(row.rate) };
+    for (const row of core.sections[section]?.rates ?? []) {
+      if (row.product_key !== productKey) continue;
+      out.set(row.rate_index ?? out.size, { row, fraction: toFraction(row.rate) });
+    }
   }
-  return null;
+  return out;
 }
 
 /**
@@ -74,17 +80,26 @@ export function computeChanges(
     });
   }
 
-  // Watchlisted products.
+  // Watchlisted products — compare row-for-row by rate_index and report the largest
+  // qualifying move (order-independent; catches changes to any rate row, not just the first).
   for (const key of favorites) {
-    const before = findRate(oldCore, key);
-    const after = findRate(newCore, key);
-    if (!before || !after || before.fraction === null || after.fraction === null) continue;
-    const bps = Math.abs(bpsBetween(after.fraction, before.fraction) ?? 0);
-    if (bps < thresholdBps) continue;
-    messages.push({
-      title: `${after.row.provider} rate changed`,
-      body: `${after.row.product_name}: ${formatRate(before.fraction)} → ${formatRate(after.fraction)}.`,
-    });
+    const before = ratesByIndex(oldCore, key);
+    const after = ratesByIndex(newCore, key);
+    let biggest: { row: RateRow; from: number; to: number; bps: number } | null = null;
+    for (const [index, nw] of after) {
+      const od = before.get(index);
+      if (!od || od.fraction === null || nw.fraction === null) continue;
+      const bps = Math.abs(bpsBetween(nw.fraction, od.fraction) ?? 0);
+      if (bps >= thresholdBps && (!biggest || bps > biggest.bps)) {
+        biggest = { row: nw.row, from: od.fraction, to: nw.fraction, bps };
+      }
+    }
+    if (biggest) {
+      messages.push({
+        title: `${biggest.row.provider} rate changed`,
+        body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.`,
+      });
+    }
   }
 
   return messages;

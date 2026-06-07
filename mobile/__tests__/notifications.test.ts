@@ -67,4 +67,42 @@ describe('computeChanges', () => {
     const msgs = computeChanges(core('0.0579'), core('0.0574'), ['A|1'], 5);
     expect(msgs.some((m) => m.body.includes('→'))).toBe(true);
   });
+
+  function multiRowCore(rates: { rate_index: number; rate: string }[]): CorePayload {
+    return {
+      schema_version: 1,
+      run_date: '2026-05-19',
+      sections: {
+        Mortgage: { rates: rates.map((r) => mk({ product_key: 'M|1', ...r })), ribbon: emptyRibbon() },
+        Savings: { rates: [], ribbon: emptyRibbon() },
+        TD: { rates: [], ribbon: emptyRibbon() },
+      },
+      brands: {},
+      rba: [{ date: '2026-05-06', rate: 4.35 }],
+    };
+  }
+
+  test('watchlist matches rows by rate_index (catches non-first row change)', () => {
+    const before = multiRowCore([
+      { rate_index: 1, rate: '0.0600' },
+      { rate_index: 2, rate: '0.0700' },
+    ]);
+    const after = multiRowCore([
+      { rate_index: 1, rate: '0.0600' },
+      { rate_index: 2, rate: '0.0650' }, // 2nd row moved 50bps
+    ]);
+    expect(computeChanges(before, after, ['M|1'], 5).some((m) => m.body.includes('→'))).toBe(true);
+  });
+
+  test('watchlist ignores pure row-order changes', () => {
+    const before = multiRowCore([
+      { rate_index: 1, rate: '0.0600' },
+      { rate_index: 2, rate: '0.0700' },
+    ]);
+    const after = multiRowCore([
+      { rate_index: 2, rate: '0.0700' },
+      { rate_index: 1, rate: '0.0600' }, // same rates, swapped order
+    ]);
+    expect(computeChanges(before, after, ['M|1'], 5)).toEqual([]);
+  });
 });

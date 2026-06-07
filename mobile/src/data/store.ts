@@ -112,21 +112,13 @@ export const useStore = create<AppState>()(
           // proceed with defaults if rehydrate fails
         }
 
-        const meta = await cache.readMeta();
-        const cachedCore = await cache.readCore();
-        // Only trust the cache when core and metadata agree: a crash between
-        // writeCore() and writeMeta() can leave a new core paired with an old
-        // manifest, which would later mis-pair rates with another run's details.
-        const cacheConsistent =
-          !!meta &&
-          !!cachedCore &&
-          cachedCore.run_date === meta.manifest.run_date &&
-          cachedCore.schema_version === meta.manifest.schema_version;
-        if (meta && cachedCore && cacheConsistent) {
+        // Core + meta are persisted atomically in one bundle, so they always agree.
+        const bundle = await cache.readBundle();
+        if (bundle) {
           set({
-            core: cachedCore,
-            manifest: meta.manifest,
-            source: meta.source,
+            core: bundle.core,
+            manifest: bundle.meta.manifest,
+            source: bundle.meta.source,
             status: 'ready',
           });
         } else {
@@ -138,8 +130,7 @@ export const useStore = create<AppState>()(
             coreSha: sampleManifest.files.core.sha256,
             detailsSha: null,
           };
-          await cache.writeCore(JSON.stringify(sampleCore));
-          await cache.writeMeta(seedMeta);
+          await cache.writeBundle(seedMeta, JSON.stringify(sampleCore));
           set({
             core: sampleCore,
             manifest: sampleManifest,
@@ -154,10 +145,9 @@ export const useStore = create<AppState>()(
 
       async ensureCoreLoaded() {
         if (get().core) return;
-        const meta = await cache.readMeta();
-        const cachedCore = await cache.readCore();
-        if (meta && cachedCore) {
-          set({ core: cachedCore, manifest: meta.manifest, source: meta.source });
+        const bundle = await cache.readBundle();
+        if (bundle) {
+          set({ core: bundle.core, manifest: bundle.meta.manifest, source: bundle.meta.source });
         }
       },
 
@@ -202,19 +192,22 @@ export const useStore = create<AppState>()(
           const previousCore = get().core;
           const previousSource = get().source;
           const { text, core } = await downloadCore(remote.files.core.url, remote.files.core.sha256);
-          await cache.writeCore(text);
           // A forced refresh (pull-to-refresh / "Refresh now") re-downloads the core
           // even when nothing changed. If the details payload is byte-identical to what
           // we already cached, keep the existing details + hash so a transient details
           // failure doesn't strip an offline user's fees/features.
           const detailsUnchanged = !!meta && meta.detailsSha === remote.files.details.sha256;
-          await cache.writeMeta({
-            manifest: remote,
-            source: 'remote',
-            savedAt: new Date().toISOString(),
-            coreSha: remote.files.core.sha256,
-            detailsSha: detailsUnchanged ? remote.files.details.sha256 : null,
-          });
+          // Atomic core+meta write: they can never end up mismatched on disk.
+          await cache.writeBundle(
+            {
+              manifest: remote,
+              source: 'remote',
+              savedAt: new Date().toISOString(),
+              coreSha: remote.files.core.sha256,
+              detailsSha: detailsUnchanged ? remote.files.details.sha256 : null,
+            },
+            text,
+          );
           set({
             core,
             manifest: remote,
@@ -297,7 +290,8 @@ export const useStore = create<AppState>()(
             if (!datasetUnchanged()) return;
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.
-            await cache.writeMeta({
+            // updateMeta preserves the cached core in the same atomic bundle.
+            await cache.updateMeta({
               manifest,
               source: 'remote',
               savedAt: new Date().toISOString(),
