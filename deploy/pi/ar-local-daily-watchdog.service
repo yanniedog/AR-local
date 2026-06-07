@@ -10,4 +10,6 @@ Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+# Optional mobile-app payload publishing (inherited by the pi_daily_sync subprocess).
+EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_watchdog.py

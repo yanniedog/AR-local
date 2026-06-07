@@ -5,7 +5,7 @@ The Raspberry Pi builds a compact daily **payload** and publishes it to a rollin
 **GitHub Release**; the app downloads it, serves everything offline, and fires local
 notifications when rates move.
 
-```
+```text
 Pi daily ingest ──► app_payload build ──► GitHub Release (tag: app-payload-latest)
                                               ├─ manifest.json      (tiny; polled first)
                                               ├─ core-<date>.json.gz (rates + ribbon + brands + RBA)
@@ -51,25 +51,20 @@ payload error, and with no token the builder just builds locally and skips the u
 
 1. Create a GitHub **fine-grained PAT** scoped to `yanniedog/AR-local` with
    **Contents: Read and write** (covers Releases).
-2. Put it (and the opt-in flag) in an env file the daily service reads, e.g.
-   `/etc/ar-local/app-payload.env`:
-
-   ```ini
-   AR_LOCAL_APP_PAYLOAD=1
-   GH_TOKEN=github_pat_xxx
-   ```
-
-3. Reference it from the daily unit and reload:
-
-   ```ini
-   # deploy/pi/ar-local-daily.service  (and the watchdog service)
-   [Service]
-   EnvironmentFile=-/etc/ar-local/app-payload.env
-   ```
+2. Install it on the Pi (writes `/etc/ar-local/app-payload.env`, mode 0600 — never
+   committed). The daily + watchdog service units already reference this file via
+   `EnvironmentFile=-/etc/ar-local/app-payload.env`:
 
    ```bash
+   sudo sh deploy/pi/install-app-payload-token.sh github_pat_xxx
+   ```
+
+3. Re-render the service units so the new `EnvironmentFile` line lands, then reload
+   (service-unit changes are applied by the installer, not the auto-deploy watchdog):
+
+   ```bash
+   sh deploy/pi/install-pi-systemd.sh /srv/ar-local
    sudo systemctl daemon-reload
-   sudo systemctl restart ar-local-daily.timer
    ```
 
 4. (Optional) Confirm with one manual run:
