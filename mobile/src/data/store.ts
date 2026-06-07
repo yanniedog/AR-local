@@ -185,6 +185,7 @@ export const useStore = create<AppState>()(
           }
 
           const previousCore = get().core;
+          const previousSource = get().source;
           const { text, core } = await downloadCore(remote.files.core.url, remote.files.core.sha256);
           await cache.writeCore(text);
           await cache.writeMeta({
@@ -196,8 +197,10 @@ export const useStore = create<AppState>()(
           });
           set({ core, manifest: remote, source: 'remote', status: 'ready', details: null });
 
-          // Local notifications on meaningful change.
-          if (prefs.notificationsEnabled) {
+          // Local notifications on meaningful change — only when the baseline was a
+          // previously-installed remote dataset, never the bundled sample (otherwise
+          // the first live refresh would alert on sample-vs-real differences).
+          if (prefs.notificationsEnabled && previousSource === 'remote') {
             const messages = computeChanges(
               previousCore,
               core,
@@ -235,11 +238,22 @@ export const useStore = create<AppState>()(
         const shaOk = !wantSha || meta?.detailsSha === wantSha;
         if (details && details.run_date === core.run_date && shaOk) return;
 
+        // A concurrent refresh may swap core/manifest while we await reads/downloads
+        // below; only install a result if the dataset we captured is still current.
+        const datasetUnchanged = () => {
+          const cur = get();
+          return (
+            cur.core?.run_date === core.run_date &&
+            cur.manifest?.files.core.sha256 === manifest?.files.core.sha256 &&
+            cur.manifest?.files.details.sha256 === manifest?.files.details.sha256
+          );
+        };
+
         set({ detailsLoading: true });
         try {
           const cached = await cache.readDetails();
           if (cached && cached.run_date === core.run_date && shaOk) {
-            set({ details: cached });
+            if (datasetUnchanged()) set({ details: cached });
             return;
           }
           if (source === 'remote' && manifest) {
@@ -247,17 +261,8 @@ export const useStore = create<AppState>()(
               manifest.files.details.url,
               manifest.files.details.sha256,
             );
-            // A concurrent refresh may have swapped the dataset while we awaited —
-            // verify both the core run_date and the manifest still match what we
-            // captured before writing or setting anything.
-            const cur = get();
-            if (
-              cur.core?.run_date !== core.run_date ||
-              cur.manifest?.files.core.sha256 !== manifest.files.core.sha256 ||
-              cur.manifest?.files.details.sha256 !== manifest.files.details.sha256
-            ) {
-              return;
-            }
+            // Discard an obsolete download if a refresh swapped the dataset mid-flight.
+            if (!datasetUnchanged()) return;
             await cache.writeDetails(text);
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.
