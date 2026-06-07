@@ -164,7 +164,10 @@ export const useStore = create<AppState>()(
         set({ refreshing: true });
         try {
           const remote = await fetchManifest();
-          set({ offline: false, manifest: remote, lastCheckedAt: new Date().toISOString() });
+          // Do NOT install the remote manifest yet — if the core download fails we'd
+          // be left with a new manifest paired with the old core, poisoning the
+          // metadata-only freshness check. Install it only once its core is in hand.
+          set({ offline: false, lastCheckedAt: new Date().toISOString() });
 
           const meta = await cache.readMeta();
           const upToDate =
@@ -173,9 +176,10 @@ export const useStore = create<AppState>()(
             meta.manifest.run_date === remote.run_date &&
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
-            set({ refreshing: false });
-            // Core is unchanged, but details may have been republished for the same
-            // run_date (e.g. corrected fees) — ensureDetails re-checks the details sha.
+            // Core already matches, so adopting this manifest keeps them aligned.
+            set({ manifest: remote, refreshing: false });
+            // Details may have been republished for the same run_date (e.g. corrected
+            // fees) — ensureDetails re-checks the details sha.
             void get().ensureDetails();
             return false;
           }
@@ -190,7 +194,7 @@ export const useStore = create<AppState>()(
             coreSha: remote.files.core.sha256,
             detailsSha: null,
           });
-          set({ core, source: 'remote', status: 'ready', details: null });
+          set({ core, manifest: remote, source: 'remote', status: 'ready', details: null });
 
           // Local notifications on meaningful change.
           if (prefs.notificationsEnabled) {

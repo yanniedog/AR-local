@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 
+import { SECTIONS } from '../constants';
 import type { Ribbon, SectionKey } from '../types';
 import { formatRate } from '../data/format';
 import { useTheme } from '../theme/ThemeProvider';
@@ -16,13 +17,18 @@ export function RibbonBar({ ribbon, section }: { ribbon: Ribbon; section: Sectio
   const span = max - min;
   const pct = (v: number | null) => (v === null ? 0 : Math.max(0, Math.min(1, (v - min) / span)) * 100);
 
+  // For loans the lowest rate is best (green); for deposits the highest is best.
+  const lowerIsBetter = SECTIONS[section].lowerIsBetter;
+  const minColor = lowerIsBetter ? theme.colors.success : theme.colors.danger;
+  const maxColor = lowerIsBetter ? theme.colors.danger : theme.colors.success;
+
   return (
     <View>
       <Row style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-        <Stat label="Min" value={formatRate(min)} color={theme.colors.success} />
+        <Stat label="Min" value={formatRate(min)} color={minColor} />
         <Stat label="Median" value={formatRate(median)} align="center" />
         <Stat label="Mean" value={formatRate(mean)} align="center" />
-        <Stat label="Max" value={formatRate(max)} align="right" color={theme.colors.danger} />
+        <Stat label="Max" value={formatRate(max)} align="right" color={maxColor} />
       </Row>
       <View
         style={{
