@@ -243,8 +243,16 @@ export const useStore = create<AppState>()(
               manifest.files.details.url,
               manifest.files.details.sha256,
             );
-            // A concurrent refresh may have swapped the dataset while we awaited.
-            if (get().core?.run_date !== core.run_date) return;
+            // A concurrent refresh may have swapped the dataset while we awaited —
+            // verify both the core run_date and the manifest still match what we
+            // captured before writing or setting anything.
+            const cur = get();
+            if (
+              cur.core?.run_date !== core.run_date ||
+              cur.manifest?.files.core.sha256 !== manifest.files.core.sha256
+            ) {
+              return;
+            }
             await cache.writeDetails(text);
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.

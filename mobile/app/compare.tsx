@@ -89,7 +89,7 @@ export default function Compare() {
         const accent = SECTIONS[e.section].lowerIsBetter ? theme.colors.success : theme.colors.primary;
         return (
           <Card
-            key={e.row.product_key}
+            key={`${e.row.product_key}#${e.row.rate_index ?? idx}`}
             style={{
               width: 230,
               marginRight: 12,
