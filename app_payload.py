@@ -593,11 +593,36 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     # ...then replace manifest.json last, so it only ever points at assets already live.
+    # --clobber deletes the live manifest before re-uploading; back it up first and
+    # restore it if the replacement fails, so the stable manifest URL is never left missing.
+    backup_dir = payload_dir / ".prev-manifest"
+    backup_dir.mkdir(exist_ok=True)
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     subprocess.run(
-        [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
-        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+        [gh, "release", "download", tag, "--repo", repo, "--pattern", "manifest.json",
+         "--dir", str(backup_dir), "--clobber"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
     )
+    backup_manifest = backup_dir / "manifest.json"
+    has_backup = backup_manifest.exists()
+    try:
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+        subprocess.run(
+            [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
+            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+        )
+    except subprocess.SubprocessError:
+        if has_backup:
+            try:
+                # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+                subprocess.run(
+                    [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"],
+                    check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+                )
+                print("[app_payload] restored previous manifest after a failed replacement upload")
+            except subprocess.SubprocessError:
+                print("[app_payload] WARNING: manifest upload failed AND restore failed")
+        raise
     print(
         f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
         f"to {repo}@{tag} (run_date={manifest.get('run_date')})"
