@@ -86,11 +86,15 @@ export const cache = {
   async writeBundle(meta: CacheMeta, coreText: string): Promise<void> {
     return serialize(() => atomicWriteBundle(`{"meta":${JSON.stringify(meta)},"core":${coreText}}`));
   },
-  /** Update only the metadata, preserving the cached core (serialized read-modify-write). */
+  /** Update only the metadata, preserving the cached core (serialized read-modify-write).
+   *  Conditional: discards the update if the on-disk core has advanced past the one this
+   *  metadata was built for (coreSha mismatch), so a stale update queued after a newer
+   *  refresh can't pair the new core with an old manifest. */
   async updateMeta(meta: CacheMeta): Promise<void> {
     return serialize(async () => {
       const b = await cache.readBundle();
       if (!b) return;
+      if (b.meta.coreSha !== meta.coreSha) return;
       await atomicWriteBundle(`{"meta":${JSON.stringify(meta)},"core":${JSON.stringify(b.core)}}`);
     });
   },

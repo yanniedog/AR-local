@@ -54,8 +54,14 @@ jobs:
             echo "::error::Live manifest was unparseable. Refusing; re-run with force=true to override."
             exit 1
           fi
-          if [ -n "$cur" ] && [ "$cur" \> "$sample" ] && [ "$force" != "true" ]; then
-            echo "::error::Release already has a newer run_date ($cur > $sample). This seed would downgrade users to the stale sample. Re-run with force=true only if you really intend to."
+          # Refuse when the live release is the SAME date or newer than the sample
+          # (a same-day Pi correction shares the sample's run_date but has different
+          # content, so a strict '>' would let the sample overwrite it). Only a live
+          # release strictly OLDER than the sample, or a missing one, may bootstrap.
+          if [ -n "$cur" ] && [ "$cur" \< "$sample" ]; then
+            echo "live release ($cur) is older than the sample ($sample) — safe to bootstrap forward"
+          elif [ -n "$cur" ] && [ "$force" != "true" ]; then
+            echo "::error::Release already has run_date $cur (>= sample $sample). Seeding the sample would downgrade live users. Re-run with force=true only if you really intend to."
             exit 1
           fi
       - name: Build payload from committed sample
