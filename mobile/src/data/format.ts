@@ -71,8 +71,23 @@ export function formatBalanceRange(
   return `Up to ${formatMoneyShort(hi)}`;
 }
 
+/** Parse an ISO-8601 duration like "P3Y", "P36M", "P1Y6M" to a month count. */
+function isoDurationMonths(term: string | undefined): number | null {
+  if (typeof term !== 'string') return null;
+  const m = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?$/.exec(term.trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  const months = Number(m[1] ?? 0) * 12 + Number(m[2] ?? 0);
+  return months > 0 ? months : null;
+}
+
 export function formatTerm(row: RateRow): string {
-  const months = toNumber(row.term_months);
+  // term_months is authoritative; otherwise parse the ISO `term` (e.g. "P36M" = 3 yrs).
+  // NB: ribbon_fixed_term only mirrors the *number* in `term` (P3Y→3, P36M→36), so its
+  // unit is ambiguous on its own — only fall back to it (as years) when nothing else.
+  let months = toNumber(row.term_months);
+  if (months === null || months <= 0) {
+    months = isoDurationMonths(typeof row.term === 'string' ? row.term : undefined);
+  }
   if (months !== null && months > 0) {
     if (months % 12 === 0) {
       const years = months / 12;

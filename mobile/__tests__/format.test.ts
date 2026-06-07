@@ -47,6 +47,14 @@ describe('format', () => {
     expect(formatTerm({} as RateRow)).toBe('');
   });
 
+  test('formatTerm parses ISO duration in term (month-valued fixed terms)', () => {
+    // ribbon_fixed_term mirrors the number regardless of unit, so term is authoritative.
+    expect(formatTerm({ term: 'P36M', ribbon_fixed_term: '36' } as RateRow)).toBe('3 yrs');
+    expect(formatTerm({ term: 'P3Y', ribbon_fixed_term: '3' } as RateRow)).toBe('3 yrs');
+    expect(formatTerm({ term: 'P12M' } as RateRow)).toBe('1 yr');
+    expect(formatTerm({ term: 'P18M' } as RateRow)).toBe('18 mo');
+  });
+
   test('isNonStandard', () => {
     expect(isNonStandard({ account_class: 'non_standard' } as RateRow)).toBe(true);
     expect(isNonStandard({ account_class: 'standard' } as RateRow)).toBe(false);

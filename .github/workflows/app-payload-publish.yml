@@ -12,6 +12,10 @@ on:
         description: Rolling release tag
         default: app-payload-latest
         required: true
+      force:
+        description: Overwrite even if the live release is newer than the sample
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,6 +28,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Refuse to downgrade newer live data
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.tag }}/manifest.json"
+          cur=$(curl -fsSL "$url" 2>/dev/null | python -c "import sys,json;print(json.load(sys.stdin).get('run_date',''))" 2>/dev/null || echo "")
+          sample=$(python -c "import json;print(json.load(open('mobile/assets/sample/manifest.json'))['run_date'])")
+          echo "live run_date='$cur' sample run_date='$sample' force='${{ inputs.force }}'"
+          if [ -n "$cur" ] && [ "$cur" \> "$sample" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "::error::Release already has a newer run_date ($cur > $sample). This seed would downgrade users to the stale sample. Re-run with force=true only if you really intend to."
+            exit 1
+          fi
       - name: Build payload from committed sample
         run: |
           python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
