@@ -493,7 +493,10 @@ def publish_payload(
         raise FileNotFoundError(f"no manifest.json in {payload_dir} (run build first)")
     manifest = _load_json(manifest_path)
     names = [manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]]
-    assets = [manifest_path] + [payload_dir / n for n in names]
+    # Upload the data assets first and the manifest LAST, so the rolling manifest is
+    # never left pointing at a missing/half-replaced asset if an upload fails.
+    data_assets = [payload_dir / n for n in names]
+    assets = data_assets + [manifest_path]
     missing = [str(a) for a in assets if not a.exists()]
     if missing:
         raise FileNotFoundError(f"missing payload assets: {missing}")
@@ -532,9 +535,16 @@ def publish_payload(
              "--notes", notes, "--latest=false"],
             check=True, timeout=SUBPROCESS_TIMEOUT_SEC,
         )
+    # Upload data assets first...
     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
     subprocess.run(
-        [gh, "release", "upload", tag, *[str(a) for a in assets], "--repo", repo, "--clobber"],
+        [gh, "release", "upload", tag, *[str(a) for a in data_assets], "--repo", repo, "--clobber"],
+        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+    )
+    # ...then replace manifest.json last, so it only ever points at assets already live.
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    subprocess.run(
+        [gh, "release", "upload", tag, str(manifest_path), "--repo", repo, "--clobber"],
         check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
     )
     print(f"[app_payload] published {len(assets)} assets to {repo}@{tag} (run_date={manifest.get('run_date')})")

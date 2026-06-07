@@ -264,6 +264,9 @@ export const useStore = create<AppState>()(
             // Discard an obsolete download if a refresh swapped the dataset mid-flight.
             if (!datasetUnchanged()) return;
             await cache.writeDetails(text);
+            // Re-check after the awaited write: a newer refresh may have installed its
+            // core/meta while writeDetails was suspended — don't clobber it.
+            if (!datasetUnchanged()) return;
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.
             await cache.writeMeta({
@@ -286,6 +289,11 @@ export const useStore = create<AppState>()(
           if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } finally {
           set({ detailsLoading: false });
+          // If a concurrent refresh moved the dataset past what this invocation
+          // captured, our result was discarded — schedule a load for the new dataset
+          // (bounded by actual run_date changes, so no tight loop).
+          const cur = get();
+          if (cur.core && cur.core.run_date !== core.run_date) void get().ensureDetails();
         }
       },
 
