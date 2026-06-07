@@ -32,6 +32,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -516,24 +518,18 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     return deleted
 
 
-def _live_manifest(gh: str, repo: str, tag: str, dest_dir: Path) -> Optional[Dict[str, Any]]:
-    """Download the release's current manifest.json and return it parsed, or None."""
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    target = dest_dir / "manifest.json"
-    if target.exists():
-        target.unlink()
-    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    res = subprocess.run(
-        [gh, "release", "download", tag, "--repo", repo, "--pattern", "manifest.json",
-         "--dir", str(dest_dir), "--clobber"],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
-    if res.returncode != 0 or not target.exists():
-        return None
+def _live_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Return the live release manifest's state, distinguishing a transient failure from
+    a genuinely missing manifest: ("present", dict) | ("missing", None) | ("error", None).
+    Uses the public asset URL (follows the 302 redirect) so a 404 is unambiguous."""
+    url = f"https://github.com/{repo}/releases/download/{tag}/manifest.json"
     try:
-        return _load_json(target)
+        with urllib.request.urlopen(url, timeout=SUBPROCESS_TIMEOUT_SEC) as resp:  # nosec B310 - https URL
+            return "present", json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return ("missing", None) if exc.code == 404 else ("error", None)
     except Exception:
-        return None
+        return "error", None
 
 
 def publish_payload(
@@ -615,52 +611,46 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     # ...then replace manifest.json last, so it only ever points at assets already live.
-    # --clobber deletes the live manifest before re-uploading; back it up first and
-    # restore it if the replacement fails, so the stable manifest URL is never left missing.
-    backup_dir = payload_dir / ".prev-manifest"
-    backup_manifest = backup_dir / "manifest.json"
-    backup_dir.mkdir(exist_ok=True)
-    # Clear any stale backup from a previous attempt so a failed download can never
-    # leave us restoring an old manifest (which may point at already-pruned assets).
-    if backup_manifest.exists():
-        backup_manifest.unlink()
-    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    dl = subprocess.run(
-        [gh, "release", "download", tag, "--repo", repo, "--pattern", "manifest.json",
-         "--dir", str(backup_dir), "--clobber"],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
-    # Only a fresh, successful download is a valid restore source.
-    has_backup = dl.returncode == 0 and backup_manifest.exists()
+    # First check the live manifest, distinguishing present / missing / transient-error.
+    status, live = _live_manifest_status(repo, tag)
+    our_run_date = str(manifest.get("run_date") or "")
+    our_gen = str(manifest.get("generated_at") or "")
 
-    # Revalidate immediately before replacing: if a concurrent publisher (e.g. the Pi)
-    # already published a NEWER run_date while we were uploading, don't clobber it with
-    # our older manifest. (Our data assets are content-addressed, so leaving them is safe.)
-    if has_backup:
-        try:
-            live = _load_json(backup_manifest)
-        except Exception:
-            live = {}
-        live_run_date = str(live.get("run_date") or "")
-        live_gen = str(live.get("generated_at") or "")
-        our_run_date = str(manifest.get("run_date") or "")
-        our_gen = str(manifest.get("generated_at") or "")
+    if status == "error" and not force:
+        # We couldn't verify the live manifest — fail closed rather than risk clobbering
+        # a newer one we just can't see. (Non-fatal for the daily pipeline; retried.)
+        print("[app_payload] could not verify the live manifest; skipping replacement (pass force=true to override)")
+        return False
+
+    if status == "present" and not force:
+        live_run_date = str((live or {}).get("run_date") or "")
+        live_gen = str((live or {}).get("generated_at") or "")
         # A newer live publication = a later run_date, OR a same-day correction with a
         # later generated_at (the per-build version that distinguishes same-day payloads).
-        # This narrows the concurrent-publisher window to the fetch->upload gap; the
-        # residual race is non-breaking because data assets are content-addressed (both
-        # manifests reference live assets) and the next scheduled run reconciles it.
+        # Residual fetch->upload race is non-breaking: data assets are content-addressed
+        # (both manifests reference live assets) and the next scheduled run reconciles it.
         live_newer = bool(live_run_date) and (
             live_run_date > our_run_date
             or (live_run_date == our_run_date and live_gen > our_gen)
         )
-        if live_newer and not force:
+        if live_newer:
             print(
                 f"[app_payload] live manifest (run_date={live_run_date}, generated_at={live_gen}) "
                 f"is newer than ours ({our_run_date}, {our_gen}); skipping manifest replacement "
                 "(pass force=true to override)"
             )
             return False
+
+    # Keep the displaced manifest so a failed --clobber replacement can be rolled back.
+    backup_gen = str((live or {}).get("generated_at") or "") if status == "present" else None
+    backup_dir = payload_dir / ".prev-manifest"
+    backup_manifest = backup_dir / "manifest.json"
+    backup_dir.mkdir(exist_ok=True)
+    if backup_manifest.exists():
+        backup_manifest.unlink()
+    if status == "present" and live is not None:
+        backup_manifest.write_text(json.dumps(live), encoding="utf-8")
+
     try:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
         subprocess.run(
@@ -668,19 +658,17 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     except subprocess.SubprocessError:
-        # Restore the previous manifest only if no one else published a newer one while
-        # our upload was failing — never clobber a concurrent newer publication.
-        if has_backup:
-            try:
-                backup_data = _load_json(backup_manifest)
-            except Exception:
-                backup_data = {}
-            current = _live_manifest(gh, repo, tag, payload_dir / ".live-recheck")
-            cur_gen = str((current or {}).get("generated_at") or "")
-            backup_gen = str(backup_data.get("generated_at") or "")
-            # Restore when the manifest is now missing, or still the one we displaced
-            # (its generated_at hasn't advanced past our backup).
-            if current is None or cur_gen <= backup_gen:
+        # Restore the displaced manifest ONLY after positively confirming it's safe:
+        # the live manifest is now genuinely missing, or still the one we displaced
+        # (generated_at unchanged). A transient recheck error -> do NOT restore (we can't
+        # confirm we wouldn't clobber a newer concurrent publish).
+        if backup_manifest.exists():
+            recheck, cur = _live_manifest_status(repo, tag)
+            cur_gen = str((cur or {}).get("generated_at") or "")
+            safe_to_restore = recheck == "missing" or (
+                recheck == "present" and backup_gen is not None and cur_gen <= backup_gen
+            )
+            if safe_to_restore:
                 try:
                     # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
                     subprocess.run(
@@ -691,7 +679,7 @@ def publish_payload(
                 except subprocess.SubprocessError:
                     print("[app_payload] WARNING: manifest upload failed AND restore failed")
             else:
-                print("[app_payload] a newer manifest is now live; skipping restore of the older backup")
+                print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
         raise
     print(
         f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
