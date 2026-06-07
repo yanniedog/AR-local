@@ -23,7 +23,7 @@ function groupsFor(section: SectionKey): Group[] {
     ];
   }
   if (section === 'TD') {
-    return [{ title: 'Interest paid', field: 'interest_payment', key: 'depositKinds' }];
+    return [{ title: 'Interest paid', field: 'interest_payment', key: 'interestPayments' }];
   }
   return [{ title: 'Account type', field: 'ribbon_deposit_kind', key: 'depositKinds' }];
 }
@@ -162,6 +162,7 @@ function resetFilters() {
     lvrTiers: [],
     repaymentTypes: [],
     depositKinds: [],
+    interestPayments: [],
     includeNonStandard: false,
   };
 }

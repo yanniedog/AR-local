@@ -73,6 +73,15 @@ describe('selectors', () => {
     expect(byProvider).toHaveLength(1);
   });
 
+  test('filterRows applies interestPayments (TD facet) against interest_payment', () => {
+    const td = [
+      mk({ product_key: 'A|TD', rate: '0.05', interest_payment: 'monthly' }),
+      mk({ product_key: 'B|TD', rate: '0.051', interest_payment: 'at_maturity' }),
+    ];
+    const monthly = filterRows(td, { ...EMPTY_FILTERS, interestPayments: ['monthly'] });
+    expect(monthly.map((r) => r.product_key)).toEqual(['A|TD']);
+  });
+
   test('queryAndSort end-to-end', () => {
     const out = queryAndSort(mortgage, { ...EMPTY_FILTERS, query: 'loan' }, 'rate', 'Mortgage');
     expect(out.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);

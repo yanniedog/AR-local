@@ -11,6 +11,7 @@ export interface Filters {
   lvrTiers: string[];
   repaymentTypes: string[];
   depositKinds: string[];
+  interestPayments: string[];
   includeNonStandard: boolean;
 }
 
@@ -21,6 +22,7 @@ export const EMPTY_FILTERS: Filters = {
   lvrTiers: [],
   repaymentTypes: [],
   depositKinds: [],
+  interestPayments: [],
   includeNonStandard: false,
 };
 
@@ -31,6 +33,7 @@ export function activeFilterCount(f: Filters): number {
     f.lvrTiers.length +
     f.repaymentTypes.length +
     f.depositKinds.length +
+    f.interestPayments.length +
     (f.includeNonStandard ? 1 : 0)
   );
 }
@@ -94,6 +97,7 @@ export function filterRows(rows: RateRow[], filters: Filters): RateRow[] {
     if (!inList(row.lvr_tier, filters.lvrTiers)) return false;
     if (!inList(row.ribbon_repayment_type ?? row.repayment_type, filters.repaymentTypes)) return false;
     if (!inList(row.ribbon_deposit_kind, filters.depositKinds)) return false;
+    if (!inList(row.interest_payment, filters.interestPayments)) return false;
     return true;
   });
 }

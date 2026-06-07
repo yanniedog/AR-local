@@ -74,6 +74,9 @@ export default function Browse() {
           value={section}
           onChange={(v) => {
             setSection(v);
+            // Filters are section-specific (LVR tiers, deposit kinds, …) — clear them
+            // so the new category isn't filtered to empty by an incompatible facet.
+            setFilters(EMPTY_FILTERS);
             setSelected([]);
           }}
         />
