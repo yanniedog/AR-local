@@ -59,12 +59,13 @@ export function ProductCard({
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
+    // Card container is a plain View; the nav target and the favorite star are
+    // SEPARATE press targets so tapping the star never also opens the product.
+    <View
+      style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 8,
         paddingVertical: 12,
         paddingHorizontal: 14,
         backgroundColor: selected ? theme.colors.primaryMuted : theme.colors.card,
@@ -72,20 +73,29 @@ export function ProductCard({
         borderWidth: 1,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
         marginBottom: 10,
-        opacity: pressed ? 0.85 : 1,
-      })}
+      }}
     >
-      {selectMode ? (
-        <Ionicons
-          name={selected ? 'checkbox' : 'square-outline'}
-          size={24}
-          color={selected ? theme.colors.primary : theme.colors.textFaint}
-        />
-      ) : (
-        <BankAvatar provider={row.provider} />
-      )}
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => ({
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          opacity: pressed ? 0.85 : 1,
+        })}
+      >
+        {selectMode ? (
+          <Ionicons
+            name={selected ? 'checkbox' : 'square-outline'}
+            size={24}
+            color={selected ? theme.colors.primary : theme.colors.textFaint}
+          />
+        ) : (
+          <BankAvatar provider={row.provider} />
+        )}
 
-      <View style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
         <AppText variant="body" weight="700" numberOfLines={1}>
           {row.product_name}
         </AppText>
@@ -127,33 +137,36 @@ export function ProductCard({
         ) : null}
       </View>
 
-      <View style={{ alignItems: 'flex-end', minWidth: 76 }}>
-        <AppText
-          variant="h3"
-          weight="800"
-          style={{ color: lowerIsBetter ? theme.colors.success : theme.colors.primary }}
-        >
-          {formatRate(row.rate)}
-        </AppText>
-        {row.comparison_rate ? (
-          <AppText variant="tiny" color="textFaint">
-            {formatRate(row.comparison_rate)} cmp
-          </AppText>
-        ) : null}
-        {!selectMode ? (
-          <Pressable
-            onPress={() => toggleFavorite(row.product_key)}
-            hitSlop={10}
-            style={{ marginTop: 4 }}
+        <View style={{ alignItems: 'flex-end', minWidth: 76 }}>
+          <AppText
+            variant="h3"
+            weight="800"
+            style={{ color: lowerIsBetter ? theme.colors.success : theme.colors.primary }}
           >
-            <Ionicons
-              name={favorite ? 'star' : 'star-outline'}
-              size={18}
-              color={favorite ? theme.colors.warning : theme.colors.textFaint}
-            />
-          </Pressable>
-        ) : null}
-      </View>
-    </Pressable>
+            {formatRate(row.rate)}
+          </AppText>
+          {row.comparison_rate ? (
+            <AppText variant="tiny" color="textFaint">
+              {formatRate(row.comparison_rate)} cmp
+            </AppText>
+          ) : null}
+        </View>
+      </Pressable>
+
+      {!selectMode ? (
+        <Pressable
+          onPress={() => toggleFavorite(row.product_key)}
+          hitSlop={10}
+          accessibilityLabel={favorite ? 'Remove from watchlist' : 'Add to watchlist'}
+          style={{ paddingLeft: 6, paddingVertical: 6 }}
+        >
+          <Ionicons
+            name={favorite ? 'star' : 'star-outline'}
+            size={20}
+            color={favorite ? theme.colors.warning : theme.colors.textFaint}
+          />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }

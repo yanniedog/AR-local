@@ -610,6 +610,22 @@ def publish_payload(
     )
     # Only a fresh, successful download is a valid restore source.
     has_backup = dl.returncode == 0 and backup_manifest.exists()
+
+    # Revalidate immediately before replacing: if a concurrent publisher (e.g. the Pi)
+    # already published a NEWER run_date while we were uploading, don't clobber it with
+    # our older manifest. (Our data assets are content-addressed, so leaving them is safe.)
+    if has_backup:
+        try:
+            live_run_date = str(_load_json(backup_manifest).get("run_date") or "")
+        except Exception:
+            live_run_date = ""
+        our_run_date = str(manifest.get("run_date") or "")
+        if live_run_date and our_run_date and live_run_date > our_run_date:
+            print(
+                f"[app_payload] live manifest run_date {live_run_date} is newer than ours "
+                f"({our_run_date}); skipping manifest replacement to avoid a downgrade"
+            )
+            return False
     try:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
         subprocess.run(

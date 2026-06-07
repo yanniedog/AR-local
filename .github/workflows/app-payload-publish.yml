@@ -35,7 +35,9 @@ jobs:
           # Fail CLOSED: only a confirmed-missing release (404) may proceed to bootstrap.
           # A transient/HTTP error must NOT be treated as "no release" (that could
           # downgrade live data) unless the operator explicitly forces it.
-          code=$(curl -s -o live-manifest.json -w '%{http_code}' "$url" || echo 000)
+          # -L: release-asset URLs 302-redirect to storage; without it we'd see 302
+          # and fail closed even when the asset genuinely exists.
+          code=$(curl -sL -o live-manifest.json -w '%{http_code}' "$url" || echo 000)
           echo "live manifest HTTP=$code force=$force"
           if [ "$code" = "200" ]; then
             cur=$(python -c "import json;print(json.load(open('live-manifest.json')).get('run_date',''))" 2>/dev/null || echo PARSE_ERR)
