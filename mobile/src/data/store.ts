@@ -203,14 +203,25 @@ export const useStore = create<AppState>()(
           const previousSource = get().source;
           const { text, core } = await downloadCore(remote.files.core.url, remote.files.core.sha256);
           await cache.writeCore(text);
+          // A forced refresh (pull-to-refresh / "Refresh now") re-downloads the core
+          // even when nothing changed. If the details payload is byte-identical to what
+          // we already cached, keep the existing details + hash so a transient details
+          // failure doesn't strip an offline user's fees/features.
+          const detailsUnchanged = !!meta && meta.detailsSha === remote.files.details.sha256;
           await cache.writeMeta({
             manifest: remote,
             source: 'remote',
             savedAt: new Date().toISOString(),
             coreSha: remote.files.core.sha256,
-            detailsSha: null,
+            detailsSha: detailsUnchanged ? remote.files.details.sha256 : null,
           });
-          set({ core, manifest: remote, source: 'remote', status: 'ready', details: null });
+          set({
+            core,
+            manifest: remote,
+            source: 'remote',
+            status: 'ready',
+            details: detailsUnchanged ? get().details : null,
+          });
 
           // Local notifications on meaningful change — only when the baseline was a
           // previously-installed remote dataset, never the bundled sample (otherwise

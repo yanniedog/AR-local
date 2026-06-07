@@ -46,6 +46,10 @@ APP_MIN_VERSION = "1.0.0"
 # pipeline. Uploads get a longer budget than metadata calls.
 SUBPROCESS_TIMEOUT_SEC = 30
 SUBPROCESS_UPLOAD_TIMEOUT_SEC = 600
+# Content-addressed assets accumulate on the rolling release; GitHub caps a release at
+# 1000 assets. Keep the current manifest's assets plus a recent buffer (covers any
+# in-flight client still holding the just-superseded manifest) and prune older ones.
+KEEP_RECENT_ASSETS = 20
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 
@@ -481,6 +485,37 @@ def _gh_authed(gh: str) -> bool:
         return False
 
 
+def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) -> int:
+    """Delete obsolete content-addressed data assets, keeping the current manifest's
+    assets plus the KEEP_RECENT_ASSETS newest. Best-effort; returns count deleted."""
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    listed = subprocess.run(
+        [gh, "release", "view", tag, "--repo", repo, "--json", "assets",
+         "-q", '.assets[] | "\\(.name)\\t\\(.createdAt)"'],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if listed.returncode != 0:
+        return 0
+    data: List[Tuple[str, str]] = []
+    for line in listed.stdout.splitlines():
+        name, _, created = line.partition("\t")
+        if (name.startswith("core-") or name.startswith("details-")) and name.endswith(".json.gz"):
+            data.append((name, created))
+    data.sort(key=lambda x: x[1], reverse=True)  # newest first
+    deleted = 0
+    for idx, (name, _created) in enumerate(data):
+        if name in keep_names or idx < KEEP_RECENT_ASSETS:
+            continue
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+        res = subprocess.run(
+            [gh, "release", "delete-asset", tag, name, "--repo", repo, "-y"],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+        )
+        if res.returncode == 0:
+            deleted += 1
+    return deleted
+
+
 def publish_payload(
     payload_dir: Path,
     *,
@@ -567,6 +602,14 @@ def publish_payload(
         f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
         f"to {repo}@{tag} (run_date={manifest.get('run_date')})"
     )
+    # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
+    try:
+        keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}
+        pruned = _prune_release_assets(gh, repo, tag, keep)
+        if pruned:
+            print(f"[app_payload] pruned {pruned} obsolete release asset(s)")
+    except Exception as exc:  # noqa: BLE001 - pruning must never fail a publish
+        print(f"[app_payload] asset prune skipped (non-fatal): {exc}")
     return True
 
 
