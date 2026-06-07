@@ -249,7 +249,8 @@ export const useStore = create<AppState>()(
             const cur = get();
             if (
               cur.core?.run_date !== core.run_date ||
-              cur.manifest?.files.core.sha256 !== manifest.files.core.sha256
+              cur.manifest?.files.core.sha256 !== manifest.files.core.sha256 ||
+              cur.manifest?.files.details.sha256 !== manifest.files.details.sha256
             ) {
               return;
             }

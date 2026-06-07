@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
-import { ScrollView } from 'react-native';
+import { Pressable, ScrollView } from 'react-native';
 
 import { RbaChart } from '../../src/components/charts';
 import { RibbonBar } from '../../src/components/RibbonBar';
@@ -74,7 +74,8 @@ export default function Trends() {
         if (!data || data.ribbon.range.min === null) return null;
         const best = bestRow(data.rates, key);
         return (
-          <Card key={key} style={{ marginBottom: 12 }} onTouchEnd={() => openBrowse(key)}>
+          <Pressable key={key} onPress={() => openBrowse(key)}>
+            <Card style={{ marginBottom: 12 }}>
             <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
               <Row gap={8}>
                 <Ionicons
@@ -95,7 +96,8 @@ export default function Trends() {
               </AppText>
             </Row>
             <RibbonBar ribbon={data.ribbon} section={key} />
-          </Card>
+            </Card>
+          </Pressable>
         );
       })}
       <AppText variant="tiny" color="textFaint" style={{ textAlign: 'center', marginTop: 8 }}>

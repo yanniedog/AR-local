@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { FilterSheet } from '../../src/components/FilterSheet';
@@ -48,6 +48,18 @@ export default function Browse() {
 
   const initial = (params.section && sectionFromSlug(params.section)) || defaultSection;
   const [section, setSection] = useState<SectionKey>(initial);
+
+  // Re-tapping a category from Home/Trends re-navigates to this mounted tab with a
+  // new ?section= — sync local state (and clear section-specific filters) to it.
+  useEffect(() => {
+    const routed = params.section && sectionFromSlug(params.section);
+    if (routed && routed !== section) {
+      setSection(routed);
+      setFilters(EMPTY_FILTERS);
+      setSelected([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.section]);
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('rate');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
