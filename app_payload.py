@@ -312,14 +312,15 @@ def _load_json(path: Path) -> Any:
 
 
 def _find_banks_json(exports_dir: Path, run_date: str) -> Path:
+    # Require the banks.json that matches latest.json's run_date. Never substitute a
+    # different date's file — that would publish older rates under a newer run_date.
     candidate = exports_dir / "dashboard-cache" / run_date / "banks.json"
-    if candidate.exists():
-        return candidate
-    # Fall back to any banks.json under dashboard-cache/<date>/.
-    matches = sorted((exports_dir / "dashboard-cache").glob("*/banks.json"))
-    if matches:
-        return matches[-1]
-    raise FileNotFoundError(f"banks.json not found under {exports_dir / 'dashboard-cache'}")
+    if not candidate.exists():
+        raise FileNotFoundError(
+            f"banks.json for run_date {run_date} not found at {candidate}; "
+            "refusing to package a different run's data"
+        )
+    return candidate
 
 
 def _ingest_schedule() -> Dict[str, Any]:

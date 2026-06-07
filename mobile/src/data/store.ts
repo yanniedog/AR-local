@@ -60,6 +60,8 @@ interface AppState {
   favorites: string[];
 
   bootstrap: () => Promise<void>;
+  /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
+  ensureCoreLoaded: () => Promise<void>;
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
   ensureDetails: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
@@ -133,6 +135,15 @@ export const useStore = create<AppState>()(
         void get().refresh({});
       },
 
+      async ensureCoreLoaded() {
+        if (get().core) return;
+        const meta = await cache.readMeta();
+        const cachedCore = await cache.readCore();
+        if (meta && cachedCore) {
+          set({ core: cachedCore, manifest: meta.manifest, source: meta.source });
+        }
+      },
+
       async refresh(opts = {}) {
         const { force = false, manual = false } = opts;
         if (get().refreshing) return false;
@@ -161,7 +172,7 @@ export const useStore = create<AppState>()(
           }
 
           const previousCore = get().core;
-          const { text, core } = await downloadCore(remote.files.core.url);
+          const { text, core } = await downloadCore(remote.files.core.url, remote.files.core.sha256);
           await cache.writeCore(text);
           await cache.writeMeta({
             manifest: remote,
@@ -219,7 +230,10 @@ export const useStore = create<AppState>()(
             return;
           }
           if (source === 'remote' && manifest) {
-            const { text, details: fresh } = await downloadDetails(manifest.files.details.url);
+            const { text, details: fresh } = await downloadDetails(
+              manifest.files.details.url,
+              manifest.files.details.sha256,
+            );
             await cache.writeDetails(text);
             if (meta) await cache.writeMeta({ ...meta, detailsSha: manifest.files.details.sha256 });
             set({ details: fresh });
@@ -301,6 +315,9 @@ try {
         } catch {
           // proceed with defaults if rehydrate fails
         }
+        // persist excludes core/manifest — load them from disk so the diff has a
+        // baseline and rate-change notifications fire on terminated-app runs.
+        await useStore.getState().ensureCoreLoaded();
         const changed = await useStore.getState().refresh({});
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
