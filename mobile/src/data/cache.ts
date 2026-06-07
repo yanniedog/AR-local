@@ -94,7 +94,12 @@ export const cache = {
     return serialize(async () => {
       const b = await cache.readBundle();
       if (!b) return;
+      // Discard if the on-disk bundle has advanced past the manifest this update is for:
+      // a different core, or a newer manifest version (generated_at) for the same core
+      // (e.g. a details-only correction adopted by a later refresh). Without the version
+      // check a stale same-core update could regress the bundle to an older details hash.
       if (b.meta.coreSha !== meta.coreSha) return;
+      if (b.meta.manifest.generated_at > meta.manifest.generated_at) return;
       await atomicWriteBundle(`{"meta":${JSON.stringify(meta)},"core":${JSON.stringify(b.core)}}`);
     });
   },
