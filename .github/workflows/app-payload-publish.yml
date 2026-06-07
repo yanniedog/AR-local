@@ -74,5 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          extra=""
+          [ "${{ inputs.force }}" = "true" ] && extra="--force"
           python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
-            publish --dir build/app-payload --require-token
+            publish --dir build/app-payload --require-token $extra

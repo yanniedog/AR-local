@@ -516,6 +516,26 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     return deleted
 
 
+def _live_manifest(gh: str, repo: str, tag: str, dest_dir: Path) -> Optional[Dict[str, Any]]:
+    """Download the release's current manifest.json and return it parsed, or None."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target = dest_dir / "manifest.json"
+    if target.exists():
+        target.unlink()
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    res = subprocess.run(
+        [gh, "release", "download", tag, "--repo", repo, "--pattern", "manifest.json",
+         "--dir", str(dest_dir), "--clobber"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if res.returncode != 0 or not target.exists():
+        return None
+    try:
+        return _load_json(target)
+    except Exception:
+        return None
+
+
 def publish_payload(
     payload_dir: Path,
     *,
@@ -523,11 +543,13 @@ def publish_payload(
     tag: str = DEFAULT_TAG,
     dry_run: bool = False,
     require_token: bool = False,
+    force: bool = False,
 ) -> bool:
     """Upload manifest + core + details to the rolling release. Returns True on upload.
 
     Token-gated: with no gh/auth it prints a message and returns False (a no-op),
-    unless ``require_token`` is set, in which case it raises.
+    unless ``require_token`` is set, in which case it raises. ``force`` overrides the
+    "don't overwrite a newer live manifest" guard (operator-confirmed downgrade).
     """
     manifest_path = payload_dir / "manifest.json"
     if not manifest_path.exists():
@@ -632,10 +654,11 @@ def publish_payload(
             live_run_date > our_run_date
             or (live_run_date == our_run_date and live_gen > our_gen)
         )
-        if live_newer:
+        if live_newer and not force:
             print(
                 f"[app_payload] live manifest (run_date={live_run_date}, generated_at={live_gen}) "
-                f"is newer than ours ({our_run_date}, {our_gen}); skipping manifest replacement"
+                f"is newer than ours ({our_run_date}, {our_gen}); skipping manifest replacement "
+                "(pass force=true to override)"
             )
             return False
     try:
@@ -645,16 +668,30 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
         )
     except subprocess.SubprocessError:
+        # Restore the previous manifest only if no one else published a newer one while
+        # our upload was failing — never clobber a concurrent newer publication.
         if has_backup:
             try:
-                # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-                subprocess.run(
-                    [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"],
-                    check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
-                )
-                print("[app_payload] restored previous manifest after a failed replacement upload")
-            except subprocess.SubprocessError:
-                print("[app_payload] WARNING: manifest upload failed AND restore failed")
+                backup_data = _load_json(backup_manifest)
+            except Exception:
+                backup_data = {}
+            current = _live_manifest(gh, repo, tag, payload_dir / ".live-recheck")
+            cur_gen = str((current or {}).get("generated_at") or "")
+            backup_gen = str(backup_data.get("generated_at") or "")
+            # Restore when the manifest is now missing, or still the one we displaced
+            # (its generated_at hasn't advanced past our backup).
+            if current is None or cur_gen <= backup_gen:
+                try:
+                    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+                    subprocess.run(
+                        [gh, "release", "upload", tag, str(backup_manifest), "--repo", repo, "--clobber"],
+                        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+                    )
+                    print("[app_payload] restored previous manifest after a failed replacement upload")
+                except subprocess.SubprocessError:
+                    print("[app_payload] WARNING: manifest upload failed AND restore failed")
+            else:
+                print("[app_payload] a newer manifest is now live; skipping restore of the older backup")
         raise
     print(
         f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
@@ -724,7 +761,12 @@ def core_section_summary(out_dir: Path) -> Dict[str, str]:
 def _cmd_publish(args: argparse.Namespace) -> int:
     payload_dir = Path(args.dir).resolve()
     publish_payload(
-        payload_dir, repo=args.repo, tag=args.tag, dry_run=args.dry_run, require_token=args.require_token
+        payload_dir,
+        repo=args.repo,
+        tag=args.tag,
+        dry_run=args.dry_run,
+        require_token=args.require_token,
+        force=args.force,
     )
     return 0
 
@@ -756,6 +798,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--dir", required=True, help="Payload dir containing manifest.json + assets.")
     p.add_argument("--dry-run", action="store_true", help="Only print intended uploads.")
     p.add_argument("--require-token", action="store_true", help="Fail (non-zero) if no gh/token.")
+    p.add_argument("--force", action="store_true", help="Overwrite even a newer live manifest.")
     p.set_defaults(func=_cmd_publish)
 
     s = sub.add_parser("seed", help="Repackage the committed app sample into a publishable payload.")
