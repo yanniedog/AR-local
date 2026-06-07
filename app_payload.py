@@ -616,14 +616,26 @@ def publish_payload(
     # our older manifest. (Our data assets are content-addressed, so leaving them is safe.)
     if has_backup:
         try:
-            live_run_date = str(_load_json(backup_manifest).get("run_date") or "")
+            live = _load_json(backup_manifest)
         except Exception:
-            live_run_date = ""
+            live = {}
+        live_run_date = str(live.get("run_date") or "")
+        live_gen = str(live.get("generated_at") or "")
         our_run_date = str(manifest.get("run_date") or "")
-        if live_run_date and our_run_date and live_run_date > our_run_date:
+        our_gen = str(manifest.get("generated_at") or "")
+        # A newer live publication = a later run_date, OR a same-day correction with a
+        # later generated_at (the per-build version that distinguishes same-day payloads).
+        # This narrows the concurrent-publisher window to the fetch->upload gap; the
+        # residual race is non-breaking because data assets are content-addressed (both
+        # manifests reference live assets) and the next scheduled run reconciles it.
+        live_newer = bool(live_run_date) and (
+            live_run_date > our_run_date
+            or (live_run_date == our_run_date and live_gen > our_gen)
+        )
+        if live_newer:
             print(
-                f"[app_payload] live manifest run_date {live_run_date} is newer than ours "
-                f"({our_run_date}); skipping manifest replacement to avoid a downgrade"
+                f"[app_payload] live manifest (run_date={live_run_date}, generated_at={live_gen}) "
+                f"is newer than ours ({our_run_date}, {our_gen}); skipping manifest replacement"
             )
             return False
     try:
