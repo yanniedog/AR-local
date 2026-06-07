@@ -38,9 +38,20 @@ export default function Compare() {
       list = keys.split(',');
     }
     return list
-      .map((k) => findByKey(core.sections, k))
-      .filter((x): x is { row: RateRow; section: SectionKey; siblings: RateRow[] } => x !== null)
-      .map(({ row, section }) => ({ row, section }));
+      .map((token) => {
+        // Browse selections are "<rate_index>#<product_key>" to pin the exact row;
+        // watchlist passes bare product_keys. rate_index is numeric, so split on the
+        // first '#' only when it's preceded solely by digits.
+        const m = /^(\d+)#([\s\S]+)$/.exec(token);
+        const rateIndex = m ? Number(m[1]) : null;
+        const key = m ? m[2] : token;
+        const found = findByKey(core.sections, key);
+        if (!found) return null;
+        const exact =
+          rateIndex !== null ? found.siblings.find((s) => s.rate_index === rateIndex) : undefined;
+        return { row: exact ?? found.row, section: found.section };
+      })
+      .filter((x): x is Entry => x !== null);
   }, [core, keys]);
 
   if (!core) return null;
@@ -48,10 +59,14 @@ export default function Compare() {
     return <EmptyState icon="git-compare-outline" title="Nothing to compare" subtitle="Select at least two products." />;
   }
 
+  // Only mark a single "BEST" when every product shares a section (so the better
+  // direction is well-defined). Mixed-category watchlist compares skip the badge.
+  const sameSection = entries.every((e) => e.section === entries[0].section);
   const lowerIsBetter = SECTIONS[entries[0].section].lowerIsBetter;
   const fractions = entries.map((e) => toFraction(e.row.rate));
   const valid = fractions.filter((f): f is number => f !== null);
-  const bestVal = valid.length ? (lowerIsBetter ? Math.min(...valid) : Math.max(...valid)) : null;
+  const bestVal =
+    sameSection && valid.length ? (lowerIsBetter ? Math.min(...valid) : Math.max(...valid)) : null;
 
   const rows: { label: string; get: (e: Entry) => string }[] = [
     { label: 'Comparison rate', get: (e) => (e.row.comparison_rate ? formatRate(e.row.comparison_rate) : '—') },

@@ -103,6 +103,15 @@ export const useStore = create<AppState>()(
         if (get().status === 'ready' || get().status === 'loading') return;
         set({ status: 'loading' });
 
+        // Restore persisted prefs before the automatic refresh below, so a returning
+        // user's wifiOnly / notification settings are honoured on the first refresh
+        // instead of racing against async hydration with the defaults.
+        try {
+          await useStore.persist?.rehydrate?.();
+        } catch {
+          // proceed with defaults if rehydrate fails
+        }
+
         const meta = await cache.readMeta();
         const cachedCore = await cache.readCore();
         if (meta && cachedCore) {

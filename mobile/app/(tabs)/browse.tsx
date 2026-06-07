@@ -20,8 +20,12 @@ import {
 } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
 import { openCompare, openProduct } from '../../src/lib/nav';
-import type { SectionKey } from '../../src/types';
+import type { RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
+
+// A product can have several rate rows; encode the exact selected row so Compare
+// shows that row, not just the product's first one. '' can't occur in a key.
+const rowToken = (r: RateRow) => `${r.rate_index ?? ''}#${r.product_key}`;
 
 const SECTION_SEG = [
   { value: 'Mortgage' as SectionKey, label: 'Loans' },
@@ -32,7 +36,7 @@ const SECTION_SEG = [
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'rate', label: 'Best rate' },
   { key: 'comparison', label: 'Comparison' },
-  { key: 'bank', label: 'Bank A–Z' },
+  { key: 'bank', label: 'Bank Aâ€“Z' },
 ];
 
 export default function Browse() {
@@ -74,7 +78,7 @@ export default function Browse() {
           value={section}
           onChange={(v) => {
             setSection(v);
-            // Filters are section-specific (LVR tiers, deposit kinds, …) — clear them
+            // Filters are section-specific (LVR tiers, deposit kinds, â€¦) â€” clear them
             // so the new category isn't filtered to empty by an incompatible facet.
             setFilters(EMPTY_FILTERS);
             setSelected([]);
@@ -117,7 +121,7 @@ export default function Browse() {
           ribbon && ribbon.range.min !== null ? (
             <Card style={{ marginBottom: 12 }}>
               <AppText variant="small" color="textMuted" style={{ marginBottom: 10 }}>
-                {SECTIONS[section].title} · rate distribution
+                {SECTIONS[section].title} Â· rate distribution
               </AppText>
               <RibbonBar ribbon={ribbon} section={section} />
             </Card>
@@ -128,9 +132,9 @@ export default function Browse() {
             row={item}
             section={section}
             selectMode={selectMode}
-            selected={selected.includes(item.product_key)}
+            selected={selected.includes(rowToken(item))}
             onPress={() =>
-              selectMode ? toggleSelect(item.product_key) : openProduct(item.product_key)
+              selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key)
             }
           />
         )}
