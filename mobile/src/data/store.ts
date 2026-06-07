@@ -207,7 +207,9 @@ export const useStore = create<AppState>()(
               get().favorites,
               prefs.rateMoveThresholdBps,
             );
-            void notify(messages);
+            // Await so a headless background task doesn't resolve (and let the OS
+            // suspend the app) before the notifications are actually scheduled.
+            await notify(messages);
           }
 
           // Warm details in the background.
@@ -276,6 +278,8 @@ export const useStore = create<AppState>()(
               coreSha: manifest.files.core.sha256,
               detailsSha: manifest.files.details.sha256,
             });
+            // Final re-check after the awaited writeMeta, before touching state.
+            if (!datasetUnchanged()) return;
             set({ details: fresh });
             return;
           }
@@ -290,10 +294,16 @@ export const useStore = create<AppState>()(
         } finally {
           set({ detailsLoading: false });
           // If a concurrent refresh moved the dataset past what this invocation
-          // captured, our result was discarded — schedule a load for the new dataset
-          // (bounded by actual run_date changes, so no tight loop).
+          // captured (a new run OR a same-run core/details correction), our result was
+          // discarded — schedule a load for the now-current dataset. Bounded: it only
+          // re-runs while the manifest keeps changing, and the top-of-function freshness
+          // check no-ops once details are current.
           const cur = get();
-          if (cur.core && cur.core.run_date !== core.run_date) void get().ensureDetails();
+          const movedOn =
+            cur.core?.run_date !== core.run_date ||
+            cur.manifest?.files.core.sha256 !== manifest?.files.core.sha256 ||
+            cur.manifest?.files.details.sha256 !== manifest?.files.details.sha256;
+          if (cur.core && movedOn) void get().ensureDetails();
         }
       },
 

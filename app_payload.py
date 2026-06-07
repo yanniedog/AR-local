@@ -342,12 +342,18 @@ def _gzip_bytes(obj: Any) -> bytes:
     return gzip.compress(raw, compresslevel=9, mtime=0)
 
 
-def _asset(out_dir: Path, name: str, gz: bytes, release_base: str) -> Dict[str, Any]:
+def _asset(out_dir: Path, kind: str, run_date: str, gz: bytes, release_base: str) -> Dict[str, Any]:
+    # Content-addressed name (kind-<run_date>-<sha12>.json.gz): a new/corrected payload
+    # gets a NEW filename, so uploading it never overwrites an asset the previously
+    # published manifest still references. Old manifests stay internally consistent
+    # until the new manifest.json is published last.
+    sha = hashlib.sha256(gz).hexdigest()
+    name = f"{kind}-{run_date}-{sha[:12]}.json.gz"
     (out_dir / name).write_bytes(gz)
     return {
         "name": name,
         "bytes": len(gz),
-        "sha256": hashlib.sha256(gz).hexdigest(),
+        "sha256": sha,
         "url": f"{release_base}/{name}",
     }
 
@@ -415,8 +421,8 @@ def _package(
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     files = {
-        "core": _asset(out_dir, f"core-{run_date}.json.gz", _gzip_bytes(core), release_base),
-        "details": _asset(out_dir, f"details-{run_date}.json.gz", _gzip_bytes(details), release_base),
+        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
+        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
