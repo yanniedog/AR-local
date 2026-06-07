@@ -10,6 +10,13 @@ Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banking-only scope, and the
 AustralianRates dashboard parity contract.
 
+## Mobile app
+
+A polished iOS + Android app lives in **`mobile/`** (Expo / React Native). The Pi
+builds a compact daily payload (`app_payload.py`) and publishes it to a rolling
+GitHub Release; the app downloads and serves it offline. See
+**`docs/MOBILE_APP.md`** for the payload contract, Pi token setup, and EAS builds.
+
 ## Easiest Start
 
 Double-click:

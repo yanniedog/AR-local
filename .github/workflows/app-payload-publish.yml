@@ -1,0 +1,80 @@
+name: app-payload-publish
+
+# Manual fallback publisher. The Raspberry Pi is the PRIMARY daily publisher
+# (pi_daily_sync.py -> app_payload build+publish). This workflow re-seeds the
+# rolling release from the committed sample so the app's release URL resolves
+# immediately (e.g. to bootstrap before the Pi's first run). It does NOT have
+# live bank data — the Pi overwrites these assets on its next ingest.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Rolling release tag
+        default: app-payload-latest
+        required: true
+      force:
+        description: Overwrite even if the live release is newer than the sample
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Refuse to downgrade newer live data
+        run: |
+          force='${{ inputs.force }}'
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.tag }}/manifest.json"
+          # Fail CLOSED: only a confirmed-missing release (404) may proceed to bootstrap.
+          # A transient/HTTP error must NOT be treated as "no release" (that could
+          # downgrade live data) unless the operator explicitly forces it.
+          # -L: release-asset URLs 302-redirect to storage; without it we'd see 302
+          # and fail closed even when the asset genuinely exists.
+          code=$(curl -sL -o live-manifest.json -w '%{http_code}' "$url" || echo 000)
+          echo "live manifest HTTP=$code force=$force"
+          if [ "$code" = "200" ]; then
+            cur=$(python -c "import json;print(json.load(open('live-manifest.json')).get('run_date',''))" 2>/dev/null || echo PARSE_ERR)
+          elif [ "$code" = "404" ]; then
+            cur=""    # genuinely missing → safe to bootstrap
+          else
+            if [ "$force" != "true" ]; then
+              echo "::error::Could not verify the live manifest (HTTP $code). Refusing to publish to avoid downgrading live data. Re-run with force=true to override."
+              exit 1
+            fi
+            cur=""
+          fi
+          sample=$(python -c "import json;print(json.load(open('mobile/assets/sample/manifest.json'))['run_date'])")
+          echo "live run_date='$cur' sample run_date='$sample'"
+          if [ "$cur" = "PARSE_ERR" ] && [ "$force" != "true" ]; then
+            echo "::error::Live manifest was unparseable. Refusing; re-run with force=true to override."
+            exit 1
+          fi
+          # Refuse when the live release is the SAME date or newer than the sample
+          # (a same-day Pi correction shares the sample's run_date but has different
+          # content, so a strict '>' would let the sample overwrite it). Only a live
+          # release strictly OLDER than the sample, or a missing one, may bootstrap.
+          if [ -n "$cur" ] && [ "$cur" \< "$sample" ]; then
+            echo "live release ($cur) is older than the sample ($sample) — safe to bootstrap forward"
+          elif [ -n "$cur" ] && [ "$force" != "true" ]; then
+            echo "::error::Release already has run_date $cur (>= sample $sample). Seeding the sample would downgrade live users. Re-run with force=true only if you really intend to."
+            exit 1
+          fi
+      - name: Build payload from committed sample
+        run: |
+          python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
+            seed --sample mobile/assets/sample --out build/app-payload
+      - name: Publish to rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          extra=""
+          [ "${{ inputs.force }}" = "true" ] && extra="--force"
+          python app_payload.py --repo "${GITHUB_REPOSITORY}" --tag "${{ inputs.tag }}" \
+            publish --dir build/app-payload --require-token $extra

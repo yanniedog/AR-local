@@ -80,6 +80,34 @@ def run_git(args: list[str], cwd: Path | None = None) -> None:
     subprocess.run(["git", *args], cwd=str(cwd) if cwd else None, check=True, shell=False)
 
 
+def _app_payload_enabled() -> bool:
+    return os.environ.get("AR_LOCAL_APP_PAYLOAD", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def maybe_publish_app_payload(repo_root: Path) -> None:
+    """Build + publish the mobile-app payload after a successful ingest.
+
+    Opt-in (AR_LOCAL_APP_PAYLOAD=1) and strictly non-fatal: a publish failure must
+    never fail the daily ingest. Publishing itself is token-gated inside
+    app_payload (no GH_TOKEN -> builds locally and skips the upload).
+    """
+    if not _app_payload_enabled():
+        return
+    try:
+        from ar_local_pi_runtime import data_runs_root, latest_exports_root
+        import app_payload
+
+        exports = latest_exports_root(data_runs_root(repo_root))
+        if exports is None:
+            print("pi_daily_sync: no valid export found for app payload; skipping")
+            return
+        manifest, published = app_payload.build_and_publish(exports)
+        state = "published" if published else "built (upload skipped: no gh token)"
+        print(f"pi_daily_sync: app payload {state} (run_date={manifest['run_date']})")
+    except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
+        print(f"pi_daily_sync: app payload step failed (non-fatal): {exc}")
+
+
 def sync_existing_repo(repo: Path, remote_url: str) -> None:
     if not (repo / ".git").is_dir():
         run_git(["clone", remote_url, str(repo)])
@@ -148,6 +176,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ],
                 cwd=REPO_ROOT,
             )
+            maybe_publish_app_payload(REPO_ROOT)
     except RuntimeError as exc:
         if "daily ingest already running" in str(exc):
             print(f"pi_daily_sync: {exc}")

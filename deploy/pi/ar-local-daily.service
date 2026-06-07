@@ -11,6 +11,9 @@ WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+# Optional mobile-app payload publishing (AR_LOCAL_APP_PAYLOAD=1 + GH_TOKEN).
+# The leading '-' makes the file optional, so the unit is fine without it.
+EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
 ExecStartPost=/bin/sleep 5
