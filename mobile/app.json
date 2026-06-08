@@ -2,6 +2,7 @@
   "expo": {
     "name": "AR Rates",
     "slug": "ar-local-rates",
+    "owner": "yannieyannies-team",
     "scheme": "arrates",
     "version": "1.0.0",
     "description": "Daily Australian home loan, savings and term-deposit rates from open banking (CDR) data. Browse, filter, compare and watch rates — works offline.",
@@ -71,7 +72,11 @@
     "extra": {
       "repo": "yanniedog/AR-local",
       "releaseTag": "app-payload-latest",
-      "manifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json"
+      "manifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json",
+      "router": {},
+      "eas": {
+        "projectId": "69c08d63-b618-43f1-86b9-2556eef82104"
+      }
     }
   }
 }
