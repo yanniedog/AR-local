@@ -95,22 +95,25 @@ export interface RateStats {
   max: number | null;
   mean: number | null;
   median: number | null;
-  count: number;
-  providers: number;
+  count: number; // number of rate rows
+  products: number; // distinct product_key count
+  providers: number; // distinct lender count
 }
 
 export function statsFor(rows: RateRow[], includeNonStandard = false): RateStats {
   const fractions: number[] = [];
   const providers = new Set<string>();
+  const products = new Set<string>();
   for (const r of rows) {
     if (!includeNonStandard && isNonStandard(r)) continue;
     const f = toFraction(r.rate);
     if (f === null) continue;
     fractions.push(f);
     providers.add(r.provider);
+    products.add(r.product_key);
   }
   if (!fractions.length) {
-    return { min: null, max: null, mean: null, median: null, count: 0, providers: 0 };
+    return { min: null, max: null, mean: null, median: null, count: 0, products: 0, providers: 0 };
   }
   fractions.sort((a, b) => a - b);
   const n = fractions.length;
@@ -121,6 +124,7 @@ export function statsFor(rows: RateRow[], includeNonStandard = false): RateStats
     mean: fractions.reduce((s, x) => s + x, 0) / n,
     median: n % 2 ? fractions[mid] : (fractions[mid - 1] + fractions[mid]) / 2,
     count: n,
+    products: products.size,
     providers: providers.size,
   };
 }

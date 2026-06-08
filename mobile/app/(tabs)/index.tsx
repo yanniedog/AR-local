@@ -132,7 +132,7 @@ export default function Home() {
                   {node.label}
                 </AppText>
                 <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
-                  {node.stats.count} products · {node.stats.providers} lenders
+                  {node.stats.products} products · {node.stats.providers} lenders
                 </AppText>
               </View>
               <Row gap={4}>

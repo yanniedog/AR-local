@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { SECTIONS } from '../constants';
+import { isNonStandard } from '../data/format';
 import { sortRows } from '../data/selectors';
 import {
   childrenOf,
@@ -30,12 +31,22 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
 
   const { stats, children, items } = useMemo(() => {
-    const all = rows ?? [];
+    // Exclude non-standard accounts by default (matches the dashboard + the ribbon
+    // stats); the flat Search screen still has the include-non-standard toggle.
+    const all = (rows ?? []).filter((r) => !isNonStandard(r));
     const nodeRows = rowsUnder(all, section, path);
     const kids = childrenOf(all, section, path);
-    const data: Item[] = kids.length
-      ? kids.map((node) => ({ kind: 'node', node }) as Item)
-      : sortRows(nodeRows, 'rate', section).map((row) => ({ kind: 'product', row }) as Item);
+    let data: Item[];
+    if (kids.length) {
+      data = kids.map((node) => ({ kind: 'node', node }) as Item);
+    } else {
+      // Leaf: show one card per distinct product (best rate row), so the list
+      // matches the product count instead of repeating a product across rate rows.
+      const seen = new Set<string>();
+      data = sortRows(nodeRows, 'rate', section)
+        .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
+        .map((row) => ({ kind: 'product', row }) as Item);
+    }
     return { stats: statsFor(nodeRows), children: kids, items: data };
   }, [rows, section, path]);
 
@@ -50,12 +61,12 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
       </Card>
       <Row style={{ justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 2 }}>
         <AppText variant="small" weight="700" color="textMuted">
-          {isLeaf ? `${stats.count} PRODUCTS` : 'CATEGORIES'}
+          {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
         </AppText>
         {!isLeaf ? (
           <Pressable onPress={() => openProductsList(section, path)} hitSlop={8}>
             <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
-              View all {stats.count} →
+              All {stats.products} products →
             </AppText>
           </Pressable>
         ) : null}
@@ -109,7 +120,7 @@ function NodeCard({ section, path, node }: { section: SectionKey; path: string[]
             {node.label}
           </AppText>
           <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
-            {node.stats.count} {node.stats.count === 1 ? 'product' : 'products'} · {node.stats.providers} lenders
+            {node.stats.products} {node.stats.products === 1 ? 'product' : 'products'} · {node.stats.providers} lenders
           </AppText>
         </View>
         <Row gap={4}>

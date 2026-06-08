@@ -85,4 +85,34 @@ describe('taxonomy', () => {
     expect(statsFor(withNs).min).toBeCloseTo(0.0574);
     expect(statsFor(withNs, true).min).toBeCloseTo(0.04);
   });
+
+  test('statsFor counts distinct products separately from rate rows', () => {
+    const multi = [
+      mk({ product_key: 'X|1', rate: '0.05', rate_index: 1 }),
+      mk({ product_key: 'X|1', rate: '0.06', rate_index: 2 }), // same product, 2nd rate row
+      mk({ product_key: 'Y|1', rate: '0.055', rate_index: 1 }),
+    ];
+    const s = statsFor(multi);
+    expect(s.count).toBe(3); // rate rows
+    expect(s.products).toBe(2); // distinct product_keys
+  });
+
+  const emptyExpect = (s: ReturnType<typeof statsFor>) => {
+    expect(s.count).toBe(0);
+    expect(s.products).toBe(0);
+    expect(s.providers).toBe(0);
+    expect(s.min).toBeNull();
+    expect(s.max).toBeNull();
+    expect(s.mean).toBeNull();
+    expect(s.median).toBeNull();
+  };
+
+  test('statsFor returns nulls/zeros for empty input', () => {
+    emptyExpect(statsFor([]));
+  });
+
+  test('statsFor returns nulls/zeros when every row is non-standard', () => {
+    const allNs = rows.map((r) => ({ ...r, account_class: 'non_standard' }));
+    emptyExpect(statsFor(allNs));
+  });
 });
