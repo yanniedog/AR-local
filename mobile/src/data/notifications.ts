@@ -8,10 +8,11 @@ import { bestRow } from './selectors';
 
 export const BACKGROUND_TASK = 'ar-rates-daily-refresh';
 
-// Foreground presentation. (shouldShowAlert is the SDK 52 field.)
+// Foreground presentation. (SDK 53+ replaced shouldShowAlert with shouldShowBanner/List.)
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),

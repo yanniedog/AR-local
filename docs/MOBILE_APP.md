@@ -84,7 +84,7 @@ resolves the release URL immediately; the Pi overwrites it on its next ingest.
 
 ## 3. The app (`mobile/`)
 
-Expo SDK 52 + expo-router + TypeScript. Offline-first: it seeds from a bundled sample,
+Expo SDK 54 + expo-router + TypeScript. Offline-first: it seeds from a bundled sample,
 then upgrades to the live GitHub payload; all screens serve from a local cache.
 
 Features: Home (RBA cash rate + per-category bests), Browse (search, sort, filters,

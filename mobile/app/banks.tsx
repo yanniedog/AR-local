@@ -35,7 +35,6 @@ export default function Banks() {
       <FlashList
         data={filtered}
         keyExtractor={(g) => g.provider}
-        estimatedItemSize={76}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
         renderItem={({ item }) => <BankRow group={item} />}
         ListEmptyComponent={<EmptyState title="No lenders found" />}
