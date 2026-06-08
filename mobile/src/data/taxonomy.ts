@@ -60,7 +60,7 @@ function months(seg: string): number | null {
 function lvrLabel(seg: string): string {
   const v = seg.replace(/^LVR_/, '');
   if (v === 'LE60') return '≤60% LVR';
-  if (v === 'UNSPECIFIED' || v === 'NA') return 'LVR n/a';
+  if (v === 'UNSP' || v === 'UNSPECIFIED' || v === 'NA') return 'LVR n/a';
   let m = /^(\d+)_(\d+)$/.exec(v);
   if (m) return `${m[1]}–${m[2]}% LVR`;
   m = /^GT?(\d+)$/.exec(v);
@@ -158,10 +158,13 @@ function compareSeg(a: string, b: string, section: SectionKey): number {
   const mb = months(b);
   if (ma !== null && mb !== null) return ma - mb;
   if (a.startsWith('LVR_') && b.startsWith('LVR_')) {
-    // Sort by the first digit run, so LE60 / 70_80 / GT95 all order correctly.
+    // Sort by the first digit run, so LE60 / 70_80 / GT95 order correctly; digitless
+    // tiers (LVR_UNSP / UNSPECIFIED / NA) sort last.
     const da = /(\d+)/.exec(a);
     const db = /(\d+)/.exec(b);
-    return (da ? parseInt(da[1], 10) : 0) - (db ? parseInt(db[1], 10) : 0);
+    const la = da ? parseInt(da[1], 10) : Number.POSITIVE_INFINITY;
+    const lb = db ? parseInt(db[1], 10) : Number.POSITIVE_INFINITY;
+    return la - lb;
   }
   const oa = ORDER[a];
   const ob = ORDER[b];

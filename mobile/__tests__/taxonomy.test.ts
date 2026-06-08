@@ -27,6 +27,7 @@ describe('taxonomy', () => {
   });
 
   test('segLabel handles LVR edge cases and generic fallback', () => {
+    expect(segLabel('LVR_UNSP')).toBe('LVR n/a');
     expect(segLabel('LVR_UNSPECIFIED')).toBe('LVR n/a');
     expect(segLabel('LVR_NA')).toBe('LVR n/a');
     expect(segLabel('LVR_GT95')).toBe('95%+ LVR');
@@ -46,6 +47,19 @@ describe('taxonomy', () => {
       'LVR_LE60',
       'LVR_70_80',
       'LVR_GT95',
+    ]);
+  });
+
+  test('childrenOf sorts the digitless LVR_UNSP tier last', () => {
+    const r = [
+      mk({ product_key: 'u', rate: '0.06', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_UNSP' }),
+      mk({ product_key: 'b', rate: '0.05', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_LE60' }),
+      mk({ product_key: 'c', rate: '0.055', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_70_80' }),
+    ];
+    expect(childrenOf(r, 'Mortgage', ['OO', 'PI', 'VARIABLE']).map((n) => n.seg)).toEqual([
+      'LVR_LE60',
+      'LVR_70_80',
+      'LVR_UNSP',
     ]);
   });
 
