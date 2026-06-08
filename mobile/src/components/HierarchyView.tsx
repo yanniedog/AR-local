@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { SECTIONS } from '../constants';
-import { isNonStandard } from '../data/format';
+import { visibleAccountRows } from '../data/format';
 import { sortRows } from '../data/selectors';
 import {
   childrenOf,
@@ -32,9 +32,9 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
   const { stats, children, items } = useMemo(() => {
-    const all = (rows ?? []).filter((r) => includeNonStandard || !isNonStandard(r));
-    const nodeRows = rowsUnder(all, section, path);
-    const kids = childrenOf(all, section, path, true);
+    const all = rows ?? [];
+    const nodeRows = visibleAccountRows(rowsUnder(all, section, path), includeNonStandard);
+    const kids = childrenOf(all, section, path, includeNonStandard);
     let data: Item[];
     if (kids.length) {
       data = kids.map((node) => ({ kind: 'node', node }) as Item);

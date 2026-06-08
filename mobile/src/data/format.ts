@@ -104,6 +104,10 @@ export function isNonStandard(row: RateRow): boolean {
   return (row.account_class ?? '') === 'non_standard';
 }
 
+export function visibleAccountRows(rows: RateRow[], includeNonStandard = false): RateRow[] {
+  return includeNonStandard ? rows : rows.filter((row) => !isNonStandard(row));
+}
+
 /** Short, friendly "Updated 3 days ago" / "Updated today". */
 export function relativeDate(iso: string | null | undefined): string {
   if (!iso) return '';

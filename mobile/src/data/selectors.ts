@@ -1,6 +1,6 @@
 import { SECTIONS } from '../constants';
 import type { RateRow, SectionKey } from '../types';
-import { isNonStandard, toFraction } from './format';
+import { isNonStandard, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -47,8 +47,7 @@ export function bestRow(
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   let best: RateRow | null = null;
   let bestVal: number | null = null;
-  for (const row of rows) {
-    if (!includeNonStandard && isNonStandard(row)) continue;
+  for (const row of visibleAccountRows(rows, includeNonStandard)) {
     const v = toFraction(row.rate);
     if (v === null) continue;
     if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {

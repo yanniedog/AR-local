@@ -134,6 +134,7 @@ export function CompactToggle({
         value={value}
         onValueChange={onChange}
         trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
+        thumbColor={value ? theme.colors.card : undefined}
         accessibilityLabel={label}
       />
     </View>

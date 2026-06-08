@@ -39,10 +39,11 @@ export default function Search() {
   const path = (pathRaw ?? '').split('.').filter(Boolean);
   const core = useStore((s) => s.core);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const setPref = useStore((s) => s.setPref);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('rate');
-  const [filters, setFilters] = useState<Filters>(() => ({ ...EMPTY_FILTERS, includeNonStandard }));
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -52,9 +53,14 @@ export default function Search() {
     return path.length ? rowsUnder(all, section, path) : all;
   }, [core, section, path]);
 
+  const effectiveFilters = useMemo(
+    () => ({ ...filters, includeNonStandard }),
+    [filters, includeNonStandard],
+  );
+
   const rows = useMemo(
-    () => queryAndSort(baseRows, { ...filters, query }, sortKey, section),
-    [baseRows, filters, query, sortKey, section],
+    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section),
+    [baseRows, effectiveFilters, query, sortKey, section],
   );
 
   const toggleSelect = (key: string) =>
@@ -71,7 +77,7 @@ export default function Search() {
           <View style={{ flex: 1 }}>
             <SearchBar value={query} onChangeText={setQuery} />
           </View>
-          <IconBtn icon="options" count={activeFilterCount(filters)} onPress={() => setFilterOpen(true)} />
+          <IconBtn icon="options" count={activeFilterCount(effectiveFilters)} onPress={() => setFilterOpen(true)} />
           <IconBtn
             icon={selectMode ? 'git-compare' : 'git-compare-outline'}
             active={selectMode}
@@ -141,8 +147,11 @@ export default function Search() {
         onClose={() => setFilterOpen(false)}
         rows={baseRows}
         section={section}
-        filters={filters}
-        onApply={setFilters}
+        filters={effectiveFilters}
+        onApply={(next) => {
+          setPref('includeNonStandard', next.includeNonStandard);
+          setFilters(next);
+        }}
       />
     </View>
   );

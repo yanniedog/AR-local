@@ -1,6 +1,6 @@
 import { SECTIONS } from '../constants';
 import type { RateRow, SectionKey } from '../types';
-import { isNonStandard, toFraction } from './format';
+import { isNonStandard, toFraction, visibleAccountRows } from './format';
 
 // The Pi packages a dot-delimited `taxonomy_path` per rate row, e.g.
 //   HOME_LOAN.OO.PI.VARIABLE.LVR_70_80
@@ -184,8 +184,7 @@ export function childrenOf(
   const root = ROOT[section];
   const depth = path.length + 1; // index of the "next" segment in the full path
   const buckets = new Map<string, RateRow[]>();
-  const visibleRows = includeNonStandard ? rows : rows.filter((r) => !isNonStandard(r));
-  for (const r of rowsUnder(visibleRows, section, path)) {
+  for (const r of rowsUnder(visibleAccountRows(rows, includeNonStandard), section, path)) {
     const segs = pathSegs(r.taxonomy_path);
     if (segs[0] !== root) continue;
     const next = segs[depth];

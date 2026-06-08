@@ -9,7 +9,7 @@ import { Ribbon } from '../../src/components/Ribbon';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRunDate, isNonStandard, relativeDate } from '../../src/data/format';
+import { formatRunDate, relativeDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder, statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
@@ -41,13 +41,16 @@ export default function Home() {
   const sectionRows = core?.sections[section]?.rates;
   // Restrict to rows in this section's hierarchy (drops alternate-root rows like
   // OVERDRAFT) so the hero, ribbon and categories all agree.
-  const hierRows = useMemo(
-    () => rowsUnder(sectionRows ?? [], section, []).filter((r) => includeNonStandard || !isNonStandard(r)),
-    [sectionRows, section, includeNonStandard],
+  const hierRows = useMemo(() => rowsUnder(sectionRows ?? [], section, []), [sectionRows, section]);
+  const stats = useMemo(() => statsFor(hierRows, includeNonStandard), [hierRows, includeNonStandard]);
+  const categories = useMemo(
+    () => childrenOf(hierRows, section, [], includeNonStandard),
+    [hierRows, section, includeNonStandard],
   );
-  const stats = useMemo(() => statsFor(hierRows, true), [hierRows]);
-  const categories = useMemo(() => childrenOf(hierRows, section, [], true), [hierRows, section]);
-  const best = useMemo(() => bestRow(hierRows, section, true), [hierRows, section]);
+  const best = useMemo(
+    () => bestRow(hierRows, section, includeNonStandard),
+    [hierRows, section, includeNonStandard],
+  );
 
   if (!core) return null;
   const meta = SECTIONS[section];
