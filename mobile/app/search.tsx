@@ -38,10 +38,11 @@ export default function Search() {
   const section = (SECTION_ORDER.includes(secRaw as SectionKey) ? secRaw : 'Mortgage') as SectionKey;
   const path = (pathRaw ?? '').split('.').filter(Boolean);
   const core = useStore((s) => s.core);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('rate');
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => ({ ...EMPTY_FILTERS, includeNonStandard }));
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);

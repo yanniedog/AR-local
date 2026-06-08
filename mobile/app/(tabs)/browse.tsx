@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { HierarchyView } from '../../src/components/HierarchyView';
-import { SegmentedControl } from '../../src/components/controls';
+import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { Row } from '../../src/components/ui';
 import { sectionFromSlug } from '../../src/constants';
 import { useStore } from '../../src/data/store';
@@ -23,6 +23,8 @@ export default function Browse() {
   const core = useStore((s) => s.core);
   const params = useLocalSearchParams<{ section?: string }>();
   const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const setPref = useStore((s) => s.setPref);
   const routed = params.section ? sectionFromSlug(params.section) : undefined;
   const [section, setSection] = useState<SectionKey>(routed ?? defaultSection);
 
@@ -56,6 +58,13 @@ export default function Browse() {
             <Ionicons name="search" size={20} color={theme.colors.text} />
           </Pressable>
         </Row>
+        <View style={{ marginTop: 10 }}>
+          <CompactToggle
+            label="Include non-standard accounts"
+            value={includeNonStandard}
+            onChange={(value) => setPref('includeNonStandard', value)}
+          />
+        </View>
       </View>
       <View style={{ flex: 1 }}>
         {/* key forces a fresh drill-down root when the section changes */}

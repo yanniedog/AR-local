@@ -175,11 +175,17 @@ function compareSeg(a: string, b: string, section: SectionKey): number {
 }
 
 /** Child nodes one level below `path` (grouped by the next taxonomy segment). */
-export function childrenOf(rows: RateRow[], section: SectionKey, path: string[]): TaxoNode[] {
+export function childrenOf(
+  rows: RateRow[],
+  section: SectionKey,
+  path: string[],
+  includeNonStandard = false,
+): TaxoNode[] {
   const root = ROOT[section];
   const depth = path.length + 1; // index of the "next" segment in the full path
   const buckets = new Map<string, RateRow[]>();
-  for (const r of rowsUnder(rows, section, path)) {
+  const visibleRows = includeNonStandard ? rows : rows.filter((r) => !isNonStandard(r));
+  for (const r of rowsUnder(visibleRows, section, path)) {
     const segs = pathSegs(r.taxonomy_path);
     if (segs[0] !== root) continue;
     const next = segs[depth];
@@ -193,7 +199,7 @@ export function childrenOf(rows: RateRow[], section: SectionKey, path: string[])
       seg,
       label: segLabel(seg),
       rows: segRows,
-      stats: statsFor(segRows),
+      stats: statsFor(segRows, true),
       hasChildren: childHasDeeper(segRows, root, depth),
     });
   }

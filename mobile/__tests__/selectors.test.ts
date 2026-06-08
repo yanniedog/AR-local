@@ -41,6 +41,10 @@ describe('selectors', () => {
     expect(best?.product_key).toBe('B|S'); // 5.2%
   });
 
+  test('bestRow includes non-standard when requested', () => {
+    expect(bestRow(mortgage, 'Mortgage', true)?.product_key).toBe('C|1');
+  });
+
   test('sortRows best-first by section direction', () => {
     const loans = sortRows(mortgage.filter((r) => r.account_class !== 'non_standard'), 'rate', 'Mortgage');
     expect(loans.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);

@@ -39,12 +39,16 @@ export function activeFilterCount(f: Filters): number {
 }
 
 /** The "best" rate in a list, honouring lower-is-better for loans. */
-export function bestRow(rows: RateRow[], section: SectionKey): RateRow | null {
+export function bestRow(
+  rows: RateRow[],
+  section: SectionKey,
+  includeNonStandard = false,
+): RateRow | null {
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   let best: RateRow | null = null;
   let bestVal: number | null = null;
   for (const row of rows) {
-    if (isNonStandard(row)) continue;
+    if (!includeNonStandard && isNonStandard(row)) continue;
     const v = toFraction(row.rate);
     if (v === null) continue;
     if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {

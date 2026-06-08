@@ -85,6 +85,20 @@ describe('taxonomy', () => {
     expect(rowsUnder(rows, 'Mortgage', []).length).toBe(3);
   });
 
+  test('childrenOf excludes non-standard-only categories unless requested', () => {
+    const withNs = [
+      ...rows,
+      mk({
+        product_key: 'D|1',
+        rate: '0.04',
+        account_class: 'non_standard',
+        taxonomy_path: 'HOME_LOAN.OTHER.PI.VARIABLE.LVR_LE60',
+      }),
+    ];
+    expect(childrenOf(withNs, 'Mortgage', []).map((n) => n.seg)).toEqual(['OO', 'INV']);
+    expect(childrenOf(withNs, 'Mortgage', [], true).map((n) => n.seg)).toEqual(['OO', 'INV', 'OTHER']);
+  });
+
   test('alternate-root and untyped rows are excluded from the hierarchy', () => {
     const mixed = [
       ...rows,
