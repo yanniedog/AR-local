@@ -126,7 +126,6 @@ export default function Browse() {
       <FlashList
         data={rows}
         keyExtractor={(item, i) => `${item.product_key}-${item.rate_index ?? i}`}
-        estimatedItemSize={98}
         refreshing={refreshing}
         onRefresh={() => void refresh({ manual: true, force: true })}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 }}

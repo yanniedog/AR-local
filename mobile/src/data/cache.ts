@@ -1,4 +1,6 @@
-import * as FileSystem from 'expo-file-system';
+// SDK 54 replaced the classic file API with a File/Directory API; the classic
+// functions we use (documentDirectory, read/write/move/delete) live under /legacy.
+import * as FileSystem from 'expo-file-system/legacy';
 
 import type { CorePayload, DetailsPayload, Manifest, PayloadSource } from '../types';
 
