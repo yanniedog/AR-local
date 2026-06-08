@@ -17,6 +17,10 @@ builds a compact daily payload (`app_payload.py`) and publishes it to a rolling
 GitHub Release; the app downloads and serves it offline. See
 **`docs/MOBILE_APP.md`** for the payload contract, Pi token setup, and EAS builds.
 
+> **Picking up this work (any LLM/agent)?** Start with **`docs/HANDOFF.md`** — a
+> self-contained guide to the Pi→GitHub→app data flow, how to verify the daily
+> upload, how the app maps to the web dashboard, file layout, secrets, and gotchas.
+
 ## Easiest Start
 
 Double-click:
