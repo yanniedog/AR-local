@@ -11,7 +11,7 @@ import { AppText, Card, Divider, IconButton, Row } from '../../src/components/ui
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
-import { childrenOf, statsFor } from '../../src/data/taxonomy';
+import { childrenOf, rowsUnder, statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { openNode, openProduct } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
@@ -37,12 +37,12 @@ export default function Home() {
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
 
   const sectionRows = core?.sections[section]?.rates;
-  const stats = useMemo(() => statsFor(sectionRows ?? []), [sectionRows]);
-  const categories = useMemo(
-    () => childrenOf(sectionRows ?? [], section, []),
-    [sectionRows, section],
-  );
-  const best = useMemo(() => bestRow(sectionRows ?? [], section), [sectionRows, section]);
+  // Restrict to rows in this section's hierarchy (drops alternate-root rows like
+  // OVERDRAFT) so the hero, ribbon and categories all agree.
+  const hierRows = useMemo(() => rowsUnder(sectionRows ?? [], section, []), [sectionRows, section]);
+  const stats = useMemo(() => statsFor(hierRows), [hierRows]);
+  const categories = useMemo(() => childrenOf(hierRows, section, []), [hierRows, section]);
+  const best = useMemo(() => bestRow(hierRows, section), [hierRows, section]);
 
   if (!core) return null;
   const meta = SECTIONS[section];

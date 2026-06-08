@@ -129,12 +129,15 @@ export function statsFor(rows: RateRow[], includeNonStandard = false): RateStats
   };
 }
 
-/** Rows whose taxonomy_path sits at or below `path` (segments under the section root). */
+/** Rows whose taxonomy_path sits at or below `path` (segments under the section root).
+ *  Rows with a different root (e.g. an OVERDRAFT row in the Mortgage dataset) or no
+ *  taxonomy are excluded from the hierarchy entirely — so the ribbon, counts and
+ *  category cards always agree. Those rows remain findable via the flat Search. */
 export function rowsUnder(rows: RateRow[], section: SectionKey, path: string[]): RateRow[] {
   const root = ROOT[section];
   return rows.filter((r) => {
     const segs = pathSegs(r.taxonomy_path);
-    if (segs[0] !== root) return path.length === 0; // untyped rows live under the root only
+    if (segs[0] !== root) return false;
     for (let i = 0; i < path.length; i++) {
       if (segs[i + 1] !== path[i]) return false;
     }

@@ -71,6 +71,16 @@ describe('taxonomy', () => {
     expect(rowsUnder(rows, 'Mortgage', []).length).toBe(3);
   });
 
+  test('alternate-root and untyped rows are excluded from the hierarchy', () => {
+    const mixed = [
+      ...rows,
+      mk({ product_key: 'OD|1', rate: '0.09', taxonomy_path: 'OVERDRAFT.VARIABLE' }),
+      mk({ product_key: 'NO|1', rate: '0.07' }), // no taxonomy_path
+    ];
+    expect(rowsUnder(mixed, 'Mortgage', []).length).toBe(3); // only HOME_LOAN rows
+    expect(childrenOf(mixed, 'Mortgage', []).map((n) => n.seg)).toEqual(['OO', 'INV']);
+  });
+
   test('statsFor computes the distribution', () => {
     const s = statsFor(rows);
     expect(s.count).toBe(3);
