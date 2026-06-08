@@ -3,11 +3,12 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView } from 'react-native';
 
 import { RbaChart } from '../../src/components/charts';
-import { RibbonBar } from '../../src/components/RibbonBar';
+import { Ribbon } from '../../src/components/Ribbon';
 import { AppText, Card, Divider, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRate, formatRunDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
+import { statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { openBrowse } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -71,31 +72,33 @@ export default function Trends() {
       </AppText>
       {SECTION_ORDER.map((key) => {
         const data = core.sections[key];
-        if (!data || data.ribbon.range.min === null) return null;
+        if (!data) return null;
+        const stats = statsFor(data.rates);
+        if (stats.min === null) return null;
         const best = bestRow(data.rates, key);
         return (
           <Pressable key={key} onPress={() => openBrowse(key)}>
             <Card style={{ marginBottom: 12 }}>
-            <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-              <Row gap={8}>
-                <Ionicons
-                  name={SECTIONS[key].icon as keyof typeof Ionicons.glyphMap}
-                  size={18}
-                  color={theme.colors.primary}
-                />
-                <AppText variant="body" weight="700">
-                  {SECTIONS[key].title}
+              <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+                <Row gap={8}>
+                  <Ionicons
+                    name={SECTIONS[key].icon as keyof typeof Ionicons.glyphMap}
+                    size={18}
+                    color={theme.colors.primary}
+                  />
+                  <AppText variant="body" weight="700">
+                    {SECTIONS[key].title}
+                  </AppText>
+                </Row>
+                <AppText
+                  variant="body"
+                  weight="800"
+                  style={{ color: SECTIONS[key].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
+                >
+                  {best ? formatRate(best.rate) : '—'}
                 </AppText>
               </Row>
-              <AppText
-                variant="body"
-                weight="800"
-                style={{ color: SECTIONS[key].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
-              >
-                {best ? formatRate(best.rate) : '—'}
-              </AppText>
-            </Row>
-            <RibbonBar ribbon={data.ribbon} section={key} />
+              <Ribbon stats={stats} section={key} />
             </Card>
           </Pressable>
         );

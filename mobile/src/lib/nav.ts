@@ -19,6 +19,17 @@ export const openBank = (provider: string) =>
 export const openBrowse = (section: SectionKey) =>
   router.push({ pathname: '/browse', params: { section: SECTIONS[section].slug } });
 
+// Drill one level into the taxonomy hierarchy (path = dot-joined segments).
+export const openNode = (section: SectionKey, path: string[]) =>
+  router.push({ pathname: '/node', params: { section, path: path.join('.') } });
+
+export const openSearch = (section: SectionKey) =>
+  router.push({ pathname: '/search', params: { section } });
+
+// Flat, searchable/sortable product list — optionally scoped to a taxonomy node.
+export const openProductsList = (section: SectionKey, path: string[] = []) =>
+  router.push({ pathname: '/search', params: { section, path: path.join('.') } });
+
 // Product keys can contain commas, so serialize the array unambiguously (JSON)
 // rather than comma-joining.
 export const openCompare = (keys: string[]) =>

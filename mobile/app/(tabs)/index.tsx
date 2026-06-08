@@ -1,19 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
-import { BankAvatar } from '../../src/components/BankAvatar';
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
-import { MetricCard } from '../../src/components/MetricCard';
 import { ProductCard } from '../../src/components/ProductCard';
+import { Ribbon } from '../../src/components/Ribbon';
+import { SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Divider, IconButton, Row } from '../../src/components/ui';
-import { SECTIONS, SECTION_ORDER } from '../../src/constants';
-import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
+import { SECTIONS } from '../../src/constants';
+import { formatRunDate, relativeDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
+import { childrenOf, statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openBrowse, openProduct } from '../../src/lib/nav';
+import { openNode, openProduct } from '../../src/lib/nav';
+import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
+
+const SECTION_SEG = [
+  { value: 'Mortgage' as SectionKey, label: 'Loans' },
+  { value: 'Savings' as SectionKey, label: 'Savings' },
+  { value: 'TD' as SectionKey, label: 'Deposits' },
+];
 
 export default function Home() {
   const theme = useTheme();
@@ -23,13 +31,24 @@ export default function Home() {
   const refresh = useStore((s) => s.refresh);
   const source = useStore((s) => s.source);
   const offline = useStore((s) => s.offline);
-  const interests = useStore((s) => s.prefs.interests);
+  const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const [section, setSection] = useState<SectionKey>(defaultSection);
 
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
 
+  const sectionRows = core?.sections[section]?.rates;
+  const stats = useMemo(() => statsFor(sectionRows ?? []), [sectionRows]);
+  const categories = useMemo(
+    () => childrenOf(sectionRows ?? [], section, []),
+    [sectionRows, section],
+  );
+  const best = useMemo(() => bestRow(sectionRows ?? [], section), [sectionRows, section]);
+
   if (!core) return null;
-  const sections = interests?.length ? interests : SECTION_ORDER;
-  const currentRba = core.rba.at(-1);
+  const meta = SECTIONS[section];
+  const rba = core.rba.at(-1);
+  const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
+  const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
 
   return (
     <ScrollView
@@ -40,96 +59,115 @@ export default function Home() {
     >
       <OfflineBanner source={source} offline={offline} />
 
-      <Row style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <View>
-          <AppText variant="h1">Today&apos;s rates</AppText>
-          <AppText variant="small" color="textMuted">
+      <Row style={{ justifyContent: 'space-between', marginBottom: 14 }}>
+        <View style={{ flex: 1 }}>
+          <AppText variant="h1">Australian rates</AppText>
+          <AppText variant="small" color="textMuted" numberOfLines={1}>
             Updated {formatRunDate(core.run_date)} · {relativeDate(`${core.run_date}T00:00:00Z`)}
           </AppText>
         </View>
         <IconButton icon="refresh" onPress={onRefresh} accessibilityLabel="Refresh" />
       </Row>
 
-      {/* RBA cash rate */}
-      <Card style={{ marginBottom: 16 }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Row gap={8}>
-            <Ionicons name="business" size={18} color={theme.colors.primary} />
-            <AppText variant="h3">RBA cash rate</AppText>
-          </Row>
-          <AppText variant="h2" weight="800" style={{ color: theme.colors.primary }}>
-            {currentRba ? `${currentRba.rate.toFixed(2)}%` : '—'}
-          </AppText>
+      <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+
+      {/* Hero: best rate + ribbon distribution for the section */}
+      <Card style={{ marginTop: 14, marginBottom: 14 }}>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <AppText variant="small" color="textMuted">
+              {meta.lowerIsBetter ? 'Lowest' : 'Top'} {meta.title.toLowerCase()} rate
+            </AppText>
+            <AppText variant="h1" weight="800" style={{ color: accent }}>
+              {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
+            </AppText>
+          </View>
+          {section === 'Mortgage' && rba ? (
+            <View style={{ alignItems: 'flex-end' }}>
+              <AppText variant="tiny" color="textFaint">
+                RBA cash rate
+              </AppText>
+              <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
+                {rba.rate.toFixed(2)}%
+              </AppText>
+            </View>
+          ) : null}
         </Row>
-        <View style={{ marginTop: 8 }}>
-          <RbaChart data={core.rba} height={150} />
-        </View>
+        <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
       </Card>
 
-      {/* Category metrics */}
-      <Row gap={12} style={{ flexWrap: 'wrap', marginBottom: 4 }}>
-        {sections.map((key) => {
-          const meta = SECTIONS[key];
-          const rows = core.sections[key]?.rates ?? [];
-          const best = bestRow(rows, key);
-          return (
-            <View key={key} style={{ width: '47.5%', flexGrow: 1 }}>
-              <MetricCard
-                icon={meta.icon as keyof typeof Ionicons.glyphMap}
-                title={meta.title}
-                value={best ? formatRate(best.rate) : '—'}
-                sub={`${meta.lowerIsBetter ? 'Lowest' : 'Top'} of ${core.sections[key]?.ribbon.counts.products ?? 0}`}
-                accent={meta.lowerIsBetter ? theme.colors.success : theme.colors.primary}
-                onPress={() => openBrowse(key)}
-              />
-            </View>
-          );
-        })}
-      </Row>
+      {section === 'Mortgage' ? (
+        <Card style={{ marginBottom: 14 }}>
+          <Row gap={8} style={{ marginBottom: 6 }}>
+            <Ionicons name="trending-up" size={16} color={theme.colors.primary} />
+            <AppText variant="h3">RBA cash rate</AppText>
+          </Row>
+          <RbaChart data={core.rba} height={140} />
+        </Card>
+      ) : null}
 
-      {/* Best rates today */}
-      <AppText variant="h3" style={{ marginTop: 20, marginBottom: 10 }}>
-        Best rates today
+      {/* Browse by category (top of the AR-local drill-down hierarchy) */}
+      <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 10, marginLeft: 2 }}>
+        BROWSE BY CATEGORY
       </AppText>
-      {sections.map((key) => {
-        const rows = core.sections[key]?.rates ?? [];
-        const best = bestRow(rows, key);
-        if (!best) return null;
+      {categories.map((node) => {
+        const nodeBest = meta.lowerIsBetter ? node.stats.min : node.stats.max;
         return (
-          <View key={key} style={{ marginBottom: 4 }}>
-            <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4, marginLeft: 4 }}>
-              {SECTIONS[key].title.toUpperCase()}
-            </AppText>
-            <ProductCard row={best} section={key} onPress={() => openProduct(best.product_key, best.rate_index)} />
-          </View>
+          <Pressable
+            key={node.seg}
+            onPress={() => openNode(section, [node.seg])}
+            style={({ pressed }) => ({
+              backgroundColor: theme.colors.card,
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              padding: 14,
+              marginBottom: 10,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <AppText variant="body" weight="700" numberOfLines={2}>
+                  {node.label}
+                </AppText>
+                <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
+                  {node.stats.count} products · {node.stats.providers} lenders
+                </AppText>
+              </View>
+              <Row gap={4}>
+                <AppText variant="h3" weight="800" style={{ color: accent }}>
+                  {nodeBest !== null ? `${(nodeBest * 100).toFixed(2)}%` : '—'}
+                </AppText>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
+              </Row>
+            </Row>
+          </Pressable>
         );
       })}
 
+      {best ? (
+        <>
+          <AppText variant="small" weight="700" color="textMuted" style={{ marginTop: 10, marginBottom: 10, marginLeft: 2 }}>
+            BEST RATE TODAY
+          </AppText>
+          <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+        </>
+      ) : null}
+
       <Card style={{ marginTop: 8 }}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Row gap={10}>
-            <BankAvatar provider={Object.keys(core.brands)[0] ?? 'AR'} size={36} />
-            <View>
-              <AppText variant="body" weight="700">
-                {manifest?.counts?.products ?? core.sections.Mortgage.ribbon.counts.products} products
-              </AppText>
-              <AppText variant="small" color="textMuted">
-                Across {Object.keys(core.brands).length} lenders
-              </AppText>
-            </View>
-          </Row>
-        </Row>
-        <Divider style={{ marginVertical: 12 }} />
-        <Row
-          style={{ justifyContent: 'space-between' }}
-        >
           <AppText variant="small" color="textMuted">
             Next update {manifest?.schedule?.label ?? 'daily'}
           </AppText>
           <AppText variant="small" color="textFaint">
-            schema v{core.schema_version}
+            {Object.keys(core.brands).length} lenders
           </AppText>
         </Row>
+        <Divider style={{ marginVertical: 10 }} />
+        <AppText variant="tiny" color="textFaint">
+          Live data published by the Raspberry Pi to GitHub · run {formatRunDate(core.run_date)}
+        </AppText>
       </Card>
     </ScrollView>
   );

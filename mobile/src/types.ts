@@ -33,6 +33,8 @@ export interface RateRow {
   account_class?: string;
   rate_index?: number;
   last_updated?: string;
+  /** Dot-delimited hierarchy, e.g. "HOME_LOAN.OO.PI.VARIABLE.LVR_70_80". */
+  taxonomy_path?: string;
 }
 
 export interface RibbonStats {

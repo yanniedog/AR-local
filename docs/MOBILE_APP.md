@@ -85,13 +85,19 @@ resolves the release URL immediately; the Pi overwrites it on its next ingest.
 ## 3. The app (`mobile/`)
 
 Expo SDK 54 + expo-router + TypeScript. Offline-first: it seeds from a bundled sample,
-then upgrades to the live GitHub payload; all screens serve from a local cache.
+then upgrades to the live GitHub payload; all screens serve from a local cache. It does
+**not** need a local server and works off-LAN — the data comes from the GitHub Release.
 
-Features: Home (RBA cash rate + per-category bests), Browse (search, sort, filters,
-rate-distribution ribbon, virtualized lists), Product detail (rates, fees, features,
-eligibility, constraints), Compare (2–4 side-by-side), Watchlist, Lenders, Trends, and
-Settings (theme, default category, alert threshold, Wi-Fi-only refresh, cache).
-Local notifications fire on best-rate moves, RBA changes, and watchlisted-product moves.
+The UI mirrors the **AR-local dashboard**: a **ribbon** (rate distribution: min / median /
+mean / max with the RBA cash-rate marker on home loans) and the **drill-down hierarchy**
+driven by each row's `taxonomy_path` (e.g. Owner-occupied → Principal & interest →
+Variable → 70–80% LVR). You drill categories until the leaf, then tap a product for full
+detail. The flat search/sort/filter/compare list is still available (the search icon).
+
+Features: Home dashboard (section ribbon + hero rate + RBA chart + top categories + best
+rate), Browse drill-down, scoped Search (sort, filters, compare 2–4), Product detail
+(every rate row + fees/features/eligibility/constraints), Watchlist, Lenders, Trends, and
+Settings. Local notifications fire on best-rate moves, RBA changes, and watchlisted moves.
 
 ```bash
 cd mobile
@@ -112,8 +118,31 @@ npm run icons                    # regenerate icon/splash from scripts/make-icon
 
 ## 4. Run it on your phone / iPad
 
-The app ships with a real bundled sample, so it shows live-looking data on a device
-**even before** the GitHub release exists; once the Pi publishes, it upgrades to live.
+The live release is already published (`app-payload-latest`), so the app pulls **real
+CDR data from GitHub over the internet** — no local server, works off your LAN. The
+bundled sample is just the instant-on fallback until the first download completes. Once
+the Pi's daily publish is enabled (§2), the data refreshes itself each day.
+
+### Option A — Development build (recommended; full features, not Expo-Go-version-bound)
+
+A dev build embeds the exact SDK, so it never hits "Expo Go needs SDK NN", and background
+refresh + notifications work. Needs a free **Expo account**; iPad also needs Apple Developer.
+
+```bash
+cd mobile
+npm i -g eas-cli && eas login
+eas build --profile development --platform android   # installable dev-client APK
+eas build --profile development --platform ios       # iPad: installs via the build link / TestFlight
+```
+Install the build on the device, then run `npx expo start --dev-client` on your computer
+and open it from the dev client (or scan its QR). `expo-dev-client` is already a dependency.
+
+### Option B — Expo Go (fastest; no accounts, both devices)
+
+Best for trying the UI/data immediately. One caveat: OS background refresh needs a real
+build (Option A), but everything else — drill-down, ribbon, search, filters, charts,
+compare, watchlist, detail, theme, offline cache, "Refresh now" — works in Expo Go.
+Expo Go must support the project's SDK (54); install the current Expo Go from the store.
 
 ### Option A — Expo Go (fastest; no accounts, both devices)
 
@@ -134,7 +163,7 @@ detail, theme, offline cache, and tapping "Refresh now" — works in Expo Go.
 3. **Android:** open Expo Go → "Scan QR code" → scan the terminal QR.
    **iPad:** open the Camera app → point at the QR → tap the "Open in Expo Go" banner.
 
-### Option B — Installable builds with EAS (production-like)
+### Option C — Standalone preview/production builds with EAS
 
 Needs a free **Expo account** (`eas login`). Android needs no store account; iPad
 needs an **Apple Developer** membership ($99/yr) to install a real build.
