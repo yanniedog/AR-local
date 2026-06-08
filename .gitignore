@@ -48,7 +48,7 @@ _run_pi_*
 .resolve-thread-*.json
 
 # Local runtime data store (state/stream stores; not source)
-data/
+/data/
 
 # projectmem persistent memory — local per-machine (CLAUDE.md is committed; memory is not)
-.projectmem/
+/.projectmem/
