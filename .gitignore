@@ -35,3 +35,20 @@ mobile/android/
 !mobile/assets/adaptive-icon.png
 !mobile/assets/splash.png
 !mobile/assets/favicon.png
+
+# Local scratch: ad-hoc probe/debug scripts and PR-thread helpers (not source)
+.pi-*
+.pi_*
+_pi_*
+_run_pi_*
+.pr[0-9]*-threads*
+.pr[0-9]*.graphql
+.reply-thread-*.json
+.resolve-*.mjs
+.resolve-thread-*.json
+
+# Local runtime data store (state/stream stores; not source)
+data/
+
+# projectmem persistent memory — local per-machine (CLAUDE.md is committed; memory is not)
+.projectmem/
