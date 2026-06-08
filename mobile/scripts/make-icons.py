@@ -15,32 +15,45 @@ from PIL import Image, ImageDraw
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 
-BG = (11, 15, 23, 255)        # #0b0f17
-PRIMARY = (31, 111, 235, 255) # #1f6feb
+BG = (11, 15, 23, 255)          # #0b0f17  app/splash background (navy)
+PRIMARY = (59, 130, 246, 255)   # #3b82f6  AR-local blue
+PRIMARY_HI = (96, 165, 250, 255)  # #60a5fa lighter blue
 LINE = (255, 255, 255, 255)
+INK = (4, 18, 43, 255)          # deep navy for marks on the blue tile
 
 
 def _trend_mark(img: Image.Image, box: tuple[int, int, int, int], rounded: bool) -> None:
-    """Draw a rounded primary tile with an upward step-line (rates rising)."""
+    """A rounded AR-local-blue tile with the 'ribbon' motif: a distribution bar with
+    a median marker plus three ascending rate bars — the AR-local dashboard signature."""
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = box
     w = x1 - x0
+    hgt = y1 - y0
     if rounded:
-        draw.rounded_rectangle(box, radius=int(w * 0.22), fill=PRIMARY)
-    # Step-up line across the tile.
-    pad = w * 0.2
-    pts = []
-    steps = [0.78, 0.78, 0.58, 0.58, 0.40, 0.40, 0.22]
-    n = len(steps)
-    for i, frac in enumerate(steps):
-        px = x0 + pad + (w - 2 * pad) * (i / (n - 1))
-        py = y0 + (y1 - y0) * frac
-        pts.append((px, py))
-    draw.line(pts, fill=LINE, width=max(6, int(w * 0.05)), joint="curve")
-    # End dot.
-    r = max(7, int(w * 0.055))
-    ex, ey = pts[-1]
-    draw.ellipse((ex - r, ey - r, ex + r, ey + r), fill=LINE)
+        draw.rounded_rectangle(box, radius=int(w * 0.225), fill=PRIMARY)
+
+    padx = w * 0.18
+    inner_w = w - 2 * padx
+    # Three ascending rounded bars (a mini rate chart).
+    bar_n = 3
+    gap = inner_w * 0.10
+    bar_w = (inner_w - gap * (bar_n - 1)) / bar_n
+    base_y = y0 + hgt * 0.74
+    heights = [0.26, 0.40, 0.56]
+    for i, hf in enumerate(heights):
+        bx = x0 + padx + i * (bar_w + gap)
+        top = base_y - hgt * hf
+        draw.rounded_rectangle((bx, top, bx + bar_w, base_y), radius=int(bar_w * 0.32), fill=LINE)
+
+    # The ribbon: a rounded distribution bar beneath the chart with a median dot.
+    rib_y0 = y0 + hgt * 0.80
+    rib_y1 = y0 + hgt * 0.875
+    draw.rounded_rectangle((x0 + padx, rib_y0, x1 - padx, rib_y1), radius=int((rib_y1 - rib_y0) / 2), fill=INK)
+    # median marker
+    mx = x0 + padx + inner_w * 0.62
+    r = (rib_y1 - rib_y0) * 0.95
+    cy = (rib_y0 + rib_y1) / 2
+    draw.ellipse((mx - r, cy - r, mx + r, cy + r), fill=LINE)
 
 
 def make_icon() -> None:

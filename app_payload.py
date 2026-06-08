@@ -86,6 +86,7 @@ CORE_RATE_FIELDS = (
     "account_class",
     "rate_index",
     "last_updated",
+    "taxonomy_path",  # dot-delimited hierarchy that drives the app's drill-down tree
 )
 
 
