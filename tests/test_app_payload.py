@@ -76,6 +76,33 @@ def test_build_brands_shortcodes_and_color():
     assert brands["Some New Bank"]["color"] == app_payload.build_brands(["Some New Bank"], {})["Some New Bank"]["color"]
 
 
+def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
+    dashboard = tmp_path / "dashboard"
+    logos = tmp_path / "banks"
+    dashboard.mkdir()
+    logos.mkdir()
+    (dashboard / "ar-bank-brand.js").write_text(
+        "'ANZ': { short: 'ANZ', icon: '/assets/banks/anz.png' },\n"
+        "'Huge Bank': { short: 'Huge', icon: '/assets/banks/huge.png' },\n",
+        encoding="utf-8",
+    )
+    (logos / "anz.png").write_bytes(b"\x89PNG\r\n\x1a\nsmall")
+    (logos / "huge.png").write_bytes(b"x" * (app_payload.MAX_EMBEDDED_LOGO_BYTES + 1))
+
+    loaded = app_payload.load_brand_logos(dashboard, logos)
+
+    assert loaded["anz"].startswith("data:image/png;base64,")
+    assert "huge bank" not in loaded
+    brands = app_payload.build_brands(
+        ["ANZ Bank Australia Limited", "No Logo Bank"],
+        {"anz": "ANZ"},
+        loaded,
+    )
+    assert brands["ANZ Bank Australia Limited"]["logo"] == loaded["anz"]
+    assert brands["ANZ Bank Australia Limited"]["short"] == "ANZ"
+    assert "logo" not in brands["No Logo Bank"]
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end build against the sample export (skipped when absent)
 # --------------------------------------------------------------------------- #

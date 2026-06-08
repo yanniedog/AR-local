@@ -148,7 +148,7 @@ The dashboard mirrors australianrates.com.
 | Drill-down hierarchy / report ribbon | `src/components/HierarchyView.tsx` + `src/data/taxonomy.ts` (driven by each row's `taxonomy_path`) | ✅ done |
 | Product detail (terminal leaf) | `app/product/[key].tsx` (+ `details` payload) | ✅ done |
 | RBA cash-rate chart | `src/components/charts.tsx`, shown on Home/Trends | ✅ done |
-| **Lender logos** | `src/components/BankAvatar.tsx` (monogram avatars) | ⚠️ **gap**: dashboard shows real logos; app uses coloured monograms (deliberate — the old logo CDN is being shut down). To match, publish a `logos/` set to the release and render them. |
+| **Lender logos** | `src/components/BankAvatar.tsx`; canonical PNGs embedded in release `core.brands` for offline rendering, with monogram fallback | ✅ done |
 | **Standard / non-standard toggle** | persisted top-level toggle on Home/Browse; hierarchy drill-down and Search inherit it | ✅ done |
 | Sort toggle / chart focus presets | `app/search.tsx` (sort chips) | ⚠️ partial: present in Search, not on the main ribbon view |
 | Light/dark theme | `src/theme/` (`ThemeProvider`, `colors.ts`) | ✅ done |
@@ -342,7 +342,7 @@ mobile/src/data/selectors.ts           # sort/filter/search/compare/best-rate
 mobile/src/data/taxonomy.ts            # taxonomy_path → drill-down tree (+ tests)
 mobile/src/components/Ribbon.tsx        # rate-distribution ribbon (SVG)
 mobile/src/components/HierarchyView.tsx # the drill-down (ribbon + child categories / leaf products)
-mobile/src/components/BankAvatar.tsx    # monogram lender avatars (logo gap — see §2 Task B)
+mobile/src/components/BankAvatar.tsx    # embedded lender logos with monogram fallback
 mobile/app/(tabs)/index.tsx             # Home dashboard (hero + ribbon + categories + best)
 mobile/app/(tabs)/browse.tsx            # hierarchy explorer (root)
 mobile/app/node.tsx                     # one drill level (pushed per category)

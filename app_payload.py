@@ -24,6 +24,7 @@ the Pi has a token.
 from __future__ import annotations
 
 import argparse
+import base64
 import gzip
 import hashlib
 import json
@@ -52,6 +53,7 @@ SUBPROCESS_UPLOAD_TIMEOUT_SEC = 600
 # 1000 assets. Keep the current manifest's assets plus a recent buffer (covers any
 # in-flight client still holding the just-superseded manifest) and prune older ones.
 KEEP_RECENT_ASSETS = 20
+MAX_EMBEDDED_LOGO_BYTES = 64 * 1024
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 
@@ -197,9 +199,13 @@ def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]
 
 
 # --------------------------------------------------------------------------- #
-# Brands (monogram avatars - short code + deterministic colour, no external CDN)
+# Brands (canonical embedded logos + monogram fallback, no external CDN)
 # --------------------------------------------------------------------------- #
-_BRAND_SHORT_RE = re.compile(r"""['"]([^'"]+)['"]\s*:\s*\{[^}]*?short\s*:\s*['"]([^'"]+)['"]""")
+_BRAND_ENTRY_RE = re.compile(r"""['"]([^'"]+)['"]\s*:\s*\{([^}]*)\}""")
+_BRAND_SHORT_IN_ENTRY_RE = re.compile(r"""short\s*:\s*['"]([^'"]+)['"]""")
+_BRAND_ICON_IN_ENTRY_RE = re.compile(r"""icon\s*:\s*['"]/assets/banks/([^'"]+\.png)['"]""")
+_BRAND_ALIASES_IN_ENTRY_RE = re.compile(r"""aliases\s*:\s*\[([^\]]*)\]""")
+_QUOTED_VALUE_RE = re.compile(r"""['"]([^'"]+)['"]""")
 
 # Pleasant, high-contrast palette for monogram avatars (deterministic per provider).
 _BRAND_PALETTE = (
@@ -209,6 +215,38 @@ _BRAND_PALETTE = (
 )
 
 
+def _normalize_brand_lookup(value: str) -> str:
+    words = re.sub(r"[^a-z0-9]+", " ", value.lower()).split()
+    ignored = {
+        "australia",
+        "australian",
+        "bank",
+        "banking",
+        "corporation",
+        "limited",
+        "ltd",
+        "pty",
+        "wholesale",
+    }
+    return " ".join(word for word in words if word not in ignored)
+
+
+def _brand_entry_names(name: str, body: str) -> List[str]:
+    aliases_match = _BRAND_ALIASES_IN_ENTRY_RE.search(body)
+    aliases = _QUOTED_VALUE_RE.findall(aliases_match.group(1)) if aliases_match else []
+    return [name, *aliases]
+
+
+def _put_brand_lookup(out: Dict[str, str], names: Iterable[str], value: str) -> None:
+    for name in names:
+        exact = name.strip().lower()
+        if exact:
+            out.setdefault(exact, value)
+        normalized = _normalize_brand_lookup(name)
+        if normalized:
+            out.setdefault(normalized, value)
+
+
 def load_brand_shortcodes(rba_dir: Path) -> Dict[str, str]:
     """Extract ``lower(name) -> short`` from dashboard/ar-bank-brand.js (best effort)."""
     path = rba_dir / "ar-bank-brand.js"
@@ -216,8 +254,56 @@ def load_brand_shortcodes(rba_dir: Path) -> Dict[str, str]:
     if not path.exists():
         return out
     text = path.read_text(encoding="utf-8", errors="ignore")
-    for name, short in _BRAND_SHORT_RE.findall(text):
-        out[name.strip().lower()] = short.strip()
+    for name, body in _BRAND_ENTRY_RE.findall(text):
+        short_match = _BRAND_SHORT_IN_ENTRY_RE.search(body)
+        if short_match:
+            _put_brand_lookup(out, _brand_entry_names(name, body), short_match.group(1).strip())
+    return out
+
+
+def find_bank_logo_dir(dashboard_dir: Path) -> Optional[Path]:
+    """Find the canonical AustralianRates ``site/assets/banks`` pack."""
+    configured = os.environ.get("AR_LOCAL_SITE_ROOT") or os.environ.get("AR_SITE_ROOT")
+    candidates = []
+    if configured:
+        root = Path(configured).expanduser()
+        candidates.extend((root / "assets" / "banks", root / "site" / "assets" / "banks"))
+    repo_dir = dashboard_dir.parent
+    candidates.extend(
+        (
+            repo_dir.parent / "australianrates" / "site" / "assets" / "banks",
+            repo_dir.parent / "AustralianRates" / "site" / "assets" / "banks",
+            repo_dir / "site" / "assets" / "banks",
+        )
+    )
+    for path in candidates:
+        if path.is_dir():
+            return path
+    return None
+
+
+def load_brand_logos(dashboard_dir: Path, logo_dir: Optional[Path] = None) -> Dict[str, str]:
+    """Extract ``lower(name) -> data:image/png`` for locally available canonical logos."""
+    brand_path = dashboard_dir / "ar-bank-brand.js"
+    logo_dir = logo_dir or find_bank_logo_dir(dashboard_dir)
+    if not brand_path.exists() or not logo_dir:
+        return {}
+    text = brand_path.read_text(encoding="utf-8", errors="ignore")
+    out: Dict[str, str] = {}
+    for name, body in _BRAND_ENTRY_RE.findall(text):
+        icon_match = _BRAND_ICON_IN_ENTRY_RE.search(body)
+        if not icon_match:
+            continue
+        filename = icon_match.group(1)
+        path = logo_dir / Path(filename).name
+        if not path.is_file() or path.stat().st_size > MAX_EMBEDDED_LOGO_BYTES:
+            continue
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        _put_brand_lookup(
+            out,
+            _brand_entry_names(name, body),
+            f"data:image/png;base64,{encoded}",
+        )
     return out
 
 
@@ -237,12 +323,24 @@ def _brand_color(provider: str) -> str:
     return _BRAND_PALETTE[int(digest[:8], 16) % len(_BRAND_PALETTE)]
 
 
-def build_brands(providers: Iterable[str], shortcodes: Dict[str, str]) -> Dict[str, Dict[str, str]]:
+def build_brands(
+    providers: Iterable[str],
+    shortcodes: Dict[str, str],
+    logos: Optional[Dict[str, str]] = None,
+) -> Dict[str, Dict[str, str]]:
     brands: Dict[str, Dict[str, str]] = {}
+    logos = logos or {}
     for provider in sorted({p for p in providers if p}):
         key = provider.lower()
-        short = shortcodes.get(key) or _derive_short(provider)
-        brands[provider] = {"short": short, "color": _brand_color(provider)}
+        normalized = _normalize_brand_lookup(provider)
+        short = shortcodes.get(key) or shortcodes.get(normalized) or _derive_short(provider)
+        brands[provider] = compact(
+            {
+                "short": short,
+                "color": _brand_color(provider),
+                "logo": logos.get(key) or logos.get(normalized),
+            }
+        )
     return brands
 
 
@@ -394,6 +492,7 @@ def build_payload(
         }
 
     shortcodes = load_brand_shortcodes(dashboard_dir)
+    logos = load_brand_logos(dashboard_dir)
     # NB: no wall-clock field inside core/details. They are content-hashed (sha256
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
@@ -401,7 +500,7 @@ def build_payload(
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
-        "brands": build_brands(providers_seen, shortcodes),
+        "brands": build_brands(providers_seen, shortcodes, logos),
         "rba": load_rba_series(dashboard_dir),
     }
     details = {

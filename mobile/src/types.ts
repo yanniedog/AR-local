@@ -64,6 +64,8 @@ export interface SectionData {
 export interface Brand {
   short: string;
   color: string;
+  /** Offline-capable canonical logo embedded by the release payload. */
+  logo?: string;
 }
 
 export interface RbaEntry {
