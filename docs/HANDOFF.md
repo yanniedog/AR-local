@@ -149,7 +149,7 @@ The dashboard mirrors australianrates.com.
 | Product detail (terminal leaf) | `app/product/[key].tsx` (+ `details` payload) | ✅ done |
 | RBA cash-rate chart | `src/components/charts.tsx`, shown on Home/Trends | ✅ done |
 | **Lender logos** | `src/components/BankAvatar.tsx` (monogram avatars) | ⚠️ **gap**: dashboard shows real logos; app uses coloured monograms (deliberate — the old logo CDN is being shut down). To match, publish a `logos/` set to the release and render them. |
-| **Standard / non-standard toggle** | excluded by default in `HierarchyView`; toggle exists only in `app/search.tsx` filters | ⚠️ **gap**: dashboard has a top-level toggle; consider adding one to Home/Browse. `src/data/taxonomy.ts statsFor(rows, includeNonStandard)` already supports it. |
+| **Standard / non-standard toggle** | persisted top-level toggle on Home/Browse; hierarchy drill-down and Search inherit it | ✅ done |
 | Sort toggle / chart focus presets | `app/search.tsx` (sort chips) | ⚠️ partial: present in Search, not on the main ribbon view |
 | Light/dark theme | `src/theme/` (`ThemeProvider`, `colors.ts`) | ✅ done |
 | JSON/XLSX export | — | ❌ not applicable to mobile (skip) |

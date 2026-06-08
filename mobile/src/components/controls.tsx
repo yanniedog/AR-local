@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, Switch, TextInput, View } from 'react-native';
 
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText } from './ui';
@@ -100,6 +100,43 @@ export function SearchBar({
           <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+export function CompactToggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        minHeight: 40,
+        paddingHorizontal: 12,
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: theme.radius.md,
+      }}
+    >
+      <AppText variant="small" weight="600" color="textMuted">
+        {label}
+      </AppText>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
+        thumbColor={value ? theme.colors.card : undefined}
+        accessibilityLabel={label}
+      />
     </View>
   );
 }

@@ -1,6 +1,6 @@
 import { SECTIONS } from '../constants';
 import type { RateRow, SectionKey } from '../types';
-import { isNonStandard, toFraction } from './format';
+import { isNonStandard, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -39,12 +39,15 @@ export function activeFilterCount(f: Filters): number {
 }
 
 /** The "best" rate in a list, honouring lower-is-better for loans. */
-export function bestRow(rows: RateRow[], section: SectionKey): RateRow | null {
+export function bestRow(
+  rows: RateRow[],
+  section: SectionKey,
+  includeNonStandard = false,
+): RateRow | null {
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   let best: RateRow | null = null;
   let bestVal: number | null = null;
-  for (const row of rows) {
-    if (isNonStandard(row)) continue;
+  for (const row of visibleAccountRows(rows, includeNonStandard)) {
     const v = toFraction(row.rate);
     if (v === null) continue;
     if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {

@@ -6,7 +6,7 @@ import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
-import { SegmentedControl } from '../../src/components/controls';
+import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
@@ -32,6 +32,8 @@ export default function Home() {
   const source = useStore((s) => s.source);
   const offline = useStore((s) => s.offline);
   const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const setPref = useStore((s) => s.setPref);
   const [section, setSection] = useState<SectionKey>(defaultSection);
 
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
@@ -40,9 +42,15 @@ export default function Home() {
   // Restrict to rows in this section's hierarchy (drops alternate-root rows like
   // OVERDRAFT) so the hero, ribbon and categories all agree.
   const hierRows = useMemo(() => rowsUnder(sectionRows ?? [], section, []), [sectionRows, section]);
-  const stats = useMemo(() => statsFor(hierRows), [hierRows]);
-  const categories = useMemo(() => childrenOf(hierRows, section, []), [hierRows, section]);
-  const best = useMemo(() => bestRow(hierRows, section), [hierRows, section]);
+  const stats = useMemo(() => statsFor(hierRows, includeNonStandard), [hierRows, includeNonStandard]);
+  const categories = useMemo(
+    () => childrenOf(hierRows, section, [], includeNonStandard),
+    [hierRows, section, includeNonStandard],
+  );
+  const best = useMemo(
+    () => bestRow(hierRows, section, includeNonStandard),
+    [hierRows, section, includeNonStandard],
+  );
 
   if (!core) return null;
   const meta = SECTIONS[section];
@@ -70,6 +78,13 @@ export default function Home() {
       </Row>
 
       <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+      <View style={{ marginTop: 10 }}>
+        <CompactToggle
+          label="Include non-standard accounts"
+          value={includeNonStandard}
+          onChange={(value) => setPref('includeNonStandard', value)}
+        />
+      </View>
 
       {/* Hero: best rate + ribbon distribution for the section */}
       <Card style={{ marginTop: 14, marginBottom: 14 }}>

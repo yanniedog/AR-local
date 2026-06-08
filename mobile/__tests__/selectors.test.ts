@@ -34,11 +34,20 @@ describe('selectors', () => {
   test('bestRow picks lowest for loans, ignoring non-standard', () => {
     const best = bestRow(mortgage, 'Mortgage');
     expect(best?.product_key).toBe('A|1'); // 5.74% — the green 4.89% is non-standard
+    expect(best?.account_class).not.toBe('non_standard');
+  });
+
+  test('bestRow returns null when every candidate is non-standard by default', () => {
+    expect(bestRow(mortgage.filter((row) => row.account_class === 'non_standard'), 'Mortgage')).toBeNull();
   });
 
   test('bestRow picks highest for deposits', () => {
     const best = bestRow(savings, 'Savings');
     expect(best?.product_key).toBe('B|S'); // 5.2%
+  });
+
+  test('bestRow includes non-standard when requested', () => {
+    expect(bestRow(mortgage, 'Mortgage', true)?.product_key).toBe('C|1');
   });
 
   test('sortRows best-first by section direction', () => {

@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { SECTIONS } from '../constants';
-import { isNonStandard } from '../data/format';
+import { visibleAccountRows } from '../data/format';
 import { sortRows } from '../data/selectors';
 import {
   childrenOf,
@@ -29,13 +29,12 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const theme = useTheme();
   const rows = useStore((s) => s.core?.sections[section]?.rates);
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
   const { stats, children, items } = useMemo(() => {
-    // Exclude non-standard accounts by default (matches the dashboard + the ribbon
-    // stats); the flat Search screen still has the include-non-standard toggle.
-    const all = (rows ?? []).filter((r) => !isNonStandard(r));
-    const nodeRows = rowsUnder(all, section, path);
-    const kids = childrenOf(all, section, path);
+    const all = rows ?? [];
+    const nodeRows = visibleAccountRows(rowsUnder(all, section, path), includeNonStandard);
+    const kids = childrenOf(all, section, path, includeNonStandard);
     let data: Item[];
     if (kids.length) {
       data = kids.map((node) => ({ kind: 'node', node }) as Item);
@@ -47,8 +46,8 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
         .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
         .map((row) => ({ kind: 'product', row }) as Item);
     }
-    return { stats: statsFor(nodeRows), children: kids, items: data };
-  }, [rows, section, path]);
+    return { stats: statsFor(nodeRows, true), children: kids, items: data };
+  }, [rows, section, path, includeNonStandard]);
 
   if (!rows) return null;
 

@@ -25,6 +25,7 @@ export interface Prefs {
   defaultSection: SectionKey;
   notificationsEnabled: boolean;
   wifiOnly: boolean;
+  includeNonStandard: boolean;
   onboarded: boolean;
   interests: SectionKey[];
   rateMoveThresholdBps: number;
@@ -35,6 +36,7 @@ const DEFAULT_PREFS: Prefs = {
   defaultSection: 'Mortgage',
   notificationsEnabled: false,
   wifiOnly: false,
+  includeNonStandard: false,
   onboarded: false,
   interests: ['Mortgage', 'Savings', 'TD'],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
