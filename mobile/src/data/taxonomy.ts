@@ -151,9 +151,10 @@ function compareSeg(a: string, b: string, section: SectionKey): number {
   const mb = months(b);
   if (ma !== null && mb !== null) return ma - mb;
   if (a.startsWith('LVR_') && b.startsWith('LVR_')) {
-    const la = parseInt(a.replace(/^LVR_(LE)?/, ''), 10) || 0;
-    const lb = parseInt(b.replace(/^LVR_(LE)?/, ''), 10) || 0;
-    return la - lb;
+    // Sort by the first digit run, so LE60 / 70_80 / GT95 all order correctly.
+    const da = /(\d+)/.exec(a);
+    const db = /(\d+)/.exec(b);
+    return (da ? parseInt(da[1], 10) : 0) - (db ? parseInt(db[1], 10) : 0);
   }
   const oa = ORDER[a];
   const ob = ORDER[b];

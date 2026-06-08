@@ -26,6 +26,29 @@ describe('taxonomy', () => {
     expect(segLabel('6M')).toBe('6 months');
   });
 
+  test('segLabel handles LVR edge cases and generic fallback', () => {
+    expect(segLabel('LVR_UNSPECIFIED')).toBe('LVR n/a');
+    expect(segLabel('LVR_NA')).toBe('LVR n/a');
+    expect(segLabel('LVR_GT95')).toBe('95%+ LVR');
+    expect(segLabel('LVR_GT80')).toBe('80%+ LVR');
+    expect(segLabel('LVR_90')).toBe('≤90% LVR');
+    expect(segLabel('')).toBe('Other');
+    expect(segLabel('OTHER_TERM_TYPE')).toBe('Other term type');
+  });
+
+  test('childrenOf sorts LVR tiers numerically even with GT/LE prefixes', () => {
+    const r = [
+      mk({ product_key: 'a', rate: '0.06', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_GT95' }),
+      mk({ product_key: 'b', rate: '0.05', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_LE60' }),
+      mk({ product_key: 'c', rate: '0.055', taxonomy_path: 'HOME_LOAN.OO.PI.VARIABLE.LVR_70_80' }),
+    ];
+    expect(childrenOf(r, 'Mortgage', ['OO', 'PI', 'VARIABLE']).map((n) => n.seg)).toEqual([
+      'LVR_LE60',
+      'LVR_70_80',
+      'LVR_GT95',
+    ]);
+  });
+
   test('childrenOf groups by the next taxonomy segment, ordered canonically', () => {
     expect(childrenOf(rows, 'Mortgage', []).map((n) => n.seg)).toEqual(['OO', 'INV']);
     expect(childrenOf(rows, 'Mortgage', ['OO']).map((n) => n.seg)).toEqual(['PI']);

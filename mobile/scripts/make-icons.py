@@ -43,8 +43,7 @@ def _trend_mark(img: Image.Image, box: tuple[int, int, int, int], rounded: bool)
     for i, hf in enumerate(heights):
         bx = x0 + padx + i * (bar_w + gap)
         top = base_y - hgt * hf
-        col = LINE if i < bar_n - 1 else (255, 255, 255, 255)
-        draw.rounded_rectangle((bx, top, bx + bar_w, base_y), radius=int(bar_w * 0.32), fill=col)
+        draw.rounded_rectangle((bx, top, bx + bar_w, base_y), radius=int(bar_w * 0.32), fill=LINE)
 
     # The ribbon: a rounded distribution bar beneath the chart with a median dot.
     rib_y0 = y0 + hgt * 0.80

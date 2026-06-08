@@ -27,6 +27,9 @@ export function Ribbon({
 }) {
   const theme = useTheme();
   const [w, setW] = useState(0);
+  // Unique per instance — multiple ribbons render on one screen and SVG ids must not
+  // collide. Must be before any early return (rules-of-hooks).
+  const gradId = `grad-${React.useId().replace(/:/g, '')}`;
   const { min, max, median, mean } = stats;
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
 
@@ -49,7 +52,6 @@ export function Ribbon({
   const badColor = theme.colors.danger;
   const leftColor = lowerIsBetter ? goodColor : badColor;
   const rightColor = lowerIsBetter ? badColor : goodColor;
-  const gradId = `g-${section}-${compact ? 'c' : 'f'}`;
   const rba = rbaRate != null ? rbaRate / 100 : null;
   const rbaIn = rba != null && rba >= min && rba <= max;
 

@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { HierarchyView } from '../../src/components/HierarchyView';
 import { SegmentedControl } from '../../src/components/controls';
 import { Row } from '../../src/components/ui';
+import { sectionFromSlug } from '../../src/constants';
 import { useStore } from '../../src/data/store';
 import { openSearch } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
@@ -19,8 +21,17 @@ const SECTION_SEG = [
 export default function Browse() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
+  const params = useLocalSearchParams<{ section?: string }>();
   const defaultSection = useStore((s) => s.prefs.defaultSection);
-  const [section, setSection] = useState<SectionKey>(defaultSection);
+  const routed = params.section ? sectionFromSlug(params.section) : undefined;
+  const [section, setSection] = useState<SectionKey>(routed ?? defaultSection);
+
+  // Honour deep-links (e.g. Trends -> openBrowse(section)) when the route param changes.
+  useEffect(() => {
+    const r = params.section ? sectionFromSlug(params.section) : undefined;
+    if (r && r !== section) setSection(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.section]);
 
   if (!core) return null;
 
