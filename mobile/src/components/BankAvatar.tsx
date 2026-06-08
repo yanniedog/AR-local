@@ -21,7 +21,7 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
   const fontSize = short.length <= 3 ? size * 0.34 : size * 0.26;
   const logo = brand?.logo;
 
-  useEffect(() => setLogoFailed(false), [logo]);
+  useEffect(() => setLogoFailed(false), [provider, logo]);
 
   if (logo && !logoFailed) {
     return (
@@ -32,9 +32,11 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
           alignItems: 'center',
           justifyContent: 'center',
         }}
+        accessible
         accessibilityLabel={provider}
       >
         <Image
+          accessible={false}
           source={{ uri: logo }}
           resizeMode="contain"
           style={{ width: size * 0.88, height: size * 0.88 }}
@@ -54,9 +56,12 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
         alignItems: 'center',
         justifyContent: 'center',
       }}
+      accessible
       accessibilityLabel={provider}
     >
-      <Text style={{ color: contrastText(color), fontWeight: '800', fontSize }}>{short}</Text>
+      <Text accessible={false} style={{ color: contrastText(color), fontWeight: '800', fontSize }}>
+        {short}
+      </Text>
     </View>
   );
 }

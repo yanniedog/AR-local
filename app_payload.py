@@ -218,6 +218,7 @@ _BRAND_PALETTE = (
 def _normalize_brand_lookup(value: str) -> str:
     words = re.sub(r"[^a-z0-9]+", " ", value.lower()).split()
     ignored = {
+        "and",
         "australia",
         "australian",
         "bank",
@@ -225,10 +226,18 @@ def _normalize_brand_lookup(value: str) -> str:
         "corporation",
         "limited",
         "ltd",
+        "of",
         "pty",
+        "the",
         "wholesale",
     }
     return " ".join(word for word in words if word not in ignored)
+
+
+def _brand_lookup_keys(value: str) -> Tuple[str, ...]:
+    exact = value.strip().lower()
+    normalized = _normalize_brand_lookup(value)
+    return tuple(dict.fromkeys(key for key in (exact, normalized) if key))
 
 
 def _brand_entry_names(name: str, body: str) -> List[str]:
@@ -239,12 +248,16 @@ def _brand_entry_names(name: str, body: str) -> List[str]:
 
 def _put_brand_lookup(out: Dict[str, str], names: Iterable[str], value: str) -> None:
     for name in names:
-        exact = name.strip().lower()
-        if exact:
-            out.setdefault(exact, value)
-        normalized = _normalize_brand_lookup(name)
-        if normalized:
-            out.setdefault(normalized, value)
+        for key in _brand_lookup_keys(name):
+            # Source order is canonical. Keep the first mapping on collisions.
+            out.setdefault(key, value)
+
+
+def _get_brand_lookup(values: Dict[str, str], provider: str) -> Optional[str]:
+    for key in _brand_lookup_keys(provider):
+        if key in values:
+            return values[key]
+    return None
 
 
 def load_brand_shortcodes(rba_dir: Path) -> Dict[str, str]:
@@ -331,14 +344,12 @@ def build_brands(
     brands: Dict[str, Dict[str, str]] = {}
     logos = logos or {}
     for provider in sorted({p for p in providers if p}):
-        key = provider.lower()
-        normalized = _normalize_brand_lookup(provider)
-        short = shortcodes.get(key) or shortcodes.get(normalized) or _derive_short(provider)
+        short = _get_brand_lookup(shortcodes, provider) or _derive_short(provider)
         brands[provider] = compact(
             {
                 "short": short,
                 "color": _brand_color(provider),
-                "logo": logos.get(key) or logos.get(normalized),
+                "logo": _get_brand_lookup(logos, provider),
             }
         )
     return brands
