@@ -57,7 +57,7 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 1. **Is the live release fresh?** (no Pi access needed)
    ```bash
    curl -fsSL https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json \
-     | python -c "import sys,json;m=json.load(sys.stdin);print(m['run_date'], m['generated_at'])"
+     | python3 -c "import sys,json;m=json.load(sys.stdin);print(m['run_date'], m['generated_at'])"
    ```
    `run_date` should equal **today** (or yesterday before the 07:00 UTC / 17:00 AEST run).
    If it's stale by >1 day, the daily publish is failing.
@@ -104,7 +104,7 @@ ssh ar-local-pi5 'cd /srv/ar-local/AR-local && \
   latest=$(ls -d /srv/ar-local/data/runs/*/_exports | sort | tail -1) && \
   python3 app_payload.py build --exports "$latest" --out /tmp/ar-pay'
 scp 'ar-local-pi5:/tmp/ar-pay/*' ./ar-pay/
-python app_payload.py publish --dir ./ar-pay --require-token   # uses gh auth or GH_TOKEN
+python3 app_payload.py publish --dir ./ar-pay --require-token   # uses gh auth or GH_TOKEN
 ```
 
 ### Task B — "Make the app look & function like the web dashboard"
@@ -225,7 +225,7 @@ The last Android dev build artifact:
 
 ## 5. The payload contract (`app_payload.py`, `schema_version: 1`)
 
-`python app_payload.py build --exports <_exports dir> --out <dir>` →
+`python3 app_payload.py build --exports <_exports dir> --out <dir>` →
 - **`manifest.json`** (small, polled first): `run_date`, `generated_at`, `counts`,
   `schedule`, and `files.{core,details}` each with `name`, `bytes`, `sha256`, `url`.
 - **`core-<date>-<sha12>.json.gz`**: `{ run_date, sections:{Mortgage,Savings,TD:{rates[],
@@ -233,7 +233,7 @@ The last Android dev build artifact:
 - **`details-<date>-<sha12>.json.gz`**: per-`product_key` fees/features/eligibility/
   constraints for the detail screen.
 
-`python app_payload.py publish --dir <dir> [--require-token]` → uploads to the rolling
+`python3 app_payload.py publish --dir <dir> [--require-token]` → uploads to the rolling
 release `app-payload-latest` via `gh` (auth via `GH_TOKEN`/`GITHUB_TOKEN` env **or** `gh`
 login). Content-addressed asset names; manifest uploaded last; refuses to downgrade to an
 older/equal `run_date` unless `--force`.
@@ -305,7 +305,7 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 
 ```bash
 # Is the daily upload fresh?
-curl -fsSL https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json | python -m json.tool | grep run_date
+curl -fsSL https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json | python3 -m json.tool | grep run_date
 
 # Pi reachable?           tailscale status | grep ar-local-pi5
 # Pi code / data:         ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git log --oneline -1; ls -d /srv/ar-local/data/runs/*/ | tail -1'
