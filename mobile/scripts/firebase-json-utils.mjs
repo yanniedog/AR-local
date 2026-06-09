@@ -15,17 +15,18 @@ export function normalizeJsonText(raw) {
   let text = raw.replace(/^\uFEFF/, '').trim();
   if (!text) return text;
 
-  if (
-    (text.startsWith('"') && text.endsWith('"')) ||
-    (text.startsWith("'") && text.endsWith("'"))
-  ) {
+  if (text.startsWith("'") && text.endsWith("'") && text.length >= 2) {
+    text = text.slice(1, -1).trim();
+  }
+
+  if (text.startsWith('"') && text.endsWith('"')) {
     try {
       const unwrapped = JSON.parse(text);
       if (typeof unwrapped === 'string') {
         text = unwrapped.trim();
       }
     } catch {
-      // keep original — parseJsonObject will report the error
+      // keep original — parseGoogleServicesJson will report the error
     }
   }
 
