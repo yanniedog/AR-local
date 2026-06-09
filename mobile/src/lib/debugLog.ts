@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { bridgeLogToCrashlytics } from './observability';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogEntry {
@@ -120,12 +122,14 @@ async function persistTail(): Promise<void> {
 }
 
 function append(level: LogLevel, tag: string, message: string): void {
+  const messageRedacted = redactSecrets(String(message));
   buffer.append({
     ts: new Date().toISOString(),
     level,
     tag,
-    message: redactSecrets(String(message)),
+    message: messageRedacted,
   });
+  bridgeLogToCrashlytics(level, tag, messageRedacted);
   notify();
   schedulePersist();
 }

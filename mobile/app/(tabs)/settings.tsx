@@ -15,6 +15,7 @@ import {
   unregisterBackgroundRefresh,
 } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -161,6 +162,22 @@ export default function Settings() {
       </Section>
 
       <Section title="Diagnostics">
+        <ToggleRow
+          icon="pulse-outline"
+          label="Diagnostics & crash reporting"
+          sub="Clarity session replay + Firebase Crashlytics logs"
+          value={prefs.diagnosticsEnabled}
+          onChange={(value) => {
+            setPref('diagnosticsEnabled', value);
+            void setDiagnosticsEnabled(value);
+          }}
+        />
+        <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
+          Clarity records on-screen interactions for replay. Crashlytics receives crash reports
+          and warn/error log lines from app flows. Disabling stops new uploads; a native rebuild
+          may be required for full SDK teardown.
+        </AppText>
+        <Divider style={{ marginVertical: 12 }} />
         <Pressable
           onPress={() => router.push('/debug-log' as Href)}
           style={({ pressed }) => ({

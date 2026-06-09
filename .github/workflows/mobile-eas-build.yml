@@ -3,6 +3,10 @@
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   EXPO_TOKEN — robot access token for yannieyannies-team (expo.dev → Access tokens)
+#   GOOGLE_SERVICES_JSON — optional full google-services.json for real Crashlytics (else placeholder)
+#   GOOGLE_SERVICE_INFO_PLIST — optional GoogleService-Info.plist for iOS Crashlytics
+# EAS project env (expo.dev → project → Environment variables):
+#   EXPO_PUBLIC_CLARITY_PROJECT_ID — Microsoft Clarity project id (preview/production builds)
 #
 # Profiles: mobile/eas.json (development = dev client; preview = internal APK; production = store)
 # Project: @yannieyannies-team/ar-local-rates (app.json → expo.extra.eas.projectId)
@@ -65,6 +69,22 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Materialize Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+          else
+            node scripts/ensure-firebase-config.mjs
+          fi
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > GoogleService-Info.plist
+          elif [ ! -f GoogleService-Info.plist ]; then
+            cp GoogleService-Info.plist.example GoogleService-Info.plist
+          fi
 
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)

@@ -497,4 +497,4 @@ mobile/firebase.json                    # Crashlytics native config (no secrets)
 .github/workflows/mobile-eas-build.yml # workflow_dispatch EAS builds (Firebase secrets optional)
 ```
 
-**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`. Warn/error/info lines also forward to Crashlytics when Diagnostics is on (see §3 observability).
+**Debug logs (mobile):** Settings → Debug log. Uploading logs posts plain text to `https://paste.rs/` (a public, unauthenticated service). The app shows an explicit confirmation dialog with a prominent warning about public visibility before uploading (`Upload to paste.rs?` — destructive Upload). The response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`. Warn/error/info lines also forward to Crashlytics when Diagnostics is on (see §3 observability).

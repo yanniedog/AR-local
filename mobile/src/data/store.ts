@@ -38,6 +38,8 @@ export interface Prefs {
   themeMode: ThemeMode;
   defaultSection: SectionKey;
   notificationsEnabled: boolean;
+  /** Session replay (Clarity) + crash/log reporting (Firebase Crashlytics). */
+  diagnosticsEnabled: boolean;
   wifiOnly: boolean;
   includeNonStandard: boolean;
   onboarded: boolean;
@@ -49,6 +51,7 @@ const DEFAULT_PREFS: Prefs = {
   themeMode: 'system',
   defaultSection: 'Mortgage',
   notificationsEnabled: false,
+  diagnosticsEnabled: true,
   wifiOnly: false,
   includeNonStandard: false,
   onboarded: false,
