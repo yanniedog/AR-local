@@ -123,3 +123,34 @@ export interface Manifest {
 }
 
 export type PayloadSource = 'sample' | 'cache' | 'remote';
+
+export type HistoryWindow = '30D' | '90D' | '1Y' | 'All';
+
+export interface BankHistoryPoint {
+  date: string;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  median: number | null;
+  count?: number;
+}
+
+/** Chart model passed to BankHistoryChart (dashboard bank-history parity). */
+export interface BankHistoryChartModel {
+  dates: string[];
+  points: BankHistoryPoint[];
+  section: SectionKey;
+  allDates?: string[];
+}
+
+/**
+ * Pi `/api/banks/history/section` cache — populated by the history-cache agent.
+ * Rates carry `run_date` for the time axis.
+ */
+export interface BankHistoryCache {
+  run_dates: string[];
+  rates: Array<RateRow & { run_date?: string }>;
+  section?: SectionKey;
+  carry_forward_count?: number;
+  current_only?: boolean;
+}
