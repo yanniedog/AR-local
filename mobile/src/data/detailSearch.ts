@@ -9,6 +9,11 @@ export interface SearchIndexPayload {
 type DetailIndex = Map<string, string>;
 let runtimeCache: { ref: Record<string, ProductDetail> | null | undefined; index: DetailIndex } | null = null;
 const queryMemo = new Map<string, Set<string>>();
+let lastMemoScope: string | null = null;
+
+function indexMemoScope(index: SearchIndexPayload, contentSha?: string | null): string {
+  return contentSha ?? `${index.schema_version}:${index.run_date}`;
+}
 
 function normalizeBlob(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -53,12 +58,22 @@ export function detailSearchIndex(detailsProducts?: Record<string, ProductDetail
 export function resetDetailSearchIndexCache(): void {
   runtimeCache = null;
   queryMemo.clear();
+  lastMemoScope = null;
 }
 
-export function productKeysMatchingIndex(index: SearchIndexPayload | null | undefined, query: string): Set<string> | null {
+export function productKeysMatchingIndex(
+  index: SearchIndexPayload | null | undefined,
+  query: string,
+  contentSha?: string | null,
+): Set<string> | null {
   const q = query.trim().toLowerCase();
   if (!q || !index?.products) return null;
-  const memo = `${index.run_date}:${q}`;
+  const scope = indexMemoScope(index, contentSha);
+  if (lastMemoScope !== scope) {
+    queryMemo.clear();
+    lastMemoScope = scope;
+  }
+  const memo = `${scope}:${q}`;
   if (queryMemo.has(memo)) return queryMemo.get(memo)!;
   const tokens = q.split(/\s+/).filter(Boolean);
   const hits = new Set<string>();
@@ -74,11 +89,12 @@ export function rowMatchesSearchQuery(
   query: string,
   payloadIndex?: SearchIndexPayload | null,
   runtimeDetailText?: string,
+  searchIndexSha?: string | null,
 ): boolean {
   const q = query.trim();
   if (!q) return true;
   const needle = q.toLowerCase();
-  const hits = productKeysMatchingIndex(payloadIndex ?? null, q);
+  const hits = productKeysMatchingIndex(payloadIndex ?? null, q, searchIndexSha);
   if (hits) return hits.has(row.product_key);
   if (row.provider.toLowerCase().includes(needle) || row.product_name.toLowerCase().includes(needle)) return true;
   return runtimeDetailText ? runtimeDetailText.includes(needle) : false;

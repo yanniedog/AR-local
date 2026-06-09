@@ -29,7 +29,7 @@ import {
   type FilterSnapshot,
   type Subscription,
 } from './subscriptions';
-import type { SearchIndexPayload } from './detailSearch';
+import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
 import type { HistoryBanksPayload } from './historyPayload';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
@@ -456,7 +456,7 @@ export const useStore = create<AppState>()(
           return;
         }
         const cached = await cache.readSearchIndex();
-        if (cached && cached.run_date === core.run_date) {
+        if (cached && cached.run_date === core.run_date && meta?.searchIndexSha === asset.sha256) {
           set({ searchIndex: cached });
           return;
         }
@@ -469,9 +469,7 @@ export const useStore = create<AppState>()(
             source: 'remote',
             savedAt: new Date().toISOString(),
             coreSha: manifest.files.core.sha256,
-            detailsSha: meta?.detailsSha ?? null,
             searchIndexSha: asset.sha256,
-            historyBanksSha: meta?.historyBanksSha ?? null,
           });
           set({ searchIndex: fresh });
         } catch (err) {
@@ -489,7 +487,7 @@ export const useStore = create<AppState>()(
           return;
         }
         const cached = await cache.readHistoryBanks();
-        if (cached && cached.run_date === core.run_date) {
+        if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
           set({ historyBanks: cached });
           return;
         }
@@ -502,8 +500,6 @@ export const useStore = create<AppState>()(
             source: 'remote',
             savedAt: new Date().toISOString(),
             coreSha: manifest.files.core.sha256,
-            detailsSha: meta?.detailsSha ?? null,
-            searchIndexSha: meta?.searchIndexSha ?? null,
             historyBanksSha: asset.sha256,
           });
           set({ historyBanks: fresh });
@@ -571,12 +567,20 @@ export const useStore = create<AppState>()(
 
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
-        if (key === 'enableDeepSearch' && value) {
-          void get().ensureSearchIndex();
-          void get().ensureDetails();
+        if (key === 'enableDeepSearch') {
+          if (value) {
+            void get().ensureSearchIndex();
+            void get().ensureDetails();
+          } else {
+            set({ searchIndex: null });
+          }
         }
-        if (key === 'showHistoryRibbon' && value) {
-          void get().ensureHistoryBanks();
+        if (key === 'showHistoryRibbon') {
+          if (value) {
+            void get().ensureHistoryBanks();
+          } else {
+            set({ historyBanks: null });
+          }
         }
       },
 
@@ -595,6 +599,7 @@ export const useStore = create<AppState>()(
       async clearCache() {
         debugLog.info('store', 'clearCache');
         await cache.clear();
+        resetDetailSearchIndexCache();
         set({
           core: null,
           details: null,
