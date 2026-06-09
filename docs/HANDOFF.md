@@ -328,8 +328,10 @@ apply to the new package name; Play Store treats the new ID as a different app.
 **Auto release when PR queue drains:** `.github/workflows/mobile-auto-release-on-queue-drain.yml`
 — on squash-merge of a PR to `main`, counts remaining open PRs (`gh pr list --state open --base main`).
 If **> 0**, exits cleanly. If **0** (last PR landed), bumps `expo.version` patch in `mobile/app.json`
-via `mobile/scripts/mobile-auto-release-on-drain.mjs`, pushes to `main`, which triggers
-**mobile-android-apk** below. Direct pushes to `main` do not auto-release. Concurrency group
+via `mobile/scripts/mobile-auto-release-on-drain.mjs`, opens a bump PR to `main` with auto-merge
+(branch protection blocks direct pushes — requires `bot-feedback-gate` + `bot-presence-gate`).
+When the bump PR lands, **mobile-android-apk** below builds the APK. Use **`workflow_dispatch`**
+on this workflow to recover a missed bump (e.g. after a failed drain run). Concurrency group
 `mobile-auto-release-on-drain` (`cancel-in-progress: false`) serializes drain checks.
 
 **Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
