@@ -1,7 +1,8 @@
 name: app-ci
 
-# Typecheck + lint + unit tests for the mobile app and the Python payload builder.
-# Scoped to the relevant paths so it stays out of the way of the banking pipeline.
+# Typecheck + lint + unit tests + bundle export for the mobile app, plus pytest for
+# app_payload.py. Scoped to relevant paths so it stays out of the way of the banking
+# pipeline. EAS cloud builds are manual via mobile-eas-build.yml (needs EXPO_TOKEN).
 on:
   pull_request:
     paths:
@@ -9,15 +10,20 @@ on:
       - 'app_payload.py'
       - 'tests/test_app_payload.py'
       - '.github/workflows/app-ci.yml'
+      - '.github/workflows/mobile-eas-build.yml'
+      - '.github/workflows/mobile-eas-submit.yml'
   push:
     branches: [main]
     paths:
       - 'mobile/**'
       - 'app_payload.py'
+      - '.github/workflows/app-ci.yml'
+      - '.github/workflows/mobile-eas-build.yml'
+      - '.github/workflows/mobile-eas-submit.yml'
 
 jobs:
   mobile:
-    name: mobile (typecheck · lint · test)
+    name: mobile (typecheck · lint · test · export)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,13 +36,17 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+      - name: Expo doctor
+        run: npx expo-doctor
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
         run: npm run lint
       - name: Test
         run: npm test -- --ci
+      - name: Export bundle (all platforms)
+        run: npm run export
 
   payload:
     name: payload builder (pytest)

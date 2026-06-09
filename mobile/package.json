@@ -11,6 +11,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --passWithNoTests",
+    "doctor": "npx expo-doctor",
+    "export:android": "expo export --platform android",
+    "export:ios": "expo export --platform ios",
+    "export": "expo export --platform all",
+    "ci": "npm run doctor && npm run typecheck && npm run lint && npm run test -- --ci && npm run export",
     "sample": "node scripts/build-sample.mjs",
     "icons": "python scripts/make-icons.py"
   },
