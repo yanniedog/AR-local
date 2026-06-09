@@ -238,7 +238,7 @@ export default function Settings() {
           value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
         <Pressable
-          onPress={() => router.push('/terms' as Href)}
+          onPress={() => router.push('/terms' satisfies Href)}
           style={{
             marginTop: 12,
             flexDirection: 'row',
