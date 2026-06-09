@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
 import { SECTIONS } from '../constants';
+import type { SortKey } from '../data/selectors';
 import type { SectionKey } from '../types';
 
 // Use expo-router's object form so it handles param encoding/decoding. Passing
@@ -23,12 +24,12 @@ export const openBrowse = (section: SectionKey) =>
 export const openNode = (section: SectionKey, path: string[]) =>
   router.push({ pathname: '/node', params: { section, path: path.join('.') } });
 
-export const openSearch = (section: SectionKey) =>
-  router.push({ pathname: '/search', params: { section } });
+export const openSearch = (section: SectionKey, sort?: SortKey) =>
+  router.push({ pathname: '/search', params: { section, ...(sort ? { sort } : {}) } });
 
 // Flat, searchable/sortable product list — optionally scoped to a taxonomy node.
-export const openProductsList = (section: SectionKey, path: string[] = []) =>
-  router.push({ pathname: '/search', params: { section, path: path.join('.') } });
+export const openProductsList = (section: SectionKey, path: string[] = [], sort?: SortKey) =>
+  router.push({ pathname: '/search', params: { section, path: path.join('.'), ...(sort ? { sort } : {}) } });
 
 // Product keys can contain commas, so serialize the array unambiguously (JSON)
 // rather than comma-joining.

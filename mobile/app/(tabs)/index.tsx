@@ -7,13 +7,13 @@ import { OfflineBanner } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
-import { AppText, Card, Divider, IconButton, Row } from '../../src/components/ui';
+import { AppText, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder, statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openNode, openProduct } from '../../src/lib/nav';
+import { openNode, openProduct, openProductsList } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -109,6 +109,24 @@ export default function Home() {
           ) : null}
         </Row>
         <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
+        <AppText variant="tiny" weight="700" color="textFaint" style={{ marginTop: 12, marginBottom: 7 }}>
+          VIEW PRODUCTS
+        </AppText>
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          <Chip
+            label={meta.lowerIsBetter ? 'Lowest rates' : 'Top yields'}
+            icon="trending-up"
+            onPress={() => openProductsList(section, [], 'rate')}
+          />
+          {section === 'Mortgage' ? (
+            <Chip
+              label="Comparison"
+              icon="swap-vertical"
+              onPress={() => openProductsList(section, [], 'comparison')}
+            />
+          ) : null}
+          <Chip label="Bank A-Z" icon="business" onPress={() => openProductsList(section, [], 'bank')} />
+        </Row>
       </Card>
 
       {section === 'Mortgage' ? (

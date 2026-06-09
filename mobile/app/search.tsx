@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { FilterSheet } from '../src/components/FilterSheet';
@@ -13,6 +13,7 @@ import { SECTIONS, SECTION_ORDER } from '../src/constants';
 import {
   activeFilterCount,
   EMPTY_FILTERS,
+  normalizeSortKey,
   queryAndSort,
   type Filters,
   type SortKey,
@@ -34,7 +35,11 @@ const rowToken = (r: { rate_index?: number | string; product_key: string }) =>
 
 export default function Search() {
   const theme = useTheme();
-  const { section: secRaw, path: pathRaw } = useLocalSearchParams<{ section: string; path?: string }>();
+  const { section: secRaw, path: pathRaw, sort: sortRaw } = useLocalSearchParams<{
+    section: string;
+    path?: string;
+    sort?: string;
+  }>();
   const section = (SECTION_ORDER.includes(secRaw as SectionKey) ? secRaw : 'Mortgage') as SectionKey;
   const path = (pathRaw ?? '').split('.').filter(Boolean);
   const core = useStore((s) => s.core);
@@ -42,11 +47,13 @@ export default function Search() {
   const setPref = useStore((s) => s.setPref);
 
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('rate');
+  const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+
+  useEffect(() => setSortKey(normalizeSortKey(sortRaw)), [sortRaw]);
 
   const baseRows = useMemo(() => {
     const all = core?.sections[section]?.rates ?? [];
