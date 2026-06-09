@@ -98,7 +98,18 @@ def refresh_rolling_latest(
         f"[backfill_app_payload] rolling latest finished run_date={run_date} "
         f"published={published}"
     )
-    return published
+    if published:
+        return True
+    status, live = app_payload._live_manifest_status(repo, app_payload.DEFAULT_TAG)
+    if status == "present" and live:
+        live_run = str(live.get("run_date") or "")
+        if live_run and live_run >= run_date:
+            print(
+                f"[backfill_app_payload] rolling latest no-op: live run_date={live_run} "
+                f">= newest export {run_date}"
+            )
+            return True
+    return False
 
 
 def backfill(
@@ -110,7 +121,7 @@ def backfill(
     dry_run: bool = False,
     force: bool = False,
     skip_latest: bool = False,
-) -> List[dict]:
+) -> Tuple[List[dict], Optional[bool]]:
     """Publish dated releases for each export date; optionally refresh rolling latest."""
     results: List[dict] = []
     dates = list(iter_valid_export_dates(runs_root, from_date=from_date, to_date=to_date))
@@ -238,7 +249,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if attempted and not any(r.get("published") for r in results):
         print("[backfill_app_payload] failed: no dated releases published")
         return 1
-    unpublished = [r["run_date"] for r in attempted if not r.get("published")]
+    unpublished = [r["run_date"] for r in attempted if not r.get("published") and not r.get("error")]
     if unpublished:
         print(
             f"[backfill_app_payload] failed: dated publish returned false for run_dates={unpublished}"
