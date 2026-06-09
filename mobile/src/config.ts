@@ -4,6 +4,7 @@ type Extra = {
   repo?: string;
   releaseTag?: string;
   manifestUrl?: string;
+  datesIndexUrl?: string;
   apkReleaseTag?: string;
   apkManifestUrl?: string;
 };
@@ -27,7 +28,8 @@ export const MANIFEST_URL =
 
 /** Index of published history dates (refreshed after ingest / backfill). */
 export const DATES_INDEX_URL =
-  `https://github.com/${REPO}/releases/download/${RELEASE_TAG}/dates-index.json`;
+  extra.datesIndexUrl ??
+  MANIFEST_URL.replace(/\/manifest\.json$/i, '/dates-index.json');
 
 /** Manifest URL for one immutable dated snapshot release. */
 export function datedManifestUrl(runDate: string): string {

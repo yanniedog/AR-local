@@ -686,7 +686,12 @@ def _published_history_dates(
     if not gh or not _gh_authed(gh):
         return []
     dates: List[str] = []
-    for tag in _list_payload_release_tags(gh, repo):
+    try:
+        tags = _list_payload_release_tags(gh, repo)
+    except RuntimeError as exc:
+        print(f"[app_payload] dates-index tag list failed (non-fatal) error={exc!r}")
+        return []
+    for tag in tags:
         if not is_dated_tag(tag):
             continue
         run_date = tag[len(DATED_TAG_PREFIX) :]
