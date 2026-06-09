@@ -12,6 +12,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --passWithNoTests",
     "doctor": "npx expo-doctor",
+    "eas-build-pre-install": "node scripts/ensure-firebase-config.mjs",
     "preexport:android": "node scripts/ensure-firebase-config.mjs",
     "export:android": "expo export --platform android",
     "preexport:ios": "node scripts/ensure-firebase-config.mjs",

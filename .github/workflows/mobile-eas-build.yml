@@ -5,11 +5,16 @@
 #   EXPO_TOKEN — robot access token for yannieyannies-team (expo.dev → Access tokens)
 #   GOOGLE_SERVICES_JSON — optional full google-services.json for real Crashlytics (else placeholder)
 #   GOOGLE_SERVICE_INFO_PLIST — optional GoogleService-Info.plist for iOS Crashlytics
-# EAS project env (expo.dev → project → Environment variables):
+#   EXPO_PUBLIC_CLARITY_PROJECT_ID — optional Clarity project id (passed to EAS build env)
+# EAS project env (expo.dev → project → Environment variables) — alternative to GH secrets:
+#   GOOGLE_SERVICES_JSON — file-type env (path injected at build; see ensure-firebase-config.mjs)
 #   EXPO_PUBLIC_CLARITY_PROJECT_ID — Microsoft Clarity project id (preview/production builds)
 #
 # Profiles: mobile/eas.json (development = dev client; preview = internal APK; production = store)
 # Project: @yannieyannies-team/ar-local-rates (app.json → expo.extra.eas.projectId)
+#
+# Firebase files are gitignored. GHA materializes them locally, then passes base64 env vars to
+# EAS cloud (eas-build-pre-install decodes and writes files before prebuild).
 
 name: mobile-eas-build
 
@@ -83,7 +88,7 @@ jobs:
           if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
             printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > GoogleService-Info.plist
           elif [ ! -f GoogleService-Info.plist ]; then
-            cp GoogleService-Info.plist.example GoogleService-Info.plist
+            node scripts/ensure-firebase-config.mjs
           fi
 
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
@@ -103,11 +108,26 @@ jobs:
       - name: EAS Build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_CLARITY_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_CLARITY_PROJECT_ID }}
         run: |
+          set -euo pipefail
+          ENV_ARGS=()
+          if [ -f google-services.json ]; then
+            B64=$(base64 -w0 google-services.json)
+            ENV_ARGS+=(--env "GOOGLE_SERVICES_JSON_B64=$B64")
+          fi
+          if [ -f GoogleService-Info.plist ]; then
+            B64=$(base64 -w0 GoogleService-Info.plist)
+            ENV_ARGS+=(--env "GOOGLE_SERVICE_INFO_PLIST_B64=$B64")
+          fi
+          if [ -n "${EXPO_PUBLIC_CLARITY_PROJECT_ID:-}" ]; then
+            ENV_ARGS+=(--env "EXPO_PUBLIC_CLARITY_PROJECT_ID=$EXPO_PUBLIC_CLARITY_PROJECT_ID")
+          fi
           npx eas-cli@16.14.1 build \
             --non-interactive \
             --profile "${{ inputs.profile }}" \
-            --platform "${{ inputs.platform }}"
+            --platform "${{ inputs.platform }}" \
+            "${ENV_ARGS[@]}"
 
       - name: Build queued
         run: |
