@@ -1,20 +1,15 @@
 "use strict";
 
-/** Pure helpers (no child_process) — shared by app-release-meta.mjs and Jest. */
-
-/** @param {string} version */
 function versionTag(version) {
   return `app-v${version}`;
 }
 
-/** @param {string} version */
 function releaseTitle(version) {
-  return `Australian Rates app – ${version} (Android)`;
+  return `Australian Rates app ÔÇö ${version} (Android)`;
 }
 
-/** @param {string} content @param {string} version */
 function extractChangelogSection(content, version) {
-  const heading = new RegExp(`^##\s+\[?${version.replace(/\./g, "\\.")}\]?`, "m");
+  const heading = new RegExp(`^##\\s+\\[?${version.replace(/\./g, '\\.')}\\]?`, 'm');
   const match = content.match(heading);
   if (!match || match.index == null) {
     return null;
