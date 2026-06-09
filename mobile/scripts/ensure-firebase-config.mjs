@@ -22,12 +22,11 @@ const mobileDir = join(root, '..');
 function decodeB64(name) {
   const raw = process.env[name]?.trim();
   if (!raw) return undefined;
-  try {
-    return Buffer.from(raw, 'base64').toString('utf8');
-  } catch {
-    console.error(`ensure-firebase-config: invalid base64 for ${name}`);
+  if (!/^[A-Za-z0-9+/_\-=\s]+$/.test(raw)) {
+    console.error(`ensure-firebase-config: invalid base64 characters in ${name}`);
     process.exit(1);
   }
+  return Buffer.from(raw, 'base64').toString('utf8');
 }
 
 /**
@@ -59,9 +58,10 @@ function materialize(target, options) {
       console.log(`ensure-firebase-config: copied ${envVar} path → ${target}`);
       return;
     }
-    writeFileSync(targetPath, envVal, 'utf8');
-    console.log(`ensure-firebase-config: wrote ${target} from ${envVar}`);
-    return;
+    console.error(
+      `ensure-firebase-config: ${envVar} is not inline content and path does not exist: ${srcPath}`,
+    );
+    process.exit(1);
   }
 
   if (existsSync(targetPath)) {
@@ -88,5 +88,5 @@ materialize('GoogleService-Info.plist', {
   envVar: 'GOOGLE_SERVICE_INFO_PLIST',
   b64Var: 'GOOGLE_SERVICE_INFO_PLIST_B64',
   example: 'GoogleService-Info.plist.example',
-  inlinePrefix: '<?xml',
+  inlinePrefix: '<',
 });
