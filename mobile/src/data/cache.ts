@@ -214,6 +214,12 @@ export const cache = {
 
   },
 
+  async clearHistoryBanks(): Promise<void> {
+
+    await FileSystem.deleteAsync(HISTORY_BANKS, { idempotent: true });
+
+  },
+
   async writeHistoryBanks(json: string): Promise<void> {
 
     await ensureDir();

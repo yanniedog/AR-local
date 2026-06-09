@@ -6,6 +6,7 @@ import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
 import { debugLog } from '../lib/debugLog';
 import { versionLt } from '../lib/versionCompare';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
+import { normalizeHistoryBanksPayload } from './historyPayload';
 import {
   fileNameFromUrl,
   type PayloadProgressHandler,
@@ -264,5 +265,9 @@ export async function downloadHistoryBanks(
   opts: DownloadOpts = {},
 ): Promise<HistoryBanksResult> {
   const text = await downloadInflate(url, expectedSha, opts);
-  return { text, historyBanks: JSON.parse(text) as HistoryBanksResult['historyBanks'] };
+  const historyBanks = normalizeHistoryBanksPayload(JSON.parse(text) as unknown);
+  if (!historyBanks) {
+    throw new Error('history_banks payload failed validation');
+  }
+  return { text, historyBanks };
 }

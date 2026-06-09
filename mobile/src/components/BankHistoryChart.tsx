@@ -109,10 +109,16 @@ export function BankHistoryChart({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const timeline = allDates ?? dates;
-  const sliced = useMemo(
-    () => sliceChartTimeline(timeline, points, window),
-    [timeline, points, window],
-  );
+  const sliced = useMemo(() => {
+    if (!Array.isArray(dates) || !Array.isArray(points) || !dates.length || !points.length) {
+      return { dates: [] as string[], points: [] as BankHistoryPoint[] };
+    }
+    try {
+      return sliceChartTimeline(timeline, points, window);
+    } catch {
+      return { dates: [] as string[], points: [] as BankHistoryPoint[] };
+    }
+  }, [timeline, dates, points, window]);
 
   const plotDates = sliced.dates;
   const plotPoints = sliced.points;

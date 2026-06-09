@@ -39,6 +39,7 @@ export default function Home() {
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
   const historyBanks = useStore((s) => s.historyBanks);
+  const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
   const setPref = useStore((s) => s.setPref);
   const [section, setSection] = useState<SectionKey>(defaultSection);
@@ -74,7 +75,7 @@ export default function Home() {
 
   if (!core) return null;
   const meta = SECTIONS[section];
-  const rba = core.rba.at(-1);
+  const rba = core.rba?.at(-1);
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
@@ -170,22 +171,33 @@ export default function Home() {
         </Row>
       </Card>
 
-      {showHistoryRibbon && historyModel ? (
-        <Card style={{ marginBottom: 14 }}>
-          <AppText variant="h3" style={{ marginBottom: 8 }}>
-            {meta.title} history
-          </AppText>
-          <BankHistoryChart
-            dates={historyModel.dates}
-            points={historyModel.points}
-            allDates={historyModel.allDates}
-            rba={section === 'Mortgage' ? core.rba : undefined}
-            section={section}
-          />
-        </Card>
+      {showHistoryRibbon ? (
+        historyModel ? (
+          <Card style={{ marginBottom: 14 }}>
+            <AppText variant="h3" style={{ marginBottom: 8 }}>
+              {meta.title} history
+            </AppText>
+            <BankHistoryChart
+              dates={historyModel.dates}
+              points={historyModel.points}
+              allDates={historyModel.allDates}
+              rba={section === 'Mortgage' ? core.rba : undefined}
+              section={section}
+            />
+          </Card>
+        ) : historyBanksError ? (
+          <Card style={{ marginBottom: 14 }}>
+            <AppText variant="h3" style={{ marginBottom: 4 }}>
+              {meta.title} history
+            </AppText>
+            <AppText variant="tiny" color="textFaint">
+              History data unavailable ({historyBanksError}). Showing today&apos;s ribbon only.
+            </AppText>
+          </Card>
+        ) : null
       ) : null}
 
-      {section === 'Mortgage' ? (
+      {section === 'Mortgage' && core.rba?.length ? (
         <Card style={{ marginBottom: 14 }}>
           <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="trending-up" size={16} color={theme.colors.primary} />

@@ -12,7 +12,6 @@ import {
   alignPointsToTimeline,
   historyDatesInWindow,
   normalizeTimelineDates,
-  sliceChartTimeline,
 } from './bankHistoryTransform';
 import { toFraction } from './format';
 import { rowsUnder } from './taxonomy';
@@ -126,12 +125,12 @@ export interface HistorySelectorState {
 
 /**
  * Select bank-history chart model for a section.
- * Uses `historyCache` when present; otherwise falls back to the current ribbon slice.
+ * Returns the full retained timeline; BankHistoryChart applies window chips locally.
  */
 export function selectBankHistoryChartModel(
   state: HistorySelectorState,
   section: SectionKey,
-  window: HistoryWindow = '30D',
+  window: HistoryWindow = 'All',
 ): BankHistoryChartModel | null {
   const { core, historyBanks, historyCache, includeNonStandard = false } = state;
   if (!core) return null;
@@ -168,11 +167,10 @@ export function selectBankHistoryChartModel(
 
   const fallback = currentRibbonFallback(core, section, includeNonStandard);
   if (!fallback) return null;
-  const sliced = sliceChartTimeline(fallback.allDates ?? fallback.dates, fallback.points, window);
   return {
     section,
-    dates: sliced.dates,
-    points: sliced.points,
+    dates: fallback.dates,
+    points: fallback.points,
     allDates: fallback.allDates ?? fallback.dates,
   };
 }
