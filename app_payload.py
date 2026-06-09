@@ -48,6 +48,8 @@ SCHEMA_VERSION = 1
 DEFAULT_REPO = os.environ.get("AR_LOCAL_REPO", "yanniedog/AR-local")
 DEFAULT_TAG = os.environ.get("AR_LOCAL_APP_PAYLOAD_TAG", "app-payload-latest")
 DATED_TAG_PREFIX = "app-payload-"
+DATES_INDEX_FILENAME = "dates-index.json"
+HISTORY_MIN_DATE = "2026-05-13"
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 APP_MIN_VERSION = "1.0.0"
 # Bound every gh subprocess so a network/CLI stall can never hang the Pi's daily
@@ -624,6 +626,150 @@ def release_display_title(tag: str, run_date: str) -> str:
     return release_title(run_date) if is_rolling_tag(tag) else dated_release_title(run_date)
 
 
+def iter_valid_export_dates(
+    runs_root: Path,
+    *,
+    from_date: str = "",
+    to_date: str = "",
+) -> Iterable[Tuple[str, Path]]:
+    """Yield ``(run_date, exports_dir)`` for valid exports in the optional date range."""
+    from ar_local_pi_runtime import export_manifest_is_valid, load_exports_manifest
+
+    runs_root = runs_root.expanduser().resolve()
+    if not runs_root.is_dir():
+        return iter(())
+    for child in sorted(runs_root.iterdir()):
+        if not child.is_dir() or not _RUN_DATE_RE.match(child.name):
+            continue
+        run_date = child.name
+        if from_date and run_date < from_date:
+            continue
+        if to_date and run_date > to_date:
+            continue
+        exports = child / "_exports"
+        manifest = load_exports_manifest(exports)
+        if manifest is not None and export_manifest_is_valid(manifest):
+            yield run_date, exports
+
+
+def build_dates_index(
+    dates: Iterable[str],
+    *,
+    min_date: str = HISTORY_MIN_DATE,
+    repo: str = DEFAULT_REPO,
+    tag: str = DEFAULT_TAG,
+) -> Dict[str, Any]:
+    """Build the mobile history dates index (sorted, bounded, with download URL hints)."""
+    valid = sorted(
+        {d for d in dates if _RUN_DATE_RE.match(d) and (not min_date or d >= min_date)}
+    )
+    latest = valid[-1] if valid else ""
+    base = f"https://github.com/{repo}/releases/download"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "dates": valid,
+        "count": len(valid),
+        "min_date": min_date,
+        "latest_date": latest,
+        "dates_index_url": f"{base}/{tag}/{DATES_INDEX_FILENAME}",
+        "dated_manifest_url_pattern": f"{base}/{DATED_TAG_PREFIX}{{run_date}}/manifest.json",
+    }
+
+
+def _published_history_dates(
+    repo: str,
+    *,
+    min_date: str = HISTORY_MIN_DATE,
+) -> List[str]:
+    """Return sorted run_dates with live dated snapshot releases on GitHub."""
+    gh = _gh_available()
+    if not gh or not _gh_authed(gh):
+        return []
+    dates: List[str] = []
+    for tag in _list_payload_release_tags(gh, repo):
+        if not is_dated_tag(tag):
+            continue
+        run_date = tag[len(DATED_TAG_PREFIX) :]
+        if min_date and run_date < min_date:
+            continue
+        status, live = _live_manifest_status(repo, tag)
+        if status == "present" and live and str(live.get("run_date") or "") == run_date:
+            dates.append(run_date)
+    return sorted(set(dates))
+
+
+def _upload_dates_index(
+    gh: str,
+    repo: str,
+    tag: str,
+    index_path: Path,
+) -> bool:
+    """Upload ``dates-index.json`` to the rolling release (clobber)."""
+    if not index_path.is_file():
+        return False
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    view = subprocess.run(
+        [gh, "release", "view", tag, "--repo", repo],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if view.returncode != 0:
+        print(f"[app_payload] dates-index upload skipped: release {tag!r} missing")
+        return False
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    subprocess.run(
+        [gh, "release", "upload", tag, str(index_path), "--repo", repo, "--clobber"],
+        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+    )
+    return True
+
+
+def refresh_dates_index(
+    runs_root: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    tag: str = DEFAULT_TAG,
+    min_date: str = HISTORY_MIN_DATE,
+) -> bool:
+    """Rebuild ``dates-index.json`` from published dated releases and upload to rolling tag."""
+    gh = _gh_available()
+    if not gh or not _gh_authed(gh):
+        print("[app_payload] dates-index refresh skipped: no gh auth")
+        return False
+
+    dates = _published_history_dates(repo, min_date=min_date)
+    if not dates:
+        disk_dates = [d for d, _ in iter_valid_export_dates(runs_root, from_date=min_date)]
+        dates = sorted(set(disk_dates))
+    if not dates:
+        print("[app_payload] dates-index refresh skipped: no published dates")
+        return False
+
+    index = build_dates_index(dates, min_date=min_date, repo=repo, tag=tag)
+    payload = {
+        "schema_version": index["schema_version"],
+        "dates": index["dates"],
+        "count": index["count"],
+        "min_date": index["min_date"],
+        "latest_date": index["latest_date"],
+    }
+    out_dir = runs_root.expanduser().resolve() / ".dates-index"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index_path = out_dir / DATES_INDEX_FILENAME
+    index_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    try:
+        ok = _upload_dates_index(gh, repo, tag, index_path)
+    except subprocess.SubprocessError as exc:
+        print(f"[app_payload] dates-index upload failed error={exc!r}")
+        return False
+    print(
+        f"[app_payload] dates-index refresh finished count={index['count']} "
+        f"latest={index['latest_date']} uploaded={ok}"
+    )
+    return ok
+
+
 def _update_release_title(gh: str, repo: str, tag: str, run_date: str) -> bool:
     """Refresh a release title to match the manifest run_date (rolling or dated)."""
     if not run_date:
@@ -1004,6 +1150,120 @@ def retitle_payload_releases(
             skipped += 1
     print(f"[app_payload] retitle finished updated={updated} skipped={skipped}")
     return updated, skipped
+
+
+def iter_valid_export_dates(
+    runs_root: Path,
+    *,
+    from_date: str = "",
+    to_date: str = "",
+) -> Iterable[Tuple[str, Path]]:
+    """Yield ``(run_date, exports_dir)`` for valid exports in the optional date range."""
+    from ar_local_pi_runtime import export_manifest_is_valid, load_exports_manifest
+
+    runs_root = runs_root.expanduser().resolve()
+    if not runs_root.is_dir():
+        return iter(())
+    for child in sorted(runs_root.iterdir()):
+        if not child.is_dir() or not _RUN_DATE_RE.match(child.name):
+            continue
+        run_date = child.name
+        if from_date and run_date < from_date:
+            continue
+        if to_date and run_date > to_date:
+            continue
+        exports = child / "_exports"
+        manifest = load_exports_manifest(exports)
+        if manifest is not None and export_manifest_is_valid(manifest):
+            yield run_date, exports
+
+
+def build_dates_index(
+    dates: Iterable[str],
+    *,
+    repo: str = DEFAULT_REPO,
+    min_date: str = HISTORY_MIN_DATE,
+) -> Dict[str, Any]:
+    """Tiny index of immutable dated payload releases for mobile incremental fetch."""
+    ordered = sorted({str(d) for d in dates if _RUN_DATE_RE.match(str(d))})
+    if min_date:
+        ordered = [d for d in ordered if d >= min_date]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "updated_at": utc_now_iso(),
+        "repo": repo,
+        "rolling_tag": DEFAULT_TAG,
+        "dated_tag_prefix": DATED_TAG_PREFIX,
+        "min_date": min_date or (ordered[0] if ordered else ""),
+        "latest_date": ordered[-1] if ordered else "",
+        "count": len(ordered),
+        "dates": ordered,
+        "dated_manifest_url_pattern": (
+            f"https://github.com/{repo}/releases/download/{DATED_TAG_PREFIX}{{run_date}}/manifest.json"
+        ),
+        "dates_index_url": (
+            f"https://github.com/{repo}/releases/download/{DEFAULT_TAG}/{DATES_INDEX_FILENAME}"
+        ),
+    }
+
+
+def publish_dates_index_file(
+    index_path: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    tag: str = DEFAULT_TAG,
+    dry_run: bool = False,
+) -> bool:
+    """Upload ``dates-index.json`` to the rolling release (non-fatal when unauthenticated)."""
+    if not index_path.is_file():
+        raise FileNotFoundError(f"dates index not found: {index_path}")
+    gh = _gh_available()
+    if not gh or not _gh_authed(gh):
+        print(
+            "[app_payload] dates-index publish skipped: no gh auth "
+            f"(path={index_path.name} tag={tag})"
+        )
+        return False
+    if dry_run:
+        print(f"[app_payload] dates-index dry-run tag={tag} file={index_path.name}")
+        return False
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    view = subprocess.run(
+        [gh, "release", "view", tag, "--repo", repo],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if view.returncode != 0:
+        print(f"[app_payload] dates-index publish skipped: release {tag!r} missing")
+        return False
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    subprocess.run(
+        [gh, "release", "upload", tag, str(index_path), "--repo", repo, "--clobber"],
+        check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+    )
+    print(f"[app_payload] dates-index published tag={tag} file={index_path.name} exit=0")
+    return True
+
+
+def refresh_dates_index(
+    runs_root: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    min_date: str = HISTORY_MIN_DATE,
+    staging_dir: Optional[Path] = None,
+    dry_run: bool = False,
+) -> bool:
+    """Rebuild and publish ``dates-index.json`` from valid exports on disk."""
+    dates = [d for d, _ in iter_valid_export_dates(runs_root, from_date=min_date)]
+    index = build_dates_index(dates, repo=repo, min_date=min_date)
+    stage = staging_dir or (runs_root / ".dates-index-staging")
+    stage.mkdir(parents=True, exist_ok=True)
+    index_path = stage / DATES_INDEX_FILENAME
+    index_path.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(
+        f"[app_payload] dates-index built count={index['count']} "
+        f"min={index['min_date']} latest={index['latest_date']}"
+    )
+    return publish_dates_index_file(index_path, repo=repo, dry_run=dry_run)
 
 
 def build_and_publish(
