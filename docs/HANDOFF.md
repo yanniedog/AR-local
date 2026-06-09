@@ -370,7 +370,9 @@ EXPO_TOKEN=<token> eas build --profile preview --platform android
 
 Settings → **App update** (Android only): **Check for update** / **Download update** compares
 `nativeApplicationVersion` + `nativeBuildVersion` against a rolling GitHub manifest and
-installs a newer preview APK via the system package installer.
+installs a newer preview APK via the system package installer. When the remote **semver** is
+newer, Settings shows summary bullets for every skipped version (from `changelog-summary.json`)
+and a **Full changelog** link to each `app-v{semver}` GitHub release.
 
 | Piece | Location / URL |
 |---|---|
@@ -378,9 +380,13 @@ installs a newer preview APK via the system package installer.
 | APK asset | Same release tag → `app-preview.apk` |
 | Install QR (PNG) | Same release tag → `app-preview-qr.png` — encodes direct APK download URL (Android Chrome) |
 | Install page | Same release tag → `install.html` — desktop-friendly QR + direct link |
-| Client logic | `mobile/src/lib/appUpdateLogic.ts` (compare/fetch) + `appUpdate.ts` (download/install) |
+| Client logic | `mobile/src/lib/appUpdateLogic.ts` (compare/fetch) + `appUpdate.ts` (download/install) + `installPermission.ts` (Android sideload gate) + `changelog.ts` (cumulative summaries) |
 | Publish script | `mobile/scripts/publish-apk-manifest.mjs` (`--apk` GHA; `--eas-build-id` EAS; `--qr-only` refresh QR without rebuild) |
 | Version bump (GHA) | `mobile/scripts/bump-android-version-code.mjs` — monotonic `versionCode` from manifest |
+| Changelog source | `mobile/changelog/versions/{semver}.json` — exhaustive nested bullets for GitHub; `summaryBullets` for in-app |
+| Changelog manifest | `mobile/changelog/manifest.json` + release asset `changelog-summary.json` on `app-apk-latest` |
+| GH release notes | `mobile/scripts/changelog-lib.cjs` → collapsible `<details>` sections on `app-v{semver}` releases |
+| Maintain | Edit `mobile/changelog/versions/X.Y.Z.json` before merge; auto-release stubs from git if missing; run `npm run changelog:manifest` |
 
 After a successful **mobile-android-apk** run (or **mobile-eas-build** preview/android), both
 files land on GitHub release tag **`app-apk-latest`**. First build seeds the release;
@@ -390,6 +396,21 @@ across either publisher (`appVersionSource: local`, no preview `autoIncrement`).
 
 Operator: run **mobile-android-apk** on `main` once to seed the release, then devices with an
 older preview build can update from Settings without reinstalling from expo.dev.
+
+**Android install permission (self-update)**
+
+| Piece | Detail |
+|---|---|
+| Manifest | `REQUEST_INSTALL_PACKAGES` in `mobile/app.json` → `expo.android.permissions` |
+| Check | `expo-device` → `Device.isSideLoadingEnabledAsync()` (`PackageManager.canRequestPackageInstalls`) |
+| Settings deep link | `android.settings.MANAGE_UNKNOWN_APP_SOURCES` with `package:com.eyex.australianrates` |
+| First launch | Onboarding (Android) + Settings → App update show **Allow app updates** when not granted |
+| Before install | `ensureInstallPermission()` in `appUpdate.ts` / Settings download flow |
+
+**Persistence:** Android stores “Install unknown apps” **per app** (package name). It **survives
+normal in-app APK updates** when the package (`com.eyex.australianrates`) and signing key are
+unchanged. Users must grant again after uninstall, a new package ID, or a reinstall signed with a
+different key. The app cannot grant this programmatically on Android 8+ — only open system settings.
 
 **Scan-to-install QR (EAS-style, no expo.dev link)**
 

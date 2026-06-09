@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import { useRouter, type Href } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { Alert, Platform, Pressable, Switch, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, AppState, Platform, Pressable, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -22,6 +22,11 @@ import {
   type ApkManifest,
   type UpdateCheckResult,
 } from '../../src/lib/appUpdate';
+import {
+  canInstallApkUpdates,
+  ensureInstallPermission,
+  openInstallPermissionSettings,
+} from '../../src/lib/installPermission';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
@@ -238,7 +243,7 @@ export default function Settings() {
           value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
         <Pressable
-          onPress={() => router.push('/terms' satisfies Href)}
+          onPress={() => router.push('/terms' as Href)}
           style={{
             marginTop: 12,
             flexDirection: 'row',
@@ -270,6 +275,19 @@ function AppUpdateSection() {
   const [downloading, setDownloading] = useState(false);
   const [downloadPct, setDownloadPct] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [installAllowed, setInstallAllowed] = useState<boolean | null>(null);
+
+  const refreshInstallPermission = useCallback(async () => {
+    setInstallAllowed(await canInstallApkUpdates());
+  }, []);
+
+  useEffect(() => {
+    void refreshInstallPermission();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshInstallPermission();
+    });
+    return () => sub.remove();
+  }, [refreshInstallPermission]);
 
   const onCheck = useCallback(async () => {
     setChecking(true);
@@ -291,6 +309,8 @@ function AppUpdateSection() {
 
   const onDownload = useCallback(async () => {
     if (!remote) return;
+    const allowed = await ensureInstallPermission();
+    if (!allowed) return;
     setDownloading(true);
     setError(null);
     setDownloadPct(null);
@@ -324,6 +344,21 @@ function AppUpdateSection() {
     <Section title="App update">
       <InfoRow label="Installed" value={`${installed.version} (${installed.buildNumber})`} />
       <InfoRow label="Latest" value={latestLabel} />
+      <InfoRow
+        label="Install permission"
+        value={installAllowed === null ? '—' : installAllowed ? 'Allowed' : 'Required'}
+      />
+      {installAllowed === false ? (
+        <Row gap={12} style={{ marginTop: 8 }}>
+          <Button
+            title="Allow app updates"
+            icon="settings-outline"
+            variant="secondary"
+            style={{ flex: 1 }}
+            onPress={() => void openInstallPermissionSettings()}
+          />
+        </Row>
+      ) : null}
       {downloadPct !== null ? (
         <InfoRow label="Download" value={`${downloadPct}%`} />
       ) : null}
@@ -354,8 +389,8 @@ function AppUpdateSection() {
         ) : null}
       </Row>
       <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
-        Preview builds are published on the release channel. Android will prompt to install; allow
-        installs from this app if prompted.
+        Required to install updates from the app. Android keeps this setting across app updates for
+        the same package and signing key.
       </AppText>
     </Section>
   );

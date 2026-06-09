@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
-import { View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AppState, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip } from '../src/components/ui';
@@ -9,6 +9,10 @@ import { AppText, Button, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
 import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifications';
 import { useStore } from '../src/data/store';
+import {
+  canInstallApkUpdates,
+  openInstallPermissionSettings,
+} from '../src/lib/installPermission';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
@@ -18,6 +22,23 @@ export default function Onboarding() {
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const [interests, setInterests] = useState<SectionKey[]>(['Mortgage', 'Savings', 'TD']);
   const [notify, setNotify] = useState(true);
+  const [installAllowed, setInstallAllowed] = useState<boolean | null>(
+    Platform.OS === 'android' ? null : true,
+  );
+
+  const refreshInstallPermission = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+    setInstallAllowed(await canInstallApkUpdates());
+  }, []);
+
+  useEffect(() => {
+    void refreshInstallPermission();
+    if (Platform.OS !== 'android') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshInstallPermission();
+    });
+    return () => sub.remove();
+  }, [refreshInstallPermission]);
 
   const toggle = (key: SectionKey) =>
     setInterests((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -84,6 +105,28 @@ export default function Onboarding() {
         </View>
         <Chip label={notify ? 'On' : 'Off'} selected={notify} onPress={() => setNotify((v) => !v)} />
       </Row>
+
+      {Platform.OS === 'android' ? (
+        <Row gap={12} style={{ marginTop: 20, alignItems: 'flex-start' }}>
+          <Ionicons name="download-outline" size={22} color={theme.colors.primary} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="body" weight="700">
+              Allow app updates
+            </AppText>
+            <AppText variant="small" color="textMuted" style={{ marginTop: 2 }}>
+              Required to install updates from the app.
+            </AppText>
+          </View>
+          <Chip
+            label={installAllowed ? 'Allowed' : 'Allow'}
+            selected={installAllowed === true}
+            onPress={() => {
+              if (installAllowed) return;
+              void openInstallPermissionSettings();
+            }}
+          />
+        </Row>
+      ) : null}
 
       <View style={{ flex: 1 }} />
       <Button title="Get started" icon="arrow-forward" onPress={start} style={{ marginBottom: insets.bottom + 20 }} />
