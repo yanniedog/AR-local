@@ -50,6 +50,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics",
       "expo-router",
       [
         "expo-notifications",
@@ -67,11 +69,14 @@
       ],
       "expo-asset",
       "expo-font",
-      "@react-native-firebase/app",
-      "@react-native-firebase/crashlytics",
       [
         "expo-build-properties",
         {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "kotlinVersion": "2.0.21"
+          },
           "ios": {
             "useFrameworks": "static",
             "forceStaticLinking": [

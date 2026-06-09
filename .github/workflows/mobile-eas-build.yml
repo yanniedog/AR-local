@@ -93,6 +93,7 @@ jobs:
 
           if [ -f google-services.json ]; then
             echo "Materialized google-services.json ($(wc -c < google-services.json) bytes)"
+            node scripts/validate-firebase-package.mjs
           else
             echo "::warning::google-services.json missing after materialize step"
           fi
@@ -112,12 +113,27 @@ jobs:
           esac
 
 
-      - name: Sync Firebase file env to EAS
+      - name: Sync Firebase env to EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
         run: |
+          sync_string_env() {
+            local name="$1"
+            local value="$2"
+            npx eas-cli@16.14.1 env:create \
+              --name "$name" \
+              --value "$value" \
+              --environment "${{ inputs.profile }}" \
+              --visibility secret \
+              --non-interactive \
+              || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                --variable-name "$name" \
+                --variable-environment "${{ inputs.profile }}" \
+                --value "$value" \
+                --non-interactive
+          }
           sync_file_env() {
             local name="$1"
             local path="$2"
@@ -136,11 +152,15 @@ jobs:
                 --non-interactive
           }
           if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+            GOOGLE_SERVICES_JSON_B64=$(printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -w0)
+            sync_string_env GOOGLE_SERVICES_JSON_B64 "$GOOGLE_SERVICES_JSON_B64"
             printf '%s' "$GOOGLE_SERVICES_JSON" > .eas-sync-google-services.json
             sync_file_env GOOGLE_SERVICES_JSON .eas-sync-google-services.json
             rm -f .eas-sync-google-services.json
           fi
           if [ -n "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
+            GOOGLE_SERVICE_INFO_PLIST_B64=$(printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" | base64 -w0)
+            sync_string_env GOOGLE_SERVICE_INFO_PLIST_B64 "$GOOGLE_SERVICE_INFO_PLIST_B64"
             printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > .eas-sync-GoogleService-Info.plist
             sync_file_env GOOGLE_SERVICE_INFO_PLIST .eas-sync-GoogleService-Info.plist
             rm -f .eas-sync-GoogleService-Info.plist
@@ -181,13 +201,25 @@ jobs:
         run: node scripts/ensure-eas-android-credentials.mjs
 
       - name: EAS Build
+        id: eas_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
+          set -o pipefail
           EAS_NO_VCS=1 npx eas-cli@16.14.1 build \
             --non-interactive \
             --profile "${{ inputs.profile }}" \
-            --platform "${{ inputs.platform }}"
+            --platform "${{ inputs.platform }}" 2>&1 | tee /tmp/eas-build.log
+          status=${PIPESTATUS[0]}
+          build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
+          if [ -n "$build_id" ]; then
+            echo "eas_build_id=$build_id" >> "$GITHUB_OUTPUT"
+            echo "EAS build: https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds/$build_id"
+          fi
+          if [ "$status" -ne 0 ] && [ -n "$build_id" ]; then
+            node scripts/fetch-eas-build-error.mjs "$build_id" || true
+          fi
+          exit "$status"
 
       - name: Build queued
         run: |
