@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
 import { SECTIONS } from '../constants';
@@ -26,7 +26,10 @@ export function Ribbon({
   compact?: boolean;
 }) {
   const theme = useTheme();
+  const { width: screenW } = useWindowDimensions();
   const [w, setW] = useState(0);
+  // FlashList headers and first paint can report 0 width — fall back so the bar renders.
+  const layoutW = w > 0 ? w : Math.max(1, screenW - 64);
   // Unique per instance — multiple ribbons render on one screen and SVG ids must not
   // collide. Must be before any early return (rules-of-hooks).
   const gradId = `grad-${React.useId().replace(/:/g, '')}`;
@@ -46,7 +49,7 @@ export function Ribbon({
   const barH = compact ? 10 : 14;
   const pad = 2;
   const span = max - min || 1;
-  const x = (v: number) => pad + ((v - min) / span) * (Math.max(1, w) - 2 * pad);
+  const x = (v: number) => pad + ((v - min) / span) * (Math.max(1, layoutW) - 2 * pad);
 
   const goodColor = theme.colors.success;
   const badColor = theme.colors.danger;
@@ -58,8 +61,7 @@ export function Ribbon({
   return (
     <View>
       <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ width: '100%', height: h }}>
-        {w > 0 ? (
-          <Svg width={w} height={h}>
+        <Svg width={layoutW} height={h}>
             <Defs>
               <LinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
                 <Stop offset="0" stopColor={leftColor} stopOpacity={0.85} />
@@ -67,7 +69,7 @@ export function Ribbon({
                 <Stop offset="1" stopColor={rightColor} stopOpacity={0.85} />
               </LinearGradient>
             </Defs>
-            <Rect x={pad} y={barY} width={Math.max(1, w - 2 * pad)} height={barH} rx={barH / 2} fill={`url(#${gradId})`} />
+            <Rect x={pad} y={barY} width={Math.max(1, layoutW - 2 * pad)} height={barH} rx={barH / 2} fill={`url(#${gradId})`} />
             {/* mean marker (thin) */}
             {mean !== null ? (
               <Line x1={x(mean)} y1={barY - 3} x2={x(mean)} y2={barY + barH + 3} stroke={theme.colors.text} strokeWidth={1.5} />
@@ -88,7 +90,6 @@ export function Ribbon({
               </>
             ) : null}
           </Svg>
-        ) : null}
       </View>
       <Row style={{ justifyContent: 'space-between', marginTop: 2 }}>
         <Stat label="Min" value={formatRate(min)} color={leftColor} />
