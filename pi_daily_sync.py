@@ -138,6 +138,17 @@ def discard_eol_only_changes(repo: Path) -> bool:
     ).stdout.strip()
     if not status:
         return False
+    for line in status.splitlines():
+        if len(line) >= 2 and line[0] == "?" and line[1] == "?":
+            return False
+    has_unstaged = subprocess.run(
+        ["git", "diff", "--quiet"],
+        cwd=str(repo),
+        check=False,
+        shell=False,
+    ).returncode != 0
+    if not has_unstaged:
+        return False
     eol_only = subprocess.run(
         ["git", "diff", "--ignore-cr-at-eol", "--quiet"],
         cwd=str(repo),
@@ -146,7 +157,22 @@ def discard_eol_only_changes(repo: Path) -> bool:
     ).returncode == 0
     if not eol_only:
         return False
-    subprocess.run(["git", "checkout", "--", "."], cwd=str(repo), check=True, shell=False)
+    subprocess.run(
+        ["git", "checkout", "--", "."],
+        cwd=str(repo),
+        check=True,
+        shell=False,
+    )
+    remaining = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=False,
+    ).stdout.strip()
+    if remaining:
+        return False
     print(f"[pi_daily_sync] discarded line-ending-only local changes in {repo}")
     return True
 

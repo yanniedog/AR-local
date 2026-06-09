@@ -84,6 +84,14 @@ jobs:
           node scripts/ensure-firebase-config.mjs
           node scripts/validate-firebase-package.mjs
 
+      - name: Bump Android versionCode from rolling manifest
+        if: >-
+          inputs.profile == 'preview' &&
+          (inputs.platform == 'android' || inputs.platform == 'all')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/bump-android-version-code.mjs --repo "${{ github.repository }}"
+
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)
         run: |

@@ -364,8 +364,9 @@ installs a newer preview APK via the system package installer.
 
 After a successful **mobile-android-apk** run (or **mobile-eas-build** preview/android), both
 files land on GitHub release tag **`app-apk-latest`**. First build seeds the release;
-subsequent builds clobber the rolling assets. GHA bumps `android.versionCode` from the
-published manifest; EAS uses `appVersionSource: remote` + `autoIncrement: true`.
+subsequent builds clobber the rolling assets. Both **mobile-android-apk** and **mobile-eas-build** (preview/android) run
+`bump-android-version-code.mjs` against the published manifest so version codes stay monotonic
+across either publisher (`appVersionSource: local`, no preview `autoIncrement`).
 
 Operator: run **mobile-android-apk** on `main` once to seed the release, then devices with an
 older preview build can update from Settings without reinstalling from expo.dev.
