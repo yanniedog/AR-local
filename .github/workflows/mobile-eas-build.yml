@@ -42,7 +42,7 @@ on:
           - all
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mobile-eas-build-${{ github.run_id }}
@@ -162,6 +162,18 @@ jobs:
             node scripts/fetch-eas-build-error.mjs "$build_id" || true
           fi
           exit "$status"
+
+      - name: Publish preview APK manifest (GitHub release)
+        if: >-
+          inputs.profile == 'preview' &&
+          (inputs.platform == 'android' || inputs.platform == 'all') &&
+          steps.eas_build.outputs.eas_build_id != ''
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/publish-apk-manifest.mjs "${{ steps.eas_build.outputs.eas_build_id }}" \
+            --repo "${{ github.repository }}"
 
       - name: Build queued
         run: |

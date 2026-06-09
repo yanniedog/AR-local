@@ -48,3 +48,25 @@ jest.mock('@microsoft/react-native-clarity', () => ({
   resume: jest.fn(async () => true),
   isPaused: jest.fn(async () => false),
 }));
+
+jest.mock('expo-application', () => ({
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+}));
+
+jest.mock('expo-intent-launcher', () => ({
+  startActivityAsync: jest.fn(async () => {}),
+}));
+
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///cache/',
+  documentDirectory: 'file:///docs/',
+  EncodingType: { Base64: 'base64' },
+  deleteAsync: jest.fn(async () => {}),
+  createDownloadResumable: jest.fn(() => ({
+    downloadAsync: jest.fn(async () => ({ uri: 'file:///cache/app-update.apk' })),
+  })),
+  getContentUriAsync: jest.fn(async () => 'content://test/app-update.apk'),
+  getInfoAsync: jest.fn(async () => ({ exists: false })),
+  readAsStringAsync: jest.fn(async () => ''),
+}));

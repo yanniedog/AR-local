@@ -322,6 +322,28 @@ cd mobile
 EXPO_TOKEN=<token> eas build --profile preview --platform android
 ```
 
+**In-app APK self-update (preview / internal distribution)**
+
+Settings → **App update** (Android only): **Check for update** / **Download update** compares
+`nativeApplicationVersion` + `nativeBuildVersion` against a rolling GitHub manifest and
+installs a newer preview APK via the system package installer.
+
+| Piece | Location / URL |
+|---|---|
+| Manifest URL (baked in) | `app.json` → `expo.extra.apkManifestUrl` → `…/app-apk-latest/app-apk-latest.json` |
+| APK asset | Same release tag → `app-preview.apk` |
+| Client logic | `mobile/src/lib/appUpdateLogic.ts` (compare/fetch) + `appUpdate.ts` (download/install) |
+| Publish script | `mobile/scripts/publish-apk-manifest.mjs` (CI only; uses `EXPO_TOKEN` + `GITHUB_TOKEN`) |
+
+After a successful **mobile-eas-build** run (`profile=preview`, `platform=android`), the
+workflow downloads the EAS artifact and uploads both files to GitHub release tag
+**`app-apk-latest`**. First preview build seeds the release; subsequent builds clobber
+the rolling assets. Preview profile uses `autoIncrement: true` in `eas.json` so
+`versionCode` bumps each build.
+
+Operator: run **mobile-eas-build** (preview/android) once to populate the release, then
+devices with an older build can update from Settings without reinstalling from expo.dev.
+
 **Part 4 — Verification**
 
 | Check | How |

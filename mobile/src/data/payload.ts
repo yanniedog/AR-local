@@ -4,6 +4,7 @@ import { gunzipSync, strFromU8 } from 'fflate';
 
 import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
 import { debugLog } from '../lib/debugLog';
+import { versionLt } from '../lib/versionCompare';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
 import {
   fileNameFromUrl,
@@ -11,19 +12,6 @@ import {
   type PayloadProgressPhase,
   type PayloadProgressSnapshot,
 } from './downloadProgress';
-
-/** Numeric semver compare: true when a < b ("1.0.0" < "1.1.0"). */
-function versionLt(a: string, b: string): boolean {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] ?? 0;
-    const y = pb[i] ?? 0;
-    if (x < y) return true;
-    if (x > y) return false;
-  }
-  return false;
-}
 
 export interface DownloadOpts {
   fileName?: string;
