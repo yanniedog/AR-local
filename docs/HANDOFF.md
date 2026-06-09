@@ -479,10 +479,9 @@ the committed sample); the **Pi is the primary daily publisher**.
 - **Required status checks (branch protection):** `bot-feedback-gate` + `bot-presence-gate`,
   `strict: true` (up-to-date), `enforce_admins: true` (**admins cannot bypass** — even
   `gh pr merge --admin` is refused).
-- **Required bots:** **gemini** + **sourcery** (`AR_BOT_WAIT_REQUIRED=gemini,sourcery`).
-  `bot-presence-gate` is **single-shot**: it fails if both bots haven't reviewed yet.
-  Sourcery can lag 10–20 min; nudge it with a PR comment **`@sourcery-ai review`**. A bot's
-  `pull_request_review` event auto-re-runs the presence gate.
+- **Required bot (presence gate):** **gemini** only (`AR_BOT_WAIT_REQUIRED=gemini` in
+  `pr-bot-presence-gate.yml`). Sourcery is optional — it may still comment but does not block
+  merge. A bot's `pull_request_review` event auto-re-runs the presence gate.
 - **Resolving a thread emits no webhook** → a previously-failed gate won't auto-re-run after
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
   `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
@@ -514,8 +513,8 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 
 - **Pi offline = everything stops.** Check `tailscale status` first when data looks stale.
 - **`enforce_admins: true`** — you cannot force-merge; satisfy the gates for real.
-- **`bot-presence-gate` is single-shot** and waits for gemini **and** sourcery. Sourcery
-  lag is the usual reason a green-looking PR won't merge; nudge `@sourcery-ai review`.
+- **`bot-presence-gate` is single-shot** and waits for **gemini** only. If the gate failed
+  before gemini reviewed, a fresh push or `gh run rerun <run-id>` after gemini comments.
 - **Pi file ownership**: some `/srv/ar-local` paths are root-owned; use the blessed scripts
   (`pi_deploy_verify.py`, `install-pi-systemd.sh`) rather than ad-hoc `git pull`/edits.
 - **Line endings**: repo is LF; Windows checkouts warn about CRLF — harmless.
@@ -529,7 +528,29 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 
 ---
 
-## 9. Command cheat-sheet
+## 9. Quotas & costs (pipeline audit, condensed)
+
+Normal ops are **$0**. Billable or capped components:
+
+| Component | Limit | Overage / reset | AR-local usage |
+|---|---|---|---|
+| **EAS cloud builds** (Free plan) | **15 Android + 15 iOS / month** | No pay-as-you-go on Free; upgrade or wait for **1st-of-month** reset | **`mobile-eas-build`** only; quota exhausted Jun 2026 — use **`mobile-android-apk`** instead |
+| **GHA Gradle APK** (`mobile-android-apk`) | Unlimited on **public** repo | — | **Primary** internal Android preview path (no EAS quota) |
+| **GitHub Actions** (other workflows) | Public repo: generous minutes | Private repos: 2000 min/mo Free | Pi deploy, ingest watchdog, PR gates |
+| **GitHub Releases** | Asset size limits per file/release | — | `app-payload-latest`, `app-apk-latest`, dated payload tags |
+| **Firebase Crashlytics** (Spark) | Free tier | Blaze metered if enabled | Preview/production builds with real `google-services.json` |
+| **Microsoft Clarity** | Free, no session cap | — | Non-`__DEV__` builds + Diagnostics on |
+| **paste.rs** (debug log upload) | Public, unauthenticated | No SLA | Settings → Debug log → Upload |
+| **Tailscale** (Pi access) | Personal plan | — | `100.78.28.10` dashboard + SSH |
+| **Pi self-host** | Local SSD / bandwidth | — | Daily ingest + dashboard; no cloud VM bill |
+
+**Rule of thumb:** Android preview APKs → **`mobile-android-apk`** (free). Reserve EAS cloud for
+iOS or when you need Expo's managed build queue. Store fees (Apple/Google) apply only at
+public-store submission — not used yet.
+
+---
+
+## 10. Command cheat-sheet
 
 ```bash
 # Is the daily upload fresh?
@@ -548,7 +569,7 @@ curl -fsSL https://github.com/yanniedog/AR-local/releases/download/app-payload-l
 
 ---
 
-## 10. Key files index
+## 11. Key files index
 
 ```
 app_payload.py                         # build + publish the payload (Pi side)
@@ -584,7 +605,14 @@ mobile/scripts/ensure-firebase-config.mjs  # copy .example Firebase configs when
 mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
 mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
 mobile/firebase.json                    # Crashlytics native config (no secrets)
-.github/workflows/mobile-eas-build.yml # workflow_dispatch EAS builds (Firebase secrets optional)
+mobile/src/lib/appUpdateLogic.ts       # in-app update: manifest fetch + version compare
+mobile/src/lib/appUpdate.ts            # in-app update: APK download + system installer
+mobile/src/lib/versionCompare.ts       # semver / versionCode compare helper
+mobile/scripts/publish-apk-manifest.mjs # publish app-preview.apk + app-apk-latest.json to GH release
+mobile/scripts/bump-android-version-code.mjs  # monotonic versionCode from rolling manifest
+mobile/scripts/materialize-android-keystore.mjs  # EAS keystore fetch or B64 secret for GHA signing
+.github/workflows/mobile-android-apk.yml # primary free Android preview APK (GHA Gradle, no EAS quota)
+.github/workflows/mobile-eas-build.yml # optional workflow_dispatch EAS cloud builds (quota-limited)
 ```
 
 **Debug logs (mobile):** Settings → Debug log. Uploading logs posts plain text to `https://paste.rs/` (a public, unauthenticated service). The app shows an explicit confirmation dialog with a prominent warning about public visibility before uploading (`Upload to paste.rs?` — destructive Upload). The response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`. Warn/error/info lines also forward to Crashlytics when Diagnostics is on (see §3 observability).
