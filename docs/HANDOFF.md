@@ -150,7 +150,7 @@ The dashboard mirrors australianrates.com.
 | RBA cash-rate chart | `src/components/charts.tsx`, shown on Home/Trends | ✅ done |
 | **Lender logos** | `src/components/BankAvatar.tsx`; canonical PNGs embedded in release `core.brands` for offline rendering, with monogram fallback | ✅ done |
 | **Standard / non-standard toggle** | persisted top-level toggle on Home/Browse; hierarchy drill-down and Search inherit it | ✅ done |
-| Sort toggle / chart focus presets | Home ribbon presets deep-link to `app/search.tsx` sort chips | ✅ done |
+| Sort toggle / chart focus presets | Home ribbon presets open hierarchy-scoped `app/search.tsx` sort chips | ✅ done |
 | Light/dark theme | `src/theme/` (`ThemeProvider`, `colors.ts`) | ✅ done |
 | JSON/XLSX export | — | ❌ not applicable to mobile (skip) |
 | Economic Data tab | — | ❌ out of scope |

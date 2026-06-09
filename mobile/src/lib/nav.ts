@@ -31,6 +31,9 @@ export const openSearch = (section: SectionKey, sort?: SortKey) =>
 export const openProductsList = (section: SectionKey, path: string[] = [], sort?: SortKey) =>
   router.push({ pathname: '/search', params: { section, path: path.join('.'), ...(sort ? { sort } : {}) } });
 
+export const openRibbonProducts = (section: SectionKey, sort: SortKey) =>
+  router.push({ pathname: '/search', params: { section, sort, scope: 'hierarchy' } });
+
 // Product keys can contain commas, so serialize the array unambiguously (JSON)
 // rather than comma-joining.
 export const openCompare = (keys: string[]) =>

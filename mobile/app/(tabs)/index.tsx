@@ -13,7 +13,7 @@ import { formatRunDate, relativeDate } from '../../src/data/format';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder, statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openNode, openProduct, openProductsList } from '../../src/lib/nav';
+import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -116,16 +116,16 @@ export default function Home() {
           <Chip
             label={meta.lowerIsBetter ? 'Lowest rates' : 'Top yields'}
             icon="trending-up"
-            onPress={() => openProductsList(section, [], 'rate')}
+            onPress={() => openRibbonProducts(section, 'rate')}
           />
           {section === 'Mortgage' ? (
             <Chip
               label="Comparison"
               icon="swap-vertical"
-              onPress={() => openProductsList(section, [], 'comparison')}
+              onPress={() => openRibbonProducts(section, 'comparison')}
             />
           ) : null}
-          <Chip label="Bank A-Z" icon="business" onPress={() => openProductsList(section, [], 'bank')} />
+          <Chip label="Bank A-Z" icon="business" onPress={() => openRibbonProducts(section, 'bank')} />
         </Row>
       </Card>
 

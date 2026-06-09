@@ -19,7 +19,7 @@ import {
   type SortKey,
 } from '../src/data/selectors';
 import { useStore } from '../src/data/store';
-import { breadcrumb, rowsUnder } from '../src/data/taxonomy';
+import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
 import { openCompare, openProduct } from '../src/lib/nav';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -35,13 +35,15 @@ const rowToken = (r: { rate_index?: number | string; product_key: string }) =>
 
 export default function Search() {
   const theme = useTheme();
-  const { section: secRaw, path: pathRaw, sort: sortRaw } = useLocalSearchParams<{
+  const { section: secRaw, path: pathRaw, sort: sortRaw, scope: scopeRaw } = useLocalSearchParams<{
     section: string;
     path?: string;
     sort?: string;
+    scope?: string;
   }>();
   const section = (SECTION_ORDER.includes(secRaw as SectionKey) ? secRaw : 'Mortgage') as SectionKey;
-  const path = (pathRaw ?? '').split('.').filter(Boolean);
+  const path = useMemo(() => (pathRaw ?? '').split('.').filter(Boolean), [pathRaw]);
+  const hierarchyScoped = scopeRaw === 'hierarchy';
   const core = useStore((s) => s.core);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const setPref = useStore((s) => s.setPref);
@@ -57,8 +59,8 @@ export default function Search() {
 
   const baseRows = useMemo(() => {
     const all = core?.sections[section]?.rates ?? [];
-    return path.length ? rowsUnder(all, section, path) : all;
-  }, [core, section, path]);
+    return rowsForSearchScope(all, section, path, hierarchyScoped);
+  }, [core, section, path, hierarchyScoped]);
 
   const effectiveFilters = useMemo(
     () => ({ ...filters, includeNonStandard }),

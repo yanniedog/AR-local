@@ -14,6 +14,15 @@ export const ROOT: Record<SectionKey, string> = {
   TD: 'TERM_DEPOSIT',
 };
 
+export function rowsForSearchScope(
+  rows: RateRow[],
+  section: SectionKey,
+  path: string[],
+  hierarchyScoped: boolean,
+): RateRow[] {
+  return path.length || hierarchyScoped ? rowsUnder(rows, section, path) : rows;
+}
+
 const LABELS: Record<string, string> = {
   HOME_LOAN: 'Home loans',
   OO: 'Owner-occupied',
