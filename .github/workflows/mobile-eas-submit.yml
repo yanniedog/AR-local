@@ -1,0 +1,74 @@
+# Submit the latest EAS production build to App Store Connect / Google Play.
+# Manual trigger only. Store credentials must be configured in EAS (eas credentials).
+#
+# Secrets:
+#   EXPO_TOKEN — same robot token as mobile-eas-build.yml
+#
+# Prerequisite: a successful production build for the target platform(s).
+
+name: mobile-eas-submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Store platform(s) to submit
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+      profile:
+        description: EAS submit profile (mobile/eas.json → submit)
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-eas-submit
+  cancel-in-progress: false
+
+jobs:
+  eas-submit:
+    name: eas submit (${{ inputs.profile }} · ${{ inputs.platform }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Require EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings → Secrets → Actions."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: EAS Submit (latest build)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest submit \
+            --non-interactive \
+            --latest \
+            --profile "${{ inputs.profile }}" \
+            --platform "${{ inputs.platform }}"
