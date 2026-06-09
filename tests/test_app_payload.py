@@ -76,6 +76,49 @@ def test_build_brands_shortcodes_and_color():
     assert brands["Some New Bank"]["color"] == app_payload.build_brands(["Some New Bank"], {})["Some New Bank"]["color"]
 
 
+def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
+    dashboard = tmp_path / "dashboard"
+    logos = tmp_path / "banks"
+    dashboard.mkdir()
+    logos.mkdir()
+    (dashboard / "ar-bank-brand.js").write_text(
+        "'ANZ': {\n"
+        "  short: 'ANZ',\n"
+        "  icon: '/assets/banks/anz.png',\n"
+        "  aliases: ['ANZ Bank'],\n"
+        "},\n"
+        "'Huge Bank': { short: 'Huge', icon: '/assets/banks/huge.png' },\n",
+        encoding="utf-8",
+    )
+    (logos / "anz.png").write_bytes(b"\x89PNG\r\n\x1a\nsmall")
+    (logos / "huge.png").write_bytes(b"x" * (app_payload.MAX_EMBEDDED_LOGO_BYTES + 1))
+
+    loaded = app_payload.load_brand_logos(dashboard, logos)
+
+    assert set(loaded) == {"anz", "anz bank"}
+    assert loaded["anz"].startswith("data:image/png;base64,")
+    brands = app_payload.build_brands(
+        ["ANZ Bank Australia Limited", "No Logo Bank"],
+        {"anz": "ANZ"},
+        loaded,
+    )
+    assert brands["ANZ Bank Australia Limited"]["logo"] == loaded["anz"]
+    assert brands["ANZ Bank Australia Limited"]["short"] == "ANZ"
+    assert "logo" not in brands["No Logo Bank"]
+
+
+def test_brand_lookup_normalization_is_centralized_and_first_wins():
+    values = {}
+    app_payload._put_brand_lookup(values, ["Bank of Melbourne"], "first")
+    app_payload._put_brand_lookup(values, ["Melbourne Bank"], "second")
+
+    assert app_payload._brand_lookup_keys("The Melbourne Bank Limited") == (
+        "the melbourne bank limited",
+        "melbourne",
+    )
+    assert app_payload._get_brand_lookup(values, "The Melbourne Bank Limited") == "first"
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end build against the sample export (skipped when absent)
 # --------------------------------------------------------------------------- #

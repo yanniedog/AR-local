@@ -26,7 +26,8 @@ server, so it works in the daily pipeline and in CI.
   `{ name, bytes, sha256, url }` with the stable release download URL. The app polls
   this first and re-downloads only when `run_date` / `sha256` changed.
 - **`core-<date>.json.gz`** — `sections.{Mortgage,Savings,TD}.{rates[],ribbon}` +
-  `brands` (monogram short-code + colour per lender, no external CDN) + `rba[]`.
+  `brands` (embedded canonical logo where available, plus monogram short-code + colour
+  fallback; no external CDN) + `rba[]`.
   Each rate row is the dashboard's `BANK_SECTION_COLUMNS` set plus `comparison_rate`.
   Filtering mirrors the dashboard (Mortgage = lending & non-DISCOUNT; deposits otherwise).
 - **`details-<date>.json.gz`** — per-`product_key` `{ description, last_updated, fees,
@@ -215,9 +216,9 @@ eas submit --platform android     # Google Play
 
 ## Notes & follow-ups
 
-- Real bank logos: v1 uses branded monogram avatars (deterministic colour + short code
-  from `dashboard/ar-bank-brand.js`) to stay off the deprecated `australianrates.com`
-  CDN. A future tier could publish a `logos/` set into the release.
+- Real bank logos: the Pi embeds the canonical AustralianRates PNG logo pack into
+  `core.brands` as compact data URIs, so logos render offline without an external CDN.
+  Lenders outside the pack retain deterministic coloured monograms.
 - Remote push (vs the current local notifications) would need a device-token store.
 - Per-product rate history could be added as a future payload tier from
   `/api/banks/history`.

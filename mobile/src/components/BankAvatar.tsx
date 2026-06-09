@@ -1,5 +1,5 @@
-import React from 'react';
-import { Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, Text, View } from 'react-native';
 
 import { useStore } from '../data/store';
 
@@ -15,9 +15,37 @@ function contrastText(hex: string): string {
 
 export function BankAvatar({ provider, size = 42 }: { provider: string; size?: number }) {
   const brand = useStore((s) => s.core?.brands?.[provider]);
+  const [logoFailed, setLogoFailed] = useState(false);
   const color = brand?.color ?? '#3a4254';
   const short = (brand?.short ?? provider.slice(0, 2)).toUpperCase().slice(0, 5);
   const fontSize = short.length <= 3 ? size * 0.34 : size * 0.26;
+  const logo = brand?.logo;
+
+  useEffect(() => setLogoFailed(false), [provider, logo]);
+
+  if (logo && !logoFailed) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        accessible
+        accessibilityLabel={provider}
+      >
+        <Image
+          accessible={false}
+          source={{ uri: logo }}
+          resizeMode="contain"
+          style={{ width: size * 0.88, height: size * 0.88 }}
+          onError={() => setLogoFailed(true)}
+        />
+      </View>
+    );
+  }
+
   return (
     <View
       style={{
@@ -28,9 +56,12 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
         alignItems: 'center',
         justifyContent: 'center',
       }}
+      accessible
       accessibilityLabel={provider}
     >
-      <Text style={{ color: contrastText(color), fontWeight: '800', fontSize }}>{short}</Text>
+      <Text accessible={false} style={{ color: contrastText(color), fontWeight: '800', fontSize }}>
+        {short}
+      </Text>
     </View>
   );
 }
