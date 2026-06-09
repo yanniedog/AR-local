@@ -54,10 +54,12 @@ render_unit() {
 render_unit "$repo_dir/deploy/pi/ar-local-dashboard.service" "$tmp_dir/ar-local-dashboard.service"
 render_unit "$repo_dir/deploy/pi/ar-local-daily.service" "$tmp_dir/ar-local-daily.service"
 render_unit "$repo_dir/deploy/pi/ar-local-daily-watchdog.service" "$tmp_dir/ar-local-daily-watchdog.service"
+render_unit "$repo_dir/deploy/pi/ar-local-ingest-alert.service" "$tmp_dir/ar-local-ingest-alert.service"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily-watchdog.service" /etc/systemd/system/ar-local-daily-watchdog.service
+sudo install -m 0644 "$tmp_dir/ar-local-ingest-alert.service" /etc/systemd/system/ar-local-ingest-alert.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily.timer" /etc/systemd/system/ar-local-daily.timer
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily-watchdog.timer" /etc/systemd/system/ar-local-daily-watchdog.timer
 chmod +x "$repo_dir/deploy/pi/ar-local-deploy-watchdog.sh"
@@ -69,6 +71,9 @@ sudo systemctl enable ar-local-dashboard.service
 sudo systemctl enable --now ar-local-daily.timer
 sudo systemctl enable --now ar-local-daily-watchdog.timer
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
+if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
+  sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir"
+fi
 if [ -f /etc/avahi/avahi-daemon.conf ]; then
   if sudo grep -q '^host-name=' /etc/avahi/avahi-daemon.conf; then
     sudo sed -i 's/^host-name=.*/host-name=ar/' /etc/avahi/avahi-daemon.conf

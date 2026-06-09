@@ -126,7 +126,34 @@ def sync_existing_repo(repo: Path, remote_url: str) -> None:
     run_git(["pull", "--ff-only", "origin", "main"], cwd=repo)
 
 
+def discard_eol_only_changes(repo: Path) -> bool:
+    """Reset tracked files that differ only by CRLF vs LF (common after Windows edits on Pi)."""
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=False,
+    ).stdout.strip()
+    if not status:
+        return False
+    eol_only = subprocess.run(
+        ["git", "diff", "--ignore-cr-at-eol", "--quiet"],
+        cwd=str(repo),
+        check=False,
+        shell=False,
+    ).returncode == 0
+    if not eol_only:
+        return False
+    subprocess.run(["git", "checkout", "--", "."], cwd=str(repo), check=True, shell=False)
+    print(f"[pi_daily_sync] discarded line-ending-only local changes in {repo}")
+    return True
+
+
 def assert_clean(repo: Path) -> None:
+    if discard_eol_only_changes(repo):
+        return
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=str(repo),
