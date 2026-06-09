@@ -22,9 +22,9 @@ Raspberry Pi (daily, 17:00 AEST)              GitHub                         Mob
 pi_daily_sync.py --banks-only                 Release tag                    on launch / pull-to-refresh:
   → _exports/dashboard-cache/<date>/          "app-payload-latest"            1. GET manifest.json
        banks.json + latest.json          ┌──► ├─ manifest.json         ──┐    2. if run_date newer → GET
-  → app_payload.build_and_publish        │    ├─ core-<date>-<sha>.gz   │       core + details (gzip),
-       (gated by AR_LOCAL_APP_PAYLOAD     │    └─ details-<date>-<sha>.gz│       inflate, cache to disk
-        + GH_TOKEN in app-payload.env) ───┘                             └──► 3. render all screens locally
+  → app_payload.build_and_publish_dual   │    ├─ core-<date>-<sha>.gz   │       core + details (gzip),
+       dated tag + rolling latest         │    └─ details-<date>-<sha>.gz│       inflate, cache to disk
+       (AR_LOCAL_APP_PAYLOAD + GH_TOKEN) ─┘   + app-payload-<date> tags └──► 3. render all screens locally
                                                                               4. diff vs previous → notify
 ```
 
@@ -80,7 +80,8 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 
 4. **Publish path in code**: `pi_daily_sync.py` → `maybe_publish_app_payload()` (gated by
    `AR_LOCAL_APP_PAYLOAD` env) → `app_payload.build_and_publish(exports)`. Publishing is
-   **token-gated and non-fatal** (a publish failure never fails the ingest).
+   **token-gated and non-fatal** (a publish failure never fails the ingest). Journald:
+   `journalctl -u ar-local-daily.service -n 80 --no-pager | grep -E 'app_payload|pi_daily_sync.*app_payload'`.
 
 **Common failure modes** (in order of likelihood):
 - **Pi offline.** Check `tailscale status` for `ar-local-pi5` (must be "active", not
@@ -233,10 +234,31 @@ The last Android dev build artifact:
 - **`details-<date>-<sha12>.json.gz`**: per-`product_key` fees/features/eligibility/
   constraints for the detail screen.
 
-`python3 app_payload.py publish --dir <dir> [--require-token]` → uploads to the rolling
-release `app-payload-latest` via `gh` (auth via `GH_TOKEN`/`GITHUB_TOKEN` env **or** `gh`
-login). Content-addressed asset names; manifest uploaded last; refuses to downgrade to an
-older/equal `run_date` unless `--force`.
+**Release model (per-date + rolling latest):**
+
+| Tag | Purpose | Assets |
+|-----|---------|--------|
+| `app-payload-latest` | Mobile app polls this for the newest `run_date` | Rolling manifest + ~20 recent core/details (pruned) |
+| `app-payload-YYYY-MM-DD` | Immutable snapshot for that ingest date | Exactly 3 assets (manifest + core + details); never pruned |
+
+`pi_daily_sync` → `build_and_publish_dual()` publishes **both**: dated tag for the ingest
+`run_date`, then updates `app-payload-latest` when `run_date` is not older than the live
+rolling manifest.
+
+`python3 app_payload.py publish --dir <dir> [--tag app-payload-2026-06-08] [--require-token]`
+→ uploads via `gh` (auth via `GH_TOKEN`/`GITHUB_TOKEN` env **or** `gh` login). Content-addressed
+asset names; manifest uploaded last. Rolling tag refuses to downgrade to an older `run_date`
+unless `--force`. Dated tags are independent snapshots. Journald:
+`[app_payload] publish starting|succeeded|failed`, `[app_payload] dated publish finished`,
+`[pi_daily_sync] app_payload publish`.
+
+**Backfill historical dates** (Pi — one dated release per ingested folder, then refresh latest):
+
+```bash
+ssh ar-local-pi5 'cd /srv/ar-local/AR-local && sudo bash scripts/backfill-app-payload.sh'
+# optional bounds: --from-date 2026-05-13 --to-date 2026-06-08
+# preview: --dry-run ; re-upload existing: --force
+```
 
 CI: `.github/workflows/app-payload-publish.yml` (manual `workflow_dispatch` re-publish from
 the committed sample); the **Pi is the primary daily publisher**.
