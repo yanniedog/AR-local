@@ -37,7 +37,7 @@ describe('eligibility', () => {
     expect(productHasAllEligibilityCriteria('A|1', ['MIN_AGE'], null)).toBe(false);
   });
 
-  test('distinctEligibilityCriteria counts unique products and sorts by frequency', () => {
+  test('distinctEligibilityCriteria sorts alphabetically by display label', () => {
     const rows = [
       mk({ product_key: 'A|1' }),
       mk({ product_key: 'A|1', rate_index: 2 }),

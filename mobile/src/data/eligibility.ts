@@ -1,4 +1,5 @@
 import type { DetailItem, ProductDetail, RateRow } from '../types';
+import { sortByDisplayLabel } from './format';
 
 /** CDR eligibilityType code from a details payload eligibility row (label or name). */
 export function eligibilityTypeKey(item: DetailItem): string {
@@ -26,22 +27,20 @@ export function productHasAllEligibilityCriteria(
   return required.every((c) => types.has(c));
 }
 
-/** Distinct eligibilityType codes for products in rows, sorted by frequency then label. */
+/** Distinct eligibilityType codes for products in rows, sorted alphabetically by display label. */
 export function distinctEligibilityCriteria(
   rows: RateRow[],
   lookup: Record<string, ProductDetail> | null | undefined,
 ): string[] {
   if (!lookup) return [];
-  const counts = new Map<string, number>();
+  const keys = new Set<string>();
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.product_key)) continue;
     seen.add(row.product_key);
     for (const key of productEligibilityTypes(lookup[row.product_key])) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      keys.add(key);
     }
   }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([k]) => k);
+  return sortByDisplayLabel(Array.from(keys));
 }

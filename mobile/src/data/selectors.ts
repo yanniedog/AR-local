@@ -2,7 +2,7 @@ import { SECTIONS } from '../constants';
 import type { ProductDetail, RateRow, SectionKey } from '../types';
 import { productHasAllEligibilityCriteria } from './eligibility';
 import { productHasAllFeatures } from './features';
-import { isNonStandard, toFraction, visibleAccountRows } from './format';
+import { isNonStandard, sortByDisplayLabel, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -145,18 +145,24 @@ export function queryAndSort(
   return sortRows(filterRows(rows, filters, detailsProducts), sortKey, section);
 }
 
-/** Distinct non-empty values for a field, sorted by frequency then label. */
+/** Distinct non-empty values for a field, sorted alphabetically by display label. */
 export function distinctValues(rows: RateRow[], field: keyof RateRow): string[] {
-  const counts = new Map<string, number>();
+  const keys = new Set<string>();
   for (const row of rows) {
     const raw = row[field];
     if (raw === undefined || raw === null || raw === '') continue;
-    const key = String(raw);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    keys.add(String(raw));
   }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([k]) => k);
+  return sortByDisplayLabel(Array.from(keys));
+}
+
+/** Distinct provider names for filter UI, sorted A–Z (case-insensitive). */
+export function distinctProviders(rows: RateRow[]): string[] {
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (row.provider) names.add(row.provider);
+  }
+  return sortByDisplayLabel(Array.from(names), (p) => p);
 }
 
 export interface ProviderGroup {
