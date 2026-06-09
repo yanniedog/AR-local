@@ -237,8 +237,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             to_date=args.to_date,
             dry_run=args.dry_run,
         )
-        if args.dry_run:
-            return 0
         return 0
 
     if args.latest_only:
