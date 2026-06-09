@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_FROM = ""
+DEFAULT_TO = ""
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -46,7 +48,7 @@ def iter_valid_export_dates(
     """Yield ``(run_date, exports_dir)`` for valid exports in the optional date range."""
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
-        return
+        return iter(())
     for child in sorted(runs_root.iterdir()):
         if not child.is_dir():
             continue
@@ -75,6 +77,7 @@ def refresh_rolling_latest(
     *,
     repo: str = app_payload.DEFAULT_REPO,
     dry_run: bool = False,
+    force: bool = False,
 ) -> bool:
     """Publish ``app-payload-latest`` for the newest valid export on disk."""
     dates = list(iter_valid_export_dates(runs_root))
@@ -90,7 +93,7 @@ def refresh_rolling_latest(
         return False
     out_dir = exports / "app-payload-latest"
     app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
-    published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG, force=force)
     print(
         f"[backfill_app_payload] rolling latest finished run_date={run_date} "
         f"published={published}"
@@ -170,7 +173,7 @@ def backfill(
         f"dates_published={published}"
     )
     if not skip_latest:
-        refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run)
+        refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
     return results
 
 
@@ -193,8 +196,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=None,
         help="Runs root (default: AR_LOCAL_DATA_ROOT/runs or <repo>/data/runs).",
     )
-    parser.add_argument("--from-date", default="", help="Optional first run_date (YYYY-MM-DD).")
-    parser.add_argument("--to-date", default="", help="Optional last run_date (YYYY-MM-DD).")
+    parser.add_argument("--from-date", default=DEFAULT_FROM, help="Optional first run_date (YYYY-MM-DD) (default: %(default)s).")
+    parser.add_argument("--to-date", default=DEFAULT_TO, help="Optional last run_date (YYYY-MM-DD) (default: %(default)s).")
     parser.add_argument("--repo", default=app_payload.DEFAULT_REPO, help="GitHub repo.")
     parser.add_argument("--dry-run", action="store_true", help="Build/list only; no gh uploads.")
     parser.add_argument(
@@ -216,10 +219,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     runs_root = resolve_runs_root(args.runs_root)
 
     if args.latest_only:
-        ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run)
+        ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run, force=args.force)
         return 0 if args.dry_run or ok else 1
 
-    backfill(
+    results = backfill(
         runs_root,
         from_date=args.from_date,
         to_date=args.to_date,
@@ -228,6 +231,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         force=args.force,
         skip_latest=args.skip_latest,
     )
+    if args.dry_run:
+        return 0
+    attempted = [r for r in results if not r.get("skipped")]
+    if attempted and not any(r.get("published") for r in results):
+        print("[backfill_app_payload] failed: no dated releases published")
+        return 1
+    if any(r.get("error") for r in results):
+        print("[backfill_app_payload] failed: one or more dates errored")
+        return 1
     return 0
 
 

@@ -219,6 +219,33 @@ def test_update_release_title_calls_gh_release_edit(monkeypatch):
     ]
 
 
+
+
+def test_update_release_title_nonzero_exit(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        class Result:
+            returncode = 1
+            stdout = ""
+            stderr = "edit failed"
+
+        return Result()
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+    ok = app_payload._update_release_title(
+        "/usr/bin/gh", "yanniedog/AR-local", "app-payload-latest", "2026-06-08"
+    )
+    assert ok is False
+
+
+def test_update_release_title_exception(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise OSError("timeout")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+    ok = app_payload._update_release_title(
+        "/usr/bin/gh", "yanniedog/AR-local", "app-payload-latest", "2026-06-08"
+    )
+    assert ok is False
 def test_update_release_title_skips_blank_run_date():
     assert app_payload._update_release_title("/usr/bin/gh", "owner/repo", "tag", "") is False
 

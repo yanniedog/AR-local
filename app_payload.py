@@ -57,7 +57,7 @@ SUBPROCESS_UPLOAD_TIMEOUT_SEC = 600
 # Content-addressed assets accumulate on the rolling release; GitHub caps a release at
 # 1000 assets. Keep the current manifest's assets plus a recent buffer (covers any
 # in-flight client still holding the just-superseded manifest) and prune older ones.
-KEEP_RECENT_ASSETS = 20
+KEEP_RECENT_ASSETS = 48  # backfill window (~2 assets/day)
 MAX_EMBEDDED_LOGO_BYTES = 64 * 1024
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
@@ -950,11 +950,18 @@ def build_and_publish_dual(
     dated = dated_tag(run_date)
     out_dated = out_dir or (exports_dir / "app-payload")
     manifest = build_payload(exports_dir, out_dated, repo=repo, tag=dated)
-    published_dated = publish_payload(out_dated, repo=repo, tag=dated)
-    print(
-        f"[app_payload] dated publish finished run_date={run_date} tag={dated} "
-        f"published={published_dated}"
-    )
+    try:
+        published_dated = publish_payload(out_dated, repo=repo, tag=dated)
+    except Exception as exc:  # noqa: BLE001 - rolling latest must still run
+        published_dated = False
+        print(
+            f"[app_payload] dated publish failed run_date={run_date} tag={dated} error={exc!r}"
+        )
+    else:
+        print(
+            f"[app_payload] dated publish finished run_date={run_date} tag={dated} "
+            f"published={published_dated}"
+        )
 
     published_latest = False
     if update_latest:
