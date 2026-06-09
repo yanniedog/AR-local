@@ -80,7 +80,7 @@ interface AppState {
   bootstrap: () => Promise<void>;
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
-  refresh: (opts?: { force?: boolean; manual?: boolean; background?: boolean }) => Promise<boolean>;
+  refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
   ensureDetails: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
@@ -191,10 +191,8 @@ export const useStore = create<AppState>()(
       },
 
       async refresh(opts = {}) {
-        const { force = false, manual = false, background = false } = opts;
-        // In a headless background run, warm details synchronously so the OS can't
-        // suspend the app before fees/features are cached; in the foreground it stays
-        // a non-blocking background warm.
+        const { force = false, manual = false } = opts;
+        // Warm details during refresh so subscriptions and change detection see products.
         const warmDetails = async () => {
           await get().ensureDetails();
         };
@@ -500,7 +498,7 @@ try {
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
         await useStore.getState().ensureDetails();
-        const changed = await useStore.getState().refresh({ background: true });
+        const changed = await useStore.getState().refresh({});
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
           : BackgroundFetch.BackgroundFetchResult.NoData;
