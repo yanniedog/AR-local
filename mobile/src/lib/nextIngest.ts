@@ -31,7 +31,7 @@ const HOBART_PARTS_OPTIONS: Intl.DateTimeFormatOptions = {
   day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
-  hour12: false,
+  hourCycle: 'h23',
 };
 
 const PROBE_OPTIONS: Intl.DateTimeFormatOptions = {
@@ -62,13 +62,22 @@ function hobartParts(ms: number): HobartParts {
   for (const part of fmt.formatToParts(new Date(ms))) {
     if (part.type !== 'literal') map[part.type] = part.value;
   }
-  return {
-    year: Number(map.year),
-    month: Number(map.month),
-    day: Number(map.day),
-    hour: Number(map.hour),
-    minute: Number(map.minute),
-  };
+  const year = Number(map.year);
+  const month = Number(map.month);
+  const day = Number(map.day);
+  const hour = Number(map.hour);
+  const minute = Number(map.minute);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day) || Number.isNaN(hour) || Number.isNaN(minute)) {
+    const d = new Date(ms);
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+    };
+  }
+  return { year, month, day, hour, minute };
 }
 
 function hobartLocalToUtcMs(year: number, month: number, day: number, hour: number, minute = 0): number {
@@ -81,6 +90,9 @@ function hobartLocalToUtcMs(year: number, month: number, day: number, hour: numb
       if (part.type !== 'literal') map[part.type] = Number(part.value);
     }
     const actual = Date.UTC(map.year, map.month - 1, map.day, map.hour, map.minute, map.second ?? 0);
+    if (Number.isNaN(actual)) {
+      return target;
+    }
     utc += target - actual;
   }
   return utc;

@@ -6,18 +6,15 @@ export function useNextIngestCountdown(intervalMs = 1000): IngestCountdownSnapsh
   const [snapshot, setSnapshot] = useState(() => getNextIngestCountdown(Date.now()));
 
   useEffect(() => {
-    let nextDueMs = getNextIngestCountdown(Date.now()).nextDueMs;
     const tick = () => {
-      const now = Date.now();
-      if (now >= nextDueMs) {
-        const fresh = getNextIngestCountdown(now);
-        nextDueMs = fresh.nextDueMs;
-        setSnapshot(fresh);
-      } else {
-        setSnapshot(getNextIngestCountdown(now, nextDueMs));
-      }
+      setSnapshot((prev) => {
+        const now = Date.now();
+        if (now >= prev.nextDueMs) {
+          return getNextIngestCountdown(now);
+        }
+        return getNextIngestCountdown(now, prev.nextDueMs);
+      });
     };
-    tick();
     const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
   }, [intervalMs]);
