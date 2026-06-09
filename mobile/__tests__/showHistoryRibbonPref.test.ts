@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import core from '../assets/sample/core.json';
 import { selectBankHistoryChartModel } from '../src/data/historySelectors';
 import { DEFAULT_PREFS, useStore } from '../src/data/store';
@@ -30,5 +31,32 @@ describe('showHistoryRibbon pref', () => {
 
     useStore.getState().setPref('showHistoryRibbon', true);
     expect(visible(useStore.getState().prefs.showHistoryRibbon)).toBe(true);
+  });
+
+  it('does not persist showHistoryRibbon to AsyncStorage', async () => {
+    useStore.getState().setPref('showHistoryRibbon', true);
+    await useStore.persist.rehydrate();
+    const raw = await AsyncStorage.getItem('ar-rates');
+    expect(raw).not.toBeNull();
+    const stored = JSON.parse(raw!) as { state?: { prefs?: Record<string, unknown> } };
+    expect(stored.state?.prefs?.showHistoryRibbon).toBeUndefined();
+  });
+
+  it('resets showHistoryRibbon to false on cold-start rehydrate', async () => {
+    await useStore.persist.clearStorage();
+    await AsyncStorage.setItem(
+      'ar-rates',
+      JSON.stringify({
+        state: {
+          prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, enableDeepSearch: true },
+          favorites: [],
+          subscriptions: [],
+        },
+        version: 0,
+      }),
+    );
+    await useStore.persist.rehydrate();
+    expect(useStore.getState().prefs.showHistoryRibbon).toBe(false);
+    expect(useStore.getState().prefs.enableDeepSearch).toBe(true);
   });
 });
