@@ -196,7 +196,7 @@ Then add yourself as an internal tester in App Store Connect and install via the
 `eas device:create`, then `eas build -p ios --profile preview`.)
 
 `eas.json` defines `development` / `preview` / `production` profiles. The
-`bundleIdentifier` (`com.yanniedog.arlocalrates`) / Android `package` live in
+`bundleIdentifier` (`com.eyex.australianrates`) / Android `package` live in
 `app.json` — change them if you use different store identifiers.
 
 ### Pointing at live data
