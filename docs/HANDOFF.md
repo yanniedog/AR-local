@@ -92,7 +92,8 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 - GitHub (no SMTP secrets): `.github/workflows/pi-ingest-watchdog.yml` runs at **03:00
   Australia/Brisbane** daily (cron `0 16` + `0 17` UTC; hour gate keeps only the 03:00
   Brisbane run). Expects `app-payload-latest` manifest `run_date` = **today in Brisbane**
-  (2h after 01:00 Pi ingest). On stale/missing: opens a deduped `ingest-missed` issue and
+  (2h buffer after **01:00** Pi ingest — requires `deploy/pi/ar-local-daily.timer` at 01:00
+  local, PR #195). On stale/missing: opens a deduped `ingest-missed` issue and
   **fails the workflow** so GitHub emails watchers who enable Actions notifications.
 - **GitHub notification setup** (repo watcher): GitHub → Settings → Notifications → enable
   **Actions** and **Issues** for `yanniedog/AR-local` (same channel as other repo events; no

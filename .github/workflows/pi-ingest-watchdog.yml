@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           python scripts/pi_ingest_manifest_check.py \
             --expected-tz Australia/Brisbane \
-            --json > check.json
+            --json > check.json || true
           cat check.json
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json

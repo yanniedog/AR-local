@@ -52,13 +52,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     generated_at = ""
     try:
         manifest = fetch_manifest(args.manifest_url)
-        run_date = str(manifest.get("run_date") or "")
-        generated_at = str(manifest.get("generated_at") or "")
+        if isinstance(manifest, dict):
+            run_date = str(manifest.get("run_date") or "")
+            generated_at = str(manifest.get("generated_at") or "")
+        else:
+            manifest_error = f"Expected JSON object, got {type(manifest).__name__}"
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         manifest_error = str(exc)
 
     if args.expected_tz:
-        tz = ZoneInfo(args.expected_tz)
+        try:
+            tz = ZoneInfo(args.expected_tz)
+        except KeyError:
+            print(f"Error: invalid timezone {args.expected_tz!r}", file=sys.stderr)
+            return 1
         expected = datetime.now(tz).date().isoformat()
         stale = manifest_error is not None or not run_date or run_date < expected
         payload = {
