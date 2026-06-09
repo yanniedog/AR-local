@@ -325,6 +325,13 @@ also runs `credentials:configure-build` before upload to fail fast with this doc
 apply to the new package name; Play Store treats the new ID as a different app.
 
 
+**Auto release when PR queue drains:** `.github/workflows/mobile-auto-release-on-queue-drain.yml`
+— on squash-merge of a PR to `main`, counts remaining open PRs (`gh pr list --state open --base main`).
+If **> 0**, exits cleanly. If **0** (last PR landed), bumps `expo.version` patch in `mobile/app.json`
+via `mobile/scripts/mobile-auto-release-on-drain.mjs`, pushes `main`, which triggers
+**mobile-android-apk** below. Direct pushes to `main` do not auto-release. Concurrency group
+`mobile-auto-release-on-drain` (`cancel-in-progress: false`) serializes drain checks.
+
 **Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
 — runs on `ubuntu-latest` (JDK 17, Android SDK): materialize Firebase → bump `versionCode`
 from rolling `app-apk-latest` manifest → `expo prebuild` → `gradlew assembleRelease` → publish
