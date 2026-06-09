@@ -127,8 +127,15 @@ export function getNextIngestCountdown(nowMs = Date.now()): IngestCountdownSnaps
   };
 }
 
-export function dataSourceLabel(source: string): string {
-  if (source === 'remote') return 'Live';
-  if (source === 'cache') return 'Cached';
-  return 'Sample';
+import type { PayloadSource } from '../types';
+
+export function dataSourceLabel(source: PayloadSource): string {
+  switch (source) {
+    case 'remote':
+      return 'Live';
+    case 'cache':
+      return 'Cached';
+    case 'sample':
+      return 'Sample';
+  }
 }

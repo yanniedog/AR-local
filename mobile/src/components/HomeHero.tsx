@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { useNextIngestCountdown } from '../hooks/useNextIngestCountdown';
 import { dataSourceLabel } from '../lib/nextIngest';
+import type { PayloadSource } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Row } from './ui';
 
@@ -18,7 +19,7 @@ export function HomeHero({
 }: {
   runDateLabel: string;
   runAgeLabel: string;
-  source: string;
+  source: PayloadSource;
   offline: boolean;
   productCount: number;
   lenderCount: number;
@@ -27,7 +28,7 @@ export function HomeHero({
   const theme = useTheme();
   const countdown = useNextIngestCountdown();
   const sourceLabel = dataSourceLabel(source);
-  const statusIcon = offline ? 'cloud-offline-outline' : source === 'remote' ? 'cloud-done-outline' : 'albums-outline';
+  const statusIcon = offline ? 'cloud-offline-outline' : source === 'remote' ? 'cloud-done' : 'albums-outline';
   const statusColor = offline ? theme.colors.warning : theme.colors.success;
 
   return (
