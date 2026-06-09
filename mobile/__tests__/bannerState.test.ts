@@ -52,4 +52,10 @@ describe('resolveOfflineBanner', () => {
       'Offline — showing bundled sample data; latest data will load once you reconnect.',
     );
   });
+
+  it('shows connecting once retry progress arrives while offline flag is still set', () => {
+    const view = resolveOfflineBanner('sample', true, true, progress);
+    expect(view.mode).toBe('connecting');
+    expect(view.showLiveProgress).toBe(true);
+  });
 });

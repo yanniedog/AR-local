@@ -29,7 +29,7 @@ export function resolveOfflineBanner(
     };
   }
 
-  if (sample && refreshing && offline) {
+  if (sample && refreshing && offline && payloadProgress == null) {
     return {
       mode: 'offline-sample',
       showLiveProgress: false,
@@ -38,7 +38,7 @@ export function resolveOfflineBanner(
     };
   }
 
-  if (sample && refreshing && !offline) {
+  if (sample && refreshing) {
     const showLiveProgress = payloadProgress != null;
     return {
       mode: 'connecting',
