@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import { useRouter, type Href } from 'expo-router';
-import React from 'react';
-import { Alert, Pressable, Switch, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Alert, Platform, Pressable, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -15,6 +15,13 @@ import {
   unregisterBackgroundRefresh,
 } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import {
+  checkForAppUpdate,
+  downloadAndInstallUpdate,
+  getInstalledAppInfo,
+  type ApkManifest,
+  type UpdateCheckResult,
+} from '../../src/lib/appUpdate';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
@@ -201,10 +208,12 @@ export default function Settings() {
         </Pressable>
       </Section>
 
+      <AppUpdateSection />
+
       <Section title="About">
         <InfoRow
           label="Version"
-          value={Application.nativeApplicationVersion ?? '1.0.0'}
+          value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
         <InfoRow label="Repo" value={manifest?.repo ?? 'yanniedog/AR-local'} />
         <AppText variant="tiny" color="textFaint" style={{ marginTop: 12, lineHeight: 16 }}>
@@ -214,6 +223,105 @@ export default function Settings() {
         </AppText>
       </Section>
     </ScreenScrollView>
+  );
+}
+
+function AppUpdateSection() {
+  const installed = getInstalledAppInfo();
+  const [checkResult, setCheckResult] = useState<UpdateCheckResult | null>(null);
+  const [remote, setRemote] = useState<ApkManifest | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadPct, setDownloadPct] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onCheck = useCallback(async () => {
+    setChecking(true);
+    setError(null);
+    setCheckResult(null);
+    try {
+      const result = await checkForAppUpdate();
+      setCheckResult(result);
+      if (result.status === 'available' || result.status === 'current') {
+        setRemote(result.remote);
+      }
+      if (result.status === 'error') {
+        setError(result.message);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  const onDownload = useCallback(async () => {
+    if (!remote) return;
+    setDownloading(true);
+    setError(null);
+    setDownloadPct(null);
+    try {
+      await downloadAndInstallUpdate(remote, (progress) => {
+        if (progress.totalBytes) {
+          setDownloadPct(Math.round((progress.bytesWritten / progress.totalBytes) * 100));
+        }
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      Alert.alert('Update failed', message);
+    } finally {
+      setDownloading(false);
+    }
+  }, [remote]);
+
+  if (Platform.OS !== 'android') {
+    return null;
+  }
+
+  const updateAvailable = checkResult?.status === 'available';
+  const latestLabel = remote
+    ? `${remote.version} (${remote.build_number})`
+    : checkResult?.status === 'current'
+      ? `${installed.version} (${installed.buildNumber})`
+      : '—';
+
+  return (
+    <Section title="App update">
+      <InfoRow label="Installed" value={`${installed.version} (${installed.buildNumber})`} />
+      <InfoRow label="Latest" value={latestLabel} />
+      {downloadPct !== null ? (
+        <InfoRow label="Download" value={`${downloadPct}%`} />
+      ) : null}
+      {error ? (
+        <AppText variant="tiny" color="danger" style={{ marginTop: 6 }}>
+          {error}
+        </AppText>
+      ) : null}
+      <Row gap={12} style={{ marginTop: 12 }}>
+        <Button
+          title="Check for update"
+          icon="cloud-download-outline"
+          variant="secondary"
+          style={{ flex: 1 }}
+          loading={checking}
+          disabled={downloading}
+          onPress={() => void onCheck()}
+        />
+        {updateAvailable ? (
+          <Button
+            title="Download update"
+            icon="download-outline"
+            style={{ flex: 1 }}
+            loading={downloading}
+            disabled={checking}
+            onPress={() => void onDownload()}
+          />
+        ) : null}
+      </Row>
+      <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
+        Preview APK updates from the rolling GitHub release (app-apk-latest). Android will prompt
+        to install; allow installs from this app if prompted.
+      </AppText>
+    </Section>
   );
 }
 

@@ -1,0 +1,128 @@
+# Free unlimited Android preview APK builds on GitHub Actions (no EAS cloud quota).
+# Produces a signed release APK and publishes to rolling release tag app-apk-latest.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   GOOGLE_SERVICES_JSON — optional; materialized via ensure-firebase-config.mjs
+#   GOOGLE_SERVICE_INFO_PLIST — optional
+#   EXPO_TOKEN — optional; used to download EAS Android keystore when ANDROID_KEYSTORE_B64 unset
+#   ANDROID_KEYSTORE_B64 — optional override; base64 .jks/.keystore
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD — with B64 override
+#
+# Signing: prefers ANDROID_KEYSTORE_* secrets; else fetches default keystore from EAS credentials.
+
+name: mobile-android-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-android-apk.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android-apk:
+    name: android preview apk (GHA)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Materialize Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          node scripts/ensure-firebase-config.mjs
+          node scripts/validate-firebase-package.mjs
+
+      - name: Bump Android versionCode from rolling manifest
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/bump-android-version-code.mjs --repo "${{ github.repository }}"
+
+      - name: Materialize Android release keystore
+        id: keystore
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: node scripts/materialize-android-keystore.mjs
+
+      - name: Validate JS bundle (typecheck + export)
+        run: |
+          npm run typecheck
+          npm run export:android
+
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Gradle assembleRelease
+        env:
+          KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+          KEYSTORE_PASSWORD: ${{ steps.keystore.outputs.store_password }}
+          KEY_ALIAS: ${{ steps.keystore.outputs.key_alias }}
+          KEY_PASSWORD: ${{ steps.keystore.outputs.key_password }}
+        run: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Locate release APK
+        id: apk
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk -name '*-release.apk' -type f | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::No release APK found under android/app/build/outputs/apk"
+            exit 1
+          fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+          ls -lh "$apk"
+
+      - name: Publish preview APK manifest (GitHub release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/publish-apk-manifest.mjs --apk "${{ steps.apk.outputs.path }}" \
+            --repo "${{ github.repository }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-preview-apk
+          path: mobile/build/apk-publish/app-preview.apk
+          if-no-files-found: error

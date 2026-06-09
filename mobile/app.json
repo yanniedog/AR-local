@@ -34,6 +34,7 @@
     },
     "android": {
       "package": "com.eyex.australianrates",
+      "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -41,7 +42,8 @@
       },
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "REQUEST_INSTALL_PACKAGES"
       ]
     },
     "web": {
@@ -89,6 +91,8 @@
       "repo": "yanniedog/AR-local",
       "releaseTag": "app-payload-latest",
       "manifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json",
+      "apkReleaseTag": "app-apk-latest",
+      "apkManifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json",
       "router": {},
       "eas": {
         "projectId": "69c08d63-b618-43f1-86b9-2556eef82104"

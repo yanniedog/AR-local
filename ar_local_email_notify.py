@@ -20,7 +20,9 @@ def load_notify_env(path: Optional[Path] = None) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
         content = env_path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError as exc:
+        # Pi installs notify.env as root:root 0600; systemd EnvironmentFile still injects vars.
+        print(f"[email_notify] notify env unreadable ({env_path}): {exc}")
         return {}
     for raw_line in content.splitlines():
         line = raw_line.strip()

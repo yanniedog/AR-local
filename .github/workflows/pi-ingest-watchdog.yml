@@ -28,8 +28,9 @@ jobs:
         run: |
           set +e
           python scripts/pi_ingest_manifest_check.py --json
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Alert on stale manifest
         if: steps.check.outputs.exit != '0'
@@ -40,9 +41,6 @@ jobs:
           AR_LOCAL_SMTP_PASS: ${{ secrets.AR_LOCAL_SMTP_PASS }}
           AR_LOCAL_SMTP_FROM: ${{ secrets.AR_LOCAL_SMTP_FROM }}
         run: |
-          if [ -z "$AR_LOCAL_NOTIFY_TO" ]; then
-            export AR_LOCAL_NOTIFY_TO=jkokavec@gmail.com
-          fi
           if [ -z "$AR_LOCAL_SMTP_HOST" ] || [ -z "$AR_LOCAL_SMTP_USER" ] || [ -z "$AR_LOCAL_SMTP_PASS" ]; then
             echo "::warning::SMTP secrets missing — cannot email on stale manifest"
             python scripts/pi_ingest_manifest_check.py
@@ -53,3 +51,7 @@ jobs:
       - name: OK
         if: steps.check.outputs.exit == '0'
         run: python scripts/pi_ingest_manifest_check.py
+
+      - name: Fail when manifest stale
+        if: steps.check.outputs.exit != '0'
+        run: exit 1
