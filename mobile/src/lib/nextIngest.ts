@@ -57,9 +57,9 @@ function getFormatters(): { hobartPartsFmt: Intl.DateTimeFormat; probeFmt: Intl.
 }
 
 function hobartParts(ms: number): HobartParts {
-  const { hobartPartsFmt: fmt } = getFormatters();
+  const { HOBART_PARTS_FMT } = getFormatters();
   const map: Record<string, string> = {};
-  for (const part of fmt.formatToParts(new Date(ms))) {
+  for (const part of HOBART_PARTS_FMT.formatToParts(new Date(ms))) {
     if (part.type !== 'literal') map[part.type] = part.value;
   }
   const year = Number(map.year);
@@ -82,11 +82,11 @@ function hobartParts(ms: number): HobartParts {
 
 function hobartLocalToUtcMs(year: number, month: number, day: number, hour: number, minute = 0): number {
   const target = Date.UTC(year, month - 1, day, hour, minute, 0);
-  const { probeFmt: fmt } = getFormatters();
+  const { PROBE_FMT } = getFormatters();
   let utc = target;
   for (let i = 0; i < 4; i += 1) {
     const map: Record<string, number> = {};
-    for (const part of fmt.formatToParts(new Date(utc))) {
+    for (const part of PROBE_FMT.formatToParts(new Date(utc))) {
       if (part.type !== 'literal') map[part.type] = Number(part.value);
     }
     const actual = Date.UTC(map.year, map.month - 1, map.day, map.hour, map.minute, map.second ?? 0);
