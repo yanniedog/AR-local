@@ -1,4 +1,4 @@
-"""Check GitHub app-payload manifest freshness; alert when ingest is stale."""
+﻿"""Check GitHub app-payload manifest freshness; alert when ingest is stale."""
 
 from __future__ import annotations
 
@@ -16,7 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ar_local_ingest_schedule import DAILY_INGEST_UTC_HOUR, expected_run_date_for_due, latest_daily_due_utc
+from ar_local_ingest_schedule import (
+    DAILY_INGEST_LOCAL_HOUR,
+    DAILY_INGEST_SCHEDULE_LABEL,
+    DAILY_INGEST_TZ_KEY,
+    expected_run_date_for_due,
+    latest_daily_due_utc,
+)
 
 MANIFEST_URL = (
     "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json"
@@ -90,9 +96,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             "manifest_run_date": run_date,
             "generated_at": generated_at,
             "stale": stale,
-            "schedule_utc_hour": DAILY_INGEST_UTC_HOUR,
+            "schedule": DAILY_INGEST_SCHEDULE_LABEL,
+            "schedule_local_hour": DAILY_INGEST_LOCAL_HOUR,
+            "schedule_timezone": DAILY_INGEST_TZ_KEY,
             "manifest_error": manifest_error,
         }
+
 
     if args.json:
         print(json.dumps(payload, indent=2))

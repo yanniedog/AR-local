@@ -2,7 +2,8 @@
 Description=Run AR-local CDR ingest/export daily
 
 [Timer]
-OnCalendar=*-*-* 07:00:00 UTC
+# 01:00 Pi local time (Australia/Hobart on ar-local-pi5; see ar_local_ingest_schedule.py).
+OnCalendar=*-*-* 01:00:00
 Persistent=true
 Unit=ar-local-daily.service
 
