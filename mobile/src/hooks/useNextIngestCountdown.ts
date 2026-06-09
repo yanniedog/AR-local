@@ -6,7 +6,7 @@ export function useNextIngestCountdown(intervalMs = 1000): IngestCountdownSnapsh
   const [snapshot, setSnapshot] = useState(() => getNextIngestCountdown(Date.now()));
 
   useEffect(() => {
-    let nextDueMs = snapshot.nextDueMs;
+    let nextDueMs = getNextIngestCountdown(Date.now()).nextDueMs;
     const tick = () => {
       const now = Date.now();
       if (now >= nextDueMs) {
