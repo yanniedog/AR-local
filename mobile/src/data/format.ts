@@ -1,4 +1,5 @@
 import type { RateRow } from '../types';
+import { isKnownNonStandardProduct } from './accountClass';
 
 /** Parse a rate that may be a normalized fraction ("0.0634") or a raw percent ("6.34"). */
 export function toFraction(rate: string | number | null | undefined): number | null {
@@ -101,7 +102,8 @@ export function formatTerm(row: RateRow): string {
 }
 
 export function isNonStandard(row: RateRow): boolean {
-  return (row.account_class ?? '') === 'non_standard';
+  if ((row.account_class ?? '') === 'non_standard') return true;
+  return isKnownNonStandardProduct(row);
 }
 
 export function visibleAccountRows(rows: RateRow[], includeNonStandard = false): RateRow[] {

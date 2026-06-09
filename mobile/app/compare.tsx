@@ -12,6 +12,7 @@ import {
   formatRate,
   formatTerm,
   humanizeEnum,
+  isNonStandard,
   toFraction,
 } from '../src/data/format';
 import { findByKey } from '../src/data/selectors';
@@ -79,7 +80,7 @@ export default function Compare() {
     },
     { label: 'LVR', get: (e) => humanizeEnum(e.row.lvr_tier) || '—' },
     { label: 'Balance', get: (e) => formatBalanceRange(e.row.balance_min, e.row.balance_max) || '—' },
-    { label: 'Account', get: (e) => (e.row.account_class === 'non_standard' ? 'Non-standard' : 'Standard') },
+    { label: 'Account', get: (e) => (isNonStandard(e.row) ? 'Non-standard' : 'Standard') },
   ];
 
   return (
