@@ -54,7 +54,6 @@ export default function Search() {
   const setPref = useStore((s) => s.setPref);
   const subscribeSearch = useStore((s) => s.subscribeSearch);
   const unsubscribeSearch = useStore((s) => s.unsubscribeSearch);
-  const subscriptions = useStore((s) => s.subscriptions);
   const findSearchSubscription = useStore((s) => s.findSearchSubscription);
 
   useEffect(() => {
@@ -108,7 +107,7 @@ export default function Search() {
 
   const searchSub = useMemo(
     () => findSearchSubscription(searchSnapshot),
-    [subscriptions, findSearchSubscription, searchSnapshot],
+    [findSearchSubscription, searchSnapshot],
   );
 
   const onToggleSearchAlert = async () => {

@@ -8,7 +8,6 @@ import { APK_MANIFEST_URL } from '../config';
 import { debugLog } from './debugLog';
 import {
   checkForAppUpdateAt,
-  fetchApkManifest,
   type ApkManifest,
   type DownloadProgress,
   type InstalledAppInfo,
