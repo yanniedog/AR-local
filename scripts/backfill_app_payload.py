@@ -172,9 +172,10 @@ def backfill(
         f"skipped={len(skipped)} failed={len(failed)} "
         f"dates_published={published}"
     )
+    rolling_ok: Optional[bool] = None
     if not skip_latest:
-        refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
-    return results
+        rolling_ok = refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
+    return results, rolling_ok
 
 
 def resolve_runs_root(explicit: Optional[Path]) -> Path:
@@ -222,7 +223,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run, force=args.force)
         return 0 if args.dry_run or ok else 1
 
-    results = backfill(
+    results, rolling_ok = backfill(
         runs_root,
         from_date=args.from_date,
         to_date=args.to_date,
@@ -237,8 +238,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if attempted and not any(r.get("published") for r in results):
         print("[backfill_app_payload] failed: no dated releases published")
         return 1
+    unpublished = [r["run_date"] for r in attempted if not r.get("published")]
+    if unpublished:
+        print(
+            f"[backfill_app_payload] failed: dated publish returned false for run_dates={unpublished}"
+        )
+        return 1
     if any(r.get("error") for r in results):
         print("[backfill_app_payload] failed: one or more dates errored")
+        return 1
+    if rolling_ok is False:
+        print("[backfill_app_payload] failed: rolling latest refresh failed")
         return 1
     return 0
 
