@@ -496,7 +496,7 @@ export const useStore = create<AppState>()(
         const { core, manifest, source, historyBanks } = get();
         if (!core) return;
         if (!manifest?.files.history_banks) {
-          set({ historyBanksError: null });
+          set({ historyBanks: null, historyBanksError: null });
           return;
         }
         const asset = manifest.files.history_banks;
@@ -511,7 +511,7 @@ export const useStore = create<AppState>()(
           return;
         }
         if (source !== 'remote') {
-          set({ historyBanksError: null });
+          set({ historyBanks: null, historyBanksError: null });
           return;
         }
         try {

@@ -1,4 +1,5 @@
-﻿import type { BankHistoryPoint, HistoryWindow, SectionKey } from '../types';
+import type { BankHistoryPoint, HistoryWindow, SectionKey } from '../types';
+import { SECTION_KEYS } from '../types';
 import {
   alignPointsToTimeline,
   normalizeTimelineDates,
@@ -21,9 +22,6 @@ export interface HistoryBanksPayload {
   >;
 }
 
-function isSectionKey(value: string): value is SectionKey {
-  return value === 'Mortgage' || value === 'Savings' || value === 'TD';
-}
 
 /** Drop corrupt history-banks JSON before it reaches chart code (prevents `.map` throws). */
 export function normalizeHistoryBanksPayload(raw: unknown): HistoryBanksPayload | null {
@@ -43,7 +41,7 @@ export function normalizeHistoryBanksPayload(raw: unknown): HistoryBanksPayload 
 
   const sections: HistoryBanksPayload['sections'] = {};
   for (const [key, value] of Object.entries(sectionsRaw as Record<string, unknown>)) {
-    if (!isSectionKey(key) || !value || typeof value !== 'object') continue;
+    if (!(SECTION_KEYS as readonly string[]).includes(key) || !value || typeof value !== 'object') continue;
     const pointsRaw = (value as { points?: unknown }).points;
     if (!Array.isArray(pointsRaw) || !pointsRaw.length) continue;
     const points: BankHistoryPoint[] = [];
@@ -54,7 +52,7 @@ export function normalizeHistoryBanksPayload(raw: unknown): HistoryBanksPayload 
       if (!date) continue;
       points.push(sanitizeRibbonPoint(date, partial));
     }
-    if (points.length) sections[key] = { points };
+    if (points.length) sections[key as SectionKey] = { points };
   }
 
   if (!Object.keys(sections).length) return null;

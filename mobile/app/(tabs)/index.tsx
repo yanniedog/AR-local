@@ -191,7 +191,7 @@ export default function Home() {
               {meta.title} history
             </AppText>
             <AppText variant="tiny" color="textFaint">
-              History data unavailable ({historyBanksError}). Showing today&apos;s ribbon only.
+              History data unavailable. Showing today&apos;s ribbon only.
             </AppText>
           </Card>
         ) : null

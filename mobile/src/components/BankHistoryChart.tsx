@@ -12,6 +12,7 @@ import {
   sliceChartTimeline,
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
+import { debugLog } from '../lib/debugLog';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Chip, Row } from './ui';
 
@@ -110,12 +111,14 @@ export function BankHistoryChart({
 
   const timeline = allDates ?? dates;
   const sliced = useMemo(() => {
-    if (!Array.isArray(dates) || !Array.isArray(points) || !dates.length || !points.length) {
+    if (!Array.isArray(dates) || !Array.isArray(points) || !Array.isArray(timeline) || !dates.length || !points.length) {
+      debugLog.warn('BankHistoryChart', 'invalid chart inputs');
       return { dates: [] as string[], points: [] as BankHistoryPoint[] };
     }
     try {
       return sliceChartTimeline(timeline, points, window);
-    } catch {
+    } catch (err) {
+      debugLog.warn('BankHistoryChart', `sliceChartTimeline failed: ${String((err as Error)?.message ?? err)}`);
       return { dates: [] as string[], points: [] as BankHistoryPoint[] };
     }
   }, [timeline, dates, points, window]);
