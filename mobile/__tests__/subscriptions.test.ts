@@ -57,7 +57,7 @@ describe('subscription CRUD', () => {
     expect(isProductSubscribed(list, 'P|1', 2)).toBe(true);
   });
   test('product subscribed handles null rateIndex independently per product', () => {
-    const row1 = mk({ product_key: 'P|1', rate_index: null });
+    const row1 = mk({ product_key: 'P|1' });
     const list = addSubscription([], makeProductSubscription(row1, null));
     expect(isProductSubscribed(list, 'P|1', null)).toBe(true);
     expect(isProductSubscribed(list, 'P|2', null)).toBe(false);
