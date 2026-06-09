@@ -264,9 +264,9 @@ Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlyt
 | Secret / env | Where | Purpose |
 |---|---|---|
 | `EXPO_TOKEN` | GitHub Actions → Settings → Secrets | EAS upload/auth (required) — §7 |
-| `GOOGLE_SERVICES_JSON` | GitHub Actions secrets (optional) | Full `google-services.json` body; GHA base64-passes to EAS cloud |
-| `GOOGLE_SERVICE_INFO_PLIST` | GitHub Actions secrets (optional) | Full `GoogleService-Info.plist` body; GHA base64-passes to EAS cloud |
-| `EXPO_PUBLIC_CLARITY_PROJECT_ID` | GitHub Actions secret **or** EAS project env | Baked into preview/production JS bundles (`--env` from GHA when secret set) |
+| `GOOGLE_SERVICES_JSON` | GitHub Actions secrets (optional) | Full `google-services.json` body; GHA materializes then uploads via `.easignore` |
+| `GOOGLE_SERVICE_INFO_PLIST` | GitHub Actions secrets (optional) | Full `GoogleService-Info.plist` body; same upload path |
+| `EXPO_PUBLIC_CLARITY_PROJECT_ID` | GitHub Actions secret **or** EAS project env | GHA runs `eas env:create` before build when secret set |
 | `GOOGLE_SERVICES_JSON` (file) | EAS project env (expo.dev, optional) | Alternative: file-type env; path read by `eas-build-pre-install` hook |
 
 **Workflow:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only (does not
@@ -278,14 +278,13 @@ Steps relevant to observability:
   `mobile/google-services.json`; else runs `node scripts/ensure-firebase-config.mjs` (placeholder
   from `.example`). Same pattern for `GOOGLE_SERVICE_INFO_PLIST` / `GoogleService-Info.plist`.
 - **`ensure-firebase-config.mjs`** — also runs as **`eas-build-pre-install`** on EAS cloud
-  (before `npm install`). Accepts `*_B64` env from GHA, inline/path `GOOGLE_SERVICES_JSON` from
-  EAS file secrets, or copies `.example` when nothing is set. Placeholders **do not** report to
-  Firebase; swap in real console downloads (locally, GH secrets, or EAS file env) before expecting data.
+  (before `npm install`). Fallback when Firebase files are missing: inline/path env from EAS file
+  secrets, `*_B64` env, or copies `.example`. Primary GHA path: materialize locally then upload
+  with `EAS_NO_VCS=1` + `mobile/.easignore` (`!google-services.json` whitelist).
 - **Validate JS bundle** — `npm run typecheck` + platform `export:*` (each `preexport:*`
   also runs `ensure-firebase-config.mjs`).
-- **EAS Build** — base64-encodes materialized Firebase files and passes
-  `GOOGLE_SERVICES_JSON_B64` / `GOOGLE_SERVICE_INFO_PLIST_B64` via `--env` (gitignored files are
-  not uploaded to EAS). Optional `EXPO_PUBLIC_CLARITY_PROJECT_ID` from GH secret via `--env`.
+- **EAS Build** — `EAS_NO_VCS=1` + `mobile/.easignore` uploads materialized Firebase files;
+  optional `eas env:create` for `EXPO_PUBLIC_CLARITY_PROJECT_ID` from GH secret.
 
 Trigger from GitHub: Actions → **mobile-eas-build** → Run workflow. Or locally:
 ```bash
@@ -493,6 +492,7 @@ mobile/app/product/[key].tsx            # product detail (terminal leaf)
 mobile/src/lib/debugLog.ts              # in-app ring-buffer logger (512KB / 2000 lines)
 mobile/src/lib/observability.ts       # Clarity init + Crashlytics bridge + diagnostics toggle
 mobile/app/debug-log.tsx                # Settings → view/share/upload logs (paste.rs POST)
+mobile/.easignore                       # EAS upload rules; whitelists materialized Firebase JSON/plist
 mobile/scripts/ensure-firebase-config.mjs  # copy .example Firebase configs when gitignored files absent
 mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
 mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
