@@ -1,4 +1,4 @@
-﻿import { SECTIONS } from '../constants';
+import { SECTIONS } from '../constants';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { bpsBetween, formatRate, humanizeEnum, toFraction } from './format';
 import { activeFilterCount, filterRows, type Filters } from './selectors';

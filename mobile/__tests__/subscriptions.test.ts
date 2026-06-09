@@ -1,4 +1,4 @@
-﻿import { computeChanges } from '../src/data/notifications';
+import { computeChanges } from '../src/data/notifications';
 import {
   addSubscription,
   buildSearchLabel,
