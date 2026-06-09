@@ -54,9 +54,18 @@ export function computeChanges(
   favorites: string[],
   thresholdBps: number,
   subscriptions: Subscription[] = [],
-  detailsProducts?: Record<string, ProductDetail> | null,
+  oldDetailsProducts?: Record<string, ProductDetail> | null,
+  newDetailsProducts?: Record<string, ProductDetail> | null,
 ): NotifyMessage[] {
   if (!oldCore) return [];
+  const subscriptionMessages = computeSubscriptionChanges(
+    oldCore,
+    newCore,
+    subscriptions,
+    thresholdBps,
+    oldDetailsProducts,
+    newDetailsProducts,
+  );
   const messages: NotifyMessage[] = [];
 
   // Per-category best-rate moves.
@@ -106,11 +115,7 @@ export function computeChanges(
     }
   }
 
-  messages.push(
-    ...computeSubscriptionChanges(oldCore, newCore, subscriptions, thresholdBps, detailsProducts),
-  );
-
-  return messages;
+  return [...subscriptionMessages, ...messages];
 }
 
 export async function ensurePermissions(): Promise<boolean> {

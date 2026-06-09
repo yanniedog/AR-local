@@ -7,6 +7,7 @@ import {
   makeProductSubscription,
   makeSearchSubscription,
   normalizeFilterSnapshot,
+  removeSubscription,
   rowsForSearchSubscription,
 } from '../src/data/subscriptions';
 import type { CorePayload, RateRow } from '../src/types';
@@ -55,6 +56,31 @@ describe('subscription CRUD', () => {
     const list = addSubscription([], makeProductSubscription(row, 2));
     expect(isProductSubscribed(list, 'P|1', 2)).toBe(true);
   });
+  test('product subscribed handles null rateIndex independently per product', () => {
+    const row1 = mk({ product_key: 'P|1', rate_index: null });
+    const list = addSubscription([], makeProductSubscription(row1, null));
+    expect(isProductSubscribed(list, 'P|1', null)).toBe(true);
+    expect(isProductSubscribed(list, 'P|2', null)).toBe(false);
+    expect(isProductSubscribed(list, 'P|1', 0)).toBe(false);
+  });
+
+  test('removeSubscription removes product subscription', () => {
+    const row = mk({ product_key: 'P|1', rate_index: 2 });
+    const sub = makeProductSubscription(row, 2);
+    const withSub = addSubscription([], sub);
+    const withoutSub = removeSubscription(withSub, sub.id);
+    expect(isProductSubscribed(withoutSub, 'P|1', 2)).toBe(false);
+    expect(withoutSub).toHaveLength(0);
+  });
+
+  test('computeSubscriptionChanges silent when rate unchanged', () => {
+    const row = mk({ product_key: 'P|1', rate_index: 0, rate: '0.05' });
+    const before = core([row]);
+    const after = core([{ ...row, rate: '0.05' }]);
+    const subs = addSubscription([], makeProductSubscription(row, 0));
+    expect(computeSubscriptionChanges(before, after, subs, 5)).toEqual([]);
+  });
+
 });
 
 describe('filter matching helpers', () => {

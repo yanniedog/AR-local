@@ -24,6 +24,7 @@ import {
   isProductSubscribed as productIsSubscribed,
   makeProductSubscription,
   makeSearchSubscription,
+  productSubscriptionId,
   removeSubscription as dropSubscription,
   type FilterSnapshot,
   type Subscription,
@@ -237,6 +238,7 @@ export const useStore = create<AppState>()(
 
           const previousCore = get().core;
           const previousSource = get().source;
+          const previousDetailsProducts = get().details?.products ?? null;
           const { text, core } = await downloadCore(
             remote.files.core.url,
             remote.files.core.sha256,
@@ -273,6 +275,9 @@ export const useStore = create<AppState>()(
           // Local notifications on meaningful change — only when the baseline was a
           // previously-installed remote dataset, never the bundled sample (otherwise
           // the first live refresh would alert on sample-vs-real differences).
+          // Warm details before diffing so detail-filtered search subscriptions see products.
+          await warmDetails();
+
           if (prefs.notificationsEnabled && previousSource === 'remote') {
             const messages = computeChanges(
               previousCore,
@@ -280,15 +285,13 @@ export const useStore = create<AppState>()(
               get().favorites,
               prefs.rateMoveThresholdBps,
               get().subscriptions,
-              get().details?.products,
+              previousDetailsProducts,
+              get().details?.products ?? null,
             );
             // Await so a headless background task doesn't resolve (and let the OS
             // suspend the app) before the notifications are actually scheduled.
             await notify(messages);
           }
-
-          // Warm details (awaited only for headless background runs).
-          await warmDetails();
           return true;
         } catch (err) {
           // Keep whatever data we already have; just flag offline.
@@ -412,7 +415,7 @@ export const useStore = create<AppState>()(
       },
 
       unsubscribeProduct(productKey, rateIndex) {
-        const id = `product:${productKey}:${rateIndex ?? 'all'}`;
+        const id = productSubscriptionId(productKey, rateIndex);
         set({ subscriptions: dropSubscription(get().subscriptions, id) });
       },
 
@@ -425,7 +428,7 @@ export const useStore = create<AppState>()(
       },
 
       unsubscribeSearch(id) {
-        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+        get().removeSubscription(id);
       },
 
       removeSubscription(id) {

@@ -54,17 +54,17 @@ function searchSnapshotKey(input: {
 }
 
 export function normalizeFilterSnapshot(filters: FilterSnapshot): FilterSnapshot {
-  const sort = (xs: string[]) => [...xs].sort();
+  const sort = (xs: string[] | undefined) => (xs ? [...xs].sort() : []);
   return {
-    providers: sort(filters.providers),
-    rateTypes: sort(filters.rateTypes),
-    lvrTiers: sort(filters.lvrTiers),
-    repaymentTypes: sort(filters.repaymentTypes),
-    depositKinds: sort(filters.depositKinds),
-    interestPayments: sort(filters.interestPayments),
-    accountFeatures: sort(filters.accountFeatures),
-    eligibilityCriteria: sort(filters.eligibilityCriteria),
-    includeNonStandard: filters.includeNonStandard,
+    providers: sort(filters?.providers),
+    rateTypes: sort(filters?.rateTypes),
+    lvrTiers: sort(filters?.lvrTiers),
+    repaymentTypes: sort(filters?.repaymentTypes),
+    depositKinds: sort(filters?.depositKinds),
+    interestPayments: sort(filters?.interestPayments),
+    accountFeatures: sort(filters?.accountFeatures),
+    eligibilityCriteria: sort(filters?.eligibilityCriteria),
+    includeNonStandard: !!filters?.includeNonStandard,
   };
 }
 
@@ -235,10 +235,13 @@ export function computeSubscriptionChanges(
   newCore: CorePayload,
   subscriptions: Subscription[],
   thresholdBps: number,
-  detailsProducts?: Record<string, ProductDetail> | null,
+  oldDetailsProducts?: Record<string, ProductDetail> | null,
+  newDetailsProducts?: Record<string, ProductDetail> | null,
 ): NotifyMessage[] {
   if (!oldCore || !subscriptions.length) return [];
   const messages: NotifyMessage[] = [];
+  const oldDetails = oldDetailsProducts;
+  const newDetails = newDetailsProducts ?? oldDetailsProducts;
 
   for (const sub of subscriptions) {
     if (sub.kind === 'product') {
@@ -257,8 +260,8 @@ export function computeSubscriptionChanges(
     }
 
     const hit = largestRateChange(
-      ratesMap(rowsForSearchSubscription(oldCore, sub, detailsProducts)),
-      ratesMap(rowsForSearchSubscription(newCore, sub, detailsProducts)),
+      ratesMap(rowsForSearchSubscription(oldCore, sub, oldDetails)),
+      ratesMap(rowsForSearchSubscription(newCore, sub, newDetails)),
       thresholdBps,
     );
     if (hit) {

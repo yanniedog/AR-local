@@ -233,7 +233,7 @@ function SubscriptionRow({
   label,
   onRemove,
 }: {
-  kind: string;
+  kind: 'Product' | 'Search';
   label: string;
   onRemove: () => void;
 }) {
