@@ -25,11 +25,11 @@ import { EmptyState } from './feedback';
 type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow };
 
 /** The dashboard-style drill-down: a ribbon for the current node, then either
- *  child category cards or ??? at a leaf ??? the actual products. */
+ *  child category cards or — at a leaf — the actual products. */
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
+  const rows = useStore((s) => s.core?.sections[section]?.rates);
   const sectionData = useStore((s) => s.core?.sections[section]);
-  const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
@@ -71,7 +71,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
         {!isLeaf ? (
           <Pressable onPress={() => openProductsList(section, path)} hitSlop={8}>
             <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
-              All {stats.products} products ???
+              All {stats.products} products →
             </AppText>
           </Pressable>
         ) : null}
@@ -125,7 +125,7 @@ function NodeCard({ section, path, node }: { section: SectionKey; path: string[]
             {node.label}
           </AppText>
           <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
-            {node.stats.products} {node.stats.products === 1 ? 'product' : 'products'} ?? {node.stats.providers} lenders
+            {node.stats.products} {node.stats.products === 1 ? 'product' : 'products'} · {node.stats.providers} lenders
           </AppText>
         </View>
         <Row gap={4}>
@@ -134,7 +134,7 @@ function NodeCard({ section, path, node }: { section: SectionKey; path: string[]
             weight="800"
             style={{ color: SECTIONS[section].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
           >
-            {best !== null ? `${(best * 100).toFixed(2)}%` : '???'}
+            {best !== null ? `${(best * 100).toFixed(2)}%` : '—'}
           </AppText>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
         </Row>
