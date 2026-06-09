@@ -179,7 +179,11 @@ export async function downloadInflate(
     startedAt: verifyStarted,
   });
   if (expectedSha) {
-    const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, buf);
+    // expo-crypto on Android bridges Uint8Array → Kotlin ByteArray; raw ArrayBuffer fails.
+    const digest = await Crypto.digest(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      new Uint8Array(buf),
+    );
     const actual = toHex(digest);
     if (actual !== expectedSha) {
       throw new Error(`asset sha256 mismatch (expected ${expectedSha.slice(0, 12)}…, got ${actual.slice(0, 12)}…)`);
