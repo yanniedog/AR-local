@@ -1,0 +1,81 @@
+# Cloud EAS builds for the Expo mobile app (development / preview / production).
+# Manual trigger only — does not gate PR merges.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   EXPO_TOKEN — robot access token for yannieyannies-team (expo.dev → Access tokens)
+#
+# Profiles: mobile/eas.json (development = dev client; preview = internal APK; production = store)
+# Project: @yannieyannies-team/ar-local-rates (app.json → expo.extra.eas.projectId)
+
+name: mobile-eas-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile (mobile/eas.json)
+        required: true
+        default: preview
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+      platform:
+        description: Target platform(s)
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-eas-build-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  eas-build:
+    name: eas build (${{ inputs.profile }} · ${{ inputs.platform }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Require EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings → Secrets → Actions."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: EAS Build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@16.14.1 build \
+            --non-interactive \
+            --profile "${{ inputs.profile }}" \
+            --platform "${{ inputs.platform }}"
+
+      - name: Build queued
+        run: |
+          echo "Track the build at https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds"
+          echo "Tip: EXPO_TOKEN=… eas build:view <id> --json   (build:view has no --non-interactive flag)"
