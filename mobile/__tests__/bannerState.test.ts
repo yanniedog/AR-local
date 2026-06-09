@@ -1,4 +1,4 @@
-import { resolveOfflineBanner } from '../src/components/bannerState';
+﻿import { resolveOfflineBanner } from '../src/components/bannerState';
 import type { PayloadProgressSnapshot } from '../src/data/downloadProgress';
 
 const progress: PayloadProgressSnapshot = {
@@ -33,13 +33,27 @@ describe('resolveOfflineBanner', () => {
     expect(view.showLiveProgress).toBe(false);
   });
 
-  it('hides stuck connecting state after refresh completes on sample while online', () => {
-    expect(resolveOfflineBanner('sample', false, false, null).mode).toBe('hidden');
+  it('shows sample warning when live refresh was skipped while online', () => {
+    const view = resolveOfflineBanner('sample', false, false, null);
+    expect(view.mode).toBe('offline-sample');
+    expect(view.message).toBe('Showing bundled sample data.');
   });
 
   it('shows offline sample copy when upgrade failed', () => {
     const view = resolveOfflineBanner('sample', true, false, null);
     expect(view.mode).toBe('offline-sample');
     expect(view.message).toContain('bundled sample');
+  });
+
+  it('shows connecting while retrying sample upgrade even if offline flag is still set', () => {
+    const view = resolveOfflineBanner('sample', true, true, progress);
+    expect(view.mode).toBe('connecting');
+    expect(view.showLiveProgress).toBe(true);
+  });
+
+  it('shows connecting copy during offline-flagged retry before progress events', () => {
+    const view = resolveOfflineBanner('sample', true, true, null);
+    expect(view.mode).toBe('connecting');
+    expect(view.showLiveProgress).toBe(false);
   });
 });
