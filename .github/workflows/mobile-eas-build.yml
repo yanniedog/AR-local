@@ -91,6 +91,12 @@ jobs:
             node scripts/ensure-firebase-config.mjs
           fi
 
+          if [ -f google-services.json ]; then
+            echo "Materialized google-services.json ($(wc -c < google-services.json) bytes)"
+          else
+            echo "::warning::google-services.json missing after materialize step"
+          fi
+
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)
         run: |
@@ -122,8 +128,13 @@ jobs:
                 --value "$path" \
                 --environment "${{ inputs.profile }}" \
                 --visibility secret \
-                --force \
-                --non-interactive
+                --non-interactive \
+                || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                  --variable-name "$name" \
+                  --variable-environment "${{ inputs.profile }}" \
+                  --type file \
+                  --value "$path" \
+                  --non-interactive
             fi
           }
           sync_file_env GOOGLE_SERVICES_JSON google-services.json
@@ -149,23 +160,11 @@ jobs:
           fi
 
 
-      - name: Ensure Android keystore exists (EAS)
+      - name: Ensure Android keystore (non-interactive)
         if: inputs.platform == 'android' || inputs.platform == 'all'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if ! npx eas-cli@16.14.1 credentials:configure-build \
-            --platform android \
-            --profile "${{ inputs.profile }}" \
-            --non-interactive; then
-            echo "::error::No Android keystore for com.eyex.australianrates (package rename from com.yanniedog.arlocalrates)."
-            echo "EAS cannot generate a keystore in --non-interactive mode. One-time setup (pick one):"
-            echo "  1. expo.dev -> ar-local-rates -> Credentials -> Android -> com.eyex.australianrates -> Generate new keystore"
-            echo "     https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/credentials"
-            echo "  2. Local interactive: cd mobile && EXPO_TOKEN=<token> npx eas-cli@16.14.1 credentials -p android"
-            echo "  3. Local interactive build (no --non-interactive): cd mobile && EXPO_TOKEN=<token> npx eas-cli@16.14.1 build -p android --profile ${{ inputs.profile }}"
-            exit 1
-          fi
+        run: node scripts/ensure-eas-android-credentials.mjs
 
       - name: EAS Build
         env:
