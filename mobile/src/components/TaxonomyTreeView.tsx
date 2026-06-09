@@ -144,6 +144,13 @@ export function TaxonomyTreeView({
     [section],
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: FlatTreeRow }) => (
+      <TreeRow row={item} section={section} onToggle={toggle} onOpenLeaf={openLeaf} />
+    ),
+    [section, toggle, openLeaf],
+  );
+
   if (!rows) return null;
 
   const header = (
@@ -166,18 +173,10 @@ export function TaxonomyTreeView({
     </View>
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: FlatTreeRow }) => (
-      <TreeRow row={item} section={section} onToggle={toggle} onOpenLeaf={openLeaf} />
-    ),
-    [section, toggle, openLeaf],
-  );
-
   return (
     <FlashList
       data={flat}
       keyExtractor={(item) => item.key}
-      estimatedItemSize={ROW_H}
       ListHeaderComponent={header}
       ListEmptyComponent={<EmptyState title="No categories" />}
       renderItem={renderItem}
