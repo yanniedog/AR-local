@@ -239,7 +239,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if args.dry_run:
             return 0
-        return 0 if updated > 0 or skipped > 0 else 1
+        return 0
 
     if args.latest_only:
         ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run, force=args.force)
