@@ -196,8 +196,7 @@ export const useStore = create<AppState>()(
         // suspend the app before fees/features are cached; in the foreground it stays
         // a non-blocking background warm.
         const warmDetails = async () => {
-          const p = get().ensureDetails();
-          if (background) await p;
+          await get().ensureDetails();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -230,7 +229,6 @@ export const useStore = create<AppState>()(
               offline: false,
               ...(bundle ? { core: bundle.core } : {}),
             });
->>>>>>> origin/main
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
