@@ -1,0 +1,30 @@
+# One-shot: fetch EAS build error message (uses EXPO_TOKEN secret).
+name: eas-fetch-build-error
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: EAS build UUID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch build error
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ inputs.build_id }}
+        run: node scripts/fetch-eas-build-error.mjs
