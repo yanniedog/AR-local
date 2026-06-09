@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 import { FilterSheet } from '../src/components/FilterSheet';
 import { EmptyState } from '../src/components/feedback';
@@ -19,6 +19,7 @@ import {
   type Filters,
   type SortKey,
 } from '../src/data/selectors';
+import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifications';
 import { useStore } from '../src/data/store';
 import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
 import { openCompare, openProduct } from '../src/lib/nav';
@@ -49,7 +50,11 @@ export default function Search() {
   const details = useStore((s) => s.details);
   const ensureDetails = useStore((s) => s.ensureDetails);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const notificationsEnabled = useStore((s) => s.prefs.notificationsEnabled);
   const setPref = useStore((s) => s.setPref);
+  const subscribeSearch = useStore((s) => s.subscribeSearch);
+  const unsubscribeSearch = useStore((s) => s.unsubscribeSearch);
+  const findSearchSubscription = useStore((s) => s.findSearchSubscription);
 
   useEffect(() => {
     void ensureDetails();
@@ -79,6 +84,50 @@ export default function Search() {
     [baseRows, effectiveFilters, query, sortKey, section, details?.products],
   );
 
+  const searchSnapshot = useMemo(
+    () => ({
+      section,
+      path,
+      hierarchyScoped,
+      query,
+      filters: {
+        providers: effectiveFilters.providers,
+        rateTypes: effectiveFilters.rateTypes,
+        lvrTiers: effectiveFilters.lvrTiers,
+        repaymentTypes: effectiveFilters.repaymentTypes,
+        depositKinds: effectiveFilters.depositKinds,
+        interestPayments: effectiveFilters.interestPayments,
+        accountFeatures: effectiveFilters.accountFeatures,
+        eligibilityCriteria: effectiveFilters.eligibilityCriteria,
+        includeNonStandard: effectiveFilters.includeNonStandard,
+      },
+    }),
+    [section, path, hierarchyScoped, query, effectiveFilters],
+  );
+
+  const searchSub = useMemo(
+    () => findSearchSubscription(searchSnapshot),
+    [findSearchSubscription, searchSnapshot],
+  );
+
+  const onToggleSearchAlert = async () => {
+    if (searchSub) {
+      unsubscribeSearch(searchSub.id);
+      return;
+    }
+    const ok = await ensurePermissions();
+    if (!ok) {
+      Alert.alert('Notifications disabled', 'Enable notifications for Australian Rates in system settings.');
+      return;
+    }
+    if (!notificationsEnabled) {
+      setPref('notificationsEnabled', true);
+      void registerBackgroundRefresh();
+    }
+    const added = subscribeSearch(searchSnapshot);
+    if (!added) Alert.alert('Already subscribed', 'This search already has a rate alert.');
+  };
+
   const toggleSelect = (key: string) =>
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].slice(-4)));
 
@@ -107,7 +156,18 @@ export default function Search() {
           {SORT_OPTIONS.map((o) => (
             <Chip key={o.key} label={o.label} selected={sortKey === o.key} onPress={() => setSortKey(o.key)} />
           ))}
+          <Chip
+            icon={searchSub ? 'notifications' : 'notifications-outline'}
+            label={searchSub ? 'Search alert on' : 'Alert this search'}
+            selected={!!searchSub}
+            onPress={() => void onToggleSearchAlert()}
+          />
         </Row>
+        {searchSub ? (
+          <AppText variant="tiny" color="textFaint">
+            {rows.length} products · {searchSub.label}
+          </AppText>
+        ) : null}
       </View>
 
       <View style={{ flex: 1 }}>

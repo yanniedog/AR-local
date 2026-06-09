@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Share, View } from 'react-native';
+import { Alert, Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
 import { EmptyState } from '../../src/components/feedback';
@@ -18,6 +18,7 @@ import {
 } from '../../src/data/format';
 import { sortRows } from '../../src/data/selectors';
 import { findByKey } from '../../src/data/selectors';
+import { ensurePermissions, registerBackgroundRefresh } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
 import { openBank } from '../../src/lib/nav';
 import type { DetailItem, RateRow, SectionKey } from '../../src/types';
@@ -36,6 +37,11 @@ export default function ProductDetail() {
   const detailsLoading = useStore((s) => s.detailsLoading);
   const favorite = useStore((s) => s.favorites.includes(productKey));
   const toggleFavorite = useStore((s) => s.toggleFavorite);
+  const notificationsEnabled = useStore((s) => s.prefs.notificationsEnabled);
+  const setPref = useStore((s) => s.setPref);
+  const subscribed = useStore((s) => s.isProductSubscribed(productKey, rateIndex));
+  const subscribeProduct = useStore((s) => s.subscribeProduct);
+  const unsubscribeProduct = useStore((s) => s.unsubscribeProduct);
 
   useEffect(() => {
     void ensureDetails();
@@ -66,6 +72,23 @@ export default function ProductDetail() {
       message: `${row.provider} — ${row.product_name}: ${formatRate(row.rate)} (${meta.title}, Australian Rates)`,
     }).catch(() => {});
 
+  const onToggleNotify = async () => {
+    if (subscribed) {
+      unsubscribeProduct(productKey, rateIndex);
+      return;
+    }
+    const ok = await ensurePermissions();
+    if (!ok) {
+      Alert.alert('Notifications disabled', 'Enable notifications for Australian Rates in system settings.');
+      return;
+    }
+    if (!notificationsEnabled) {
+      setPref('notificationsEnabled', true);
+      void registerBackgroundRefresh();
+    }
+    subscribeProduct(productKey, rateIndex, row);
+  };
+
   return (
     <>
       <Stack.Screen
@@ -73,6 +96,12 @@ export default function ProductDetail() {
           title: row.provider,
           headerRight: () => (
             <Row gap={2}>
+              <IconButton
+                icon={subscribed ? 'notifications' : 'notifications-outline'}
+                color={subscribed ? 'primary' : 'text'}
+                onPress={() => void onToggleNotify()}
+                accessibilityLabel={subscribed ? 'Remove rate alert' : 'Notify on rate change'}
+              />
               <IconButton
                 icon={favorite ? 'star' : 'star-outline'}
                 color={favorite ? 'warning' : 'text'}
@@ -146,6 +175,13 @@ export default function ProductDetail() {
         <DetailGroup title="Eligibility" icon="person-outline" items={detail?.eligibility} loading={detailsLoading} />
         <DetailGroup title="Constraints" icon="lock-closed-outline" items={detail?.constraints} loading={detailsLoading} />
 
+        <Button
+          title={subscribed ? 'Rate alert on' : 'Notify on rate change'}
+          icon={subscribed ? 'notifications' : 'notifications-outline'}
+          variant={subscribed ? 'secondary' : 'primary'}
+          style={{ marginBottom: 8 }}
+          onPress={() => void onToggleNotify()}
+        />
         <Button
           title={`View all ${row.provider} products`}
           icon="business-outline"
