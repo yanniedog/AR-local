@@ -15,7 +15,8 @@ export default function DebugLogScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [text, setText] = useState(debugLog.getText());
   const [uploadUrl, setUploadUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'copy' | 'share' | 'upload' | null>(null);
+  const [busy, setBusy] = useState<'copy' | 'share' | 'upload' | 'path' | null>(null);
+  const logPathHint = debugLog.getAndroidLogPathHint();
 
   useEffect(() => {
     return debugLog.subscribe(() => setText(debugLog.getText()));
@@ -26,18 +27,34 @@ export default function DebugLogScreen() {
   }, [text]);
 
   const onClear = useCallback(() => {
-    Alert.alert('Clear debug log?', 'In-memory log buffer will be emptied.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: () => {
-          debugLog.clear();
-          setUploadUrl(null);
+    Alert.alert(
+      'Clear debug log?',
+      'Clears the in-app buffer and deletes the on-disk log file.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            debugLog.clear();
+            setUploadUrl(null);
+          },
         },
-      },
-    ]);
+      ],
+    );
   }, []);
+
+  const onCopyPath = useCallback(async () => {
+    setBusy('path');
+    try {
+      await Clipboard.setStringAsync(logPathHint);
+      Alert.alert('Copied', 'Log file path copied.');
+    } catch (err) {
+      Alert.alert('Copy failed', String((err as Error)?.message ?? err));
+    } finally {
+      setBusy(null);
+    }
+  }, [logPathHint]);
 
   const onCopy = useCallback(async () => {
     setBusy('copy');
@@ -53,11 +70,13 @@ export default function DebugLogScreen() {
 
   const onShare = useCallback(async () => {
     setBusy('share');
-    let path: string | null = null;
     try {
-      const fileName = `ar-debug-log-${Date.now()}.txt`;
-      path = `${FileSystem.cacheDirectory}${fileName}`;
-      await FileSystem.writeAsStringAsync(path, text);
+      await debugLog.flushToFile();
+      const path = debugLog.getLogFileUri();
+      const info = await FileSystem.getInfoAsync(path);
+      if (!info.exists) {
+        await FileSystem.writeAsStringAsync(path, text);
+      }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(path, {
           mimeType: 'text/plain',
@@ -65,14 +84,11 @@ export default function DebugLogScreen() {
           UTI: 'public.plain-text',
         });
       } else {
-        await Share.share({ message: text, title: fileName });
+        await Share.share({ message: text, title: 'ar-local.log' });
       }
     } catch (err) {
       Alert.alert('Share failed', String((err as Error)?.message ?? err));
     } finally {
-      if (path) {
-        await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
-      }
       setBusy(null);
     }
   }, [text]);
@@ -120,6 +136,21 @@ export default function DebugLogScreen() {
           <AppText variant="tiny" color="textFaint">
             May include device/network info. Secrets are redacted; avoid sharing if sensitive.
           </AppText>
+          <Card style={{ gap: 8 }}>
+            <AppText variant="tiny" color="textMuted">
+              On-disk log (Android scoped storage)
+            </AppText>
+            <AppText variant="small" selectable style={{ fontFamily: 'monospace' }}>
+              {logPathHint}
+            </AppText>
+            <Button
+              title="Copy path"
+              icon="folder-outline"
+              variant="ghost"
+              loading={busy === 'path'}
+              onPress={() => void onCopyPath()}
+            />
+          </Card>
           <Row gap={8} style={{ flexWrap: 'wrap' }}>
             <Button title="Clear" icon="trash-outline" variant="ghost" onPress={onClear} />
             <Button

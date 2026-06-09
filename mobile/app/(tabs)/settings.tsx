@@ -223,7 +223,7 @@ export default function Settings() {
               Debug log
             </AppText>
             <AppText variant="tiny" color="textFaint">
-              View, share, or upload end-to-end logs
+              View, share, or upload logs; on-disk path shown on screen
             </AppText>
           </View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />

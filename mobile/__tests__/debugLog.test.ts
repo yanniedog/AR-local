@@ -1,12 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // eslint-disable-next-line import/first -- imports after jest mocks
 import {
+  ANDROID_LOG_PATH_HINT,
   MAX_LOG_BYTES,
   MAX_LOG_LINES,
   RingBuffer,
   debugLog,
+  formatEntry,
   formatLogUploadBody,
+  parseLogLine,
   redactSecrets,
   uploadLogsToPasteRs,
 } from '../src/lib/debugLog';
@@ -117,6 +121,84 @@ describe('uploadLogsToPasteRs', () => {
   });
 });
 
+describe('parseLogLine', () => {
+  it('round-trips formatted entries', () => {
+    const entry = {
+      ts: '2026-01-01T00:00:00.000Z',
+      level: 'info' as const,
+      tag: 'app',
+      message: 'bootstrap starting',
+    };
+    const parsed = parseLogLine(formatEntry(entry));
+    expect(parsed).toEqual(entry);
+  });
+});
+
+describe('persistent log file', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    setObservabilityDepsForTests({
+      crashlytics: () => crashlyticsApi,
+      clarity: clarityApi,
+    });
+    await setDiagnosticsEnabled(true);
+    debugLog.clear();
+    await AsyncStorage.clear();
+    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: false });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue('');
+  });
+
+  afterEach(() => {
+    setObservabilityDepsForTests(null);
+  });
+
+  it('writes log lines to the persistent file', async () => {
+    debugLog.info('test', 'file persist');
+    await debugLog.flushToFile();
+
+    expect(FileSystem.makeDirectoryAsync).toHaveBeenCalledWith(
+      'file:///docs/logs/',
+      { intermediates: true },
+    );
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
+    const [path, contents] = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
+    expect(path).toBe('file:///docs/logs/ar-local.log');
+    expect(contents).toContain('file persist');
+    expect(contents).not.toContain('secret');
+  });
+
+  it('clear deletes the persistent log file', async () => {
+    debugLog.info('test', 'before clear');
+    await debugLog.flushToFile();
+    debugLog.clear();
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///docs/logs/ar-local.log',
+      { idempotent: true },
+    );
+  });
+
+  it('restores tail from log file on startup', async () => {
+    const line = formatEntry({
+      ts: '2026-01-01T00:00:00.000Z',
+      level: 'warn',
+      tag: 'store',
+      message: 'from disk',
+    });
+    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: true });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue(`${line}\n`);
+
+    debugLog.clear();
+    await debugLog.restoreFromStorage();
+    expect(debugLog.getText()).toContain('from disk');
+  });
+
+  it('exposes Android scoped storage path hint', () => {
+    expect(debugLog.getAndroidLogPathHint()).toBe(ANDROID_LOG_PATH_HINT);
+    expect(ANDROID_LOG_PATH_HINT).toContain('com.eyex.australianrates');
+  });
+});
+
 describe('debugLog integration', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -142,7 +224,7 @@ describe('debugLog integration', () => {
     expect(debugLog.getText()).toBe('');
 
     debugLog.info('test', 'persist me');
-    await new Promise((r) => setTimeout(r, 600));
+    await debugLog.flushToFile();
 
     await debugLog.restoreFromStorage();
     expect(debugLog.getText()).toContain('persist me');
