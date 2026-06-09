@@ -145,24 +145,29 @@ export function queryAndSort(
   return sortRows(filterRows(rows, filters, detailsProducts), sortKey, section);
 }
 
-/** Distinct non-empty values for a field, sorted alphabetically by display label. */
+/** Distinct non-empty values for a field, sorted by frequency then label. */
 export function distinctValues(rows: RateRow[], field: keyof RateRow): string[] {
-  const keys = new Set<string>();
+  const counts = new Map<string, number>();
   for (const row of rows) {
     const raw = row[field];
     if (raw === undefined || raw === null || raw === '') continue;
-    keys.add(String(raw));
+    const key = String(raw);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return sortByDisplayLabel(Array.from(keys));
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([k]) => k);
 }
 
-/** Distinct provider names for filter UI, sorted A–Z (case-insensitive). */
+/** Distinct provider names for filter UI, sorted A-Z (case-insensitive). */
 export function distinctProviders(rows: RateRow[]): string[] {
   const names = new Set<string>();
   for (const row of rows) {
-    if (row.provider) names.add(row.provider);
+    const prov = row.provider;
+    if (prov === undefined || prov === null || prov === '') continue;
+    names.add(prov);
   }
-  return sortByDisplayLabel(Array.from(names), (p) => p);
+  return sortByDisplayLabel(Array.from(names), (name) => name);
 }
 
 export interface ProviderGroup {

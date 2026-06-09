@@ -34,14 +34,7 @@ export function resolveSectionRibbonStats(
     ? hierarchyRows
     : visibleAccountRows(hierarchyRows, false);
 
-  if (includeNonStandard) {
-    const computed = statsFor(filtered, true);
-    if (computed.min != null) return computed;
-  } else if (sectionData && hasPayloadRibbon(sectionData.ribbon)) {
-    return ribbonToRateStats(sectionData.ribbon);
-  }
-
-  const computed = statsFor(filtered, true);
+  const computed = statsFor(filtered, includeNonStandard);
   if (computed.min != null) return computed;
   if (sectionData && hasPayloadRibbon(sectionData.ribbon)) {
     return ribbonToRateStats(sectionData.ribbon);

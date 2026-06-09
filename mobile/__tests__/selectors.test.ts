@@ -136,8 +136,18 @@ describe('selectors', () => {
     expect(activeFilterCount({ ...EMPTY_FILTERS, providers: ['Bank A'], includeNonStandard: true })).toBe(2);
   });
 
-  test('distinctValues sorts alphabetically by display label', () => {
-    expect(distinctValues(mortgage, 'rate_type')).toEqual(['FIXED', 'VARIABLE']);
+  test('distinctValues sorts by frequency then label', () => {
+    expect(distinctValues(mortgage, 'rate_type')).toEqual(['VARIABLE', 'FIXED']);
+  });
+
+  test('distinctProviders empty input and falsey providers', () => {
+    expect(distinctProviders([])).toEqual([]);
+    const rows = [
+      mk({ provider: 'Bank A', product_key: 'A|1' }),
+      mk({ provider: '', product_key: 'E|1' }),
+      mk({ provider: undefined as unknown as string, product_key: 'U|1' }),
+    ];
+    expect(distinctProviders(rows)).toEqual(['Bank A']);
   });
 
   test('distinctProviders sorted A–Z case-insensitive, not by frequency', () => {
