@@ -66,6 +66,16 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
+      - name: Validate JS bundle (typecheck + export)
+        run: |
+          npm run typecheck
+          case "${{ inputs.platform }}" in
+            android) npm run export:android ;;
+            ios) npm run export:ios ;;
+            all) npm run export ;;
+          esac
+
       - name: EAS Build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

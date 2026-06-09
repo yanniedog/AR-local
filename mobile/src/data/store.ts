@@ -191,7 +191,7 @@ export const useStore = create<AppState>()(
       },
 
       async refresh(opts = {}) {
-        const { force = false, manual = false, background = false } = opts;
+        const { force = false, manual = false } = opts;
         // In a headless background run, warm details synchronously so the OS can't
         // suspend the app before fees/features are cached; in the foreground it stays
         // a non-blocking background warm.

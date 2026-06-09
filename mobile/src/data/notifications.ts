@@ -126,7 +126,7 @@ export function computeChanges(
     }
   }
 
-  return [...subscriptionMessages, ...messages];
+  return dedupeNotifyMessages([...subscriptionMessages, ...messages]);
 }
 
 export async function ensurePermissions(): Promise<boolean> {

@@ -37,16 +37,8 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
-      - name: Expo doctor
-        run: npx expo-doctor
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Test
-        run: npm test -- --ci
-      - name: Export bundle (all platforms)
-        run: npm run export
+      - name: Mobile CI (doctor · typecheck · lint · test · export)
+        run: npm run ci
 
   payload:
     name: payload builder (pytest)
