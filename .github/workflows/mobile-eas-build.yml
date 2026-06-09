@@ -74,6 +74,10 @@ jobs:
             android) npm run export:android ;;
             ios) npm run export:ios ;;
             all) npm run export ;;
+            *)
+              echo "Unsupported platform: '${{ inputs.platform }}'" >&2
+              exit 1
+              ;;
           esac
 
       - name: EAS Build
