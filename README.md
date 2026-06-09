@@ -35,7 +35,7 @@ Scan with **Android Chrome** to install the latest preview APK. The QR image URL
 
 | | |
 |---|---|
-| Version | **1.0.1** (build 26) |
+| Version | **1.0.2** (build 30) |
 | QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png) |
 | APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
 | Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
