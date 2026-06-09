@@ -33,9 +33,10 @@ describe('resolveOfflineBanner', () => {
     expect(view.showLiveProgress).toBe(false);
   });
 
-  it('hides banner when sample is online and not refreshing', () => {
+  it('shows sample warning when live refresh was skipped while online', () => {
     const view = resolveOfflineBanner('sample', false, false, null);
-    expect(view.mode).toBe('hidden');
+    expect(view.mode).toBe('offline-sample');
+    expect(view.message).toBe('Showing bundled sample data.');
   });
 
   it('shows offline sample copy when upgrade failed', () => {
@@ -56,4 +57,3 @@ describe('resolveOfflineBanner', () => {
     expect(view.showLiveProgress).toBe(false);
   });
 });
-
