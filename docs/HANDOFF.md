@@ -17,7 +17,7 @@ The goal is for the app to **look and behave like the web dashboard** at
 `http://100.78.28.10:8808/`.
 
 ```
-Raspberry Pi (daily, 17:00 AEST)              GitHub                         Mobile app (anywhere)
+Raspberry Pi (daily, 01:00 Australia/Hobart)  GitHub                         Mobile app (anywhere)
 ────────────────────────────────              ──────                         ─────────────────────
 pi_daily_sync.py --banks-only                 Release tag                    on launch / pull-to-refresh:
   → _exports/dashboard-cache/<date>/          "app-payload-latest"            1. GET manifest.json
@@ -39,7 +39,7 @@ pi_daily_sync.py --banks-only                 Release tag                    on 
   data). `npm audit` = 0; tsc/lint/jest all green.
 - **Pi publishing**: Pi is online (Tailscale), on latest `main`, and **auto-publishes the
   payload every day** (token installed — verified live, `run_date` 2026-06-08 is on the
-  release). Daily timer next runs **17:00 AEST**.
+  release). Daily timer next runs **01:00 local** (`Australia/Hobart` on ar-local-pi5).
 - **EAS**: project `@yannieyannies-team/ar-local-rates` (`projectId`
   `69c08d63-b618-43f1-86b9-2556eef82104`). An **Android development build** has been built
   and is installable. PR **#157** persists the EAS `owner`/`projectId` in `app.json`
@@ -423,7 +423,7 @@ older preview build can update from Settings without reinstalling from expo.dev.
   `dashboard-cache/<date>/banks.json` + `latest.json`, which `app_payload.py` reads).
 - **Dashboard**: `http://100.78.28.10:8808/` (backend) and `http://100.78.28.10/` (nginx :80).
 - **Daily**: `ar-local-daily.timer` → `ar-local-daily.service` (runs as user `pi`) →
-  `pi_daily_sync.py --banks-only`, **17:00 AEST / 07:00 UTC**.
+  `pi_daily_sync.py --banks-only`, **01:00 local (`Australia/Hobart`)** — Pi `timedatectl` timezone.
 - **systemd units** live in `deploy/pi/*.service|*.timer`; render/install with
   `sh deploy/pi/install-pi-systemd.sh /srv/ar-local && sudo systemctl daemon-reload`.
 - Passwordless `sudo` for the needed commands is configured (`deploy/pi/install-pi-sudoers.sh`).
