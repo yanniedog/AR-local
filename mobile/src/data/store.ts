@@ -238,7 +238,14 @@ export const useStore = create<AppState>()(
 
           const previousCore = get().core;
           const previousSource = get().source;
-          const previousDetailsProducts = get().details?.products ?? null;
+          let previousDetailsProducts = get().details?.products ?? null;
+          if (!previousDetailsProducts && previousCore) {
+            const cachedDetails = await cache.readDetails();
+            if (cachedDetails && cachedDetails.run_date === previousCore.run_date) {
+              previousDetailsProducts = cachedDetails.products ?? null;
+              if (!get().details) set({ details: cachedDetails });
+            }
+          }
           const { text, core } = await downloadCore(
             remote.files.core.url,
             remote.files.core.sha256,
@@ -493,6 +500,7 @@ try {
         // persist excludes core/manifest — load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
+        await useStore.getState().ensureDetails();
         const changed = await useStore.getState().refresh({ background: true });
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
