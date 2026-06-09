@@ -3,17 +3,20 @@
 The Raspberry Pi daily ingest already produces a compact, dashboard-ready
 ``dashboard-cache/<run_date>/banks.json`` plus a ``dashboard-cache/latest.json``
 manifest. This module reshapes those (pure Python, no SQLite and no running
-dashboard server) into three small artifacts the mobile app downloads from a
-rolling GitHub Release:
+dashboard server) into three small artifacts the mobile app downloads from GitHub Releases:
 
   * ``manifest.json``          - tiny; the app polls this first.
   * ``core-<date>.json.gz``    - section rates + ribbon stats + brands + RBA series.
   * ``details-<date>.json.gz`` - per-product fees/features/eligibility/constraints.
 
+Rolling tag ``app-payload-latest`` is the canonical "newest" manifest the mobile app
+polls. Each ingest ``run_date`` also gets an immutable dated release
+``app-payload-<YYYY-MM-DD>`` with its own manifest + assets (no pruning).
+
 Usage::
 
     python app_payload.py build  --exports runs/2026-05-19/_exports --out <dir>
-    python app_payload.py publish --dir <app-payload dir> [--repo owner/name]
+    python app_payload.py publish --dir <app-payload dir> [--tag app-payload-2026-05-19]
 
 ``build`` is deterministic and CI-friendly. ``publish`` uploads via the ``gh``
 CLI and is token-gated: with no ``gh`` auth / ``GH_TOKEN`` it prints a clear
@@ -44,6 +47,8 @@ BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_VERSION = 1
 DEFAULT_REPO = os.environ.get("AR_LOCAL_REPO", "yanniedog/AR-local")
 DEFAULT_TAG = os.environ.get("AR_LOCAL_APP_PAYLOAD_TAG", "app-payload-latest")
+DATED_TAG_PREFIX = "app-payload-"
+_RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 APP_MIN_VERSION = "1.0.0"
 # Bound every gh subprocess so a network/CLI stall can never hang the Pi's daily
 # pipeline. Uploads get a longer budget than metadata calls.
@@ -585,9 +590,33 @@ def _gh_available() -> Optional[str]:
     return shutil.which("gh")
 
 
+def dated_tag(run_date: str) -> str:
+    """Immutable per-run_date release tag (``app-payload-YYYY-MM-DD``)."""
+    if not _RUN_DATE_RE.match(run_date):
+        raise ValueError(f"invalid run_date for dated tag: {run_date!r}")
+    return f"{DATED_TAG_PREFIX}{run_date}"
+
+
+def is_rolling_tag(tag: str) -> bool:
+    """True for the canonical rolling latest tag the mobile app polls."""
+    return tag in (DEFAULT_TAG, "app-payload-latest")
+
+
+def is_dated_tag(tag: str) -> bool:
+    """True for immutable per-run_date snapshot tags."""
+    if not tag.startswith(DATED_TAG_PREFIX):
+        return False
+    return bool(_RUN_DATE_RE.match(tag[len(DATED_TAG_PREFIX) :]))
+
+
 def release_title(run_date: str) -> str:
     """Human-readable rolling-release title for a given payload run_date."""
     return f"App payload (rolling) - {run_date}"
+
+
+def dated_release_title(run_date: str) -> str:
+    """Human-readable title for an immutable per-run_date snapshot release."""
+    return f"App payload - {run_date}"
 
 
 def _update_release_title(gh: str, repo: str, tag: str, run_date: str) -> bool:
@@ -658,6 +687,37 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     return deleted
 
 
+def _manifest_should_replace(
+    status: str,
+    live: Optional[Dict[str, Any]],
+    *,
+    our_run_date: str,
+    our_gen: str,
+    tag: str,
+    force: bool,
+) -> Tuple[bool, str]:
+    """Decide whether to replace the live manifest on ``tag`` (rolling vs dated rules)."""
+    if force:
+        return True, "force"
+    if status == "error":
+        return False, "live_manifest_verify_error"
+    if status == "missing":
+        return True, "missing"
+    live_run_date = str((live or {}).get("run_date") or "")
+    live_gen = str((live or {}).get("generated_at") or "")
+    if is_rolling_tag(tag):
+        live_newer = bool(live_run_date) and (
+            live_run_date > our_run_date
+            or (live_run_date == our_run_date and live_gen > our_gen)
+        )
+    else:
+        # Dated snapshots only skip a same-day correction with a newer generated_at.
+        live_newer = live_run_date == our_run_date and live_gen > our_gen
+    if live_newer:
+        return False, "live_newer"
+    return True, "ok"
+
+
 def _live_manifest_status(repo: str, tag: str) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Return the live release manifest's state, distinguishing a transient failure from
     a genuinely missing manifest: ("present", dict) | ("missing", None) | ("error", None).
@@ -723,8 +783,13 @@ def publish_payload(
         f"[app_payload] publish starting run_date={our_run_date} tag={tag} repo={repo} "
         f"assets=[{core_name}, {details_name}, manifest.json]"
     )
-    title = release_title(our_run_date)
-    notes = "Rolling mobile-app data payload. Updated automatically by the daily Pi ingest."
+    rolling = is_rolling_tag(tag)
+    title = release_title(our_run_date) if rolling else dated_release_title(our_run_date)
+    notes = (
+        "Rolling mobile-app data payload. Updated automatically by the daily Pi ingest."
+        if rolling
+        else f"Immutable mobile-app data snapshot for run_date {our_run_date}."
+    )
     if dry_run:
         print(
             f"[app_payload] publish dry-run run_date={our_run_date} tag={tag} repo={repo} "
@@ -767,33 +832,30 @@ def publish_payload(
     # First check the live manifest, distinguishing present / missing / transient-error.
     status, live = _live_manifest_status(repo, tag)
 
-    if status == "error" and not force:
-        # We couldn't verify the live manifest — fail closed rather than risk clobbering
-        # a newer one we just can't see. (Non-fatal for the daily pipeline; retried.)
-        print(
-            "[app_payload] publish failed run_date="
-            f"{our_run_date} reason=live_manifest_verify_error exit=0"
-        )
-        return False
-
-    if status == "present" and not force:
-        live_run_date = str((live or {}).get("run_date") or "")
-        live_gen = str((live or {}).get("generated_at") or "")
-        # A newer live publication = a later run_date, OR a same-day correction with a
-        # later generated_at (the per-build version that distinguishes same-day payloads).
-        # Residual fetch->upload race is non-breaking: data assets are content-addressed
-        # (both manifests reference live assets) and the next scheduled run reconciles it.
-        live_newer = bool(live_run_date) and (
-            live_run_date > our_run_date
-            or (live_run_date == our_run_date and live_gen > our_gen)
-        )
-        if live_newer:
+    should_replace, replace_reason = _manifest_should_replace(
+        status,
+        live,
+        our_run_date=our_run_date,
+        our_gen=our_gen,
+        tag=tag,
+        force=force,
+    )
+    if not should_replace:
+        reason = replace_reason
+        if reason == "live_manifest_verify_error":
             print(
-                f"[app_payload] publish skipped manifest run_date={our_run_date} "
-                f"(live run_date={live_run_date} generated_at={live_gen} is newer; "
-                f"uploaded {len(to_upload)} new data asset(s); pass force=true to override)"
+                "[app_payload] publish failed run_date="
+                f"{our_run_date} reason=live_manifest_verify_error exit=0"
             )
             return False
+        live_run_date = str((live or {}).get("run_date") or "")
+        live_gen = str((live or {}).get("generated_at") or "")
+        print(
+            f"[app_payload] publish skipped manifest run_date={our_run_date} tag={tag} "
+            f"(live run_date={live_run_date} generated_at={live_gen} is newer; "
+            f"uploaded {len(to_upload)} new data asset(s); pass force=true to override)"
+        )
+        return False
 
     # Keep the displaced manifest so a failed --clobber replacement can be rolled back.
     backup_gen = str((live or {}).get("generated_at") or "") if status == "present" else None
@@ -839,15 +901,16 @@ def publish_payload(
         f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
         f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"
     )
-    _update_release_title(gh, repo, tag, our_run_date)
-    # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
-    try:
-        keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}
-        pruned = _prune_release_assets(gh, repo, tag, keep)
-        if pruned:
-            print(f"[app_payload] pruned {pruned} obsolete release asset(s)")
-    except Exception as exc:  # noqa: BLE001 - pruning must never fail a publish
-        print(f"[app_payload] asset prune skipped (non-fatal): {exc}")
+    if rolling:
+        _update_release_title(gh, repo, tag, our_run_date)
+        # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
+        try:
+            keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}
+            pruned = _prune_release_assets(gh, repo, tag, keep)
+            if pruned:
+                print(f"[app_payload] pruned {pruned} obsolete release asset(s)")
+        except Exception as exc:  # noqa: BLE001 - pruning must never fail a publish
+            print(f"[app_payload] asset prune skipped (non-fatal): {exc}")
     return True
 
 
@@ -858,11 +921,59 @@ def build_and_publish(
     tag: str = DEFAULT_TAG,
     out_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool]:
-    """Convenience entry point for the Pi daily pipeline (build then best-effort publish)."""
+    """Build + publish to a single release tag (legacy / CI helper)."""
     out_dir = out_dir or (exports_dir / "app-payload")
     manifest = build_payload(exports_dir, out_dir, repo=repo, tag=tag)
     published = publish_payload(out_dir, repo=repo, tag=tag)
     return manifest, published
+
+
+def build_and_publish_dual(
+    exports_dir: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    out_dir: Optional[Path] = None,
+    update_latest: bool = True,
+) -> Tuple[Dict[str, Any], bool, bool]:
+    """Build + publish immutable dated snapshot and rolling latest (when allowed).
+
+    Returns ``(manifest, published_dated, published_latest)``. The dated release uses
+    ``app-payload-<run_date>``; rolling ``app-payload-latest`` is updated only when
+    ``run_date`` is not older than the live rolling manifest (unless ``--force`` on
+    the latest publish path — not exposed here; backfill handles end-of-run refresh).
+    """
+    latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
+    run_date = str(latest.get("run_date") or "")
+    if not run_date:
+        raise ValueError("latest.json has no run_date")
+
+    dated = dated_tag(run_date)
+    out_dated = out_dir or (exports_dir / "app-payload")
+    manifest = build_payload(exports_dir, out_dated, repo=repo, tag=dated)
+    published_dated = publish_payload(out_dated, repo=repo, tag=dated)
+    print(
+        f"[app_payload] dated publish finished run_date={run_date} tag={dated} "
+        f"published={published_dated}"
+    )
+
+    published_latest = False
+    if update_latest:
+        out_latest = exports_dir / "app-payload-latest"
+        build_payload(exports_dir, out_latest, repo=repo, tag=DEFAULT_TAG)
+        status, live = _live_manifest_status(repo, DEFAULT_TAG)
+        live_run_date = str((live or {}).get("run_date") or "") if status == "present" else ""
+        if live_run_date and live_run_date > run_date:
+            print(
+                f"[app_payload] rolling latest skipped run_date={run_date} "
+                f"(live run_date={live_run_date} is newer)"
+            )
+        else:
+            published_latest = publish_payload(out_latest, repo=repo, tag=DEFAULT_TAG)
+            print(
+                f"[app_payload] rolling latest publish finished run_date={run_date} "
+                f"tag={DEFAULT_TAG} published={published_latest}"
+            )
+    return manifest, published_dated, published_latest
 
 
 # --------------------------------------------------------------------------- #
@@ -927,7 +1038,11 @@ def _cmd_seed(args: argparse.Namespace) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Build/publish the AR-local mobile app payload.")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo (default: %(default)s)")
-    parser.add_argument("--tag", default=DEFAULT_TAG, help="Rolling release tag (default: %(default)s)")
+    parser.add_argument(
+        "--tag",
+        default=DEFAULT_TAG,
+        help="Release tag: app-payload-latest (rolling) or app-payload-YYYY-MM-DD (dated snapshot)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("build", help="Build manifest + core + details from a run export.")

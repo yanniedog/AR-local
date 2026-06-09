@@ -107,9 +107,84 @@ def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
     assert "logo" not in brands["No Logo Bank"]
 
 
+def test_dated_tag_naming():
+    assert app_payload.dated_tag("2026-06-08") == "app-payload-2026-06-08"
+    assert app_payload.is_dated_tag("app-payload-2026-06-08")
+    assert not app_payload.is_dated_tag("app-payload-latest")
+    assert not app_payload.is_dated_tag("app-payload-not-a-date")
+    with pytest.raises(ValueError):
+        app_payload.dated_tag("bad")
+
+
+def test_is_rolling_tag():
+    assert app_payload.is_rolling_tag("app-payload-latest")
+    assert not app_payload.is_rolling_tag("app-payload-2026-06-08")
+
+
+def test_dated_release_title():
+    assert app_payload.dated_release_title("2026-06-08") == "App payload - 2026-06-08"
+
+
 def test_release_title_format():
     assert app_payload.release_title("2026-06-08") == "App payload (rolling) - 2026-06-08"
     assert app_payload.release_title("2026-05-19") == "App payload (rolling) - 2026-05-19"
+
+
+def test_manifest_should_replace_rolling_blocks_older_run_date():
+    live = {"run_date": "2026-06-08", "generated_at": "2026-06-08T10:00:00Z"}
+    ok, reason = app_payload._manifest_should_replace(
+        "present",
+        live,
+        our_run_date="2026-06-07",
+        our_gen="2026-06-07T10:00:00Z",
+        tag="app-payload-latest",
+        force=False,
+    )
+    assert not ok
+    assert reason == "live_newer"
+
+
+def test_manifest_should_replace_rolling_allows_newer_run_date():
+    live = {"run_date": "2026-06-07", "generated_at": "2026-06-07T10:00:00Z"}
+    ok, reason = app_payload._manifest_should_replace(
+        "present",
+        live,
+        our_run_date="2026-06-08",
+        our_gen="2026-06-08T10:00:00Z",
+        tag="app-payload-latest",
+        force=False,
+    )
+    assert ok
+    assert reason == "ok"
+
+
+def test_manifest_should_replace_dated_ignores_other_dates_on_rolling():
+    """Dated tag guard only compares same-day generated_at, not cross-date rolling state."""
+    live = {"run_date": "2026-06-08", "generated_at": "2026-06-08T10:00:00Z"}
+    ok, reason = app_payload._manifest_should_replace(
+        "present",
+        live,
+        our_run_date="2026-06-07",
+        our_gen="2026-06-07T10:00:00Z",
+        tag="app-payload-2026-06-07",
+        force=False,
+    )
+    assert ok
+    assert reason == "ok"
+
+
+def test_manifest_should_replace_dated_blocks_same_day_correction_race():
+    live = {"run_date": "2026-06-07", "generated_at": "2026-06-07T12:00:00Z"}
+    ok, reason = app_payload._manifest_should_replace(
+        "present",
+        live,
+        our_run_date="2026-06-07",
+        our_gen="2026-06-07T10:00:00Z",
+        tag="app-payload-2026-06-07",
+        force=False,
+    )
+    assert not ok
+    assert reason == "live_newer"
 
 
 def test_update_release_title_calls_gh_release_edit(monkeypatch):

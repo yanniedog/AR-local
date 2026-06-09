@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Backfill historical app-payload assets on the Pi (or any host with run exports + gh auth).
+# Backfill per-date app-payload GitHub releases on the Pi (or any host with exports + gh auth).
 #
 # Usage (Pi, from repo root):
 #   sudo -E bash scripts/backfill-app-payload.sh
-#   sudo -E bash scripts/backfill-app-payload.sh --from-date 2026-05-20 --to-date 2026-06-06
+#   sudo -E bash scripts/backfill-app-payload.sh --from-date 2026-05-13 --to-date 2026-06-08
 #   sudo -E bash scripts/backfill-app-payload.sh --dry-run
+#   sudo -E bash scripts/backfill-app-payload.sh --latest-only
 #
 # Requires GH_TOKEN (or gh auth) with contents:read+write. On the Pi, load
 # /etc/ar-local/app-payload.env before running (sudo -E preserves EnvironmentFile vars
