@@ -28,8 +28,8 @@ type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow }
  *  child category cards or — at a leaf — the actual products. */
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
-  const rows = useStore((s) => s.core?.sections[section]?.rates);
   const sectionData = useStore((s) => s.core?.sections[section]);
+  const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
