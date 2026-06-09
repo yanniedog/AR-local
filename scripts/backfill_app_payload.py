@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Backfill historical app-payload assets onto the rolling GitHub release.
+"""Backfill per-date app-payload GitHub releases from Pi run exports.
 
-Iterates Pi run folders under ``<runs-root>/<date>/_exports`` for dates that were
-ingested but never published. For each date with a valid dashboard export it builds
-(or reuses) ``app-payload`` and calls ``app_payload.publish_payload`` **without**
-``--force``, so older run_dates upload missing core/details assets but never
-downgrade the live manifest when a newer one is already published.
+For each ``runs/<YYYY-MM-DD>/_exports`` with valid dashboard data, builds and publishes
+an immutable dated release ``app-payload-<date>``. After all dates, refreshes the rolling
+``app-payload-latest`` manifest to the newest run_date on disk (without downgrading a
+newer live manifest).
 
 Typical Pi invocation (from repo root, with GH_TOKEN in app-payload.env)::
 
@@ -15,34 +14,36 @@ Operator dry-run (no uploads)::
 
     python3 scripts/backfill_app_payload.py --dry-run
 
-Bounds default to the audit window (2026-05-20 .. 2026-06-06); override with
-``--from-date`` / ``--to-date``.
+Bounds are optional (``--from-date`` / ``--to-date``); default scans all valid exports.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
-from ar_local_pi_runtime import export_manifest_is_valid, load_exports_manifest  # noqa: E402
+from ar_local_pi_runtime import (  # noqa: E402
+    data_runs_root,
+    export_manifest_is_valid,
+    load_exports_manifest,
+)
 
-DEFAULT_FROM = "2026-05-20"
-DEFAULT_TO = "2026-06-06"
 
-
-def iter_backfill_dates(
+def iter_valid_export_dates(
     runs_root: Path,
-    from_date: str,
-    to_date: str,
+    *,
+    from_date: str = "",
+    to_date: str = "",
 ) -> Iterable[Tuple[str, Path]]:
-    """Yield (run_date, exports_dir) for valid exports in the inclusive date range."""
+    """Yield ``(run_date, exports_dir)`` for valid exports in the optional date range."""
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
         return
@@ -50,7 +51,9 @@ def iter_backfill_dates(
         if not child.is_dir():
             continue
         run_date = child.name
-        if run_date < from_date or run_date > to_date:
+        if from_date and run_date < from_date:
+            continue
+        if to_date and run_date > to_date:
             continue
         exports = child / "_exports"
         manifest = load_exports_manifest(exports)
@@ -58,45 +61,78 @@ def iter_backfill_dates(
             yield run_date, exports
 
 
-def sync_release_title_from_live(
-    *,
-    repo: str = app_payload.DEFAULT_REPO,
-    tag: str = app_payload.DEFAULT_TAG,
-) -> bool:
-    """Set the rolling release title from the live manifest's run_date (best-effort)."""
-    gh = app_payload._gh_available()
-    if not gh or not app_payload._gh_authed(gh):
-        print("[backfill_app_payload] title sync skipped: no gh auth")
-        return False
+def dated_release_already_published(repo: str, run_date: str) -> bool:
+    """True when the dated tag already has a live manifest for this run_date."""
+    tag = app_payload.dated_tag(run_date)
     status, live = app_payload._live_manifest_status(repo, tag)
     if status != "present" or not live:
-        print(f"[backfill_app_payload] title sync skipped: live manifest status={status}")
         return False
-    run_date = str(live.get("run_date") or "")
-    return app_payload._update_release_title(gh, repo, tag, run_date)
+    return str(live.get("run_date") or "") == run_date
+
+
+def refresh_rolling_latest(
+    runs_root: Path,
+    *,
+    repo: str = app_payload.DEFAULT_REPO,
+    dry_run: bool = False,
+) -> bool:
+    """Publish ``app-payload-latest`` for the newest valid export on disk."""
+    dates = list(iter_valid_export_dates(runs_root))
+    if not dates:
+        print("[backfill_app_payload] rolling latest skipped: no valid exports")
+        return False
+    run_date, exports = dates[-1]
+    print(
+        f"[backfill_app_payload] rolling latest refresh run_date={run_date} "
+        f"exports={exports} dry_run={dry_run}"
+    )
+    if dry_run:
+        return False
+    out_dir = exports / "app-payload-latest"
+    app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    print(
+        f"[backfill_app_payload] rolling latest finished run_date={run_date} "
+        f"published={published}"
+    )
+    return published
 
 
 def backfill(
     runs_root: Path,
     *,
-    from_date: str = DEFAULT_FROM,
-    to_date: str = DEFAULT_TO,
+    from_date: str = "",
+    to_date: str = "",
     repo: str = app_payload.DEFAULT_REPO,
-    tag: str = app_payload.DEFAULT_TAG,
     dry_run: bool = False,
-    sync_title: bool = True,
+    force: bool = False,
+    skip_latest: bool = False,
 ) -> List[dict]:
-    """Build + publish payloads for each date; return per-date result rows."""
+    """Publish dated releases for each export date; optionally refresh rolling latest."""
     results: List[dict] = []
-    dates = list(iter_backfill_dates(runs_root, from_date, to_date))
+    dates = list(iter_valid_export_dates(runs_root, from_date=from_date, to_date=to_date))
     print(
         f"[backfill_app_payload] starting runs_root={runs_root} "
-        f"from={from_date} to={to_date} dates={len(dates)} dry_run={dry_run}"
+        f"from={from_date or '*'} to={to_date or '*'} dates={len(dates)} "
+        f"dry_run={dry_run} force={force}"
     )
     for run_date, exports in dates:
+        tag = app_payload.dated_tag(run_date)
         out_dir = exports / "app-payload"
-        row = {"run_date": run_date, "exports": str(exports), "published": False, "error": None}
+        row = {
+            "run_date": run_date,
+            "tag": tag,
+            "exports": str(exports),
+            "published": False,
+            "skipped": False,
+            "error": None,
+        }
         try:
+            if not force and not dry_run and dated_release_already_published(repo, run_date):
+                row["skipped"] = True
+                print(f"[backfill_app_payload] run_date={run_date} tag={tag} skipped=already_published")
+                results.append(row)
+                continue
             if dry_run:
                 manifest_path = out_dir / "manifest.json"
                 if manifest_path.exists():
@@ -106,7 +142,7 @@ def backfill(
                 row["core"] = manifest["files"]["core"]["name"]
                 row["details"] = manifest["files"]["details"]["name"]
                 print(
-                    f"[backfill_app_payload] dry-run run_date={run_date} "
+                    f"[backfill_app_payload] dry-run run_date={run_date} tag={tag} "
                     f"core={row['core']} details={row['details']}"
                 )
             else:
@@ -114,77 +150,83 @@ def backfill(
                 row["core"] = manifest["files"]["core"]["name"]
                 row["details"] = manifest["files"]["details"]["name"]
                 row["published"] = app_payload.publish_payload(
-                    out_dir, repo=repo, tag=tag, force=False
+                    out_dir, repo=repo, tag=tag, force=force
                 )
                 print(
-                    f"[backfill_app_payload] run_date={run_date} published={row['published']} "
-                    f"core={row['core']} details={row['details']}"
+                    f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                    f"published={row['published']} core={row['core']} details={row['details']}"
                 )
         except Exception as exc:  # noqa: BLE001 - continue other dates
             row["error"] = repr(exc)
-            print(f"[backfill_app_payload] run_date={run_date} failed error={exc!r}")
+            print(f"[backfill_app_payload] run_date={run_date} tag={tag} failed error={exc!r}")
         results.append(row)
 
-    uploaded = [r["run_date"] for r in results if r.get("published")]
-    built = [r["run_date"] for r in results if not r.get("error")]
+    published = [r["run_date"] for r in results if r.get("published")]
+    skipped = [r["run_date"] for r in results if r.get("skipped")]
     failed = [r["run_date"] for r in results if r.get("error")]
     print(
-        f"[backfill_app_payload] finished built={len(built)} manifest_replaced={len(uploaded)} "
-        f"failed={len(failed)} dates={built}"
+        f"[backfill_app_payload] dated finished published={len(published)} "
+        f"skipped={len(skipped)} failed={len(failed)} "
+        f"dates_published={published}"
     )
-    if sync_title and not dry_run:
-        sync_release_title_from_live(repo=repo, tag=tag)
+    if not skip_latest:
+        refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run)
     return results
 
 
-def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Backfill app-payload assets for historical run dates.")
+def resolve_runs_root(explicit: Optional[Path]) -> Path:
+    if explicit is not None:
+        return explicit.expanduser().resolve()
+    data_root = os.environ.get("AR_LOCAL_DATA_ROOT", "").strip()
+    if data_root:
+        return (Path(data_root).expanduser() / "runs").resolve()
+    return data_runs_root(ROOT)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Backfill per-date app-payload GitHub releases from run exports.",
+    )
     parser.add_argument(
         "--runs-root",
         type=Path,
         default=None,
-        help="Pi runs root (default: AR_LOCAL_DATA_ROOT/runs or <repo>/data/runs).",
+        help="Runs root (default: AR_LOCAL_DATA_ROOT/runs or <repo>/data/runs).",
     )
-    parser.add_argument("--from-date", default=DEFAULT_FROM, help=f"First run_date (default: {DEFAULT_FROM}).")
-    parser.add_argument("--to-date", default=DEFAULT_TO, help=f"Last run_date (default: {DEFAULT_TO}).")
-    parser.add_argument("--repo", default=app_payload.DEFAULT_REPO, help="GitHub repo (default: %(default)s).")
-    parser.add_argument("--tag", default=app_payload.DEFAULT_TAG, help="Rolling release tag (default: %(default)s).")
+    parser.add_argument("--from-date", default="", help="Optional first run_date (YYYY-MM-DD).")
+    parser.add_argument("--to-date", default="", help="Optional last run_date (YYYY-MM-DD).")
+    parser.add_argument("--repo", default=app_payload.DEFAULT_REPO, help="GitHub repo.")
     parser.add_argument("--dry-run", action="store_true", help="Build/list only; no gh uploads.")
     parser.add_argument(
-        "--no-sync-title",
+        "--force",
         action="store_true",
-        help="Skip gh release edit to match live manifest run_date after backfill.",
+        help="Re-publish dated releases even when already present; may override rolling latest.",
     )
     parser.add_argument(
-        "--sync-title-only",
+        "--skip-latest",
         action="store_true",
-        help="Only refresh the rolling release title from the live manifest.",
+        help="Only publish dated tags; do not refresh app-payload-latest at the end.",
+    )
+    parser.add_argument(
+        "--latest-only",
+        action="store_true",
+        help="Only refresh app-payload-latest from the newest valid export.",
     )
     args = parser.parse_args(argv)
+    runs_root = resolve_runs_root(args.runs_root)
 
-    if args.sync_title_only:
-        ok = sync_release_title_from_live(repo=args.repo, tag=args.tag)
-        return 0 if ok else 1
-
-    runs_root = args.runs_root
-    if runs_root is None:
-        import os
-        from ar_local_pi_runtime import data_runs_root, repo_root as resolve_repo_root
-
-        data_root = os.environ.get("AR_LOCAL_DATA_ROOT", "").strip()
-        if data_root:
-            runs_root = Path(data_root).expanduser() / "runs"
-        else:
-            runs_root = data_runs_root(resolve_repo_root(ROOT))
+    if args.latest_only:
+        ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run)
+        return 0 if args.dry_run or ok else 1
 
     backfill(
         runs_root,
         from_date=args.from_date,
         to_date=args.to_date,
         repo=args.repo,
-        tag=args.tag,
         dry_run=args.dry_run,
-        sync_title=not args.no_sync_title,
+        force=args.force,
+        skip_latest=args.skip_latest,
     )
     return 0
 
