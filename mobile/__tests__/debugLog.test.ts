@@ -10,6 +10,24 @@ import {
   redactSecrets,
   uploadLogsToPasteRs,
 } from '../src/lib/debugLog';
+import {
+  setDiagnosticsEnabled,
+  setObservabilityDepsForTests,
+  type CrashlyticsLike,
+  type ClarityLike,
+} from '../src/lib/observability';
+
+const crashlyticsApi: CrashlyticsLike = {
+  log: jest.fn(),
+  recordError: jest.fn(),
+  setCrashlyticsCollectionEnabled: jest.fn(async () => {}),
+};
+
+const clarityApi: ClarityLike = {
+  initialize: jest.fn(),
+  pause: jest.fn(async () => true),
+  resume: jest.fn(async () => true),
+};
 
 describe('redactSecrets', () => {
   it('redacts EXPO_TOKEN and bearer tokens', () => {
@@ -101,8 +119,18 @@ describe('uploadLogsToPasteRs', () => {
 
 describe('debugLog integration', () => {
   beforeEach(async () => {
+    jest.clearAllMocks();
+    setObservabilityDepsForTests({
+      crashlytics: () => crashlyticsApi,
+      clarity: clarityApi,
+    });
+    await setDiagnosticsEnabled(true);
     debugLog.clear();
     await AsyncStorage.clear();
+  });
+
+  afterEach(() => {
+    setObservabilityDepsForTests(null);
   });
 
   it('stores redacted lines and restores tail snapshot', async () => {
@@ -118,5 +146,21 @@ describe('debugLog integration', () => {
 
     await debugLog.restoreFromStorage();
     expect(debugLog.getText()).toContain('persist me');
+  });
+
+  it('forwards warn/error lines to Crashlytics', () => {
+    debugLog.warn('store', 'prefs rehydrate failed');
+    debugLog.error('payload', 'download failed');
+
+    expect(crashlyticsApi.log).toHaveBeenCalledWith('[WARN] store: prefs rehydrate failed');
+    expect(crashlyticsApi.log).toHaveBeenCalledWith('[ERROR] payload: download failed');
+    expect(crashlyticsApi.recordError).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts secrets forwarded to Crashlytics', () => {
+    debugLog.warn('test', 'hello EXPO_TOKEN=secret');
+
+    expect(crashlyticsApi.log).toHaveBeenCalledWith('[WARN] test: hello EXPO_TOKEN=[REDACTED]');
+    expect(crashlyticsApi.log).not.toHaveBeenCalledWith(expect.stringContaining('secret'));
   });
 });

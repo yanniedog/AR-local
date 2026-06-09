@@ -27,3 +27,24 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
+
+jest.mock('@react-native-firebase/crashlytics', () => {
+  const crashlytics = jest.fn(() => ({
+    log: jest.fn(),
+    recordError: jest.fn(),
+    setCrashlyticsCollectionEnabled: jest.fn(async () => {}),
+  }));
+  return { __esModule: true, default: crashlytics };
+});
+
+jest.mock('@react-native-firebase/app', () => ({
+  __esModule: true,
+  default: {},
+}));
+
+jest.mock('@microsoft/react-native-clarity', () => ({
+  initialize: jest.fn(),
+  pause: jest.fn(async () => true),
+  resume: jest.fn(async () => true),
+  isPaused: jest.fn(async () => false),
+}));
