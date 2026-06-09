@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * When the last open PR to main is squash-merged, bump expo.version and push to main.
- * mobile-android-apk.yml builds the APK on the resulting push to mobile/**.
+ * When the last open PR to main is squash-merged, bump expo.version and open a PR to main.
+ * Branch protection requires bot gates on main; direct push is rejected (GH006).
+ * mobile-android-apk.yml builds the APK after the bump PR squash-merges.
  *
  * Env:
  *   GH_TOKEN / GITHUB_TOKEN — required
@@ -103,9 +104,89 @@ function alreadyAutoBumpedOnHead() {
   return subject.startsWith(AUTO_BUMP_PREFIX);
 }
 
+function listOpenAutoBumpPrs(nextVersion) {
+  const raw = gh([
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--base',
+    'main',
+    '--json',
+    'number,title,url',
+    '--repo',
+    repo,
+  ]);
+  const rows = JSON.parse(raw || '[]');
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  const titlePrefix = `${AUTO_BUMP_PREFIX}${nextVersion}`;
+  return rows.filter((row) => row.title?.startsWith(titlePrefix));
+}
+
 function readCurrentVersion() {
   const appJson = JSON.parse(readFileSync(join(mobileDir, 'app.json'), 'utf8'));
   return String(appJson.expo?.version ?? '1.0.0').trim();
+}
+
+function bumpBranchName(nextVersion) {
+  return `chore/mobile-auto-release-v${nextVersion}`;
+}
+
+function enableAutoMerge(prNumber) {
+  gh(['pr', 'merge', String(prNumber), '--squash', '--auto', '--repo', repo]);
+}
+
+function publishViaPullRequest(next, message) {
+  const branchName = bumpBranchName(next);
+  const existing = listOpenAutoBumpPrs(next);
+  if (existing.length > 0) {
+    const pr = existing[0];
+    console.log(
+      `mobile-auto-release-on-drain: open bump PR #${pr.number} (${pr.url}) — ensure auto-merge`,
+    );
+    enableAutoMerge(pr.number);
+    return pr.number;
+  }
+
+  git(['checkout', '-B', branchName]);
+  git(['push', '-u', 'origin', branchName, '--force-with-lease']);
+
+  const prHint = mergeSha ? `\n- Trigger merge: \`${mergeSha.slice(0, 7)}\`` : '';
+  const body = [
+    'Automated patch version bump after the PR queue to `main` drained.',
+    '',
+    `- Version: **${next}**${prHint}`,
+    '',
+    'Auto-merge enabled; **mobile-android-apk** builds when this lands on `main`.',
+  ].join('\n');
+
+  const prUrl = gh([
+    'pr',
+    'create',
+    '--base',
+    'main',
+    '--head',
+    branchName,
+    '--title',
+    message,
+    '--body',
+    body,
+    '--repo',
+    repo,
+  ]);
+
+  const prNumber = prUrl.match(/\/pull\/(\d+)/)?.[1];
+  if (!prNumber) {
+    throw new Error(`mobile-auto-release-on-drain: could not parse PR number from ${prUrl}`);
+  }
+
+  enableAutoMerge(prNumber);
+  console.log(
+    `mobile-auto-release-on-drain: opened PR #${prNumber} with auto-merge (${prUrl}); mobile-android-apk runs after merge`,
+  );
+  return Number(prNumber);
 }
 
 async function main() {
@@ -136,8 +217,17 @@ async function main() {
   const next = bumpPatchVersion(current);
   console.log(`mobile-auto-release-on-drain: queue drained — bump ${current} → ${next}`);
 
+  const pending = listOpenAutoBumpPrs(next);
+  if (pending.length > 0) {
+    console.log(
+      `mobile-auto-release-on-drain: bump PR already open for v${next} (#${pending[0].number}) — skip`,
+    );
+    enableAutoMerge(pending[0].number);
+    process.exit(0);
+  }
+
   if (dryRun) {
-    console.log('mobile-auto-release-on-drain: dry-run — no commit');
+    console.log(`mobile-auto-release-on-drain: dry-run — would open PR ${bumpBranchName(next)}`);
     process.exit(0);
   }
 
@@ -157,19 +247,7 @@ async function main() {
   const message = `${AUTO_BUMP_PREFIX}${next}${prHint}`;
   git(['commit', '-m', message]);
 
-  const push = spawnSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], {
-    encoding: 'utf8',
-    cwd: repoRoot,
-    env: { ...process.env, GH_TOKEN: ghToken },
-    timeout: SPAWN_TIMEOUT_MS,
-  });
-  if (push.status !== 0) {
-    throw new Error(
-      `git push failed: ${(push.stderr || push.stdout || '').trim()} — check branch protection / token permissions`,
-    );
-  }
-
-  console.log(`mobile-auto-release-on-drain: pushed ${message}; mobile-android-apk will build on main`);
+  publishViaPullRequest(next, message);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

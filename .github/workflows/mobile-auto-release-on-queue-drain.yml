@@ -4,22 +4,25 @@
 #   1. pull_request closed + merged → count open PRs targeting main
 #   2. count > 1 → exit (more work in flight)
 #   3. count == 1 → poll briefly (simultaneous last-two merge race)
-#   4. count == 0 → bump expo.version patch in mobile/app.json, push main
-#   5. push to mobile/** triggers mobile-android-apk.yml (versionCode bump + APK publish)
+#   4. count == 0 → bump expo.version patch in mobile/app.json, open PR to main
+#   5. bump PR squash-merge triggers mobile-android-apk.yml (versionCode bump + APK publish)
 #
-# Direct pushes to main do not trigger this workflow (PR merge close only).
+# Direct pushes to main are blocked by branch protection (bot-feedback-gate +
+# bot-presence-gate). The drain script opens a bump PR and enables auto-merge instead.
+# workflow_dispatch supports manual recovery after a failed drain run.
 # Concurrency serializes drain checks so only one auto-bump runs per queue drain.
 
 name: mobile-auto-release-on-queue-drain
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches: [main]
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: mobile-auto-release-on-drain
@@ -27,7 +30,7 @@ concurrency:
 
 jobs:
   maybe-release:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     name: bump app version when queue drained
     runs-on: ubuntu-latest
     steps:
@@ -39,9 +42,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Queue drained → patch bump + push (APK via mobile-android-apk)
+      - name: Queue drained → patch bump PR (APK via mobile-android-apk)
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha || '' }}
         run: node mobile/scripts/mobile-auto-release-on-drain.mjs
