@@ -32,15 +32,15 @@ const mergeSha = process.env.MERGE_SHA?.trim() || '';
 const AUTO_BUMP_PREFIX = 'chore(mobile): auto-release bump to v';
 const POLL_ATTEMPTS = 6;
 const POLL_SECONDS = 20;
+const SPAWN_TIMEOUT_MS = 60_000;
 
 function gh(args) {
-  if (!ghToken) {
-    throw new Error('GH_TOKEN is not set');
-  }
+  const env = ghToken ? { ...process.env, GH_TOKEN: ghToken } : process.env;
   const res = spawnSync('gh', args, {
     encoding: 'utf8',
     cwd: repoRoot,
-    env: { ...process.env, GH_TOKEN: ghToken },
+    env,
+    timeout: SPAWN_TIMEOUT_MS,
   });
   if (res.status !== 0) {
     throw new Error(`gh ${args.join(' ')} failed: ${(res.stderr || res.stdout || '').trim()}`);
@@ -52,6 +52,7 @@ function git(args) {
   const res = spawnSync('git', args, {
     encoding: 'utf8',
     cwd: repoRoot,
+    timeout: SPAWN_TIMEOUT_MS,
   });
   if (res.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${(res.stderr || res.stdout || '').trim()}`);
@@ -114,8 +115,12 @@ async function main() {
   }
 
   git(['fetch', 'origin', 'main', '--quiet']);
+  git(['checkout', '-B', 'main', 'origin/main']);
 
-  const remaining = dryRun ? countOpenPrsToMain() : await waitForQueueDrain();
+  const remaining = dryRun ? 0 : await waitForQueueDrain();
+  if (dryRun) {
+    console.log('mobile-auto-release-on-drain: dry-run — skipping open PR count (assume drained)');
+  }
   if (remaining !== 0) {
     process.exit(0);
   }
@@ -156,6 +161,7 @@ async function main() {
     encoding: 'utf8',
     cwd: repoRoot,
     env: { ...process.env, GH_TOKEN: ghToken },
+    timeout: SPAWN_TIMEOUT_MS,
   });
   if (push.status !== 0) {
     throw new Error(

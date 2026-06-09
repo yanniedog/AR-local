@@ -27,6 +27,9 @@ if (dryRun) {
   process.exit(0);
 }
 
+if (!appJson.expo || typeof appJson.expo !== 'object') {
+  appJson.expo = {};
+}
 appJson.expo.version = next;
 writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2) + '\n', 'utf8');
 console.log(`bump-app-patch-version: ${current} → ${next}`);
