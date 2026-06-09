@@ -290,7 +290,7 @@ non-interactive mode (`Generating a new Keystore is not supported in --non-inter
 |---|---|
 | [expo.dev Credentials](https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/credentials) → **Android** → `com.eyex.australianrates` → **Keystore** → **Generate new keystore** | Fastest; works with the `EXPO_TOKEN` robot after the keystore exists |
 | Local interactive CLI | `cd mobile` then `EXPO_TOKEN=<token> npx eas-cli@16.14.1 credentials -p android` and choose **Set up a new keystore** (or reuse/upload an existing `.jks`) |
-| One interactive cloud build | Same token, run `eas build -p android --profile preview` **without** `--non-interactive` once; EAS prompts to create the keystore |
+| One interactive cloud build | Same token, run `npx eas-cli@16.14.1 build -p android --profile preview` **without** `--non-interactive` once; EAS prompts to create the keystore |
 
 After setup, re-run GitHub Actions → **mobile-eas-build** (preview / android). The workflow
 also runs `credentials:configure-build` before upload to fail fast with this doc link.

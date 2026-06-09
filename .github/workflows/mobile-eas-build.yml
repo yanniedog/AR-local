@@ -121,24 +121,30 @@ jobs:
           sync_file_env() {
             local name="$1"
             local path="$2"
-            if [ -f "$path" ]; then
-              npx eas-cli@16.14.1 env:create \
-                --name "$name" \
+            npx eas-cli@16.14.1 env:create \
+              --name "$name" \
+              --type file \
+              --value "$path" \
+              --environment "${{ inputs.profile }}" \
+              --visibility secret \
+              --non-interactive \
+              || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                --variable-name "$name" \
+                --variable-environment "${{ inputs.profile }}" \
                 --type file \
                 --value "$path" \
-                --environment "${{ inputs.profile }}" \
-                --visibility secret \
-                --non-interactive \
-                || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
-                  --variable-name "$name" \
-                  --variable-environment "${{ inputs.profile }}" \
-                  --type file \
-                  --value "$path" \
-                  --non-interactive
-            fi
+                --non-interactive
           }
-          sync_file_env GOOGLE_SERVICES_JSON google-services.json
-          sync_file_env GOOGLE_SERVICE_INFO_PLIST GoogleService-Info.plist
+          if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > .eas-sync-google-services.json
+            sync_file_env GOOGLE_SERVICES_JSON .eas-sync-google-services.json
+            rm -f .eas-sync-google-services.json
+          fi
+          if [ -n "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
+            printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > .eas-sync-GoogleService-Info.plist
+            sync_file_env GOOGLE_SERVICE_INFO_PLIST .eas-sync-GoogleService-Info.plist
+            rm -f .eas-sync-GoogleService-Info.plist
+          fi
 
       - name: Sync Clarity env to EAS
         env:
