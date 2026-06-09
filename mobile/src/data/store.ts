@@ -12,11 +12,22 @@ import type {
   Manifest,
   PayloadSource,
   ProductDetail,
+  RateRow,
   SectionKey,
 } from '../types';
 import { cache, type CacheMeta } from './cache';
 import type { PayloadProgressSnapshot } from './downloadProgress';
 import { BACKGROUND_TASK, computeChanges, notify } from './notifications';
+import {
+  addSubscription,
+  findSearchSubscription as lookupSearchSubscription,
+  isProductSubscribed as productIsSubscribed,
+  makeProductSubscription,
+  makeSearchSubscription,
+  removeSubscription as dropSubscription,
+  type FilterSnapshot,
+  type Subscription,
+} from './subscriptions';
 import { downloadCore, downloadDetails, fetchManifest } from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
 import type { ThemeMode } from '../theme/theme';
@@ -63,6 +74,7 @@ interface AppState {
 
   prefs: Prefs;
   favorites: string[];
+  subscriptions: Subscription[];
 
   bootstrap: () => Promise<void>;
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
@@ -72,6 +84,25 @@ interface AppState {
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
+  subscribeProduct: (productKey: string, rateIndex: number | null, labelRow: RateRow) => boolean;
+  unsubscribeProduct: (productKey: string, rateIndex: number | null) => void;
+  subscribeSearch: (input: {
+    section: SectionKey;
+    path: string[];
+    hierarchyScoped: boolean;
+    query: string;
+    filters: FilterSnapshot;
+  }) => boolean;
+  unsubscribeSearch: (id: string) => void;
+  removeSubscription: (id: string) => void;
+  isProductSubscribed: (productKey: string, rateIndex: number | null) => boolean;
+  findSearchSubscription: (input: {
+    section: SectionKey;
+    path: string[];
+    hierarchyScoped: boolean;
+    query: string;
+    filters: FilterSnapshot;
+  }) => Subscription | undefined;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   completeOnboarding: (interests: SectionKey[], notifications: boolean) => void;
   clearCache: () => Promise<void>;
@@ -104,6 +135,7 @@ export const useStore = create<AppState>()(
 
       prefs: DEFAULT_PREFS,
       favorites: [],
+      subscriptions: [],
 
       async bootstrap() {
         if (get().status === 'ready' || get().status === 'loading') return;
@@ -189,7 +221,7 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             // Core already matches, so adopting this manifest keeps them aligned.
-            set({ manifest: remote });
+            set({ manifest: remote, source: 'remote' });
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
@@ -240,6 +272,8 @@ export const useStore = create<AppState>()(
               core,
               get().favorites,
               prefs.rateMoveThresholdBps,
+              get().subscriptions,
+              get().details?.products,
             );
             // Await so a headless background task doesn't resolve (and let the OS
             // suspend the app) before the notifications are actually scheduled.
@@ -359,6 +393,46 @@ export const useStore = create<AppState>()(
         return get().favorites.includes(key);
       },
 
+      subscribeProduct(productKey, rateIndex, labelRow) {
+        if (productIsSubscribed(get().subscriptions, productKey, rateIndex)) return false;
+        set({
+          subscriptions: addSubscription(
+            get().subscriptions,
+            makeProductSubscription(labelRow, rateIndex),
+          ),
+        });
+        return true;
+      },
+
+      unsubscribeProduct(productKey, rateIndex) {
+        const id = `product:${productKey}:${rateIndex ?? 'all'}`;
+        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      subscribeSearch(input) {
+        if (lookupSearchSubscription(get().subscriptions, input)) return false;
+        set({
+          subscriptions: addSubscription(get().subscriptions, makeSearchSubscription(input)),
+        });
+        return true;
+      },
+
+      unsubscribeSearch(id) {
+        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      removeSubscription(id) {
+        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      isProductSubscribed(productKey, rateIndex) {
+        return productIsSubscribed(get().subscriptions, productKey, rateIndex);
+      },
+
+      findSearchSubscription(input) {
+        return lookupSearchSubscription(get().subscriptions, input);
+      },
+
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
       },
@@ -384,7 +458,7 @@ export const useStore = create<AppState>()(
     {
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites }),
+      partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites, subscriptions: s.subscriptions }),
       // Flip `hydrated` once persisted state is restored, so the initial route
       // doesn't redirect returning users to onboarding before prefs load.
       onRehydrateStorage: () => () => {
