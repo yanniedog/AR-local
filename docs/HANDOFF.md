@@ -255,7 +255,7 @@ unless `--force`. Dated tags are independent snapshots. Journald:
 **Backfill historical dates** (Pi — one dated release per ingested folder, then refresh latest):
 
 ```bash
-ssh ar-local-pi5 'cd /srv/ar-local/AR-local && sudo -E bash scripts/backfill-app-payload.sh'
+ssh ar-local-pi5 'cd /srv/ar-local/AR-local && sudo bash scripts/backfill-app-payload.sh'
 # optional bounds: --from-date 2026-05-13 --to-date 2026-06-08
 # preview: --dry-run ; re-upload existing: --force
 ```
