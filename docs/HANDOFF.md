@@ -245,7 +245,7 @@ The last Android dev build artifact:
 `run_date`, then updates `app-payload-latest` when `run_date` is not older than the live
 rolling manifest.
 
-`python3 app_payload.py publish --dir <dir> [--tag app-payload-2026-06-08] [--require-token]`
+`python3 app_payload.py --tag app-payload-2026-06-08 publish --dir <dir> [--require-token]`
 → uploads via `gh` (auth via `GH_TOKEN`/`GITHUB_TOKEN` env **or** `gh` login). Content-addressed
 asset names; manifest uploaded last. Rolling tag refuses to downgrade to an older `run_date`
 unless `--force`. Dated tags are independent snapshots. Journald:
