@@ -94,6 +94,8 @@ jobs:
 
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)
+        env:
+          NODE_ENV: ${{ inputs.profile == 'development' && 'development' || 'production' }}
         run: |
           npm run typecheck
           case "${{ inputs.platform }}" in
@@ -153,6 +155,7 @@ jobs:
         id: eas_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NODE_ENV: ${{ inputs.profile == 'development' && 'development' || 'production' }}
         run: |
           set +e
           EAS_NO_VCS=1 npx eas-cli@16.14.1 build \

@@ -1,4 +1,4 @@
-﻿import {
+import {
   bridgeLogToCrashlytics,
   initObservability,
   isDiagnosticsEnabled,
