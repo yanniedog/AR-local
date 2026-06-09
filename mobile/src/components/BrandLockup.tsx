@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useTheme } from '../theme/ThemeProvider';
 import { ArMarkLogo } from './ArMarkLogo';
@@ -11,7 +11,7 @@ export function BrandLockup({
   style,
 }: {
   markSize?: number;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
   return (
