@@ -57,6 +57,7 @@ DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
+    "app_payload.py",
     "dashboard/",
     "cdr_",
     "deploy/pi/",
