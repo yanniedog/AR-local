@@ -217,8 +217,8 @@ Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlyt
 | Requirement | Value / note |
 |---|---|
 | Installable build | **EAS or local dev client** — **not Expo Go** (native modules) |
-| Android package | `com.yanniedog.arlocalrates` (`mobile/app.json` → `expo.android.package`) |
-| iOS bundle ID | `com.yanniedog.arlocalrates` (`mobile/app.json` → `expo.ios.bundleIdentifier`) |
+| Android package | `com.eyex.australianrates` (`mobile/app.json` → `expo.android.package`) |
+| iOS bundle ID | `com.eyex.australianrates` (`mobile/app.json` → `expo.ios.bundleIdentifier`) |
 | Native SDK change | **Rebuild** after first Firebase/Clarity setup or config swap (preview/production profile) |
 | EAS project | `@yannieyannies-team/ar-local-rates` — [expo.dev project](https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates) |
 | Robot token | `EXPO_TOKEN` — see §7 / EAS builds above (`ar-local-eas` robot) |
@@ -245,21 +245,29 @@ Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlyt
 1. [console.firebase.google.com](https://console.firebase.google.com/) → **Add project** (or
    reuse an existing one).
 2. **Build** → **Crashlytics** → **Enable** (adds the SDK hooks EAS expects).
-3. Register **two** mobile apps in that Firebase project — both use bundle ID
-   `com.yanniedog.arlocalrates`:
-   - **Android** → download `google-services.json`
-   - **iOS** → download `GoogleService-Info.plist`
-4. Place the real files (gitignored — never commit):
+3. Register mobile apps in that Firebase project (Android now; iOS when you ship iOS):
+   - **Android** — package `com.eyex.australianrates` → download `google-services.json`
+   - **iOS** (optional for now) — bundle ID `com.eyex.australianrates` → download
+     `GoogleService-Info.plist`
+4. **Skip Firebase console Gradle/Kotlin steps 2–3** (google-services plugin, firebase-bom).
+   This repo is **Expo managed prebuild**: `@react-native-firebase/app` and
+   `@react-native-firebase/crashlytics` in `mobile/app.json` apply the native SDK at
+   **`eas build` prebuild** — do not hand-edit `android/build.gradle.kts`.
+5. Place the real files (gitignored — never commit):
    - `mobile/google-services.json`
    - `mobile/GoogleService-Info.plist`
-5. Committed placeholders (safe to diff; used when real files absent):
+6. Committed placeholders (safe to diff; used when real files absent):
    - `mobile/google-services.json.example`
    - `mobile/GoogleService-Info.plist.example`
-6. `mobile/app.json` already points `expo.android.googleServicesFile` and
+7. `mobile/app.json` already points `expo.android.googleServicesFile` and
    `expo.ios.googleServicesFile` at those paths; `mobile/firebase.json` holds Crashlytics
    native config (no secrets).
 
-**Part 3 — CI / EAS**
+**Part 3 — CI / EAS** (not Firebase console "Part 3")
+
+Firebase's onboarding wizard labels native Gradle edits as steps 2–3; for Expo those are
+**automatic at EAS prebuild**. HANDOFF **Part 3** here means **CI secrets and EAS build
+workflow** — not manual Android project sync.
 
 | Secret / env | Where | Purpose |
 |---|---|---|
@@ -321,7 +329,7 @@ EXPO_TOKEN=<token> eas build --profile preview --platform android
 | Placeholder Firebase files | Build/export green; zero Crashlytics events | Drop real JSON/plist from Firebase console or set GH secrets |
 | Expecting Clarity in `expo start` / `__DEV__` | No recordings despite correct Project ID | Use preview/production build (`__DEV__` false) |
 | Diagnostics toggle off | No new logs or replays | Enable in Settings (default is on for fresh installs) |
-| Wrong Firebase app package/bundle | Crashlytics dashboard empty | Re-register apps as `com.yanniedog.arlocalrates` |
+| Wrong Firebase app package/bundle | Crashlytics dashboard empty | Re-register apps as `com.eyex.australianrates` |
 | Forgot rebuild after first SDK setup | Old binary without Crashlytics/Clarity native code | `eas build` or **mobile-eas-build** workflow |
 | `debug` lines missing in Crashlytics | By design | Only info/warn/error bridge; use Settings → Debug log locally |
 
