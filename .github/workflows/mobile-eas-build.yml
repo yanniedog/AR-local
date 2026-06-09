@@ -116,8 +116,12 @@ jobs:
               --value "$EXPO_PUBLIC_CLARITY_PROJECT_ID" \
               --environment "${{ inputs.profile }}" \
               --visibility plaintext \
-              --force \
-              --non-interactive
+              --non-interactive \
+              || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                --variable-name EXPO_PUBLIC_CLARITY_PROJECT_ID \
+                --variable-environment "${{ inputs.profile }}" \
+                --value "$EXPO_PUBLIC_CLARITY_PROJECT_ID" \
+                --non-interactive
           fi
 
       - name: EAS Build
