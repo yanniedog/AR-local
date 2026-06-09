@@ -119,7 +119,12 @@ export interface Manifest {
   tag: string;
   counts: Record<string, number>;
   schedule: { label: string; next_due_utc?: string };
-  files: { core: ManifestFile; details: ManifestFile };
+  files: {
+    core: ManifestFile;
+    details: ManifestFile;
+    search_index?: ManifestFile;
+    history_banks?: ManifestFile;
+  };
 }
 
 export type PayloadSource = 'sample' | 'cache' | 'remote';

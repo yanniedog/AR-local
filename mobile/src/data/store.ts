@@ -29,8 +29,19 @@ import {
   type FilterSnapshot,
   type Subscription,
 } from './subscriptions';
-import { downloadCore, downloadDetails, fetchManifest } from './payload';
+import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
+import type { HistoryBanksPayload } from './historyPayload';
+import { shouldWarmDetails } from './optionalPrefs';
+import {
+  downloadCore,
+  downloadDetails,
+  downloadHistoryBanks,
+  downloadSearchIndex,
+  fetchManifest,
+} from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
+
+export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
 
@@ -42,6 +53,8 @@ export interface Prefs {
   diagnosticsEnabled: boolean;
   wifiOnly: boolean;
   includeNonStandard: boolean;
+  /** Fulltext search across product info (off by default). */
+  enableDeepSearch: boolean;
   /** Section ribbon time-series chart on Home (off by default). */
   showHistoryRibbon: boolean;
   onboarded: boolean;
@@ -56,6 +69,7 @@ export const DEFAULT_PREFS: Prefs = {
   diagnosticsEnabled: true,
   wifiOnly: false,
   includeNonStandard: false,
+  enableDeepSearch: false,
   showHistoryRibbon: false,
   onboarded: false,
   interests: ['Mortgage', 'Savings', 'TD'],
@@ -71,6 +85,8 @@ interface AppState {
   manifest: Manifest | null;
   core: CorePayload | null;
   details: DetailsPayload | null;
+  searchIndex: SearchIndexPayload | null;
+  historyBanks: HistoryBanksPayload | null;
   detailsLoading: boolean;
   error: string | null;
   offline: boolean;
@@ -88,7 +104,9 @@ interface AppState {
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
-  ensureDetails: () => Promise<void>;
+  ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
+  ensureSearchIndex: () => Promise<void>;
+  ensureHistoryBanks: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
@@ -134,6 +152,8 @@ export const useStore = create<AppState>()(
       manifest: null,
       core: null,
       details: null,
+      searchIndex: null,
+      historyBanks: null,
       detailsLoading: false,
       error: null,
       offline: false,
@@ -161,7 +181,12 @@ export const useStore = create<AppState>()(
         }
 
         // Core + meta are persisted atomically in one bundle, so they always agree.
+        const prefs = get().prefs;
         const bundle = await cache.readBundle();
+        const [cachedSearch, cachedHistory] = await Promise.all([
+          prefs.enableDeepSearch ? cache.readSearchIndex() : Promise.resolve(null),
+          prefs.showHistoryRibbon ? cache.readHistoryBanks() : Promise.resolve(null),
+        ]);
         if (bundle) {
           debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
           set({
@@ -169,6 +194,8 @@ export const useStore = create<AppState>()(
             manifest: bundle.meta.manifest,
             source: bundle.meta.source,
             status: 'ready',
+            ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
+            ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
           });
         } else {
           debugLog.info('store', 'cache miss — seeding bundled sample');
@@ -205,7 +232,14 @@ export const useStore = create<AppState>()(
         const { force = false, manual = false } = opts;
         // Warm details during refresh so subscriptions and change detection see products.
         const warmDetails = async () => {
-          await get().ensureDetails();
+          if (shouldWarmDetails(get().prefs, get().subscriptions)) {
+            await get().ensureDetails();
+          }
+        };
+        const warmOptionalAssets = () => {
+          const p = get().prefs;
+          if (p.enableDeepSearch) void get().ensureSearchIndex();
+          if (p.showHistoryRibbon) void get().ensureHistoryBanks();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -244,6 +278,7 @@ export const useStore = create<AppState>()(
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
+            warmOptionalAssets();
             return false;
           }
 
@@ -295,6 +330,7 @@ export const useStore = create<AppState>()(
           // the first live refresh would alert on sample-vs-real differences).
           // Warm details before diffing so detail-filtered search subscriptions see products.
           await warmDetails();
+          warmOptionalAssets();
 
           if (prefs.notificationsEnabled && previousSource === 'remote') {
             const messages = computeChanges(
@@ -329,9 +365,11 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async ensureDetails() {
-        const { details, core, manifest, source, detailsLoading } = get();
+      async ensureDetails(opts = {}) {
+        const { forProductView = false } = opts;
+        const { details, core, manifest, source, detailsLoading, prefs, subscriptions } = get();
         if (!core || detailsLoading) return;
+        if (!forProductView && !shouldWarmDetails(prefs, subscriptions)) return;
 
         // Details are fresh only when run_date AND the manifest's details sha match.
         const wantSha = manifest?.files.details.sha256 ?? null;
@@ -404,7 +442,69 @@ export const useStore = create<AppState>()(
             cur.core?.run_date !== core.run_date ||
             cur.manifest?.files.core.sha256 !== manifest?.files.core.sha256 ||
             cur.manifest?.files.details.sha256 !== manifest?.files.details.sha256;
-          if (cur.core && movedOn) void get().ensureDetails();
+          if (cur.core && movedOn) void get().ensureDetails(opts);
+        }
+      },
+
+      async ensureSearchIndex() {
+        if (!get().prefs.enableDeepSearch) return;
+        const { core, manifest, source, searchIndex } = get();
+        if (!core || !manifest?.files.search_index) return;
+        const asset = manifest.files.search_index;
+        const meta = await cache.readMeta();
+        if (searchIndex && searchIndex.run_date === core.run_date && meta?.searchIndexSha === asset.sha256) {
+          return;
+        }
+        const cached = await cache.readSearchIndex();
+        if (cached && cached.run_date === core.run_date && meta?.searchIndexSha === asset.sha256) {
+          set({ searchIndex: cached });
+          return;
+        }
+        if (source !== 'remote') return;
+        try {
+          const { text, searchIndex: fresh } = await downloadSearchIndex(asset.url, asset.sha256);
+          await cache.writeSearchIndex(text);
+          await cache.updateMeta({
+            manifest,
+            source: 'remote',
+            savedAt: new Date().toISOString(),
+            coreSha: manifest.files.core.sha256,
+            searchIndexSha: asset.sha256,
+          });
+          set({ searchIndex: fresh });
+        } catch (err) {
+          debugLog.warn('store', `ensureSearchIndex failed: ${String((err as Error)?.message ?? err)}`);
+        }
+      },
+
+      async ensureHistoryBanks() {
+        if (!get().prefs.showHistoryRibbon) return;
+        const { core, manifest, source, historyBanks } = get();
+        if (!core || !manifest?.files.history_banks) return;
+        const asset = manifest.files.history_banks;
+        const meta = await cache.readMeta();
+        if (historyBanks && historyBanks.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
+          return;
+        }
+        const cached = await cache.readHistoryBanks();
+        if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
+          set({ historyBanks: cached });
+          return;
+        }
+        if (source !== 'remote') return;
+        try {
+          const { text, historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
+          await cache.writeHistoryBanks(text);
+          await cache.updateMeta({
+            manifest,
+            source: 'remote',
+            savedAt: new Date().toISOString(),
+            coreSha: manifest.files.core.sha256,
+            historyBanksSha: asset.sha256,
+          });
+          set({ historyBanks: fresh });
+        } catch (err) {
+          debugLog.warn('store', `ensureHistoryBanks failed: ${String((err as Error)?.message ?? err)}`);
         }
       },
 
@@ -467,6 +567,21 @@ export const useStore = create<AppState>()(
 
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
+        if (key === 'enableDeepSearch') {
+          if (value) {
+            void get().ensureSearchIndex();
+            void get().ensureDetails();
+          } else {
+            set({ searchIndex: null });
+          }
+        }
+        if (key === 'showHistoryRibbon') {
+          if (value) {
+            void get().ensureHistoryBanks();
+          } else {
+            set({ historyBanks: null });
+          }
+        }
       },
 
       completeOnboarding(interests, notifications) {
@@ -484,7 +599,16 @@ export const useStore = create<AppState>()(
       async clearCache() {
         debugLog.info('store', 'clearCache');
         await cache.clear();
-        set({ core: null, details: null, manifest: null, status: 'idle', source: 'sample' });
+        resetDetailSearchIndexCache();
+        set({
+          core: null,
+          details: null,
+          searchIndex: null,
+          historyBanks: null,
+          manifest: null,
+          status: 'idle',
+          source: 'sample',
+        });
         await get().bootstrap();
       },
     }),
@@ -524,7 +648,12 @@ try {
         // persist excludes core/manifest — load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
-        await useStore.getState().ensureDetails();
+        const state = useStore.getState();
+        if (shouldWarmDetails(state.prefs, state.subscriptions)) {
+          await state.ensureDetails();
+        }
+        if (state.prefs.enableDeepSearch) await state.ensureSearchIndex();
+        if (state.prefs.showHistoryRibbon) await state.ensureHistoryBanks();
         const changed = await useStore.getState().refresh({});
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData

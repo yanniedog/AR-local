@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
@@ -38,8 +38,14 @@ export default function Home() {
   const defaultSection = useStore((s) => s.prefs.defaultSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
+  const historyBanks = useStore((s) => s.historyBanks);
+  const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
   const setPref = useStore((s) => s.setPref);
   const [section, setSection] = useState<SectionKey>(defaultSection);
+
+  useEffect(() => {
+    if (showHistoryRibbon) void ensureHistoryBanks();
+  }, [showHistoryRibbon, ensureHistoryBanks]);
 
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
 
@@ -58,11 +64,12 @@ export default function Home() {
     () => bestRow(hierRows, section, includeNonStandard),
     [hierRows, section, includeNonStandard],
   );
-  const historyModel = useStore((s) =>
-    selectBankHistoryChartModel(
-      { core: s.core, includeNonStandard: s.prefs.includeNonStandard },
-      section,
-    ),
+  const historyModel = useMemo(
+    () =>
+      showHistoryRibbon && core
+        ? selectBankHistoryChartModel({ core, historyBanks, includeNonStandard }, section)
+        : null,
+    [showHistoryRibbon, core, historyBanks, includeNonStandard, section],
   );
 
   if (!core) return null;

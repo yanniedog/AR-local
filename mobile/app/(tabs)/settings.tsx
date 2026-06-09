@@ -94,6 +94,24 @@ export default function Settings() {
         />
       </Section>
 
+      <Section title="Optional data">
+        <ToggleRow
+          icon="search-outline"
+          label="Deep product search"
+          sub="Search fees and features; downloads details + search index"
+          value={prefs.enableDeepSearch}
+          onChange={(v) => setPref('enableDeepSearch', v)}
+        />
+        <Divider style={{ marginVertical: 12 }} />
+        <ToggleRow
+          icon="analytics-outline"
+          label="History ribbon chart"
+          sub="Multi-day rate range chart; downloads history payload"
+          value={prefs.showHistoryRibbon}
+          onChange={(v) => setPref('showHistoryRibbon', v)}
+        />
+      </Section>
+
       <Section title="Notifications">
         <ToggleRow
           icon="notifications-outline"

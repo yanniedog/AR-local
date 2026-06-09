@@ -238,3 +238,31 @@ export async function downloadDetails(
   });
   return { text, details: JSON.parse(text) as DetailsPayload };
 }
+
+export interface SearchIndexResult {
+  text: string;
+  searchIndex: import('./detailSearch').SearchIndexPayload;
+}
+
+export async function downloadSearchIndex(
+  url: string,
+  expectedSha?: string,
+  opts: DownloadOpts = {},
+): Promise<SearchIndexResult> {
+  const text = await downloadInflate(url, expectedSha, opts);
+  return { text, searchIndex: JSON.parse(text) as SearchIndexResult['searchIndex'] };
+}
+
+export interface HistoryBanksResult {
+  text: string;
+  historyBanks: import('./historyPayload').HistoryBanksPayload;
+}
+
+export async function downloadHistoryBanks(
+  url: string,
+  expectedSha?: string,
+  opts: DownloadOpts = {},
+): Promise<HistoryBanksResult> {
+  const text = await downloadInflate(url, expectedSha, opts);
+  return { text, historyBanks: JSON.parse(text) as HistoryBanksResult['historyBanks'] };
+}

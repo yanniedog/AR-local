@@ -7,6 +7,7 @@ import type {
   RateRow,
   SectionKey,
 } from '../types';
+import { chartModelFromPrebuiltHistory, type HistoryBanksPayload } from './historyPayload';
 import {
   alignPointsToTimeline,
   historyDatesInWindow,
@@ -118,6 +119,7 @@ function currentRibbonFallback(
 
 export interface HistorySelectorState {
   core: CorePayload | null;
+  historyBanks?: HistoryBanksPayload | null;
   historyCache?: BankHistoryCache | null;
   includeNonStandard?: boolean;
 }
@@ -131,8 +133,18 @@ export function selectBankHistoryChartModel(
   section: SectionKey,
   window: HistoryWindow = '30D',
 ): BankHistoryChartModel | null {
-  const { core, historyCache, includeNonStandard = false } = state;
+  const { core, historyBanks, historyCache, includeNonStandard = false } = state;
   if (!core) return null;
+
+  const prebuilt = chartModelFromPrebuiltHistory(historyBanks, section, window);
+  if (prebuilt?.dates.length) {
+    return {
+      section,
+      dates: prebuilt.dates,
+      points: prebuilt.points,
+      allDates: prebuilt.allDates,
+    };
+  }
 
   if (historyCache && historyCache.section === section && historyCache.rates?.length) {
     const sectionRows = core.sections[section]?.rates ?? [];

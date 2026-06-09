@@ -44,7 +44,7 @@ export default function ProductDetail() {
   const unsubscribeProduct = useStore((s) => s.unsubscribeProduct);
 
   useEffect(() => {
-    void ensureDetails();
+    void ensureDetails({ forProductView: true });
   }, [ensureDetails]);
 
   const found = core ? findByKey(core.sections, productKey) : null;

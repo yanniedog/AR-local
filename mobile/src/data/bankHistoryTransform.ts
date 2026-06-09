@@ -81,17 +81,14 @@ export function historyDatesInWindow(dates: string[], window: HistoryWindow): st
   const sorted = (dates || [])
     .map((date) => ({ date: String(date || ''), ts: parseYmd(date) }))
     .filter((item): item is { date: string; ts: number } => item.ts != null)
-    .sort((a, b) => a.ts - b.ts)
-    .map((item) => item.date);
-  if (window === 'All' || sorted.length < 2) return sorted;
+    .sort((a, b) => a.ts - b.ts);
+  if (window === 'All' || sorted.length < 2) {
+    return sorted.map((item) => item.date);
+  }
   const days = HISTORY_WINDOWS[window] || 30;
-  const anchor = parseYmd(sorted[sorted.length - 1]);
-  if (anchor == null) return sorted;
+  const anchor = sorted[sorted.length - 1].ts;
   const cutoff = anchor - days * 24 * 60 * 60 * 1000;
-  return sorted.filter((date) => {
-    const parsed = parseYmd(date);
-    return parsed != null && parsed >= cutoff;
-  });
+  return sorted.filter((item) => item.ts >= cutoff).map((item) => item.date);
 }
 
 export function sliceChartTimeline(
