@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, View } from 'react-native';
 
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
@@ -59,7 +60,7 @@ export default function Home() {
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
 
   return (
-    <ScrollView
+    <ScreenScrollView
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
@@ -202,6 +203,6 @@ export default function Home() {
           Live data published by the Raspberry Pi to GitHub · run {formatRunDate(core.run_date)}
         </AppText>
       </Card>
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

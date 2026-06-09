@@ -1,3 +1,5 @@
+import type { ColorSchemeName } from 'react-native';
+
 import { DARK, LIGHT, type Palette } from './colors';
 
 export interface Theme {
@@ -25,3 +27,9 @@ export const darkTheme: Theme = { dark: true, colors: DARK, ...base };
 export const lightTheme: Theme = { dark: false, colors: LIGHT, ...base };
 
 export type ThemeMode = 'system' | 'light' | 'dark';
+
+/** Resolve persisted theme mode + OS appearance to a concrete theme object. */
+export function resolveTheme(mode: ThemeMode, scheme: ColorSchemeName | null | undefined): Theme {
+  const resolved = mode === 'system' ? scheme ?? 'dark' : mode;
+  return resolved === 'light' ? lightTheme : darkTheme;
+}

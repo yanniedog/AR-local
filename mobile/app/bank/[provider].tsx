@@ -1,10 +1,11 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
 import { EmptyState } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { sortRows } from '../../src/data/selectors';
@@ -38,7 +39,7 @@ export default function BankDetail() {
   return (
     <>
       <Stack.Screen options={{ title: provider }} />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         <Row gap={14} style={{ marginBottom: 20 }}>
           <BankAvatar provider={provider} size={56} />
           <View style={{ flex: 1 }}>
@@ -68,7 +69,7 @@ export default function BankDetail() {
             </View>
           ))
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </>
   );
 }

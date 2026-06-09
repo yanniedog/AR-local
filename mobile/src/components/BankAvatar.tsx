@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 
 import { useStore } from '../data/store';
+import { useTheme } from '../theme/ThemeProvider';
 
 function contrastText(hex: string): string {
   const c = hex.replace('#', '');
@@ -14,9 +15,10 @@ function contrastText(hex: string): string {
 }
 
 export function BankAvatar({ provider, size = 42 }: { provider: string; size?: number }) {
+  const theme = useTheme();
   const brand = useStore((s) => s.core?.brands?.[provider]);
   const [logoFailed, setLogoFailed] = useState(false);
-  const color = brand?.color ?? '#3a4254';
+  const color = brand?.color ?? theme.colors.chipText;
   const short = (brand?.short ?? provider.slice(0, 2)).toUpperCase().slice(0, 5);
   const fontSize = short.length <= 3 ? size * 0.34 : size * 0.26;
   const logo = brand?.logo;

@@ -60,4 +60,39 @@ describe('format', () => {
     expect(isNonStandard({ account_class: 'standard' } as RateRow)).toBe(false);
     expect(isNonStandard({} as RateRow)).toBe(false);
   });
+
+  test('isNonStandard matches curated RACQ and Westpac green/sustainable loans', () => {
+    const racqGreen = {
+      provider: 'RACQ Bank',
+      product_name: 'Green Home Loan',
+      account_class: 'standard',
+    } as RateRow;
+    const racqGreenInv = {
+      provider: 'RACQ Bank',
+      product_name: 'Green Home Loan Investment',
+      account_class: '',
+    } as RateRow;
+    const westpacSustainable = {
+      provider: 'Westpac',
+      product_name: 'Sustainable Upgrades Investment Loan',
+      account_class: 'standard',
+    } as RateRow;
+    expect(isNonStandard(racqGreen)).toBe(true);
+    expect(isNonStandard(racqGreenInv)).toBe(true);
+    expect(isNonStandard(westpacSustainable)).toBe(true);
+    expect(
+      isNonStandard({
+        provider: 'Westpac Banking Corporation',
+        product_name: 'Sustainable Upgrades Investment',
+        account_class: 'standard',
+      } as RateRow),
+    ).toBe(true);
+    expect(
+      isNonStandard({
+        provider: 'Greater Bank',
+        product_name: 'Green Home Loan',
+        account_class: 'standard',
+      } as RateRow),
+    ).toBe(false);
+  });
 });

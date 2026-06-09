@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
-import { Pressable, ScrollView } from 'react-native';
+import { Pressable } from 'react-native';
 
 import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Card, Divider, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRate, formatRunDate } from '../../src/data/format';
@@ -32,7 +33,7 @@ export default function Trends() {
   const currentRba = core.rba.at(-1);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>
           <AppText variant="h3">RBA cash rate</AppText>
@@ -106,6 +107,6 @@ export default function Trends() {
       <AppText variant="tiny" color="textFaint" style={{ textAlign: 'center', marginTop: 8 }}>
         Snapshot from {formatRunDate(core.run_date)}
       </AppText>
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

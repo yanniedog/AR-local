@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -35,7 +36,7 @@ function RootNavigator() {
   }, [status, hydrated]);
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StatusBar style={theme.dark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
@@ -56,7 +57,7 @@ function RootNavigator() {
         <Stack.Screen name="banks" options={{ title: 'Lenders' }} />
         <Stack.Screen name="compare" options={{ title: 'Compare', presentation: 'modal' }} />
       </Stack>
-    </>
+    </View>
   );
 }
 

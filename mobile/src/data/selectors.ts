@@ -1,5 +1,7 @@
 import { SECTIONS } from '../constants';
-import type { RateRow, SectionKey } from '../types';
+import type { ProductDetail, RateRow, SectionKey } from '../types';
+import { productHasAllEligibilityCriteria } from './eligibility';
+import { productHasAllFeatures } from './features';
 import { isNonStandard, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
@@ -16,6 +18,10 @@ export interface Filters {
   repaymentTypes: string[];
   depositKinds: string[];
   interestPayments: string[];
+  /** CDR featureType codes from details.features (AND when multiple selected). */
+  accountFeatures: string[];
+  /** CDR eligibilityType codes from details.eligibility (AND when multiple selected). */
+  eligibilityCriteria: string[];
   includeNonStandard: boolean;
 }
 
@@ -27,6 +33,8 @@ export const EMPTY_FILTERS: Filters = {
   repaymentTypes: [],
   depositKinds: [],
   interestPayments: [],
+  accountFeatures: [],
+  eligibilityCriteria: [],
   includeNonStandard: false,
 };
 
@@ -38,6 +46,8 @@ export function activeFilterCount(f: Filters): number {
     f.repaymentTypes.length +
     f.depositKinds.length +
     f.interestPayments.length +
+    f.accountFeatures.length +
+    f.eligibilityCriteria.length +
     (f.includeNonStandard ? 1 : 0)
   );
 }
@@ -95,7 +105,11 @@ function inList(value: string | undefined, list: string[]): boolean {
   return list.length === 0 || (value !== undefined && list.includes(value));
 }
 
-export function filterRows(rows: RateRow[], filters: Filters): RateRow[] {
+export function filterRows(
+  rows: RateRow[],
+  filters: Filters,
+  detailsProducts?: Record<string, ProductDetail> | null,
+): RateRow[] {
   return rows.filter((row) => {
     if (!filters.includeNonStandard && isNonStandard(row)) return false;
     if (!matchesQuery(row, filters.query)) return false;
@@ -105,6 +119,18 @@ export function filterRows(rows: RateRow[], filters: Filters): RateRow[] {
     if (!inList(row.ribbon_repayment_type ?? row.repayment_type, filters.repaymentTypes)) return false;
     if (!inList(row.ribbon_deposit_kind, filters.depositKinds)) return false;
     if (!inList(row.interest_payment, filters.interestPayments)) return false;
+    if (
+      filters.accountFeatures.length > 0 &&
+      !productHasAllFeatures(row.product_key, filters.accountFeatures, detailsProducts)
+    ) {
+      return false;
+    }
+    if (
+      filters.eligibilityCriteria.length > 0 &&
+      !productHasAllEligibilityCriteria(row.product_key, filters.eligibilityCriteria, detailsProducts)
+    ) {
+      return false;
+    }
     return true;
   });
 }
@@ -114,8 +140,9 @@ export function queryAndSort(
   filters: Filters,
   sortKey: SortKey,
   section: SectionKey,
+  detailsProducts?: Record<string, ProductDetail> | null,
 ): RateRow[] {
-  return sortRows(filterRows(rows, filters), sortKey, section);
+  return sortRows(filterRows(rows, filters, detailsProducts), sortKey, section);
 }
 
 /** Distinct non-empty values for a field, sorted by frequency then label. */

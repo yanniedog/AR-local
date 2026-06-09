@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import React from 'react';
-import { Alert, ScrollView, Switch, View } from 'react-native';
+import { Alert, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Button, Card, Chip, Divider, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
@@ -44,7 +45,7 @@ export default function Settings() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Section title="Appearance">
         <Label text="Theme" />
         <SegmentedControl<ThemeMode>
@@ -149,7 +150,7 @@ export default function Settings() {
           lender before applying.
         </AppText>
       </Section>
-    </ScrollView>
+    </ScreenScrollView>
   );
 }
 

@@ -3,8 +3,10 @@ import React, { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 
 import { distinctValues, type Filters } from '../data/selectors';
+import { distinctEligibilityCriteria } from '../data/eligibility';
+import { distinctAccountFeatures } from '../data/features';
 import { humanizeEnum } from '../data/format';
-import type { RateRow, SectionKey } from '../types';
+import type { ProductDetail, RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Button, Chip, Divider, Row } from './ui';
 
@@ -35,6 +37,7 @@ export function FilterSheet({
   section,
   filters,
   onApply,
+  detailsProducts,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -42,6 +45,7 @@ export function FilterSheet({
   section: SectionKey;
   filters: Filters;
   onApply: (f: Filters) => void;
+  detailsProducts?: Record<string, ProductDetail> | null;
 }) {
   const theme = useTheme();
   const [draft, setDraft] = useState<Filters>(filters);
@@ -54,6 +58,14 @@ export function FilterSheet({
   const groups = groupsFor(section);
   // Show every lender (50+ per section) — the sheet scrolls, so don't truncate.
   const providers = useMemo(() => distinctValues(rows, 'provider'), [rows]);
+  const accountFeatures = useMemo(
+    () => distinctAccountFeatures(rows, detailsProducts).slice(0, 24),
+    [rows, detailsProducts],
+  );
+  const eligibilityCriteria = useMemo(
+    () => distinctEligibilityCriteria(rows, detailsProducts).slice(0, 24),
+    [rows, detailsProducts],
+  );
 
   const toggle = (key: keyof Filters, value: string) => {
     setDraft((d) => {
@@ -65,7 +77,7 @@ export function FilterSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#0006' }}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.colors.overlay }}>
         <View
           style={{
             backgroundColor: theme.colors.surface,
@@ -117,6 +129,42 @@ export function FilterSheet({
               );
             })}
 
+            {accountFeatures.length ? (
+              <View>
+                <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
+                  Account features
+                </AppText>
+                <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                  {accountFeatures.map((f) => (
+                    <Chip
+                      key={f}
+                      label={humanizeEnum(f)}
+                      selected={draft.accountFeatures.includes(f)}
+                      onPress={() => toggle('accountFeatures', f)}
+                    />
+                  ))}
+                </Row>
+              </View>
+            ) : null}
+
+            {eligibilityCriteria.length ? (
+              <View>
+                <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
+                  Eligibility
+                </AppText>
+                <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                  {eligibilityCriteria.map((c) => (
+                    <Chip
+                      key={c}
+                      label={humanizeEnum(c)}
+                      selected={draft.eligibilityCriteria.includes(c)}
+                      onPress={() => toggle('eligibilityCriteria', c)}
+                    />
+                  ))}
+                </Row>
+              </View>
+            ) : null}
+
             <View>
               <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
                 Lenders
@@ -164,6 +212,8 @@ function resetFilters() {
     repaymentTypes: [],
     depositKinds: [],
     interestPayments: [],
+    accountFeatures: [],
+    eligibilityCriteria: [],
     includeNonStandard: false,
   };
 }

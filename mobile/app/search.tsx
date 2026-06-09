@@ -7,6 +7,7 @@ import { Pressable, View } from 'react-native';
 import { FilterSheet } from '../src/components/FilterSheet';
 import { EmptyState } from '../src/components/feedback';
 import { ProductCard } from '../src/components/ProductCard';
+import { Screen } from '../src/components/Screen';
 import { SearchBar } from '../src/components/controls';
 import { AppText, Chip, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
@@ -45,8 +46,14 @@ export default function Search() {
   const path = useMemo(() => (pathRaw ?? '').split('.').filter(Boolean), [pathRaw]);
   const hierarchyScoped = scopeRaw === 'hierarchy';
   const core = useStore((s) => s.core);
+  const details = useStore((s) => s.details);
+  const ensureDetails = useStore((s) => s.ensureDetails);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const setPref = useStore((s) => s.setPref);
+
+  useEffect(() => {
+    void ensureDetails();
+  }, [ensureDetails]);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
@@ -68,8 +75,8 @@ export default function Search() {
   );
 
   const rows = useMemo(
-    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section),
-    [baseRows, effectiveFilters, query, sortKey, section],
+    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section, details?.products),
+    [baseRows, effectiveFilters, query, sortKey, section, details?.products],
   );
 
   const toggleSelect = (key: string) =>
@@ -79,7 +86,7 @@ export default function Search() {
   const title = path.length ? breadcrumb(section, path).at(-1)! : `${SECTIONS[section].title}`;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <Screen>
       <Stack.Screen options={{ title }} />
       <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 10 }}>
         <Row gap={10}>
@@ -157,12 +164,13 @@ export default function Search() {
         rows={baseRows}
         section={section}
         filters={effectiveFilters}
+        detailsProducts={details?.products}
         onApply={(next) => {
           setPref('includeNonStandard', next.includeNonStandard);
           setFilters(next);
         }}
       />
-    </View>
+    </Screen>
   );
 }
 
