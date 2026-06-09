@@ -328,7 +328,8 @@ apply to the new package name; Play Store treats the new ID as a different app.
 **Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
 — runs on `ubuntu-latest` (JDK 17, Android SDK): materialize Firebase → bump `versionCode`
 from rolling `app-apk-latest` manifest → `expo prebuild` → `gradlew assembleRelease` → publish
-`app-preview.apk` + `app-apk-latest.json` to GitHub release tag **`app-apk-latest`**. Triggers:
+`app-preview.apk` + `app-apk-latest.json` + **`app-preview-qr.png`** + **`install.html`** to GitHub
+release tag **`app-apk-latest`**. Triggers:
 `workflow_dispatch` and pushes to `main` under `mobile/**`. Signing: `ANDROID_KEYSTORE_B64`
 secrets, or `EXPO_TOKEN` to pull the default EAS keystore (`materialize-android-keystore.mjs`).
 
@@ -366,8 +367,10 @@ installs a newer preview APK via the system package installer.
 |---|---|
 | Manifest URL (baked in) | `app.json` → `expo.extra.apkManifestUrl` → `…/app-apk-latest/app-apk-latest.json` |
 | APK asset | Same release tag → `app-preview.apk` |
+| Install QR (PNG) | Same release tag → `app-preview-qr.png` — encodes direct APK download URL (Android Chrome) |
+| Install page | Same release tag → `install.html` — desktop-friendly QR + direct link |
 | Client logic | `mobile/src/lib/appUpdateLogic.ts` (compare/fetch) + `appUpdate.ts` (download/install) |
-| Publish script | `mobile/scripts/publish-apk-manifest.mjs` (`--apk` for GHA; `--eas-build-id` for EAS) |
+| Publish script | `mobile/scripts/publish-apk-manifest.mjs` (`--apk` GHA; `--eas-build-id` EAS; `--qr-only` refresh QR without rebuild) |
 | Version bump (GHA) | `mobile/scripts/bump-android-version-code.mjs` — monotonic `versionCode` from manifest |
 
 After a successful **mobile-android-apk** run (or **mobile-eas-build** preview/android), both
@@ -378,6 +381,15 @@ across either publisher (`appVersionSource: local`, no preview `autoIncrement`).
 
 Operator: run **mobile-android-apk** on `main` once to seed the release, then devices with an
 older preview build can update from Settings without reinstalling from expo.dev.
+
+**Scan-to-install QR (EAS-style, no expo.dev link)**
+
+| Where | How |
+|---|---|
+| GitHub release assets | [app-apk-latest](https://github.com/yanniedog/AR-local/releases/tag/app-apk-latest) → **`app-preview-qr.png`** or open **`install.html`** on desktop |
+| GHA job summary | **mobile-android-apk** (and **mobile-eas-build** preview/android) append markdown with `![Install QR](…)` linking to the release PNG |
+| QR payload | Direct APK URL: `…/releases/download/app-apk-latest/app-preview.apk` — scan with **Android Chrome**; allow “Install unknown apps” when prompted |
+| Refresh QR only (APK unchanged) | `cd mobile` → `GH_TOKEN=… node scripts/publish-apk-manifest.mjs --qr-only --repo yanniedog/AR-local` |
 
 **Part 4 — Verification**
 
@@ -609,7 +621,7 @@ mobile/firebase.json                    # Crashlytics native config (no secrets)
 mobile/src/lib/appUpdateLogic.ts       # in-app update: manifest fetch + version compare
 mobile/src/lib/appUpdate.ts            # in-app update: APK download + system installer
 mobile/src/lib/versionCompare.ts       # semver / versionCode compare helper
-mobile/scripts/publish-apk-manifest.mjs # publish app-preview.apk + app-apk-latest.json to GH release
+mobile/scripts/publish-apk-manifest.mjs # publish app-preview.apk + manifest + QR + install.html to GH release
 mobile/scripts/bump-android-version-code.mjs  # monotonic versionCode from rolling manifest
 mobile/scripts/materialize-android-keystore.mjs  # EAS keystore fetch or B64 secret for GHA signing
 .github/workflows/mobile-android-apk.yml # primary free Android preview APK (GHA Gradle, no EAS quota)

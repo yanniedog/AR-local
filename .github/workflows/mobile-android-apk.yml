@@ -124,5 +124,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-preview-apk
-          path: mobile/build/apk-publish/app-preview.apk
+          path: |
+            mobile/build/apk-publish/app-preview.apk
+            mobile/build/apk-publish/app-preview-qr.png
+            mobile/build/apk-publish/install.html
           if-no-files-found: error
