@@ -17,6 +17,22 @@ builds a compact daily payload (`app_payload.py`) and publishes it to a rolling
 GitHub Release; the app downloads and serves it offline. See
 **`docs/MOBILE_APP.md`** for the payload contract, Pi token setup, and EAS builds.
 
+<!-- app-android-install:start -->
+### Android preview install
+
+Scan with **Android Chrome** to install the latest preview APK. The QR image URL is stable (`app-apk-latest/app-preview-qr.png`) and updates on each successful build.
+
+| | |
+|---|---|
+| Version | **1.0.0** (build 1) |
+| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png) |
+| APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
+| Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
+| Version history | [app-v* releases](https://github.com/yanniedog/AR-local/releases?q=app-v&expanded=true) |
+
+In-app self-update uses the rolling manifest `app-apk-latest.json` on tag `app-apk-latest`.
+<!-- app-android-install:end -->
+
 > **Picking up this work (any LLM/agent)?** Start with **`docs/HANDOFF.md`** — a
 > self-contained guide to the Pi→GitHub→app data flow, how to verify the daily
 > upload, how the app maps to the web dashboard, file layout, secrets, and gotchas.
