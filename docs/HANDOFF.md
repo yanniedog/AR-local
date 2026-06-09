@@ -206,6 +206,33 @@ Profiles are in `mobile/eas.json` (development = dev client + internal distribut
 The last Android dev build artifact:
 `https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds/9b2911bd-162a-4b47-a0a5-4407027583db`
 
+### Mobile observability (Clarity + Crashlytics)
+
+Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlytics**
+(crashes + bridged `debugLog` warn/error/info lines). Requires an **EAS/dev build** — not
+Expo Go (native modules).
+
+**One-time setup (operator)**
+
+1. **Clarity** — [clarity.microsoft.com](https://clarity.microsoft.com/) → New project → Mobile
+   → copy **Project ID**. Set `EXPO_PUBLIC_CLARITY_PROJECT_ID` in EAS env (preview +
+   production) or `mobile/.env` locally. Clarity initializes only outside `__DEV__`.
+2. **Firebase** — [console.firebase.google.com](https://console.firebase.google.com/) → Add
+   project → Add Android app (`com.yanniedog.arlocalrates`) + iOS app
+   (`com.yanniedog.arlocalrates`) → enable **Crashlytics** → download config files:
+   - `google-services.json` → `mobile/google-services.json` (gitignored)
+   - `GoogleService-Info.plist` → `mobile/GoogleService-Info.plist` (gitignored)
+   - Committed placeholders: `mobile/google-services.json.example`,
+     `mobile/GoogleService-Info.plist.example`
+3. **CI/EAS** — optional GitHub Actions secrets `GOOGLE_SERVICES_JSON` /
+   `GOOGLE_SERVICE_INFO_PLIST` (full file contents). Without them, `ensure-firebase-config.mjs`
+   copies placeholders so bundle/export succeeds; Crashlytics won't report until real files land.
+4. **Rebuild** after adding native SDKs: `eas build --profile preview --platform android`
+   (or workflow_dispatch **mobile-eas-build**).
+
+**In-app:** Settings → Diagnostics — toggle off stops new Clarity capture and Crashlytics
+collection (runtime). Local **Debug log** viewer/upload unchanged.
+
 ---
 
 ## 4. The Pi (data source) — access & layout
@@ -371,7 +398,11 @@ mobile/app/node.tsx                     # one drill level (pushed per category)
 mobile/app/search.tsx                   # flat search/sort/filter/compare (scoped to a node)
 mobile/app/product/[key].tsx            # product detail (terminal leaf)
 mobile/src/lib/debugLog.ts              # in-app ring-buffer logger (512KB / 2000 lines)
+mobile/src/lib/observability.ts       # Clarity init + Crashlytics bridge + diagnostics toggle
 mobile/app/debug-log.tsx                # Settings → view/share/upload logs (paste.rs POST)
+mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
+mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
+mobile/firebase.json                    # Crashlytics native config (no secrets)
 ```
 
-**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`.
+**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`. Warn/error/info lines also forward to Crashlytics when Diagnostics is on (see §3 observability).

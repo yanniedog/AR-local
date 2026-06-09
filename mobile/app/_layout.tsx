@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorScreen } from '../src/components/ErrorScreen';
 import { useStore } from '../src/data/store';
 import { debugLog } from '../src/lib/debugLog';
+import { initObservability, setDiagnosticsEnabled } from '../src/lib/observability';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -23,7 +24,17 @@ function RootNavigator() {
   const theme = useTheme();
   const status = useStore((s) => s.status);
   const hydrated = useStore((s) => s.hydrated);
+  const diagnosticsEnabled = useStore((s) => s.prefs.diagnosticsEnabled);
   const bootstrap = useStore((s) => s.bootstrap);
+
+  useEffect(() => {
+    void initObservability();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void setDiagnosticsEnabled(diagnosticsEnabled);
+  }, [hydrated, diagnosticsEnabled]);
 
   useEffect(() => {
     void debugLog.restoreFromStorage().then(() => {
