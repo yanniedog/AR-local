@@ -1048,6 +1048,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             return cache.read(target), ctype, cache.gz_for(target, ctype)
 
         def route(self, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str, bytes | None]:
+            if path in ("/terms", "/terms/"):
+                return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "terms.html", "text/html; charset=utf-8")
             if is_dashboard_banking_section_path(path):
                 return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "index.html", "text/html; charset=utf-8")
             if path == "/assets/app.css":

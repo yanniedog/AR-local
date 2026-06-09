@@ -1,9 +1,7 @@
-# Local Manual CDR Ingest
+# Australian Rates — local dashboard and mobile app
 
-Daily Australian banking CDR ingest, export, and analysis. A **Raspberry Pi** runs ingest
-and hosts the web dashboard (AustralianRates shell parity). An **Expo mobile app** in
-**`mobile/`** renders the same rate data offline from **GitHub Releases** — rolling payload
-tag **`app-payload-latest`**, rolling Android APK tag **`app-apk-latest`**.
+Compare Australian home loan, savings, and term-deposit rates on a Pi-hosted web
+dashboard and offline mobile app.
 
 Agent workflow (Git/PR/bots/Pi verify — aligned with AustralianRates, no Cloudflare):
 **`WORKFLOW.md`** and **`AGENTS.md`**.
@@ -16,8 +14,8 @@ AustralianRates dashboard parity contract.
 
 ## Mobile app
 
-Expo / React Native app in **`mobile/`** (SDK 54). Data flow: Pi daily ingest →
-**`app_payload.py`** publishes gzip core/details to **`app-payload-latest`** (dated
+Expo / React Native app in **`mobile/`** (SDK 54). Data flow: Pi publishes daily rate
+payloads via **`app_payload.py`** to **`app-payload-latest`** (dated
 **`app-payload-<date>`** tags for history); the app fetches the manifest and renders locally
 (no Pi/LAN required at runtime).
 
@@ -68,14 +66,14 @@ The launcher detects the host (Windows PC vs Raspberry Pi vs other Linux) and
 shows a short header. Menu:
 
 ```text
-1. Run/update today's CDR data
-2. Force rerun today's CDR data
+1. Run/update today's rate data
+2. Force rerun today's rate data
 3. Rebuild Excel/JSON/SQLite for latest run
 4. Open dashboard
 5. Install or adjust daily schedule (20:00 UTC)
 6. Check GitHub / git: update available and pull
 7. Show database summary
-8. Boot ingest service (systemd user): enable / disable / status  [Linux/Pi when systemd is available]
+8. Boot daily update service (systemd user): enable / disable / status  [Linux/Pi when systemd is available]
 0. Exit
 ```
 
@@ -88,7 +86,7 @@ with the shared worker count from `ar_local_launcher_constants.py`.
 9009**), not when `start_here.py` exits with an error.
 
 Boot option 8: installs a **systemd user** oneshot unit that runs `cdr_daily.py`
-on boot. Ingest is skipped for the current local day if `.daily-state/<date>.done.json`
+on boot. The daily run is skipped for the current local day if `.daily-state/<date>.done.json`
 already exists (same rule as a normal daily run). User units run at boot only if
 lingering is enabled for your account, e.g. `loginctl enable-linger $USER` on
 the Pi.
@@ -100,9 +98,8 @@ Non-interactive shortcuts (same as before):
 python .\start_here.py --action dashboard
 ```
 
-The first full run can take a while because it fetches public CDR detail JSON
-from every discovered provider. Later runs resume and skip completed detail
-files.
+The first full run can take a while because it fetches product detail JSON from
+every discovered provider. Later runs resume and skip completed detail files.
 
 Database summary (menu 7) uses `runs/<latest>/_exports/local-cdr.sqlite` by
 default; override with env `AR_LOCAL_DB` if needed. `PRAGMA quick_check` is **skipped**
@@ -110,11 +107,11 @@ by default (large DBs); set `AR_LOCAL_DB_QUICK_CHECK=1` or `DB_QUICK_CHECK=1` to
 
 ## Raspberry Pi 5 deployment
 
-The Pi runtime is designed to keep high-churn ingest/build writes off the
-microSD card. On Raspberry Pi, `cdr_daily.py` automatically stages raw ingest
-and export building under `/dev/shm/ar-local-<uid>`, then copies only the
-completed `_exports` tree into the configured data root. Completed generated
-artifacts are not pruned.
+The Pi runtime is designed to keep high-churn build writes off the microSD card.
+On Raspberry Pi, `cdr_daily.py` automatically stages raw fetches and export
+building under `/dev/shm/ar-local-<uid>`, then copies only the completed
+`_exports` tree into the configured data root. Completed generated artifacts are
+not pruned.
 
 The Pi deployment is self-contained under one portable root:
 
@@ -160,13 +157,13 @@ Avahi with mDNS host name `ar`, so the dashboard is available as
 `http://ar.local/` on LANs that pass mDNS (nginx port 80). Keep the Pi IP stable with a
 router DHCP reservation or equivalent static-IP setup.
 
-The Pi daily timer (`deploy/pi/ar-local-daily.timer`) runs banking ingest at
+The Pi daily timer (`deploy/pi/ar-local-daily.timer`) runs the banking rate update at
 **20:00 UTC** each day via `pi_daily_sync.py --banks-only`. The service exits
 non-zero when the banking export has zero rates, so systemd records a failed
 unit instead of treating an empty export as success.
 
 `deploy/pi/ar-local-daily-watchdog.timer` runs every 15 minutes and checks
-whether the most recent scheduled daily ingest has produced a valid banking
+whether the most recent scheduled daily update has produced a valid banking
 export. If the 20:00 UTC run is missing after a 30-minute grace period and the
 daily service is not already active, it runs the same `pi_daily_sync.py
 --banks-only` path directly as the Pi app user.
@@ -202,7 +199,7 @@ Add the SSD mount to `/etc/fstab` after confirming the UUID and filesystem.
 Because the deployed unit paths point at `/srv/ar-local`, no service rewrite is
 needed when the SSD replaces the microSD directory.
 
-After the first real ingest succeeds, the dashboard can run continuously on the
+After the first successful rate export, the dashboard can run continuously on the
 LAN:
 
 ```sh
@@ -229,7 +226,7 @@ python3 cdr_dashboard_server.py --exports latest --runs /srv/ar-local/data/runs 
 Double-click these when you know what you want:
 
 ```text
-run_daily.cmd       fetch CDR data, then build exports
+run_daily.cmd       fetch rate data, then build exports
 open_dashboard.cmd  open the latest local dashboard
 rebuild_exports.cmd rebuild exports from the latest run without fetching
 ```
@@ -256,8 +253,8 @@ Files:
 - `local-cdr.sqlite`
 - `dashboard-cache\`
 
-Generated JSON strips CDR links, URI/URL fields, and URLs embedded in text while
-retaining rates, fees, constraints, eligibility, features, clean banking detail JSON.
+Generated JSON strips source links, URI/URL fields, and URLs embedded in text while
+retaining rates, fees, constraints, eligibility, features, and clean banking detail JSON.
 
 ## Command Line
 

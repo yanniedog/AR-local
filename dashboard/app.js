@@ -742,9 +742,9 @@
       button.setAttribute('aria-current', active ? 'page' : 'false');
     });
     const pageTitles = {
-      Mortgage: 'Compare Australian Home Loan Rates - Daily CDR Data | AustralianRates',
-      Savings:  'Compare Australian Savings Rates - Daily CDR Data | AustralianRates',
-      TD:       'Compare Australian Term Deposit Rates - Daily CDR Data | AustralianRates',
+      Mortgage: 'Compare Australian Home Loan Rates | AustralianRates',
+      Savings:  'Compare Australian Savings Rates | AustralianRates',
+      TD:       'Compare Australian Term Deposit Rates | AustralianRates',
     };
     document.title = pageTitles[state.section] || pageTitles.Mortgage;
     const titles = {
@@ -808,11 +808,11 @@
     const schedule = state.ingestSchedule || {};
     const nextMs = parseIsoMs(schedule.next_due_utc);
     if (nextMs == null) {
-      el.textContent = 'Next ingest: unavailable';
+      el.textContent = 'Next refresh: unavailable';
       return;
     }
     if (state.ingestScheduleFetchedAtMs && Date.now() - state.ingestScheduleFetchedAtMs > 15 * 60 * 1000) {
-      el.textContent = 'Next ingest: schedule stale';
+      el.textContent = 'Next refresh: schedule stale';
       return;
     }
     const serverNowMs = Date.now() + state.ingestClockOffsetMs;
@@ -823,7 +823,7 @@
       minute: '2-digit',
       timeZoneName: 'short',
     });
-    el.textContent = `Next ingest in ${formatCountdown(remaining)} (${nextText})`;
+    el.textContent = `Next refresh in ${formatCountdown(remaining)} (${nextText})`;
   }
 
   async function refreshIngestSchedule() {
@@ -1205,7 +1205,7 @@
       const logoWrap = $('selectedLogos');
       if (logoWrap) logoWrap.hidden = true;
     }
-    $('chart-status').textContent = 'Loading local CDR data';
+    $('chart-status').textContent = 'Loading rates';
     $('table-count').textContent = '';
     clear($('table'));
     clear($('hierarchy'));
