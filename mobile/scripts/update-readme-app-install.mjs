@@ -5,7 +5,7 @@
  *
  * Usage: node scripts/update-readme-app-install.mjs [--repo owner/name] [--readme path]
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -34,9 +34,30 @@ const readmePath = resolve(
 const START = '<!-- app-android-install:start -->';
 const END = '<!-- app-android-install:end -->';
 
+function resolveVersionAndBuild() {
+  let version = readAppJsonVersion(mobileRoot);
+  let buildNumber = readAppJsonBuildNumber(mobileRoot);
+  const manifestArgIdx = process.argv.indexOf('--manifest');
+  if (manifestArgIdx >= 0) {
+    const rawPath = process.argv[manifestArgIdx + 1];
+    if (rawPath) {
+      const manifestPath = resolve(rawPath);
+      if (existsSync(manifestPath)) {
+        try {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          if (manifest.version) version = String(manifest.version);
+          if (manifest.build_number != null) buildNumber = String(manifest.build_number);
+        } catch (err) {
+          console.error(`Error reading or parsing manifest at ${manifestPath}:`, err);
+        }
+      }
+    }
+  }
+  return { version, buildNumber };
+}
+
 function buildSection() {
-  const version = readAppJsonVersion(mobileRoot);
-  const buildNumber = readAppJsonBuildNumber(mobileRoot);
+  const { version, buildNumber } = resolveVersionAndBuild();
   const qrUrl = qrReleaseUrl(repo, ROLLING_TAG);
   const apkUrl = apkDownloadUrl(repo, ROLLING_TAG);
   const installUrl = installReleaseUrl(repo, ROLLING_TAG);
