@@ -45,4 +45,13 @@ describe('nextIngest', () => {
     expect(snap.scheduleLabel).toBe(DAILY_INGEST_SCHEDULE_LABEL);
     expect(snap.nextDueLocalLabel.length).toBeGreaterThan(0);
   });
+
+  test('getNextIngestCountdown reuses cached nextDueMs', () => {
+    const nowMs = Date.parse('2026-06-09T14:30:00Z');
+    const dueMs = Date.parse('2026-06-09T15:00:00.000Z');
+    const snap = getNextIngestCountdown(nowMs, dueMs);
+    expect(snap.nextDueMs).toBe(dueMs);
+    expect(snap.remainingMs).toBe(1_800_000);
+    expect(snap.countdownLabel).toBe('30m 00s');
+  });
 });

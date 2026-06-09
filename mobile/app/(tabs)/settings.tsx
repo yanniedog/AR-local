@@ -148,7 +148,7 @@ export default function Settings() {
         <InfoRow label="Data set" value={core ? formatRunDate(core.run_date) : '—'} />
         <InfoRow label="Source" value={dataSourceLabel(source)} />
         <InfoRow label="Last checked" value={lastCheckedAt ? relativeDate(lastCheckedAt) : 'never'} />
-        <InfoRow label="Lenders" value={core ? String(Object.keys(core.brands).length) : '—'} />
+        <InfoRow label="Lenders" value={core ? String(Object.keys(core.brands ?? {}).length) : '—'} />
         <Row gap={12} style={{ marginTop: 12 }}>
           <Button
             title="Refresh now"

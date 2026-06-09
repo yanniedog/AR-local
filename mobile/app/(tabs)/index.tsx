@@ -70,7 +70,7 @@ export default function Home() {
   const rba = core.rba.at(-1);
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
-  const lenderCount = Object.keys(core.brands).length;
+  const lenderCount = Object.keys(core.brands ?? {}).length;
 
   return (
     <ScreenScrollView

@@ -3,6 +3,8 @@
  * deploy/pi/ar-local-daily.timer (01:00 Australia/Hobart).
  */
 
+import type { PayloadSource } from '../types';
+
 export const DAILY_INGEST_TZ_KEY = 'Australia/Hobart';
 export const DAILY_INGEST_LOCAL_HOUR = 1;
 export const DAILY_INGEST_SCHEDULE_LABEL = `${String(DAILY_INGEST_LOCAL_HOUR).padStart(2, '0')}:00 ${DAILY_INGEST_TZ_KEY} daily`;
@@ -23,19 +25,41 @@ interface HobartParts {
   minute: number;
 }
 
-const HOBART_PARTS_FMT = new Intl.DateTimeFormat('en-US', {
-  timeZone: DAILY_INGEST_TZ_KEY,
+const HOBART_PARTS_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
-});
+};
+
+const PROBE_OPTIONS: Intl.DateTimeFormatOptions = {
+  ...HOBART_PARTS_OPTIONS,
+  second: '2-digit',
+};
+
+let hobartPartsFmt: Intl.DateTimeFormat | null = null;
+let probeFmt: Intl.DateTimeFormat | null = null;
+
+function getFormatters(): { hobartPartsFmt: Intl.DateTimeFormat; probeFmt: Intl.DateTimeFormat } {
+  if (!hobartPartsFmt || !probeFmt) {
+    try {
+      hobartPartsFmt = new Intl.DateTimeFormat('en-US', { ...HOBART_PARTS_OPTIONS, timeZone: DAILY_INGEST_TZ_KEY });
+      probeFmt = new Intl.DateTimeFormat('en-US', { ...PROBE_OPTIONS, timeZone: DAILY_INGEST_TZ_KEY });
+    } catch {
+      const fallbackTz = 'UTC';
+      hobartPartsFmt = new Intl.DateTimeFormat('en-US', { ...HOBART_PARTS_OPTIONS, timeZone: fallbackTz });
+      probeFmt = new Intl.DateTimeFormat('en-US', { ...PROBE_OPTIONS, timeZone: fallbackTz });
+    }
+  }
+  return { hobartPartsFmt, probeFmt };
+}
 
 function hobartParts(ms: number): HobartParts {
+  const { hobartPartsFmt: fmt } = getFormatters();
   const map: Record<string, string> = {};
-  for (const part of HOBART_PARTS_FMT.formatToParts(new Date(ms))) {
+  for (const part of fmt.formatToParts(new Date(ms))) {
     if (part.type !== 'literal') map[part.type] = part.value;
   }
   return {
@@ -49,20 +73,11 @@ function hobartParts(ms: number): HobartParts {
 
 function hobartLocalToUtcMs(year: number, month: number, day: number, hour: number, minute = 0): number {
   const target = Date.UTC(year, month - 1, day, hour, minute, 0);
-  const probeFmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: DAILY_INGEST_TZ_KEY,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  const { probeFmt: fmt } = getFormatters();
   let utc = target;
   for (let i = 0; i < 4; i += 1) {
     const map: Record<string, number> = {};
-    for (const part of probeFmt.formatToParts(new Date(utc))) {
+    for (const part of fmt.formatToParts(new Date(utc))) {
       if (part.type !== 'literal') map[part.type] = Number(part.value);
     }
     const actual = Date.UTC(map.year, map.month - 1, map.day, map.hour, map.minute, map.second ?? 0);
@@ -115,19 +130,17 @@ export function formatNextDueLocal(nextDueMs: number): string {
   });
 }
 
-export function getNextIngestCountdown(nowMs = Date.now()): IngestCountdownSnapshot {
-  const nextDueMs = nextDailyDueUtcMs(nowMs);
-  const remainingMs = Math.max(0, nextDueMs - nowMs);
+export function getNextIngestCountdown(nowMs = Date.now(), nextDueMs?: number): IngestCountdownSnapshot {
+  const dueMs = nextDueMs ?? nextDailyDueUtcMs(nowMs);
+  const remainingMs = Math.max(0, dueMs - nowMs);
   return {
     remainingMs,
-    nextDueMs,
+    nextDueMs: dueMs,
     countdownLabel: formatCountdown(remainingMs),
-    nextDueLocalLabel: formatNextDueLocal(nextDueMs),
+    nextDueLocalLabel: formatNextDueLocal(dueMs),
     scheduleLabel: DAILY_INGEST_SCHEDULE_LABEL,
   };
 }
-
-import type { PayloadSource } from '../types';
 
 export function dataSourceLabel(source: PayloadSource): string {
   switch (source) {
