@@ -16,6 +16,7 @@ describe('showHistoryRibbon pref', () => {
   });
 
   it('defaults to false', () => {
+    expect(DEFAULT_PREFS.enableDeepSearch).toBe(false);
     expect(DEFAULT_PREFS.showHistoryRibbon).toBe(false);
     expect(useStore.getState().prefs.showHistoryRibbon).toBe(false);
   });

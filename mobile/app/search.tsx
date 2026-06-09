@@ -49,15 +49,20 @@ export default function Search() {
   const hierarchyScoped = scopeRaw === 'hierarchy';
   const core = useStore((s) => s.core);
   const details = useStore((s) => s.details);
+  const searchIndex = useStore((s) => s.searchIndex);
+  const enableDeepSearch = useStore((s) => s.prefs.enableDeepSearch);
   const ensureDetails = useStore((s) => s.ensureDetails);
+  const ensureSearchIndex = useStore((s) => s.ensureSearchIndex);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const notificationsEnabled = useStore((s) => s.prefs.notificationsEnabled);
   const setPref = useStore((s) => s.setPref);
   const subscribeSearch = useStore((s) => s.subscribeSearch);
   const unsubscribeSearch = useStore((s) => s.unsubscribeSearch);
   useEffect(() => {
+    if (!enableDeepSearch) return;
+    void ensureSearchIndex();
     void ensureDetails();
-  }, [ensureDetails]);
+  }, [enableDeepSearch, ensureDetails, ensureSearchIndex]);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
@@ -79,9 +84,20 @@ export default function Search() {
   );
 
   const rows = useMemo(
-    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section, details?.products),
-    [baseRows, effectiveFilters, query, sortKey, section, details?.products],
+    () =>
+      queryAndSort(
+        baseRows,
+        { ...effectiveFilters, query },
+        sortKey,
+        section,
+        enableDeepSearch ? details?.products : null,
+        enableDeepSearch ? searchIndex : null,
+      ),
+    [baseRows, effectiveFilters, query, sortKey, section, enableDeepSearch, details?.products, searchIndex],
   );
+
+  const showDeepSearchHint =
+    !!query.trim() && !enableDeepSearch && rows.length === 0 && !activeFilterCount(effectiveFilters);
 
   const searchSnapshot = useMemo(
     () => ({
@@ -162,6 +178,11 @@ export default function Search() {
         {searchSub ? (
           <AppText variant="tiny" color="textFaint">
             {rows.length} products · {searchSub.label}
+          </AppText>
+        ) : null}
+        {showDeepSearchHint ? (
+          <AppText variant="tiny" color="textFaint">
+            Enable Deep product search in Settings for fees and features.
           </AppText>
         ) : null}
       </View>

@@ -1,5 +1,10 @@
 import { SECTIONS } from '../constants';
 import type { ProductDetail, RateRow, SectionKey } from '../types';
+import {
+  detailSearchIndex,
+  rowMatchesSearchQuery,
+  type SearchIndexPayload,
+} from './detailSearch';
 import { productHasAllEligibilityCriteria } from './eligibility';
 import { productHasAllFeatures } from './features';
 import { isNonStandard, sortByDisplayLabel, toFraction, visibleAccountRows } from './format';
@@ -92,15 +97,6 @@ export function sortRows(rows: RateRow[], sortKey: SortKey, section: SectionKey)
   return copy;
 }
 
-function matchesQuery(row: RateRow, q: string): boolean {
-  if (!q) return true;
-  const needle = q.toLowerCase();
-  return (
-    row.provider.toLowerCase().includes(needle) ||
-    row.product_name.toLowerCase().includes(needle)
-  );
-}
-
 function inList(value: string | undefined, list: string[]): boolean {
   return list.length === 0 || (value !== undefined && list.includes(value));
 }
@@ -109,10 +105,21 @@ export function filterRows(
   rows: RateRow[],
   filters: Filters,
   detailsProducts?: Record<string, ProductDetail> | null,
+  searchIndex?: SearchIndexPayload | null,
 ): RateRow[] {
+  const runtimeDetailIndex = searchIndex ? null : detailSearchIndex(detailsProducts);
   return rows.filter((row) => {
     if (!filters.includeNonStandard && isNonStandard(row)) return false;
-    if (!matchesQuery(row, filters.query)) return false;
+    if (
+      !rowMatchesSearchQuery(
+        row,
+        filters.query,
+        searchIndex,
+        runtimeDetailIndex?.get(row.product_key),
+      )
+    ) {
+      return false;
+    }
     if (!inList(row.provider, filters.providers)) return false;
     if (!inList(row.rate_type, filters.rateTypes)) return false;
     if (!inList(row.lvr_tier, filters.lvrTiers)) return false;
@@ -141,8 +148,9 @@ export function queryAndSort(
   sortKey: SortKey,
   section: SectionKey,
   detailsProducts?: Record<string, ProductDetail> | null,
+  searchIndex?: SearchIndexPayload | null,
 ): RateRow[] {
-  return sortRows(filterRows(rows, filters, detailsProducts), sortKey, section);
+  return sortRows(filterRows(rows, filters, detailsProducts, searchIndex), sortKey, section);
 }
 
 /** Distinct non-empty values for a field, sorted by frequency then label. */
