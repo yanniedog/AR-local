@@ -641,13 +641,16 @@ export const useStore = create<AppState>()(
     {
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites, subscriptions: s.subscriptions }),
+      partialize: (s) => {
+        const { showHistoryRibbon: _sessionOnly, ...prefsToPersist } = s.prefs;
+        return { prefs: prefsToPersist, favorites: s.favorites, subscriptions: s.subscriptions };
+      },
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
         return {
           ...current,
           ...p,
-          prefs: { ...DEFAULT_PREFS, ...p?.prefs },
+          prefs: { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false },
         };
       },
       // Flip `hydrated` once persisted state is restored, so the initial route
