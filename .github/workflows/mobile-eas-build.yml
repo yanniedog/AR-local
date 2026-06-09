@@ -91,6 +91,12 @@ jobs:
             node scripts/ensure-firebase-config.mjs
           fi
 
+          if [ -f google-services.json ]; then
+            echo "Materialized google-services.json ($(wc -c < google-services.json) bytes)"
+          else
+            echo "::warning::google-services.json missing after materialize step"
+          fi
+
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)
         run: |
@@ -105,6 +111,41 @@ jobs:
               ;;
           esac
 
+
+      - name: Sync Firebase file env to EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          sync_file_env() {
+            local name="$1"
+            local path="$2"
+            npx eas-cli@16.14.1 env:create \
+              --name "$name" \
+              --type file \
+              --value "$path" \
+              --environment "${{ inputs.profile }}" \
+              --visibility secret \
+              --non-interactive \
+              || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                --variable-name "$name" \
+                --variable-environment "${{ inputs.profile }}" \
+                --type file \
+                --value "$path" \
+                --non-interactive
+          }
+          if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > .eas-sync-google-services.json
+            sync_file_env GOOGLE_SERVICES_JSON .eas-sync-google-services.json
+            rm -f .eas-sync-google-services.json
+          fi
+          if [ -n "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
+            printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > .eas-sync-GoogleService-Info.plist
+            sync_file_env GOOGLE_SERVICE_INFO_PLIST .eas-sync-GoogleService-Info.plist
+            rm -f .eas-sync-GoogleService-Info.plist
+          fi
+
       - name: Sync Clarity env to EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -116,9 +157,20 @@ jobs:
               --value "$EXPO_PUBLIC_CLARITY_PROJECT_ID" \
               --environment "${{ inputs.profile }}" \
               --visibility plaintext \
-              --force \
-              --non-interactive
+              --non-interactive \
+              || npx eas-cli@16.14.1 env:update "${{ inputs.profile }}" \
+                --variable-name EXPO_PUBLIC_CLARITY_PROJECT_ID \
+                --variable-environment "${{ inputs.profile }}" \
+                --value "$EXPO_PUBLIC_CLARITY_PROJECT_ID" \
+                --non-interactive
           fi
+
+
+      - name: Ensure Android keystore (non-interactive)
+        if: inputs.platform == 'android' || inputs.platform == 'all'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: node scripts/ensure-eas-android-credentials.mjs
 
       - name: EAS Build
         env:

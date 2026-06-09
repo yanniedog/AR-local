@@ -277,6 +277,28 @@ workflow** — not manual Android project sync.
 | `EXPO_PUBLIC_CLARITY_PROJECT_ID` | GitHub Actions secret **or** EAS project env | GHA runs `eas env:create` before build when secret set |
 | `GOOGLE_SERVICES_JSON` (file) | EAS project env (expo.dev, optional) | Alternative: file-type env; path read by `eas-build-pre-install` hook |
 
+
+**Android keystore after package / application ID change**
+
+EAS stores the signing keystore **per Android application identifier** (`expo.android.package`).
+Renaming the package (e.g. `com.yanniedog.arlocalrates` → `com.eyex.australianrates` in PR #183)
+requires a **one-time** keystore for the new ID before **`mobile-eas-build`** or any
+`eas build --non-interactive` CI job can succeed. Expo explicitly blocks auto-generation in
+non-interactive mode (`Generating a new Keystore is not supported in --non-interactive mode`).
+
+| Method | When to use |
+|---|---|
+| [expo.dev Credentials](https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/credentials) → **Android** → `com.eyex.australianrates` → **Keystore** → **Generate new keystore** | Fastest; works with the `EXPO_TOKEN` robot after the keystore exists |
+| Local interactive CLI | `cd mobile` then `EXPO_TOKEN=<token> npx eas-cli@16.14.1 credentials -p android` and choose **Set up a new keystore** (or reuse/upload an existing `.jks`) |
+| One interactive cloud build | Same token, run `npx eas-cli@16.14.1 build -p android --profile preview` **without** `--non-interactive` once; EAS prompts to create the keystore |
+
+After setup, re-run GitHub Actions → **mobile-eas-build** (preview / android). The workflow
+also runs `credentials:configure-build` before upload to fail fast with this doc link.
+
+**Note:** The old keystore for `com.yanniedog.arlocalrates` remains on Expo but does **not**
+apply to the new package name; Play Store treats the new ID as a different app.
+
+
 **Workflow:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only (does not
 gate PR merges). Inputs: `profile` (`development` / `preview` / `production` from
 `mobile/eas.json`), `platform` (`android` / `ios` / `all`).
