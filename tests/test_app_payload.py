@@ -107,6 +107,19 @@ def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
     assert "logo" not in brands["No Logo Bank"]
 
 
+def test_build_dates_index_sorted_and_bounded():
+    index = app_payload.build_dates_index(
+        ["2026-06-08", "2026-05-13", "2026-05-12", "bad"],
+        min_date=app_payload.HISTORY_MIN_DATE,
+    )
+    assert index["dates"] == ["2026-05-13", "2026-06-08"]
+    assert index["count"] == 2
+    assert index["min_date"] == app_payload.HISTORY_MIN_DATE
+    assert index["latest_date"] == "2026-06-08"
+    assert "dates-index.json" in index["dates_index_url"]
+    assert "{run_date}" in index["dated_manifest_url_pattern"]
+
+
 def test_dated_tag_naming():
     assert app_payload.dated_tag("2026-06-08") == "app-payload-2026-06-08"
     assert app_payload.is_dated_tag("app-payload-2026-06-08")
@@ -122,12 +135,21 @@ def test_is_rolling_tag():
 
 
 def test_dated_release_title():
-    assert app_payload.dated_release_title("2026-06-08") == "App payload - 2026-06-08"
+    assert app_payload.dated_release_title("2026-06-08") == "Australian Rates payload — 2026-06-08"
 
 
 def test_release_title_format():
-    assert app_payload.release_title("2026-06-08") == "App payload (rolling) - 2026-06-08"
-    assert app_payload.release_title("2026-05-19") == "App payload (rolling) - 2026-05-19"
+    assert app_payload.release_title("2026-06-08") == "Australian Rates payload — latest (2026-06-08)"
+    assert app_payload.release_title("2026-05-19") == "Australian Rates payload — latest (2026-05-19)"
+
+
+def test_release_display_title():
+    assert app_payload.release_display_title("app-payload-latest", "2026-06-08") == (
+        "Australian Rates payload — latest (2026-06-08)"
+    )
+    assert app_payload.release_display_title("app-payload-2026-06-08", "2026-06-08") == (
+        "Australian Rates payload — 2026-06-08"
+    )
 
 
 def test_manifest_should_replace_rolling_blocks_older_run_date():
@@ -214,7 +236,7 @@ def test_update_release_title_calls_gh_release_edit(monkeypatch):
             "--repo",
             "yanniedog/AR-local",
             "--title",
-            "App payload (rolling) - 2026-06-08",
+            "Australian Rates payload — latest (2026-06-08)",
         ]
     ]
 

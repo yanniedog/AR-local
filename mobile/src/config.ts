@@ -13,6 +13,9 @@ const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
 export const REPO = extra.repo ?? 'yanniedog/AR-local';
 export const RELEASE_TAG = extra.releaseTag ?? 'app-payload-latest';
 
+/** Immutable per-run_date snapshot tags: ``app-payload-YYYY-MM-DD``. */
+export const DATED_TAG_PREFIX = 'app-payload-';
+
 /**
  * URL of the rolling manifest the Pi publishes each day. The manifest in turn
  * points at the (date-stamped) core/details asset URLs, so the app only needs a
@@ -21,6 +24,15 @@ export const RELEASE_TAG = extra.releaseTag ?? 'app-payload-latest';
 export const MANIFEST_URL =
   extra.manifestUrl ??
   `https://github.com/${REPO}/releases/download/${RELEASE_TAG}/manifest.json`;
+
+/** Index of published history dates (refreshed after ingest / backfill). */
+export const DATES_INDEX_URL =
+  `https://github.com/${REPO}/releases/download/${RELEASE_TAG}/dates-index.json`;
+
+/** Manifest URL for one immutable dated snapshot release. */
+export function datedManifestUrl(runDate: string): string {
+  return `https://github.com/${REPO}/releases/download/${DATED_TAG_PREFIX}${runDate}/manifest.json`;
+}
 
 export const APK_RELEASE_TAG = extra.apkReleaseTag ?? 'app-apk-latest';
 

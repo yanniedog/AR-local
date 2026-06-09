@@ -611,19 +611,24 @@ def is_dated_tag(tag: str) -> bool:
 
 def release_title(run_date: str) -> str:
     """Human-readable rolling-release title for a given payload run_date."""
-    return f"App payload (rolling) - {run_date}"
+    return f"Australian Rates payload — latest ({run_date})"
 
 
 def dated_release_title(run_date: str) -> str:
     """Human-readable title for an immutable per-run_date snapshot release."""
-    return f"App payload - {run_date}"
+    return f"Australian Rates payload — {run_date}"
+
+
+def release_display_title(tag: str, run_date: str) -> str:
+    """GitHub release title for ``tag`` using manifest ``run_date``."""
+    return release_title(run_date) if is_rolling_tag(tag) else dated_release_title(run_date)
 
 
 def _update_release_title(gh: str, repo: str, tag: str, run_date: str) -> bool:
-    """Refresh the rolling release title to match the published run_date."""
+    """Refresh a release title to match the manifest run_date (rolling or dated)."""
     if not run_date:
         return False
-    title = release_title(run_date)
+    title = release_display_title(tag, run_date)
     try:
         # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
         res = subprocess.run(
@@ -901,8 +906,8 @@ def publish_payload(
         f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
         f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"
     )
+    _update_release_title(gh, repo, tag, our_run_date)
     if rolling:
-        _update_release_title(gh, repo, tag, our_run_date)
         # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
         try:
             keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}
@@ -912,6 +917,93 @@ def publish_payload(
         except Exception as exc:  # noqa: BLE001 - pruning must never fail a publish
             print(f"[app_payload] asset prune skipped (non-fatal): {exc}")
     return True
+
+
+def _list_payload_release_tags(gh: str, repo: str) -> List[str]:
+    """Return sorted ``app-payload-*`` release tag names from GitHub."""
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    res = subprocess.run(
+        [gh, "release", "list", "--repo", repo, "--limit", "500", "--json", "tagName",
+         "-q", ".[].tagName"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"gh release list failed (exit={res.returncode}): "
+            f"{(res.stderr or res.stdout or '').strip()}"
+        )
+    tags = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    return sorted(t for t in tags if is_rolling_tag(t) or is_dated_tag(t))
+
+
+def _release_current_title(gh: str, repo: str, tag: str) -> str:
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    res = subprocess.run(
+        [gh, "release", "view", tag, "--repo", repo, "--json", "name", "-q", ".name"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    if res.returncode != 0:
+        return ""
+    return res.stdout.strip()
+
+
+def _release_run_date_for_retitle(repo: str, tag: str) -> str:
+    """Resolve manifest run_date for retitle (tag suffix or live manifest)."""
+    if is_dated_tag(tag):
+        return tag[len(DATED_TAG_PREFIX) :]
+    status, live = _live_manifest_status(repo, tag)
+    if status == "present" and live:
+        return str(live.get("run_date") or "")
+    return ""
+
+
+def retitle_payload_releases(
+    *,
+    repo: str = DEFAULT_REPO,
+    from_date: str = "",
+    to_date: str = "",
+    dry_run: bool = False,
+) -> Tuple[int, int]:
+    """Retitle existing app-payload releases. Returns ``(updated, skipped)``."""
+    gh = _gh_available()
+    if not gh or not _gh_authed(gh):
+        raise RuntimeError(
+            "[app_payload] gh CLI / GitHub auth required for retitle "
+            "(set GH_TOKEN or gh auth login)"
+        )
+    tags = _list_payload_release_tags(gh, repo)
+    updated = 0
+    skipped = 0
+    print(
+        f"[app_payload] retitle starting repo={repo} tags={len(tags)} "
+        f"from={from_date or '*'} to={to_date or '*'} dry_run={dry_run}"
+    )
+    for tag in tags:
+        run_date = _release_run_date_for_retitle(repo, tag)
+        if not run_date:
+            print(f"[app_payload] retitle skip tag={tag} reason=no_run_date")
+            skipped += 1
+            continue
+        if from_date and run_date < from_date:
+            continue
+        if to_date and run_date > to_date:
+            continue
+        want = release_display_title(tag, run_date)
+        current = _release_current_title(gh, repo, tag)
+        if current == want:
+            print(f"[app_payload] retitle skip tag={tag} reason=already_current")
+            skipped += 1
+            continue
+        if dry_run:
+            print(f"[app_payload] retitle dry-run tag={tag} {current!r} -> {want!r}")
+            updated += 1
+            continue
+        if _update_release_title(gh, repo, tag, run_date):
+            updated += 1
+        else:
+            skipped += 1
+    print(f"[app_payload] retitle finished updated={updated} skipped={skipped}")
+    return updated, skipped
 
 
 def build_and_publish(
