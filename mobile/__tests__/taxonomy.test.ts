@@ -1,4 +1,4 @@
-import { childrenOf, rowsUnder, segLabel, statsFor } from '../src/data/taxonomy';
+import { childrenOf, rowsForSearchScope, rowsUnder, segLabel, statsFor } from '../src/data/taxonomy';
 import type { RateRow } from '../src/types';
 
 const mk = (over: Partial<RateRow>): RateRow => ({
@@ -126,6 +126,8 @@ describe('taxonomy', () => {
     ];
     expect(rowsUnder(mixed, 'Mortgage', []).length).toBe(3); // only HOME_LOAN rows
     expect(childrenOf(mixed, 'Mortgage', []).map((n) => n.seg)).toEqual(['OO', 'INV']);
+    expect(rowsForSearchScope(mixed, 'Mortgage', [], false)).toHaveLength(5);
+    expect(rowsForSearchScope(mixed, 'Mortgage', [], true)).toHaveLength(3);
   });
 
   test('statsFor computes the distribution', () => {

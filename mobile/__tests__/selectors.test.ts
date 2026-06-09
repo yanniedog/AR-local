@@ -6,6 +6,7 @@ import {
   filterRows,
   findByKey,
   groupByProvider,
+  normalizeSortKey,
   queryAndSort,
   sortRows,
 } from '../src/data/selectors';
@@ -60,6 +61,13 @@ describe('selectors', () => {
   test('sortRows by bank A-Z', () => {
     const sorted = sortRows(mortgage, 'bank', 'Mortgage');
     expect(sorted.map((r) => r.provider)).toEqual(['Bank A', 'Bank B', 'Bank C']);
+  });
+
+  test('normalizeSortKey accepts deep-link presets and defaults invalid values', () => {
+    expect(normalizeSortKey('comparison')).toBe('comparison');
+    expect(normalizeSortKey('bank')).toBe('bank');
+    expect(normalizeSortKey('unexpected')).toBe('rate');
+    expect(normalizeSortKey()).toBe('rate');
   });
 
   test('filterRows excludes non-standard by default and applies facets', () => {

@@ -4,6 +4,10 @@ import { isNonStandard, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
+export function normalizeSortKey(value?: string): SortKey {
+  return value === 'comparison' || value === 'bank' ? value : 'rate';
+}
+
 export interface Filters {
   query: string;
   providers: string[];

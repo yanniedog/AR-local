@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { FilterSheet } from '../src/components/FilterSheet';
@@ -13,12 +13,13 @@ import { SECTIONS, SECTION_ORDER } from '../src/constants';
 import {
   activeFilterCount,
   EMPTY_FILTERS,
+  normalizeSortKey,
   queryAndSort,
   type Filters,
   type SortKey,
 } from '../src/data/selectors';
 import { useStore } from '../src/data/store';
-import { breadcrumb, rowsUnder } from '../src/data/taxonomy';
+import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
 import { openCompare, openProduct } from '../src/lib/nav';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -34,24 +35,32 @@ const rowToken = (r: { rate_index?: number | string; product_key: string }) =>
 
 export default function Search() {
   const theme = useTheme();
-  const { section: secRaw, path: pathRaw } = useLocalSearchParams<{ section: string; path?: string }>();
+  const { section: secRaw, path: pathRaw, sort: sortRaw, scope: scopeRaw } = useLocalSearchParams<{
+    section: string;
+    path?: string;
+    sort?: string;
+    scope?: string;
+  }>();
   const section = (SECTION_ORDER.includes(secRaw as SectionKey) ? secRaw : 'Mortgage') as SectionKey;
-  const path = (pathRaw ?? '').split('.').filter(Boolean);
+  const path = useMemo(() => (pathRaw ?? '').split('.').filter(Boolean), [pathRaw]);
+  const hierarchyScoped = scopeRaw === 'hierarchy';
   const core = useStore((s) => s.core);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const setPref = useStore((s) => s.setPref);
 
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('rate');
+  const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
+  useEffect(() => setSortKey(normalizeSortKey(sortRaw)), [sortRaw]);
+
   const baseRows = useMemo(() => {
     const all = core?.sections[section]?.rates ?? [];
-    return path.length ? rowsUnder(all, section, path) : all;
-  }, [core, section, path]);
+    return rowsForSearchScope(all, section, path, hierarchyScoped);
+  }, [core, section, path, hierarchyScoped]);
 
   const effectiveFilters = useMemo(
     () => ({ ...filters, includeNonStandard }),
