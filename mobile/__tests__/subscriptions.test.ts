@@ -1,14 +1,12 @@
-import { computeChanges } from '../src/data/notifications';
+﻿import { computeChanges } from '../src/data/notifications';
 import {
   addSubscription,
   buildSearchLabel,
   computeSubscriptionChanges,
-  findSearchSubscription,
   isProductSubscribed,
   makeProductSubscription,
   makeSearchSubscription,
   normalizeFilterSnapshot,
-  removeSubscription,
   rowsForSearchSubscription,
 } from '../src/data/subscriptions';
 import type { CorePayload, RateRow } from '../src/types';
