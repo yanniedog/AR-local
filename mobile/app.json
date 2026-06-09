@@ -4,7 +4,7 @@
     "slug": "ar-local-rates",
     "owner": "yannieyannies-team",
     "scheme": "arrates",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Daily Australian home loan, savings and term-deposit rates from open banking (CDR) data. Browse, filter, compare and watch rates — works offline.",
     "primaryColor": "#1f6feb",
     "githubUrl": "https://github.com/yanniedog/AR-local",
