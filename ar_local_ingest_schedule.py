@@ -18,12 +18,18 @@ DAILY_INGEST_LOCAL_HOUR = 1
 DAILY_INGEST_SCHEDULE_LABEL = f"{DAILY_INGEST_LOCAL_HOUR:02d}:00 {DAILY_INGEST_TZ_KEY} daily"
 
 
+def _as_utc(now_utc: datetime) -> datetime:
+    if now_utc.tzinfo is None:
+        return now_utc.replace(tzinfo=timezone.utc)
+    return now_utc.astimezone(timezone.utc)
+
+
 def _due_local_on(day: date) -> datetime:
     return datetime.combine(day, datetime_time(DAILY_INGEST_LOCAL_HOUR, 0), tzinfo=DAILY_INGEST_TZ)
 
 
 def latest_daily_due_utc(now_utc: datetime) -> datetime:
-    local_now = now_utc.astimezone(DAILY_INGEST_TZ)
+    local_now = _as_utc(now_utc).astimezone(DAILY_INGEST_TZ)
     due_day = local_now.date()
     due_local = _due_local_on(due_day)
     if local_now < due_local:
