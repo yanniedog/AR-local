@@ -174,6 +174,12 @@ def backfill(
                 row["published"] = app_payload.publish_payload(
                     out_dir, repo=repo, tag=tag, force=force
                 )
+                if not row["published"] and not force and dated_release_already_published(repo, run_date):
+                    row["skipped"] = True
+                    print(
+                        f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                        "skipped=already_published_after_publish"
+                    )
                 print(
                     f"[backfill_app_payload] run_date={run_date} tag={tag} "
                     f"published={row['published']} core={row['core']} details={row['details']}"
