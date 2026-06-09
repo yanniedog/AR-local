@@ -122,9 +122,7 @@ function listOpenAutoBumpPrs(nextVersion) {
     return [];
   }
   const titlePrefix = `${AUTO_BUMP_PREFIX}${nextVersion}`;
-  return rows.filter(
-    (row) => row.title?.startsWith(AUTO_BUMP_PREFIX) || row.title?.startsWith(titlePrefix),
-  );
+  return rows.filter((row) => row.title?.startsWith(titlePrefix));
 }
 
 function readCurrentVersion() {
