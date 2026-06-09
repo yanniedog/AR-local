@@ -1,0 +1,68 @@
+# Poll Firebase Crashlytics and open GitHub issues for new Crashlytics issue IDs.
+# Dedupes via <!-- crashlytics-issue-id: … --> marker in issue bodies.
+
+name: crashlytics-github-issues
+
+on:
+  schedule:
+    # Every 30 minutes (GitHub Actions cron uses UTC)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Log actions without creating GitHub issues
+        type: boolean
+        default: false
+      mock_report:
+        description: Path to mock topIssues JSON (skips Firebase API; for testing)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: crashlytics-github-issues
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sync Crashlytics issues to GitHub
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CRASHLYTICS_LOOKBACK_DAYS: '7'
+          CRASHLYTICS_MIN_EVENTS: '1'
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          if [ -n "${{ inputs.mock_report }}" ]; then
+            args+=(--mock-report "${{ inputs.mock_report }}")
+          fi
+          node scripts/crashlytics-to-github-issues.mjs "${args[@]}"
+
+      - name: Dry-run with mock report (when secrets missing)
+        if: failure() && secrets.FIREBASE_SERVICE_ACCOUNT_JSON == ''
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON secret not set — running mock dry-run only"
+          node scripts/crashlytics-to-github-issues.mjs \
+            --dry-run \
+            --mock-report scripts/fixtures/crashlytics-topIssues-mock.json

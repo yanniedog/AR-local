@@ -1,0 +1,51 @@
+{
+  "name": "projects/demo-project/apps/1:000000000000:android:demo/reports/topIssues",
+  "displayName": "Top issues",
+  "totalSize": 2,
+  "groups": [
+    {
+      "issue": {
+        "id": "mock-fatal-001",
+        "title": "com.eyex.australianrates.MainActivity.onCreate",
+        "subtitle": "java.lang.RuntimeException: Mock fatal crash for dry-run",
+        "errorType": "FATAL",
+        "uri": "https://console.firebase.google.com/project/demo-project/crashlytics/app/android:com.eyex.australianrates/issues/mock-fatal-001",
+        "firstSeenVersion": "1.0.0",
+        "lastSeenVersion": "1.0.2",
+        "firstSeenTime": "2026-06-01T00:00:00Z",
+        "lastSeenTime": "2026-06-10T08:00:00Z",
+        "state": "OPEN",
+        "name": "projects/demo-project/apps/1:000000000000:android:demo/issues/mock-fatal-001"
+      },
+      "metrics": [
+        {
+          "eventsCount": "12",
+          "impactedUsersCount": "4",
+          "sessionsCount": "10"
+        }
+      ]
+    },
+    {
+      "issue": {
+        "id": "mock-anr-002",
+        "title": "ANR",
+        "subtitle": "Input dispatching timed out",
+        "errorType": "ANR",
+        "uri": "https://console.firebase.google.com/project/demo-project/crashlytics/app/android:com.eyex.australianrates/issues/mock-anr-002",
+        "firstSeenVersion": "1.0.1",
+        "lastSeenVersion": "1.0.2",
+        "firstSeenTime": "2026-06-05T00:00:00Z",
+        "lastSeenTime": "2026-06-10T07:30:00Z",
+        "state": "OPEN",
+        "name": "projects/demo-project/apps/1:000000000000:android:demo/issues/mock-anr-002"
+      },
+      "metrics": [
+        {
+          "eventsCount": "3",
+          "impactedUsersCount": "2",
+          "sessionsCount": "3"
+        }
+      ]
+    }
+  ]
+}

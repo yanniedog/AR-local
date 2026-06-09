@@ -410,6 +410,71 @@ older preview build can update from Settings without reinstalling from expo.dev.
 | Diagnostics toggle | Settings → **Diagnostics & crash reporting** — off stops new Clarity capture and Crashlytics collection; on resumes. Local **Debug log** viewer/upload (`/debug-log`) is independent. |
 | Placeholder detection | If CI log shows `ensure-firebase-config: copied …example → …` and no Crashlytics data, add real Firebase files or GitHub secrets. |
 
+**Part 5 — Crashlytics → GitHub Issues (automatic triage)**
+
+Scheduled GitHub Action polls Firebase Crashlytics **topIssues** (open crashes, non-fatals, and
+ANRs in the same report) and opens a GitHub issue for each new Crashlytics issue ID.
+
+| Piece | Location |
+|---|---|
+| Workflow | `.github/workflows/crashlytics-github-issues.yml` — cron **every 30 min** + `workflow_dispatch` |
+| Script | `scripts/crashlytics-to-github-issues.mjs` |
+| Mock fixture (dry-run) | `scripts/fixtures/crashlytics-topIssues-mock.json` |
+| npm | `npm run crashlytics:sync-issues` (pass `-- --dry-run` locally) |
+
+**How it works**
+
+1. Reads `GOOGLE_SERVICES_JSON` for Firebase `project_id` and Android `mobilesdk_app_id`
+   (`com.eyex.australianrates`).
+2. Authenticates to the Crashlytics REST API with `FIREBASE_SERVICE_ACCOUNT_JSON` (GCP service
+   account key — **not** the client `google-services.json`).
+3. Fetches `reports/topIssues` for the last 7 days (open issues only).
+4. Skips Crashlytics IDs already tracked in GitHub (HTML comment
+   `<!-- crashlytics-issue-id: … -->` in any issue labeled `crashlytics`).
+5. Creates GitHub issues titled `[Crashlytics] {title} — v{version}` with stack/metadata and a
+   Firebase console link. Labels: `crashlytics`, `mobile`, plus `crashlytics-fatal` /
+   `crashlytics-anr` / `crashlytics-non-fatal` by error type.
+
+**GitHub secrets (repo Settings → Secrets and variables → Actions)**
+
+| Secret | Status (2026-06-10) | Required | Purpose |
+|---|---|---|---|
+| `GOOGLE_SERVICES_JSON` | **Set** | Yes | Resolve Firebase project + Android app id |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | **Not set — operator must add** | Yes | Crashlytics API auth (service account key JSON) |
+| `GITHUB_TOKEN` | Built-in per workflow run | Yes | Create issues (same repo; `issues: write`) |
+
+**One-time GCP setup for `FIREBASE_SERVICE_ACCOUNT_JSON`**
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → same project as Firebase →
+   **IAM & Admin** → **Service Accounts** → create (or reuse) a key-enabled account.
+2. Grant **`roles/firebasecrashlytics.viewer`** (read-only) or **`roles/firebase.qualityViewer`**.
+3. **APIs & Services** → enable **Firebase Crashlytics API** (`firebasecrashlytics.googleapis.com`).
+4. Download JSON key → paste full body into GitHub secret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+
+**Manual test**
+
+```bash
+# Mock data — no Firebase API call
+GOOGLE_SERVICES_JSON="$(cat mobile/google-services.json)" \
+GH_TOKEN=… \
+node scripts/crashlytics-to-github-issues.mjs \
+  --dry-run \
+  --mock-report scripts/fixtures/crashlytics-topIssues-mock.json
+
+# Live poll (after FIREBASE_SERVICE_ACCOUNT_JSON is set)
+GOOGLE_SERVICES_JSON=… FIREBASE_SERVICE_ACCOUNT_JSON=… GH_TOKEN=… \
+  npm run crashlytics:sync-issues
+```
+
+GitHub Actions → **crashlytics-github-issues** → Run workflow → optional **dry_run** or
+**mock_report** `scripts/fixtures/crashlytics-topIssues-mock.json`.
+
+**Known limitation:** Some Firebase projects return HTTP 404 for Crashlytics report endpoints when
+using a service account (user OAuth works). If the workflow fails with 404 after IAM/API setup,
+confirm data exists in the Firebase console; if still 404, Firebase may require allowlisting — see
+[firebase-tools#10004](https://github.com/firebase/firebase-tools/issues/10004). BigQuery export is
+the fallback for advanced setups (Blaze plan).
+
 **Operator checklist**
 
 - [ ] EAS **preview** or **production** build installed on device (not Expo Go)

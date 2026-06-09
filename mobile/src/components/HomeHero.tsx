@@ -6,6 +6,7 @@ import { useNextIngestCountdown } from '../hooks/useNextIngestCountdown';
 import { dataSourceLabel } from '../lib/nextIngest';
 import type { PayloadSource } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
+import { BrandLockup } from './BrandLockup';
 import { AppText, Row } from './ui';
 
 export function HomeHero({
@@ -35,32 +36,29 @@ export function HomeHero({
     <View
       style={{
         backgroundColor: theme.colors.surface,
-        borderRadius: theme.radius.xl,
+        borderRadius: theme.radius.md,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        padding: 16,
+        padding: 12,
         marginBottom: 14,
         overflow: 'hidden',
       }}
     >
-      <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 4,
-          backgroundColor: theme.colors.primary,
-          borderTopLeftRadius: theme.radius.xl,
-          borderBottomLeftRadius: theme.radius.xl,
-        }}
-      />
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
-          <AppText variant="h1" style={{ marginBottom: 4 }}>
-            Australian Rates
+          <BrandLockup markSize={32} style={{ marginBottom: 8 }} />
+          <AppText
+            variant="tiny"
+            color="textMuted"
+            weight="700"
+            style={{ letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Daily rates
           </AppText>
-          <AppText variant="small" color="textMuted">
+          <AppText variant="h1" style={{ lineHeight: 32 }}>
+            Home loan rates, tracked.
+          </AppText>
+          <AppText variant="small" color="textMuted" style={{ marginTop: 4 }}>
             Data set {runDateLabel} · {runAgeLabel}
           </AppText>
         </View>
@@ -72,7 +70,9 @@ export function HomeHero({
             backgroundColor: theme.colors.chip,
             paddingHorizontal: 10,
             paddingVertical: 6,
-            borderRadius: theme.radius.pill,
+            borderRadius: theme.radius.sm,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
           }}
         >
           <Ionicons name={statusIcon} size={14} color={statusColor} />
@@ -84,16 +84,18 @@ export function HomeHero({
 
       <View
         style={{
-          backgroundColor: theme.colors.primaryMuted,
-          borderRadius: theme.radius.md,
+          backgroundColor: theme.colors.card,
+          borderRadius: theme.radius.sm,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
           padding: 12,
-          marginBottom: 12,
+          marginBottom: 10,
         }}
       >
         <Row gap={8} style={{ alignItems: 'flex-start' }}>
           <Ionicons name="time-outline" size={18} color={theme.colors.primary} style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
-            <AppText variant="tiny" color="textMuted" weight="600">
+            <AppText variant="tiny" color="textMuted" weight="600" style={{ letterSpacing: 0.6 }}>
               NEXT DATA REFRESH
             </AppText>
             <AppText variant="h2" weight="800" style={{ color: theme.colors.primary, marginTop: 2 }}>
@@ -122,7 +124,7 @@ function StatPill({ label, value }: { label: string; value: string }) {
       style={{
         flex: 1,
         backgroundColor: theme.colors.card,
-        borderRadius: theme.radius.md,
+        borderRadius: theme.radius.sm,
         borderWidth: 1,
         borderColor: theme.colors.border,
         paddingVertical: 10,
@@ -133,7 +135,7 @@ function StatPill({ label, value }: { label: string; value: string }) {
       <AppText variant="h3" weight="800">
         {value}
       </AppText>
-      <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
+      <AppText variant="tiny" color="textMuted" weight="700" style={{ marginTop: 2, letterSpacing: 0.4 }}>
         {label}
       </AppText>
     </View>
