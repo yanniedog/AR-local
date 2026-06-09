@@ -6,6 +6,7 @@ import { Pressable, View } from 'react-native';
 import { BankAvatar } from '../src/components/BankAvatar';
 import { SearchBar } from '../src/components/controls';
 import { EmptyState } from '../src/components/feedback';
+import { Screen } from '../src/components/Screen';
 import { AppText, Row } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
 import { formatRate } from '../src/data/format';
@@ -28,7 +29,7 @@ export default function Banks() {
   if (!core) return null;
 
   return (
-    <View style={{ flex: 1 }}>
+    <Screen>
       <View style={{ padding: 16 }}>
         <SearchBar value={query} onChangeText={setQuery} placeholder="Search lenders" />
       </View>
@@ -39,7 +40,7 @@ export default function Banks() {
         renderItem={({ item }) => <BankRow group={item} />}
         ListEmptyComponent={<EmptyState title="No lenders found" />}
       />
-    </View>
+    </Screen>
   );
 }
 

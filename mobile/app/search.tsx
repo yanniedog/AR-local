@@ -7,6 +7,7 @@ import { Pressable, View } from 'react-native';
 import { FilterSheet } from '../src/components/FilterSheet';
 import { EmptyState } from '../src/components/feedback';
 import { ProductCard } from '../src/components/ProductCard';
+import { Screen } from '../src/components/Screen';
 import { SearchBar } from '../src/components/controls';
 import { AppText, Chip, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
@@ -79,7 +80,7 @@ export default function Search() {
   const title = path.length ? breadcrumb(section, path).at(-1)! : `${SECTIONS[section].title}`;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <Screen>
       <Stack.Screen options={{ title }} />
       <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 10 }}>
         <Row gap={10}>
@@ -162,7 +163,7 @@ export default function Search() {
           setFilters(next);
         }}
       />
-    </View>
+    </Screen>
   );
 }
 

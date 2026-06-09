@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 import { EmptyState } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Button } from '../../src/components/ui';
 import { findByKey } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
@@ -29,12 +30,13 @@ export default function Watchlist() {
         icon="star-outline"
         title="No saved products yet"
         subtitle="Tap the star on any product to add it to your watchlist and get rate-change alerts."
+        fill
       />
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
       <AppText variant="small" color="textMuted" style={{ marginBottom: 12 }}>
         {items.length} saved {items.length === 1 ? 'product' : 'products'}
       </AppText>
@@ -56,6 +58,6 @@ export default function Watchlist() {
         />
       ))}
       <View style={{ height: 8 }} />
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

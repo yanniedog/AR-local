@@ -38,14 +38,22 @@ export function EmptyState({
   icon = 'search',
   title,
   subtitle,
+  fill,
 }: {
   icon?: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
+  /** When true, fills the screen with the themed background (tab empty states). */
+  fill?: boolean;
 }) {
   const theme = useTheme();
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 }}>
+    <View
+      style={[
+        { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 },
+        fill && { flex: 1, backgroundColor: theme.colors.bg, justifyContent: 'center' },
+      ]}
+    >
       <Ionicons name={icon} size={42} color={theme.colors.textFaint} />
       <AppText variant="h3" style={{ marginTop: 12, textAlign: 'center' }}>
         {title}

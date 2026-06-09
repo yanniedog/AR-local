@@ -18,3 +18,7 @@ jest.mock('expo-notifications', () => ({
   requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
   scheduleNotificationAsync: jest.fn(async () => 'test-notification-id'),
 }));
+
+jest.mock('expo-system-ui', () => ({
+  setBackgroundColorAsync: jest.fn(async () => {}),
+}));

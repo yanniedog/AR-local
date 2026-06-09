@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect } from 'react';
-import { ScrollView, Share, View } from 'react-native';
+import { Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
 import { EmptyState } from '../../src/components/feedback';
+import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Button, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import {
@@ -83,7 +84,7 @@ export default function ProductDetail() {
           ),
         }}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         <Row gap={14} style={{ marginBottom: 16 }}>
           <BankAvatar provider={row.provider} size={56} />
           <View style={{ flex: 1 }}>
@@ -157,7 +158,7 @@ export default function ProductDetail() {
             Lender data updated {relativeDate(row.last_updated)}
           </AppText>
         ) : null}
-      </ScrollView>
+      </ScreenScrollView>
     </>
   );
 }

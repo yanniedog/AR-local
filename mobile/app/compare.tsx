@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import React, { useMemo } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 import { BankAvatar } from '../src/components/BankAvatar';
 import { EmptyState } from '../src/components/feedback';
+import { ScreenScrollView } from '../src/components/Screen';
 import { AppText, Card, Divider } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
 import {
@@ -56,7 +57,7 @@ export default function Compare() {
 
   if (!core) return null;
   if (entries.length < 2) {
-    return <EmptyState icon="git-compare-outline" title="Nothing to compare" subtitle="Select at least two products." />;
+    return <EmptyState icon="git-compare-outline" title="Nothing to compare" subtitle="Select at least two products." fill />;
   }
 
   // Only mark a single "BEST" when every product shares a section (so the better
@@ -82,7 +83,7 @@ export default function Compare() {
   ];
 
   return (
-    <ScrollView horizontal contentContainerStyle={{ padding: 16 }} showsHorizontalScrollIndicator>
+    <ScreenScrollView horizontal contentContainerStyle={{ padding: 16 }} showsHorizontalScrollIndicator>
       {entries.map((e, idx) => {
         const f = fractions[idx];
         const isBest = bestVal !== null && f === bestVal;
@@ -133,6 +134,6 @@ export default function Compare() {
           </Card>
         );
       })}
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

@@ -65,7 +65,7 @@ export function FilterSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#0006' }}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.colors.overlay }}>
         <View
           style={{
             backgroundColor: theme.colors.surface,

@@ -17,6 +17,7 @@ export interface Palette {
   chipText: string;
   shadow: string;
   skeleton: string;
+  overlay: string;
 }
 
 export const DARK: Palette = {
@@ -38,6 +39,7 @@ export const DARK: Palette = {
   chipText: '#c3cee0',
   shadow: '#00000088',
   skeleton: '#1b2334',
+  overlay: '#00000066',
 };
 
 export const LIGHT: Palette = {
@@ -59,4 +61,5 @@ export const LIGHT: Palette = {
   chipText: '#3a4254',
   shadow: '#0b122016',
   skeleton: '#e7ecf4',
+  overlay: '#0b122040',
 };

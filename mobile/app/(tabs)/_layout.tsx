@@ -12,6 +12,7 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: theme.colors.bg },
         headerTitleStyle: { color: theme.colors.text, fontWeight: '800' },
         headerShadowVisible: false,
+        sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textFaint,
         tabBarStyle: {

@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 
 import { HierarchyView } from '../../src/components/HierarchyView';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
+import { Screen } from '../../src/components/Screen';
 import { Row } from '../../src/components/ui';
 import { sectionFromSlug } from '../../src/constants';
 import { useStore } from '../../src/data/store';
@@ -38,7 +39,7 @@ export default function Browse() {
   if (!core) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+    <Screen>
       <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
         <Row gap={10}>
           <View style={{ flex: 1 }}>
@@ -70,6 +71,6 @@ export default function Browse() {
         {/* key forces a fresh drill-down root when the section changes */}
         <HierarchyView key={section} section={section} path={[]} />
       </View>
-    </View>
+    </Screen>
   );
 }
