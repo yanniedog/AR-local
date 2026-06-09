@@ -206,6 +206,123 @@ Profiles are in `mobile/eas.json` (development = dev client + internal distribut
 The last Android dev build artifact:
 `https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds/9b2911bd-162a-4b47-a0a5-4407027583db`
 
+### Mobile observability (Clarity + Crashlytics)
+
+Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlytics**
+(crashes + bridged `debugLog` warn/error/info lines). Implemented in
+`mobile/src/lib/observability.ts`; wired from `mobile/app/_layout.tsx` and Settings.
+
+**Prerequisites**
+
+| Requirement | Value / note |
+|---|---|
+| Installable build | **EAS or local dev client** — **not Expo Go** (native modules) |
+| Android package | `com.yanniedog.arlocalrates` (`mobile/app.json` → `expo.android.package`) |
+| iOS bundle ID | `com.yanniedog.arlocalrates` (`mobile/app.json` → `expo.ios.bundleIdentifier`) |
+| Native SDK change | **Rebuild** after first Firebase/Clarity setup or config swap (preview/production profile) |
+| EAS project | `@yannieyannies-team/ar-local-rates` — [expo.dev project](https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates) |
+| Robot token | `EXPO_TOKEN` — see §7 / EAS builds above (`ar-local-eas` robot) |
+
+**Part 1 — Microsoft Clarity**
+
+1. [clarity.microsoft.com](https://clarity.microsoft.com/) → **New project** → **Mobile**.
+2. Copy the **Project ID** (not the API key).
+3. Set `EXPO_PUBLIC_CLARITY_PROJECT_ID`:
+   - **EAS cloud builds (recommended):** expo.dev → `yannieyannies-team` / `ar-local-rates` →
+     **Environment variables** → add for **preview** and **production** (and development if
+     you want replay on dev-client release builds).
+   - **Local `eas build` / export:** create `mobile/.env` (gitignored) with
+     `EXPO_PUBLIC_CLARITY_PROJECT_ID=<id>` or export the var in the shell before building.
+4. **Runtime behavior:**
+   - Clarity **does not initialize when `__DEV__` is true** (Metro dev server / most local
+     `expo start` sessions) even if the env var is set.
+   - On non-`__DEV__` builds, Clarity starts only when **Settings → Diagnostics** is on
+     (default **on**; persisted in `prefs.diagnosticsEnabled`).
+   - Toggle **off** → `clarity.pause()`; toggle **on** → `clarity.resume()` or first init.
+
+**Part 2 — Firebase Crashlytics**
+
+1. [console.firebase.google.com](https://console.firebase.google.com/) → **Add project** (or
+   reuse an existing one).
+2. **Build** → **Crashlytics** → **Enable** (adds the SDK hooks EAS expects).
+3. Register **two** mobile apps in that Firebase project — both use bundle ID
+   `com.yanniedog.arlocalrates`:
+   - **Android** → download `google-services.json`
+   - **iOS** → download `GoogleService-Info.plist`
+4. Place the real files (gitignored — never commit):
+   - `mobile/google-services.json`
+   - `mobile/GoogleService-Info.plist`
+5. Committed placeholders (safe to diff; used when real files absent):
+   - `mobile/google-services.json.example`
+   - `mobile/GoogleService-Info.plist.example`
+6. `mobile/app.json` already points `expo.android.googleServicesFile` and
+   `expo.ios.googleServicesFile` at those paths; `mobile/firebase.json` holds Crashlytics
+   native config (no secrets).
+
+**Part 3 — CI / EAS**
+
+| Secret / env | Where | Purpose |
+|---|---|---|
+| `EXPO_TOKEN` | GitHub Actions → Settings → Secrets | EAS upload/auth (required) — §7 |
+| `GOOGLE_SERVICES_JSON` | GitHub Actions secrets (optional) | Full `google-services.json` body for CI/EAS Android builds |
+| `GOOGLE_SERVICE_INFO_PLIST` | GitHub Actions secrets (optional) | Full `GoogleService-Info.plist` body for CI/EAS iOS builds |
+| `EXPO_PUBLIC_CLARITY_PROJECT_ID` | EAS project env (expo.dev) | Baked into preview/production JS bundles |
+
+**Workflow:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only (does not
+gate PR merges). Inputs: `profile` (`development` / `preview` / `production` from
+`mobile/eas.json`), `platform` (`android` / `ios` / `all`).
+
+Steps relevant to observability:
+- **Materialize Firebase config** — if `GOOGLE_SERVICES_JSON` is set, writes
+  `mobile/google-services.json`; else runs `node scripts/ensure-firebase-config.mjs`.
+  Same pattern for `GOOGLE_SERVICE_INFO_PLIST` / `GoogleService-Info.plist` (falls back to
+  copying `.example`).
+- **`ensure-firebase-config.mjs`** — when a gitignored file is missing, copies the matching
+  `.example` so `expo export` / EAS preflight succeeds. Placeholders **do not** report to
+  Firebase; swap in real console downloads (locally or via secrets) before expecting data.
+- **Validate JS bundle** — `npm run typecheck` + platform `export:*` (each `preexport:*`
+  also runs `ensure-firebase-config.mjs`).
+- **EAS Build** — `eas-cli@16.14.1 build --non-interactive --profile … --platform …`.
+
+Trigger from GitHub: Actions → **mobile-eas-build** → Run workflow. Or locally:
+```bash
+cd mobile
+EXPO_TOKEN=<token> eas build --profile preview --platform android
+```
+
+**Part 4 — Verification**
+
+| Check | How |
+|---|---|
+| Crashlytics logs | Install a **preview/production** build with real Firebase config + Diagnostics **on** → use the app → Firebase console → Crashlytics → **Logs**. `debugLog` **info/warn/error** lines appear via `bridgeLogToCrashlytics` (`mobile/src/lib/debugLog.ts`); **debug** level is local-only. **error** also calls `recordError`. |
+| Crashlytics crashes | Force a test crash or wait for a real native crash; same console → **Issues**. |
+| Clarity replay | Non-`__DEV__` build + `EXPO_PUBLIC_CLARITY_PROJECT_ID` set + Diagnostics **on** → browse a few screens → clarity.microsoft.com → project → **Recordings** (may lag a few minutes). |
+| Diagnostics toggle | Settings → **Diagnostics & crash reporting** — off stops new Clarity capture and Crashlytics collection; on resumes. Local **Debug log** viewer/upload (`/debug-log`) is independent. |
+| Placeholder detection | If CI log shows `ensure-firebase-config: copied …example → …` and no Crashlytics data, add real Firebase files or GitHub secrets. |
+
+**Operator checklist**
+
+- [ ] EAS **preview** or **production** build installed on device (not Expo Go)
+- [ ] `EXPO_PUBLIC_CLARITY_PROJECT_ID` in EAS env (or `mobile/.env` for local EAS CLI)
+- [ ] Real `google-services.json` + `GoogleService-Info.plist` (or GH secrets for workflow builds)
+- [ ] Crashlytics **enabled** in Firebase console for the project
+- [ ] Rebuilt **after** adding native config / env vars
+- [ ] Settings → Diagnostics **on** for the test session
+- [ ] Confirmed data in Firebase Crashlytics + Clarity dashboards
+
+**Common mistakes**
+
+| Mistake | Symptom | Fix |
+|---|---|---|
+| Testing in Expo Go | No native modules; observability silently no-ops | Install EAS dev/preview APK or dev client |
+| Only `mobile/.env` for Clarity, not EAS env | Cloud builds missing Project ID; no recordings | Set var on expo.dev project environments |
+| Placeholder Firebase files | Build/export green; zero Crashlytics events | Drop real JSON/plist from Firebase console or set GH secrets |
+| Expecting Clarity in `expo start` / `__DEV__` | No recordings despite correct Project ID | Use preview/production build (`__DEV__` false) |
+| Diagnostics toggle off | No new logs or replays | Enable in Settings (default is on for fresh installs) |
+| Wrong Firebase app package/bundle | Crashlytics dashboard empty | Re-register apps as `com.yanniedog.arlocalrates` |
+| Forgot rebuild after first SDK setup | Old binary without Crashlytics/Clarity native code | `eas build` or **mobile-eas-build** workflow |
+| `debug` lines missing in Crashlytics | By design | Only info/warn/error bridge; use Settings → Debug log locally |
+
 ---
 
 ## 4. The Pi (data source) — access & layout
@@ -371,7 +488,13 @@ mobile/app/node.tsx                     # one drill level (pushed per category)
 mobile/app/search.tsx                   # flat search/sort/filter/compare (scoped to a node)
 mobile/app/product/[key].tsx            # product detail (terminal leaf)
 mobile/src/lib/debugLog.ts              # in-app ring-buffer logger (512KB / 2000 lines)
+mobile/src/lib/observability.ts       # Clarity init + Crashlytics bridge + diagnostics toggle
 mobile/app/debug-log.tsx                # Settings → view/share/upload logs (paste.rs POST)
+mobile/scripts/ensure-firebase-config.mjs  # copy .example Firebase configs when gitignored files absent
+mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
+mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
+mobile/firebase.json                    # Crashlytics native config (no secrets)
+.github/workflows/mobile-eas-build.yml # workflow_dispatch EAS builds (Firebase secrets optional)
 ```
 
-**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`.
+**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`. Warn/error/info lines also forward to Crashlytics when Diagnostics is on (see §3 observability).
