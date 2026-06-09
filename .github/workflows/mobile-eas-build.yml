@@ -42,7 +42,7 @@ on:
           - all
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mobile-eas-build-${{ github.run_id }}
@@ -83,6 +83,14 @@ jobs:
         run: |
           node scripts/ensure-firebase-config.mjs
           node scripts/validate-firebase-package.mjs
+
+      - name: Bump Android versionCode from rolling manifest
+        if: >-
+          inputs.profile == 'preview' &&
+          (inputs.platform == 'android' || inputs.platform == 'all')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/bump-android-version-code.mjs --repo "${{ github.repository }}"
 
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
       - name: Validate JS bundle (typecheck + export)
@@ -153,7 +161,17 @@ jobs:
             --platform "${{ inputs.platform }}" 2>&1 | tee /tmp/eas-build.log
           status=${PIPESTATUS[0]}
           set -e
-          build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
+          case "${{ inputs.platform }}" in
+            android)
+              build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
+              ;;
+            all)
+              build_id=$(grep -i android /tmp/eas-build.log | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1 || true)
+              ;;
+            *)
+              build_id=""
+              ;;
+          esac
           if [ -n "$build_id" ]; then
             echo "eas_build_id=$build_id" >> "$GITHUB_OUTPUT"
             echo "EAS build: https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds/$build_id"
@@ -162,6 +180,18 @@ jobs:
             node scripts/fetch-eas-build-error.mjs "$build_id" || true
           fi
           exit "$status"
+
+      - name: Publish preview APK manifest (GitHub release)
+        if: >-
+          inputs.profile == 'preview' &&
+          (inputs.platform == 'android' || inputs.platform == 'all') &&
+          steps.eas_build.outputs.eas_build_id != ''
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/publish-apk-manifest.mjs --eas-build-id "${{ steps.eas_build.outputs.eas_build_id }}" \
+            --repo "${{ github.repository }}"
 
       - name: Build queued
         run: |

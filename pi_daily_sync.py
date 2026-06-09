@@ -173,6 +173,18 @@ def discard_eol_only_changes(repo: Path) -> bool:
         shell=False,
         timeout=GIT_TIMEOUT_SEC,
     )
+    remaining = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=False,
+        timeout=GIT_TIMEOUT_SEC,
+    ).stdout.strip()
+    if remaining:
+        return False
+
     print(f"[pi_daily_sync] discarded line-ending-only local changes in {repo}")
     return True
 
