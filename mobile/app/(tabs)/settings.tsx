@@ -25,6 +25,7 @@ import {
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
+import { dataSourceLabel } from '../../src/lib/nextIngest';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 const THRESHOLDS = [1, 5, 10, 25];
@@ -33,7 +34,6 @@ export default function Settings() {
   const router = useRouter();
   const prefs = useStore((s) => s.prefs);
   const setPref = useStore((s) => s.setPref);
-  const manifest = useStore((s) => s.manifest);
   const core = useStore((s) => s.core);
   const source = useStore((s) => s.source);
   const refresh = useStore((s) => s.refresh);
@@ -146,10 +146,7 @@ export default function Settings() {
         />
         <Divider style={{ marginVertical: 12 }} />
         <InfoRow label="Data set" value={core ? formatRunDate(core.run_date) : '—'} />
-        <InfoRow
-          label="Source"
-          value={source === 'remote' ? 'GitHub (live)' : source === 'cache' ? 'Cached' : 'Bundled sample'}
-        />
+        <InfoRow label="Source" value={dataSourceLabel(source)} />
         <InfoRow label="Last checked" value={lastCheckedAt ? relativeDate(lastCheckedAt) : 'never'} />
         <InfoRow label="Lenders" value={core ? String(Object.keys(core.brands).length) : '—'} />
         <Row gap={12} style={{ marginTop: 12 }}>
@@ -222,7 +219,6 @@ export default function Settings() {
           label="Version"
           value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
-        <InfoRow label="Repo" value={manifest?.repo ?? 'yanniedog/AR-local'} />
         <AppText variant="tiny" color="textFaint" style={{ marginTop: 12, lineHeight: 16 }}>
           Rates are sourced from public Consumer Data Right (open banking) product data and
           provided for general information only — not financial advice. Always confirm with the
@@ -325,8 +321,8 @@ function AppUpdateSection() {
         ) : null}
       </Row>
       <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
-        Preview APK updates from the rolling GitHub release (app-apk-latest). Android will prompt
-        to install; allow installs from this app if prompted.
+        Preview builds are published on the release channel. Android will prompt to install; allow
+        installs from this app if prompted.
       </AppText>
     </Section>
   );

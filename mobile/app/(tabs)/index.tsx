@@ -5,11 +5,12 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
+import { HomeHero } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
-import { AppText, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
+import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
@@ -30,7 +31,6 @@ const SECTION_SEG = [
 export default function Home() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
-  const manifest = useStore((s) => s.manifest);
   const refreshing = useStore((s) => s.refreshing);
   const refresh = useStore((s) => s.refresh);
   const source = useStore((s) => s.source);
@@ -44,8 +44,6 @@ export default function Home() {
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
 
   const sectionRows = core?.sections[section]?.rates;
-  // Restrict to rows in this section's hierarchy (drops alternate-root rows like
-  // OVERDRAFT) so the hero, ribbon and categories all agree.
   const sectionData = core?.sections[section];
   const hierRows = useMemo(() => rowsUnder(sectionRows ?? [], section, []), [sectionRows, section]);
   const stats = useMemo(
@@ -72,6 +70,7 @@ export default function Home() {
   const rba = core.rba.at(-1);
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
+  const lenderCount = Object.keys(core.brands).length;
 
   return (
     <ScreenScrollView
@@ -82,15 +81,19 @@ export default function Home() {
     >
       <OfflineBanner source={source} offline={offline} />
 
-      <Row style={{ justifyContent: 'space-between', marginBottom: 14 }}>
-        <View style={{ flex: 1 }}>
-          <AppText variant="h1">Australian Rates</AppText>
-          <AppText variant="small" color="textMuted" numberOfLines={1}>
-            Updated {formatRunDate(core.run_date)} · {relativeDate(`${core.run_date}T00:00:00Z`)}
-          </AppText>
-        </View>
+      <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <IconButton icon="refresh" onPress={onRefresh} accessibilityLabel="Refresh" />
       </Row>
+
+      <HomeHero
+        runDateLabel={formatRunDate(core.run_date)}
+        runAgeLabel={relativeDate(`${core.run_date}T00:00:00Z`)}
+        source={source}
+        offline={offline}
+        productCount={stats.products}
+        lenderCount={lenderCount}
+        providerCount={stats.providers}
+      />
 
       <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
       <View style={{ marginTop: 10 }}>
@@ -101,21 +104,37 @@ export default function Home() {
         />
       </View>
 
-      {/* Hero: best rate + ribbon distribution for the section */}
-      <Card style={{ marginTop: 14, marginBottom: 14 }}>
+      <Card
+        style={{
+          marginTop: 14,
+          marginBottom: 14,
+          borderColor: `${accent}44`,
+        }}
+      >
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
           <View style={{ flex: 1, paddingRight: 10 }}>
-            <AppText variant="small" color="textMuted">
-              {meta.lowerIsBetter ? 'Lowest' : 'Top'} {meta.title.toLowerCase()} rate
+            <AppText variant="tiny" color="textFaint" weight="700">
+              {meta.title.toUpperCase()}
             </AppText>
-            <AppText variant="h1" weight="800" style={{ color: accent }}>
+            <AppText variant="small" color="textMuted" style={{ marginTop: 2 }}>
+              {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate in section
+            </AppText>
+            <AppText variant="h1" weight="800" style={{ color: accent, marginTop: 4 }}>
               {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
             </AppText>
           </View>
           {section === 'Mortgage' && rba ? (
-            <View style={{ alignItems: 'flex-end' }}>
+            <View
+              style={{
+                alignItems: 'flex-end',
+                backgroundColor: theme.colors.chip,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                borderRadius: theme.radius.md,
+              }}
+            >
               <AppText variant="tiny" color="textFaint">
-                RBA cash rate
+                RBA cash
               </AppText>
               <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
                 {rba.rate.toFixed(2)}%
@@ -169,7 +188,6 @@ export default function Home() {
         </Card>
       ) : null}
 
-      {/* Browse by category (top of the AR-local drill-down hierarchy) */}
       <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 10, marginLeft: 2 }}>
         BROWSE BY CATEGORY
       </AppText>
@@ -184,6 +202,8 @@ export default function Home() {
               borderRadius: theme.radius.lg,
               borderWidth: 1,
               borderColor: theme.colors.border,
+              borderLeftWidth: 3,
+              borderLeftColor: accent,
               padding: 14,
               marginBottom: 10,
               opacity: pressed ? 0.85 : 1,
@@ -217,21 +237,6 @@ export default function Home() {
           <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
         </>
       ) : null}
-
-      <Card style={{ marginTop: 8 }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <AppText variant="small" color="textMuted">
-            Next update {manifest?.schedule?.label ?? 'daily'}
-          </AppText>
-          <AppText variant="small" color="textFaint">
-            {Object.keys(core.brands).length} lenders
-          </AppText>
-        </Row>
-        <Divider style={{ marginVertical: 10 }} />
-        <AppText variant="tiny" color="textFaint">
-          Live data published by the Raspberry Pi to GitHub · run {formatRunDate(core.run_date)}
-        </AppText>
-      </Card>
     </ScreenScrollView>
   );
 }
