@@ -11,6 +11,7 @@ import {
   uploadLogsToPasteRs,
 } from '../src/lib/debugLog';
 import {
+  setDiagnosticsEnabled,
   setObservabilityDepsForTests,
   type CrashlyticsLike,
   type ClarityLike,
@@ -123,6 +124,7 @@ describe('debugLog integration', () => {
       crashlytics: () => crashlyticsApi,
       clarity: clarityApi,
     });
+    await setDiagnosticsEnabled(true);
     debugLog.clear();
     await AsyncStorage.clear();
   });
@@ -153,5 +155,12 @@ describe('debugLog integration', () => {
     expect(crashlyticsApi.log).toHaveBeenCalledWith('[WARN] store: prefs rehydrate failed');
     expect(crashlyticsApi.log).toHaveBeenCalledWith('[ERROR] payload: download failed');
     expect(crashlyticsApi.recordError).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts secrets forwarded to Crashlytics', () => {
+    debugLog.warn('test', 'hello EXPO_TOKEN=secret');
+
+    expect(crashlyticsApi.log).toHaveBeenCalledWith('[WARN] test: hello EXPO_TOKEN=[REDACTED]');
+    expect(crashlyticsApi.log).not.toHaveBeenCalledWith(expect.stringContaining('secret'));
   });
 });

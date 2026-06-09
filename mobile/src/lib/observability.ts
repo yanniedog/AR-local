@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 import type { LogLevel } from './debugLog';
 
-let diagnosticsEnabled = true;
+let diagnosticsEnabled = false;
 let clarityInitialized = false;
 
 export type CrashlyticsLike = {
@@ -43,9 +43,28 @@ function getDeps(): ObservabilityDeps | null {
   return deps;
 }
 
+function clarityProjectId(): string | undefined {
+  return process.env.EXPO_PUBLIC_CLARITY_PROJECT_ID?.trim() || undefined;
+}
+
+function tryInitializeClarity(native: ObservabilityDeps): void {
+  const projectId = clarityProjectId();
+  if (!projectId || __DEV__ || clarityInitialized) return;
+  try {
+    native.clarity.initialize(projectId);
+    clarityInitialized = true;
+  } catch {
+    // native module unavailable
+  }
+}
+
 /** Test hook — inject mocks or reset to lazy native load. */
 export function setObservabilityDepsForTests(next: ObservabilityDeps | null): void {
   deps = next;
+  if (!next) {
+    clarityInitialized = false;
+    diagnosticsEnabled = false;
+  }
 }
 
 export function isDiagnosticsEnabled(): boolean {
@@ -58,7 +77,9 @@ export async function setDiagnosticsEnabled(enabled: boolean): Promise<void> {
   if (!native) return;
   try {
     await native.crashlytics().setCrashlyticsCollectionEnabled(enabled);
-    if (clarityInitialized) {
+    if (enabled && !clarityInitialized) {
+      tryInitializeClarity(native);
+    } else if (clarityInitialized) {
       if (enabled) await native.clarity.resume();
       else await native.clarity.pause();
     }
@@ -78,15 +99,8 @@ export async function initObservability(): Promise<void> {
     // non-fatal
   }
 
-  const projectId = process.env.EXPO_PUBLIC_CLARITY_PROJECT_ID?.trim();
-  if (!projectId || __DEV__ || !diagnosticsEnabled) return;
-
-  try {
-    native.clarity.initialize(projectId);
-    clarityInitialized = true;
-  } catch {
-    // native module unavailable
-  }
+  if (!diagnosticsEnabled) return;
+  tryInitializeClarity(native);
 }
 
 /** Forward debugLog lines to Crashlytics when diagnostics are enabled. */

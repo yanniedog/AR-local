@@ -1,4 +1,4 @@
-import {
+﻿import {
   bridgeLogToCrashlytics,
   initObservability,
   isDiagnosticsEnabled,
@@ -85,5 +85,18 @@ describe('observability', () => {
     await setDiagnosticsEnabled(false);
 
     expect(clarityApi.pause).toHaveBeenCalled();
+  });
+
+  it('initializes Clarity when enabling diagnostics mid-session', async () => {
+    const { crashlytics, clarityApi } = makeMocks();
+    setObservabilityDepsForTests({ crashlytics, clarity: clarityApi });
+    (global as { __DEV__?: boolean }).__DEV__ = false;
+    process.env.EXPO_PUBLIC_CLARITY_PROJECT_ID = 'test-clarity-project';
+
+    await setDiagnosticsEnabled(false);
+    await setDiagnosticsEnabled(true);
+
+    expect(clarityApi.initialize).toHaveBeenCalledWith('test-clarity-project');
+    expect(clarityApi.resume).not.toHaveBeenCalled();
   });
 });
