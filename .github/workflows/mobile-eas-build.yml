@@ -205,12 +205,13 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          set -o pipefail
+          set +e
           EAS_NO_VCS=1 npx eas-cli@16.14.1 build \
             --non-interactive \
             --profile "${{ inputs.profile }}" \
             --platform "${{ inputs.platform }}" 2>&1 | tee /tmp/eas-build.log
           status=${PIPESTATUS[0]}
+          set -e
           build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
           if [ -n "$build_id" ]; then
             echo "eas_build_id=$build_id" >> "$GITHUB_OUTPUT"

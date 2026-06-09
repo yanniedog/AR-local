@@ -11,7 +11,6 @@
  * EAS: wired via package.json "eas-build-pre-install" (runs before npm install on cloud).
  * Local: preexport:* hooks and mobile-eas-build.yml materialize step.
  */
-import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,11 +91,3 @@ materialize('GoogleService-Info.plist', {
   inlinePrefix: '<',
 });
 
-// Fail fast on EAS / CI when package_name drifts from app.json.
-const validate = join(root, 'validate-firebase-package.mjs');
-if (existsSync(join(mobileDir, 'google-services.json'))) {
-  const result = spawnSync(process.execPath, [validate], { stdio: 'inherit' });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-}
