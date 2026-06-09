@@ -585,6 +585,35 @@ def _gh_available() -> Optional[str]:
     return shutil.which("gh")
 
 
+def release_title(run_date: str) -> str:
+    """Human-readable rolling-release title for a given payload run_date."""
+    return f"App payload (rolling) - {run_date}"
+
+
+def _update_release_title(gh: str, repo: str, tag: str, run_date: str) -> bool:
+    """Refresh the rolling release title to match the published run_date."""
+    if not run_date:
+        return False
+    title = release_title(run_date)
+    try:
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+        res = subprocess.run(
+            [gh, "release", "edit", tag, "--repo", repo, "--title", title],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+        )
+        if res.returncode == 0:
+            print(f"[app_payload] release title updated to {title!r}")
+            return True
+        print(
+            f"[app_payload] release title update failed (exit={res.returncode}): "
+            f"{(res.stderr or res.stdout or '').strip()}"
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001 - title sync must never fail publish
+        print(f"[app_payload] release title update skipped (non-fatal): {exc}")
+        return False
+
+
 def _gh_authed(gh: str) -> bool:
     if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
         return True
@@ -680,14 +709,27 @@ def publish_payload(
         if require_token:
             raise RuntimeError(msg)
         print(msg)
+        print(
+            f"[app_payload] publish skipped run_date={str(manifest.get('run_date') or '')} "
+            "reason=no_gh_auth exit=0"
+        )
         return False
 
-    title = f"App payload (rolling) - {manifest.get('run_date')}"
+    our_run_date = str(manifest.get("run_date") or "")
+    our_gen = str(manifest.get("generated_at") or "")
+    core_name = manifest["files"]["core"]["name"]
+    details_name = manifest["files"]["details"]["name"]
+    print(
+        f"[app_payload] publish starting run_date={our_run_date} tag={tag} repo={repo} "
+        f"assets=[{core_name}, {details_name}, manifest.json]"
+    )
+    title = release_title(our_run_date)
     notes = "Rolling mobile-app data payload. Updated automatically by the daily Pi ingest."
     if dry_run:
-        print(f"[app_payload] DRY-RUN would publish {len(assets)} assets to {repo}@{tag}:")
-        for a in assets:
-            print(f"  - {a.name}")
+        print(
+            f"[app_payload] publish dry-run run_date={our_run_date} tag={tag} repo={repo} "
+            f"assets={[a.name for a in assets]}"
+        )
         return False
 
     # Ensure the release/tag exists (idempotent). All calls use a fixed argv with
@@ -724,13 +766,14 @@ def publish_payload(
     # ...then replace manifest.json last, so it only ever points at assets already live.
     # First check the live manifest, distinguishing present / missing / transient-error.
     status, live = _live_manifest_status(repo, tag)
-    our_run_date = str(manifest.get("run_date") or "")
-    our_gen = str(manifest.get("generated_at") or "")
 
     if status == "error" and not force:
         # We couldn't verify the live manifest — fail closed rather than risk clobbering
         # a newer one we just can't see. (Non-fatal for the daily pipeline; retried.)
-        print("[app_payload] could not verify the live manifest; skipping replacement (pass force=true to override)")
+        print(
+            "[app_payload] publish failed run_date="
+            f"{our_run_date} reason=live_manifest_verify_error exit=0"
+        )
         return False
 
     if status == "present" and not force:
@@ -746,9 +789,9 @@ def publish_payload(
         )
         if live_newer:
             print(
-                f"[app_payload] live manifest (run_date={live_run_date}, generated_at={live_gen}) "
-                f"is newer than ours ({our_run_date}, {our_gen}); skipping manifest replacement "
-                "(pass force=true to override)"
+                f"[app_payload] publish skipped manifest run_date={our_run_date} "
+                f"(live run_date={live_run_date} generated_at={live_gen} is newer; "
+                f"uploaded {len(to_upload)} new data asset(s); pass force=true to override)"
             )
             return False
 
@@ -793,9 +836,10 @@ def publish_payload(
                 print(f"[app_payload] not restoring backup (live recheck={recheck}); avoiding a clobber")
         raise
     print(
-        f"[app_payload] published manifest + {len(to_upload)} new asset(s) "
-        f"to {repo}@{tag} (run_date={manifest.get('run_date')})"
+        f"[app_payload] publish succeeded run_date={our_run_date} tag={tag} repo={repo} "
+        f"manifest_replaced=true new_data_assets={len(to_upload)} exit=0"
     )
+    _update_release_title(gh, repo, tag, our_run_date)
     # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
     try:
         keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}

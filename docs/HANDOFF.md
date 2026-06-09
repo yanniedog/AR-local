@@ -80,7 +80,8 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 
 4. **Publish path in code**: `pi_daily_sync.py` → `maybe_publish_app_payload()` (gated by
    `AR_LOCAL_APP_PAYLOAD` env) → `app_payload.build_and_publish(exports)`. Publishing is
-   **token-gated and non-fatal** (a publish failure never fails the ingest).
+   **token-gated and non-fatal** (a publish failure never fails the ingest). Journald:
+   `journalctl -u ar-local-daily.service -n 80 --no-pager | grep -E 'app_payload|pi_daily_sync.*app_payload'`.
 
 **Common failure modes** (in order of likelihood):
 - **Pi offline.** Check `tailscale status` for `ar-local-pi5` (must be "active", not
@@ -236,7 +237,17 @@ The last Android dev build artifact:
 `python3 app_payload.py publish --dir <dir> [--require-token]` → uploads to the rolling
 release `app-payload-latest` via `gh` (auth via `GH_TOKEN`/`GITHUB_TOKEN` env **or** `gh`
 login). Content-addressed asset names; manifest uploaded last; refuses to downgrade to an
-older/equal `run_date` unless `--force`.
+older/equal `run_date` unless `--force`. On each successful manifest replacement, `gh release
+edit` refreshes the release title to `App payload (rolling) - <run_date>` (journald:
+`[app_payload] publish starting|succeeded|failed` and `[pi_daily_sync] app_payload publish`).
+
+**Backfill missing historical assets** (Pi, ingested but never published — uploads core/details
+without downgrading the live manifest):
+
+```bash
+ssh ar-local-pi5 'cd /srv/ar-local/AR-local && sudo -E bash scripts/backfill-app-payload.sh'
+# bounds: --from-date 2026-05-20 --to-date 2026-06-06 (defaults); --dry-run to preview
+```
 
 CI: `.github/workflows/app-payload-publish.yml` (manual `workflow_dispatch` re-publish from
 the committed sample); the **Pi is the primary daily publisher**.

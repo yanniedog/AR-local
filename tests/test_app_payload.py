@@ -107,6 +107,47 @@ def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
     assert "logo" not in brands["No Logo Bank"]
 
 
+def test_release_title_format():
+    assert app_payload.release_title("2026-06-08") == "App payload (rolling) - 2026-06-08"
+    assert app_payload.release_title("2026-05-19") == "App payload (rolling) - 2026-05-19"
+
+
+def test_update_release_title_calls_gh_release_edit(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+    ok = app_payload._update_release_title(
+        "/usr/bin/gh", "yanniedog/AR-local", "app-payload-latest", "2026-06-08"
+    )
+    assert ok is True
+    assert calls == [
+        [
+            "/usr/bin/gh",
+            "release",
+            "edit",
+            "app-payload-latest",
+            "--repo",
+            "yanniedog/AR-local",
+            "--title",
+            "App payload (rolling) - 2026-06-08",
+        ]
+    ]
+
+
+def test_update_release_title_skips_blank_run_date():
+    assert app_payload._update_release_title("/usr/bin/gh", "owner/repo", "tag", "") is False
+
+
 def test_brand_lookup_normalization_is_centralized_and_first_wins():
     values = {}
     app_payload._put_brand_lookup(values, ["Bank of Melbourne"], "first")
