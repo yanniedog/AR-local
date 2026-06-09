@@ -48,6 +48,17 @@ function ratesByIndex(core: CorePayload, productKey: string): Map<number, { row:
  * Pure diff: compare two payloads and produce user-facing change messages.
  * Exposed (and unit-tested) separately from the scheduling side-effect.
  */
+
+function dedupeNotifyMessages(messages: NotifyMessage[]): NotifyMessage[] {
+  const seen = new Set<string>();
+  return messages.filter((m) => {
+    const key = `${m.title}\0${m.body}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function computeChanges(
   oldCore: CorePayload | null,
   newCore: CorePayload,
