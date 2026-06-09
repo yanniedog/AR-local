@@ -215,14 +215,14 @@ export function BankHistoryChart({
               return (
                 <React.Fragment key={`${mark.date}-${mark.snap}`}>
                   <Rect
-                    x={x - half}
+                    x={Math.max(padL, x - half)}
                     y={padT}
-                    width={half * 2}
+                    width={Math.min(width - padR, x + half) - Math.max(padL, x - half)}
                     height={innerH}
                     fill={RBA_BAND}
                   />
                   <SvgText
-                    x={x - half + 2}
+                    x={Math.max(padL + 2, x - half + 2)}
                     y={padT + 10}
                     fontSize={9}
                     fill={RBA_COLOR}
@@ -255,28 +255,34 @@ export function BankHistoryChart({
               />
             ) : null}
 
-            {plotDates.map((date, i) =>
-              labelEvery === 0 || i % (labelEvery + 1) === 0 || i === plotDates.length - 1 ? (
-                <SvgText
-                  key={date}
-                  x={xAt(i)}
-                  y={height - 4}
-                  fontSize={10}
-                  fill={theme.colors.textFaint}
-                  textAnchor="middle"
-                >
-                  {formatAxisDateLabel(date)}
-                </SvgText>
-              ) : null,
-            )}
+            {plotDates.map((date, i) => {
+              const isLast = i === plotDates.length - 1;
+              const isScheduled = labelEvery === 0 || i % (labelEvery + 1) === 0;
+              const isTooCloseToLast = !isLast && (plotDates.length - 1 - i) < (labelEvery + 1) * 0.7;
+              if (isLast || (isScheduled && !isTooCloseToLast)) {
+                return (
+                  <SvgText
+                    key={date}
+                    x={xAt(i)}
+                    y={height - 4}
+                    fontSize={10}
+                    fill={theme.colors.textFaint}
+                    textAnchor="middle"
+                  >
+                    {formatAxisDateLabel(date)}
+                  </SvgText>
+                );
+              }
+              return null;
+            })}
 
             {activePoint?.mean != null ? (
-              <CircleMarker cx={xAt(plotDates.indexOf(activeDate))} cy={yAt(activePoint.mean)} color={ribbonColor} />
+              <CrossMarker cx={xAt(plotDates.indexOf(activeDate))} cy={yAt(activePoint.mean)} color={ribbonColor} />
             ) : null}
           </Svg>
         ) : null}
 
-        {onDateSelect && plotDates.length > 1 ? (
+        {plotDates.length > 1 ? (
           <View
             style={{
               position: 'absolute',
@@ -316,7 +322,7 @@ export function BankHistoryChart({
   );
 }
 
-function CircleMarker({ cx, cy, color }: { cx: number; cy: number; color: string }) {
+function CrossMarker({ cx, cy, color }: { cx: number; cy: number; color: string }) {
   return (
     <>
       <Line x1={cx} y1={cy - 4} x2={cx} y2={cy + 4} stroke={color} strokeWidth={2} />

@@ -137,7 +137,11 @@ export function selectBankHistoryChartModel(
   if (historyCache && historyCache.section === section && historyCache.rates?.length) {
     const sectionRows = core.sections[section]?.rates ?? [];
     const hierRows = rowsUnder(sectionRows, section, []);
-    const visibleKeys = new Set(hierRows.map((row) => row.product_key));
+    const visibleKeys = new Set(
+      hierRows
+        .filter((row) => includeNonStandard || row.account_class !== 'non_standard')
+        .map((row) => row.product_key),
+    );
     const filtered = historyCache.rates.filter((row) => visibleKeys.has(row.product_key));
     const retained = normalizeTimelineDates(historyCache.run_dates || []);
     const aggregate = buildAggregateRibbonFromHistory(filtered, retained, window);
@@ -161,7 +165,7 @@ export function selectBankHistoryChartModel(
   };
 }
 
-/** Read history cache from store state once the history-cache agent lands. */
+/** Read on-device history cache from store state when wired. */
 export function selectBankHistoryCache(state: { historyCache?: BankHistoryCache | null }): BankHistoryCache | null {
   return state.historyCache ?? null;
 }

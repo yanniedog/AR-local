@@ -60,15 +60,11 @@ export default function Home() {
     () => bestRow(hierRows, section, includeNonStandard),
     [hierRows, section, includeNonStandard],
   );
-  const historyModel = useMemo(
-    () =>
-      core
-        ? selectBankHistoryChartModel(
-            { core, includeNonStandard },
-            section,
-          )
-        : null,
-    [core, section, includeNonStandard],
+  const historyModel = useStore((s) =>
+    selectBankHistoryChartModel(
+      { core: s.core, includeNonStandard: s.prefs.includeNonStandard },
+      section,
+    ),
   );
 
   if (!core) return null;
