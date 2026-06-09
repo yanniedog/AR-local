@@ -7,7 +7,11 @@ import type { RateRow } from '../types';
  */
 const NON_STANDARD_PRODUCTS: Readonly<Record<string, readonly string[]>> = {
   racq: ['Green Home Loan', 'Green Home Loan Investment'],
-  westpac: ['Sustainable Upgrades Investment', 'Sustainable Upgrades Investment Loan'],
+  westpac: [
+    'Sustainable Upgrades Home Loan',
+    'Sustainable Upgrades Investment',
+    'Sustainable Upgrades Investment Loan',
+  ],
 };
 
 function providerKey(provider: string): string | null {
