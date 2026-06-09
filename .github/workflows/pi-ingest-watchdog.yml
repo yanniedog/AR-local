@@ -1,17 +1,20 @@
-# Alert when GitHub app-payload manifest run_date is stale (backup to Pi OnFailure email).
-# Secrets: AR_LOCAL_SMTP_HOST, AR_LOCAL_SMTP_USER, AR_LOCAL_SMTP_PASS
-# Optional: AR_LOCAL_NOTIFY_TO (defaults in notify.env.example)
+# End-of-night check: Pi 01:00 ingest should publish today's manifest before 03:00 Brisbane.
+# Notify via GitHub (failed workflow + ingest-missed issue) — no SMTP secrets in Actions.
 
 name: pi-ingest-watchdog
 
 on:
   schedule:
-    # 08:30 UTC = 90 min after 07:00 UTC ingest + grace
-    - cron: "30 8 * * *"
+    # 03:00 Australia/Brisbane is UTC+10 year-round (no DST). One of these fires at 03:00 local:
+    #   AEST: 03:00 Brisbane = 17:00 UTC previous calendar day
+    # (16:00 UTC = 02:00 Brisbane — skipped by the Brisbane hour gate below.)
+    - cron: "0 16 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   manifest-check:
@@ -23,33 +26,93 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Run only at 03:00 Australia/Brisbane
+        id: gate
+        run: |
+          hour=$(TZ=Australia/Brisbane date +%H)
+          echo "brisbane_hour=$hour" >> "$GITHUB_OUTPUT"
+          if [ "$hour" = "03" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "03:00 Australia/Brisbane — running manifest check"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skip: Brisbane local hour is ${hour}:xx (want 03:xx)"
+          fi
+
       - name: Check manifest freshness
+        if: steps.gate.outputs.run == 'true'
         id: check
-        run: |
-          set +e
-          python scripts/pi_ingest_manifest_check.py --json
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
-
-      - name: Alert on stale manifest
-        if: steps.check.outputs.exit != '0'
         env:
-          AR_LOCAL_NOTIFY_TO: ${{ secrets.AR_LOCAL_NOTIFY_TO }}
-          AR_LOCAL_SMTP_HOST: ${{ secrets.AR_LOCAL_SMTP_HOST }}
-          AR_LOCAL_SMTP_USER: ${{ secrets.AR_LOCAL_SMTP_USER }}
-          AR_LOCAL_SMTP_PASS: ${{ secrets.AR_LOCAL_SMTP_PASS }}
-          AR_LOCAL_SMTP_FROM: ${{ secrets.AR_LOCAL_SMTP_FROM }}
+          TZ: Australia/Brisbane
         run: |
-          if [ -z "$AR_LOCAL_NOTIFY_TO" ]; then
-            export AR_LOCAL_NOTIFY_TO=jkokavec@gmail.com
-          fi
-          if [ -z "$AR_LOCAL_SMTP_HOST" ] || [ -z "$AR_LOCAL_SMTP_USER" ] || [ -z "$AR_LOCAL_SMTP_PASS" ]; then
-            echo "::warning::SMTP secrets missing — cannot email on stale manifest"
-            python scripts/pi_ingest_manifest_check.py
-            exit 1
-          fi
-          python scripts/pi_ingest_manifest_check.py --alert
+          set -euo pipefail
+          python scripts/pi_ingest_manifest_check.py \
+            --expected-tz Australia/Brisbane \
+            --json > check.json
+          cat check.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          data = json.loads(Path("check.json").read_text(encoding="utf-8"))
+          print(f"stale={'true' if data.get('stale') else 'false'}")
+          print(f"expected={data.get('expected_run_date', '')}")
+          print(f"manifest={data.get('manifest_run_date', '')}")
+          PY
 
-      - name: OK
-        if: steps.check.outputs.exit == '0'
-        run: python scripts/pi_ingest_manifest_check.py
+      - name: Close resolved ingest-missed issues
+        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected="${{ steps.check.outputs.expected }}"
+          mapfile -t nums < <(gh issue list \
+            --label ingest-missed \
+            --state open \
+            --json number,title \
+            --jq ".[] | select(.title | contains(\"${expected}\")) | .number")
+          if [ "${#nums[@]}" -eq 0 ]; then
+            echo "No open ingest-missed issues for ${expected}"
+            exit 0
+          fi
+          for num in "${nums[@]}"; do
+            gh issue close "$num" \
+              --comment "Manifest run_date is current (${expected}). Closed by pi-ingest-watchdog."
+          done
+
+      - name: Open ingest-missed issue when stale
+        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected="${{ steps.check.outputs.expected }}"
+          manifest="${{ steps.check.outputs.manifest }}"
+          title="Pi ingest missed: ${expected}"
+          body=$(cat <<EOF
+          GitHub \`app-payload-latest\` manifest is stale after the 03:00 Australia/Brisbane watchdog.
+
+          - expected \`run_date\`: **${expected}**
+          - manifest \`run_date\`: **${manifest:-missing}**
+          - manifest URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json
+
+          Pi ingest is scheduled for 01:00 local (see \`deploy/pi/ar-local-daily.timer\`). This check runs at 03:00 Brisbane (2h buffer).
+          EOF
+          )
+          mapfile -t existing < <(gh issue list \
+            --label ingest-missed \
+            --state open \
+            --json number,title \
+            --jq ".[] | select(.title == \"${title}\") | .number")
+          if [ "${#existing[@]}" -gt 0 ]; then
+            echo "Open issue #${existing[0]} already tracks ${expected}"
+            gh issue comment "${existing[0]}" --body "Watchdog still stale: manifest run_date=${manifest:-missing}, expected=${expected}."
+          else
+            gh issue create --title "$title" --label ingest-missed --body "$body"
+          fi
+
+      - name: Fail workflow for GitHub email notification
+        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'true'
+        run: |
+          echo "::error::Manifest stale — expected run_date ${{ steps.check.outputs.expected }}"
+          exit 1
