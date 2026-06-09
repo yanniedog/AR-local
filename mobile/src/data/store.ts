@@ -42,18 +42,21 @@ export interface Prefs {
   diagnosticsEnabled: boolean;
   wifiOnly: boolean;
   includeNonStandard: boolean;
+  /** Section ribbon time-series chart on Home (off by default). */
+  showHistoryRibbon: boolean;
   onboarded: boolean;
   interests: SectionKey[];
   rateMoveThresholdBps: number;
 }
 
-const DEFAULT_PREFS: Prefs = {
+export const DEFAULT_PREFS: Prefs = {
   themeMode: 'system',
   defaultSection: 'Mortgage',
   notificationsEnabled: false,
   diagnosticsEnabled: true,
   wifiOnly: false,
   includeNonStandard: false,
+  showHistoryRibbon: false,
   onboarded: false,
   interests: ['Mortgage', 'Savings', 'TD'],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
@@ -489,6 +492,14 @@ export const useStore = create<AppState>()(
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites, subscriptions: s.subscriptions }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<AppState> | undefined;
+        return {
+          ...current,
+          ...p,
+          prefs: { ...DEFAULT_PREFS, ...p?.prefs },
+        };
+      },
       // Flip `hydrated` once persisted state is restored, so the initial route
       // doesn't redirect returning users to onboarding before prefs load.
       onRehydrateStorage: () => () => {

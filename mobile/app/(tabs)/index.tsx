@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
+import { BankHistoryChart } from '../../src/components/BankHistoryChart';
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
@@ -11,6 +12,7 @@ import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
+import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
@@ -35,6 +37,7 @@ export default function Home() {
   const offline = useStore((s) => s.offline);
   const defaultSection = useStore((s) => s.prefs.defaultSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
   const setPref = useStore((s) => s.setPref);
   const [section, setSection] = useState<SectionKey>(defaultSection);
 
@@ -56,6 +59,12 @@ export default function Home() {
   const best = useMemo(
     () => bestRow(hierRows, section, includeNonStandard),
     [hierRows, section, includeNonStandard],
+  );
+  const historyModel = useStore((s) =>
+    selectBankHistoryChartModel(
+      { core: s.core, includeNonStandard: s.prefs.includeNonStandard },
+      section,
+    ),
   );
 
   if (!core) return null;
@@ -134,6 +143,21 @@ export default function Home() {
           <Chip label="Bank A-Z" icon="business" onPress={() => openRibbonProducts(section, 'bank')} />
         </Row>
       </Card>
+
+      {showHistoryRibbon && historyModel ? (
+        <Card style={{ marginBottom: 14 }}>
+          <AppText variant="h3" style={{ marginBottom: 8 }}>
+            {meta.title} history
+          </AppText>
+          <BankHistoryChart
+            dates={historyModel.dates}
+            points={historyModel.points}
+            allDates={historyModel.allDates}
+            rba={section === 'Mortgage' ? core.rba : undefined}
+            section={section}
+          />
+        </Card>
+      ) : null}
 
       {section === 'Mortgage' ? (
         <Card style={{ marginBottom: 14 }}>

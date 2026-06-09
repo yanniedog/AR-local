@@ -85,6 +85,13 @@ export default function Settings() {
             />
           ))}
         </Row>
+        <Divider style={{ marginVertical: 12 }} />
+        <ToggleRow
+          icon="analytics-outline"
+          label="History ribbon chart"
+          value={prefs.showHistoryRibbon}
+          onChange={(v) => setPref('showHistoryRibbon', v)}
+        />
       </Section>
 
       <Section title="Notifications">
