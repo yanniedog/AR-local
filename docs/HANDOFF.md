@@ -317,9 +317,17 @@ also runs `credentials:configure-build` before upload to fail fast with this doc
 apply to the new package name; Play Store treats the new ID as a different app.
 
 
-**Workflow:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only (does not
-gate PR merges). Inputs: `profile` (`development` / `preview` / `production` from
-`mobile/eas.json`), `platform` (`android` / `ios` / `all`).
+**Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
+— runs on `ubuntu-latest` (JDK 17, Android SDK): materialize Firebase → bump `versionCode`
+from rolling `app-apk-latest` manifest → `expo prebuild` → `gradlew assembleRelease` → publish
+`app-preview.apk` + `app-apk-latest.json` to GitHub release tag **`app-apk-latest`**. Triggers:
+`workflow_dispatch` and pushes to `main` under `mobile/**`. Signing: `ANDROID_KEYSTORE_B64`
+secrets, or `EXPO_TOKEN` to pull the default EAS keystore (`materialize-android-keystore.mjs`).
+
+**Optional EAS cloud build:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only
+(does not gate PR merges; subject to EAS quota). Inputs: `profile` (`development` / `preview` /
+`production` from `mobile/eas.json`), `platform` (`android` / `ios` / `all`). Use when EAS
+quota is available or for iOS.
 
 Steps relevant to observability:
 - **Materialize Firebase config (GHA)** — if `GOOGLE_SERVICES_JSON` is set, writes
@@ -351,16 +359,16 @@ installs a newer preview APK via the system package installer.
 | Manifest URL (baked in) | `app.json` → `expo.extra.apkManifestUrl` → `…/app-apk-latest/app-apk-latest.json` |
 | APK asset | Same release tag → `app-preview.apk` |
 | Client logic | `mobile/src/lib/appUpdateLogic.ts` (compare/fetch) + `appUpdate.ts` (download/install) |
-| Publish script | `mobile/scripts/publish-apk-manifest.mjs` (CI only; uses `EXPO_TOKEN` + `GITHUB_TOKEN`) |
+| Publish script | `mobile/scripts/publish-apk-manifest.mjs` (`--apk` for GHA; `--eas-build-id` for EAS) |
+| Version bump (GHA) | `mobile/scripts/bump-android-version-code.mjs` — monotonic `versionCode` from manifest |
 
-After a successful **mobile-eas-build** run (`profile=preview`, `platform=android`), the
-workflow downloads the EAS artifact and uploads both files to GitHub release tag
-**`app-apk-latest`**. First preview build seeds the release; subsequent builds clobber
-the rolling assets. Preview profile uses `autoIncrement: true` in `eas.json` so
-`versionCode` bumps each build.
+After a successful **mobile-android-apk** run (or **mobile-eas-build** preview/android), both
+files land on GitHub release tag **`app-apk-latest`**. First build seeds the release;
+subsequent builds clobber the rolling assets. GHA bumps `android.versionCode` from the
+published manifest; EAS uses `appVersionSource: remote` + `autoIncrement: true`.
 
-Operator: run **mobile-eas-build** (preview/android) once to populate the release, then
-devices with an older build can update from Settings without reinstalling from expo.dev.
+Operator: run **mobile-android-apk** on `main` once to seed the release, then devices with an
+older preview build can update from Settings without reinstalling from expo.dev.
 
 **Part 4 — Verification**
 

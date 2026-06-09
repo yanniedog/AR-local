@@ -172,7 +172,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/publish-apk-manifest.mjs "${{ steps.eas_build.outputs.eas_build_id }}" \
+          node scripts/publish-apk-manifest.mjs --eas-build-id "${{ steps.eas_build.outputs.eas_build_id }}" \
             --repo "${{ github.repository }}"
 
       - name: Build queued

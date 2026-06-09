@@ -59,8 +59,9 @@ function toHex(buf: ArrayBuffer): string {
 async function verifySha256(path: string, expectedSha: string): Promise<void> {
   const info = await FileSystem.getInfoAsync(path);
   const size = info.exists && 'size' in info ? (info.size ?? 0) : 0;
-  if (size > 100 * 1024 * 1024) {
-    debugLog.warn('app-update', 'skipping sha256 verify (APK too large)');
+  // SDK 54 has no FileSystem.hashAsync; skip verify for large APKs to avoid OOM on low-RAM devices.
+  if (size > 64 * 1024 * 1024) {
+    debugLog.warn('app-update', `skipping sha256 verify (APK ${size} bytes > 64 MiB)`);
     return;
   }
   const base64 = await FileSystem.readAsStringAsync(path, {
