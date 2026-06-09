@@ -131,4 +131,20 @@ describe('store refresh lifecycle', () => {
     expect(state.offline).toBe(true);
     expect(state.source).toBe('sample');
   });
+<<<<<<< HEAD
+
+  it('clears refreshing and flags offline on downloadCore failure', async () => {
+    mockDownloadCore.mockRejectedValueOnce(new Error('download failure'));
+
+    const changed = await useStore.getState().refresh({});
+
+    expect(changed).toBe(false);
+    const state = useStore.getState();
+    expect(state.refreshing).toBe(false);
+    expect(state.payloadProgress).toBeNull();
+    expect(state.offline).toBe(true);
+    expect(state.source).toBe('sample');
+  });
+=======
+>>>>>>> origin/main
 });

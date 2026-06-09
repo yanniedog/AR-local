@@ -13,6 +13,7 @@ import {
 } from '../data/downloadProgress';
 import { useStore } from '../data/store';
 import { useTheme } from '../theme/ThemeProvider';
+import { resolveOfflineBanner } from './bannerState';
 import { AppText, Row } from './ui';
 
 /** Collapsible live transfer metrics — collapsed by default. */
@@ -75,9 +76,9 @@ export function OfflineBanner({ source, offline }: { source: string; offline: bo
   const theme = useTheme();
   const payloadProgress = useStore((s) => s.payloadProgress);
   const refreshing = useStore((s) => s.refreshing);
-  if (!offline && source !== 'sample') return null;
-  const sample = source === 'sample';
-  const showLiveProgress = sample && refreshing && payloadProgress;
+  const banner = resolveOfflineBanner(source, offline, refreshing, payloadProgress);
+  if (banner.mode === 'hidden') return null;
+  const sample = banner.mode === 'connecting' || banner.mode === 'offline-sample';
   return (
     <Row
       gap={8}
@@ -87,22 +88,20 @@ export function OfflineBanner({ source, offline }: { source: string; offline: bo
         paddingVertical: 8,
         borderRadius: theme.radius.md,
         marginBottom: 12,
-        alignItems: showLiveProgress ? 'flex-start' : 'center',
+        alignItems: banner.showLiveProgress ? 'flex-start' : 'center',
       }}
     >
       <Ionicons
         name={sample ? 'flask-outline' : 'cloud-offline-outline'}
         size={16}
         color={sample ? theme.colors.primary : theme.colors.warning}
-        style={showLiveProgress ? { marginTop: 2 } : undefined}
+        style={banner.showLiveProgress ? { marginTop: 2 } : undefined}
       />
-      {showLiveProgress ? (
+      {banner.showLiveProgress && payloadProgress ? (
         <PayloadProgressDetails progress={payloadProgress} />
       ) : (
         <AppText variant="small" color="textMuted" style={{ flex: 1 }}>
-          {sample
-            ? 'Showing bundled sample data — connecting for the latest…'
-            : 'Offline — showing the last downloaded rates.'}
+          {banner.message}
         </AppText>
       )}
     </Row>

@@ -230,6 +230,7 @@ export const useStore = create<AppState>()(
               offline: false,
               ...(bundle ? { core: bundle.core } : {}),
             });
+>>>>>>> origin/main
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
