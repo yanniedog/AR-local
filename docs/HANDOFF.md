@@ -83,7 +83,25 @@ The whole daily path already exists and is enabled. To **verify** it's working:
    **token-gated and non-fatal** (a publish failure never fails the ingest). Journald:
    `journalctl -u ar-local-daily.service -n 80 --no-pager | grep -E 'app_payload|pi_daily_sync.*app_payload'`.
 
+**Email alerts on missed/failed ingest** (no manual checks):
+- Pi: `ar-local-daily.service` and `ar-local-daily-watchdog.service` use
+  `OnFailure=ar-local-ingest-alert.service` → `pi_ingest_alert.py` (SMTP via
+  `/etc/ar-local/notify.env`). Install: `sh deploy/pi/install-ingest-notify.sh` then
+  `sh deploy/pi/install-pi-systemd.sh /srv/ar-local && sudo systemctl daemon-reload`.
+- GitHub: `.github/workflows/pi-ingest-watchdog.yml` (08:30 UTC) checks
+  `app-payload-latest` manifest `run_date` and emails if stale (backup when Pi cannot send).
+- **Operator setup** — create `/etc/ar-local/notify.env` (see `deploy/pi/notify.env.example`):
+  `AR_LOCAL_NOTIFY_TO=jkokavec@gmail.com`, Gmail App Password in `AR_LOCAL_SMTP_*`.
+  GitHub repo secrets (for the workflow): `AR_LOCAL_SMTP_HOST`, `AR_LOCAL_SMTP_USER`,
+  `AR_LOCAL_SMTP_PASS`; optional `AR_LOCAL_NOTIFY_TO`, `AR_LOCAL_SMTP_FROM`.
+- Test (dry-run): `python3 pi_ingest_alert.py --reason missed-ingest --dry-run`
+- **CRLF dirty tree:** `pi_daily_sync.py` auto-discards line-ending-only changes; real edits
+  still block ingest — run `git status` on the Pi and reset or commit intentionally.
+
 **Common failure modes** (in order of likelihood):
+- **Dirty Pi git tree.** `pi_daily_sync` refuses pull when tracked files differ (often CRLF on
+  `app_payload.py` after Windows edits). Fix: `ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git checkout -- .'`
+  then `sudo systemctl start --no-block ar-local-daily.service`.
 - **Pi offline.** Check `tailscale status` for `ar-local-pi5` (must be "active", not
   "offline"). If offline, nothing publishes — the user must power/reconnect it. The deploy
   Action can't reach it either.
