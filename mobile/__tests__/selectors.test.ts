@@ -151,6 +151,16 @@ describe('selectors', () => {
     expect(distinctProviders(rows)).toEqual(['alpha credit', 'Beta', 'Mid Bank', 'Zebra Bank']);
   });
 
+
+  test('distinctProviders handles empty input and missing provider', () => {
+    expect(distinctProviders([])).toEqual([]);
+    const rows = [
+      mk({ provider: '', product_key: 'e|1' }),
+      mk({ provider: 'Bank A', product_key: 'A|1' }),
+    ];
+    expect(distinctProviders(rows)).toEqual(['Bank A']);
+  });
+
   test('findByKey across sections', () => {
     const sections = {
       Mortgage: { rates: mortgage },

@@ -57,9 +57,13 @@ export function sortByDisplayLabel(
   values: string[],
   labelOf: (value: string) => string = humanizeEnum,
 ): string[] {
-  return [...values].sort((a, b) =>
-    labelOf(a).localeCompare(labelOf(b), undefined, { sensitivity: 'base' }),
-  );
+  return [...values].sort((a, b) => {
+    const byLabel = labelOf(a).localeCompare(labelOf(b), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+    return byLabel !== 0 ? byLabel : a.localeCompare(b, undefined, { sensitivity: 'base' });
+  });
 }
 
 function toNumber(value: string | number | null | undefined): number | null {
