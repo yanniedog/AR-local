@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
+import { useRouter, type Href } from 'expo-router';
 import React from 'react';
 import { Alert, Pressable, Switch, View } from 'react-native';
 
@@ -21,6 +22,7 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 const THRESHOLDS = [1, 5, 10, 25];
 
 export default function Settings() {
+  const router = useRouter();
   const prefs = useStore((s) => s.prefs);
   const setPref = useStore((s) => s.setPref);
   const manifest = useStore((s) => s.manifest);
@@ -31,6 +33,7 @@ export default function Settings() {
   const lastCheckedAt = useStore((s) => s.lastCheckedAt);
   const subscriptions = useStore((s) => s.subscriptions);
   const removeSubscription = useStore((s) => s.removeSubscription);
+  const theme = useTheme();
 
   const onToggleNotifications = async (value: boolean) => {
     if (value) {
@@ -155,6 +158,30 @@ export default function Settings() {
             }
           />
         </Row>
+      </Section>
+
+      <Section title="Diagnostics">
+        <Pressable
+          onPress={() => router.push('/debug-log' as Href)}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingVertical: 6,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Ionicons name="document-text-outline" size={20} color={theme.colors.primary} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="body" weight="600">
+              Debug log
+            </AppText>
+            <AppText variant="tiny" color="textFaint">
+              View, share, or upload end-to-end logs
+            </AppText>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </Pressable>
       </Section>
 
       <Section title="About">

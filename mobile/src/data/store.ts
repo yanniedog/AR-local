@@ -32,6 +32,7 @@ import {
 import { downloadCore, downloadDetails, fetchManifest } from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
 import type { ThemeMode } from '../theme/theme';
+import { debugLog } from '../lib/debugLog';
 
 export interface Prefs {
   themeMode: ThemeMode;
@@ -140,6 +141,7 @@ export const useStore = create<AppState>()(
 
       async bootstrap() {
         if (get().status === 'ready' || get().status === 'loading') return;
+        debugLog.info('store', 'bootstrap');
         set({ status: 'loading' });
 
         // Restore persisted prefs before the automatic refresh below, so a returning
@@ -147,13 +149,15 @@ export const useStore = create<AppState>()(
         // instead of racing against async hydration with the defaults.
         try {
           await useStore.persist?.rehydrate?.();
-        } catch {
+        } catch (err) {
+          debugLog.warn('store', `prefs rehydrate failed: ${String((err as Error)?.message ?? err)}`);
           // proceed with defaults if rehydrate fails
         }
 
         // Core + meta are persisted atomically in one bundle, so they always agree.
         const bundle = await cache.readBundle();
         if (bundle) {
+          debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
           set({
             core: bundle.core,
             manifest: bundle.meta.manifest,
@@ -161,6 +165,7 @@ export const useStore = create<AppState>()(
             status: 'ready',
           });
         } else {
+          debugLog.info('store', 'cache miss — seeding bundled sample');
           // Seed from the bundled sample so the app is instantly usable offline.
           const seedMeta: CacheMeta = {
             manifest: sampleManifest,
@@ -199,9 +204,11 @@ export const useStore = create<AppState>()(
         if (get().refreshing) return false;
         const prefs = get().prefs;
         if (prefs.wifiOnly && !manual && !(await onWifi())) {
+          debugLog.debug('store', 'refresh skipped (wifi-only, not on Wi-Fi)');
           set({ lastCheckedAt: new Date().toISOString() });
           return false;
         }
+        debugLog.info('store', `refresh start manual=${manual} force=${force}`);
         set({ refreshing: true });
         const onProgress = (snapshot: PayloadProgressSnapshot) => set({ payloadProgress: snapshot });
         try {
@@ -218,6 +225,7 @@ export const useStore = create<AppState>()(
             meta.manifest.run_date === remote.run_date &&
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
+            debugLog.debug('store', `refresh up-to-date run_date=${remote.run_date}`);
             // Core already matches on disk — adopt manifest and sync in-memory source
             // so the sample-connect banner dismisses after a successful refresh.
             const bundle = await cache.readBundle();
@@ -295,15 +303,18 @@ export const useStore = create<AppState>()(
             // Await so a headless background task doesn't resolve (and let the OS
             // suspend the app) before the notifications are actually scheduled.
             await notify(messages);
+            debugLog.info('store', `notified ${messages.length} rate-change message(s)`);
           }
+          debugLog.info('store', `refresh ok run_date=${core.run_date} changed=true`);
           return true;
         } catch (err) {
-          // Keep whatever data we already have; just flag offline.
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.error('store', `refresh failed: ${msg}`);
           const hasData = !!get().core;
           set({
             offline: true,
             status: hasData ? 'ready' : 'error',
-            error: hasData ? null : String((err as Error)?.message ?? err),
+            error: hasData ? null : msg,
             lastCheckedAt: new Date().toISOString(),
           });
           return false;
@@ -369,7 +380,8 @@ export const useStore = create<AppState>()(
           // Only fall back to the bundled sample when we are *still* on sample data
           // (re-read source — a refresh may have switched us to remote mid-flight).
           if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
-        } catch {
+        } catch (err) {
+          debugLog.warn('store', `ensureDetails failed: ${String((err as Error)?.message ?? err)}`);
           // A live details download failed: leave details unavailable rather than
           // show stale sample fees/features next to current rates. Only use the
           // bundled sample when the rest of the data is also the sample.
@@ -464,6 +476,7 @@ export const useStore = create<AppState>()(
       },
 
       async clearCache() {
+        debugLog.info('store', 'clearCache');
         await cache.clear();
         set({ core: null, details: null, manifest: null, status: 'idle', source: 'sample' });
         await get().bootstrap();
