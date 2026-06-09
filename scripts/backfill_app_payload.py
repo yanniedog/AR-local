@@ -92,7 +92,8 @@ def refresh_rolling_latest(
     if dry_run:
         return False
     out_dir = exports / "app-payload-latest"
-    app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    manifest = app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    our_gen = str(manifest.get("generated_at") or "")
     published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG, force=force)
     print(
         f"[backfill_app_payload] rolling latest finished run_date={run_date} "
@@ -103,10 +104,17 @@ def refresh_rolling_latest(
     status, live = app_payload._live_manifest_status(repo, app_payload.DEFAULT_TAG)
     if status == "present" and live:
         live_run = str(live.get("run_date") or "")
-        if live_run and live_run >= run_date:
+        live_gen = str(live.get("generated_at") or "")
+        if live_run and live_run > run_date:
             print(
                 f"[backfill_app_payload] rolling latest no-op: live run_date={live_run} "
-                f">= newest export {run_date}"
+                f"> newest export {run_date}"
+            )
+            return True
+        if live_run == run_date and live_gen and our_gen and live_gen >= our_gen:
+            print(
+                f"[backfill_app_payload] rolling latest no-op: live run_date={live_run} "
+                f"generated_at={live_gen} >= built {our_gen}"
             )
             return True
     return False
