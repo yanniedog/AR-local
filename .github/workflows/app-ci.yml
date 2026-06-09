@@ -45,8 +45,8 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test -- --ci
-      - name: Export bundle (Android Hermes)
-        run: npm run export:android
+      - name: Export bundle (all platforms)
+        run: npm run export
 
   payload:
     name: payload builder (pytest)

@@ -67,7 +67,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          npx eas-cli@latest submit \
+          npx eas-cli@16.14.1 submit \
             --non-interactive \
             --latest \
             --profile "${{ inputs.profile }}" \

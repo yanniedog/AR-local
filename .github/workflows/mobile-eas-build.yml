@@ -70,7 +70,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          npx eas-cli@latest build \
+          npx eas-cli@16.14.1 build \
             --non-interactive \
             --profile "${{ inputs.profile }}" \
             --platform "${{ inputs.platform }}"
