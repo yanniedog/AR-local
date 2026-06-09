@@ -130,20 +130,25 @@ jobs:
 
       - name: Update README Android install QR section
         if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/update-readme-app-install.mjs --repo "${{ github.repository }}"
-          cd ..
+          node scripts/update-readme-app-install.mjs \
+            --repo "${{ github.repository }}" \
+            --manifest build/apk-publish/app-apk-latest.json
+          cd "$GITHUB_WORKSPACE"
           if git diff --quiet README.md; then
-            echo "README.md unchanged â€” skip commit"
+            echo "README.md unchanged — skip commit"
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add README.md
             version=$(node -p "require('./mobile/app.json').expo.version")
-            git commit -m "docs: refresh Android install QR (v${version})"
-            git push
+            git commit -m "docs: refresh Android install QR (v${version}) [skip ci]"
+            if ! git push origin HEAD:refs/heads/main; then
+              echo "::warning::README commit not pushed (protected main). Open a docs PR from main or merge bot sync."
+            fi
           fi
 
       - name: Upload workflow artifact
