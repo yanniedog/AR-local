@@ -21,8 +21,7 @@ export function hasPayloadRibbon(ribbon: Ribbon | undefined): ribbon is Ribbon {
 
 /**
  * Section-level ribbon stats for Home / Trends / Browse root.
- * Prefer the Pi precomputed `sections.*.ribbon` aggregate (matches dashboard server).
- * Recompute from filtered hierarchy rows when non-standard accounts are included.
+ * Prefer stats from visible hierarchy rows (matches non-standard toggle).
  * Fall back to payload ribbon when client-side stats are empty but payload has range data.
  */
 export function resolveSectionRibbonStats(

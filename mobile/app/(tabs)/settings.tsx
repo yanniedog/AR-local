@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import React from 'react';
-import { Alert, Switch, View } from 'react-native';
+import { Alert, Pressable, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -14,6 +14,7 @@ import {
   unregisterBackgroundRefresh,
 } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -28,6 +29,8 @@ export default function Settings() {
   const refresh = useStore((s) => s.refresh);
   const clearCache = useStore((s) => s.clearCache);
   const lastCheckedAt = useStore((s) => s.lastCheckedAt);
+  const subscriptions = useStore((s) => s.subscriptions);
+  const removeSubscription = useStore((s) => s.removeSubscription);
 
   const onToggleNotifications = async (value: boolean) => {
     if (value) {
@@ -77,7 +80,7 @@ export default function Settings() {
         <ToggleRow
           icon="notifications-outline"
           label="Rate-change alerts"
-          sub="Local alerts on best-rate moves & RBA changes"
+          sub="Best-rate, RBA, watchlist, and your subscriptions"
           value={prefs.notificationsEnabled}
           onChange={onToggleNotifications}
         />
@@ -95,6 +98,22 @@ export default function Settings() {
                 />
               ))}
             </Row>
+            <Divider style={{ marginVertical: 12 }} />
+            <Label text={`Subscriptions (${subscriptions.length})`} />
+            {subscriptions.length ? (
+              subscriptions.map((sub: Subscription) => (
+                <SubscriptionRow
+                  key={sub.id}
+                  kind={sub.kind === 'product' ? 'Product' : 'Search'}
+                  label={sub.label}
+                  onRemove={() => removeSubscription(sub.id)}
+                />
+              ))
+            ) : (
+              <AppText variant="tiny" color="textFaint">
+                None — add from a product or search screen.
+              </AppText>
+            )}
           </>
         ) : null}
       </Section>
@@ -206,6 +225,40 @@ function ToggleRow({
         trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
       />
     </Row>
+  );
+}
+
+function SubscriptionRow({
+  kind,
+  label,
+  onRemove,
+}: {
+  kind: 'Product' | 'Search';
+  label: string;
+  onRemove: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onRemove}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingVertical: 8,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <View style={{ flex: 1 }}>
+        <AppText variant="tiny" color="textFaint">
+          {kind}
+        </AppText>
+        <AppText variant="small" weight="600">
+          {label}
+        </AppText>
+      </View>
+      <Ionicons name="close-circle-outline" size={20} color={theme.colors.textMuted} />
+    </Pressable>
   );
 }
 

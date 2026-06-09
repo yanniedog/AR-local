@@ -2,9 +2,10 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
 
 import { SECTIONS, SECTION_ORDER } from '../constants';
-import type { CorePayload, RateRow, SectionKey } from '../types';
+import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { bpsBetween, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
+import { computeSubscriptionChanges, type Subscription } from './subscriptions';
 
 export const BACKGROUND_TASK = 'ar-rates-daily-refresh';
 
@@ -47,13 +48,35 @@ function ratesByIndex(core: CorePayload, productKey: string): Map<number, { row:
  * Pure diff: compare two payloads and produce user-facing change messages.
  * Exposed (and unit-tested) separately from the scheduling side-effect.
  */
+
+function dedupeNotifyMessages(messages: NotifyMessage[]): NotifyMessage[] {
+  const seen = new Set<string>();
+  return messages.filter((m) => {
+    const key = `${m.title}\0${m.body}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function computeChanges(
   oldCore: CorePayload | null,
   newCore: CorePayload,
   favorites: string[],
   thresholdBps: number,
+  subscriptions: Subscription[] = [],
+  oldDetailsProducts?: Record<string, ProductDetail> | null,
+  newDetailsProducts?: Record<string, ProductDetail> | null,
 ): NotifyMessage[] {
   if (!oldCore) return [];
+  const subscriptionMessages = computeSubscriptionChanges(
+    oldCore,
+    newCore,
+    subscriptions,
+    thresholdBps,
+    oldDetailsProducts,
+    newDetailsProducts,
+  );
   const messages: NotifyMessage[] = [];
 
   // Per-category best-rate moves.
@@ -103,7 +126,7 @@ export function computeChanges(
     }
   }
 
-  return messages;
+  return [...subscriptionMessages, ...messages];
 }
 
 export async function ensurePermissions(): Promise<boolean> {

@@ -12,11 +12,23 @@ import type {
   Manifest,
   PayloadSource,
   ProductDetail,
+  RateRow,
   SectionKey,
 } from '../types';
 import { cache, type CacheMeta } from './cache';
 import type { PayloadProgressSnapshot } from './downloadProgress';
 import { BACKGROUND_TASK, computeChanges, notify } from './notifications';
+import {
+  addSubscription,
+  findSearchSubscription as lookupSearchSubscription,
+  isProductSubscribed as productIsSubscribed,
+  makeProductSubscription,
+  makeSearchSubscription,
+  productSubscriptionId,
+  removeSubscription as dropSubscription,
+  type FilterSnapshot,
+  type Subscription,
+} from './subscriptions';
 import { downloadCore, downloadDetails, fetchManifest } from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
 import type { ThemeMode } from '../theme/theme';
@@ -63,6 +75,7 @@ interface AppState {
 
   prefs: Prefs;
   favorites: string[];
+  subscriptions: Subscription[];
 
   bootstrap: () => Promise<void>;
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
@@ -72,6 +85,25 @@ interface AppState {
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
+  subscribeProduct: (productKey: string, rateIndex: number | null, labelRow: RateRow) => boolean;
+  unsubscribeProduct: (productKey: string, rateIndex: number | null) => void;
+  subscribeSearch: (input: {
+    section: SectionKey;
+    path: string[];
+    hierarchyScoped: boolean;
+    query: string;
+    filters: FilterSnapshot;
+  }) => boolean;
+  unsubscribeSearch: (id: string) => void;
+  removeSubscription: (id: string) => void;
+  isProductSubscribed: (productKey: string, rateIndex: number | null) => boolean;
+  findSearchSubscription: (input: {
+    section: SectionKey;
+    path: string[];
+    hierarchyScoped: boolean;
+    query: string;
+    filters: FilterSnapshot;
+  }) => Subscription | undefined;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   completeOnboarding: (interests: SectionKey[], notifications: boolean) => void;
   clearCache: () => Promise<void>;
@@ -104,6 +136,7 @@ export const useStore = create<AppState>()(
 
       prefs: DEFAULT_PREFS,
       favorites: [],
+      subscriptions: [],
 
       async bootstrap() {
         if (get().status === 'ready' || get().status === 'loading') return;
@@ -163,8 +196,7 @@ export const useStore = create<AppState>()(
         // suspend the app before fees/features are cached; in the foreground it stays
         // a non-blocking background warm.
         const warmDetails = async () => {
-          const p = get().ensureDetails();
-          if (background) await p;
+          await get().ensureDetails();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -188,8 +220,15 @@ export const useStore = create<AppState>()(
             meta.manifest.run_date === remote.run_date &&
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
-            // Core already matches, so adopting this manifest keeps them aligned.
-            set({ manifest: remote, source: 'remote', offline: false });
+            // Core already matches on disk — adopt manifest and sync in-memory source
+            // so the sample-connect banner dismisses after a successful refresh.
+            const bundle = await cache.readBundle();
+            set({
+              manifest: remote,
+              source: 'remote',
+              offline: false,
+              ...(bundle ? { core: bundle.core } : {}),
+            });
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
@@ -198,6 +237,14 @@ export const useStore = create<AppState>()(
 
           const previousCore = get().core;
           const previousSource = get().source;
+          let previousDetailsProducts = get().details?.products ?? null;
+          if (!previousDetailsProducts && previousCore) {
+            const cachedDetails = await cache.readDetails();
+            if (cachedDetails && cachedDetails.run_date === previousCore.run_date) {
+              previousDetailsProducts = cachedDetails.products ?? null;
+              if (!get().details) set({ details: cachedDetails });
+            }
+          }
           const { text, core } = await downloadCore(
             remote.files.core.url,
             remote.files.core.sha256,
@@ -234,20 +281,23 @@ export const useStore = create<AppState>()(
           // Local notifications on meaningful change — only when the baseline was a
           // previously-installed remote dataset, never the bundled sample (otherwise
           // the first live refresh would alert on sample-vs-real differences).
+          // Warm details before diffing so detail-filtered search subscriptions see products.
+          await warmDetails();
+
           if (prefs.notificationsEnabled && previousSource === 'remote') {
             const messages = computeChanges(
               previousCore,
               core,
               get().favorites,
               prefs.rateMoveThresholdBps,
+              get().subscriptions,
+              previousDetailsProducts,
+              get().details?.products ?? null,
             );
             // Await so a headless background task doesn't resolve (and let the OS
             // suspend the app) before the notifications are actually scheduled.
             await notify(messages);
           }
-
-          // Warm details (awaited only for headless background runs).
-          await warmDetails();
           return true;
         } catch (err) {
           // Keep whatever data we already have; just flag offline.
@@ -359,6 +409,46 @@ export const useStore = create<AppState>()(
         return get().favorites.includes(key);
       },
 
+      subscribeProduct(productKey, rateIndex, labelRow) {
+        if (productIsSubscribed(get().subscriptions, productKey, rateIndex)) return false;
+        set({
+          subscriptions: addSubscription(
+            get().subscriptions,
+            makeProductSubscription(labelRow, rateIndex),
+          ),
+        });
+        return true;
+      },
+
+      unsubscribeProduct(productKey, rateIndex) {
+        const id = productSubscriptionId(productKey, rateIndex);
+        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      subscribeSearch(input) {
+        if (lookupSearchSubscription(get().subscriptions, input)) return false;
+        set({
+          subscriptions: addSubscription(get().subscriptions, makeSearchSubscription(input)),
+        });
+        return true;
+      },
+
+      unsubscribeSearch(id) {
+        get().removeSubscription(id);
+      },
+
+      removeSubscription(id) {
+        set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      isProductSubscribed(productKey, rateIndex) {
+        return productIsSubscribed(get().subscriptions, productKey, rateIndex);
+      },
+
+      findSearchSubscription(input) {
+        return lookupSearchSubscription(get().subscriptions, input);
+      },
+
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
       },
@@ -384,7 +474,7 @@ export const useStore = create<AppState>()(
     {
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites }),
+      partialize: (s) => ({ prefs: s.prefs, favorites: s.favorites, subscriptions: s.subscriptions }),
       // Flip `hydrated` once persisted state is restored, so the initial route
       // doesn't redirect returning users to onboarding before prefs load.
       onRehydrateStorage: () => () => {
@@ -409,6 +499,7 @@ try {
         // persist excludes core/manifest — load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
+        await useStore.getState().ensureDetails();
         const changed = await useStore.getState().refresh({ background: true });
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
