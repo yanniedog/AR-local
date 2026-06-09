@@ -40,6 +40,9 @@ jobs:
           AR_LOCAL_SMTP_PASS: ${{ secrets.AR_LOCAL_SMTP_PASS }}
           AR_LOCAL_SMTP_FROM: ${{ secrets.AR_LOCAL_SMTP_FROM }}
         run: |
+          if [ -z "$AR_LOCAL_NOTIFY_TO" ]; then
+            export AR_LOCAL_NOTIFY_TO=jkokavec@gmail.com
+          fi
           if [ -z "$AR_LOCAL_SMTP_HOST" ] || [ -z "$AR_LOCAL_SMTP_USER" ] || [ -z "$AR_LOCAL_SMTP_PASS" ]; then
             echo "::warning::SMTP secrets missing — cannot email on stale manifest"
             python scripts/pi_ingest_manifest_check.py

@@ -51,7 +51,7 @@ def service_active() -> bool:
             text=True,
             timeout=SUBPROCESS_STATUS_TIMEOUT_SEC,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.SubprocessError):
         return False
     return (result.stdout or "").strip() in ("active", "activating")
 
@@ -122,9 +122,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             try:
                 run_daily_ingest(run_date, args.dry_run)
-            except subprocess.CalledProcessError as exc:
+            except subprocess.SubprocessError as exc:
                 catch_up_failed = True
-                detail = f"watchdog catch-up failed exit={exc.returncode}"
+                if isinstance(exc, subprocess.TimeoutExpired):
+                    detail = f"watchdog catch-up timed out after {exc.timeout}s"
+                elif isinstance(exc, subprocess.CalledProcessError):
+                    detail = f"watchdog catch-up failed exit={exc.returncode}"
+                else:
+                    detail = f"watchdog catch-up failed: {exc}"
                 if not args.json:
                     print(f"pi_daily_watchdog: {detail}", file=sys.stderr)
                 send_missed_ingest_alert(run_date, detail)

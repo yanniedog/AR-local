@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 AR_SITE_REPO = REPO_ROOT.parent / "australianrates"
 AR_SITE_URL = "https://github.com/yanniedog/australianrates.git"
 LOCK_STALE_SECONDS = 6 * 60 * 60
+GIT_TIMEOUT_SEC = 30
 
 
 class DailyIngestLock:
@@ -135,18 +136,43 @@ def discard_eol_only_changes(repo: Path) -> bool:
         text=True,
         check=True,
         shell=False,
+        timeout=GIT_TIMEOUT_SEC,
     ).stdout.strip()
     if not status:
+        return False
+    for line in status.splitlines():
+        if len(line) < 2:
+            continue
+        staged, unstaged = line[0], line[1]
+        if staged == "?" and unstaged == "?":
+            return False
+        if staged not in (" ", "?"):
+            return False
+    has_unstaged_tracked = subprocess.run(
+        ["git", "diff", "--quiet"],
+        cwd=str(repo),
+        check=False,
+        shell=False,
+        timeout=GIT_TIMEOUT_SEC,
+    ).returncode != 0
+    if not has_unstaged_tracked:
         return False
     eol_only = subprocess.run(
         ["git", "diff", "--ignore-cr-at-eol", "--quiet"],
         cwd=str(repo),
         check=False,
         shell=False,
+        timeout=GIT_TIMEOUT_SEC,
     ).returncode == 0
     if not eol_only:
         return False
-    subprocess.run(["git", "checkout", "--", "."], cwd=str(repo), check=True, shell=False)
+    subprocess.run(
+        ["git", "checkout", "--", "."],
+        cwd=str(repo),
+        check=True,
+        shell=False,
+        timeout=GIT_TIMEOUT_SEC,
+    )
     print(f"[pi_daily_sync] discarded line-ending-only local changes in {repo}")
     return True
 

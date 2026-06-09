@@ -18,7 +18,11 @@ def load_notify_env(path: Optional[Path] = None) -> dict[str, str]:
     if not env_path.is_file():
         return {}
     values: dict[str, str] = {}
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    try:
+        content = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -90,12 +94,17 @@ def send_email(
     message.set_content(body)
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=30) as smtp:
-        smtp.ehlo()
-        if port != 25:
-            smtp.starttls(context=context)
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=30, context=context) as smtp:
+            smtp.login(user, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=30) as smtp:
             smtp.ehlo()
-        smtp.login(user, password)
-        smtp.send_message(message)
+            if port != 25:
+                smtp.starttls(context=context)
+                smtp.ehlo()
+            smtp.login(user, password)
+            smtp.send_message(message)
     print(f"[email_notify] sent subject={subject!r} to={recipients}")
     return True
