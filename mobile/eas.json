@@ -8,7 +8,6 @@
       "developmentClient": true,
       "distribution": "internal",
       "environment": "development",
-      "prebuildCommand": "node scripts/ensure-firebase-config.mjs",
       "android": {
         "buildType": "apk"
       }
@@ -16,7 +15,6 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "prebuildCommand": "node scripts/ensure-firebase-config.mjs",
       "android": {
         "buildType": "apk"
       }
@@ -24,7 +22,6 @@
     "production": {
       "autoIncrement": true,
       "environment": "production",
-      "prebuildCommand": "node scripts/ensure-firebase-config.mjs",
       "android": {
         "buildType": "app-bundle"
       }
