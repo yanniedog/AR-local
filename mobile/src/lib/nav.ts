@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 
 import { SECTIONS } from '../constants';
 import type { SortKey } from '../data/selectors';
@@ -19,6 +19,12 @@ export const openBank = (provider: string) =>
 
 export const openBrowse = (section: SectionKey) =>
   router.push({ pathname: '/browse', params: { section: SECTIONS[section].slug } });
+
+export const openHierarchy = (section: SectionKey, path: string[] = []) =>
+  router.push({
+    pathname: '/hierarchy',
+    params: { section: SECTIONS[section].slug, ...(path.length ? { path: path.join('.') } : {}) },
+  } as unknown as Href);
 
 // Drill one level into the taxonomy hierarchy (path = dot-joined segments).
 export const openNode = (section: SectionKey, path: string[]) =>
