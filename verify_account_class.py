@@ -48,6 +48,8 @@ CASES: list[tuple[str, str, str, str]] = [
     ("At Call Account", "TRANS_AND_SAVINGS_ACCOUNTS", ACCOUNT_CLASS_NON_STANDARD, "at-call savings"),
     # --- Non-standard LENDING filed under RESIDENTIAL_MORTGAGES ----------------
     ("Green Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "RACQ clean-energy loan"),
+    ("Sustainable Upgrades Investment Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "Westpac sustainable upgrade loan"),
+    ("Sustainable Upgrades Home Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "Westpac sustainable home loan"),
     ("Home Equity Maximiser Investment", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "equity line of credit"),
     ("Bridging Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "bridging finance"),
     ("Land Loan", "RESIDENTIAL_MORTGAGES", ACCOUNT_CLASS_NON_STANDARD, "land loan"),

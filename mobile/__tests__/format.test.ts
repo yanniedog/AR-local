@@ -90,6 +90,13 @@ describe('format', () => {
     ).toBe(true);
     expect(
       isNonStandard({
+        provider: 'Westpac',
+        product_name: 'Sustainable Upgrades Home Loan',
+        account_class: 'standard',
+      } as RateRow),
+    ).toBe(true);
+    expect(
+      isNonStandard({
         provider: 'Greater Bank',
         product_name: 'Green Home Loan',
         account_class: 'standard',
