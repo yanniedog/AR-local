@@ -28,9 +28,12 @@ def load_state(path: Path) -> dict:
     if not path.is_file():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
     except (OSError, json.JSONDecodeError):
-        return {}
+        pass
+    return {}
 
 
 def save_state(path: Path, payload: dict) -> None:
@@ -63,7 +66,7 @@ def journal_tail(service: str = "ar-local-daily.service", lines: int = JOURNAL_L
             shell=False,
             timeout=20,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, subprocess.SubprocessError):
         return "(journalctl unavailable)"
     return (result.stdout or result.stderr or "").strip() or "(empty journal)"
 

@@ -17,14 +17,14 @@ def load_notify_env(path: Optional[Path] = None) -> dict[str, str]:
     env_path = path or Path(os.environ.get("AR_LOCAL_NOTIFY_ENV", str(DEFAULT_NOTIFY_ENV)))
     if not env_path.is_file():
         return {}
+    values: dict[str, str] = {}
     try:
-        raw = env_path.read_text(encoding="utf-8")
+        content = env_path.read_text(encoding="utf-8")
     except OSError as exc:
         # Pi installs notify.env as root:root 0600; systemd EnvironmentFile still injects vars.
         print(f"[email_notify] notify env unreadable ({env_path}): {exc}")
         return {}
-    values: dict[str, str] = {}
-    for raw_line in raw.splitlines():
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -96,12 +96,17 @@ def send_email(
     message.set_content(body)
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=30) as smtp:
-        smtp.ehlo()
-        if port != 25:
-            smtp.starttls(context=context)
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=30, context=context) as smtp:
+            smtp.login(user, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=30) as smtp:
             smtp.ehlo()
-        smtp.login(user, password)
-        smtp.send_message(message)
+            if port != 25:
+                smtp.starttls(context=context)
+                smtp.ehlo()
+            smtp.login(user, password)
+            smtp.send_message(message)
     print(f"[email_notify] sent subject={subject!r} to={recipients}")
     return True
