@@ -304,13 +304,14 @@ _NON_STANDARD_NAME_RE = re.compile(
 # file under RESIDENTIAL_MORTGAGES but are not standard owner-occupier/investor
 # home loans: line-of-credit / equity release (e.g. Bank of Sydney "Home Equity
 # Maximiser"), bridging finance, green / clean-energy purchase loans (e.g. RACQ
-# "Green Home Loan"), and construction / land loans. Scoping them to lending
-# avoids false hits on deposit products such as a "Green Saver" (Codex PR #146).
+# "Green Home Loan", Westpac "Sustainable Upgrades Home Loan"), and construction /
+# land loans. Scoping them to lending avoids false hits on deposit products such
+# as a "Green Saver" (Codex PR #146).
 _NON_STANDARD_LENDING_TERMS: tuple[str, ...] = (
     r"home[\s_-]*equity", r"equity[\s_-]*(?:maximiser|maximizer|release|access|line|loan)",
     r"line[\s_-]*of[\s_-]*credit", r"\bheloc\b",
     r"\bbridging\b", r"bridge[\s_-]*loan",
-    r"\bgreen\b", r"\bsolar\b", r"clean[\s_-]*energy",
+    r"\bgreen\b", r"\bsolar\b", r"clean[\s_-]*energy", r"\bsustainable\b",
     r"\bconstruction\b", r"\bland[\s_-]*loan", r"vacant[\s_-]*land",
 )
 
