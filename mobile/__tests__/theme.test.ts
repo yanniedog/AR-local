@@ -25,4 +25,10 @@ describe('theme palettes', () => {
     expect(lightTheme.colors.overlay).toMatch(/^#/);
     expect(darkTheme.colors.overlay).toMatch(/^#/);
   });
+
+  it('matches Pi dashboard foundation.css accent and dark background', () => {
+    expect(darkTheme.colors.bg).toBe('#0b0e11');
+    expect(darkTheme.colors.primary).toBe('#2563eb');
+    expect(lightTheme.colors.primary).toBe('#2563eb');
+  });
 });

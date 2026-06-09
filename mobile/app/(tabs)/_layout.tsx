@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 
+import { BrandLockup } from '../../src/components/BrandLockup';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function TabsLayout() {
@@ -9,22 +10,27 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.bg },
-        headerTitleStyle: { color: theme.colors.text, fontWeight: '800' },
+        headerStyle: {
+          backgroundColor: theme.colors.surface,
+          borderBottomColor: theme.colors.border,
+        },
+        headerTitleStyle: { color: theme.colors.text, fontWeight: '700', letterSpacing: -0.3 },
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textFaint,
+        tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
         },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
+          headerTitle: () => <BrandLockup markSize={28} />,
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
