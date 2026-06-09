@@ -15,6 +15,7 @@ import type {
   SectionKey,
 } from '../types';
 import { cache, type CacheMeta } from './cache';
+import type { PayloadProgressSnapshot } from './downloadProgress';
 import { BACKGROUND_TASK, computeChanges, notify } from './notifications';
 import { downloadCore, downloadDetails, fetchManifest } from './payload';
 import { sampleCore, sampleDetails, sampleManifest } from './sample';
@@ -55,6 +56,8 @@ interface AppState {
   error: string | null;
   offline: boolean;
   lastCheckedAt: string | null;
+  /** Live payload fetch metrics while upgrading from bundled sample. */
+  payloadProgress: PayloadProgressSnapshot | null;
   /** True once persisted prefs/favorites have rehydrated from AsyncStorage. */
   hydrated: boolean;
 
@@ -96,6 +99,7 @@ export const useStore = create<AppState>()(
       error: null,
       offline: false,
       lastCheckedAt: null,
+      payloadProgress: null,
       hydrated: false,
 
       prefs: DEFAULT_PREFS,
@@ -169,8 +173,9 @@ export const useStore = create<AppState>()(
           return false;
         }
         set({ refreshing: true });
+        const onProgress = (snapshot: PayloadProgressSnapshot) => set({ payloadProgress: snapshot });
         try {
-          const remote = await fetchManifest();
+          const remote = await fetchManifest(undefined, onProgress);
           // Do NOT install the remote manifest yet — if the core download fails we'd
           // be left with a new manifest paired with the old core, poisoning the
           // metadata-only freshness check. Install it only once its core is in hand.
@@ -193,7 +198,15 @@ export const useStore = create<AppState>()(
 
           const previousCore = get().core;
           const previousSource = get().source;
-          const { text, core } = await downloadCore(remote.files.core.url, remote.files.core.sha256);
+          const { text, core } = await downloadCore(
+            remote.files.core.url,
+            remote.files.core.sha256,
+            {
+              fileName: remote.files.core.name,
+              expectedBytes: remote.files.core.bytes,
+              onProgress,
+            },
+          );
           // A forced refresh (pull-to-refresh / "Refresh now") re-downloads the core
           // even when nothing changed. If the details payload is byte-identical to what
           // we already cached, keep the existing details + hash so a transient details
@@ -247,7 +260,7 @@ export const useStore = create<AppState>()(
           });
           return false;
         } finally {
-          set({ refreshing: false });
+          set({ refreshing: false, payloadProgress: null });
         }
       },
 
