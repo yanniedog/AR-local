@@ -11,6 +11,8 @@ const mockDownloadCore = jest.fn();
 const mockDownloadDetails = jest.fn();
 const mockDownloadSearchIndex = jest.fn();
 const mockDownloadHistoryBanks = jest.fn();
+const mockReadHistoryBanks = jest.fn();
+const mockClearHistoryBanks = jest.fn(async () => {});
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
@@ -31,7 +33,8 @@ jest.mock('../src/data/cache', () => ({
     writeDetails: jest.fn(async () => {}),
     readSearchIndex: jest.fn(async () => null),
     writeSearchIndex: jest.fn(async () => {}),
-    readHistoryBanks: jest.fn(async () => null),
+    readHistoryBanks: (...args: unknown[]) => mockReadHistoryBanks(...args),
+    clearHistoryBanks: () => mockClearHistoryBanks(),
     writeHistoryBanks: jest.fn(async () => {}),
     updateMeta: jest.fn(async () => {}),
     clear: jest.fn(async () => {}),
@@ -79,6 +82,7 @@ function resetStore() {
     details: null,
     searchIndex: null,
     historyBanks: null,
+    historyBanksError: null,
     detailsLoading: false,
     error: null,
     offline: false,
@@ -175,8 +179,26 @@ describe('optional feature prefs', () => {
       historyBanksSha: null,
     });
     mockDownloadHistoryBanks.mockResolvedValue({
-      text: '{"schema_version":1,"run_date":"2026-05-19","run_dates":[],"sections":{}}',
-      historyBanks: { schema_version: 1, run_date: remoteCore.run_date, run_dates: [], sections: {} },
+      text: '{"schema_version":1,"run_date":"2026-05-19","run_dates":["2026-05-19"],"sections":{"Mortgage":{"points":[{"date":"2026-05-19","min":0.03,"max":0.08,"mean":0.05,"median":0.05,"count":1}]}}}',
+      historyBanks: {
+        schema_version: 1,
+        run_date: remoteCore.run_date,
+        run_dates: [remoteCore.run_date],
+        sections: {
+          Mortgage: {
+            points: [
+              {
+                date: remoteCore.run_date,
+                min: 0.03,
+                max: 0.08,
+                mean: 0.05,
+                median: 0.05,
+                count: 1,
+              },
+            ],
+          },
+        },
+      },
     });
 
     await store.getState().ensureHistoryBanks();
@@ -185,6 +207,72 @@ describe('optional feature prefs', () => {
     expect(store.getState().historyBanks).not.toBeNull();
   });
 
+  it('ensureHistoryBanks records error when download validation fails', async () => {
+    store.setState({
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      detailsSha: null,
+      historyBanksSha: null,
+    });
+    mockDownloadHistoryBanks.mockRejectedValue(new Error('history_banks payload failed validation'));
+
+    await store.getState().ensureHistoryBanks();
+
+    expect(store.getState().historyBanks).toBeNull();
+    expect(store.getState().historyBanksError).toMatch(/validation/i);
+  });
+
+
+  it('ensureHistoryBanks discards invalid cached payload and clears cache', async () => {
+    mockReadHistoryBanks.mockResolvedValue({ run_date: '2026-05-19', sections: { Mortgage: { points: 'bad' } } });
+    store.setState({
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      detailsSha: null,
+      historyBanksSha: null,
+    });
+
+    await store.getState().ensureHistoryBanks();
+
+    expect(mockClearHistoryBanks).toHaveBeenCalled();
+    expect(store.getState().historyBanks).toBeNull();
+    expect(mockDownloadHistoryBanks).toHaveBeenCalled();
+  });
+
+  it('turning history ribbon off clears historyBanks and historyBanksError', () => {
+    store.setState({
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      historyBanks: {
+        schema_version: 1,
+        run_date: remoteCore.run_date,
+        run_dates: [remoteCore.run_date],
+        sections: {},
+      },
+      historyBanksError: 'some error',
+    });
+
+    store.getState().setPref('showHistoryRibbon', false);
+
+    expect(store.getState().prefs.showHistoryRibbon).toBe(false);
+    expect(store.getState().historyBanks).toBeNull();
+    expect(store.getState().historyBanksError).toBeNull();
+  });
   it('ensureHistoryBanks no-ops when history ribbon pref is off', async () => {
     await store.getState().ensureHistoryBanks();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();

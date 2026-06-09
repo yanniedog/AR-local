@@ -31,6 +31,7 @@ import {
 } from './subscriptions';
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
 import type { HistoryBanksPayload } from './historyPayload';
+import { normalizeHistoryBanksPayload } from './historyPayload';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
   downloadCore,
@@ -87,6 +88,8 @@ interface AppState {
   details: DetailsPayload | null;
   searchIndex: SearchIndexPayload | null;
   historyBanks: HistoryBanksPayload | null;
+  /** Set when optional history payload download/parse fails (pref may stay on). */
+  historyBanksError: string | null;
   detailsLoading: boolean;
   error: string | null;
   offline: boolean;
@@ -143,6 +146,16 @@ async function onWifi(): Promise<boolean> {
   }
 }
 
+async function readValidatedHistoryBanks(): Promise<HistoryBanksPayload | null> {
+  const raw = await cache.readHistoryBanks();
+  if (!raw) return null;
+  const normalized = normalizeHistoryBanksPayload(raw);
+  if (normalized) return normalized;
+  debugLog.warn('store', 'discarding invalid cached history banks payload');
+  await cache.clearHistoryBanks();
+  return null;
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -154,6 +167,7 @@ export const useStore = create<AppState>()(
       details: null,
       searchIndex: null,
       historyBanks: null,
+      historyBanksError: null,
       detailsLoading: false,
       error: null,
       offline: false,
@@ -185,7 +199,7 @@ export const useStore = create<AppState>()(
         const bundle = await cache.readBundle();
         const [cachedSearch, cachedHistory] = await Promise.all([
           prefs.enableDeepSearch ? cache.readSearchIndex() : Promise.resolve(null),
-          prefs.showHistoryRibbon ? cache.readHistoryBanks() : Promise.resolve(null),
+          prefs.showHistoryRibbon ? readValidatedHistoryBanks() : Promise.resolve(null),
         ]);
         if (bundle) {
           debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
@@ -480,18 +494,26 @@ export const useStore = create<AppState>()(
       async ensureHistoryBanks() {
         if (!get().prefs.showHistoryRibbon) return;
         const { core, manifest, source, historyBanks } = get();
-        if (!core || !manifest?.files.history_banks) return;
+        if (!core) return;
+        if (!manifest?.files.history_banks) {
+          set({ historyBanks: null, historyBanksError: null });
+          return;
+        }
         const asset = manifest.files.history_banks;
         const meta = await cache.readMeta();
         if (historyBanks && historyBanks.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
+          set({ historyBanksError: null });
           return;
         }
-        const cached = await cache.readHistoryBanks();
+        const cached = await readValidatedHistoryBanks();
         if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
-          set({ historyBanks: cached });
+          set({ historyBanks: cached, historyBanksError: null });
           return;
         }
-        if (source !== 'remote') return;
+        if (source !== 'remote') {
+          set({ historyBanks: null, historyBanksError: null });
+          return;
+        }
         try {
           const { text, historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
           await cache.writeHistoryBanks(text);
@@ -502,9 +524,11 @@ export const useStore = create<AppState>()(
             coreSha: manifest.files.core.sha256,
             historyBanksSha: asset.sha256,
           });
-          set({ historyBanks: fresh });
+          set({ historyBanks: fresh, historyBanksError: null });
         } catch (err) {
-          debugLog.warn('store', `ensureHistoryBanks failed: ${String((err as Error)?.message ?? err)}`);
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureHistoryBanks failed: ${msg}`);
+          set({ historyBanks: null, historyBanksError: msg });
         }
       },
 
@@ -577,9 +601,10 @@ export const useStore = create<AppState>()(
         }
         if (key === 'showHistoryRibbon') {
           if (value) {
+            set({ historyBanksError: null });
             void get().ensureHistoryBanks();
           } else {
-            set({ historyBanks: null });
+            set({ historyBanks: null, historyBanksError: null });
           }
         }
       },
@@ -605,6 +630,7 @@ export const useStore = create<AppState>()(
           details: null,
           searchIndex: null,
           historyBanks: null,
+          historyBanksError: null,
           manifest: null,
           status: 'idle',
           source: 'sample',
