@@ -22,7 +22,11 @@ export function resolveOfflineBanner(
   }
 
   if (sample && !refreshing && !offline) {
-    return { mode: 'hidden', showLiveProgress: false, message: '' };
+    return {
+      mode: 'offline-sample',
+      showLiveProgress: false,
+      message: 'Showing bundled sample data.',
+    };
   }
 
   if (sample && refreshing) {

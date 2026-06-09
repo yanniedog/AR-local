@@ -189,11 +189,7 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             // Core already matches, so adopting this manifest keeps them aligned.
-<<<<<<< HEAD
             set({ manifest: remote, source: 'remote', offline: false });
-=======
-            set({ manifest: remote, source: 'remote' });
->>>>>>> origin/main
             // Details may have been republished for the same run_date (e.g. corrected
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
