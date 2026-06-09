@@ -514,7 +514,8 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 - **Pi offline = everything stops.** Check `tailscale status` first when data looks stale.
 - **`enforce_admins: true`** — you cannot force-merge; satisfy the gates for real.
 - **`bot-presence-gate` is single-shot** and waits for **gemini** only. If the gate failed
-  before gemini reviewed, a fresh push or `gh run rerun <run-id>` after gemini comments.
+  before gemini reviewed, re-run it with a fresh push or `gh run rerun <run-id>` once gemini
+  has commented.
 - **Pi file ownership**: some `/srv/ar-local` paths are root-owned; use the blessed scripts
   (`pi_deploy_verify.py`, `install-pi-systemd.sh`) rather than ad-hoc `git pull`/edits.
 - **Line endings**: repo is LF; Windows checkouts warn about CRLF — harmless.
