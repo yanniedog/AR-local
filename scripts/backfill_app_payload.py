@@ -14,7 +14,7 @@ Operator dry-run (no uploads)::
 
     python3 scripts/backfill_app_payload.py --dry-run
 
-Bounds are optional (``--from-date`` / ``--to-date``); default scans all valid exports.
+Default ``--from-date`` is ``2026-05-13`` (mobile history ribbon floor); ``--to-date`` is open.
 """
 
 from __future__ import annotations
@@ -26,41 +26,17 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FROM = ""
 DEFAULT_TO = ""
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
-from ar_local_pi_runtime import (  # noqa: E402
-    data_runs_root,
-    export_manifest_is_valid,
-    load_exports_manifest,
-)
+from ar_local_pi_runtime import data_runs_root  # noqa: E402
+
+DEFAULT_FROM = app_payload.HISTORY_MIN_DATE
 
 
-def iter_valid_export_dates(
-    runs_root: Path,
-    *,
-    from_date: str = "",
-    to_date: str = "",
-) -> Iterable[Tuple[str, Path]]:
-    """Yield ``(run_date, exports_dir)`` for valid exports in the optional date range."""
-    runs_root = runs_root.expanduser().resolve()
-    if not runs_root.is_dir():
-        return iter(())
-    for child in sorted(runs_root.iterdir()):
-        if not child.is_dir():
-            continue
-        run_date = child.name
-        if from_date and run_date < from_date:
-            continue
-        if to_date and run_date > to_date:
-            continue
-        exports = child / "_exports"
-        manifest = load_exports_manifest(exports)
-        if manifest is not None and export_manifest_is_valid(manifest):
-            yield run_date, exports
+iter_valid_export_dates = app_payload.iter_valid_export_dates
 
 
 def dated_release_already_published(repo: str, run_date: str) -> bool:
@@ -200,6 +176,11 @@ def backfill(
     rolling_ok: Optional[bool] = None
     if not skip_latest:
         rolling_ok = refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
+    if not dry_run and (published or rolling_ok):
+        try:
+            app_payload.refresh_dates_index(runs_root, repo=repo, min_date=from_date or DEFAULT_FROM)
+        except Exception as exc:  # noqa: BLE001 - index refresh must not fail backfill
+            print(f"[backfill_app_payload] dates-index refresh failed (non-fatal) error={exc!r}")
     return results, rolling_ok
 
 
@@ -241,8 +222,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Only refresh app-payload-latest from the newest valid export.",
     )
+    parser.add_argument(
+        "--retitle-only",
+        action="store_true",
+        help="Only refresh GitHub release titles from manifest run_date (no uploads).",
+    )
     args = parser.parse_args(argv)
     runs_root = resolve_runs_root(args.runs_root)
+
+    if args.retitle_only:
+        updated, skipped = app_payload.retitle_payload_releases(
+            repo=args.repo,
+            from_date=args.from_date,
+            to_date=args.to_date,
+            dry_run=args.dry_run,
+        )
+        return 0
 
     if args.latest_only:
         ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run, force=args.force)

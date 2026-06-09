@@ -456,8 +456,12 @@ older preview build can update from Settings without reinstalling from expo.dev.
 
 | Tag | Purpose | Assets |
 |-----|---------|--------|
-| `app-payload-latest` | Mobile app polls this for the newest `run_date` | Rolling manifest + ~20 recent core/details (pruned) |
+| `app-payload-latest` | Mobile app polls this for the newest `run_date` | Rolling manifest + `dates-index.json` + ~20 recent core/details (pruned) |
 | `app-payload-YYYY-MM-DD` | Immutable snapshot for that ingest date | Exactly 3 assets (manifest + core + details); never pruned |
+
+Release **titles**: dated `Australian Rates payload — YYYY-MM-DD`; rolling
+`Australian Rates payload — latest (YYYY-MM-DD)` (`run_date` from manifest). Retitle:
+`sudo bash scripts/backfill-app-payload.sh --retitle-only --from-date 2026-05-13`.
 
 `pi_daily_sync` → `build_and_publish_dual()` publishes **both**: dated tag for the ingest
 `run_date`, then updates `app-payload-latest` when `run_date` is not older than the live
@@ -475,7 +479,7 @@ unless `--force`. Dated tags are independent snapshots. Journald:
 ```bash
 ssh ar-local-pi5 'cd /srv/ar-local/AR-local && sudo bash scripts/backfill-app-payload.sh'
 # optional bounds: --from-date 2026-05-13 --to-date 2026-06-08
-# preview: --dry-run ; re-upload existing: --force
+# preview: --dry-run ; re-upload existing: --force ; retitle only: --retitle-only
 ```
 
 CI: `.github/workflows/app-payload-publish.yml` (manual `workflow_dispatch` re-publish from

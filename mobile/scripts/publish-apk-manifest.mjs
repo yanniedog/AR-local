@@ -1,28 +1,40 @@
 #!/usr/bin/env node
 /**
- * Publish a rolling GitHub release (tag app-apk-latest) with app-preview.apk +
- * app-apk-latest.json + app-preview-qr.png + install.html for in-app self-update
- * and scan-to-install (EAS-style QR on desktop).
+ * Publish Android preview APK to GitHub Releases:
+ *   1. Rolling tag app-apk-latest (manifest + in-app self-update)
+ *   2. Versioned tag app-v{semver} (immutable install history + per-version QR)
  *
  * Usage:
  *   GH_TOKEN=… node scripts/publish-apk-manifest.mjs --apk <path> [--repo owner/name]
  *   EXPO_TOKEN=… GH_TOKEN=… node scripts/publish-apk-manifest.mjs --eas-build-id <id> [--repo owner/name]
  *   GH_TOKEN=… node scripts/publish-apk-manifest.mjs --qr-only [--repo owner/name]
+ *   node scripts/publish-apk-manifest.mjs --dry-run-qr [--repo owner/name]
  */
 import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import QRCode from 'qrcode';
+import {
+  APK_ASSET,
+  MANIFEST_ASSET,
+  ROLLING_TAG,
+  apkDownloadUrl,
+  ensureGitHubRelease,
+  generateInstallAssets,
+  generateReleaseNotes,
+  gh,
+  installReleaseUrl,
+  manifestReleaseUrl,
+  qrReleaseUrl,
+  readAppJsonBuildNumber,
+  readAppJsonVersion,
+  releaseTitle,
+  versionTag,
+} from './app-release-utils.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const mobileRoot = join(__dirname, '..');
-const TAG = 'app-apk-latest';
-const APK_ASSET = 'app-preview.apk';
-const MANIFEST_ASSET = 'app-apk-latest.json';
-const QR_ASSET = 'app-preview-qr.png';
-const INSTALL_HTML = 'install.html';
 
 const repoArgIdx = process.argv.indexOf('--repo');
 const repo =
@@ -30,6 +42,7 @@ const repo =
   'yanniedog/AR-local';
 
 const qrOnly = process.argv.includes('--qr-only');
+const dryRunQr = process.argv.includes('--dry-run-qr');
 const apkArgIdx = process.argv.indexOf('--apk');
 const easArgIdx = process.argv.indexOf('--eas-build-id');
 const legacyBuildId = process.argv[2]?.trim();
@@ -39,47 +52,21 @@ const easBuildId =
   (legacyBuildId && !legacyBuildId.startsWith('-') && legacyBuildId !== '--apk' ? legacyBuildId : '');
 
 const ghToken = process.env.GH_TOKEN?.trim();
-if (!ghToken) {
-  console.error('GH_TOKEN is not set');
-  process.exit(1);
+
+function rollingApkDownloadUrl() {
+  return apkDownloadUrl(repo, ROLLING_TAG);
 }
 
-function apkDownloadUrl() {
-  return `https://github.com/${repo}/releases/download/${TAG}/${APK_ASSET}`;
+function rollingQrReleaseUrl() {
+  return qrReleaseUrl(repo, ROLLING_TAG);
 }
 
-function qrReleaseUrl() {
-  return `https://github.com/${repo}/releases/download/${TAG}/${QR_ASSET}`;
+function rollingInstallReleaseUrl() {
+  return installReleaseUrl(repo, ROLLING_TAG);
 }
 
-function installReleaseUrl() {
-  return `https://github.com/${repo}/releases/download/${TAG}/${INSTALL_HTML}`;
-}
-
-function manifestReleaseUrl() {
-  return `https://github.com/${repo}/releases/download/${TAG}/${MANIFEST_ASSET}`;
-}
-
-function readAppJson() {
-  return JSON.parse(readFileSync(join(mobileRoot, 'app.json'), 'utf8'));
-}
-
-function readAppJsonVersion() {
-  return readAppJson().expo?.version ?? '1.0.0';
-}
-
-function readAppJsonBuildNumber() {
-  const code = readAppJson().expo?.android?.versionCode;
-  return code != null ? String(code) : '0';
-}
-
-function gh(args, opts = {}) {
-  return execFileSync('gh', args, {
-    encoding: 'utf8',
-    env: { ...process.env, GH_TOKEN: ghToken },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...opts,
-  });
+function rollingManifestReleaseUrl() {
+  return manifestReleaseUrl(repo, ROLLING_TAG);
 }
 
 function sha256File(path) {
@@ -143,7 +130,7 @@ async function fetchEasApk(buildId) {
   const apkBuf = Buffer.from(await apkRes.arrayBuffer());
   return {
     apkBuf,
-    version: build.appVersion || readAppJsonVersion(),
+    version: build.appVersion || readAppJsonVersion(mobileRoot),
     buildNumber: String(build.appBuildVersion ?? '0'),
     source: 'eas',
     easBuildId: buildId,
@@ -155,7 +142,8 @@ function resolveLocalApk(path) {
     console.error(
       'usage: node scripts/publish-apk-manifest.mjs --apk <path> [--repo owner/name]\n' +
         '   or: node scripts/publish-apk-manifest.mjs --eas-build-id <id> [--repo owner/name]\n' +
-        '   or: node scripts/publish-apk-manifest.mjs --qr-only [--repo owner/name]',
+        '   or: node scripts/publish-apk-manifest.mjs --qr-only [--repo owner/name]\n' +
+        '   or: node scripts/publish-apk-manifest.mjs --dry-run-qr [--repo owner/name]',
     );
     process.exit(1);
   }
@@ -165,53 +153,15 @@ function resolveLocalApk(path) {
   const apkBuf = readFileSync(path);
   return {
     apkBuf,
-    version: readAppJsonVersion(),
-    buildNumber: readAppJsonBuildNumber(),
+    version: readAppJsonVersion(mobileRoot),
+    buildNumber: readAppJsonBuildNumber(mobileRoot),
     source: 'gha',
     easBuildId: null,
   };
 }
 
-async function generateInstallAssets(outDir, downloadUrl) {
-  const qrPath = join(outDir, QR_ASSET);
-  await QRCode.toFile(qrPath, downloadUrl, {
-    type: 'png',
-    width: 512,
-    margin: 2,
-    errorCorrectionLevel: 'M',
-  });
-
-  const qrUrl = qrReleaseUrl();
-  const installUrl = installReleaseUrl();
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Install AR Rates preview APK</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.4; }
-    img { display: block; width: 16rem; height: 16rem; margin: 1rem auto; }
-    a { word-break: break-all; }
-    p { margin: 0.75rem 0; }
-  </style>
-</head>
-<body>
-  <h1>Install preview APK</h1>
-  <p>Scan with <strong>Android Chrome</strong> (camera or QR scanner). Chrome downloads the APK directly from GitHub Releases.</p>
-  <img src="${qrUrl}" width="512" height="512" alt="QR code for APK download">
-  <p><a href="${downloadUrl}">Direct APK download</a></p>
-  <p><small>Manifest: <a href="${manifestReleaseUrl()}">${MANIFEST_ASSET}</a></small></p>
-</body>
-</html>
-`;
-  const installPath = join(outDir, INSTALL_HTML);
-  writeFileSync(installPath, html);
-  return { qrPath, installPath, qrUrl, installUrl };
-}
-
 function releaseAssetNames() {
-  const raw = gh(['release', 'view', TAG, '--repo', repo, '--json', 'assets']);
+  const raw = gh(ghToken, repo, ['release', 'view', ROLLING_TAG, '--json', 'assets']);
   const data = JSON.parse(raw);
   return (data.assets ?? []).map((asset) => asset.name);
 }
@@ -220,25 +170,23 @@ function assertApkReleaseAssetExists() {
   const names = releaseAssetNames();
   if (!names.includes(APK_ASSET)) {
     throw new Error(
-      `${APK_ASSET} not found on ${TAG} release — publish an APK first (omit --qr-only)`,
+      `${APK_ASSET} not found on ${ROLLING_TAG} release — publish an APK first (omit --qr-only)`,
     );
   }
 }
 
-function ensureReleaseExists() {
-  const view = spawnSync('gh', ['release', 'view', TAG, '--repo', repo], {
+function ensureRollingReleaseExists() {
+  const view = spawnSync('gh', ['release', 'view', ROLLING_TAG, '--repo', repo], {
     encoding: 'utf8',
     env: { ...process.env, GH_TOKEN: ghToken },
   });
   if (view.status !== 0) {
-    gh([
+    gh(ghToken, repo, [
       'release',
       'create',
-      TAG,
-      '--repo',
-      repo,
+      ROLLING_TAG,
       '--title',
-      'AR Rates preview APK (rolling)',
+      'Australian Rates app (rolling preview APK)',
       '--notes',
       'Rolling preview APK for in-app self-update. Updated by mobile-android-apk (GHA) or mobile-eas-build.',
       '--latest=false',
@@ -246,11 +194,14 @@ function ensureReleaseExists() {
   }
 }
 
-function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber }) {
+function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber, versionedTag }) {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY?.trim();
   if (!summaryPath) {
     return;
   }
+  const versionedUrl = versionedTag
+    ? `https://github.com/${repo}/releases/tag/${versionedTag}`
+    : '';
   const lines = [
     '### Preview APK — scan to install',
     '',
@@ -259,39 +210,109 @@ function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber 
     `![Install QR](${qrUrl})`,
     '',
     version != null && buildNumber != null ? `Version **${version}** (build ${buildNumber})` : '',
+    versionedTag ? `Versioned release: [\`${versionedTag}\`](${versionedUrl})` : '',
     '',
     '| Asset | URL |',
     '|---|---|',
-    `| APK | ${downloadUrl} |`,
-    `| QR PNG | ${qrUrl} |`,
-    `| Install page | ${installUrl} |`,
+    `| APK (rolling) | ${downloadUrl} |`,
+    `| QR PNG (rolling) | ${qrUrl} |`,
+    `| Install page (rolling) | ${installUrl} |`,
     '',
   ].filter((line) => line !== '');
   writeFileSync(summaryPath, `${lines.join('\n')}\n`, { flag: 'a' });
 }
 
+async function publishVersionedRelease({ apkBuf, version, buildNumber, outDir }) {
+  const tag = versionTag(version);
+  const title = releaseTitle(version);
+  const notes = generateReleaseNotes({ version, buildNumber, mobileRoot });
+  const versionOutDir = join(outDir, 'versioned');
+  mkdirSync(versionOutDir, { recursive: true });
+
+  const apkPath = join(versionOutDir, APK_ASSET);
+  writeFileSync(apkPath, apkBuf);
+
+  const downloadUrl = apkDownloadUrl(repo, tag);
+  const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(
+    versionOutDir,
+    downloadUrl,
+    repo,
+    tag,
+    ROLLING_TAG,
+  );
+
+  const targetRef = process.env.GITHUB_SHA?.trim() || '';
+  const action = ensureGitHubRelease(ghToken, repo, tag, title, notes, targetRef);
+  gh(ghToken, repo, ['release', 'upload', tag, apkPath, qrPath, installPath, '--clobber']);
+
+  console.log(`Versioned release ${tag} (${action}): https://github.com/${repo}/releases/tag/${tag}`);
+  console.log(`  QR PNG: ${qrUrl}`);
+  console.log(`  Install page: ${installUrl}`);
+  return { tag, qrUrl, installUrl };
+}
+
 async function publishQrOnly() {
+  if (!ghToken) {
+    console.error('GH_TOKEN is not set');
+    process.exit(1);
+  }
   const outDir = join(mobileRoot, 'build', 'apk-publish');
   mkdirSync(outDir, { recursive: true });
-  ensureReleaseExists();
+  ensureRollingReleaseExists();
   assertApkReleaseAssetExists();
-  const downloadUrl = apkDownloadUrl();
+  const downloadUrl = rollingApkDownloadUrl();
   console.log(`Generating install QR for ${downloadUrl}…`);
-  const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(outDir, downloadUrl);
-  gh(['release', 'upload', TAG, qrPath, installPath, '--repo', repo, '--clobber']);
+  const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(
+    outDir,
+    downloadUrl,
+    repo,
+    ROLLING_TAG,
+    ROLLING_TAG,
+  );
+  gh(ghToken, repo, ['release', 'upload', ROLLING_TAG, qrPath, installPath, '--clobber']);
   console.log(`QR PNG: ${qrUrl}`);
   console.log(`Install page: ${installUrl}`);
   writeJobSummary({ downloadUrl, qrUrl, installUrl });
 }
 
+async function dryRunQrLocal() {
+  const version = readAppJsonVersion(mobileRoot);
+  const buildNumber = readAppJsonBuildNumber(mobileRoot);
+  const outDir = join(mobileRoot, 'build', 'apk-publish-dry-run');
+  mkdirSync(outDir, { recursive: true });
+
+  const rollingUrl = rollingApkDownloadUrl();
+  const rolling = await generateInstallAssets(outDir, rollingUrl, repo, ROLLING_TAG, ROLLING_TAG);
+
+  const versionedTag = versionTag(version);
+  const versionedUrl = apkDownloadUrl(repo, versionedTag);
+  const versionedDir = join(outDir, 'versioned');
+  const versioned = await generateInstallAssets(versionedDir, versionedUrl, repo, versionedTag, ROLLING_TAG);
+
+  const notes = generateReleaseNotes({ version, buildNumber, mobileRoot });
+  writeFileSync(join(outDir, 'release-notes.md'), notes, 'utf8');
+
+  console.log('dry-run-qr: wrote local assets (no GitHub upload)');
+  console.log(`  rolling QR: ${rolling.qrPath}`);
+  console.log(`  versioned tag: ${versionedTag}`);
+  console.log(`  versioned QR: ${versioned.qrPath}`);
+  console.log(`  release notes: ${join(outDir, 'release-notes.md')}`);
+  console.log(`  example title: ${releaseTitle(version)}`);
+}
+
 async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId }) {
+  if (!ghToken) {
+    console.error('GH_TOKEN is not set');
+    process.exit(1);
+  }
+
   const outDir = join(mobileRoot, 'build', 'apk-publish');
   mkdirSync(outDir, { recursive: true });
   const apkPath = join(outDir, APK_ASSET);
   writeFileSync(apkPath, apkBuf);
 
   const sha256 = sha256File(apkPath);
-  const downloadUrl = apkDownloadUrl();
+  const downloadUrl = rollingApkDownloadUrl();
 
   const manifest = {
     schema_version: 1,
@@ -302,7 +323,7 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
     bytes: apkBuf.length,
     published_at: new Date().toISOString(),
     repo,
-    tag: TAG,
+    tag: ROLLING_TAG,
     profile: 'preview',
     build_source: source,
     ...(easBuildId ? { eas_build_id: easBuildId } : {}),
@@ -311,20 +332,49 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
   const manifestPath = join(outDir, MANIFEST_ASSET);
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
-  const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(outDir, downloadUrl);
+  const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(
+    outDir,
+    downloadUrl,
+    repo,
+    ROLLING_TAG,
+    ROLLING_TAG,
+  );
 
-  console.log(`Publishing ${TAG} to ${repo} (v${version} build ${buildNumber}, ${apkBuf.length} bytes)…`);
+  console.log(`Publishing ${ROLLING_TAG} to ${repo} (v${version} build ${buildNumber}, ${apkBuf.length} bytes)…`);
 
-  ensureReleaseExists();
-  gh(['release', 'upload', TAG, apkPath, manifestPath, qrPath, installPath, '--repo', repo, '--clobber']);
+  ensureRollingReleaseExists();
+  gh(ghToken, repo, [
+    'release',
+    'upload',
+    ROLLING_TAG,
+    apkPath,
+    manifestPath,
+    qrPath,
+    installPath,
+    '--clobber',
+  ]);
   console.log(`Published ${downloadUrl}`);
-  console.log(`Manifest: ${manifestReleaseUrl()}`);
+  console.log(`Manifest: ${rollingManifestReleaseUrl()}`);
   console.log(`QR PNG: ${qrUrl}`);
   console.log(`Install page: ${installUrl}`);
-  writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber });
+
+  const versioned = await publishVersionedRelease({ apkBuf, version, buildNumber, outDir });
+
+  writeJobSummary({
+    downloadUrl,
+    qrUrl,
+    installUrl,
+    version,
+    buildNumber,
+    versionedTag: versioned.tag,
+  });
 }
 
 async function main() {
+  if (dryRunQr) {
+    await dryRunQrLocal();
+    return;
+  }
   if (qrOnly) {
     await publishQrOnly();
     return;
@@ -334,7 +384,7 @@ async function main() {
     : easBuildId
       ? await fetchEasApk(easBuildId)
       : (() => {
-          console.error('Provide --apk <path>, --eas-build-id <id>, or --qr-only');
+          console.error('Provide --apk <path>, --eas-build-id <id>, --qr-only, or --dry-run-qr');
           process.exit(1);
         })();
   await publishRelease(payload);

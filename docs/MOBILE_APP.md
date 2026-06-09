@@ -6,10 +6,15 @@ The Raspberry Pi builds a compact daily **payload** and publishes it to a rollin
 notifications when rates move.
 
 ```text
-Pi daily ingest ──► app_payload build ──► GitHub Release (tag: app-payload-latest)
-                                              ├─ manifest.json      (tiny; polled first)
-                                              ├─ core-<date>.json.gz (rates + ribbon + brands + RBA)
-                                              └─ details-<date>.json.gz (fees/features/eligibility/constraints)
+Pi daily ingest ──► app_payload build ──► GitHub Releases
+                                              ├─ app-payload-latest (rolling)
+                                              │    ├─ manifest.json       (poll for newest run_date)
+                                              │    ├─ dates-index.json    (list of immutable history dates)
+                                              │    └─ core/details *.json.gz (recent; pruned)
+                                              └─ app-payload-YYYY-MM-DD (one per ingest date, from 2026-05-13)
+                                                   ├─ manifest.json
+                                                   ├─ core-<date>-<sha>.json.gz
+                                                   └─ details-<date>-<sha>.json.gz
                                                         │
                                           mobile app ◄──┘  download → inflate → cache → serve offline
 ```
@@ -36,6 +41,29 @@ server, so it works in the daily pipeline and in CI.
 Content files are **content-hashed and contain no wall-clock field**, so a same-day
 rebuild (e.g. the watchdog rerun) produces identical bytes and the app skips a
 needless re-download.
+
+### History ribbon (per-date snapshots)
+
+Each ingest `run_date` also gets an immutable GitHub Release tag
+`app-payload-YYYY-MM-DD` with exactly three assets (`manifest.json`, one `core-*.json.gz`,
+one `details-*.json.gz`). The rolling `app-payload-latest` tag stays the canonical
+“newest” manifest the app polls daily.
+
+For incremental backfill, fetch `dates-index.json` on the rolling release
+(`mobile/src/config.ts` → `DATES_INDEX_URL`). It lists every published `run_date`
+from `2026-05-13` upward; download only missing dates via
+`datedManifestUrl(runDate)` → per-tag `manifest.json` → core/details URLs inside.
+
+**Pi one-off backfill** (all dates on disk, then refresh rolling latest + dates-index):
+
+```bash
+sudo bash scripts/backfill-app-payload.sh
+# bounds optional: --from-date 2026-05-13 --to-date 2026-06-09
+# preview: --dry-run
+```
+
+Daily ingest (`pi_daily_sync` with `AR_LOCAL_APP_PAYLOAD=1`) publishes both the dated
+tag for today and updates `app-payload-latest` when appropriate.
 
 Build it locally and inspect:
 
