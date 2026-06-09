@@ -41,7 +41,7 @@ describe('ribbonStats', () => {
   it('treats incomplete payload ribbon as missing', () => {
     const data = {
       ...sample.sections.Mortgage,
-      ribbon: { range: { min: null, max: 0.1 }, counts: { rates: 1, products: 1, providers: 1 } },
+      ribbon: { range: { min: null, max: 0.1, mean: null, median: null }, counts: { rates: 1, products: 1, providers: 1 }, providers: [] },
     };
     expect(hasPayloadRibbon(data.ribbon)).toBe(false);
     const stats = resolveSectionRibbonStats(data, [], false);
@@ -62,3 +62,4 @@ describe('ribbonStats', () => {
     expect(stats.min).toBe(sample.sections.Mortgage.ribbon.range.min);
   });
 });
+
