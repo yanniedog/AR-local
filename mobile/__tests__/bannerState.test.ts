@@ -17,14 +17,14 @@ describe('resolveOfflineBanner', () => {
   it('shows offline banner for cached remote data', () => {
     const view = resolveOfflineBanner('remote', true, false, null);
     expect(view.mode).toBe('offline-cached');
-    expect(view.message).toContain('last downloaded rates');
+    expect(view.message).toBe('Offline — showing the last downloaded rates.');
   });
 
   it('shows connecting while upgrading bundled sample', () => {
     const view = resolveOfflineBanner('sample', false, true, progress);
     expect(view.mode).toBe('connecting');
     expect(view.showLiveProgress).toBe(true);
-    expect(view.message).toContain('connecting');
+    expect(view.message).toBe('Showing bundled sample data — connecting for the latest…');
   });
 
   it('shows connecting copy before first progress event', () => {
@@ -33,13 +33,23 @@ describe('resolveOfflineBanner', () => {
     expect(view.showLiveProgress).toBe(false);
   });
 
-  it('hides stuck connecting state after refresh completes on sample while online', () => {
-    expect(resolveOfflineBanner('sample', false, false, null).mode).toBe('hidden');
+  it('shows sample warning when live refresh was skipped while online', () => {
+    const view = resolveOfflineBanner('sample', false, false, null);
+    expect(view.mode).toBe('offline-sample');
+    expect(view.message).toBe('Showing bundled sample data.');
   });
 
   it('shows offline sample copy when upgrade failed', () => {
     const view = resolveOfflineBanner('sample', true, false, null);
     expect(view.mode).toBe('offline-sample');
-    expect(view.message).toContain('bundled sample');
+    expect(view.message).toBe('Offline — showing bundled sample data.');
+  });
+
+  it('prefers offline copy when refresh runs while offline on sample', () => {
+    const view = resolveOfflineBanner('sample', true, true, null);
+    expect(view.mode).toBe('offline-sample');
+    expect(view.message).toBe(
+      'Offline — showing bundled sample data; latest data will load once you reconnect.',
+    );
   });
 });

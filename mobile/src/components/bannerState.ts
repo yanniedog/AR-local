@@ -22,15 +22,28 @@ export function resolveOfflineBanner(
   }
 
   if (sample && !refreshing && !offline) {
-    return { mode: 'hidden', showLiveProgress: false, message: '' };
+    return {
+      mode: 'offline-sample',
+      showLiveProgress: false,
+      message: 'Showing bundled sample data.',
+    };
   }
 
-  if (sample && refreshing) {
+  if (sample && refreshing && offline) {
+    return {
+      mode: 'offline-sample',
+      showLiveProgress: false,
+      message:
+        'Offline â€” showing bundled sample data; latest data will load once you reconnect.',
+    };
+  }
+
+  if (sample && refreshing && !offline) {
     const showLiveProgress = payloadProgress != null;
     return {
       mode: 'connecting',
       showLiveProgress,
-      message: 'Showing bundled sample data ÔÇö connecting for the latestÔÇª',
+      message: 'Showing bundled sample data â€” connecting for the latestâ€¦',
     };
   }
 
@@ -38,13 +51,13 @@ export function resolveOfflineBanner(
     return {
       mode: 'offline-sample',
       showLiveProgress: false,
-      message: 'Offline ÔÇö showing bundled sample data.',
+      message: 'Offline â€” showing bundled sample data.',
     };
   }
 
   return {
     mode: 'offline-cached',
     showLiveProgress: false,
-    message: 'Offline ÔÇö showing the last downloaded rates.',
+    message: 'Offline â€” showing the last downloaded rates.',
   };
 }
