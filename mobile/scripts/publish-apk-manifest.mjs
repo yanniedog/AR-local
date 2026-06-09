@@ -56,6 +56,10 @@ function installReleaseUrl() {
   return `https://github.com/${repo}/releases/download/${TAG}/${INSTALL_HTML}`;
 }
 
+function manifestReleaseUrl() {
+  return `https://github.com/${repo}/releases/download/${TAG}/${MANIFEST_ASSET}`;
+}
+
 function readAppJson() {
   return JSON.parse(readFileSync(join(mobileRoot, 'app.json'), 'utf8'));
 }
@@ -197,13 +201,28 @@ async function generateInstallAssets(outDir, downloadUrl) {
   <p>Scan with <strong>Android Chrome</strong> (camera or QR scanner). Chrome downloads the APK directly from GitHub Releases.</p>
   <img src="${qrUrl}" width="512" height="512" alt="QR code for APK download">
   <p><a href="${downloadUrl}">Direct APK download</a></p>
-  <p><small>Manifest: <a href="https://github.com/${repo}/releases/download/${TAG}/${MANIFEST_ASSET}">${MANIFEST_ASSET}</a></small></p>
+  <p><small>Manifest: <a href="${manifestReleaseUrl()}">${MANIFEST_ASSET}</a></small></p>
 </body>
 </html>
 `;
   const installPath = join(outDir, INSTALL_HTML);
   writeFileSync(installPath, html);
   return { qrPath, installPath, qrUrl, installUrl };
+}
+
+function releaseAssetNames() {
+  const raw = gh(['release', 'view', TAG, '--repo', repo, '--json', 'assets']);
+  const data = JSON.parse(raw);
+  return (data.assets ?? []).map((asset) => asset.name);
+}
+
+function assertApkReleaseAssetExists() {
+  const names = releaseAssetNames();
+  if (!names.includes(APK_ASSET)) {
+    throw new Error(
+      `${APK_ASSET} not found on ${TAG} release — publish an APK first (omit --qr-only)`,
+    );
+  }
 }
 
 function ensureReleaseExists() {
@@ -239,7 +258,7 @@ function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber 
     '',
     `![Install QR](${qrUrl})`,
     '',
-    version != null ? `Version **${version}** (build ${buildNumber})` : '',
+    version != null && buildNumber != null ? `Version **${version}** (build ${buildNumber})` : '',
     '',
     '| Asset | URL |',
     '|---|---|',
@@ -254,10 +273,11 @@ function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber 
 async function publishQrOnly() {
   const outDir = join(mobileRoot, 'build', 'apk-publish');
   mkdirSync(outDir, { recursive: true });
+  ensureReleaseExists();
+  assertApkReleaseAssetExists();
   const downloadUrl = apkDownloadUrl();
   console.log(`Generating install QR for ${downloadUrl}…`);
   const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(outDir, downloadUrl);
-  ensureReleaseExists();
   gh(['release', 'upload', TAG, qrPath, installPath, '--repo', repo, '--clobber']);
   console.log(`QR PNG: ${qrUrl}`);
   console.log(`Install page: ${installUrl}`);
@@ -298,7 +318,7 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
   ensureReleaseExists();
   gh(['release', 'upload', TAG, apkPath, manifestPath, qrPath, installPath, '--repo', repo, '--clobber']);
   console.log(`Published ${downloadUrl}`);
-  console.log(`Manifest: https://github.com/${repo}/releases/download/${TAG}/${MANIFEST_ASSET}`);
+  console.log(`Manifest: ${manifestReleaseUrl()}`);
   console.log(`QR PNG: ${qrUrl}`);
   console.log(`Install page: ${installUrl}`);
   writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber });
