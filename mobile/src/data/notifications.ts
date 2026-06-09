@@ -2,9 +2,10 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
 
 import { SECTIONS, SECTION_ORDER } from '../constants';
-import type { CorePayload, RateRow, SectionKey } from '../types';
+import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { bpsBetween, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
+import { computeSubscriptionChanges, type Subscription } from './subscriptions';
 
 export const BACKGROUND_TASK = 'ar-rates-daily-refresh';
 
@@ -52,6 +53,8 @@ export function computeChanges(
   newCore: CorePayload,
   favorites: string[],
   thresholdBps: number,
+  subscriptions: Subscription[] = [],
+  detailsProducts?: Record<string, ProductDetail> | null,
 ): NotifyMessage[] {
   if (!oldCore) return [];
   const messages: NotifyMessage[] = [];
@@ -102,6 +105,10 @@ export function computeChanges(
       });
     }
   }
+
+  messages.push(
+    ...computeSubscriptionChanges(oldCore, newCore, subscriptions, thresholdBps, detailsProducts),
+  );
 
   return messages;
 }
