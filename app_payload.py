@@ -42,6 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import app_payload_mobile
+
 BASE_DIR = Path(__file__).resolve().parent
 
 SCHEMA_VERSION = 1
@@ -527,8 +529,32 @@ def build_payload(
         "products": build_details(products),
     }
 
+    all_core_rows: List[Dict[str, Any]] = []
+    for section in VALID_SECTIONS:
+        all_core_rows.extend(core["sections"][section]["rates"])
+    search_index = app_payload_mobile.build_search_index(
+        all_core_rows, details["products"], run_date=run_date, schema_version=SCHEMA_VERSION
+    )
+    history_banks = app_payload_mobile.build_history_banks(
+        exports_dir,
+        run_date=run_date,
+        load_json=_load_json,
+        section_filter=section_filter,
+        normalized_rate_value=_normalized_rate_value,
+        schema_version=SCHEMA_VERSION,
+    )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
-    return _package(core, details, run_date, out_dir, repo=repo, tag=tag, counts=counts)
+    return _package(
+        core,
+        details,
+        run_date,
+        out_dir,
+        repo=repo,
+        tag=tag,
+        counts=counts,
+        search_index=search_index,
+        history_banks=history_banks,
+    )
 
 
 def _package(
@@ -540,14 +566,24 @@ def _package(
     repo: str,
     tag: str,
     counts: Dict[str, Any],
+    search_index: Optional[Dict[str, Any]] = None,
+    history_banks: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Gzip core/details, write them + a manifest (sha256/bytes/urls) into out_dir."""
+    """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
-    files = {
+    files: Dict[str, Any] = {
         "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
         "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
     }
+    if search_index and search_index.get("products"):
+        files["search_index"] = _asset(
+            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base
+        )
+    if history_banks and history_banks.get("sections"):
+        files["history_banks"] = _asset(
+            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
+        )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
@@ -826,7 +862,7 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     data: List[Tuple[str, str]] = []
     for line in listed.stdout.splitlines():
         name, _, created = line.partition("\t")
-        if (name.startswith("core-") or name.startswith("details-")) and name.endswith(".json.gz"):
+        if name.startswith(("core-", "details-", "search-index-", "history-banks-")) and name.endswith(".json.gz"):
             data.append((name, created))
     data.sort(key=lambda x: x[1], reverse=True)  # newest first
     deleted = 0
