@@ -69,7 +69,7 @@ export default function HierarchyScreen() {
         </View>
       </View>
       <View style={{ flex: 1 }}>
-        <TaxonomyTreeView key={section} section={section} initialPath={initialPath} />
+        <TaxonomyTreeView key={`${section}-${params.path ?? ''}`} section={section} initialPath={initialPath} />
       </View>
     </Screen>
   );

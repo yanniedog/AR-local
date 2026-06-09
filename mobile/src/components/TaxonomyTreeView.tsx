@@ -62,11 +62,7 @@ function TreeRow({
       accessibilityRole="button"
       accessibilityLabel={`${row.label}, ${row.stats.products} products`}
     >
-      <Pressable
-        onPress={() => (row.hasChildren ? onToggle(row.key) : onOpenLeaf(row.path))}
-        hitSlop={8}
-        style={{ width: 22, alignItems: 'center', marginRight: 4 }}
-      >
+      <View style={{ width: 22, alignItems: 'center', marginRight: 4 }}>
         {row.hasChildren ? (
           <Ionicons
             name={row.expanded ? 'chevron-down' : 'chevron-forward'}
@@ -76,7 +72,7 @@ function TreeRow({
         ) : (
           <View style={{ width: 16 }} />
         )}
-      </Pressable>
+      </View>
       <View style={{ flex: 1, paddingRight: 8 }}>
         <AppText variant="small" weight="600" numberOfLines={1}>
           {row.label}
@@ -170,15 +166,21 @@ export function TaxonomyTreeView({
     </View>
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: FlatTreeRow }) => (
+      <TreeRow row={item} section={section} onToggle={toggle} onOpenLeaf={openLeaf} />
+    ),
+    [section, toggle, openLeaf],
+  );
+
   return (
     <FlashList
       data={flat}
       keyExtractor={(item) => item.key}
+      estimatedItemSize={ROW_H}
       ListHeaderComponent={header}
       ListEmptyComponent={<EmptyState title="No categories" />}
-      renderItem={({ item }) => (
-        <TreeRow row={item} section={section} onToggle={toggle} onOpenLeaf={openLeaf} />
-      )}
+      renderItem={renderItem}
     />
   );
 }
