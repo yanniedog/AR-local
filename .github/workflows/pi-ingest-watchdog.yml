@@ -1,0 +1,55 @@
+# Alert when GitHub app-payload manifest run_date is stale (backup to Pi OnFailure email).
+# Secrets: AR_LOCAL_SMTP_HOST, AR_LOCAL_SMTP_USER, AR_LOCAL_SMTP_PASS
+# Optional: AR_LOCAL_NOTIFY_TO (defaults in notify.env.example)
+
+name: pi-ingest-watchdog
+
+on:
+  schedule:
+    # 08:30 UTC = 90 min after 07:00 UTC ingest + grace
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check manifest freshness
+        id: check
+        run: |
+          set +e
+          python scripts/pi_ingest_manifest_check.py --json
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Alert on stale manifest
+        if: steps.check.outputs.exit != '0'
+        env:
+          AR_LOCAL_NOTIFY_TO: ${{ secrets.AR_LOCAL_NOTIFY_TO }}
+          AR_LOCAL_SMTP_HOST: ${{ secrets.AR_LOCAL_SMTP_HOST }}
+          AR_LOCAL_SMTP_USER: ${{ secrets.AR_LOCAL_SMTP_USER }}
+          AR_LOCAL_SMTP_PASS: ${{ secrets.AR_LOCAL_SMTP_PASS }}
+          AR_LOCAL_SMTP_FROM: ${{ secrets.AR_LOCAL_SMTP_FROM }}
+        run: |
+          if [ -z "$AR_LOCAL_NOTIFY_TO" ]; then
+            export AR_LOCAL_NOTIFY_TO=jkokavec@gmail.com
+          fi
+          if [ -z "$AR_LOCAL_SMTP_HOST" ] || [ -z "$AR_LOCAL_SMTP_USER" ] || [ -z "$AR_LOCAL_SMTP_PASS" ]; then
+            echo "::warning::SMTP secrets missing — cannot email on stale manifest"
+            python scripts/pi_ingest_manifest_check.py
+            exit 1
+          fi
+          python scripts/pi_ingest_manifest_check.py --alert
+
+      - name: OK
+        if: steps.check.outputs.exit == '0'
+        run: python scripts/pi_ingest_manifest_check.py

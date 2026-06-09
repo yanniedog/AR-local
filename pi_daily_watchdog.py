@@ -44,14 +44,16 @@ def run_complete(date_text: str) -> bool:
 def service_active() -> bool:
     try:
         result = subprocess.run(
-            ["systemctl", "is-active", "--quiet", SERVICE_NAME],
+            ["systemctl", "is-active", SERVICE_NAME],
             check=False,
             shell=False,
+            capture_output=True,
+            text=True,
             timeout=SUBPROCESS_STATUS_TIMEOUT_SEC,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.SubprocessError):
         return False
-    return result.returncode == 0
+    return (result.stdout or "").strip() in ("active", "activating")
 
 
 def run_daily_ingest(date_text: str, dry_run: bool) -> None:
@@ -61,6 +63,28 @@ def run_daily_ingest(date_text: str, dry_run: bool) -> None:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
     subprocess.run(cmd, cwd=REPO_ROOT, check=True, shell=False, timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
+
+
+def send_missed_ingest_alert(run_date: str, details: str) -> None:
+    alert = REPO_ROOT / "pi_ingest_alert.py"
+    if not alert.is_file():
+        return
+    subprocess.run(
+        [
+            sys.executable,
+            str(alert),
+            "--reason",
+            "missed-ingest",
+            "--run-date",
+            run_date,
+            "--details",
+            details,
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        shell=False,
+        timeout=60,
+    )
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -91,8 +115,32 @@ def main(argv: Optional[list[str]] = None) -> int:
     active = service_active()
     current_day_due = run_date == local_today
     should_start = not writable_error and now_utc >= ready_at and not complete and not active
+    catch_up_failed = False
     if should_start:
-        run_daily_ingest(run_date, args.dry_run)
+        if args.dry_run:
+            run_daily_ingest(run_date, args.dry_run)
+        else:
+            try:
+                run_daily_ingest(run_date, args.dry_run)
+            except subprocess.SubprocessError as exc:
+                catch_up_failed = True
+                if isinstance(exc, subprocess.TimeoutExpired):
+                    detail = f"watchdog catch-up timed out after {exc.timeout}s"
+                elif isinstance(exc, subprocess.CalledProcessError):
+                    detail = f"watchdog catch-up failed exit={exc.returncode}"
+                else:
+                    detail = f"watchdog catch-up failed: {exc}"
+                if not args.json:
+                    print(f"pi_daily_watchdog: {detail}", file=sys.stderr)
+                send_missed_ingest_alert(run_date, detail)
+    elif (
+        not args.dry_run
+        and writable_error
+        and now_utc >= ready_at
+        and not complete
+        and not active
+    ):
+        send_missed_ingest_alert(run_date, writable_error)
     payload = {
         "now_utc": now_utc.isoformat(),
         "due_utc": due_utc.isoformat(),
@@ -103,7 +151,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         "current_day_due": current_day_due,
         "runtime_writable": not bool(writable_error),
         "runtime_writable_error": writable_error,
-        "started": should_start and not args.dry_run,
+        "started": should_start and not args.dry_run and not catch_up_failed,
+        "catch_up_failed": catch_up_failed,
         "dry_run": bool(args.dry_run),
     }
     if args.json:

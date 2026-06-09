@@ -1,0 +1,13 @@
+[Unit]
+Description=Email alert for AR-local daily ingest failure
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+EnvironmentFile=-/etc/ar-local/notify.env
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_ingest_alert.py --reason systemd-failure

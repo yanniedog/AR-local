@@ -2,6 +2,7 @@
 Description=AR-local CDR daily ingest/export
 After=network-online.target
 Wants=network-online.target
+OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
