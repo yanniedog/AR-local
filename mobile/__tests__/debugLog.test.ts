@@ -154,7 +154,7 @@ describe('persistent log file', () => {
 
   it('writes log lines to the persistent file', async () => {
     debugLog.info('test', 'file persist');
-    await new Promise((r) => setTimeout(r, 150));
+    await debugLog.flushToFile();
 
     expect(FileSystem.makeDirectoryAsync).toHaveBeenCalledWith(
       'file:///docs/logs/',
@@ -169,7 +169,7 @@ describe('persistent log file', () => {
 
   it('clear deletes the persistent log file', async () => {
     debugLog.info('test', 'before clear');
-    await new Promise((r) => setTimeout(r, 150));
+    await debugLog.flushToFile();
     debugLog.clear();
 
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
@@ -224,7 +224,7 @@ describe('debugLog integration', () => {
     expect(debugLog.getText()).toBe('');
 
     debugLog.info('test', 'persist me');
-    await new Promise((r) => setTimeout(r, 600));
+    await debugLog.flushToFile();
 
     await debugLog.restoreFromStorage();
     expect(debugLog.getText()).toContain('persist me');

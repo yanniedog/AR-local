@@ -78,12 +78,16 @@ function entryBytes(entry: LogEntry): number {
   return textEncoder.encode(formatEntry(entry) + "\n").length;
 }
 
+const textDecoder = new TextDecoder();
+
 function trimFileTail(content: string): string {
-  if (content.length <= MAX_LOG_FILE_BYTES) return content;
-  let tail = content.slice(-MAX_LOG_FILE_BYTES);
-  const nl = tail.indexOf('\n');
-  if (nl >= 0) tail = tail.slice(nl + 1);
-  return tail;
+  const bytes = textEncoder.encode(content);
+  if (bytes.length <= MAX_LOG_FILE_BYTES) return content;
+  let start = bytes.length - MAX_LOG_FILE_BYTES;
+  while (start < bytes.length && bytes[start] !== 0x0a) start += 1;
+  start += 1;
+  if (start >= bytes.length) return '';
+  return textDecoder.decode(bytes.slice(start));
 }
 
 async function ensureLogDir(): Promise<void> {
@@ -97,6 +101,8 @@ async function ensureLogDir(): Promise<void> {
 let pendingFileLines: string[] = [];
 let fileFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let fileFlushPromise: Promise<void> | null = null;
+let fileContentCache: string | null = null;
+let fileWriteEpoch = 0;
 
 function scheduleFileFlush(): void {
   if (fileFlushTimer) return;
@@ -104,6 +110,19 @@ function scheduleFileFlush(): void {
     fileFlushTimer = null;
     void flushPendingToFile();
   }, LOG_FILE_FLUSH_MS);
+}
+
+async function syncLogFile(appendText: string, epoch: number): Promise<void> {
+  if (!FileSystem.documentDirectory) {
+    throw new Error('documentDirectory unavailable');
+  }
+  await ensureLogDir();
+  const existing = fileContentCache ?? (await FileSystem.readAsStringAsync(LOG_FILE).catch(() => ''));
+  if (epoch !== fileWriteEpoch) return;
+  const combined = trimFileTail(existing + appendText);
+  await FileSystem.writeAsStringAsync(LOG_FILE, combined);
+  if (epoch !== fileWriteEpoch) return;
+  fileContentCache = combined;
 }
 
 async function flushPendingToFile(): Promise<void> {
@@ -114,6 +133,7 @@ async function flushPendingToFile(): Promise<void> {
 
   const batch = pendingFileLines.splice(0);
   if (batch.length === 0) return;
+  const epoch = fileWriteEpoch;
 
   fileFlushPromise = (async () => {
     try {
@@ -121,16 +141,11 @@ async function flushPendingToFile(): Promise<void> {
         pendingFileLines.unshift(...batch);
         return;
       }
-      await ensureLogDir();
-      let existing = '';
-      const info = await FileSystem.getInfoAsync(LOG_FILE);
-      if (info.exists) {
-        existing = await FileSystem.readAsStringAsync(LOG_FILE);
-      }
-      const combined = trimFileTail(existing + batch.join(''));
-      await FileSystem.writeAsStringAsync(LOG_FILE, combined);
+      await syncLogFile(batch.join(''), epoch);
     } catch {
-      pendingFileLines.unshift(...batch);
+      if (epoch === fileWriteEpoch) {
+        pendingFileLines.unshift(...batch);
+      }
     } finally {
       fileFlushPromise = null;
     }
@@ -227,10 +242,16 @@ function append(level: LogLevel, tag: string, message: string): void {
   scheduleFileFlush();
 }
 
+const VALID_LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
 function isValidEntry(entry: unknown): entry is LogEntry {
   if (!entry || typeof entry !== 'object') return false;
-  const e = entry as LogEntry;
-  return !!(e.ts && e.level && e.tag && e.message);
+  const e = entry as Partial<LogEntry>;
+  if (typeof e.ts !== 'string' || !e.ts) return false;
+  if (typeof e.level !== 'string' || !VALID_LOG_LEVELS.includes(e.level as LogLevel)) return false;
+  if (typeof e.tag !== 'string' || !e.tag) return false;
+  if (typeof e.message !== 'string') return false;
+  return true;
 }
 
 export const debugLog = {
@@ -246,16 +267,23 @@ export const debugLog = {
   error(tag: string, message: string): void {
     append('error', tag, message);
   },
-  clear(): void {
+  async clear(): Promise<void> {
+    fileWriteEpoch += 1;
     buffer.clear();
     pendingFileLines = [];
+    fileContentCache = null;
     if (fileFlushTimer) {
       clearTimeout(fileFlushTimer);
       fileFlushTimer = null;
     }
+    const inFlight = fileFlushPromise;
+    fileFlushPromise = null;
+    if (inFlight) {
+      await inFlight.catch(() => {});
+    }
     notify();
-    void AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
-    void FileSystem.deleteAsync(LOG_FILE, { idempotent: true }).catch(() => {});
+    await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+    await FileSystem.deleteAsync(LOG_FILE, { idempotent: true }).catch(() => {});
   },
   getText(): string {
     return buffer.getText();
@@ -284,28 +312,31 @@ export const debugLog = {
     const restored: LogEntry[] = [];
 
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const tail = JSON.parse(raw) as LogEntry[];
-        if (Array.isArray(tail)) {
-          restored.push(...tail.filter(isValidEntry));
-        }
-      }
-    } catch {
-      // ignore corrupt snapshot
-    }
-
-    try {
       if (FileSystem.documentDirectory) {
         await ensureLogDir();
         const info = await FileSystem.getInfoAsync(LOG_FILE);
         if (info.exists) {
           const text = await FileSystem.readAsStringAsync(LOG_FILE);
+          fileContentCache = text;
           restored.push(...parseLogFile(text).slice(-MAX_LOG_LINES));
         }
       }
     } catch {
       // non-fatal
+    }
+
+    if (restored.length === 0) {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const tail = JSON.parse(raw) as LogEntry[];
+          if (Array.isArray(tail)) {
+            restored.push(...tail.filter(isValidEntry));
+          }
+        }
+      } catch {
+        // ignore corrupt snapshot
+      }
     }
 
     if (restored.length === 0) return;
