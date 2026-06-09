@@ -99,6 +99,32 @@ describe('selectors', () => {
     expect(monthly.map((r) => r.product_key)).toEqual(['A|TD']);
   });
 
+  test('filterRows applies accountFeatures from details (AND logic)', () => {
+    const rows = [
+      mk({ product_key: 'A|1', rate: '0.05' }),
+      mk({ product_key: 'B|1', rate: '0.06' }),
+      mk({ product_key: 'C|1', rate: '0.07' }),
+    ];
+    const details = {
+      'A|1': { features: [{ label: 'OFFSET' }, { label: 'REDRAW' }] },
+      'B|1': { features: [{ label: 'OFFSET' }] },
+      'C|1': { features: [{ label: 'REDRAW' }] },
+    };
+    const offsetOnly = filterRows(rows, { ...EMPTY_FILTERS, accountFeatures: ['OFFSET'] }, details);
+    expect(offsetOnly.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);
+    const offsetAndRedraw = filterRows(
+      rows,
+      { ...EMPTY_FILTERS, accountFeatures: ['OFFSET', 'REDRAW'] },
+      details,
+    );
+    expect(offsetAndRedraw.map((r) => r.product_key)).toEqual(['A|1']);
+    expect(filterRows(rows, { ...EMPTY_FILTERS, accountFeatures: ['OFFSET'] }, null)).toHaveLength(0);
+  });
+
+  test('activeFilterCount includes accountFeatures', () => {
+    expect(activeFilterCount({ ...EMPTY_FILTERS, accountFeatures: ['OFFSET', 'REDRAW'] })).toBe(2);
+  });
+
   test('queryAndSort end-to-end', () => {
     const out = queryAndSort(mortgage, { ...EMPTY_FILTERS, query: 'loan' }, 'rate', 'Mortgage');
     expect(out.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);

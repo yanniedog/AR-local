@@ -46,8 +46,14 @@ export default function Search() {
   const path = useMemo(() => (pathRaw ?? '').split('.').filter(Boolean), [pathRaw]);
   const hierarchyScoped = scopeRaw === 'hierarchy';
   const core = useStore((s) => s.core);
+  const details = useStore((s) => s.details);
+  const ensureDetails = useStore((s) => s.ensureDetails);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const setPref = useStore((s) => s.setPref);
+
+  useEffect(() => {
+    void ensureDetails();
+  }, [ensureDetails]);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
@@ -69,8 +75,8 @@ export default function Search() {
   );
 
   const rows = useMemo(
-    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section),
-    [baseRows, effectiveFilters, query, sortKey, section],
+    () => queryAndSort(baseRows, { ...effectiveFilters, query }, sortKey, section, details?.products),
+    [baseRows, effectiveFilters, query, sortKey, section, details?.products],
   );
 
   const toggleSelect = (key: string) =>
@@ -158,6 +164,7 @@ export default function Search() {
         rows={baseRows}
         section={section}
         filters={effectiveFilters}
+        detailsProducts={details?.products}
         onApply={(next) => {
           setPref('includeNonStandard', next.includeNonStandard);
           setFilters(next);
