@@ -115,6 +115,15 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
             f"published_latest={published_latest} state={state} "
             f"core={core_name} details={details_name} exit=0"
         )
+        if published_dated or published_latest:
+            try:
+                runs_root = data_runs_root(repo_root)
+                app_payload.refresh_dates_index(runs_root)
+            except Exception as idx_exc:  # noqa: BLE001 - index is informational
+                print(
+                    f"[pi_daily_sync] app_payload dates-index refresh failed "
+                    f"(non-fatal) error={idx_exc!r}"
+                )
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
         print(f"[pi_daily_sync] app_payload publish failed (non-fatal) error={exc!r} exit=0")
 
