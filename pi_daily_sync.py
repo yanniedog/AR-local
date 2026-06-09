@@ -99,13 +99,23 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
 
         exports = latest_exports_root(data_runs_root(repo_root))
         if exports is None:
-            print("pi_daily_sync: no valid export found for app payload; skipping")
+            print("[pi_daily_sync] app_payload skipped reason=no_valid_exports")
             return
-        manifest, published = app_payload.build_and_publish(exports)
-        state = "published" if published else "built (upload skipped: no gh token)"
-        print(f"pi_daily_sync: app payload {state} (run_date={manifest['run_date']})")
+        print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
+        manifest, published_dated, published_latest = app_payload.build_and_publish_dual(exports)
+        run_date = str(manifest.get("run_date") or "")
+        dated_tag = app_payload.dated_tag(run_date)
+        core_name = manifest.get("files", {}).get("core", {}).get("name", "")
+        details_name = manifest.get("files", {}).get("details", {}).get("name", "")
+        state = "published" if (published_dated or published_latest) else "built_or_skipped"
+        print(
+            f"[pi_daily_sync] app_payload publish finished run_date={run_date} "
+            f"dated_tag={dated_tag} published_dated={published_dated} "
+            f"published_latest={published_latest} state={state} "
+            f"core={core_name} details={details_name} exit=0"
+        )
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
-        print(f"pi_daily_sync: app payload step failed (non-fatal): {exc}")
+        print(f"[pi_daily_sync] app_payload publish failed (non-fatal) error={exc!r} exit=0")
 
 
 def sync_existing_repo(repo: Path, remote_url: str) -> None:
