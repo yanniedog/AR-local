@@ -37,7 +37,14 @@ const res = await fetch('https://api.expo.dev/graphql', {
   body: JSON.stringify({ query, variables: { buildId } }),
 });
 
-const body = await res.json();
+let body;
+try {
+  body = await res.json();
+} catch {
+  console.error('GraphQL failed: non-JSON response (HTTP', res.status, ')');
+  process.exit(1);
+}
+
 if (!res.ok || body.errors?.length) {
   console.error('GraphQL failed:', JSON.stringify(body.errors ?? body, null, 2));
   process.exit(1);
