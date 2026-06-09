@@ -39,11 +39,18 @@ function resolveVersionAndBuild() {
   let buildNumber = readAppJsonBuildNumber(mobileRoot);
   const manifestArgIdx = process.argv.indexOf('--manifest');
   if (manifestArgIdx >= 0) {
-    const manifestPath = resolve(process.argv[manifestArgIdx + 1] ?? '');
-    if (manifestPath && existsSync(manifestPath)) {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      if (manifest.version) version = String(manifest.version);
-      if (manifest.build_number != null) buildNumber = String(manifest.build_number);
+    const rawPath = process.argv[manifestArgIdx + 1];
+    if (rawPath) {
+      const manifestPath = resolve(rawPath);
+      if (existsSync(manifestPath)) {
+        try {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          if (manifest.version) version = String(manifest.version);
+          if (manifest.build_number != null) buildNumber = String(manifest.build_number);
+        } catch (err) {
+          console.error(`Error reading or parsing manifest at ${manifestPath}:`, err);
+        }
+      }
     }
   }
   return { version, buildNumber };
