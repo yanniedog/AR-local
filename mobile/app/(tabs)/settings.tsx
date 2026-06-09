@@ -237,10 +237,25 @@ export default function Settings() {
           label="Version"
           value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
-        <AppText variant="tiny" color="textFaint" style={{ marginTop: 12, lineHeight: 16 }}>
-          Rates are sourced from public Consumer Data Right (open banking) product data and
-          provided for general information only — not financial advice. Always confirm with the
-          lender before applying.
+        <Pressable
+          onPress={() => router.push('/terms' as Href)}
+          style={{
+            marginTop: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            paddingVertical: 10,
+          }}
+        >
+          <Ionicons name="document-text-outline" size={20} color={theme.colors.primary} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="body" weight="600">Terms</AppText>
+            <AppText variant="tiny" color="textFaint">Data sources and legal notices</AppText>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+        <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
+          General information only — not financial advice. Confirm rates with the lender before applying.
         </AppText>
       </Section>
     </ScreenScrollView>

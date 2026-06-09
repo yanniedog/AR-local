@@ -389,7 +389,7 @@
         ? {
             product_constraints: 'LVR: product constraint (rate row empty)',
             product_unparsed: 'LVR: product signal not parsed',
-            none: 'LVR: not in CDR rate fields',
+            none: 'LVR: not in rate fields',
             rate_structured: '',
             context_text: '',
           }[row.lvr_source] || ''

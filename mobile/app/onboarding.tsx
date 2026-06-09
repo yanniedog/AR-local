@@ -50,8 +50,8 @@ export default function Onboarding() {
       </View>
       <AppText variant="h1">Australian Rates</AppText>
       <AppText variant="body" color="textMuted" style={{ marginTop: 8, lineHeight: 22 }}>
-        Daily Australian home loan, savings and term-deposit rates — sourced from open
-        banking (CDR) data and refreshed automatically. Works offline.
+        Daily Australian home loan, savings and term-deposit rates — refreshed automatically.
+        Works offline.
       </AppText>
 
       <AppText variant="h3" style={{ marginTop: 36, marginBottom: 12 }}>
