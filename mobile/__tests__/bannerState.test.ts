@@ -1,4 +1,4 @@
-﻿import { resolveOfflineBanner } from '../src/components/bannerState';
+import { resolveOfflineBanner } from '../src/components/bannerState';
 import type { PayloadProgressSnapshot } from '../src/data/downloadProgress';
 
 const progress: PayloadProgressSnapshot = {

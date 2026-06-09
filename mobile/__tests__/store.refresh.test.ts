@@ -1,4 +1,4 @@
-﻿import type { CorePayload, Manifest } from '../src/types';
+import type { CorePayload, Manifest } from '../src/types';
 import { sampleCore, sampleManifest } from '../src/data/sample';
 
 const mockReadBundle = jest.fn();
