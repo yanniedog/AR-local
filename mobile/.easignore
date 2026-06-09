@@ -1,0 +1,32 @@
+# EAS upload rules (see https://docs.expo.dev/build-reference/easignore/)
+# Copy of mobile/.gitignore with Firebase configs whitelisted for CI materialization.
+
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+ios/
+android/
+*.orig.*
+
+.metro-health-check*
+
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.log
+
+# Include Firebase files when present on disk (GHA secrets or ensure-firebase-config placeholders).
+!google-services.json
+!GoogleService-Info.plist

@@ -5,11 +5,16 @@
 #   EXPO_TOKEN — robot access token for yannieyannies-team (expo.dev → Access tokens)
 #   GOOGLE_SERVICES_JSON — optional full google-services.json for real Crashlytics (else placeholder)
 #   GOOGLE_SERVICE_INFO_PLIST — optional GoogleService-Info.plist for iOS Crashlytics
-# EAS project env (expo.dev → project → Environment variables):
+#   EXPO_PUBLIC_CLARITY_PROJECT_ID — optional Clarity project id (passed to EAS build env)
+# EAS project env (expo.dev → project → Environment variables) — alternative to GH secrets:
+#   GOOGLE_SERVICES_JSON — file-type env (path injected at build; see ensure-firebase-config.mjs)
 #   EXPO_PUBLIC_CLARITY_PROJECT_ID — Microsoft Clarity project id (preview/production builds)
 #
 # Profiles: mobile/eas.json (development = dev client; preview = internal APK; production = store)
 # Project: @yannieyannies-team/ar-local-rates (app.json → expo.extra.eas.projectId)
+#
+# Firebase files are gitignored. GHA materializes them locally; EAS_NO_VCS + mobile/.easignore
+# uploads them to Expo cloud. eas-build-pre-install is a fallback (env / .example) on the builder.
 
 name: mobile-eas-build
 
@@ -83,7 +88,7 @@ jobs:
           if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
             printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > GoogleService-Info.plist
           elif [ ! -f GoogleService-Info.plist ]; then
-            cp GoogleService-Info.plist.example GoogleService-Info.plist
+            node scripts/ensure-firebase-config.mjs
           fi
 
       # Fail fast in Actions before uploading to EAS cloud (same Metro bundle step).
@@ -100,11 +105,26 @@ jobs:
               ;;
           esac
 
+      - name: Sync Clarity env to EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_CLARITY_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_CLARITY_PROJECT_ID }}
+        run: |
+          if [ -n "${EXPO_PUBLIC_CLARITY_PROJECT_ID:-}" ]; then
+            npx eas-cli@16.14.1 env:create \
+              --name EXPO_PUBLIC_CLARITY_PROJECT_ID \
+              --value "$EXPO_PUBLIC_CLARITY_PROJECT_ID" \
+              --environment "${{ inputs.profile }}" \
+              --visibility plaintext \
+              --force \
+              --non-interactive
+          fi
+
       - name: EAS Build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          npx eas-cli@16.14.1 build \
+          EAS_NO_VCS=1 npx eas-cli@16.14.1 build \
             --non-interactive \
             --profile "${{ inputs.profile }}" \
             --platform "${{ inputs.platform }}"

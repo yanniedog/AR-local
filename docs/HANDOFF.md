@@ -264,25 +264,27 @@ Forever-free stack: **Microsoft Clarity** (session replay) + **Firebase Crashlyt
 | Secret / env | Where | Purpose |
 |---|---|---|
 | `EXPO_TOKEN` | GitHub Actions → Settings → Secrets | EAS upload/auth (required) — §7 |
-| `GOOGLE_SERVICES_JSON` | GitHub Actions secrets (optional) | Full `google-services.json` body for CI/EAS Android builds |
-| `GOOGLE_SERVICE_INFO_PLIST` | GitHub Actions secrets (optional) | Full `GoogleService-Info.plist` body for CI/EAS iOS builds |
-| `EXPO_PUBLIC_CLARITY_PROJECT_ID` | EAS project env (expo.dev) | Baked into preview/production JS bundles |
+| `GOOGLE_SERVICES_JSON` | GitHub Actions secrets (optional) | Full `google-services.json` body; GHA materializes then uploads via `.easignore` |
+| `GOOGLE_SERVICE_INFO_PLIST` | GitHub Actions secrets (optional) | Full `GoogleService-Info.plist` body; same upload path |
+| `EXPO_PUBLIC_CLARITY_PROJECT_ID` | GitHub Actions secret **or** EAS project env | GHA runs `eas env:create` before build when secret set |
+| `GOOGLE_SERVICES_JSON` (file) | EAS project env (expo.dev, optional) | Alternative: file-type env; path read by `eas-build-pre-install` hook |
 
 **Workflow:** `.github/workflows/mobile-eas-build.yml` — `workflow_dispatch` only (does not
 gate PR merges). Inputs: `profile` (`development` / `preview` / `production` from
 `mobile/eas.json`), `platform` (`android` / `ios` / `all`).
 
 Steps relevant to observability:
-- **Materialize Firebase config** — if `GOOGLE_SERVICES_JSON` is set, writes
-  `mobile/google-services.json`; else runs `node scripts/ensure-firebase-config.mjs`.
-  Same pattern for `GOOGLE_SERVICE_INFO_PLIST` / `GoogleService-Info.plist` (falls back to
-  copying `.example`).
-- **`ensure-firebase-config.mjs`** — when a gitignored file is missing, copies the matching
-  `.example` so `expo export` / EAS preflight succeeds. Placeholders **do not** report to
-  Firebase; swap in real console downloads (locally or via secrets) before expecting data.
+- **Materialize Firebase config (GHA)** — if `GOOGLE_SERVICES_JSON` is set, writes
+  `mobile/google-services.json`; else runs `node scripts/ensure-firebase-config.mjs` (placeholder
+  from `.example`). Same pattern for `GOOGLE_SERVICE_INFO_PLIST` / `GoogleService-Info.plist`.
+- **`ensure-firebase-config.mjs`** — also runs as **`eas-build-pre-install`** on EAS cloud
+  (before `npm install`). Fallback when Firebase files are missing: inline/path env from EAS file
+  secrets, `*_B64` env, or copies `.example`. Primary GHA path: materialize locally then upload
+  with `EAS_NO_VCS=1` + `mobile/.easignore` (`!google-services.json` whitelist).
 - **Validate JS bundle** — `npm run typecheck` + platform `export:*` (each `preexport:*`
   also runs `ensure-firebase-config.mjs`).
-- **EAS Build** — `eas-cli@16.14.1 build --non-interactive --profile … --platform …`.
+- **EAS Build** — `EAS_NO_VCS=1` + `mobile/.easignore` uploads materialized Firebase files;
+  optional `eas env:create` for `EXPO_PUBLIC_CLARITY_PROJECT_ID` from GH secret.
 
 Trigger from GitHub: Actions → **mobile-eas-build** → Run workflow. Or locally:
 ```bash
@@ -303,7 +305,7 @@ EXPO_TOKEN=<token> eas build --profile preview --platform android
 **Operator checklist**
 
 - [ ] EAS **preview** or **production** build installed on device (not Expo Go)
-- [ ] `EXPO_PUBLIC_CLARITY_PROJECT_ID` in EAS env (or `mobile/.env` for local EAS CLI)
+- [ ] `EXPO_PUBLIC_CLARITY_PROJECT_ID` in GH secret, EAS env, or `mobile/.env` for local EAS CLI
 - [ ] Real `google-services.json` + `GoogleService-Info.plist` (or GH secrets for workflow builds)
 - [ ] Crashlytics **enabled** in Firebase console for the project
 - [ ] Rebuilt **after** adding native config / env vars
@@ -315,7 +317,7 @@ EXPO_TOKEN=<token> eas build --profile preview --platform android
 | Mistake | Symptom | Fix |
 |---|---|---|
 | Testing in Expo Go | No native modules; observability silently no-ops | Install EAS dev/preview APK or dev client |
-| Only `mobile/.env` for Clarity, not EAS env | Cloud builds missing Project ID; no recordings | Set var on expo.dev project environments |
+| Only `mobile/.env` for Clarity, not EAS/GHA env | Cloud builds missing Project ID; no recordings | Set GH secret or expo.dev project env |
 | Placeholder Firebase files | Build/export green; zero Crashlytics events | Drop real JSON/plist from Firebase console or set GH secrets |
 | Expecting Clarity in `expo start` / `__DEV__` | No recordings despite correct Project ID | Use preview/production build (`__DEV__` false) |
 | Diagnostics toggle off | No new logs or replays | Enable in Settings (default is on for fresh installs) |
@@ -490,6 +492,7 @@ mobile/app/product/[key].tsx            # product detail (terminal leaf)
 mobile/src/lib/debugLog.ts              # in-app ring-buffer logger (512KB / 2000 lines)
 mobile/src/lib/observability.ts       # Clarity init + Crashlytics bridge + diagnostics toggle
 mobile/app/debug-log.tsx                # Settings → view/share/upload logs (paste.rs POST)
+mobile/.easignore                       # EAS upload rules; whitelists materialized Firebase JSON/plist
 mobile/scripts/ensure-firebase-config.mjs  # copy .example Firebase configs when gitignored files absent
 mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
 mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
