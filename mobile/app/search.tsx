@@ -54,8 +54,6 @@ export default function Search() {
   const setPref = useStore((s) => s.setPref);
   const subscribeSearch = useStore((s) => s.subscribeSearch);
   const unsubscribeSearch = useStore((s) => s.unsubscribeSearch);
-  const findSearchSubscription = useStore((s) => s.findSearchSubscription);
-
   useEffect(() => {
     void ensureDetails();
   }, [ensureDetails]);
@@ -105,10 +103,7 @@ export default function Search() {
     [section, path, hierarchyScoped, query, effectiveFilters],
   );
 
-  const searchSub = useMemo(
-    () => findSearchSubscription(searchSnapshot),
-    [findSearchSubscription, searchSnapshot],
-  );
+  const searchSub = useStore((s) => s.findSearchSubscription(searchSnapshot));
 
   const onToggleSearchAlert = async () => {
     if (searchSub) {
