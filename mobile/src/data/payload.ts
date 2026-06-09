@@ -3,6 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { gunzipSync, strFromU8 } from 'fflate';
 
 import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
+import { debugLog } from '../lib/debugLog';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
 import {
   fileNameFromUrl,
@@ -106,7 +107,10 @@ async function downloadBytes(
       }
       reject(new Error(`asset HTTP ${xhr.status}`));
     };
-    xhr.onerror = () => reject(new Error('network error'));
+    xhr.onerror = () => {
+      debugLog.error('payload', `download failed url=${url}`);
+      reject(new Error('network error'));
+    };
     xhr.send();
   });
 }
@@ -142,6 +146,7 @@ export async function fetchManifest(
   if (m.app_min_version && appVersion && versionLt(appVersion, m.app_min_version)) {
     throw new Error(`payload requires app >= ${m.app_min_version} (have ${appVersion}); update the app`);
   }
+  debugLog.info('payload', `manifest ok run_date=${m.run_date} schema=${m.schema_version ?? 'n/a'}`);
   return m;
 }
 

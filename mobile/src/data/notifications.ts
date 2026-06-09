@@ -2,6 +2,7 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
 
 import { SECTIONS, SECTION_ORDER } from '../constants';
+import { debugLog } from '../lib/debugLog';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { bpsBetween, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
@@ -142,7 +143,11 @@ export async function ensurePermissions(): Promise<boolean> {
 
 export async function notify(messages: NotifyMessage[]): Promise<void> {
   if (!messages.length) return;
-  if (!(await ensurePermissions())) return;
+  debugLog.debug('notify', `scheduling ${messages.length} notification(s)`);
+  if (!(await ensurePermissions())) {
+    debugLog.warn('notify', 'permissions denied — skipped');
+    return;
+  }
   // Collapse a flurry into at most a few notifications.
   for (const msg of messages.slice(0, 3)) {
     await Notifications.scheduleNotificationAsync({
@@ -162,7 +167,9 @@ export async function registerBackgroundRefresh(): Promise<void> {
       stopOnTerminate: false,
       startOnBoot: true,
     });
-  } catch {
+    debugLog.info('notify', 'background refresh registered');
+  } catch (err) {
+    debugLog.warn('notify', `background register failed: ${String((err as Error)?.message ?? err)}`);
     // Background fetch may be unavailable (e.g. web / simulator) — non-fatal.
   }
 }
@@ -170,7 +177,9 @@ export async function registerBackgroundRefresh(): Promise<void> {
 export async function unregisterBackgroundRefresh(): Promise<void> {
   try {
     await BackgroundFetch.unregisterTaskAsync(BACKGROUND_TASK);
-  } catch {
+    debugLog.info('notify', 'background refresh unregistered');
+  } catch (err) {
+    debugLog.debug('notify', `background unregister failed: ${String((err as Error)?.message ?? err)}`);
     // ignore
   }
 }

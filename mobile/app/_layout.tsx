@@ -8,12 +8,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorScreen } from '../src/components/ErrorScreen';
 import { useStore } from '../src/data/store';
+import { debugLog } from '../src/lib/debugLog';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // expo-router renders this when a child route throws during render.
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  debugLog.error('app', `render error: ${error.message}`);
   return <ErrorScreen error={error} retry={retry} />;
 }
 
@@ -24,7 +26,10 @@ function RootNavigator() {
   const bootstrap = useStore((s) => s.bootstrap);
 
   useEffect(() => {
-    void bootstrap();
+    void debugLog.restoreFromStorage().then(() => {
+      debugLog.info('app', 'bootstrap starting');
+      void bootstrap();
+    });
   }, [bootstrap]);
 
   useEffect(() => {
@@ -56,6 +61,7 @@ function RootNavigator() {
         <Stack.Screen name="bank/[provider]" options={{ title: 'Lender' }} />
         <Stack.Screen name="banks" options={{ title: 'Lenders' }} />
         <Stack.Screen name="compare" options={{ title: 'Compare', presentation: 'modal' }} />
+        <Stack.Screen name="debug-log" options={{ title: 'Debug log', headerBackTitle: 'Settings' }} />
       </Stack>
     </View>
   );

@@ -370,4 +370,8 @@ mobile/app/(tabs)/browse.tsx            # hierarchy explorer (root)
 mobile/app/node.tsx                     # one drill level (pushed per category)
 mobile/app/search.tsx                   # flat search/sort/filter/compare (scoped to a node)
 mobile/app/product/[key].tsx            # product detail (terminal leaf)
+mobile/src/lib/debugLog.ts              # in-app ring-buffer logger (512KB / 2000 lines)
+mobile/app/debug-log.tsx                # Settings → view/share/upload logs (paste.rs POST)
 ```
+
+**Debug logs (mobile):** Settings → Debug log. Upload posts plain text to `https://paste.rs/`; response body is the paste URL (e.g. `https://paste.rs/<id>`). Fetch with `curl https://paste.rs/<id>`.

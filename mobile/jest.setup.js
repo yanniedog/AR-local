@@ -22,3 +22,8 @@ jest.mock('expo-notifications', () => ({
 jest.mock('expo-system-ui', () => ({
   setBackgroundColorAsync: jest.fn(async () => {}),
 }));
+
+jest.mock('@react-native-async-storage/async-storage', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);
