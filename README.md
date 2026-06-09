@@ -1,8 +1,12 @@
 # Local Manual CDR Ingest
 
-Real public CDR product-reference ingest for local analysis.
+Daily Australian banking CDR ingest, export, and analysis. A **Raspberry Pi** runs ingest
+and hosts the web dashboard (AustralianRates shell parity). An **Expo mobile app** in
+**`mobile/`** renders the same rate data offline from **GitHub Releases** — rolling payload
+tag **`app-payload-latest`**, rolling Android APK tag **`app-apk-latest`**.
 
-Agent workflow (Git/PR/bots/local verify - aligned with AustralianRates, no Cloudflare): **`WORKFLOW.md`** and **`AGENTS.md`**.
+Agent workflow (Git/PR/bots/Pi verify — aligned with AustralianRates, no Cloudflare):
+**`WORKFLOW.md`** and **`AGENTS.md`**.
 
 Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). CI required checks: **`bot-presence-gate`**, **`bot-feedback-gate`**. Apply branch protection: `npm run branch-protection:apply` (see **`WORKFLOW.md`** → Branch protection).
 
@@ -12,10 +16,19 @@ AustralianRates dashboard parity contract.
 
 ## Mobile app
 
-A polished iOS + Android app lives in **`mobile/`** (Expo / React Native). The Pi
-builds a compact daily payload (`app_payload.py`) and publishes it to a rolling
-GitHub Release; the app downloads and serves it offline. See
-**`docs/MOBILE_APP.md`** for the payload contract, Pi token setup, and EAS builds.
+Expo / React Native app in **`mobile/`** (SDK 54). Data flow: Pi daily ingest →
+**`app_payload.py`** publishes gzip core/details to **`app-payload-latest`** (dated
+**`app-payload-<date>`** tags for history); the app fetches the manifest and renders locally
+(no Pi/LAN required at runtime).
+
+Preview Android APKs are built on **`main`** by **`mobile-android-apk`** (GitHub Actions,
+local Gradle) and published to **`app-apk-latest`**; semver snapshots use **`app-v*`** tags.
+When the last open PR squashes to **`main`**, **`mobile-auto-release-on-queue-drain`**
+auto-bumps **`expo.version`** and triggers a new APK build.
+
+See **`docs/MOBILE_APP.md`** (payload contract), **`docs/HANDOFF.md`** (ops + verify), and
+**`mobile/scripts/update-readme-app-install.mjs`** (refresh the install table from
+**`app-apk-latest.json`**).
 
 <!-- app-android-install:start -->
 ### Android preview install
@@ -24,7 +37,7 @@ Scan with **Android Chrome** to install the latest preview APK. The QR image URL
 
 | | |
 |---|---|
-| Version | **1.0.1** (build 24) |
+| Version | **1.0.1** (build 26) |
 | QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png) |
 | APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
 | Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
@@ -194,11 +207,16 @@ LAN:
 
 ```sh
 sudo systemctl start ar-local-dashboard.service
-npm run verify:local -- --base-url=http://127.0.0.1:8808/
-curl -fsS http://<pi-ip>/api/latest
-curl -fsS http://ar.local/api/latest
 sudo bash deploy/pi/install-pi-dashboard-proxy.sh /srv/ar-local/AR-local
+npm run verify:pi
+curl -fsS http://100.78.28.10/api/latest
+curl -fsS http://ar.local/api/latest
 ```
+
+**Acceptance smoke** (Tailscale Pi nginx :80): **`http://100.78.28.10/`** — or
+`npm run verify:pi` / `npm run verify:local -- --base-url=http://100.78.28.10/`.
+Direct backend: **`http://100.78.28.10:8808/`**. Local loopback only when running
+**`cdr_dashboard_server.py`** on your dev machine.
 
 The dashboard service serves the newest completed export with:
 
