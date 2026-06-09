@@ -8,7 +8,7 @@
  *
  * Outputs keystore path on stdout (for workflow env).
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -119,14 +119,25 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(keystorePath, material.keystore);
 
-  const envPath = join(outDir, 'signing.env');
-  const lines = [
-    'ANDROID_KEYSTORE_PATH=' + keystorePath,
-    'ANDROID_KEYSTORE_PASSWORD=' + material.storePassword,
-    'ANDROID_KEY_ALIAS=' + material.keyAlias,
-    'ANDROID_KEY_PASSWORD=' + material.keyPassword,
-  ];
-  writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+  const pairs = {
+    ANDROID_KEYSTORE_PATH: keystorePath,
+    ANDROID_KEYSTORE_PASSWORD: material.storePassword,
+    ANDROID_KEY_ALIAS: material.keyAlias,
+    ANDROID_KEY_PASSWORD: material.keyPassword,
+  };
+  const ghEnv = process.env.GITHUB_ENV?.trim();
+  if (ghEnv) {
+    for (const [key, value] of Object.entries(pairs)) {
+      appendFileSync(ghEnv, `${key}=${value}\n`, 'utf8');
+    }
+  }
+  const ghOut = process.env.GITHUB_OUTPUT?.trim();
+  if (ghOut) {
+    appendFileSync(ghOut, `path=${keystorePath}\n`, 'utf8');
+    appendFileSync(ghOut, `store_password=${material.storePassword}\n`, 'utf8');
+    appendFileSync(ghOut, `key_alias=${material.keyAlias}\n`, 'utf8');
+    appendFileSync(ghOut, `key_password=${material.keyPassword}\n`, 'utf8');
+  }
   console.log('materialize-android-keystore: wrote ' + keystorePath);
   console.log(keystorePath);
 }

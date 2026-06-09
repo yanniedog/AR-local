@@ -37,7 +37,8 @@ async function fetchRemoteBuildNumber() {
 
 async function main() {
   const remote = await fetchRemoteBuildNumber();
-  const next = remote != null ? Math.max(remote + 1, current) : current;
+  const runFloor = Number(process.env.GITHUB_RUN_NUMBER ?? 0) || 0;
+  const next = remote != null ? Math.max(remote + 1, current, runFloor) : Math.max(current, runFloor);
   if (next === current && remote == null) {
     console.log(`bump-android-version-code: versionCode stays ${current} (no remote manifest)`);
     return;

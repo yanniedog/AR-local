@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: mobile-android-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   android-apk:
@@ -75,17 +75,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          ks_path=$(node scripts/materialize-android-keystore.mjs | tail -1)
-          # shellcheck disable=SC1091
-          source build/signing/signing.env
-          {
-            echo "path=$ks_path"
-            echo "store_password=$ANDROID_KEYSTORE_PASSWORD"
-            echo "key_alias=$ANDROID_KEY_ALIAS"
-            echo "key_password=$ANDROID_KEY_PASSWORD"
-          } >> "$GITHUB_OUTPUT"
+        run: node scripts/materialize-android-keystore.mjs
 
       - name: Validate JS bundle (typecheck + export)
         run: |
