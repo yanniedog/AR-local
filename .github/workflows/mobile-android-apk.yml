@@ -32,11 +32,11 @@ jobs:
   android-apk:
     name: android preview apk (GHA)
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
     defaults:
       run:
         working-directory: mobile
-        env:
-          NODE_ENV: production
     steps:
       - uses: actions/checkout@v4
 
