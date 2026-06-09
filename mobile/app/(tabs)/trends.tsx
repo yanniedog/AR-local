@@ -8,8 +8,8 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Card, Divider, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRate, formatRunDate } from '../../src/data/format';
+import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
-import { statsFor } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { openBrowse } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -74,7 +74,7 @@ export default function Trends() {
       {SECTION_ORDER.map((key) => {
         const data = core.sections[key];
         if (!data) return null;
-        const stats = statsFor(data.rates);
+        const stats = resolveSectionRibbonStats(data, data.rates, false);
         if (stats.min === null) return null;
         const best = bestRow(data.rates, key);
         return (

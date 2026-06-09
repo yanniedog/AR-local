@@ -2,7 +2,6 @@ import {
   EMPTY_FILTERS,
   activeFilterCount,
   bestRow,
-  distinctProviders,
   distinctValues,
   filterRows,
   findByKey,
@@ -138,17 +137,6 @@ describe('selectors', () => {
 
   test('distinctValues by frequency', () => {
     expect(distinctValues(mortgage, 'rate_type')).toEqual(['VARIABLE', 'FIXED']);
-  });
-
-  test('distinctProviders sorted A–Z case-insensitive, not by frequency', () => {
-    const rows = [
-      mk({ provider: 'Zebra Bank', product_key: 'Z|1' }),
-      mk({ provider: 'Zebra Bank', product_key: 'Z|2' }),
-      mk({ provider: 'alpha credit', product_key: 'a|1' }),
-      mk({ provider: 'Mid Bank', product_key: 'M|1' }),
-      mk({ provider: 'Beta', product_key: 'B|1' }),
-    ];
-    expect(distinctProviders(rows)).toEqual(['alpha credit', 'Beta', 'Mid Bank', 'Zebra Bank']);
   });
 
   test('findByKey across sections', () => {

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 
-import { distinctProviders, distinctValues, type Filters } from '../data/selectors';
+import { distinctValues, type Filters } from '../data/selectors';
 import { distinctEligibilityCriteria } from '../data/eligibility';
 import { distinctAccountFeatures } from '../data/features';
 import { humanizeEnum } from '../data/format';
@@ -57,7 +57,7 @@ export function FilterSheet({
 
   const groups = groupsFor(section);
   // Show every lender (50+ per section) — the sheet scrolls, so don't truncate.
-  const providers = useMemo(() => distinctProviders(rows), [rows]);
+  const providers = useMemo(() => distinctValues(rows, 'provider'), [rows]);
   const accountFeatures = useMemo(
     () => distinctAccountFeatures(rows, detailsProducts).slice(0, 24),
     [rows, detailsProducts],

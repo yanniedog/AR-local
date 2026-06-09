@@ -159,15 +159,6 @@ export function distinctValues(rows: RateRow[], field: keyof RateRow): string[] 
     .map(([k]) => k);
 }
 
-/** Distinct provider names for filter UI, sorted A–Z (case-insensitive). */
-export function distinctProviders(rows: RateRow[]): string[] {
-  const names = new Set<string>();
-  for (const row of rows) {
-    if (row.provider) names.add(row.provider);
-  }
-  return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
-
 export interface ProviderGroup {
   provider: string;
   rows: RateRow[];
