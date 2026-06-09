@@ -92,13 +92,32 @@ def refresh_rolling_latest(
     if dry_run:
         return False
     out_dir = exports / "app-payload-latest"
-    app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    manifest = app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    our_gen = str(manifest.get("generated_at") or "")
     published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG, force=force)
     print(
         f"[backfill_app_payload] rolling latest finished run_date={run_date} "
         f"published={published}"
     )
-    return published
+    if published:
+        return True
+    status, live = app_payload._live_manifest_status(repo, app_payload.DEFAULT_TAG)
+    if status == "present" and live:
+        live_run = str(live.get("run_date") or "")
+        live_gen = str(live.get("generated_at") or "")
+        if live_run and live_run > run_date:
+            print(
+                f"[backfill_app_payload] rolling latest no-op: live run_date={live_run} "
+                f"> newest export {run_date}"
+            )
+            return True
+        if live_run == run_date and live_gen and our_gen and live_gen >= our_gen:
+            print(
+                f"[backfill_app_payload] rolling latest no-op: live run_date={live_run} "
+                f"generated_at={live_gen} >= built {our_gen}"
+            )
+            return True
+    return False
 
 
 def backfill(
@@ -110,7 +129,7 @@ def backfill(
     dry_run: bool = False,
     force: bool = False,
     skip_latest: bool = False,
-) -> List[dict]:
+) -> Tuple[List[dict], Optional[bool]]:
     """Publish dated releases for each export date; optionally refresh rolling latest."""
     results: List[dict] = []
     dates = list(iter_valid_export_dates(runs_root, from_date=from_date, to_date=to_date))
@@ -155,6 +174,12 @@ def backfill(
                 row["published"] = app_payload.publish_payload(
                     out_dir, repo=repo, tag=tag, force=force
                 )
+                if not row["published"] and not force and dated_release_already_published(repo, run_date):
+                    row["skipped"] = True
+                    print(
+                        f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                        "skipped=already_published_after_publish"
+                    )
                 print(
                     f"[backfill_app_payload] run_date={run_date} tag={tag} "
                     f"published={row['published']} core={row['core']} details={row['details']}"
@@ -172,9 +197,10 @@ def backfill(
         f"skipped={len(skipped)} failed={len(failed)} "
         f"dates_published={published}"
     )
+    rolling_ok: Optional[bool] = None
     if not skip_latest:
-        refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
-    return results
+        rolling_ok = refresh_rolling_latest(runs_root, repo=repo, dry_run=dry_run, force=force)
+    return results, rolling_ok
 
 
 def resolve_runs_root(explicit: Optional[Path]) -> Path:
@@ -222,7 +248,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         ok = refresh_rolling_latest(runs_root, repo=args.repo, dry_run=args.dry_run, force=args.force)
         return 0 if args.dry_run or ok else 1
 
-    results = backfill(
+    results, rolling_ok = backfill(
         runs_root,
         from_date=args.from_date,
         to_date=args.to_date,
@@ -237,8 +263,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if attempted and not any(r.get("published") for r in results):
         print("[backfill_app_payload] failed: no dated releases published")
         return 1
+    unpublished = [r["run_date"] for r in attempted if not r.get("published") and not r.get("error")]
+    if unpublished:
+        print(
+            f"[backfill_app_payload] failed: dated publish returned false for run_dates={unpublished}"
+        )
+        return 1
     if any(r.get("error") for r in results):
         print("[backfill_app_payload] failed: one or more dates errored")
+        return 1
+    if rolling_ok is False:
+        print("[backfill_app_payload] failed: rolling latest refresh failed")
         return 1
     return 0
 
