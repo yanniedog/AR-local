@@ -152,10 +152,10 @@ jobs:
           EXPO_PUBLIC_CLARITY_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_CLARITY_PROJECT_ID }}
         run: |
           if [ -n "${EXPO_PUBLIC_CLARITY_PROJECT_ID:-}" ]; then
-            if npx eas-cli@16.14.1 env:get \
-              --variable-name EXPO_PUBLIC_CLARITY_PROJECT_ID \
-              --variable-environment "${{ inputs.profile }}" \
-              --non-interactive >/dev/null 2>&1; then
+            if npx eas-cli@16.14.1 env:list \
+              --environment "${{ inputs.profile }}" \
+              --non-interactive \
+              --format short 2>/dev/null | grep -q "^EXPO_PUBLIC_CLARITY_PROJECT_ID="; then
               npx eas-cli@16.14.1 env:update \
                 --variable-name EXPO_PUBLIC_CLARITY_PROJECT_ID \
                 --variable-environment "${{ inputs.profile }}" \
@@ -168,7 +168,8 @@ jobs:
                 --environment "${{ inputs.profile }}" \
                 --visibility plaintext \
                 --non-interactive
-            fi          fi
+            fi
+          fi
 
 
       - name: Ensure Android keystore (non-interactive)
