@@ -2,6 +2,7 @@ import {
   EMPTY_FILTERS,
   activeFilterCount,
   bestRow,
+  distinctProviders,
   distinctValues,
   filterRows,
   findByKey,
@@ -135,8 +136,39 @@ describe('selectors', () => {
     expect(activeFilterCount({ ...EMPTY_FILTERS, providers: ['Bank A'], includeNonStandard: true })).toBe(2);
   });
 
-  test('distinctValues by frequency', () => {
+  test('distinctValues sorts by frequency then label', () => {
     expect(distinctValues(mortgage, 'rate_type')).toEqual(['VARIABLE', 'FIXED']);
+  });
+
+  test('distinctProviders empty input and falsey providers', () => {
+    expect(distinctProviders([])).toEqual([]);
+    const rows = [
+      mk({ provider: 'Bank A', product_key: 'A|1' }),
+      mk({ provider: '', product_key: 'E|1' }),
+      mk({ provider: undefined as unknown as string, product_key: 'U|1' }),
+    ];
+    expect(distinctProviders(rows)).toEqual(['Bank A']);
+  });
+
+  test('distinctProviders sorted A–Z case-insensitive, not by frequency', () => {
+    const rows = [
+      mk({ provider: 'Zebra Bank', product_key: 'Z|1' }),
+      mk({ provider: 'Zebra Bank', product_key: 'Z|2' }),
+      mk({ provider: 'alpha credit', product_key: 'a|1' }),
+      mk({ provider: 'Mid Bank', product_key: 'M|1' }),
+      mk({ provider: 'Beta', product_key: 'B|1' }),
+    ];
+    expect(distinctProviders(rows)).toEqual(['alpha credit', 'Beta', 'Mid Bank', 'Zebra Bank']);
+  });
+
+
+  test('distinctProviders handles empty input and missing provider', () => {
+    expect(distinctProviders([])).toEqual([]);
+    const rows = [
+      mk({ provider: '', product_key: 'e|1' }),
+      mk({ provider: 'Bank A', product_key: 'A|1' }),
+    ];
+    expect(distinctProviders(rows)).toEqual(['Bank A']);
   });
 
   test('findByKey across sections', () => {

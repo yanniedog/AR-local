@@ -22,20 +22,7 @@ export function resolveOfflineBanner(
   }
 
   if (sample && !refreshing && !offline) {
-    return {
-      mode: 'offline-sample',
-      showLiveProgress: false,
-      message: 'Showing bundled sample data.',
-    };
-  }
-
-  if (sample && refreshing && offline && payloadProgress == null) {
-    return {
-      mode: 'offline-sample',
-      showLiveProgress: false,
-      message:
-        'Offline — showing bundled sample data; latest data will load once you reconnect.',
-    };
+    return { mode: 'hidden', showLiveProgress: false, message: '' };
   }
 
   if (sample && refreshing) {

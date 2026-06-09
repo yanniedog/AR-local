@@ -28,7 +28,7 @@ describe('features', () => {
     expect(productHasAllFeatures('A|1', ['OFFSET'], null)).toBe(false);
   });
 
-  test('distinctAccountFeatures counts unique products and sorts by frequency', () => {
+  test('distinctAccountFeatures sorts alphabetically by display label', () => {
     const lookup: Record<string, ProductDetail> = {
       'A|1': { features: [{ label: 'OFFSET' }, { label: 'REDRAW' }] },
       'B|1': { features: [{ label: 'OFFSET' }] },
@@ -40,7 +40,7 @@ describe('features', () => {
       { product_key: 'B|1', provider: 'Y', product_name: 'B', rate: '0.05' },
       { product_key: 'C|1', provider: 'Z', product_name: 'C', rate: '0.05' },
     ];
-    expect(distinctAccountFeatures(rows, lookup)).toEqual(['OFFSET', 'DIGITAL_BANKING', 'REDRAW']);
+    expect(distinctAccountFeatures(rows, lookup)).toEqual(['DIGITAL_BANKING', 'OFFSET', 'REDRAW']);
     expect(productFeatureTypes(lookup['A|1'])).toEqual(new Set(['OFFSET', 'REDRAW']));
   });
 });

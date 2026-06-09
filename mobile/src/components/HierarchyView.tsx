@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 
 import { SECTIONS } from '../constants';
 import { visibleAccountRows } from '../data/format';
+import { resolveSectionRibbonStats } from '../data/ribbonStats';
 import { sortRows } from '../data/selectors';
 import {
   childrenOf,
@@ -28,6 +29,7 @@ type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow }
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
   const rows = useStore((s) => s.core?.sections[section]?.rates);
+  const sectionData = useStore((s) => s.core?.sections[section]);
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
 
@@ -35,6 +37,10 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
     const all = rows ?? [];
     const nodeRows = visibleAccountRows(rowsUnder(all, section, path), includeNonStandard);
     const kids = childrenOf(all, section, path, includeNonStandard);
+    const stats =
+      path.length === 0
+        ? resolveSectionRibbonStats(sectionData, rowsUnder(all, section, path), includeNonStandard)
+        : statsFor(nodeRows, true);
     let data: Item[];
     if (kids.length) {
       data = kids.map((node) => ({ kind: 'node', node }) as Item);
@@ -46,8 +52,8 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
         .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
         .map((row) => ({ kind: 'product', row }) as Item);
     }
-    return { stats: statsFor(nodeRows, true), children: kids, items: data };
-  }, [rows, section, path, includeNonStandard]);
+    return { stats, children: kids, items: data };
+  }, [rows, sectionData, section, path, includeNonStandard]);
 
   if (!rows) return null;
 
