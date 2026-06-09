@@ -14,11 +14,14 @@ export const MAX_LOG_BYTES = 512 * 1024;
 export const PERSIST_TAIL_LINES = 100;
 const STORAGE_KEY = 'ar-debug-log-tail';
 
+const SECRET_VALUE = String.raw`[^\s,;}"']+`;
 const SECRET_PATTERNS: RegExp[] = [
-  /EXPO_TOKEN[=:\s]\S+/gi,
-  /Bearer\s+\S+/gi,
-  /Authorization:\s*\S+/gi,
-  /(?:api[_-]?key|secret|password|token)[=:\s]\S+/gi,
+  new RegExp(String.raw`EXPO_TOKEN[=:\s]${SECRET_VALUE}`, "gi"),
+  new RegExp(String.raw`Bearer\s+${SECRET_VALUE}`, "gi"),
+  new RegExp(String.raw`Authorization:\s*${SECRET_VALUE}`, "gi"),
+  new RegExp(String.raw`(?:api[_-]?key|secret|password|token)[=:\s]${SECRET_VALUE}`, "gi"),
+  new RegExp(String.raw`"(?:EXPO_TOKEN|api[_-]?key|secret|password|token)"\s*:\s*"[^"]+"`, "gi"),
+  new RegExp(String.raw`'(?:EXPO_TOKEN|api[_-]?key|secret|password|token)'\s*:\s*'[^']+'`, "gi"),
 ];
 
 /** Strip likely secrets before lines are stored or uploaded. */
@@ -38,8 +41,10 @@ function formatEntry(entry: LogEntry): string {
   return `${entry.ts} [${level}] ${entry.tag}: ${entry.message}`;
 }
 
+const textEncoder = new TextEncoder();
+
 function entryBytes(entry: LogEntry): number {
-  return formatEntry(entry).length + 1;
+  return textEncoder.encode(formatEntry(entry) + "\n").length;
 }
 
 export class RingBuffer {
@@ -62,6 +67,16 @@ export class RingBuffer {
   clear(): void {
     this.entries = [];
     this.bytes = 0;
+  }
+
+  loadHistory(history: LogEntry[]): void {
+    const merged = [...history, ...this.entries];
+    merged.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+    this.entries = [];
+    this.bytes = 0;
+    for (const entry of merged) {
+      this.append(entry);
+    }
   }
 
   getEntries(): LogEntry[] {
@@ -149,11 +164,11 @@ export const debugLog = {
       if (!raw) return;
       const tail = JSON.parse(raw) as LogEntry[];
       if (!Array.isArray(tail)) return;
-      for (const entry of tail) {
-        if (entry?.ts && entry?.level && entry?.tag && entry?.message) {
-          buffer.append(entry);
-        }
-      }
+      const valid = tail.filter(
+        (entry): entry is LogEntry =>
+          !!(entry?.ts && entry?.level && entry?.tag && entry?.message),
+      );
+      buffer.loadHistory(valid);
       notify();
     } catch {
       // ignore corrupt snapshot
@@ -185,12 +200,13 @@ export async function uploadLogsToPasteRs(
     headers: { 'Content-Type': 'text/plain' },
     body,
   });
-  const url = (await res.text()).trim();
-  if (!url.startsWith('http')) {
-    throw new Error(`paste.rs upload failed (${res.status})`);
-  }
+  const raw = (await res.text()).trim();
   if (res.status !== 201 && res.status !== 206) {
-    throw new Error(`paste.rs upload failed (${res.status})`);
+    const snippet = raw.slice(0, 120);
+    throw new Error(`paste.rs upload failed (${res.status}): ${snippet}`);
   }
-  return { url, truncated: res.status === 206 };
+  if (!raw.startsWith('http')) {
+    throw new Error(`paste.rs upload failed (${res.status}): invalid response`);
+  }
+  return { url: raw, truncated: res.status === 206 };
 }

@@ -53,9 +53,10 @@ export default function DebugLogScreen() {
 
   const onShare = useCallback(async () => {
     setBusy('share');
+    let path: string | null = null;
     try {
       const fileName = `ar-debug-log-${Date.now()}.txt`;
-      const path = `${FileSystem.cacheDirectory}${fileName}`;
+      path = `${FileSystem.cacheDirectory}${fileName}`;
       await FileSystem.writeAsStringAsync(path, text);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(path, {
@@ -69,11 +70,14 @@ export default function DebugLogScreen() {
     } catch (err) {
       Alert.alert('Share failed', String((err as Error)?.message ?? err));
     } finally {
+      if (path) {
+        await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
+      }
       setBusy(null);
     }
   }, [text]);
 
-  const onUpload = useCallback(async () => {
+  const runUpload = useCallback(async () => {
     setBusy('upload');
     try {
       const body = formatLogUploadBody(text, {
@@ -92,6 +96,17 @@ export default function DebugLogScreen() {
       setBusy(null);
     }
   }, [text]);
+
+  const onUpload = useCallback(() => {
+    Alert.alert(
+      'Upload to paste.rs?',
+      'Creates a public paste anyone with the link can read. Only upload if you accept that risk.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Upload', style: 'destructive', onPress: () => void runUpload() },
+      ],
+    );
+  }, [runUpload]);
 
   const onCopyUrl = useCallback(async () => {
     if (!uploadUrl) return;
@@ -125,7 +140,7 @@ export default function DebugLogScreen() {
               title="Upload"
               icon="cloud-upload-outline"
               loading={busy === 'upload'}
-              onPress={() => void onUpload()}
+              onPress={onUpload}
             />
           </Row>
           {uploadUrl ? (
