@@ -26,4 +26,5 @@ jobs:
       - name: Fetch build error
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: node scripts/fetch-eas-build-error.mjs "${{ inputs.build_id }}"
+          BUILD_ID: ${{ inputs.build_id }}
+        run: node scripts/fetch-eas-build-error.mjs

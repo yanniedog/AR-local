@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
  * Print EAS build status + error message (no secrets logged).
- * Usage: EXPO_TOKEN=… node scripts/fetch-eas-build-error.mjs <buildId>
+ * Usage: EXPO_TOKEN=… BUILD_ID=… node scripts/fetch-eas-build-error.mjs
+ *        EXPO_TOKEN=… node scripts/fetch-eas-build-error.mjs <buildId>
  */
-const buildId = process.argv[2]?.trim();
+const buildId = (process.env.BUILD_ID || process.argv[2])?.trim();
 if (!buildId) {
-  console.error('usage: node scripts/fetch-eas-build-error.mjs <buildId>');
+  console.error('usage: BUILD_ID=… node scripts/fetch-eas-build-error.mjs (or pass <buildId> argv)');
   process.exit(1);
 }
 
