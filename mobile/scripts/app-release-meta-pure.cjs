@@ -5,7 +5,7 @@ function versionTag(version) {
 }
 
 function releaseTitle(version) {
-  return `Australian Rates app ÔÇö ${version} (Android)`;
+  return `Australian Rates app \u2013 ${version} (Android)`;
 }
 
 function extractChangelogSection(content, version) {
