@@ -15,10 +15,11 @@ export type PayloadProgressHandler = (snapshot: PayloadProgressSnapshot) => void
 export function fileNameFromUrl(url: string): string {
   try {
     const path = new URL(url).pathname;
-    const base = path.split('/').pop() ?? url;
-    return decodeURIComponent(base);
+    const base = path.split('/').pop();
+    return base ? decodeURIComponent(base) : url;
   } catch {
-    return url.split('/').pop() ?? url;
+    const fallbackBase = url.split('/').pop();
+    return fallbackBase || url;
   }
 }
 

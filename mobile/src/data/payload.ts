@@ -41,6 +41,12 @@ function emit(
  * Download raw bytes with XMLHttpRequest progress events (works on iOS/Android).
  * Falls back to `expectedBytes` when Content-Length is missing.
  */
+
+function manifestFetchUrl(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_=${Date.now()}`;
+}
+
 async function downloadBytes(
   url: string,
   opts: DownloadOpts & { phase?: PayloadProgressPhase } = {},
@@ -57,13 +63,22 @@ async function downloadBytes(
   });
 
   return new Promise((resolve, reject) => {
+    let lastEmitAt = 0;
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
+    xhr.timeout = 30000;
     xhr.responseType = 'arraybuffer';
+    xhr.ontimeout = () => reject(new Error('network timeout'));
     xhr.onprogress = (event) => {
+      const now = Date.now();
       const totalBytes = event.lengthComputable
         ? event.total
         : (opts.expectedBytes ?? null);
+      const isFinal = totalBytes !== null && event.loaded >= totalBytes;
+      if (!isFinal && now - lastEmitAt < 150) {
+        return;
+      }
+      lastEmitAt = now;
       emit(opts.onProgress, {
         phase,
         fileName,
@@ -75,6 +90,10 @@ async function downloadBytes(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         const buf = xhr.response as ArrayBuffer;
+        if (!buf) {
+          reject(new Error('empty response'));
+          return;
+        }
         emit(opts.onProgress, {
           phase,
           fileName,
@@ -101,7 +120,7 @@ export async function fetchManifest(
   url: string = MANIFEST_URL,
   onProgress?: PayloadProgressHandler,
 ): Promise<Manifest> {
-  const buf = await downloadBytes(url, {
+  const buf = await downloadBytes(manifestFetchUrl(url), {
     fileName: 'manifest.json',
     onProgress,
     phase: 'manifest',
