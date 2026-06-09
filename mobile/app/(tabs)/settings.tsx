@@ -33,7 +33,7 @@ export default function Settings() {
     if (value) {
       const ok = await ensurePermissions();
       if (!ok) {
-        Alert.alert('Notifications disabled', 'Enable notifications for AR Rates in system settings.');
+        Alert.alert('Notifications disabled', 'Enable notifications for Australian Rates in system settings.');
         return;
       }
       void registerBackgroundRefresh();
