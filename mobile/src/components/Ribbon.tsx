@@ -62,34 +62,31 @@ export function Ribbon({
     <View>
       <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ width: '100%', height: h }}>
         <Svg width={layoutW} height={h}>
-            <Defs>
-              <LinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={leftColor} stopOpacity={0.85} />
-                <Stop offset="0.5" stopColor={theme.colors.warning} stopOpacity={0.8} />
-                <Stop offset="1" stopColor={rightColor} stopOpacity={0.85} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={pad} y={barY} width={Math.max(1, layoutW - 2 * pad)} height={barH} rx={barH / 2} fill={`url(#${gradId})`} />
-            {/* mean marker (thin) */}
-            {mean !== null ? (
-              <Line x1={x(mean)} y1={barY - 3} x2={x(mean)} y2={barY + barH + 3} stroke={theme.colors.text} strokeWidth={1.5} />
-            ) : null}
-            {/* median marker (dot) */}
-            {median !== null ? (
-              <Circle cx={x(median)} cy={barY + barH / 2} r={barH / 2 + 1} fill={theme.colors.surface} stroke={theme.colors.text} strokeWidth={2} />
-            ) : null}
-            {/* RBA cash-rate marker for loans */}
-            {rbaIn ? (
-              <>
-                <Line x1={x(rba!)} y1={barY - 5} x2={x(rba!)} y2={barY + barH + 5} stroke={theme.colors.primary} strokeWidth={2} strokeDasharray="2,2" />
-                {!compact ? (
-                  <SvgText x={x(rba!)} y={barY + barH + 14} fontSize={9} fill={theme.colors.primary} textAnchor="middle">
-                    RBA
-                  </SvgText>
-                ) : null}
-              </>
-            ) : null}
-          </Svg>
+          <Defs>
+            <LinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor={leftColor} stopOpacity={0.85} />
+              <Stop offset="0.5" stopColor={theme.colors.warning} stopOpacity={0.8} />
+              <Stop offset="1" stopColor={rightColor} stopOpacity={0.85} />
+            </LinearGradient>
+          </Defs>
+          <Rect x={pad} y={barY} width={Math.max(1, layoutW - 2 * pad)} height={barH} rx={barH / 2} fill={`url(#${gradId})`} />
+          {mean !== null ? (
+            <Line x1={x(mean)} y1={barY - 3} x2={x(mean)} y2={barY + barH + 3} stroke={theme.colors.text} strokeWidth={1.5} />
+          ) : null}
+          {median !== null ? (
+            <Circle cx={x(median)} cy={barY + barH / 2} r={barH / 2 + 1} fill={theme.colors.surface} stroke={theme.colors.text} strokeWidth={2} />
+          ) : null}
+          {rbaIn ? (
+            <>
+              <Line x1={x(rba!)} y1={barY - 5} x2={x(rba!)} y2={barY + barH + 5} stroke={theme.colors.primary} strokeWidth={2} strokeDasharray="2,2" />
+              {!compact ? (
+                <SvgText x={x(rba!)} y={barY + barH + 14} fontSize={9} fill={theme.colors.primary} textAnchor="middle">
+                  RBA
+                </SvgText>
+              ) : null}
+            </>
+          ) : null}
+        </Svg>
       </View>
       <Row style={{ justifyContent: 'space-between', marginTop: 2 }}>
         <Stat label="Min" value={formatRate(min)} color={leftColor} />

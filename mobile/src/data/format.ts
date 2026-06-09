@@ -29,11 +29,17 @@ export function bpsBetween(a: number | null, b: number | null): number | null {
 
 const ACRONYMS = new Set(['LVR', 'TD', 'PI', 'IO', 'FX', 'SMSF', 'P&I']);
 
+const ENUM_LABEL_OVERRIDES: Record<string, string> = {
+  OFFSET: 'Mortgage offset',
+};
+
 /** Humanize a CDR enum like "PRINCIPAL_AND_INTEREST" -> "Principal & interest". */
 export function humanizeEnum(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '';
   const raw = String(value).trim();
   if (!raw) return '';
+  const override = ENUM_LABEL_OVERRIDES[raw.toUpperCase()];
+  if (override) return override;
   const withAmp = raw.replace(/_AND_/gi, ' & ');
   const words = withAmp.replace(/_/g, ' ').toLowerCase().split(/\s+/);
   return words
@@ -44,6 +50,20 @@ export function humanizeEnum(value: string | number | null | undefined): string 
       return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w;
     })
     .join(' ');
+}
+
+/** Case-insensitive sort by display label (defaults to humanizeEnum). */
+export function sortByDisplayLabel(
+  values: string[],
+  labelOf: (value: string) => string = humanizeEnum,
+): string[] {
+  return [...values].sort((a, b) => {
+    const byLabel = labelOf(a).localeCompare(labelOf(b), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+    return byLabel !== 0 ? byLabel : a.localeCompare(b, undefined, { sensitivity: 'base' });
+  });
 }
 
 function toNumber(value: string | number | null | undefined): number | null {

@@ -2,7 +2,7 @@ import { SECTIONS } from '../constants';
 import type { ProductDetail, RateRow, SectionKey } from '../types';
 import { productHasAllEligibilityCriteria } from './eligibility';
 import { productHasAllFeatures } from './features';
-import { isNonStandard, toFraction, visibleAccountRows } from './format';
+import { isNonStandard, sortByDisplayLabel, toFraction, visibleAccountRows } from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -157,6 +157,17 @@ export function distinctValues(rows: RateRow[], field: keyof RateRow): string[] 
   return Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([k]) => k);
+}
+
+/** Distinct provider names for filter UI, sorted A-Z (case-insensitive). */
+export function distinctProviders(rows: RateRow[]): string[] {
+  const names = new Set<string>();
+  for (const row of rows) {
+    const prov = row.provider;
+    if (prov === undefined || prov === null || prov === '') continue;
+    names.add(prov);
+  }
+  return sortByDisplayLabel(Array.from(names), (name) => name);
 }
 
 export interface ProviderGroup {
