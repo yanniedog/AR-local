@@ -1,8 +1,8 @@
-import {
-  extractChangelogSection,
-  releaseTitle,
+const {
   versionTag,
-} from '../scripts/app-release-meta.mjs';
+  releaseTitle,
+  extractChangelogSection,
+} = require('../scripts/app-release-meta-pure.cjs');
 
 describe('app-release-meta', () => {
   it('versionTag uses app-v prefix', () => {
@@ -11,7 +11,7 @@ describe('app-release-meta', () => {
   });
 
   it('releaseTitle matches documented format', () => {
-    expect(releaseTitle('1.0.0')).toBe('Australian Rates app — 1.0.0 (Android)');
+    expect(releaseTitle('1.0.0')).toBe('Australian Rates app \u2013 1.0.0 (Android)');
   });
 
   it('extractChangelogSection reads version block from CHANGELOG.md', () => {

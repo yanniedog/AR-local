@@ -63,19 +63,26 @@ function main() {
   const readme = readFileSync(readmePath, 'utf8');
   const section = buildSection();
 
+  const hasStart = readme.includes(START);
+  const hasEnd = readme.includes(END);
+  if (hasStart !== hasEnd) {
+    console.error('README.md has mismatched app-android-install markers (need both START and END)');
+    process.exit(1);
+  }
+
   let next;
-  if (readme.includes(START) && readme.includes(END)) {
+  if (hasStart && hasEnd) {
     const before = readme.slice(0, readme.indexOf(START));
     const after = readme.slice(readme.indexOf(END) + END.length);
     next = `${before}${section}${after}`;
   } else {
-    const anchor = '## Mobile app\n';
-    if (!readme.includes(anchor)) {
+    const anchorMatch = readme.match(/^##\s+Mobile app\s*$/m);
+    if (!anchorMatch || anchorMatch.index == null) {
       console.error('README.md missing "## Mobile app" anchor — add section manually');
       process.exit(1);
     }
-    const insertAt = readme.indexOf(anchor) + anchor.length;
-    next = `${readme.slice(0, insertAt)}\n${section}\n${readme.slice(insertAt)}`;
+    const insertAt = anchorMatch.index + anchorMatch[0].length;
+    next = `${readme.slice(0, insertAt)}\n\n${section}\n${readme.slice(insertAt)}`;
   }
 
   if (next === readme) {

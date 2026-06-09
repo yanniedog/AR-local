@@ -1,28 +1,40 @@
 /**
- * Pure helpers for Android APK GitHub release naming and changelog (no native deps).
+ * Release naming, changelog, and git-backed notes for Android APK GitHub releases.
  *
  * Tag scheme: app-v{semver}  e.g. app-v1.0.0
- * Release title: Australian Rates app — {version} (Android)
+ * Release title: Australian Rates app – {version} (Android)
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const ROLLING_TAG = 'app-apk-latest';
-export const APK_ASSET = 'app-preview.apk';
-export const MANIFEST_ASSET = 'app-apk-latest.json';
-export const QR_ASSET = 'app-preview-qr.png';
-export const INSTALL_HTML = 'install.html';
+const require = createRequire(import.meta.url);
+const { versionTag, releaseTitle, extractChangelogSection } = require("./app-release-meta-pure.cjs");
 
-/** @param {string} version semver from app.json expo.version */
-export function versionTag(version) {
-  return `app-v${version}`;
+export { versionTag, releaseTitle, extractChangelogSection };
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const mobileRoot = join(__dirname, "..");
+const repoRoot = join(mobileRoot, "..");
+
+const GIT_TIMEOUT_MS = 15_000;
+
+/** @param {string[]} args */
+function gitExec(args) {
+  return execFileSync("git", args, {
+    encoding: "utf8",
+    cwd: repoRoot,
+    timeout: GIT_TIMEOUT_MS,
+  });
 }
 
-/** @param {string} version */
-export function releaseTitle(version) {
-  return `Australian Rates app — ${version} (Android)`;
-}
+export const ROLLING_TAG = "app-apk-latest";
+export const APK_ASSET = "app-preview.apk";
+export const MANIFEST_ASSET = "app-apk-latest.json";
+export const QR_ASSET = "app-preview-qr.png";
+export const INSTALL_HTML = "install.html";
 
 /** @param {string} repo owner/name @param {string} tag */
 export function apkDownloadUrl(repo, tag) {
@@ -46,18 +58,18 @@ export function manifestReleaseUrl(repo, tag) {
 
 /** @param {string} mobileRoot */
 export function readAppJson(mobileRoot) {
-  return JSON.parse(readFileSync(join(mobileRoot, 'app.json'), 'utf8'));
+  return JSON.parse(readFileSync(join(mobileRoot, "app.json"), "utf8"));
 }
 
 /** @param {string} mobileRoot */
 export function readAppJsonVersion(mobileRoot) {
-  return readAppJson(mobileRoot).expo?.version ?? '1.0.0';
+  return readAppJson(mobileRoot).expo?.version ?? "1.0.0";
 }
 
 /** @param {string} mobileRoot */
 export function readAppJsonBuildNumber(mobileRoot) {
   const code = readAppJson(mobileRoot).expo?.android?.versionCode;
-  return code != null ? String(code) : '0';
+  return code != null ? String(code) : "0";
 }
 
 /**
@@ -67,12 +79,10 @@ export function readAppJsonBuildNumber(mobileRoot) {
 export function findPreviousVersionTag(version) {
   const current = versionTag(version);
   try {
-    const raw = execFileSync('git', ['tag', '--list', 'app-v*', '--sort=-version:refname'], {
-      encoding: 'utf8',
-    });
+    const raw = gitExec(["tag", "--list", "app-v*", "--sort=-version:refname"]);
     const tags = raw
       .trim()
-      .split('\n')
+      .split("\n")
       .map((t) => t.trim())
       .filter(Boolean);
     return tags.find((t) => t !== current) ?? null;
@@ -82,32 +92,12 @@ export function findPreviousVersionTag(version) {
 }
 
 /**
- * @param {string} content
- * @param {string} version
- */
-export function extractChangelogSection(content, version) {
-  const heading = new RegExp(`^##\\s+\\[?${version.replace(/\./g, '\\.')}\\]?`, 'm');
-  const match = content.match(heading);
-  if (!match || match.index == null) {
-    return null;
-  }
-  const start = match.index;
-  const rest = content.slice(start + match[0].length);
-  const nextHeading = rest.search(/^##\s+/m);
-  const body = (nextHeading >= 0 ? rest.slice(0, nextHeading) : rest).trim();
-  if (!body) {
-    return null;
-  }
-  return `## ${version}\n\n${body}\n`;
-}
-
-/**
  * @param {{ version: string, buildNumber: string, mobileRoot: string }} opts
  */
 export function generateReleaseNotes({ version, buildNumber, mobileRoot }) {
-  const changelogPath = join(mobileRoot, 'CHANGELOG.md');
+  const changelogPath = join(mobileRoot, "CHANGELOG.md");
   if (existsSync(changelogPath)) {
-    const section = extractChangelogSection(readFileSync(changelogPath, 'utf8'), version);
+    const section = extractChangelogSection(readFileSync(changelogPath, "utf8"), version);
     if (section) {
       return `${section}\n_Build ${buildNumber}_\n`;
     }
@@ -115,32 +105,32 @@ export function generateReleaseNotes({ version, buildNumber, mobileRoot }) {
 
   const prevTag = findPreviousVersionTag(version);
   const logArgs = prevTag
-    ? ['log', `${prevTag}..HEAD`, '--pretty=format:- %s (%h)', '--', 'mobile/']
-    : ['log', '--pretty=format:- %s (%h)', '-30', '--', 'mobile/'];
+    ? ["log", `${prevTag}..HEAD`, "--pretty=format:- %s (%h)", "--", "mobile/"]
+    : ["log", "--pretty=format:- %s (%h)", "-30", "--", "mobile/"];
 
-  let commits = '';
+  let commits = "";
   try {
-    commits = execFileSync('git', logArgs, { encoding: 'utf8' }).trim();
+    commits = gitExec(logArgs).trim();
   } catch {
-    commits = '';
+    commits = "";
   }
 
   const lines = [
     `## ${version} (build ${buildNumber})`,
-    '',
-    'Preview APK published by **mobile-android-apk** (GitHub Actions).',
-    '',
+    "",
+    "Preview APK published by **mobile-android-apk** (GitHub Actions).",
+    "",
   ];
   if (commits) {
-    lines.push('### Changes since last app release', '', commits, '');
+    lines.push("### Changes since last app release", "", commits, "");
   } else {
-    lines.push('_No mobile commits since the previous app-v release tag._', '');
+    lines.push("_No mobile commits since the previous app-v release tag._", "");
   }
   lines.push(
-    '### Install',
-    '',
-    `Scan **app-preview-qr.png** with Android Chrome, or open **install.html** on this release.`,
-    '',
+    "### Install",
+    "",
+    "Scan **app-preview-qr.png** with Android Chrome, or open **install.html** on this release.",
+    "",
   );
-  return lines.join('\n');
+  return lines.join("\n");
 }

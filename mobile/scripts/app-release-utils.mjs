@@ -79,6 +79,7 @@ export function gh(ghToken, repo, args, opts = {}) {
     encoding: 'utf8',
     env: { ...process.env, GH_TOKEN: ghToken },
     stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 60_000,
     ...opts,
   });
 }
@@ -95,6 +96,7 @@ export function ensureGitHubRelease(ghToken, repo, tag, title, notes, targetRef)
   const view = spawnSync('gh', ['release', 'view', tag, '--repo', repo], {
     encoding: 'utf8',
     env: { ...process.env, GH_TOKEN: ghToken },
+    timeout: 30_000,
   });
   if (view.status !== 0) {
     const createArgs = [
