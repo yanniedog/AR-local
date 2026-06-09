@@ -70,7 +70,7 @@ export default function Home() {
 
       <Row style={{ justifyContent: 'space-between', marginBottom: 14 }}>
         <View style={{ flex: 1 }}>
-          <AppText variant="h1">Australian rates</AppText>
+          <AppText variant="h1">Australian Rates</AppText>
           <AppText variant="small" color="textMuted" numberOfLines={1}>
             Updated {formatRunDate(core.run_date)} · {relativeDate(`${core.run_date}T00:00:00Z`)}
           </AppText>

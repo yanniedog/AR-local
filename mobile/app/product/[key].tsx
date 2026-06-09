@@ -63,7 +63,7 @@ export default function ProductDetail() {
 
   const onShare = () =>
     Share.share({
-      message: `${row.provider} — ${row.product_name}: ${formatRate(row.rate)} (${meta.title}, AR Rates)`,
+      message: `${row.provider} — ${row.product_name}: ${formatRate(row.rate)} (${meta.title}, Australian Rates)`,
     }).catch(() => {});
 
   return (

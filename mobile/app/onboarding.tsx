@@ -48,7 +48,7 @@ export default function Onboarding() {
       >
         <Ionicons name="trending-up" size={36} color={theme.colors.onPrimary} />
       </View>
-      <AppText variant="h1">AR Rates</AppText>
+      <AppText variant="h1">Australian Rates</AppText>
       <AppText variant="body" color="textMuted" style={{ marginTop: 8, lineHeight: 22 }}>
         Daily Australian home loan, savings and term-deposit rates — sourced from open
         banking (CDR) data and refreshed automatically. Works offline.
