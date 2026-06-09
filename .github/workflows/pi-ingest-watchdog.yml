@@ -28,8 +28,9 @@ jobs:
         run: |
           set +e
           python scripts/pi_ingest_manifest_check.py --json
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Alert on stale manifest
         if: steps.check.outputs.exit != '0'
@@ -50,3 +51,7 @@ jobs:
       - name: OK
         if: steps.check.outputs.exit == '0'
         run: python scripts/pi_ingest_manifest_check.py
+
+      - name: Fail when manifest stale
+        if: steps.check.outputs.exit != '0'
+        run: exit 1

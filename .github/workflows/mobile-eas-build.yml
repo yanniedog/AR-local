@@ -161,7 +161,17 @@ jobs:
             --platform "${{ inputs.platform }}" 2>&1 | tee /tmp/eas-build.log
           status=${PIPESTATUS[0]}
           set -e
-          build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
+          case "${{ inputs.platform }}" in
+            android)
+              build_id=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/eas-build.log | tail -1 || true)
+              ;;
+            all)
+              build_id=$(grep -i android /tmp/eas-build.log | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1 || true)
+              ;;
+            *)
+              build_id=""
+              ;;
+          esac
           if [ -n "$build_id" ]; then
             echo "eas_build_id=$build_id" >> "$GITHUB_OUTPUT"
             echo "EAS build: https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds/$build_id"

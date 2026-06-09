@@ -156,6 +156,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         status = "complete" if complete else "missing"
         action = "started" if payload["started"] else "no action"
         print(f"pi_daily_watchdog: {run_date} is {status}; service_active={active}; {action}")
+    if catch_up_failed:
+        return 1
     return 0
 
 
