@@ -20,6 +20,7 @@ import {
   type SortKey,
 } from '../src/data/selectors';
 import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifications';
+import { findSearchSubscription } from '../src/data/subscriptions';
 import { useStore } from '../src/data/store';
 import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
 import { openCompare, openProduct } from '../src/lib/nav';
@@ -103,7 +104,7 @@ export default function Search() {
     [section, path, hierarchyScoped, query, effectiveFilters],
   );
 
-  const searchSub = useStore((s) => s.findSearchSubscription(searchSnapshot));
+  const searchSub = useStore((s) => findSearchSubscription(s.subscriptions, searchSnapshot));
 
   const onToggleSearchAlert = async () => {
     if (searchSub) {
