@@ -49,7 +49,7 @@ export function proGateCopy(intent: ProGateIntent): { title: string; body: strin
           'Full-text deep product search',
           'Filter by account features & eligibility',
           'Unlimited rate alerts',
-          'History ribbon chart on Home',
+          'History ribbon in Charts & trends',
         ],
       };
     case 'history_ribbon':

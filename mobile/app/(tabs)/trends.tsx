@@ -1,26 +1,59 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo } from 'react';
+import { router } from 'expo-router';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 
+import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { AppText, Card, Divider, Row } from '../../src/components/ui';
+import { SegmentedControl } from '../../src/components/controls';
+import { AppText, Button, Card, Chip, Divider, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { orderedInterestSections } from '../../src/data/interests';
 import { formatRate, formatRunDate } from '../../src/data/format';
+import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
+import { orderedInterestSections, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
 import { rateValueLabel, rbaDecisionA11yLabel } from '../../src/lib/a11ySummaries';
 import { openBrowse } from '../../src/lib/nav';
+import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function Trends() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
   const interests = useStore((s) => s.prefs.interests);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
+  const historyBanks = useStore((s) => s.historyBanks);
+  const historyBanksError = useStore((s) => s.historyBanksError);
+  const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
+  const activeSection = useStore((s) => s.activeSection);
+  const setActiveSection = useStore((s) => s.setActiveSection);
+  const historyRequestKey = useRef<string | null>(null);
   const interestSections = useMemo(() => orderedInterestSections(interests), [interests]);
+  const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
+  const historyModel = useMemo(
+    () =>
+      core
+        ? selectBankHistoryChartModel(
+            { core, historyBanks, includeNonStandard },
+            activeSection,
+            'All',
+          )
+        : null,
+    [activeSection, core, historyBanks, includeNonStandard],
+  );
+
+  useEffect(() => {
+    const key = showHistoryRibbon ? core?.run_date ?? null : null;
+    if (!key || historyRequestKey.current === key) return;
+    historyRequestKey.current = key;
+    void ensureHistoryBanks();
+  }, [core?.run_date, ensureHistoryBanks, showHistoryRibbon]);
 
   const decisions = useMemo(() => {
     if (!core) return [];
@@ -83,6 +116,56 @@ export default function Trends() {
             </Row>
           );
         })}
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <View>
+            <AppText variant="h3">History ribbon</AppText>
+            <AppText variant="tiny" color="textFaint">
+              Min / mean / max
+            </AppText>
+          </View>
+          <Chip label="PRO" selected={showHistoryRibbon} />
+        </Row>
+        {showHistoryRibbon ? (
+          <>
+            {sectionOptions.length > 1 ? (
+              <SegmentedControl
+                options={sectionOptions}
+                value={activeSection}
+                onChange={setActiveSection}
+              />
+            ) : null}
+            {historyModel ? (
+              <ChartErrorBoundary name="BankHistoryChart">
+                <BankHistoryChart
+                  dates={historyModel.dates}
+                  points={historyModel.points}
+                  allDates={historyModel.allDates}
+                  rba={core.rba}
+                  section={activeSection}
+                  height={210}
+                />
+              </ChartErrorBoundary>
+            ) : null}
+            {historyBanksError ? (
+              <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
+                <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
+                  History unavailable
+                </AppText>
+                <Button title="Retry" variant="ghost" onPress={() => void ensureHistoryBanks()} />
+              </Row>
+            ) : null}
+          </>
+        ) : (
+          <Button
+            title="Enable in Settings"
+            icon="sparkles"
+            variant="secondary"
+            onPress={() => router.push('/(tabs)/settings')}
+          />
+        )}
       </Card>
 
       <AppText variant="h3" style={{ marginBottom: 10 }}>

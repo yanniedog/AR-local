@@ -33,16 +33,16 @@ describe('showHistoryRibbon pref', () => {
     expect(visible(useStore.getState().prefs.showHistoryRibbon)).toBe(true);
   });
 
-  it('does not persist showHistoryRibbon to AsyncStorage', async () => {
+  it('persists showHistoryRibbon to AsyncStorage', async () => {
     useStore.getState().setPref('showHistoryRibbon', true);
     await useStore.persist.rehydrate();
     const raw = await AsyncStorage.getItem('ar-rates');
     expect(raw).not.toBeNull();
     const stored = JSON.parse(raw!) as { state?: { prefs?: Record<string, unknown> } };
-    expect(stored.state?.prefs?.showHistoryRibbon).toBeUndefined();
+    expect(stored.state?.prefs?.showHistoryRibbon).toBe(true);
   });
 
-  it('resets showHistoryRibbon to false on cold-start rehydrate', async () => {
+  it('restores showHistoryRibbon on cold-start rehydrate', async () => {
     await useStore.persist.clearStorage();
     await AsyncStorage.setItem(
       'ar-rates',
@@ -56,7 +56,7 @@ describe('showHistoryRibbon pref', () => {
       }),
     );
     await useStore.persist.rehydrate();
-    expect(useStore.getState().prefs.showHistoryRibbon).toBe(false);
+    expect(useStore.getState().prefs.showHistoryRibbon).toBe(true);
     expect(useStore.getState().prefs.enableDeepSearch).toBe(true);
   });
 });

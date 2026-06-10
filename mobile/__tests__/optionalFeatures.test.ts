@@ -177,7 +177,7 @@ describe('optional feature prefs', () => {
     expect(mockDownloadSearchIndex).not.toHaveBeenCalled();
   });
 
-  it('ensureHistoryBanks syncs daily payloads when history ribbon pref is on', async () => {
+  it('ensureHistoryBanks downloads the compact asset before daily fallback', async () => {
     const infoSpy = jest.spyOn(debugLog, 'info').mockImplementation(() => {});
     store.setState({
       prefs: historyRibbonPrefs,
@@ -194,39 +194,33 @@ describe('optional feature prefs', () => {
       detailsSha: null,
       historyBanksSha: null,
     });
-    global.fetch = jest.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        dates: ['2026-05-13', remoteCore.run_date],
-        count: 2,
-        min_date: '2026-05-13',
-      }),
-    })) as unknown as typeof fetch;
-    mockSyncHistoryFromDailyPayloads.mockResolvedValue({
-      schema_version: 1,
-      run_date: remoteCore.run_date,
-      run_dates: ['2026-05-13', remoteCore.run_date],
-      sections: {
-        Mortgage: {
-          points: [
-            { date: '2026-05-13', min: 0.03, max: 0.08, mean: 0.05, median: 0.05, count: 1 },
-            {
-              date: remoteCore.run_date,
-              min: 0.031,
-              max: 0.081,
-              mean: 0.051,
-              median: 0.051,
-              count: 1,
-            },
-          ],
+    mockDownloadHistoryBanks.mockResolvedValue({
+      historyBanks: {
+        schema_version: 1,
+        run_date: remoteCore.run_date,
+        run_dates: ['2026-05-13', remoteCore.run_date],
+        sections: {
+          Mortgage: {
+            points: [
+              { date: '2026-05-13', min: 0.03, max: 0.08, mean: 0.05, median: 0.05, count: 1 },
+              {
+                date: remoteCore.run_date,
+                min: 0.031,
+                max: 0.081,
+                mean: 0.051,
+                median: 0.051,
+                count: 1,
+              },
+            ],
+          },
         },
       },
     });
 
     await store.getState().ensureHistoryBanks();
 
-    expect(mockSyncHistoryFromDailyPayloads).toHaveBeenCalled();
-    expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
+    expect(mockDownloadHistoryBanks).toHaveBeenCalledTimes(1);
+    expect(mockSyncHistoryFromDailyPayloads).not.toHaveBeenCalled();
     expect(store.getState().historyBanks?.run_dates).toHaveLength(2);
     expect(store.getState().historyBanksError).toBeNull();
     expect(infoSpy).toHaveBeenCalledWith(
@@ -330,7 +324,7 @@ describe('optional feature prefs', () => {
     expect(mockDownloadHistoryBanks).toHaveBeenCalled();
   });
 
-  it('turning history ribbon off clears historyBanks and historyBanksError', () => {
+  it('turning history ribbon off keeps the compact cache warm and clears its error', () => {
     store.setState({
       prefs: historyRibbonPrefs,
       historyBanks: {
@@ -345,9 +339,20 @@ describe('optional feature prefs', () => {
     store.getState().setPref('showHistoryRibbon', false);
 
     expect(store.getState().prefs.showHistoryRibbon).toBe(false);
-    expect(store.getState().historyBanks).toBeNull();
+    expect(store.getState().historyBanks).not.toBeNull();
     expect(store.getState().historyBanksError).toBeNull();
   });
+
+  it('turning history ribbon on does not start a payload download', () => {
+    store.setState({ prefs: proPrefs });
+
+    store.getState().setPref('showHistoryRibbon', true);
+
+    expect(store.getState().prefs.showHistoryRibbon).toBe(true);
+    expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
+    expect(mockSyncHistoryFromDailyPayloads).not.toHaveBeenCalled();
+  });
+
   it('ensureHistoryBanks no-ops when history ribbon pref is off', async () => {
     await store.getState().ensureHistoryBanks();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();

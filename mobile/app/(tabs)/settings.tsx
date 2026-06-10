@@ -189,14 +189,6 @@ export default function Settings() {
             />
           ))}
         </Row>
-        <Divider style={{ marginVertical: 12 }} />
-        <ToggleRow
-          icon="analytics-outline"
-          label="History ribbon chart"
-          sub={hasProAccess(prefs) ? undefined : 'Pro'}
-          value={effectiveHistoryRibbon(prefs)}
-          onChange={onToggleHistoryRibbon}
-        />
       </Section>
 
       <Section title="Optional data">
@@ -215,10 +207,19 @@ export default function Settings() {
         <ToggleRow
           icon="analytics-outline"
           label="History ribbon chart"
-          sub={hasProAccess(prefs) ? 'Multi-day rate range chart; downloads history payload' : 'Pro'}
+          sub={hasProAccess(prefs) ? 'Charts & trends - compact history' : 'Pro'}
           value={effectiveHistoryRibbon(prefs)}
           onChange={onToggleHistoryRibbon}
         />
+        {effectiveHistoryRibbon(prefs) ? (
+          <Button
+            title="View history ribbon"
+            icon="stats-chart"
+            variant="secondary"
+            style={{ marginTop: 10 }}
+            onPress={() => router.push('/(tabs)/trends' as Href)}
+          />
+        ) : null}
       </Section>
 
       <Section title="Notifications">
