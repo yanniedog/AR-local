@@ -114,14 +114,15 @@ export default function Settings() {
         {!hasProAccess(prefs) ? (
           <>
             <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, lineHeight: 16 }}>
-              1 rate alert included. Pro unlocks unlimited alerts, deep search, and history ribbon.
+              1 rate alert included. Pro unlocks unlimited alerts, deep search, bank intelligence
+              (rate-move feed, RBA pass-through, per-bank history), and the history ribbon.
             </AppText>
             <Button
               title="Upgrade to Pro"
               icon="sparkles"
               style={{ marginTop: 10 }}
               onPress={() => {
-                requestPro('alert_limit');
+                requestPro('bank_insights');
               }}
             />
           </>

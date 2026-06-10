@@ -2,6 +2,7 @@ import { DEFAULT_PREFS } from '../src/data/store';
 import type { Subscription } from '../src/data/subscriptions';
 import {
   canAddAlertSubscription,
+  effectiveBankInsights,
   effectiveDeepSearch,
   effectiveHistoryRibbon,
   FREE_ALERT_SLOTS,
@@ -33,6 +34,11 @@ describe('proAccess', () => {
     expect(effectiveHistoryRibbon({ ...prefs, rateIntelligencePro: true })).toBe(true);
   });
 
+  it('bank insights ship with Pro, no extra pref required', () => {
+    expect(effectiveBankInsights(DEFAULT_PREFS)).toBe(false);
+    expect(effectiveBankInsights({ ...DEFAULT_PREFS, rateIntelligencePro: true })).toBe(true);
+  });
+
   it('allows one alert on free tier', () => {
     expect(canAddAlertSubscription([], DEFAULT_PREFS)).toBe(true);
     expect(canAddAlertSubscription([productSub], DEFAULT_PREFS)).toBe(false);
@@ -43,5 +49,6 @@ describe('proAccess', () => {
     expect(proGateCopy('alert_limit').bullets.length).toBeGreaterThan(0);
     expect(proGateCopy('deep_search').title).toMatch(/Pro/);
     expect(proGateCopy('history_ribbon').bullets.some((b) => /history/i.test(b))).toBe(true);
+    expect(proGateCopy('bank_insights').bullets.some((b) => /RBA pass-through/i.test(b))).toBe(true);
   });
 });

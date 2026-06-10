@@ -4,7 +4,15 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import {
+  BankMovesFeed,
+  InsightsLockedCard,
+  MarketPulseStrip,
+  MoversLeaderboard,
+  RbaPassThroughCard,
+} from '../../src/components/BankInsights';
 import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
+import { ProPaywall } from '../../src/components/ProPaywall';
 import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -17,9 +25,10 @@ import { orderedInterestSections, sectionSegmentOptions } from '../../src/data/i
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
+import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { rateValueLabel, rbaDecisionA11yLabel } from '../../src/lib/a11ySummaries';
 import { openBrowse } from '../../src/lib/nav';
-import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
+import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function Trends() {
@@ -28,12 +37,18 @@ export default function Trends() {
   const interests = useStore((s) => s.prefs.interests);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
+  const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
+  const bankInsights = useStore((s) => s.bankInsights);
+  const bankInsightsError = useStore((s) => s.bankInsightsError);
+  const ensureBankInsights = useStore((s) => s.ensureBankInsights);
   const activeSection = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
+  const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
   const historyRequestKey = useRef<string | null>(null);
+  const insightsRequestKey = useRef<string | null>(null);
   const interestSections = useMemo(() => orderedInterestSections(interests), [interests]);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const historyModel = useMemo(
@@ -55,6 +70,13 @@ export default function Trends() {
     void ensureHistoryBanks();
   }, [core?.run_date, ensureHistoryBanks, showHistoryRibbon]);
 
+  useEffect(() => {
+    const key = showBankInsights ? core?.run_date ?? null : null;
+    if (!key || insightsRequestKey.current === key) return;
+    insightsRequestKey.current = key;
+    void ensureBankInsights();
+  }, [core?.run_date, ensureBankInsights, showBankInsights]);
+
   const decisions = useMemo(() => {
     if (!core) return [];
     const out: { date: string; rate: number; prior: number }[] = [];
@@ -71,6 +93,55 @@ export default function Trends() {
 
   return (
     <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      {showBankInsights ? (
+        <>
+          {bankInsights ? (
+            <View style={{ marginBottom: 12 }}>
+              <MarketPulseStrip payload={bankInsights} />
+            </View>
+          ) : null}
+          <Card style={{ marginBottom: 16 }}>
+            <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+              <AppText variant="h3">Bank moves</AppText>
+              <Chip label="PRO" selected />
+            </Row>
+            <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
+              Detected daily from every lender's advertised rates
+            </AppText>
+            <BankMovesFeed payload={bankInsights} limit={8} />
+            {bankInsightsError && !bankInsights ? (
+              <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
+                <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
+                  Bank intelligence unavailable
+                </AppText>
+                <Button title="Retry" variant="ghost" onPress={() => void ensureBankInsights()} />
+              </Row>
+            ) : null}
+          </Card>
+          {bankInsights ? (
+            <Card style={{ marginBottom: 16 }}>
+              <AppText variant="h3" style={{ marginBottom: 10 }}>
+                Movers
+              </AppText>
+              {sectionOptions.length > 1 ? (
+                <SegmentedControl
+                  options={sectionOptions}
+                  value={activeSection}
+                  onChange={setActiveSection}
+                />
+              ) : null}
+              <View style={{ marginTop: 8 }}>
+                <MoversLeaderboard payload={bankInsights} section={activeSection} />
+              </View>
+            </Card>
+          ) : null}
+        </>
+      ) : (
+        <Card style={{ marginBottom: 16 }}>
+          <InsightsLockedCard onUnlock={() => requestPro('bank_insights')} />
+        </Card>
+      )}
+
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>
           <AppText variant="h3">RBA cash rate</AppText>
@@ -117,6 +188,16 @@ export default function Trends() {
           );
         })}
       </Card>
+
+      {showBankInsights && bankInsights ? (
+        <Card style={{ marginBottom: 16 }}>
+          <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+            <AppText variant="h3">RBA pass-through</AppText>
+            <Chip label="PRO" selected />
+          </Row>
+          <RbaPassThroughCard payload={bankInsights} rba={core.rba} />
+        </Card>
+      ) : null}
 
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
@@ -221,6 +302,7 @@ export default function Trends() {
       <AppText variant="tiny" color="textFaint" style={{ textAlign: 'center', marginTop: 8 }}>
         Snapshot from {formatRunDate(core.run_date)}
       </AppText>
+      <ProPaywall visible={paywallVisible} intent={paywallIntent} onClose={closePaywall} />
     </ScreenScrollView>
   );
 }

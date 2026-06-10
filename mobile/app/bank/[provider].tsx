@@ -1,16 +1,24 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
+import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import { BankMoveRow, InsightsLockedCard } from '../../src/components/BankInsights';
+import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { EmptyState } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
+import { ProPaywall } from '../../src/components/ProPaywall';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { AppText, Row } from '../../src/components/ui';
+import { SegmentedControl } from '../../src/components/controls';
+import { AppText, Card, Chip, Divider, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
+import { bankTrendChartModel, recentBankEvents } from '../../src/data/bankInsights';
 import { sortRows } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
+import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openProduct } from '../../src/lib/nav';
+import { effectiveBankInsights } from '../../src/lib/proAccess';
 import type { RateRow, SectionKey } from '../../src/types';
 
 export default function BankDetail() {
@@ -18,6 +26,18 @@ export default function BankDetail() {
   const { provider: raw } = useLocalSearchParams<{ provider: string }>();
   const provider = raw ?? '';
   const core = useStore((s) => s.core);
+  const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
+  const bankInsights = useStore((s) => s.bankInsights);
+  const ensureBankInsights = useStore((s) => s.ensureBankInsights);
+  const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
+  const insightsRequestKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = showBankInsights ? core?.run_date ?? null : null;
+    if (!key || insightsRequestKey.current === key) return;
+    insightsRequestKey.current = key;
+    void ensureBankInsights();
+  }, [core?.run_date, ensureBankInsights, showBankInsights]);
 
   const bySection = useMemo(() => {
     const out: { section: SectionKey; rows: RateRow[] }[] = [];
@@ -34,6 +54,27 @@ export default function BankDetail() {
     return out;
   }, [core, provider]);
 
+  const chartSections = useMemo(
+    () =>
+      SECTION_ORDER.filter((section) => !!bankInsights?.banks?.[provider]?.[section]),
+    [bankInsights, provider],
+  );
+  const [chartSection, setChartSection] = useState<SectionKey | null>(null);
+  const activeChartSection =
+    chartSection && chartSections.includes(chartSection) ? chartSection : chartSections[0] ?? null;
+
+  const chartModel = useMemo(
+    () =>
+      activeChartSection
+        ? bankTrendChartModel(bankInsights, provider, activeChartSection)
+        : null,
+    [activeChartSection, bankInsights, provider],
+  );
+  const bankEvents = useMemo(
+    () => recentBankEvents(bankInsights, { provider, limit: 6 }),
+    [bankInsights, provider],
+  );
+
   if (!core) return null;
 
   return (
@@ -49,6 +90,52 @@ export default function BankDetail() {
             </AppText>
           </View>
         </Row>
+
+        {showBankInsights ? (
+          chartModel && activeChartSection ? (
+            <Card style={{ marginBottom: 16 }}>
+              <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+                <AppText variant="h3">Rate history</AppText>
+                <Chip label="PRO" selected />
+              </Row>
+              {chartSections.length > 1 ? (
+                <SegmentedControl
+                  options={chartSections.map((s) => ({ value: s, label: SECTIONS[s].short }))}
+                  value={activeChartSection}
+                  onChange={setChartSection}
+                />
+              ) : null}
+              <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, marginBottom: 4 }}>
+                Band spans this lender's sharpest offer to its typical rate
+              </AppText>
+              <ChartErrorBoundary name="BankTrendChart">
+                <BankHistoryChart
+                  dates={chartModel.dates}
+                  points={chartModel.points}
+                  allDates={chartModel.allDates}
+                  rba={core.rba}
+                  section={activeChartSection}
+                  height={200}
+                />
+              </ChartErrorBoundary>
+              {bankEvents.length ? (
+                <>
+                  <Divider style={{ marginVertical: 10 }} />
+                  <AppText variant="small" weight="700" style={{ marginBottom: 2 }}>
+                    Recent moves
+                  </AppText>
+                  {bankEvents.map((event) => (
+                    <BankMoveRow key={`${event.date}-${event.section}`} event={event} />
+                  ))}
+                </>
+              ) : null}
+            </Card>
+          ) : null
+        ) : (
+          <Card style={{ marginBottom: 16 }}>
+            <InsightsLockedCard onUnlock={() => requestPro('bank_insights')} />
+          </Card>
+        )}
 
         {bySection.length === 0 ? (
           <EmptyState title="No products" subtitle="This lender has no rates in the current data set." />
@@ -69,6 +156,7 @@ export default function BankDetail() {
             </View>
           ))
         )}
+        <ProPaywall visible={paywallVisible} intent={paywallIntent} onClose={closePaywall} />
       </ScreenScrollView>
     </>
   );

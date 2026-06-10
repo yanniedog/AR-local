@@ -11,7 +11,9 @@ const mockDownloadCore = jest.fn();
 const mockDownloadDetails = jest.fn();
 const mockDownloadSearchIndex = jest.fn();
 const mockDownloadHistoryBanks = jest.fn();
+const mockDownloadBankInsights = jest.fn();
 const mockReadHistoryBanks = jest.fn();
+const mockReadBankInsights = jest.fn();
 const mockClearHistoryBanks = jest.fn(async () => {});
 const mockSyncHistoryFromDailyPayloads = jest.fn();
 
@@ -37,6 +39,9 @@ jest.mock('../src/data/cache', () => ({
     readHistoryBanks: (...args: unknown[]) => mockReadHistoryBanks(...args),
     clearHistoryBanks: () => mockClearHistoryBanks(),
     writeHistoryBanks: jest.fn(async () => {}),
+    readBankInsights: (...args: unknown[]) => mockReadBankInsights(...args),
+    writeBankInsights: jest.fn(async () => {}),
+    clearBankInsights: jest.fn(async () => {}),
     updateMeta: jest.fn(async () => {}),
     clear: jest.fn(async () => {}),
   },
@@ -48,6 +53,7 @@ jest.mock('../src/data/payload', () => ({
   downloadDetails: (...args: unknown[]) => mockDownloadDetails(...args),
   downloadSearchIndex: (...args: unknown[]) => mockDownloadSearchIndex(...args),
   downloadHistoryBanks: (...args: unknown[]) => mockDownloadHistoryBanks(...args),
+  downloadBankInsights: (...args: unknown[]) => mockDownloadBankInsights(...args),
 }));
 
 jest.mock('../src/data/historyDaily', () => {
@@ -78,6 +84,12 @@ const remoteManifest: Manifest = {
       sha256: 'history-sha',
       url: 'https://example.com/history-banks.json.gz',
     },
+    bank_history: {
+      name: 'bank-history.json.gz',
+      bytes: 3000,
+      sha256: 'bank-history-sha',
+      url: 'https://example.com/bank-history.json.gz',
+    },
   },
 };
 const remoteCore: CorePayload = sampleCore;
@@ -97,6 +109,8 @@ function resetStore() {
     searchIndex: null,
     historyBanks: null,
     historyBanksError: null,
+    bankInsights: null,
+    bankInsightsError: null,
     detailsLoading: false,
     error: null,
     offline: false,
@@ -144,6 +158,7 @@ describe('optional feature prefs', () => {
     expect(mockDownloadDetails).not.toHaveBeenCalled();
     expect(mockDownloadSearchIndex).not.toHaveBeenCalled();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
+    expect(mockDownloadBankInsights).not.toHaveBeenCalled();
   });
 
   it('ensureSearchIndex downloads when deep search is enabled', async () => {
@@ -356,5 +371,91 @@ describe('optional feature prefs', () => {
   it('ensureHistoryBanks no-ops when history ribbon pref is off', async () => {
     await store.getState().ensureHistoryBanks();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
+  });
+
+  it('ensureBankInsights no-ops without Pro', async () => {
+    await store.getState().ensureBankInsights();
+    expect(mockDownloadBankInsights).not.toHaveBeenCalled();
+  });
+
+  it('ensureBankInsights downloads and installs the asset for Pro users', async () => {
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      detailsSha: null,
+      bankInsightsSha: null,
+    });
+    const insights = {
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: ['2026-05-13', remoteCore.run_date],
+      banks: {
+        AlphaBank: { Mortgage: { median: [0.06, 0.059], best: [0.055, 0.054], count: [4, 4] } },
+      },
+      events: [
+        {
+          date: remoteCore.run_date,
+          provider: 'AlphaBank',
+          section: 'Mortgage',
+          dir: 'cut',
+          moved: 2,
+          total: 4,
+          avg_bps: -10,
+        },
+      ],
+    };
+    mockDownloadBankInsights.mockResolvedValue({ text: JSON.stringify(insights), bankInsights: insights });
+
+    await store.getState().ensureBankInsights();
+
+    expect(mockDownloadBankInsights).toHaveBeenCalledTimes(1);
+    expect(store.getState().bankInsights?.events).toHaveLength(1);
+    expect(store.getState().bankInsightsError).toBeNull();
+  });
+
+  it('ensureBankInsights surfaces an error and keeps state null when download fails', async () => {
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      detailsSha: null,
+      bankInsightsSha: null,
+    });
+    mockDownloadBankInsights.mockRejectedValue(new Error('bank_history payload failed validation'));
+
+    await store.getState().ensureBankInsights();
+
+    expect(store.getState().bankInsights).toBeNull();
+    expect(store.getState().bankInsightsError).toMatch(/validation/i);
+  });
+
+  it('ensureBankInsights reports unavailable when the manifest lacks the asset', async () => {
+    const { bank_history: _omit, ...files } = remoteManifest.files;
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: { ...remoteManifest, files } as Manifest,
+      core: remoteCore,
+    });
+
+    await store.getState().ensureBankInsights();
+
+    expect(mockDownloadBankInsights).not.toHaveBeenCalled();
+    expect(store.getState().bankInsightsError).toMatch(/unavailable/i);
   });
 });

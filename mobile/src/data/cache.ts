@@ -10,6 +10,8 @@ import type { CorePayload, DetailsPayload, Manifest, PayloadSource } from '../ty
 
 import type { SearchIndexPayload } from './detailSearch';
 
+import type { BankInsightsPayload } from './bankInsights';
+
 import type { HistoryBanksPayload } from './historyPayload';
 
 
@@ -25,6 +27,8 @@ const DETAILS = `${DIR}details.json`;
 const SEARCH_INDEX = `${DIR}search-index.json`;
 
 const HISTORY_BANKS = `${DIR}history-banks.json`;
+
+const BANK_INSIGHTS = `${DIR}bank-history.json`;
 
 
 
@@ -43,6 +47,8 @@ export interface CacheMeta {
   searchIndexSha?: string | null;
 
   historyBanksSha?: string | null;
+
+  bankInsightsSha?: string | null;
 
 }
 
@@ -225,6 +231,26 @@ export const cache = {
     await ensureDir();
 
     await FileSystem.writeAsStringAsync(HISTORY_BANKS, json);
+
+  },
+
+  async readBankInsights(): Promise<BankInsightsPayload | null> {
+
+    return readJson<BankInsightsPayload>(BANK_INSIGHTS);
+
+  },
+
+  async writeBankInsights(json: string): Promise<void> {
+
+    await ensureDir();
+
+    await FileSystem.writeAsStringAsync(BANK_INSIGHTS, json);
+
+  },
+
+  async clearBankInsights(): Promise<void> {
+
+    await FileSystem.deleteAsync(BANK_INSIGHTS, { idempotent: true });
 
   },
 

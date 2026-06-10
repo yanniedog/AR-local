@@ -31,6 +31,8 @@ import {
   type Subscription,
 } from './subscriptions';
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
+import type { BankInsightsPayload } from './bankInsights';
+import { normalizeBankInsightsPayload } from './bankInsights';
 import {
   dailyHistorySha,
   syncHistoryFromDailyPayloads,
@@ -40,6 +42,7 @@ import { normalizeHistoryBanksPayload } from './historyPayload';
 import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
+  downloadBankInsights,
   downloadCore,
   downloadDetails,
   downloadHistoryBanks,
@@ -52,7 +55,7 @@ export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
-import { effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
+import { effectiveBankInsights, effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
 import type { RefreshOutcomeKind } from '../components/bannerState';
 
 export interface Prefs {
@@ -102,6 +105,9 @@ interface AppState {
   historyBanks: HistoryBanksPayload | null;
   /** Set when optional history payload download/parse fails (pref may stay on). */
   historyBanksError: string | null;
+  /** Per-bank history + rate-move events (Pro bank intelligence). */
+  bankInsights: BankInsightsPayload | null;
+  bankInsightsError: string | null;
   detailsLoading: boolean;
   error: string | null;
   offline: boolean;
@@ -128,6 +134,7 @@ interface AppState {
   ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
   ensureSearchIndex: () => Promise<void>;
   ensureHistoryBanks: () => Promise<void>;
+  ensureBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
@@ -200,6 +207,8 @@ export const useStore = create<AppState>()(
       searchIndex: null,
       historyBanks: null,
       historyBanksError: null,
+      bankInsights: null,
+      bankInsightsError: null,
       detailsLoading: false,
       error: null,
       offline: false,
@@ -287,6 +296,8 @@ export const useStore = create<AppState>()(
             searchIndex: null,
             historyBanks: null,
             historyBanksError: null,
+            bankInsights: null,
+            bankInsightsError: null,
           });
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
@@ -314,6 +325,7 @@ export const useStore = create<AppState>()(
         const warmOptionalAssets = () => {
           const p = get().prefs;
           if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
+          if (effectiveBankInsights(p)) void get().ensureBankInsights();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -666,6 +678,54 @@ export const useStore = create<AppState>()(
         }
       },
 
+      async ensureBankInsights() {
+        if (!effectiveBankInsights(get().prefs)) return;
+        const { core, manifest, source, bankInsights } = get();
+        if (!core) return;
+        if (source !== 'remote' || !manifest) {
+          set({ bankInsights: null, bankInsightsError: null });
+          return;
+        }
+        const asset = manifest.files.bank_history;
+        if (!asset) {
+          set({ bankInsightsError: 'bank history unavailable' });
+          return;
+        }
+        const meta = await cache.readMeta();
+        const fresh = (p: BankInsightsPayload | null | undefined) =>
+          !!p && p.run_date === core.run_date && meta?.bankInsightsSha === asset.sha256;
+        if (fresh(bankInsights)) {
+          set({ bankInsightsError: null });
+          return;
+        }
+        const cached = normalizeBankInsightsPayload(await cache.readBankInsights());
+        if (fresh(cached)) {
+          set({ bankInsights: cached, bankInsightsError: null });
+          return;
+        }
+        try {
+          const { bankInsights: downloaded } = await downloadBankInsights(asset.url, asset.sha256);
+          await cache.writeBankInsights(JSON.stringify(downloaded));
+          await cache.updateMeta({
+            manifest,
+            source: 'remote',
+            savedAt: new Date().toISOString(),
+            coreSha: manifest.files.core.sha256,
+            bankInsightsSha: asset.sha256,
+          });
+          set({ bankInsights: downloaded, bankInsightsError: null });
+          debugLog.info(
+            'store',
+            `ensureBankInsights ok run_date=${downloaded.run_date} banks=${Object.keys(downloaded.banks).length} events=${downloaded.events.length}`,
+          );
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureBankInsights failed: ${msg}`);
+          // A stale cached payload still powers insights offline; surface the error.
+          set({ bankInsights: cached ?? bankInsights ?? null, bankInsightsError: msg });
+        }
+      },
+
       getDetail(productKey: string) {
         return get().details?.products?.[productKey] ?? null;
       },
@@ -794,6 +854,8 @@ export const useStore = create<AppState>()(
           searchIndex: null,
           historyBanks: null,
           historyBanksError: null,
+          bankInsights: null,
+          bankInsightsError: null,
           manifest: null,
           status: 'idle',
           source: 'sample',
