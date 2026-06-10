@@ -67,7 +67,8 @@ export default function Home() {
   if (!core) return null;
   const meta = SECTIONS[section];
   const rba = core.rba?.at(-1);
-  const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
+  const sectionAccent = meta.accentColor;
+  const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const trendsDetail = showHistoryRibbon
@@ -106,7 +107,7 @@ export default function Home() {
         onChange={(value) => setPref('includeNonStandard', value)}
       />
 
-      <Card style={{ borderColor: `${accent}44` }}>
+      <Card style={{ borderColor: `${sectionAccent}44` }}>
         <SpringOnNewData dataKey={heroDataKey}>
           <Row
             style={{
@@ -122,7 +123,7 @@ export default function Home() {
               <AppText variant="small" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
                 {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate today
               </AppText>
-              <AppText variant="rateHero" style={{ color: accent, marginTop: theme.spacing(1) }}>
+              <AppText variant="rateHero" style={{ color: rateInk, marginTop: theme.spacing(1) }}>
                 {formatRate(heroRate)}
               </AppText>
             </View>
@@ -139,7 +140,7 @@ export default function Home() {
                 <AppText variant="tiny" color="textFaint">
                   RBA cash
                 </AppText>
-                <AppText variant="rate" style={{ color: theme.colors.primary }}>
+                <AppText variant="rate" style={{ color: theme.colors.rba }}>
                   {formatRate(rba.rate)}
                 </AppText>
               </View>
@@ -193,7 +194,7 @@ export default function Home() {
                 marginRight: theme.spacing(3),
               }}
             >
-              <Ionicons name="stats-chart" size={20} color={theme.colors.primary} />
+              <Ionicons name="stats-chart" size={20} color={sectionAccent} />
             </View>
             <View style={{ flex: 1, paddingRight: theme.spacing(2) }}>
               <AppText variant="body" weight="700">
@@ -230,7 +231,7 @@ export default function Home() {
           providerCount={node.stats.providers}
           rate={meta.lowerIsBetter ? node.stats.min : node.stats.max}
           section={section}
-          accent={accent}
+          accent={sectionAccent}
           showAccent
           onPress={() => openNode(section, [node.seg])}
         />
