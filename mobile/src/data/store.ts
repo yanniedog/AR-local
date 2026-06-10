@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { SECTIONS } from '../constants';
-import { RATE_MOVE_BPS_THRESHOLD } from '../config';
+import { DATES_INDEX_URL, RATE_MOVE_BPS_THRESHOLD } from '../config';
 import type {
   CorePayload,
   DetailsPayload,
@@ -31,6 +31,13 @@ import {
   type Subscription,
 } from './subscriptions';
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
+import {
+  dailyHistorySha,
+  historyBanksCoversDates,
+  historyDatesUpTo,
+  parseDatesIndex,
+  syncHistoryFromDailyPayloads,
+} from './historyDaily';
 import type { HistoryBanksPayload } from './historyPayload';
 import { normalizeHistoryBanksPayload } from './historyPayload';
 import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
@@ -561,26 +568,89 @@ export const useStore = create<AppState>()(
           debugLog.debug('store', 'ensureHistoryBanks skipped (no core)');
           return;
         }
-        if (!manifest?.files.history_banks) {
-          debugLog.debug('store', 'ensureHistoryBanks skipped (manifest has no history_banks)');
+        if (source !== 'remote' || !manifest) {
           set({ historyBanks: null, historyBanksError: null });
           return;
         }
-        const asset = manifest.files.history_banks;
+
         const meta = await cache.readMeta();
-        if (historyBanks && historyBanks.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
-          set({ historyBanksError: null });
+        const cached = historyBanks ?? (await readValidatedHistoryBanks());
+        const dailySha = cached ? dailyHistorySha(cached.run_dates) : null;
+
+        let wantedDates: string[] = [];
+        try {
+          const sep = DATES_INDEX_URL.includes('?') ? '&' : '?';
+          const res = await fetch(`${DATES_INDEX_URL}${sep}_=${Date.now()}`);
+          if (res.ok) {
+            const index = parseDatesIndex(await res.json());
+            if (index) wantedDates = historyDatesUpTo(index, core.run_date);
+          }
+        } catch {
+          // non-fatal — sync will refetch the index
+        }
+
+        if (
+          cached &&
+          cached.run_date === core.run_date &&
+          (meta?.historyBanksSha === dailySha ||
+            (!wantedDates.length && cached.run_dates.length > 1)) &&
+          (wantedDates.length === 0 || historyBanksCoversDates(cached, wantedDates))
+        ) {
+          if (!historyBanks) set({ historyBanks: cached, historyBanksError: null });
+          else set({ historyBanksError: null });
           return;
         }
-        const cached = await readValidatedHistoryBanks();
+
+        const installHistory = async (validated: HistoryBanksPayload, sha: string) => {
+          const text = JSON.stringify(validated);
+          await cache.writeHistoryBanks(text);
+          await cache.updateMeta({
+            manifest,
+            source: 'remote',
+            savedAt: new Date().toISOString(),
+            coreSha: manifest.files.core.sha256,
+            historyBanksSha: sha,
+          });
+          set({ historyBanks: validated, historyBanksError: null });
+          debugLog.info(
+            'store',
+            `ensureHistoryBanks ok run_date=${validated.run_date} slices=${validated.run_dates.length}`,
+          );
+        };
+
+        try {
+          const synced = await syncHistoryFromDailyPayloads({
+            targetRunDate: core.run_date,
+            currentCore: core,
+            existing: cached,
+            cachedDates: new Set(cached?.run_dates ?? []),
+          });
+          if (synced.run_dates.length > 1) {
+            await installHistory(synced, dailyHistorySha(synced.run_dates));
+            return;
+          }
+        } catch (err) {
+          debugLog.warn(
+            'store',
+            `ensureHistoryBanks daily sync failed: ${String((err as Error)?.message ?? err)}`,
+          );
+        }
+
+        const asset = manifest.files.history_banks;
+        if (!asset) {
+          if (cached && cached.run_dates.length > 1) {
+            set({ historyBanks: cached, historyBanksError: null });
+            return;
+          }
+          set({ historyBanks: null, historyBanksError: 'history dates unavailable' });
+          return;
+        }
+
         if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
           set({ historyBanks: cached, historyBanksError: null });
           return;
         }
-        if (source !== 'remote') {
-          set({ historyBanks: null, historyBanksError: null });
-          return;
-        }
+
         try {
           const { text, historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
           const validated = normalizeHistoryBanksPayload(fresh);
@@ -589,20 +659,11 @@ export const useStore = create<AppState>()(
             set({ historyBanks: null, historyBanksError: 'history_banks payload failed validation' });
             return;
           }
-          await cache.writeHistoryBanks(text);
-          await cache.updateMeta({
-            manifest,
-            source: 'remote',
-            savedAt: new Date().toISOString(),
-            coreSha: manifest.files.core.sha256,
-            historyBanksSha: asset.sha256,
-          });
-          set({ historyBanks: validated, historyBanksError: null });
-          debugLog.info('store', `ensureHistoryBanks ok run_date=${validated.run_date}`);
+          await installHistory(validated, asset.sha256);
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
           debugLog.error('store', `ensureHistoryBanks failed: ${msg}`);
-          set({ historyBanks: null, historyBanksError: msg });
+          set({ historyBanks: cached?.run_dates.length ? cached : null, historyBanksError: msg });
         }
       },
 

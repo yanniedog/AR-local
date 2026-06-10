@@ -13,6 +13,7 @@ const mockDownloadSearchIndex = jest.fn();
 const mockDownloadHistoryBanks = jest.fn();
 const mockReadHistoryBanks = jest.fn();
 const mockClearHistoryBanks = jest.fn(async () => {});
+const mockSyncHistoryFromDailyPayloads = jest.fn();
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
@@ -48,6 +49,14 @@ jest.mock('../src/data/payload', () => ({
   downloadSearchIndex: (...args: unknown[]) => mockDownloadSearchIndex(...args),
   downloadHistoryBanks: (...args: unknown[]) => mockDownloadHistoryBanks(...args),
 }));
+
+jest.mock('../src/data/historyDaily', () => {
+  const actual = jest.requireActual('../src/data/historyDaily') as object;
+  return {
+    ...actual,
+    syncHistoryFromDailyPayloads: (...args: unknown[]) => mockSyncHistoryFromDailyPayloads(...args),
+  };
+});
 
 // eslint-disable-next-line import/first -- store import must follow jest mocks
 import { useStore as store } from '../src/data/store';
@@ -168,7 +177,7 @@ describe('optional feature prefs', () => {
     expect(mockDownloadSearchIndex).not.toHaveBeenCalled();
   });
 
-  it('ensureHistoryBanks downloads when history ribbon pref is on', async () => {
+  it('ensureHistoryBanks syncs daily payloads when history ribbon pref is on', async () => {
     store.setState({
       prefs: historyRibbonPrefs,
       source: 'remote',
@@ -183,33 +192,40 @@ describe('optional feature prefs', () => {
       detailsSha: null,
       historyBanksSha: null,
     });
-    mockDownloadHistoryBanks.mockResolvedValue({
-      text: '{"schema_version":1,"run_date":"2026-05-19","run_dates":["2026-05-19"],"sections":{"Mortgage":{"points":[{"date":"2026-05-19","min":0.03,"max":0.08,"mean":0.05,"median":0.05,"count":1}]}}}',
-      historyBanks: {
-        schema_version: 1,
-        run_date: remoteCore.run_date,
-        run_dates: [remoteCore.run_date],
-        sections: {
-          Mortgage: {
-            points: [
-              {
-                date: remoteCore.run_date,
-                min: 0.03,
-                max: 0.08,
-                mean: 0.05,
-                median: 0.05,
-                count: 1,
-              },
-            ],
-          },
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        dates: ['2026-05-13', remoteCore.run_date],
+        count: 2,
+        min_date: '2026-05-13',
+      }),
+    })) as unknown as typeof fetch;
+    mockSyncHistoryFromDailyPayloads.mockResolvedValue({
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: ['2026-05-13', remoteCore.run_date],
+      sections: {
+        Mortgage: {
+          points: [
+            { date: '2026-05-13', min: 0.03, max: 0.08, mean: 0.05, median: 0.05, count: 1 },
+            {
+              date: remoteCore.run_date,
+              min: 0.031,
+              max: 0.081,
+              mean: 0.051,
+              median: 0.051,
+              count: 1,
+            },
+          ],
         },
       },
     });
 
     await store.getState().ensureHistoryBanks();
 
-    expect(mockDownloadHistoryBanks).toHaveBeenCalled();
-    expect(store.getState().historyBanks).not.toBeNull();
+    expect(mockSyncHistoryFromDailyPayloads).toHaveBeenCalled();
+    expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
+    expect(store.getState().historyBanks?.run_dates).toHaveLength(2);
   });
 
   it('ensureHistoryBanks logs start and validation failure to debugLog', async () => {
@@ -221,6 +237,8 @@ describe('optional feature prefs', () => {
       manifest: remoteManifest,
       core: remoteCore,
     });
+    mockSyncHistoryFromDailyPayloads.mockRejectedValue(new Error('daily sync failed'));
+    global.fetch = jest.fn(async () => ({ ok: false })) as unknown as typeof fetch;
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
       source: 'remote',
@@ -259,6 +277,8 @@ describe('optional feature prefs', () => {
       manifest: remoteManifest,
       core: remoteCore,
     });
+    mockSyncHistoryFromDailyPayloads.mockRejectedValue(new Error('daily sync failed'));
+    global.fetch = jest.fn(async () => ({ ok: false })) as unknown as typeof fetch;
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
       source: 'remote',
@@ -284,6 +304,8 @@ describe('optional feature prefs', () => {
       manifest: remoteManifest,
       core: remoteCore,
     });
+    mockSyncHistoryFromDailyPayloads.mockRejectedValue(new Error('daily sync failed'));
+    global.fetch = jest.fn(async () => ({ ok: false })) as unknown as typeof fetch;
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
       source: 'remote',
