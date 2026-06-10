@@ -12,6 +12,7 @@ import {
 const failures = [];
 
 for (const [path, want] of [
+  ['reports/pr-bot-matrix.md', true],
   ['reports/pr-bot-matrix.html', true],
   ['reports/pr-bot-matrix.json', true],
   ['reports/other.json', false],
@@ -23,7 +24,7 @@ for (const [path, want] of [
 }
 
 for (const [name, paths, want] of [
-  ['exact matrix pair', [...MATRIX_COMMIT_REL_PATHS], true],
+  ['exact matrix trio', [...MATRIX_COMMIT_REL_PATHS], true],
   ['duplicate matrix paths', [...MATRIX_COMMIT_REL_PATHS, ...MATRIX_COMMIT_REL_PATHS], false],
   ['duplicate html', ['reports/pr-bot-matrix.html', 'reports/pr-bot-matrix.html'], false],
   ['html only', ['reports/pr-bot-matrix.html'], false],
