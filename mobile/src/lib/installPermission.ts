@@ -5,6 +5,11 @@ import { Alert, Linking, Platform } from 'react-native';
 
 import { ANDROID_PACKAGE, debugLog } from './debugLog';
 
+/**
+ * Install-unknown-apps permission is prompted from Settings → App update, not
+ * first-run onboarding. Onboarding defers sideload UX so users see rate value first.
+ */
+
 /** Android O (API 26)+ requires per-app "Install unknown apps" before sideloading. */
 export const INSTALL_PERMISSION_MIN_API = 26;
 
@@ -91,7 +96,8 @@ export function promptInstallPermissionSettings(
 
 /**
  * Returns true when sideload install is allowed. When false, shows a one-shot prompt
- * and opens system settings (Android 8+ only).
+ * and opens system settings (Android 8+ only). Not used during onboarding — Settings
+ * App update section and the download flow call this before install.
  */
 export async function ensureInstallPermission(options?: {
   prompt?: boolean;
