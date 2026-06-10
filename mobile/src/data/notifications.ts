@@ -1,14 +1,21 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
+import type { Href } from 'expo-router';
 
 import { SECTIONS, SECTION_ORDER } from '../constants';
 import { debugLog } from '../lib/debugLog';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { bpsBetween, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
-import { computeSubscriptionChanges, type Subscription } from './subscriptions';
+import {
+  computeSubscriptionChanges,
+  largestRateChange,
+  rowsForSearchSubscription,
+  type Subscription,
+} from './subscriptions';
 
 export const BACKGROUND_TASK = 'ar-rates-daily-refresh';
+export const DEEP_LINK_SCHEME = 'arrates';
 
 // Foreground presentation. (SDK 53+ replaced shouldShowAlert with shouldShowBanner/List.)
 Notifications.setNotificationHandler({
@@ -20,9 +27,106 @@ Notifications.setNotificationHandler({
   }),
 });
 
+export interface NotifySearchRoute {
+  section: SectionKey;
+  path?: string[];
+  hierarchyScoped?: boolean;
+  query?: string;
+  sort?: string;
+  scope?: string;
+}
+
 export interface NotifyMessage {
   title: string;
   body: string;
+  productKey?: string;
+  rateIndex?: number | null;
+  search?: NotifySearchRoute;
+}
+
+export interface NotificationRoutePayload {
+  productKey?: string;
+  rateIndex?: string;
+  url?: string;
+  section?: string;
+  path?: string;
+  query?: string;
+  scope?: string;
+  sort?: string;
+}
+
+export function productDeepLink(productKey: string, rateIndex?: number | null): string {
+  const path = `product/${encodeURIComponent(productKey)}`;
+  if (rateIndex != null) return `${DEEP_LINK_SCHEME}://${path}?ri=${rateIndex}`;
+  return `${DEEP_LINK_SCHEME}://${path}`;
+}
+
+export function searchDeepLink(route: NotifySearchRoute): string {
+  const params = new URLSearchParams();
+  params.set('section', route.section);
+  if (route.path?.length) params.set('path', route.path.join('.'));
+  if (route.hierarchyScoped) params.set('scope', 'hierarchy');
+  else if (route.scope) params.set('scope', route.scope);
+  if (route.query) params.set('query', route.query);
+  if (route.sort) params.set('sort', route.sort);
+  return `${DEEP_LINK_SCHEME}://search?${params.toString()}`;
+}
+
+export function notificationDataFromMessage(msg: NotifyMessage): NotificationRoutePayload {
+  const data: NotificationRoutePayload = {};
+  if (msg.productKey) {
+    data.productKey = msg.productKey;
+    if (msg.rateIndex != null) data.rateIndex = String(msg.rateIndex);
+    data.url = productDeepLink(msg.productKey, msg.rateIndex);
+    return data;
+  }
+  if (msg.search) {
+    data.section = msg.search.section;
+    if (msg.search.path?.length) data.path = msg.search.path.join('.');
+    if (msg.search.query) data.query = msg.search.query;
+    if (msg.search.sort) data.sort = msg.search.sort;
+    if (msg.search.hierarchyScoped) data.scope = 'hierarchy';
+    else if (msg.search.scope) data.scope = msg.search.scope;
+    data.url = searchDeepLink(msg.search);
+  }
+  return data;
+}
+
+export function hrefFromNotificationData(
+  raw: Record<string, unknown> | null | undefined,
+): Href | null {
+  if (!raw) return null;
+
+  const url = typeof raw.url === 'string' ? raw.url : null;
+  if (url?.startsWith(`${DEEP_LINK_SCHEME}://`)) {
+    const pathAndQuery = url.slice(`${DEEP_LINK_SCHEME}://`.length);
+    return `/${pathAndQuery}` as Href;
+  }
+
+  const productKey = typeof raw.productKey === 'string' ? raw.productKey : null;
+  if (productKey) {
+    const riRaw = raw.rateIndex;
+    const ri = riRaw != null && riRaw !== '' ? Number(riRaw) : undefined;
+    return {
+      pathname: '/product/[key]',
+      params: {
+        key: productKey,
+        ...(ri != null && !Number.isNaN(ri) ? { ri: String(ri) } : {}),
+      },
+    } as Href;
+  }
+
+  const section = typeof raw.section === 'string' ? raw.section : null;
+  if (section) {
+    const params: Record<string, string> = { section };
+    if (typeof raw.path === 'string' && raw.path) params.path = raw.path;
+    if (typeof raw.query === 'string' && raw.query) params.query = raw.query;
+    if (typeof raw.sort === 'string' && raw.sort) params.sort = raw.sort;
+    if (typeof raw.scope === 'string' && raw.scope) params.scope = raw.scope;
+    return { pathname: '/search', params } as Href;
+  }
+
+  return null;
 }
 
 function bestFraction(core: CorePayload, section: SectionKey): number | null {
@@ -43,6 +147,108 @@ function ratesByIndex(core: CorePayload, productKey: string): Map<number, { row:
     }
   }
   return out;
+}
+
+function productRatesByIndex(
+  core: CorePayload,
+  productKey: string,
+  rateIndex: number | null,
+): Map<number, { row: RateRow; fraction: number | null }> {
+  const out = new Map<number, { row: RateRow; fraction: number | null }>();
+  for (const section of Object.keys(core.sections) as SectionKey[]) {
+    for (const row of core.sections[section]?.rates ?? []) {
+      if (row.product_key !== productKey) continue;
+      if (rateIndex != null && row.rate_index !== rateIndex) continue;
+      out.set(row.rate_index ?? out.size, { row, fraction: toFraction(row.rate) });
+    }
+  }
+  return out;
+}
+
+function ratesMap(rows: RateRow[]): Map<string, { row: RateRow; fraction: number | null }> {
+  const out = new Map<string, { row: RateRow; fraction: number | null }>();
+  for (const row of rows) {
+    out.set(`${row.product_key}#${row.rate_index ?? 0}`, { row, fraction: toFraction(row.rate) });
+  }
+  return out;
+}
+
+function subscriptionWouldNotify(
+  sub: Subscription,
+  oldCore: CorePayload,
+  newCore: CorePayload,
+  thresholdBps: number,
+  oldDetailsProducts?: Record<string, ProductDetail> | null,
+  newDetailsProducts?: Record<string, ProductDetail> | null,
+): boolean {
+  if (sub.kind === 'product') {
+    return (
+      largestRateChange(
+        productRatesByIndex(oldCore, sub.productKey, sub.rateIndex),
+        productRatesByIndex(newCore, sub.productKey, sub.rateIndex),
+        thresholdBps,
+      ) != null
+    );
+  }
+  const oldDetails = oldDetailsProducts;
+  const newDetails = newDetailsProducts ?? oldDetailsProducts;
+  return (
+    largestRateChange(
+      ratesMap(rowsForSearchSubscription(oldCore, sub, oldDetails)),
+      ratesMap(rowsForSearchSubscription(newCore, sub, newDetails)),
+      thresholdBps,
+    ) != null
+  );
+}
+
+function enrichSubscriptionRouting(
+  raw: Array<{ title: string; body: string }>,
+  subscriptions: Subscription[],
+  oldCore: CorePayload,
+  newCore: CorePayload,
+  thresholdBps: number,
+  oldDetailsProducts?: Record<string, ProductDetail> | null,
+  newDetailsProducts?: Record<string, ProductDetail> | null,
+): NotifyMessage[] {
+  const enriched: NotifyMessage[] = [];
+  let rawIdx = 0;
+
+  for (const sub of subscriptions) {
+    if (
+      !subscriptionWouldNotify(
+        sub,
+        oldCore,
+        newCore,
+        thresholdBps,
+        oldDetailsProducts,
+        newDetailsProducts,
+      )
+    ) {
+      continue;
+    }
+    if (rawIdx >= raw.length) break;
+    const base = raw[rawIdx++];
+    if (sub.kind === 'product') {
+      enriched.push({
+        ...base,
+        productKey: sub.productKey,
+        rateIndex: sub.rateIndex,
+      });
+      continue;
+    }
+    enriched.push({
+      ...base,
+      search: {
+        section: sub.section,
+        path: sub.path,
+        hierarchyScoped: sub.hierarchyScoped,
+        query: sub.query,
+      },
+    });
+  }
+
+  while (rawIdx < raw.length) enriched.push(raw[rawIdx++]);
+  return enriched;
 }
 
 /**
@@ -92,6 +298,7 @@ export function computeChanges(
     messages.push({
       title: `${meta.title}: best rate ${improved ? 'improved' : 'changed'}`,
       body: `Now ${formatRate(after)} (was ${formatRate(before)}).`,
+      search: { section },
     });
   }
 
@@ -123,11 +330,23 @@ export function computeChanges(
       messages.push({
         title: `${biggest.row.provider} rate changed`,
         body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.`,
+        productKey: key,
+        rateIndex: biggest.row.rate_index ?? null,
       });
     }
   }
 
-  return dedupeNotifyMessages([...subscriptionMessages, ...messages]);
+  const combined = [...subscriptionMessages, ...messages];
+  const enriched = enrichSubscriptionRouting(
+    combined,
+    subscriptions,
+    oldCore,
+    newCore,
+    thresholdBps,
+    oldDetailsProducts,
+    newDetailsProducts,
+  );
+  return dedupeNotifyMessages(enriched);
 }
 
 export async function ensurePermissions(): Promise<boolean> {
@@ -150,11 +369,19 @@ export async function notify(messages: NotifyMessage[]): Promise<void> {
   }
   // Collapse a flurry into at most a few notifications.
   for (const msg of messages.slice(0, 3)) {
+    const data = notificationDataFromMessage(msg);
     await Notifications.scheduleNotificationAsync({
-      content: { title: msg.title, body: msg.body },
+      content: { title: msg.title, body: msg.body, data },
       trigger: null, // immediate
     });
   }
+}
+
+export function routeFromNotificationResponse(
+  response: Notifications.NotificationResponse | null | undefined,
+): Href | null {
+  const data = response?.notification?.request?.content?.data as Record<string, unknown> | undefined;
+  return hrefFromNotificationData(data);
 }
 
 // --- Background refresh ---------------------------------------------------- //
