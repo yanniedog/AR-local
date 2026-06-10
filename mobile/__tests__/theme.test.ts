@@ -24,7 +24,7 @@ describe('resolveTheme', () => {
 });
 
 describe('paletteFromM3Scheme', () => {
-  const material3 = createMaterial3Theme({ sourceColor: BRAND_SOURCE_COLOR });
+  const material3 = createMaterial3Theme(BRAND_SOURCE_COLOR);
 
   it('maps surfaceContainer roles onto palette elevation tokens', () => {
     const dark = paletteFromM3Scheme(material3.dark, true);
@@ -45,7 +45,7 @@ describe('paletteFromM3Scheme', () => {
 });
 
 describe('resolveM3Theme', () => {
-  const material3 = createMaterial3Theme({ sourceColor: BRAND_SOURCE_COLOR });
+  const material3 = createMaterial3Theme(BRAND_SOURCE_COLOR);
 
   it('builds a dynamic theme for the resolved appearance', () => {
     const theme = resolveM3Theme('dark', 'light', material3);
