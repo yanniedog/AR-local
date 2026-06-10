@@ -72,6 +72,31 @@ describe('downloadProgress', () => {
     expect(computeOverallPercent(parseDone)).toBe(100);
   });
 
+  it('maps each phase band for overall percent', () => {
+    const base = {
+      fileName: 'core.gz',
+      bytesReceived: 0,
+      totalBytes: null as number | null,
+      startedAt: 0,
+    };
+    expect(computeOverallPercent({ ...base, phase: 'manifest' })).toBe(3);
+    expect(
+      computeOverallPercent({ ...base, phase: 'download', bytesReceived: 0, totalBytes: 100 }),
+    ).toBe(8);
+    expect(
+      computeOverallPercent({ ...base, phase: 'download', bytesReceived: 100, totalBytes: 100 }),
+    ).toBe(88);
+    expect(
+      computeOverallPercent({ ...base, phase: 'verify', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(92);
+    expect(
+      computeOverallPercent({ ...base, phase: 'inflate', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(96);
+    expect(
+      computeOverallPercent({ ...base, phase: 'parse', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(100);
+  });
+
   it('builds progress view model with phase and ETA line', () => {
     const vm = buildPayloadProgressViewModel(
       {
