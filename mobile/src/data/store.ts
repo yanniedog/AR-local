@@ -734,7 +734,6 @@ export const useStore = create<AppState>()(
         set({ bankInsightsError: null });
         if (!get().manifest?.files.bank_history) {
           await get().refresh({ manual: true, force: true });
-          if (get().bankInsights && !get().bankInsightsError) return;
         }
         await get().ensureBankInsights({ force: true });
       },
