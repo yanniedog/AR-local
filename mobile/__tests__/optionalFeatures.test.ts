@@ -135,7 +135,7 @@ describe('optional feature prefs', () => {
 
   it('ensureSearchIndex downloads when deep search is enabled', async () => {
     store.setState({
-      prefs: { ...DEFAULT_PREFS, enableDeepSearch: true },
+      prefs: { ...DEFAULT_PREFS, enableDeepSearch: true, rateIntelligencePro: true },
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
@@ -166,7 +166,7 @@ describe('optional feature prefs', () => {
 
   it('ensureHistoryBanks downloads when history ribbon pref is on', async () => {
     store.setState({
-      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, rateIntelligencePro: true },
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
@@ -212,7 +212,7 @@ describe('optional feature prefs', () => {
     const infoSpy = jest.spyOn(debugLog, 'info').mockImplementation(() => {});
     const errorSpy = jest.spyOn(debugLog, 'error').mockImplementation(() => {});
     store.setState({
-      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, rateIntelligencePro: true },
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
@@ -250,7 +250,7 @@ describe('optional feature prefs', () => {
 
   it('ensureHistoryBanks records error when download validation fails', async () => {
     store.setState({
-      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, rateIntelligencePro: true },
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
@@ -275,7 +275,7 @@ describe('optional feature prefs', () => {
   it('ensureHistoryBanks discards invalid cached payload and clears cache', async () => {
     mockReadHistoryBanks.mockResolvedValue({ run_date: '2026-05-19', sections: { Mortgage: { points: 'bad' } } });
     store.setState({
-      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, rateIntelligencePro: true },
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
@@ -298,7 +298,7 @@ describe('optional feature prefs', () => {
 
   it('turning history ribbon off clears historyBanks and historyBanksError', () => {
     store.setState({
-      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true, rateIntelligencePro: true },
       historyBanks: {
         schema_version: 1,
         run_date: remoteCore.run_date,
