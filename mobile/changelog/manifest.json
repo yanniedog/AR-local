@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-10T10:16:30.128Z",
+  "generated_at": "2026-06-10T23:35:21.957Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -78,6 +78,18 @@
         "feat(mobile): bank intelligence built on the historical rate series (#275)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.8"
+    },
+    {
+      "version": "1.0.9",
+      "date": "2026-06-10",
+      "summaryBullets": [
+        "fix(mobile): reset history ribbon scrub state on touch cancel (#307)",
+        "mobile: comprehensive degradation logging (#305)",
+        "fix(mobile): remove merge conflict markers from optionalFeatures tests (#306)",
+        "fix(mobile): dead button handlers and tab scroll-to-top (#304)",
+        "fix(mobile): bank intelligence Retry forces real reload (#302)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.9"
     }
   ]
 }
