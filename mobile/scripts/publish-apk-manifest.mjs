@@ -19,8 +19,11 @@ import {
   APK_ASSET,
   MANIFEST_ASSET,
   ROLLING_TAG,
+  CHANGELOG_SUMMARY_ASSET,
   apkDownloadUrl,
+  buildChangelogManifest,
   ensureGitHubRelease,
+  ensureVersionEntry,
   generateInstallAssets,
   generateReleaseNotes,
   gh,
@@ -30,6 +33,7 @@ import {
   readAppJsonBuildNumber,
   readAppJsonVersion,
   releaseTitle,
+  renderRollingReleaseNotes,
   versionTag,
 } from './app-release-utils.mjs';
 
@@ -194,6 +198,20 @@ function ensureRollingReleaseExists() {
   }
 }
 
+function writeChangelogSummaryArtifact({ version, outDir }) {
+  ensureVersionEntry({ version, mobileRoot, repo });
+  const manifest = buildChangelogManifest({ repo, mobileRoot });
+  const summaryPath = join(outDir, CHANGELOG_SUMMARY_ASSET);
+  writeFileSync(summaryPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  return summaryPath;
+}
+
+function refreshRollingReleaseNotes({ version, buildNumber }) {
+  const title = 'Australian Rates app (rolling preview APK)';
+  const notes = renderRollingReleaseNotes({ version, buildNumber, repo, mobileRoot });
+  ensureGitHubRelease(ghToken, repo, ROLLING_TAG, title, notes);
+}
+
 function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber, versionedTag }) {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY?.trim();
   if (!summaryPath) {
@@ -222,10 +240,10 @@ function writeJobSummary({ downloadUrl, qrUrl, installUrl, version, buildNumber,
   writeFileSync(summaryPath, `${lines.join('\n')}\n`, { flag: 'a' });
 }
 
-async function publishVersionedRelease({ apkBuf, version, buildNumber, outDir }) {
+async function publishVersionedRelease({ apkBuf, version, buildNumber, outDir, changelogSummaryPath }) {
   const tag = versionTag(version);
   const title = releaseTitle(version);
-  const notes = generateReleaseNotes({ version, buildNumber, mobileRoot });
+  const notes = generateReleaseNotes({ version, buildNumber, mobileRoot, repo });
   const versionOutDir = join(outDir, 'versioned');
   mkdirSync(versionOutDir, { recursive: true });
 
@@ -243,7 +261,11 @@ async function publishVersionedRelease({ apkBuf, version, buildNumber, outDir })
 
   const targetRef = process.env.GITHUB_SHA?.trim() || '';
   const action = ensureGitHubRelease(ghToken, repo, tag, title, notes, targetRef);
-  gh(ghToken, repo, ['release', 'upload', tag, apkPath, qrPath, installPath, '--clobber']);
+  const uploadPaths = [apkPath, qrPath, installPath];
+  if (changelogSummaryPath) {
+    uploadPaths.push(changelogSummaryPath);
+  }
+  gh(ghToken, repo, ['release', 'upload', tag, ...uploadPaths, '--clobber']);
 
   console.log(`Versioned release ${tag} (${action}): https://github.com/${repo}/releases/tag/${tag}`);
   console.log(`  QR PNG: ${qrUrl}`);
@@ -332,6 +354,8 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
   const manifestPath = join(outDir, MANIFEST_ASSET);
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
+  const changelogSummaryPath = writeChangelogSummaryArtifact({ version, outDir });
+
   const { qrPath, installPath, qrUrl, installUrl } = await generateInstallAssets(
     outDir,
     downloadUrl,
@@ -343,12 +367,14 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
   console.log(`Publishing ${ROLLING_TAG} to ${repo} (v${version} build ${buildNumber}, ${apkBuf.length} bytes)…`);
 
   ensureRollingReleaseExists();
+  refreshRollingReleaseNotes({ version, buildNumber });
   gh(ghToken, repo, [
     'release',
     'upload',
     ROLLING_TAG,
     apkPath,
     manifestPath,
+    changelogSummaryPath,
     qrPath,
     installPath,
     '--clobber',
@@ -358,7 +384,13 @@ async function publishRelease({ apkBuf, version, buildNumber, source, easBuildId
   console.log(`QR PNG: ${qrUrl}`);
   console.log(`Install page: ${installUrl}`);
 
-  const versioned = await publishVersionedRelease({ apkBuf, version, buildNumber, outDir });
+  const versioned = await publishVersionedRelease({
+    apkBuf,
+    version,
+    buildNumber,
+    outDir,
+    changelogSummaryPath,
+  });
 
   writeJobSummary({
     downloadUrl,

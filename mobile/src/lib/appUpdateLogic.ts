@@ -1,4 +1,8 @@
-import { isUpdateAvailable } from './versionCompare';
+import { isUpdateAvailable, versionGt } from './versionCompare';
+import {
+  fetchCumulativeChangelogs,
+  type VersionChangelogSummary,
+} from './changelog';
 
 export interface ApkManifest {
   schema_version: number;
@@ -21,8 +25,15 @@ export interface InstalledAppInfo {
 
 export type UpdateCheckResult =
   | { status: 'current'; installed: InstalledAppInfo; remote: ApkManifest }
-  | { status: 'available'; installed: InstalledAppInfo; remote: ApkManifest }
+  | {
+      status: 'available';
+      installed: InstalledAppInfo;
+      remote: ApkManifest;
+      changelogs: VersionChangelogSummary[];
+    }
   | { status: 'error'; message: string };
+
+export type { VersionChangelogSummary } from './changelog';
 
 export type DownloadProgress = {
   bytesWritten: number;
@@ -65,7 +76,19 @@ export async function checkForAppUpdateAt(
   try {
     const remote = await fetchApkManifest(manifestUrl);
     if (remoteIsNewer(installed, remote)) {
-      return { status: 'available', installed, remote };
+      let changelogs: VersionChangelogSummary[] = [];
+      if (versionGt(remote.version, installed.version)) {
+        try {
+          changelogs = await fetchCumulativeChangelogs(
+            manifestUrl,
+            installed.version,
+            remote.version,
+          );
+        } catch {
+          changelogs = [];
+        }
+      }
+      return { status: 'available', installed, remote, changelogs };
     }
     return { status: 'current', installed, remote };
   } catch (err) {

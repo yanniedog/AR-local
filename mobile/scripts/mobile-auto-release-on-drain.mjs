@@ -239,9 +239,26 @@ async function main() {
     throw new Error((bump.stderr || bump.stdout || 'bump-app-patch-version failed').trim());
   }
 
+  const ensureEntry = spawnSync(
+    'node',
+    ['scripts/ensure-changelog-entry.mjs', '--version', next, '--repo', repo],
+    { encoding: 'utf8', cwd: mobileDir },
+  );
+  if (ensureEntry.status !== 0) {
+    throw new Error((ensureEntry.stderr || ensureEntry.stdout || 'ensure-changelog-entry failed').trim());
+  }
+
+  const buildManifest = spawnSync('node', ['scripts/build-changelog-manifest.mjs', '--repo', repo], {
+    encoding: 'utf8',
+    cwd: mobileDir,
+  });
+  if (buildManifest.status !== 0) {
+    throw new Error((buildManifest.stderr || buildManifest.stdout || 'build-changelog-manifest failed').trim());
+  }
+
   git(['config', 'user.name', 'github-actions[bot]']);
   git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com']);
-  git(['add', 'mobile/app.json']);
+  git(['add', 'mobile/app.json', 'mobile/changelog/']);
 
   const prHint = mergeSha ? ` (after ${mergeSha.slice(0, 7)})` : '';
   const message = `${AUTO_BUMP_PREFIX}${next}${prHint}`;

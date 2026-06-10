@@ -12,8 +12,24 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { versionTag, releaseTitle, extractChangelogSection } = require("./app-release-meta-pure.cjs");
+const {
+  CHANGELOG_SUMMARY_ASSET,
+  changelogSummaryUrl,
+  loadVersionEntryIfExists,
+  renderGithubReleaseBody,
+  renderRollingReleaseNotes,
+  ensureVersionEntry,
+  buildChangelogManifest,
+} = require("./changelog-lib.cjs");
 
 export { versionTag, releaseTitle, extractChangelogSection };
+export {
+  CHANGELOG_SUMMARY_ASSET,
+  changelogSummaryUrl,
+  renderRollingReleaseNotes,
+  ensureVersionEntry,
+  buildChangelogManifest,
+};
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const mobileRoot = join(__dirname, "..");
@@ -92,9 +108,21 @@ export function findPreviousVersionTag(version) {
 }
 
 /**
- * @param {{ version: string, buildNumber: string, mobileRoot: string }} opts
+ * @param {{ version: string, buildNumber: string, mobileRoot: string, repo?: string }} opts
  */
-export function generateReleaseNotes({ version, buildNumber, mobileRoot }) {
+export function generateReleaseNotes({ version, buildNumber, mobileRoot, repo }) {
+  const ghRepo =
+    repo?.trim() || process.env.GITHUB_REPOSITORY?.trim() || "yanniedog/AR-local";
+
+  let entry = loadVersionEntryIfExists(mobileRoot, version);
+  if (!entry) {
+    const stub = ensureVersionEntry({ version, mobileRoot, repo: ghRepo });
+    entry = stub.entry ?? null;
+  }
+  if (entry) {
+    return renderGithubReleaseBody({ entry, buildNumber, repo: ghRepo });
+  }
+
   const changelogPath = join(mobileRoot, "CHANGELOG.md");
   if (existsSync(changelogPath)) {
     const section = extractChangelogSection(readFileSync(changelogPath, "utf8"), version);

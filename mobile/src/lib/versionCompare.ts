@@ -11,6 +11,11 @@ export function versionLt(a: string, b: string): boolean {
   return false;
 }
 
+/** True when a > b semver. */
+export function versionGt(a: string, b: string): boolean {
+  return versionLt(b, a);
+}
+
 /** Compare native build numbers (Android versionCode / iOS CFBundleVersion). */
 export function buildNumberLt(a: string, b: string): boolean {
   const na = parseInt(a, 10);

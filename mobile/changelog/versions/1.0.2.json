@@ -1,0 +1,14 @@
+{
+  "version": "1.0.2",
+  "date": "2026-06-09",
+  "summaryBullets": ["Third"],
+  "sections": [
+    {
+      "title": "Fixes",
+      "bullets": [
+        { "text": "History ribbon crash fix" },
+        { "text": "Debug log persistence and CDR copy scrub" }
+      ]
+    }
+  ]
+}

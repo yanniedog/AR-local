@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "date": "2026-06-01",
+  "summaryBullets": ["First"],
+  "sections": [
+    {
+      "title": "Initial release",
+      "bullets": [
+        {
+          "text": "Preview APK self-update",
+          "children": [
+            { "text": "Settings → App update checks GitHub manifest" },
+            { "text": "QR install page on app-apk-latest release" }
+          ]
+        },
+        { "text": "Offline-first CDR rates browse and search" }
+      ]
+    }
+  ]
+}
