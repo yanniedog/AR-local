@@ -12,6 +12,7 @@ import {
   sliceChartTimeline,
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
+import { buildBandPath } from '../lib/chartSvgPaths';
 import { debugLog } from '../lib/debugLog';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Chip, Row } from './ui';
@@ -43,30 +44,6 @@ export interface BankHistoryChartProps {
   height?: number;
   /** Full retained timeline before window slice (defaults to `dates`). */
   allDates?: string[];
-}
-
-function bandPath(
-  dates: string[],
-  mins: (number | null)[],
-  maxs: (number | null)[],
-  xAt: (i: number) => number,
-  yAt: (v: number) => number,
-): string | null {
-  const upper: string[] = [];
-  const lower: string[] = [];
-  for (let i = 0; i < dates.length; i += 1) {
-    const min = mins[i];
-    const max = maxs[i];
-    if (!isFiniteNumber(min) || !isFiniteNumber(max)) continue;
-    const x = finiteCoord(xAt(i));
-    const yMin = finiteCoord(yAt(min));
-    const yMax = finiteCoord(yAt(max));
-    if (x == null || yMin == null || yMax == null) continue;
-    upper.push(`${x},${yMax}`);
-    lower.unshift(`${x},${yMin}`);
-  }
-  if (!upper.length) return null;
-  return `M ${upper[0]} L ${upper.slice(1).join(' L ')} L ${lower.join(' L ')} Z`;
 }
 
 function linePath(
@@ -189,7 +166,7 @@ export function BankHistoryChart({
   const mins = plotPoints.map((p) => p.min);
   const maxs = plotPoints.map((p) => p.max);
   const means = plotPoints.map((p) => p.mean);
-  const band = bandPath(plotDates, mins, maxs, xAt, yAt);
+  const band = buildBandPath(plotDates, mins, maxs, xAt, yAt);
   const meanLine = linePath(means, xAt, yAt);
   const minLine = linePath(mins, xAt, yAt);
   const maxLine = linePath(maxs, xAt, yAt);
