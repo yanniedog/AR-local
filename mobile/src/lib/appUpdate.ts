@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 
 import { APK_MANIFEST_URL } from '../config';
 import { debugLog } from './debugLog';
+import { ensureInstallPermission } from './installPermission';
 import {
   checkForAppUpdateAt,
   type ApkManifest,
@@ -128,6 +129,11 @@ export async function downloadApkUpdate(
 export async function installDownloadedApk(localUri: string): Promise<void> {
   if (Platform.OS !== 'android') {
     throw new Error('APK install is Android-only');
+  }
+
+  const allowed = await ensureInstallPermission();
+  if (!allowed) {
+    throw new Error('Allow app updates in system settings, then try again');
   }
 
   const contentUri = await FileSystem.getContentUriAsync(localUri);
