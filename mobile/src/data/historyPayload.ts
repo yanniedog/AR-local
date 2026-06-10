@@ -6,6 +6,7 @@ import {
   sanitizeRibbonPoint,
   sliceChartTimeline,
 } from './bankHistoryTransform';
+import { debugLog } from '../lib/debugLog';
 
 /** Pre-aggregated section ribbon series (see app_history_export.py). */
 export interface HistoryBanksPayload {
@@ -97,7 +98,11 @@ export function chartModelFromPrebuiltHistory(
       points: sliced.points,
       allDates,
     };
-  } catch {
+  } catch (err) {
+    debugLog.error(
+      'historyPayload',
+      `chartModelFromPrebuiltHistory failed section=${section}: ${String((err as Error)?.message ?? err)}`,
+    );
     return null;
   }
 }
