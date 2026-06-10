@@ -29,8 +29,22 @@ function parseArgs(argv) {
   return out;
 }
 
-function run(cmd, args, { allowFail = false, timeout = 60000 } = {}) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout });
+function gitIdentityEnv() {
+  return {
+    GIT_AUTHOR_NAME: GH_ACTIONS_NAME,
+    GIT_AUTHOR_EMAIL: GH_ACTIONS_EMAIL,
+    GIT_COMMITTER_NAME: GH_ACTIONS_NAME,
+    GIT_COMMITTER_EMAIL: GH_ACTIONS_EMAIL,
+  };
+}
+
+function run(cmd, args, { allowFail = false, timeout = 60000, env } = {}) {
+  const r = spawnSync(cmd, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout,
+    env: { ...process.env, ...env },
+  });
   if (r.error) throw new Error(r.error.message);
   if (r.status !== 0 && !allowFail) {
     const msg = (r.stderr || r.stdout || '').trim();
@@ -39,31 +53,29 @@ function run(cmd, args, { allowFail = false, timeout = 60000 } = {}) {
   return r;
 }
 
-function gitConfig() {
-  if (process.env.GITHUB_ACTIONS !== 'true') return;
-  run('git', ['config', 'user.name', GH_ACTIONS_NAME]);
-  run('git', ['config', 'user.email', GH_ACTIONS_EMAIL]);
+function runGit(args, opts = {}) {
+  return run('git', args, { ...opts, env: { ...process.env, ...gitIdentityEnv(), ...opts.env } });
 }
 
 function hasStagedChanges() {
-  const r = run('git', ['diff', '--staged', '--quiet'], { allowFail: true });
+  const r = runGit(['diff', '--staged', '--quiet'], { allowFail: true });
   return r.status !== 0;
 }
 
 function stageMatrixFiles() {
-  run('git', ['add', '--', ...MATRIX_COMMIT_REL_PATHS]);
+  runGit(['add', '--', ...MATRIX_COMMIT_REL_PATHS]);
 }
 
 function commitMatrix() {
-  run('git', ['commit', '-m', MATRIX_COMMIT_MESSAGE]);
+  runGit(['commit', '-m', MATRIX_COMMIT_MESSAGE]);
 }
 
 function pullRebase(branch) {
-  run('git', ['pull', '--rebase', 'origin', branch]);
+  runGit(['pull', '--rebase', 'origin', branch]);
 }
 
 function pushMain(branch) {
-  return run('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
+  return runGit(['push', 'origin', `HEAD:${branch}`], { allowFail: true });
 }
 
 function isProtectedMainRejection(stderr) {
@@ -89,7 +101,6 @@ Commits only:
   const branch = process.env.MATRIX_COMMIT_BRANCH || 'main';
   const maxAttempts = Number(process.env.MATRIX_PUSH_RETRIES || 3);
 
-  gitConfig();
   stageMatrixFiles();
 
   if (!hasStagedChanges()) {
