@@ -266,6 +266,14 @@ export function BankHistoryChart({
     setHoverDate(null);
   };
 
+  // The parent ScrollView steals the gesture on vertical drags and fires
+  // touchCancel instead of touchEnd — reset without pinning a date, so the
+  // crosshair doesn't stay frozen at the aborted hover position.
+  const onTouchCancelScrub = () => {
+    touchModeRef.current = null;
+    setHoverDate(null);
+  };
+
   const onPointerMoveScrub = (e: PointerEvent) => {
     setHoverFromPlotX(e.nativeEvent.offsetX);
   };
@@ -458,6 +466,7 @@ export function BankHistoryChart({
             onTouchStart={onTouchStartScrub}
             onTouchMove={onTouchMoveScrub}
             onTouchEnd={onTouchEndScrub}
+            onTouchCancel={onTouchCancelScrub}
             {...(Platform.OS === 'web'
               ? {
                   onPointerMove: onPointerMoveScrub,
