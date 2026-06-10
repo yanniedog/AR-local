@@ -679,7 +679,10 @@ export const useStore = create<AppState>()(
       },
 
       async ensureBankInsights() {
-        if (!effectiveBankInsights(get().prefs)) return;
+        if (!effectiveBankInsights(get().prefs)) {
+          logEnsureSkipped('ensureBankInsights', 'pro_gate');
+          return;
+        }
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
         if (source !== 'remote' || !manifest) {
@@ -689,6 +692,10 @@ export const useStore = create<AppState>()(
         const asset = manifest.files.bank_history;
         if (!asset) {
           set({ bankInsightsError: 'bank history unavailable' });
+          logDegradation('warn', 'store.ensureUnavailable', {
+            fn: 'ensureBankInsights',
+            reason: 'bank history unavailable',
+          });
           return;
         }
         const meta = await cache.readMeta();

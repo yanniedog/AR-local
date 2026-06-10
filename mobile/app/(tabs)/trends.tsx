@@ -27,6 +27,7 @@ import { bestRow } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { rateValueLabel, rbaDecisionA11yLabel } from '../../src/lib/a11ySummaries';
+import { runStoreRetry } from '../../src/lib/degradationLog';
 import { openBrowse } from '../../src/lib/nav';
 import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -114,7 +115,21 @@ export default function Trends() {
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
                   Bank intelligence unavailable
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void ensureBankInsights()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={() =>
+                    void runStoreRetry(
+                      'ensureBankInsights',
+                      () => ensureBankInsights(),
+                      () => {
+                        const s = useStore.getState();
+                        return !s.bankInsightsError || !!s.bankInsights;
+                      },
+                      () => useStore.getState().bankInsightsError,
+                    )
+                  }
+                />
               </Row>
             ) : null}
           </Card>
@@ -235,7 +250,18 @@ export default function Trends() {
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
                   History unavailable
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void ensureHistoryBanks()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={() =>
+                    void runStoreRetry(
+                      'ensureHistoryBanks',
+                      () => ensureHistoryBanks(),
+                      () => !useStore.getState().historyBanksError,
+                      () => useStore.getState().historyBanksError,
+                    )
+                  }
+                />
               </Row>
             ) : null}
           </>
