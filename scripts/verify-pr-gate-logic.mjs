@@ -10,6 +10,7 @@
  *  - Low-signal bot threads never block. Unresolved human threads block.
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
+import { isReportsOnlyFileList, isReportsOnlyPath } from './lib/pr-reports-only.mjs';
 
 const BOT = { login: 'gemini-code-assist[bot]', __typename: 'Bot' };
 const HUMAN = { login: 'yanniedog', __typename: 'User' };
@@ -73,6 +74,27 @@ for (const [body, want] of [
   ['thanks', false], ['ok', false], ['', false],
 ]) {
   if (isClosureReply(body) !== want) failures.push(`isClosureReply(${body !== '' ? body : '<empty>'}) !== ${want}`);
+}
+
+for (const [path, want] of [
+  ['reports/pr-bot-matrix.html', true],
+  ['reports/foo.json', true],
+  ['scripts/foo.mjs', false],
+  ['', false],
+]) {
+  if (isReportsOnlyPath(path) !== want) {
+    failures.push(`isReportsOnlyPath(${path || '<empty>'}) !== ${want}`);
+  }
+}
+for (const [name, files, want] of [
+  ['matrix html+json only', ['reports/pr-bot-matrix.html', 'reports/pr-bot-matrix.json'], true],
+  ['empty list', [], false],
+  ['mixed reports+scripts', ['reports/a.html', 'scripts/b.mjs'], false],
+  ['non-reports only', ['docs/PR_BOT_MATRIX.md'], false],
+]) {
+  if (isReportsOnlyFileList(files) !== want) {
+    failures.push(`${name}: isReportsOnlyFileList !== ${want}`);
+  }
 }
 
 if (failures.length) {

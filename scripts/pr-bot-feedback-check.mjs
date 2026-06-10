@@ -9,6 +9,7 @@ import {
   hasGh,
   repoSlug,
 } from './lib/gh-pr-review-threads.mjs';
+import { isReportsOnlyPr } from './lib/pr-reports-only.mjs';
 
 function sh(cmd) {
   try {
@@ -137,6 +138,15 @@ function main() {
       if (!args.quiet) console.log(`pr-bot-feedback-check: no open PR for branch ${branch}; skip`);
       process.exit(0);
     }
+  }
+
+  if (isReportsOnlyPr(prNumber)) {
+    if (!args.quiet) {
+      console.log(
+        `pr-bot-feedback-check: skip PR #${prNumber} (reports/** only — matrix publish PR)`,
+      );
+    }
+    process.exit(0);
   }
 
   let botPresence = null;

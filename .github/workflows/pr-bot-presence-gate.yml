@@ -48,7 +48,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Skip bot wait for reports-only matrix PRs
+        id: reports_only
+        env:
+          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
+        run: |
+          case "${{ github.event_name }}" in
+            workflow_dispatch) PR="${{ inputs.pr_number }}" ;;
+            issue_comment)     PR="${{ github.event.issue.number }}" ;;
+            pull_request_review) PR="${{ github.event.pull_request.number }}" ;;
+            *)                 PR="${{ github.event.pull_request.number }}" ;;
+          esac
+          if node -e "import('./scripts/lib/pr-reports-only.mjs').then(m=>process.exit(m.isReportsOnlyPr($PR)?0:1))"; then
+            echo "reports_only=true" >> "$GITHUB_OUTPUT"
+            echo "PR #$PR is reports/** only — bot wait not required"
+          else
+            echo "reports_only=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Required bot wait gate (single shot)
+        if: steps.reports_only.outputs.reports_only != 'true'
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

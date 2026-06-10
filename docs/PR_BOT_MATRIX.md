@@ -53,7 +53,7 @@ Triggers:
 - **On PR merge** (`pull_request` closed + merged)
 - **Manual** `workflow_dispatch` (optional `--limit`, single `--pr`)
 
-After sync, the job commits `reports/pr-bot-matrix.html` and `reports/pr-bot-matrix.json` to `main` with message `chore: update PR bot feedback matrix [skip ci]`. Uses `GITHUB_TOKEN` with `contents: write`. Matrix-only commits should not re-run heavy deploy pipelines (`reports/**` is ignored by `pi-deploy-on-main`).
+After sync, the job opens (or updates) PR `bot/pr-bot-matrix-sync` with the matrix artifacts and enables squash auto-merge when checks pass. Protected `main` rejects direct pushes without required checks; matrix-only PRs still run `bot-presence-gate` and `bot-feedback-gate`, but those jobs exit immediately when `scripts/lib/pr-reports-only.mjs` detects only `reports/**` changes (same skip in `npm run wait-for-bots`). Uses `GITHUB_TOKEN` with `contents: write` and `pull-requests: write`. Matrix-only merges should not re-run Pi deploy (`reports/**` is ignored by `pi-deploy-on-main`).
 
 ### Optional secret
 
