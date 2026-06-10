@@ -7,10 +7,11 @@
     "pr:bot-feedback-check": "node scripts/pr-bot-feedback-check.mjs",
     "pr:gates:check": "node scripts/pr-gates-check.mjs",
     "pr:watch-once": "node scripts/pr-watch-once.mjs",
+    "pr:queue:drive": "node scripts/pr-queue-drive.mjs",
+    "pr:update-branch": "node scripts/pr-update-branch.mjs",
     "pr:bot-feedback-audit": "node scripts/pr-bot-feedback-check.mjs --audit-merged --limit 20",
     "pr:bot-spreadsheet:sync": "node scripts/pr-bot-spreadsheet-sync.mjs",
     "pr:bot-matrix:commit": "node scripts/pr-bot-matrix-commit.mjs",
-    "pr:bot-matrix:verify": "node scripts/verify-pr-bot-matrix-writer.mjs",
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
     "pr:bot-matrix-commit:verify": "node scripts/verify-pr-bot-matrix-commit.mjs",
     "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
@@ -30,6 +31,8 @@
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
     "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
     "pr:merge": "node scripts/pr-merge.mjs",
+    "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
+    "pr:update-branch": "node scripts/pr-update-branch.mjs",
     "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs"
   }
 }

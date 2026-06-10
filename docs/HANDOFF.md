@@ -599,8 +599,21 @@ the committed sample); the **Pi is the primary daily publisher**.
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
   `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
   protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
-- **Enable auto-merge**: `npm run pr:merge -- --pr <n>` (`gh pr merge <n> --auto --squash --delete-branch`). It lands when all required checks
-  are green and **0 review threads are unresolved**.
+- **Enable auto-merge**: `npm run pr:merge -- --pr <n> --enable-only` on PR open.
+
+### 6.1 PR queue efficiency (agents)
+
+One pr-fix worker per open PR owns the full loop to squash merge.
+
+| Step | Command |
+|------|---------|
+| PR opens | `npm run pr:merge -- --pr <n> --enable-only` |
+| Queue scan | `npm run pr:queue:drive` or `npm run pr:watch-once` |
+| Bot wait | `npm run wait-for-bots -- --pr <n>` (parallel per PR) |
+| Branch sync | `npm run pr:update-branch -- --pr <n> --progress` |
+| Gates | `npm run pr:gates:check -- --pr <n>` |
+
+Chore bypass: matrix direct commit; mobile auto-release drain workflow.
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.
   Read each thread before resolving; don't auto-resolve unread threads.
 - Commit trailer used here: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
