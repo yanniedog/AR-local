@@ -11,6 +11,8 @@
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
 import { isReportsOnlyFileList, isReportsOnlyPath } from './lib/pr-reports-only.mjs';
+import { isAutoReleaseCommitOnly, isAutoReleaseCommitPath } from './lib/pr-mobile-auto-release-commit.mjs';
+import { isGateExemptFileList } from './lib/pr-gate-exempt.mjs';
 
 const BOT = { login: 'gemini-code-assist[bot]', __typename: 'Bot' };
 const HUMAN = { login: 'yanniedog', __typename: 'User' };
@@ -97,6 +99,17 @@ for (const [name, files, want] of [
   if (isReportsOnlyFileList(files) !== want) {
     failures.push(`${name}: isReportsOnlyFileList !== ${want}`);
   }
+}
+
+for (const [path, want] of [['mobile/app.json', true], ['mobile/changelog/versions/1.0.8.json', true], ['mobile/package.json', false]]) {
+  if (isAutoReleaseCommitPath(path) !== want) failures.push(`isAutoReleaseCommitPath(${path}) !== ${want}`);
+}
+for (const [name, files, want] of [
+  ['auto-release only', ['mobile/app.json', 'mobile/changelog/manifest.json'], true],
+  ['gate exempt auto-release', ['mobile/app.json', 'mobile/changelog/manifest.json'], true],
+]) {
+  const fn = name.startsWith('gate exempt') ? isGateExemptFileList : isAutoReleaseCommitOnly;
+  if (fn(files) !== want) failures.push(`${name}: ${fn.name} !== ${want}`);
 }
 
 if (failures.length) {

@@ -984,8 +984,10 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             manifest = json.loads(latest.decode("utf-8"))
             run_date = str(manifest.get("run_date") or "")
             if run_date:
-                bank_ribbon_payload(run_date, "Mortgage")
-                bank_section_payload(run_date, "Mortgage")
+                for section in ("Mortgage", "Savings", "TD"):
+                    bank_section_payload(run_date, section)
+                    bank_history_payload(run_date, section)
+                    bank_history_payload("", section)
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 

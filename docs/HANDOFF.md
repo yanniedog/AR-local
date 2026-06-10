@@ -328,11 +328,15 @@ apply to the new package name; Play Store treats the new ID as a different app.
 **Auto release when PR queue drains:** `.github/workflows/mobile-auto-release-on-queue-drain.yml`
 — on squash-merge of a PR to `main`, counts remaining open PRs (`gh pr list --state open --base main`).
 If **> 0**, exits cleanly. If **0** (last PR landed), bumps `expo.version` patch in `mobile/app.json`
-via `mobile/scripts/mobile-auto-release-on-drain.mjs`, opens a bump PR to `main` with auto-merge
-(branch protection blocks direct pushes — requires `bot-feedback-gate` + `bot-presence-gate`).
-When the bump PR lands, **mobile-android-apk** below builds the APK. Use **`workflow_dispatch`**
-on this workflow to recover a missed bump (e.g. after a failed drain run). Concurrency group
+via `mobile/scripts/mobile-auto-release-on-drain.mjs`, commits `mobile/app.json` + `mobile/changelog/**`,
+and **pushes directly to `main`** (no bump PR). When the push lands, **mobile-android-apk** below builds
+the APK. Use **`workflow_dispatch`** to recover a missed bump. Concurrency group
 `mobile-auto-release-on-drain` (`cancel-in-progress: false`) serializes drain checks.
+
+**Direct commit to main (one-time GitHub setup):** Add **GitHub Actions** to the `main` ruleset bypass list
+(Settings → Rules → Rulesets). Optionally scope to `.github/workflows/mobile-auto-release-on-queue-drain.yml`.
+If push fails, the drain script falls back to a gate-exempt bump PR (`scripts/lib/pr-gate-exempt.mjs`).
+Close obsolete bump PRs (e.g. `#276`) after direct push is verified.
 
 **Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
 — runs on `ubuntu-latest` (JDK 17, Android SDK): materialize Firebase → bump `versionCode`
@@ -601,6 +605,7 @@ the committed sample); the **Pi is the primary daily publisher**.
   protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
 - **Enable auto-merge**: `npm run pr:merge -- --pr <n>` (`gh pr merge <n> --auto --squash --delete-branch`). It lands when all required checks
   are green and **0 review threads are unresolved**.
+- **Bot matrix & direct-to-main bypass (one-time operator):** `pr-bot-spreadsheet` and `mobile-auto-release-on-queue-drain` commit directly to `main` (reports-only / version bump). GitHub rejects those pushes unless **GitHub Actions** is on the `main` **ruleset** bypass list. The REST API cannot add that bypass on this personal repo (422) — use **Settings → Rules → Rulesets →** open `main` ruleset → **Bypass list → GitHub Actions → Always**, then delete duplicate **legacy** branch protection on `main`. Full click-path, migration steps, and verify commands: [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md) → "Direct commit to main".
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.
   Read each thread before resolving; don't auto-resolve unread threads.
 - Commit trailer used here: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`

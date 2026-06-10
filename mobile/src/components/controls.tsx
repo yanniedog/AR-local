@@ -154,6 +154,7 @@ export function SegmentedControl<T extends string>({
               variant="small"
               weight={active ? '700' : '500'}
               color={active ? 'text' : 'textMuted'}
+              numberOfLines={1}
             >
               {opt.label}
             </AppText>
