@@ -23,6 +23,7 @@ import { ensurePermissions, registerBackgroundRefresh } from '../../src/data/not
 import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openBank } from '../../src/lib/nav';
+import { logSwallowedError } from '../../src/lib/degradationLog';
 import { canAddAlertSubscription } from '../../src/lib/proAccess';
 import type { DetailItem, RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -75,7 +76,7 @@ export default function ProductDetail() {
   const onShare = () =>
     Share.share({
       message: `${row.provider} — ${row.product_name}: ${formatRate(row.rate)} (${meta.title}, Australian Rates)`,
-    }).catch(() => {});
+    }).catch((err) => logSwallowedError('product.share', err));
 
   const onToggleNotify = async () => {
     if (subscribed) {
