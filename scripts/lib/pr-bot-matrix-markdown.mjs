@@ -73,8 +73,12 @@ export function buildMatrixMarkdown(report, opts = {}) {
     '', '## Legend', '', '| Status | Meaning |', '| --- | --- |', ...legendRows,
     '', '## Matrix', '', `| ${header} |`, `| ${separator} |`,
   ];
-  if (bodyRows.length) bodyRows.forEach((line) => lines.push(`| ${line} |`));
-  else lines.push('| _No merged PRs yet_ | | | | | | | | |');
+  if (bodyRows.length) {
+    bodyRows.forEach((line) => lines.push(`| ${line} |`));
+  } else {
+    const emptyCells = Array(2 + botHeaders.length).fill('').join(' | ');
+    lines.push(`| _No merged PRs yet_ | ${emptyCells} |`);
+  }
   if (truncated) lines.push('', `_Showing ${maxRows} of ${report.prCount ?? allRows.length} rows._`);
   lines.push('', '## Machine-readable data', '', `JSON: [\`${MATRIX_JSON_FILE}\`](${MATRIX_JSON_FILE}). HTML: [\`${MATRIX_HTML_FILE}\`](${MATRIX_HTML_FILE}).`, '');
   return `${lines.join('\n')}\n`;
