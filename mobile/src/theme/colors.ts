@@ -1,6 +1,7 @@
 /**
- * Palette tokens aligned with Pi dashboard shell CSS (`site/foundation.css`).
- * Dark is the dashboard default (`data-theme="dark"` on `dashboard/index.html`).
+ * App-facing color tokens. Runtime values come from Material 3 dynamic/system
+ * schemes mapped in `m3Palette.ts`; DARK/LIGHT remain static fallbacks for tests
+ * and non-M3 paths.
  */
 export interface Palette {
   bg: string;
