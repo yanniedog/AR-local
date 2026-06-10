@@ -245,7 +245,7 @@ export function RbaPassThroughCard({
         Best variable rates since:
       </AppText>
       {rows.slice(0, maxRows).map((row) => {
-        const fullPass = decision.bps !== 0 && Math.abs(row.passedBps) >= Math.abs(decision.bps);
+        const fullPass = decision.bps !== 0 && (decision.bps < 0 ? row.passedBps <= decision.bps : row.passedBps >= decision.bps);
         return (
           <Pressable
             key={row.provider}
