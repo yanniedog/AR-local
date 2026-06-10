@@ -130,6 +130,7 @@ interface AppState {
   }) => boolean;
   unsubscribeSearch: (id: string) => void;
   removeSubscription: (id: string) => void;
+  restoreSubscription: (sub: Subscription) => void;
   isProductSubscribed: (productKey: string, rateIndex: number | null) => boolean;
   findSearchSubscription: (input: {
     section: SectionKey;
@@ -640,6 +641,11 @@ export const useStore = create<AppState>()(
 
       removeSubscription(id) {
         set({ subscriptions: dropSubscription(get().subscriptions, id) });
+      },
+
+      restoreSubscription(sub) {
+        if (get().subscriptions.some((s) => s.id === sub.id)) return;
+        set({ subscriptions: addSubscription(get().subscriptions, sub) });
       },
 
       isProductSubscribed(productKey, rateIndex) {
