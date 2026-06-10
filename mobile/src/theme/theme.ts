@@ -1,6 +1,8 @@
+import type { Material3Theme } from '@pchmn/expo-material3-theme';
 import type { ColorSchemeName } from 'react-native';
 
 import { DARK, LIGHT, type Palette } from './colors';
+import { paletteFromM3Scheme } from './m3Palette';
 
 export type FontVariant =
   | 'h1'
@@ -34,8 +36,23 @@ export const lightTheme: Theme = { dark: false, colors: LIGHT, ...base };
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
-/** Resolve persisted theme mode + OS appearance to a concrete theme object. */
-export function resolveTheme(mode: ThemeMode, scheme: ColorSchemeName | null | undefined): Theme {
+function isDarkMode(mode: ThemeMode, scheme: ColorSchemeName | null | undefined): boolean {
   const resolved = mode === 'system' ? scheme ?? 'dark' : mode;
-  return resolved === 'light' ? lightTheme : darkTheme;
+  return resolved !== 'light';
+}
+
+/** Resolve persisted theme mode + OS appearance to a static fallback theme object. */
+export function resolveTheme(mode: ThemeMode, scheme: ColorSchemeName | null | undefined): Theme {
+  return isDarkMode(mode, scheme) ? darkTheme : lightTheme;
+}
+
+/** Build a theme from Material 3 dynamic/system tokens mapped onto Palette. */
+export function resolveM3Theme(
+  mode: ThemeMode,
+  scheme: ColorSchemeName | null | undefined,
+  material3: Material3Theme,
+): Theme {
+  const dark = isDarkMode(mode, scheme);
+  const m3Scheme = dark ? material3.dark : material3.light;
+  return { dark, colors: paletteFromM3Scheme(m3Scheme, dark), ...base };
 }

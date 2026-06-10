@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshControl, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import { CategoryRow } from '../../src/components/CategoryRow';
 import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
@@ -11,15 +12,15 @@ import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
-import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
+import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openBrowseDrill, openProduct, openRibbonProducts } from '../../src/lib/nav';
+import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -36,14 +37,14 @@ export default function Home() {
   const refresh = useStore((s) => s.refresh);
   const source = useStore((s) => s.source);
   const offline = useStore((s) => s.offline);
-  const section = useStore((s) => s.activeSection);
-  const setActiveSection = useStore((s) => s.setActiveSection);
+  const defaultSection = useStore((s) => s.prefs.defaultSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
   const setPref = useStore((s) => s.setPref);
+  const [section, setSection] = useState<SectionKey>(defaultSection);
 
   useEffect(() => {
     if (showHistoryRibbon) void ensureHistoryBanks();
@@ -83,16 +84,11 @@ export default function Home() {
 
   return (
     <ScreenScrollView
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
       }
     >
       <OfflineBanner source={source} offline={offline} />
-
-      <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
-        <IconButton icon="refresh" onPress={onRefresh} accessibilityLabel="Refresh" />
-      </Row>
 
       <HomeHero
         runDateLabel={formatRunDate(core.run_date)}
@@ -104,32 +100,24 @@ export default function Home() {
         providerCount={stats.providers}
       />
 
-      <SegmentedControl options={SECTION_SEG} value={section} onChange={setActiveSection} />
-      <View style={{ marginTop: 10 }}>
-        <CompactToggle
-          label="Include non-standard accounts"
-          value={includeNonStandard}
-          onChange={(value) => setPref('includeNonStandard', value)}
-        />
-      </View>
+      <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+      <CompactToggle
+        label="Include non-standard accounts"
+        value={includeNonStandard}
+        onChange={(value) => setPref('includeNonStandard', value)}
+      />
 
-      <Card
-        style={{
-          marginTop: 14,
-          marginBottom: 14,
-          borderColor: `${accent}44`,
-        }}
-      >
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-          <View style={{ flex: 1, paddingRight: 10 }}>
+      <Card style={{ borderColor: `${accent}44` }}>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing(3) }}>
+          <View style={{ flex: 1, paddingRight: theme.spacing(3) }}>
             <AppText variant="tiny" color="textFaint" weight="700">
               {meta.title.toUpperCase()}
             </AppText>
-            <AppText variant="small" color="textMuted" style={{ marginTop: 2 }}>
+            <AppText variant="small" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
               {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate in section
             </AppText>
-            <AppText variant="rateHero" style={{ color: accent, marginTop: 4 }}>
-              {formatRate(heroRate)}
+            <AppText variant="h1" weight="800" style={{ color: accent, marginTop: theme.spacing(1) }}>
+              {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
             </AppText>
           </View>
           {section === 'Mortgage' && rba ? (
@@ -137,25 +125,25 @@ export default function Home() {
               style={{
                 alignItems: 'flex-end',
                 backgroundColor: theme.colors.chip,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
+                paddingHorizontal: theme.spacing(3),
+                paddingVertical: theme.spacing(2),
                 borderRadius: theme.radius.md,
               }}
             >
               <AppText variant="tiny" color="textFaint">
                 RBA cash
               </AppText>
-              <AppText variant="rate" style={{ color: theme.colors.primary }}>
-                {formatRate(rba.rate)}
+              <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
+                {rba.rate.toFixed(2)}%
               </AppText>
             </View>
           ) : null}
         </Row>
         <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
-        <AppText variant="tiny" weight="700" color="textFaint" style={{ marginTop: 12, marginBottom: 7 }}>
+        <AppText variant="tiny" weight="700" color="textFaint" style={{ marginTop: theme.spacing(3), marginBottom: theme.spacing(2) }}>
           VIEW PRODUCTS
         </AppText>
-        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Row gap={theme.spacing(2)} style={{ flexWrap: 'wrap' }}>
           <Chip
             label={meta.lowerIsBetter ? 'Lowest rates' : 'Top yields'}
             icon="trending-up"
@@ -174,8 +162,8 @@ export default function Home() {
 
       {showHistoryRibbon ? (
         historyModel ? (
-          <Card style={{ marginBottom: 14 }}>
-            <AppText variant="h3" style={{ marginBottom: 8 }}>
+          <Card>
+            <AppText variant="h3" style={{ marginBottom: theme.spacing(2) }}>
               {meta.title} history
             </AppText>
             <ChartErrorBoundary name="BankHistoryChart">
@@ -189,8 +177,8 @@ export default function Home() {
             </ChartErrorBoundary>
           </Card>
         ) : historyBanksError ? (
-          <Card style={{ marginBottom: 14 }}>
-            <AppText variant="h3" style={{ marginBottom: 4 }}>
+          <Card>
+            <AppText variant="h3" style={{ marginBottom: theme.spacing(1) }}>
               {meta.title} history
             </AppText>
             <AppText variant="tiny" color="textFaint">
@@ -201,8 +189,8 @@ export default function Home() {
       ) : null}
 
       {section === 'Mortgage' && core.rba?.length ? (
-        <Card style={{ marginBottom: 14 }}>
-          <Row gap={8} style={{ marginBottom: 6 }}>
+        <Card>
+          <Row gap={theme.spacing(2)} style={{ marginBottom: theme.spacing(2) }}>
             <Ionicons name="trending-up" size={16} color={theme.colors.primary} />
             <AppText variant="h3">RBA cash rate</AppText>
           </Row>
@@ -210,50 +198,26 @@ export default function Home() {
         </Card>
       ) : null}
 
-      <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 10, marginLeft: 2 }}>
+      <AppText variant="small" weight="700" color="textMuted">
         BROWSE BY CATEGORY
       </AppText>
-      {categories.map((node) => {
-        const nodeBest = meta.lowerIsBetter ? node.stats.min : node.stats.max;
-        return (
-          <Pressable
-            key={node.seg}
-            onPress={() => openBrowseDrill(section, [node.seg])}
-            style={({ pressed }) => ({
-              backgroundColor: theme.colors.card,
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
-              borderLeftWidth: 3,
-              borderLeftColor: accent,
-              padding: 14,
-              marginBottom: 10,
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <AppText variant="body" weight="700" numberOfLines={2}>
-                  {node.label}
-                </AppText>
-                <AppText variant="tiny" color="textFaint" style={{ marginTop: 2 }}>
-                  {node.stats.products} products · {node.stats.providers} lenders
-                </AppText>
-              </View>
-              <Row gap={4}>
-                <AppText variant="rate" style={{ color: accent }}>
-                  {formatRate(nodeBest)}
-                </AppText>
-                <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
-              </Row>
-            </Row>
-          </Pressable>
-        );
-      })}
+      {categories.map((node) => (
+        <CategoryRow
+          key={node.seg}
+          label={node.label}
+          productCount={node.stats.products}
+          providerCount={node.stats.providers}
+          rate={meta.lowerIsBetter ? node.stats.min : node.stats.max}
+          section={section}
+          accent={accent}
+          showAccent
+          onPress={() => openNode(section, [node.seg])}
+        />
+      ))}
 
       {best ? (
         <>
-          <AppText variant="small" weight="700" color="textMuted" style={{ marginTop: 10, marginBottom: 10, marginLeft: 2 }}>
+          <AppText variant="small" weight="700" color="textMuted">
             BEST RATE TODAY
           </AppText>
           <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
