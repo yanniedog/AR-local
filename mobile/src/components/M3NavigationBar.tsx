@@ -4,6 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { M3_NAV_BAR_HEIGHT } from '../lib/androidChrome';
+import { hapticSelection } from '../lib/haptics';
 import { getTabLabel, getTabMaterialSymbol } from '../lib/tabIcons';
 import { useTheme } from '../theme/ThemeProvider';
 import { MaterialSymbol } from './MaterialSymbol';
@@ -36,6 +37,7 @@ export function M3NavigationBar({ state, descriptors, navigation }: BottomTabBar
             canPreventDefault: true,
           });
           if (focused) {
+            hapticSelection();
             return;
           }
           if (!event.defaultPrevented) {
