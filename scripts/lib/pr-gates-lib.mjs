@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
+import { isReportsOnlyPr } from './pr-reports-only.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -263,6 +264,14 @@ export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxB
 }
 
 export function gateWaitForBots(prNumber, githubBotGate) {
+  if (isReportsOnlyPr(prNumber)) {
+    return {
+      id: 'wait-for-bots',
+      pass: true,
+      detail: 'Skipped (reports/** only — matrix publish PR)',
+      skipped: true,
+    };
+  }
   if (githubBotGate?.botPresencePass) {
     const state = readBotWaitStateFile(prNumber, REPO_ROOT);
     const anchorMs = new Date(state?.anchor || '').getTime();
@@ -294,6 +303,14 @@ export function gateWaitForBots(prNumber, githubBotGate) {
 }
 
 export function gateBotFeedback(prNumber) {
+  if (isReportsOnlyPr(prNumber)) {
+    return {
+      id: 'pr-bot-feedback-check',
+      pass: true,
+      detail: 'Skipped (reports/** only — matrix publish PR)',
+      skipped: true,
+    };
+  }
   const { exitCode, stderr, stdout } = runNodeScript('scripts/pr-bot-feedback-check.mjs', [
     '--pr',
     String(prNumber),
