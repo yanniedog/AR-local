@@ -1,7 +1,7 @@
 name: pr-bot-spreadsheet
 
-# Maintain a Google Sheet matrix: rows = merged PRs, columns = review bots, color-coded
-# by feedback presence, address-before-merge, and quota/limit hits.
+# Maintain an in-repo matrix (HTML + JSON): rows = merged PRs, columns = review bots,
+# color-coded by feedback presence, address-before-merge, and quota/limit hits.
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -19,15 +19,15 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: read
 
 concurrency:
-  group: pr-bot-spreadsheet-${{ github.run_id }}
+  group: pr-bot-spreadsheet
   cancel-in-progress: false
 
 jobs:
-  sync-sheet:
+  sync-matrix:
     if: >-
       github.event_name == 'schedule'
       || github.event_name == 'workflow_dispatch'
@@ -36,15 +36,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Sync PR bot matrix to Google Sheets
+      - name: Sync PR bot matrix to repo artifacts
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_BOT_SPREADSHEET_ID: ${{ secrets.PR_BOT_SPREADSHEET_ID }}
-          PR_BOT_SHEET_SERVICE_ACCOUNT_JSON: ${{ secrets.PR_BOT_SHEET_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
           ARGS=(--limit "${{ inputs.limit || '50' }}")
@@ -53,9 +54,16 @@ jobs:
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             ARGS+=(--pr "${{ github.event.pull_request.number }}")
           fi
-          if [ -z "${PR_BOT_SPREADSHEET_ID:-}" ] || [ -z "${PR_BOT_SHEET_SERVICE_ACCOUNT_JSON:-}" ]; then
-            echo "::warning::PR_BOT_SPREADSHEET_ID or PR_BOT_SHEET_SERVICE_ACCOUNT_JSON not set — running dry-run only"
-            npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}" --dry-run
+          npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
+      - name: Commit and push matrix
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/pr-bot-matrix.html reports/pr-bot-matrix.json
+          if git diff --staged --quiet; then
+            echo "Matrix unchanged — no commit"
             exit 0
           fi
-          npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
+          git commit -m "chore: update PR bot feedback matrix [skip ci]"
+          git push

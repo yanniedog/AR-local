@@ -1,30 +1,30 @@
 #!/usr/bin/env node
 /**
- * Sync merged PR bot feedback matrix to Google Sheets.
+ * Sync merged PR bot feedback matrix to in-repo HTML + JSON artifacts.
  *
  * Usage:
  *   node scripts/pr-bot-spreadsheet-sync.mjs [--limit N] [--pr N] [--dry-run] [--json]
  *
  * Env:
- *   PR_BOT_SPREADSHEET_ID — target Google Sheet ID
- *   PR_BOT_SHEET_SERVICE_ACCOUNT_JSON — GCP service account key (JSON string)
  *   GH_TOKEN / GITHUB_TOKEN — GitHub API auth (gh CLI)
  */
 import {
   classifyAllBotCells,
-  CELL_STATUS,
 } from './lib/pr-bot-cell-status.mjs';
 import {
-  getSheetsAccessToken,
-  writeSpreadsheetMatrix,
-} from './lib/google-sheets-client.mjs';
+  DEFAULT_MATRIX_DIR,
+  MATRIX_HTML_FILE,
+  MATRIX_JSON_FILE,
+  resolveMatrixPaths,
+  writeMatrixArtifacts,
+} from './lib/pr-bot-matrix-writer.mjs';
 import {
   fetchMergedPrs,
   fetchPrBotMatrixRow,
   hasGh,
   repoSlug,
 } from './lib/pr-bot-spreadsheet-fetch.mjs';
-import { SPREADSHEET_BOT_KEYS, SPREADSHEET_HEADER } from './lib/pr-bot-roster.mjs';
+import { SPREADSHEET_BOT_KEYS } from './lib/pr-bot-roster.mjs';
 
 function parseArgs(argv) {
   const out = {
@@ -33,7 +33,7 @@ function parseArgs(argv) {
     dryRun: false,
     json: false,
     help: false,
-    sheetTitle: process.env.PR_BOT_SHEET_TITLE || 'PR Bot Matrix',
+    outputDir: process.env.PR_BOT_MATRIX_DIR || DEFAULT_MATRIX_DIR,
   };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
@@ -44,29 +44,10 @@ function parseArgs(argv) {
     else if (a.startsWith('--limit=')) out.limit = Number(a.slice('--limit='.length));
     else if (a === '--pr' && argv[i + 1]) out.pr = Number(argv[++i]);
     else if (a.startsWith('--pr=')) out.pr = Number(a.slice('--pr='.length));
-    else if (a === '--sheet-title' && argv[i + 1]) out.sheetTitle = argv[++i];
+    else if (a === '--output-dir' && argv[i + 1]) out.outputDir = argv[++i];
+    else if (a.startsWith('--output-dir=')) out.outputDir = a.slice('--output-dir='.length);
   }
   return out;
-}
-
-/**
- * @param {object} row
- * @returns {{ values: string[], statuses: string[] }}
- */
-function rowToSheetCells(row) {
-  const values = [
-    String(row.meta.number),
-    row.meta.title || '',
-    row.meta.mergedAt || '',
-    row.meta.url || '',
-  ];
-  const statuses = [];
-  for (const key of SPREADSHEET_BOT_KEYS) {
-    const cell = row.cells[key];
-    values.push(cell.label);
-    statuses.push(cell.status);
-  }
-  return { values, statuses };
 }
 
 async function buildMatrix(owner, name, prNumbers) {
@@ -88,15 +69,15 @@ async function main() {
     console.log(`Usage: node scripts/pr-bot-spreadsheet-sync.mjs [options]
 
 Options:
-  --limit N       Merged PRs to scan (default 30)
-  --pr N          Single PR only
-  --dry-run       Fetch/classify only; skip Google Sheets write
-  --json          Print matrix JSON to stdout
-  --sheet-title   Sheet tab name (default "PR Bot Matrix")
+  --limit N         Merged PRs to scan (default 30)
+  --pr N            Single PR only
+  --dry-run         Fetch/classify only; print output paths, do not write files
+  --json            Print matrix JSON to stdout
+  --output-dir DIR  Output directory (default "${DEFAULT_MATRIX_DIR}")
 
-Secrets (for non-dry-run):
-  PR_BOT_SPREADSHEET_ID
-  PR_BOT_SHEET_SERVICE_ACCOUNT_JSON`);
+Artifacts:
+  ${DEFAULT_MATRIX_DIR}/${MATRIX_HTML_FILE}  — colored HTML table
+  ${DEFAULT_MATRIX_DIR}/${MATRIX_JSON_FILE}  — machine-readable matrix`);
     process.exit(0);
   }
 
@@ -122,14 +103,6 @@ Secrets (for non-dry-run):
   console.error(`pr-bot-spreadsheet-sync: scanning ${prNumbers.length} merged PR(s) in ${owner}/${name}…`);
   const matrixRows = await buildMatrix(owner, name, prNumbers);
 
-  const sheetValues = [SPREADSHEET_HEADER];
-  const statusMatrix = [];
-  for (const row of matrixRows) {
-    const { values, statuses } = rowToSheetCells(row);
-    sheetValues.push(values);
-    statusMatrix.push(statuses);
-  }
-
   const report = {
     repo: `${owner}/${name}`,
     prCount: matrixRows.length,
@@ -139,7 +112,7 @@ Secrets (for non-dry-run):
       mergedAt: r.meta.mergedAt,
       url: r.meta.url,
       cells: Object.fromEntries(
-        SPREADSHEET_BOT_KEYS.map((k) => [k, { status: r.cells[k].status, reason: r.cells[k].reason }]),
+        SPREADSHEET_BOT_KEYS.map((k) => [k, { status: r.cells[k].status, label: r.cells[k].label, reason: r.cells[k].reason }]),
       ),
     })),
   };
@@ -156,32 +129,19 @@ Secrets (for non-dry-run):
     }
   }
 
+  const { htmlPath, jsonPath } = resolveMatrixPaths({ report, outputDir: args.outputDir });
+
   if (args.dryRun) {
-    console.error('pr-bot-spreadsheet-sync: dry-run — skipped Google Sheets write');
+    console.error('pr-bot-spreadsheet-sync: dry-run — would write:');
+    console.error(`  ${htmlPath}`);
+    console.error(`  ${jsonPath}`);
     process.exit(0);
   }
 
-  const spreadsheetId = (process.env.PR_BOT_SPREADSHEET_ID || '').trim();
-  const saJson = (process.env.PR_BOT_SHEET_SERVICE_ACCOUNT_JSON || '').trim();
-  if (!spreadsheetId || !saJson) {
-    console.error(
-      'pr-bot-spreadsheet-sync: set PR_BOT_SPREADSHEET_ID and PR_BOT_SHEET_SERVICE_ACCOUNT_JSON (or use --dry-run)',
-    );
-    process.exit(1);
-  }
-
-  const accessToken = await getSheetsAccessToken(saJson);
-  const botColumnOffset = SPREADSHEET_HEADER.length - SPREADSHEET_BOT_KEYS.length;
-  await writeSpreadsheetMatrix({
-    spreadsheetId,
-    accessToken,
-    values: sheetValues,
-    statusMatrix,
-    botColumnOffset,
-    sheetTitle: args.sheetTitle,
-  });
-
-  console.error(`pr-bot-spreadsheet-sync: wrote ${matrixRows.length} row(s) to spreadsheet ${spreadsheetId}`);
+  const written = writeMatrixArtifacts({ report, outputDir: args.outputDir });
+  console.error(`pr-bot-spreadsheet-sync: wrote ${matrixRows.length} row(s) to:`);
+  console.error(`  ${written.htmlPath}`);
+  console.error(`  ${written.jsonPath}`);
 }
 
 main().catch((err) => {

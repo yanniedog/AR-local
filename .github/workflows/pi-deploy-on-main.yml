@@ -13,6 +13,8 @@ name: pi-deploy-on-main
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'reports/**'
   workflow_dispatch:
     inputs:
       dry_run:

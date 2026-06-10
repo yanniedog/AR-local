@@ -25,7 +25,7 @@ export const CELL_LABELS = {
   [CELL_STATUS.RED]: 'Limit',
 };
 
-/** Google Sheets background RGB (0–1). */
+/** Cell background RGB (0–1); converted to CSS hex in pr-bot-matrix-writer.mjs. */
 export const CELL_COLORS = {
   [CELL_STATUS.GREEN]: { red: 0.82, green: 0.94, blue: 0.82 },
   [CELL_STATUS.YELLOW]: { red: 1, green: 0.95, blue: 0.8 },
