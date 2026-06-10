@@ -5,6 +5,7 @@ import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } 
 import { SECTIONS } from '../constants';
 import { formatRate } from '../data/format';
 import type { RateStats } from '../data/taxonomy';
+import { ribbonA11ySummary } from '../lib/a11ySummaries';
 import type { SectionKey } from '../types';
 import type { Palette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
@@ -66,10 +67,15 @@ export function Ribbon({
   const fillBase = sectionFillColor(lowerIsBetter, theme.colors);
   const rba = rbaRate != null ? rbaRate / 100 : null;
   const rbaIn = rba != null && rba >= min && rba <= max;
+  const a11ySummary = ribbonA11ySummary(stats, section, rbaRate);
 
   return (
-    <View>
-      <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ width: '100%', height: h }}>
+    <View accessible accessibilityRole="image" accessibilityLabel={a11ySummary}>
+      <View
+        onLayout={(e) => setW(e.nativeEvent.layout.width)}
+        style={{ width: '100%', height: h }}
+        importantForAccessibility="no-hide-descendants"
+      >
         <Svg width={layoutW} height={h}>
           <Defs>
             <LinearGradient id={fillGradId} x1="0" y1="0" x2="1" y2="0">

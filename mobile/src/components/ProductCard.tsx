@@ -11,6 +11,7 @@ import {
   isNonStandard,
 } from '../data/format';
 import { useStore } from '../data/store';
+import { rateValueLabel } from '../lib/a11ySummaries';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BankAvatar } from './BankAvatar';
@@ -57,6 +58,11 @@ export function ProductCard({
   const tags = chips(row, section);
   const nonStandard = isNonStandard(row);
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
+  const rateLabel = rateValueLabel(section);
+  const rateText = formatRate(row.rate);
+  const cardA11yLabel = `${row.product_name}, ${row.provider}, ${rateLabel} ${rateText}${
+    row.comparison_rate ? `, comparison ${formatRate(row.comparison_rate)}` : ''
+  }`;
 
   return (
     // Card container is a plain View; the nav target and the favorite star are
@@ -77,6 +83,8 @@ export function ProductCard({
     >
       <Pressable
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={cardA11yLabel}
         android_ripple={androidRipple(theme.colors.primaryMuted)}
         style={({ pressed }) => ({
           flex: 1,
@@ -141,11 +149,14 @@ export function ProductCard({
       </View>
 
         <View style={{ alignItems: 'flex-end', minWidth: 76 }}>
+          <AppText variant="tiny" color="textFaint">
+            {rateLabel}
+          </AppText>
           <AppText
             variant="rate"
             style={{ color: lowerIsBetter ? theme.colors.success : theme.colors.primary }}
           >
-            {formatRate(row.rate)}
+            {rateText}
           </AppText>
           {row.comparison_rate ? (
             <AppText variant="tiny" color="textFaint">
@@ -159,11 +170,15 @@ export function ProductCard({
         <Pressable
           onPress={() => toggleFavorite(row.product_key)}
           hitSlop={10}
+          accessibilityRole="button"
           accessibilityLabel={favorite ? 'Remove from watchlist' : 'Add to watchlist'}
+          accessibilityState={{ selected: favorite }}
           android_ripple={androidRipple(theme.colors.primaryMuted, true)}
           style={{
-            paddingLeft: 6,
-            paddingVertical: 6,
+            minWidth: 48,
+            minHeight: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
             borderRadius: theme.radius.sm,
             overflow: 'hidden',
           }}
