@@ -120,14 +120,17 @@ def run_http_probes(*, timeout: float, retries: int) -> tuple[bool, list[str]]:
 
 
 def tailnet_ip() -> str:
-    proc = subprocess.run(
-        ["tailscale", "ip", "-4"],
-        capture_output=True,
-        text=True,
-        shell=False,
-        check=False,
-        timeout=10,
-    )
+    try:
+        proc = subprocess.run(
+            ["tailscale", "ip", "-4"],
+            capture_output=True,
+            text=True,
+            shell=False,
+            check=False,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return PI_TAILSCALE_IP
     if proc.returncode == 0:
         lines = (proc.stdout or "").strip().splitlines()
         if lines:
@@ -144,14 +147,17 @@ def tcp_probe(host: str, port: int, *, timeout: float = 5.0) -> bool:
 
 
 def tailscale_journal_unhealthy() -> tuple[bool, str]:
-    proc = subprocess.run(
-        ["journalctl", "-u", "tailscaled.service", "--since", f"{JOURNAL_LOOKBACK_SEC}s", "--no-pager", "-o", "cat"],
-        capture_output=True,
-        text=True,
-        shell=False,
-        check=False,
-        timeout=30,
-    )
+    try:
+        proc = subprocess.run(
+            ["journalctl", "-u", "tailscaled.service", "--since", f"{JOURNAL_LOOKBACK_SEC}s", "--no-pager", "-o", "cat"],
+            capture_output=True,
+            text=True,
+            shell=False,
+            check=False,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        return False, f"journal unavailable ({exc})"
     if proc.returncode != 0:
         return False, "journal unavailable"
     text = (proc.stdout or "").lower()
@@ -162,11 +168,34 @@ def tailscale_journal_unhealthy() -> tuple[bool, str]:
     return False, "journal clean"
 
 
+def tailscale_check_applicable() -> bool:
+    try:
+        proc = subprocess.run(
+            ["systemctl", "list-unit-files", "tailscaled.service", "--no-pager"],
+            capture_output=True,
+            text=True,
+            shell=False,
+            check=False,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and "tailscaled.service" in (proc.stdout or "")
+
+
 def check_tailscale(*, http_timeout: float) -> tuple[bool, list[str]]:
     messages: list[str] = []
+    if not tailscale_check_applicable():
+        messages.append("tailscale checks skipped (tailscaled unit not present)")
+        return True, messages
     if not unit_is_active("tailscaled.service"):
         messages.append("tailscaled.service not active")
         return False, messages
+    try:
+        subprocess.run(["tailscale", "version"], capture_output=True, shell=False, check=False, timeout=5)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        messages.append("tailscale CLI unavailable")
+        return True, messages
     ip = tailnet_ip()
     messages.append(f"tailnet ip={ip}")
     tailnet_http_ok = False
@@ -246,7 +275,7 @@ def cmd_heal(args: argparse.Namespace) -> int:
             state["http_fail_streak"] = 0
             healed = True
             if not args.dry_run:
-                time.sleep(3)
+                time.sleep(8)
                 http_ok, http_msgs = run_http_probes(timeout=args.timeout, retries=args.retries)
                 for line in http_msgs:
                     print(f"pi_runtime_health: post-heal {line}")
