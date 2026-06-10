@@ -133,14 +133,9 @@ interface AppState {
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
   ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
   ensureSearchIndex: () => Promise<void>;
-<<<<<<< HEAD
-  ensureHistoryBanks: () => Promise<void>;
-  ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
-=======
   ensureHistoryBanks: (opts?: { force?: boolean }) => Promise<void>;
   ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
   retryHistoryBanks: () => Promise<void>;
->>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
   retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
@@ -719,13 +714,7 @@ export const useStore = create<AppState>()(
           set({ bankInsightsError: null });
           return;
         }
-<<<<<<< HEAD
         const cached = force ? null : normalizeBankInsightsPayload(await cache.readBankInsights());
-=======
-        const cached = force
-          ? null
-          : normalizeBankInsightsPayload(await cache.readBankInsights());
->>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
         if (!force && fresh(cached)) {
           set({ bankInsights: cached, bankInsightsError: null });
           return;
@@ -753,12 +742,6 @@ export const useStore = create<AppState>()(
         }
       },
 
-<<<<<<< HEAD
-      async retryBankInsights() {
-        if (!effectiveBankInsights(get().prefs)) return;
-        set({ bankInsightsError: null });
-        if (!get().manifest?.files.bank_history) {
-=======
       async retryHistoryBanks() {
         if (!effectiveHistoryRibbon(get().prefs)) return;
         set({ historyBanksError: null });
@@ -774,7 +757,6 @@ export const useStore = create<AppState>()(
         set({ bankInsightsError: null });
         const { manifest } = get();
         if (!manifest?.files.bank_history) {
->>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
           await get().refresh({ manual: true, force: true });
         }
         await get().ensureBankInsights({ force: true });
