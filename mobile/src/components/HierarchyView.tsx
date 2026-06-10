@@ -1,5 +1,5 @@
-import { FlashList } from '@shopify/flash-list';
-import React, { useMemo } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,6 +17,7 @@ import { useStore } from '../data/store';
 import { openNode, openProduct, openProductsList } from '../lib/nav';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
+import { SectionCrossfade } from './controls';
 import { CategoryRow } from './CategoryRow';
 import { ProductCard } from './ProductCard';
 import { Ribbon } from './Ribbon';
@@ -29,10 +30,16 @@ type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow }
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const listRef = useRef<FlashListRef<Item>>(null);
   const sectionData = useStore((s) => s.core?.sections[section]);
   const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const pathKey = path.join('.');
+
+  useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [section, pathKey]);
 
   const { stats, children, items } = useMemo(() => {
     const all = rows ?? [];
@@ -60,30 +67,36 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const meta = SECTIONS[section];
 
   const header = (
-    <View>
-      <Card>
-        <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
-      </Card>
-      <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing(1) / 2 }}>
-        <AppText variant="small" weight="700" color="textMuted">
-          {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
-        </AppText>
-        {!isLeaf ? (
-          <Pressable onPress={() => openProductsList(section, path)} hitSlop={theme.spacing(2)}>
-            <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
-              All {stats.products} products →
-            </AppText>
-          </Pressable>
-        ) : null}
-      </Row>
-    </View>
+    <SectionCrossfade section={section}>
+      <View>
+        <Card>
+          <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
+        </Card>
+        <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing(1) / 2 }}>
+          <AppText variant="small" weight="700" color="textMuted">
+            {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
+          </AppText>
+          {!isLeaf ? (
+            <Pressable onPress={() => openProductsList(section, path)} hitSlop={theme.spacing(2)}>
+              <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
+                All {stats.products} products →
+              </AppText>
+            </Pressable>
+          ) : null}
+        </Row>
+      </View>
+    </SectionCrossfade>
   );
 
   return (
     <FlashList
+      ref={listRef}
       data={items}
+      extraData={`${section}:${pathKey}:${includeNonStandard}`}
       keyExtractor={(it, i) =>
-        it.kind === 'node' ? `n-${it.node.seg}` : `p-${it.row.product_key}-${it.row.rate_index ?? i}`
+        it.kind === 'node'
+          ? `${section}-n-${it.node.seg}`
+          : `${section}-p-${it.row.product_key}-${it.row.rate_index ?? i}`
       }
       contentContainerStyle={screenScrollContentStyle(theme, insets.bottom)}
       ItemSeparatorComponent={() => <View style={{ height: theme.spacing(3) }} />}

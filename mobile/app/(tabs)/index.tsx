@@ -10,7 +10,7 @@ import { HomeHero } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { CompactToggle, SegmentedControl } from '../../src/components/controls';
+import { CompactToggle, SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
@@ -113,7 +113,8 @@ export default function Home() {
         onChange={(value) => setPref('includeNonStandard', value)}
       />
 
-      <Card style={{ borderColor: `${accent}44` }}>
+      <SectionCrossfade section={section}>
+        <Card style={{ borderColor: `${accent}44` }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing(3) }}>
           <View style={{ flex: 1, paddingRight: theme.spacing(3) }}>
             <AppText variant="tiny" color="textFaint" weight="700">
@@ -164,7 +165,8 @@ export default function Home() {
           ) : null}
           <Chip label="Bank A-Z" icon="business" onPress={() => openRibbonProducts(section, 'bank')} />
         </Row>
-      </Card>
+        </Card>
+      </SectionCrossfade>
 
       {showHistoryRibbon ? (
         historyModel ? (
