@@ -297,6 +297,19 @@ Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest`
 | GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` ? cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
 | On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` ? every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
 | On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` ? every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
+| On-Pi runtime self-heal | `deploy/pi/ar-local-runtime-health.timer` ? every ~2m: `pi_runtime_health.py --heal` probes loopback `:80` and `:8808` `/api/latest`; restarts dashboard + nginx after consecutive failures; restarts `tailscaled` on tailnet/journal wedge with cooldown |
+
+**Runtime health (on the Pi):**
+
+```bash
+cd /srv/ar-local/AR-local
+npm run pi:health:check
+npm run pi:health:heal
+journalctl -u ar-local-runtime-health.service -n 40 --no-pager
+systemctl list-timers 'ar-local-runtime-health*' --no-pager
+```
+
+State file: `/srv/ar-local/data/state/runtime_health.json`.
 
 **GitHub secrets (Actions):**
 
@@ -319,6 +332,7 @@ chmod +x deploy/pi/ar-local-deploy-watchdog.sh
 sudo AR_LOCAL_REPO=/srv/ar-local/AR-local bash deploy/pi/install-pi-systemd.sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
+sudo systemctl enable --now ar-local-runtime-health.timer
 ```
 
 Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` ? invoke **run pi deploy watchdog**.

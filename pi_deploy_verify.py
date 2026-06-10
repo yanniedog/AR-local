@@ -63,6 +63,8 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "deploy/pi/",
     "pi_daily_sync.py",
     "pi_deploy_verify.py",
+    "pi_runtime_health.py",
+    "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "verify_local.py",
     "cdr_dashboard_server.py",
