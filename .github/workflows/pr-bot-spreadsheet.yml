@@ -70,7 +70,7 @@ jobs:
           BRANCH="bot/pr-bot-matrix-sync"
           git checkout -B "$BRANCH"
           git commit -m "chore: update PR bot feedback matrix"
-          git push origin "$BRANCH" --force-with-lease
+          git push origin "$BRANCH" --force
           EXISTING=$(gh pr list --head "$BRANCH" --base main --state open --json number -q '.[0].number' || true)
           if [ -z "$EXISTING" ]; then
             gh pr create --base main --head "$BRANCH" --title "chore: update PR bot feedback matrix" --body "Automated sync from pr-bot-spreadsheet workflow."
