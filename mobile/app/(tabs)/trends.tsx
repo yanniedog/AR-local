@@ -44,6 +44,7 @@ export default function Trends() {
   const bankInsights = useStore((s) => s.bankInsights);
   const bankInsightsError = useStore((s) => s.bankInsightsError);
   const ensureBankInsights = useStore((s) => s.ensureBankInsights);
+  const retryBankInsights = useStore((s) => s.retryBankInsights);
   const activeSection = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
@@ -108,13 +109,13 @@ export default function Trends() {
             <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
               Detected daily from every lender's advertised rates
             </AppText>
-            <BankMovesFeed payload={bankInsights} limit={8} />
+            <BankMovesFeed payload={bankInsights} error={bankInsightsError} limit={8} />
             {bankInsightsError && !bankInsights ? (
               <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
-                  Bank intelligence unavailable
+                  {bankInsightsError}
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void ensureBankInsights()} />
+                <Button title="Retry" variant="ghost" onPress={() => void retryBankInsights()} />
               </Row>
             ) : null}
           </Card>

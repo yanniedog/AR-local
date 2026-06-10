@@ -102,10 +102,12 @@ export function MarketPulseStrip({ payload }: { payload: BankInsightsPayload | n
 
 export function BankMovesFeed({
   payload,
+  error,
   sections,
   limit = 8,
 }: {
   payload: BankInsightsPayload | null;
+  error?: string | null;
   sections?: SectionKey[];
   limit?: number;
 }) {
@@ -114,6 +116,7 @@ export function BankMovesFeed({
     [payload, sections, limit],
   );
   if (!payload) {
+    if (error) return null;
     return (
       <AppText variant="small" color="textMuted">
         Loading bank intelligence…

@@ -458,4 +458,82 @@ describe('optional feature prefs', () => {
     expect(mockDownloadBankInsights).not.toHaveBeenCalled();
     expect(store.getState().bankInsightsError).toMatch(/unavailable/i);
   });
+
+  it('ensureBankInsights force bypasses fresh cache and re-downloads', async () => {
+    const insights = {
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: [remoteCore.run_date],
+      banks: {},
+      events: [],
+    };
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+      bankInsights: insights,
+      bankInsightsError: 'stale error',
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      bankInsightsSha: remoteManifest.files.bank_history!.sha256,
+    });
+    mockDownloadBankInsights.mockResolvedValue({
+      text: JSON.stringify(insights),
+      bankInsights: insights,
+    });
+
+    await store.getState().ensureBankInsights();
+    expect(mockDownloadBankInsights).not.toHaveBeenCalled();
+
+    await store.getState().ensureBankInsights({ force: true });
+    expect(mockDownloadBankInsights).toHaveBeenCalledTimes(1);
+    expect(store.getState().bankInsightsError).toBeNull();
+  });
+
+  it('retryBankInsights refreshes manifest when bank_history is missing then downloads', async () => {
+    const { bank_history: _bankHistoryAsset, ...filesWithoutHistory } = remoteManifest.files;
+    const manifestWithoutHistory = { ...remoteManifest, files: filesWithoutHistory } as Manifest;
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: manifestWithoutHistory,
+      core: remoteCore,
+      bankInsights: null,
+      bankInsightsError: 'bank history unavailable',
+    });
+    mockFetchManifest.mockResolvedValue(remoteManifest);
+    mockDownloadCore.mockResolvedValue({ text: JSON.stringify(remoteCore), core: remoteCore });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      bankInsightsSha: null,
+    });
+    const insights = {
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: [remoteCore.run_date],
+      banks: {
+        AlphaBank: { Mortgage: { median: [0.06], best: [0.055], count: [4] } },
+      },
+      events: [],
+    };
+    mockDownloadBankInsights.mockResolvedValue({
+      text: JSON.stringify(insights),
+      bankInsights: insights,
+    });
+
+    await store.getState().retryBankInsights();
+
+    expect(mockFetchManifest).toHaveBeenCalled();
+    expect(mockDownloadBankInsights).toHaveBeenCalled();
+    expect(store.getState().bankInsights?.banks.AlphaBank).toBeDefined();
+    expect(store.getState().bankInsightsError).toBeNull();
+  });
 });
