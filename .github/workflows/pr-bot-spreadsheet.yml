@@ -1,0 +1,61 @@
+name: pr-bot-spreadsheet
+
+# Maintain a Google Sheet matrix: rows = merged PRs, columns = review bots, color-coded
+# by feedback presence, address-before-merge, and quota/limit hits.
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Max merged PRs to sync
+        required: false
+        default: '50'
+      pr_number:
+        description: Optional single PR number
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-bot-spreadsheet-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sync-sheet:
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Sync PR bot matrix to Google Sheets
+        env:
+          GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_BOT_SPREADSHEET_ID: ${{ secrets.PR_BOT_SPREADSHEET_ID }}
+          PR_BOT_SHEET_SERVICE_ACCOUNT_JSON: ${{ secrets.PR_BOT_SHEET_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          ARGS=(--limit "${{ inputs.limit || '50' }}")
+          if [ -n "${{ inputs.pr_number }}" ]; then
+            ARGS+=(--pr "${{ inputs.pr_number }}")
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARGS+=(--pr "${{ github.event.pull_request.number }}")
+          fi
+          if [ -z "${PR_BOT_SPREADSHEET_ID:-}" ] || [ -z "${PR_BOT_SHEET_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::warning::PR_BOT_SPREADSHEET_ID or PR_BOT_SHEET_SERVICE_ACCOUNT_JSON not set — running dry-run only"
+            npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}" --dry-run
+            exit 0
+          fi
+          npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
