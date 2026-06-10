@@ -26,9 +26,9 @@ export function isMatrixCommitPath(filePath) {
 export function isMatrixCommitOnly(paths) {
   if (!Array.isArray(paths) || paths.length === 0) return false;
   const normalized = paths.map((p) => String(p || '').replace(/\\/g, '/'));
-  if (normalized.length !== MATRIX_COMMIT_REL_PATHS.length) return false;
-  const expected = new Set(MATRIX_COMMIT_REL_PATHS);
-  return normalized.every((p) => expected.has(p));
+  const unique = new Set(normalized);
+  if (unique.size !== MATRIX_COMMIT_REL_PATHS.length) return false;
+  return MATRIX_COMMIT_REL_PATHS.every((p) => unique.has(p));
 }
 
 /** Shown when protected main rejects workflow push (no ruleset bypass). */
