@@ -16,7 +16,8 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 export default function Browse() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
-  const params = useLocalSearchParams<{ section?: string }>();
+  const params = useLocalSearchParams<{ section?: string; path?: string }>();
+  const path = useMemo(() => (params.path ?? '').split('.').filter(Boolean), [params.path]);
   const interests = useStore((s) => s.prefs.interests);
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
@@ -65,7 +66,7 @@ export default function Browse() {
         />
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView section={section} path={[]} />
+        <HierarchyView section={section} path={path} />
       </View>
     </Screen>
   );
