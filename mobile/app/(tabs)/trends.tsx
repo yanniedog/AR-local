@@ -37,8 +37,8 @@ export default function Trends() {
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>
           <AppText variant="h3">RBA cash rate</AppText>
-          <AppText variant="h2" weight="800" style={{ color: theme.colors.primary }}>
-            {currentRba ? `${currentRba.rate.toFixed(2)}%` : '—'}
+          <AppText variant="rateHero" style={{ color: theme.colors.primary }}>
+            {currentRba ? formatRate(currentRba.rate) : '—'}
           </AppText>
         </Row>
         <RbaChart data={core.rba} height={190} />
@@ -60,7 +60,7 @@ export default function Trends() {
                   color={up ? theme.colors.danger : theme.colors.success}
                 />
                 <AppText variant="small" weight="700">
-                  {d.prior.toFixed(2)}% → {d.rate.toFixed(2)}%
+                  {formatRate(d.prior)} → {formatRate(d.rate)}
                 </AppText>
               </Row>
             </Row>

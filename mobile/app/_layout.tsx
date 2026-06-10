@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { DataUnavailableScreen } from '../src/components/DataUnavailableScreen';
 import { ErrorScreen } from '../src/components/ErrorScreen';
 import { routeFromNotificationResponse } from '../src/data/notifications';
 import { useStore } from '../src/data/store';
@@ -16,7 +17,6 @@ import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// expo-router renders this when a child route throws during render.
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   debugLog.error('app', `render error: ${error.message}`);
   return <ErrorScreen error={error} retry={retry} />;
@@ -31,6 +31,7 @@ function RootNavigator() {
   const theme = useTheme();
   const status = useStore((s) => s.status);
   const hydrated = useStore((s) => s.hydrated);
+  const dataUnavailable = hydrated && status === 'error';
   const diagnosticsEnabled = useStore((s) => s.prefs.diagnosticsEnabled);
   const bootstrap = useStore((s) => s.bootstrap);
   const pendingNotificationRoute = useRef<Href | null>(null);
@@ -50,8 +51,6 @@ function RootNavigator() {
   }, [bootstrap]);
 
   useEffect(() => {
-    // Hold the splash until prefs have rehydrated AND data is ready, so the first
-    // frame is the correct route with the correct theme (no onboarding flash).
     if (hydrated && (status === 'ready' || status === 'error')) {
       SplashScreen.hideAsync().catch(() => {});
     }
@@ -88,6 +87,15 @@ function RootNavigator() {
     pendingNotificationRoute.current = null;
     navigateFromNotification(href);
   }, [hydrated, status]);
+
+  if (dataUnavailable) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+        <StatusBar style={theme.dark ? 'light' : 'dark'} />
+        <DataUnavailableScreen />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
@@ -13,13 +13,13 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
+import { openBrowseDrill, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -36,14 +36,14 @@ export default function Home() {
   const refresh = useStore((s) => s.refresh);
   const source = useStore((s) => s.source);
   const offline = useStore((s) => s.offline);
-  const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const section = useStore((s) => s.activeSection);
+  const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
   const setPref = useStore((s) => s.setPref);
-  const [section, setSection] = useState<SectionKey>(defaultSection);
 
   useEffect(() => {
     if (showHistoryRibbon) void ensureHistoryBanks();
@@ -104,7 +104,7 @@ export default function Home() {
         providerCount={stats.providers}
       />
 
-      <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+      <SegmentedControl options={SECTION_SEG} value={section} onChange={setActiveSection} />
       <View style={{ marginTop: 10 }}>
         <CompactToggle
           label="Include non-standard accounts"
@@ -128,8 +128,8 @@ export default function Home() {
             <AppText variant="small" color="textMuted" style={{ marginTop: 2 }}>
               {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate in section
             </AppText>
-            <AppText variant="h1" weight="800" style={{ color: accent, marginTop: 4 }}>
-              {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
+            <AppText variant="rateHero" style={{ color: accent, marginTop: 4 }}>
+              {formatRate(heroRate)}
             </AppText>
           </View>
           {section === 'Mortgage' && rba ? (
@@ -145,8 +145,8 @@ export default function Home() {
               <AppText variant="tiny" color="textFaint">
                 RBA cash
               </AppText>
-              <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
-                {rba.rate.toFixed(2)}%
+              <AppText variant="rate" style={{ color: theme.colors.primary }}>
+                {formatRate(rba.rate)}
               </AppText>
             </View>
           ) : null}
@@ -218,7 +218,7 @@ export default function Home() {
         return (
           <Pressable
             key={node.seg}
-            onPress={() => openNode(section, [node.seg])}
+            onPress={() => openBrowseDrill(section, [node.seg])}
             style={({ pressed }) => ({
               backgroundColor: theme.colors.card,
               borderRadius: theme.radius.lg,
@@ -241,8 +241,8 @@ export default function Home() {
                 </AppText>
               </View>
               <Row gap={4}>
-                <AppText variant="h3" weight="800" style={{ color: accent }}>
-                  {nodeBest !== null ? `${(nodeBest * 100).toFixed(2)}%` : '—'}
+                <AppText variant="rate" style={{ color: accent }}>
+                  {formatRate(nodeBest)}
                 </AppText>
                 <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
               </Row>

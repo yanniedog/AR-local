@@ -2,6 +2,7 @@ import {
   bpsBetween,
   formatBalanceRange,
   formatRate,
+  formatRateDigits,
   formatTerm,
   humanizeEnum,
   isNonStandard,
@@ -22,6 +23,12 @@ describe('format', () => {
     expect(formatRate('0.0634')).toBe('6.34%');
     expect(formatRate('0.045', 2)).toBe('4.50%');
     expect(formatRate(null)).toBe('—');
+    expect(formatRate(4.35)).toBe('4.35%');
+  });
+
+  test('formatRateDigits omits percent suffix', () => {
+    expect(formatRateDigits('0.0634')).toBe('6.34');
+    expect(formatRateDigits(4.35)).toBe('4.35');
   });
 
   test('bpsBetween', () => {

@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
 import { FilterSheet } from '../src/components/FilterSheet';
-import { EmptyState } from '../src/components/feedback';
+import { EmptyState, LoadingRows } from '../src/components/feedback';
 import { ProductCard } from '../src/components/ProductCard';
 import { Screen } from '../src/components/Screen';
 import { SearchBar } from '../src/components/controls';
@@ -121,6 +121,7 @@ export default function Search() {
   );
 
   const searchSub = useStore((s) => findSearchSubscription(s.subscriptions, searchSnapshot));
+  const searchIndexLoading = enableDeepSearch && !searchIndex;
 
   const onToggleSearchAlert = async () => {
     if (searchSub) {
@@ -188,25 +189,31 @@ export default function Search() {
       </View>
 
       <View style={{ flex: 1 }}>
-        <FlashList
-          data={rows}
-          keyExtractor={(item, i) => `${item.product_key}-${item.rate_index ?? i}`}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 }}
-          renderItem={({ item }) => (
-            <ProductCard
-              row={item}
-              section={section}
-              selectMode={selectMode}
-              selected={selected.includes(rowToken(item))}
-              onPress={() =>
-                selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key, item.rate_index)
-              }
-            />
-          )}
-          ListEmptyComponent={
-            <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
-          }
-        />
+        {searchIndexLoading ? (
+          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <LoadingRows count={8} />
+          </View>
+        ) : (
+          <FlashList
+            data={rows}
+            keyExtractor={(item, i) => `${item.product_key}-${item.rate_index ?? i}`}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 }}
+            renderItem={({ item }) => (
+              <ProductCard
+                row={item}
+                section={section}
+                selectMode={selectMode}
+                selected={selected.includes(rowToken(item))}
+                onPress={() =>
+                  selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key, item.rate_index)
+                }
+              />
+            )}
+            ListEmptyComponent={
+              <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
+            }
+          />
+        )}
       </View>
 
       {selectMode && selected.length >= 2 ? (

@@ -5,6 +5,7 @@ import * as TaskManager from 'expo-task-manager';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { SECTIONS } from '../constants';
 import { RATE_MOVE_BPS_THRESHOLD } from '../config';
 import type {
   CorePayload,
@@ -98,12 +99,16 @@ interface AppState {
   payloadProgress: PayloadProgressSnapshot | null;
   /** True once persisted prefs/favorites have rehydrated from AsyncStorage. */
   hydrated: boolean;
+  /** Last-selected product section; synced across Home and Browse. */
+  activeSection: SectionKey;
 
   prefs: Prefs;
   favorites: string[];
   subscriptions: Subscription[];
 
   bootstrap: () => Promise<void>;
+  retryDataLoad: () => Promise<void>;
+  loadSampleFallback: () => Promise<void>;
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
@@ -133,6 +138,7 @@ interface AppState {
     filters: FilterSnapshot;
   }) => Subscription | undefined;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
+  setActiveSection: (section: SectionKey) => void;
   completeOnboarding: (interests: SectionKey[], notifications: boolean) => void;
   clearCache: () => Promise<void>;
 }
@@ -156,6 +162,17 @@ async function readValidatedHistoryBanks(): Promise<HistoryBanksPayload | null> 
   return null;
 }
 
+async function installSampleSeed(): Promise<void> {
+  const seedMeta: CacheMeta = {
+    manifest: sampleManifest,
+    source: 'sample',
+    savedAt: new Date().toISOString(),
+    coreSha: sampleManifest.files.core.sha256,
+    detailsSha: null,
+  };
+  await cache.writeBundle(seedMeta, JSON.stringify(sampleCore));
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -174,6 +191,7 @@ export const useStore = create<AppState>()(
       lastCheckedAt: null,
       payloadProgress: null,
       hydrated: false,
+      activeSection: DEFAULT_PREFS.defaultSection,
 
       prefs: DEFAULT_PREFS,
       favorites: [],
@@ -182,56 +200,83 @@ export const useStore = create<AppState>()(
       async bootstrap() {
         if (get().status === 'ready' || get().status === 'loading') return;
         debugLog.info('store', 'bootstrap');
-        set({ status: 'loading' });
+        set({ status: 'loading', error: null });
 
-        // Restore persisted prefs before the automatic refresh below, so a returning
-        // user's wifiOnly / notification settings are honoured on the first refresh
-        // instead of racing against async hydration with the defaults.
         try {
           await useStore.persist?.rehydrate?.();
         } catch (err) {
           debugLog.warn('store', `prefs rehydrate failed: ${String((err as Error)?.message ?? err)}`);
-          // proceed with defaults if rehydrate fails
         }
 
-        // Core + meta are persisted atomically in one bundle, so they always agree.
-        const prefs = get().prefs;
-        const bundle = await cache.readBundle();
-        const [cachedSearch, cachedHistory] = await Promise.all([
-          prefs.enableDeepSearch ? cache.readSearchIndex() : Promise.resolve(null),
-          prefs.showHistoryRibbon ? readValidatedHistoryBanks() : Promise.resolve(null),
-        ]);
-        if (bundle) {
-          debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
-          set({
-            core: bundle.core,
-            manifest: bundle.meta.manifest,
-            source: bundle.meta.source,
-            status: 'ready',
-            ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
-            ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
-          });
-        } else {
-          debugLog.info('store', 'cache miss — seeding bundled sample');
-          // Seed from the bundled sample so the app is instantly usable offline.
-          const seedMeta: CacheMeta = {
-            manifest: sampleManifest,
-            source: 'sample',
-            savedAt: new Date().toISOString(),
-            coreSha: sampleManifest.files.core.sha256,
-            detailsSha: null,
-          };
-          await cache.writeBundle(seedMeta, JSON.stringify(sampleCore));
+        try {
+          const prefs = get().prefs;
+          const bundle = await cache.readBundle();
+          const [cachedSearch, cachedHistory] = await Promise.all([
+            prefs.enableDeepSearch ? cache.readSearchIndex() : Promise.resolve(null),
+            prefs.showHistoryRibbon ? readValidatedHistoryBanks() : Promise.resolve(null),
+          ]);
+          if (bundle) {
+            debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
+            set({
+              core: bundle.core,
+              manifest: bundle.meta.manifest,
+              source: bundle.meta.source,
+              status: 'ready',
+              error: null,
+              ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
+              ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
+            });
+          } else {
+            debugLog.info('store', 'cache miss — seeding bundled sample');
+            await installSampleSeed();
+            set({
+              core: sampleCore,
+              manifest: sampleManifest,
+              source: 'sample',
+              status: 'ready',
+              error: null,
+            });
+          }
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.error('store', `bootstrap failed: ${msg}`);
+          set({ status: 'error', error: msg });
+          return;
+        }
+
+        void get().refresh({});
+      },
+
+      async retryDataLoad() {
+        debugLog.info('store', 'retryDataLoad');
+        set({ status: 'idle', error: null });
+        await get().bootstrap();
+        if (get().status !== 'ready') return;
+        await get().refresh({ force: true, manual: true });
+      },
+
+      async loadSampleFallback() {
+        debugLog.info('store', 'loadSampleFallback');
+        set({ status: 'loading', error: null, refreshing: false, payloadProgress: null });
+        try {
+          await installSampleSeed();
           set({
             core: sampleCore,
             manifest: sampleManifest,
             source: 'sample',
             status: 'ready',
+            error: null,
+            offline: true,
+            details: null,
+            searchIndex: null,
+            historyBanks: null,
+            historyBanksError: null,
           });
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.error('store', `loadSampleFallback failed: ${msg}`);
+          set({ status: 'error', error: msg });
         }
-
-        // Try the network in the background; never blocks first paint.
-        void get().refresh({});
       },
 
       async ensureCoreLoaded() {
@@ -336,6 +381,7 @@ export const useStore = create<AppState>()(
             manifest: remote,
             source: 'remote',
             status: 'ready',
+            error: null,
             details: detailsUnchanged ? get().details : null,
           });
 
@@ -601,6 +647,10 @@ export const useStore = create<AppState>()(
         return lookupSearchSubscription(get().subscriptions, input);
       },
 
+      setActiveSection(section) {
+        set({ activeSection: section });
+      },
+
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
         if (key === 'enableDeepSearch') {
@@ -622,12 +672,14 @@ export const useStore = create<AppState>()(
       },
 
       completeOnboarding(interests, notifications) {
+        const defaultSection = interests[0] ?? get().prefs.defaultSection;
         set({
+          activeSection: defaultSection,
           prefs: {
             ...get().prefs,
             onboarded: true,
             interests: interests.length ? interests : DEFAULT_PREFS.interests,
-            defaultSection: interests[0] ?? get().prefs.defaultSection,
+            defaultSection,
             notificationsEnabled: notifications,
           },
         });
@@ -655,14 +707,26 @@ export const useStore = create<AppState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => {
         const { showHistoryRibbon: _sessionOnly, ...prefsToPersist } = s.prefs;
-        return { prefs: prefsToPersist, favorites: s.favorites, subscriptions: s.subscriptions };
+        return {
+          prefs: prefsToPersist,
+          favorites: s.favorites,
+          subscriptions: s.subscriptions,
+          activeSection: s.activeSection,
+        };
       },
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
+        const prefs = { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false };
+        const persistedActiveSection = p?.activeSection;
+        const isValidActiveSection =
+          typeof persistedActiveSection === 'string' &&
+          Object.prototype.hasOwnProperty.call(SECTIONS, persistedActiveSection);
+        const activeSection = isValidActiveSection ? persistedActiveSection : prefs.defaultSection;
         return {
           ...current,
           ...p,
-          prefs: { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false },
+          prefs,
+          activeSection,
         };
       },
       // Flip `hydrated` once persisted state is restored, so the initial route
