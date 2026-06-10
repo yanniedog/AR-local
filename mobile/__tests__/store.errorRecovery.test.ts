@@ -81,6 +81,11 @@ describe('store error recovery', () => {
     expect(state.error).toBeNull();
     expect(state.core).toEqual(sampleCore);
     expect(state.source).toBe('sample');
+    expect(state.offline).toBe(true);
+    expect(state.details).toBeNull();
+    expect(state.searchIndex).toBeNull();
+    expect(state.historyBanks).toBeNull();
+    expect(state.historyBanksError).toBeNull();
     expect(mockWriteBundle).toHaveBeenCalled();
   });
 
