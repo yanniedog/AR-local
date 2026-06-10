@@ -52,7 +52,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "origin": false,
+          "asyncRoutes": false
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -93,7 +99,11 @@
       "manifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json",
       "apkReleaseTag": "app-apk-latest",
       "apkManifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json",
-      "router": {},
+      "router": {
+        "origin": false,
+        "scheme": "arrates",
+        "asyncRoutes": false
+      },
       "eas": {
         "projectId": "69c08d63-b618-43f1-86b9-2556eef82104"
       }
