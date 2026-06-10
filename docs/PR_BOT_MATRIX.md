@@ -1,6 +1,6 @@
 # PR bot feedback matrix
 
-Automated in-repo matrix tracking how each review bot responded to merged PRs. The workflow commits colored HTML and machine-readable JSON — no Google Sheets or external secrets.
+Automated in-repo matrix tracking how each review bot responded to merged PRs. The workflow commits GitHub-rendered markdown (primary), colored HTML, and machine-readable JSON — no Google Sheets or external secrets.
 
 | Dimension | Content |
 |-----------|---------|
@@ -12,12 +12,13 @@ Automated in-repo matrix tracking how each review bot responded to merged PRs. T
 
 | Artifact | Path | How to view |
 |----------|------|-------------|
+| **Markdown (primary)** | [`reports/pr-bot-matrix.md`](../reports/pr-bot-matrix.md) | Renders as a scannable table on GitHub with **PASS** / **FAIL** / **LIMIT** labels. |
 | **Colored table** | [`reports/pr-bot-matrix.html`](../reports/pr-bot-matrix.html) | Open the file on GitHub, click **Raw**, or paste the raw URL in a browser — the HTML renders with cell background colors. |
 | **JSON** | [`reports/pr-bot-matrix.json`](../reports/pr-bot-matrix.json) | Browse on GitHub or consume in scripts/CI. |
 
 Raw URL pattern (replace `OWNER/REPO` and branch):
 
-`https://raw.githubusercontent.com/OWNER/REPO/main/reports/pr-bot-matrix.html`
+`https://github.com/OWNER/REPO/blob/main/reports/pr-bot-matrix.md`
 
 ## Cell colors
 
@@ -98,7 +99,8 @@ npm run pr:bot-spreadsheet:sync -- --limit 30
 | File | Role |
 |------|------|
 | `scripts/pr-bot-spreadsheet-sync.mjs` | CLI entry |
-| `scripts/lib/pr-bot-matrix-writer.mjs` | HTML + JSON artifact writer |
+| `scripts/lib/pr-bot-matrix-writer.mjs` | Markdown + HTML + JSON artifact writer |
+| `scripts/lib/pr-bot-matrix-markdown.mjs` | GitHub markdown table + PR body builder |
 | `scripts/pr-bot-matrix-commit.mjs` | Stage/commit/push matrix files to `main` |
 | `scripts/lib/pr-bot-matrix-commit.mjs` | Matrix commit paths + bypass hint |
 | `scripts/lib/pr-bot-roster.mjs` | Bot column definitions |
@@ -106,5 +108,6 @@ npm run pr:bot-spreadsheet:sync -- --limit 30
 | `scripts/lib/pr-bot-cell-status.mjs` | Green/yellow/grey/red logic |
 | `scripts/lib/bot-noise.mjs` | Quota/limit patterns (shared) |
 | `scripts/lib/gh-pr-review-threads.mjs` | Thread address detection (shared) |
+| `reports/pr-bot-matrix.md` | Generated markdown matrix (committed, primary view) |
 | `reports/pr-bot-matrix.html` | Generated colored matrix (committed) |
 | `reports/pr-bot-matrix.json` | Generated machine-readable matrix (committed) |

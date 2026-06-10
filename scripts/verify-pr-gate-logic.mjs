@@ -77,6 +77,7 @@ for (const [body, want] of [
 }
 
 for (const [path, want] of [
+  ['reports/pr-bot-matrix.md', true],
   ['reports/pr-bot-matrix.html', true],
   ['reports/foo.json', true],
   ['scripts/foo.mjs', false],
@@ -87,6 +88,7 @@ for (const [path, want] of [
   }
 }
 for (const [name, files, want] of [
+  ['matrix md+html+json only', ['reports/pr-bot-matrix.md', 'reports/pr-bot-matrix.html', 'reports/pr-bot-matrix.json'], true],
   ['matrix html+json only', ['reports/pr-bot-matrix.html', 'reports/pr-bot-matrix.json'], true],
   ['empty list', [], false],
   ['mixed reports+scripts', ['reports/a.html', 'scripts/b.mjs'], false],

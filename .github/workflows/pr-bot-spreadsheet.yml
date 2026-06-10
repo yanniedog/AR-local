@@ -1,6 +1,6 @@
 name: pr-bot-spreadsheet
 
-# Maintain an in-repo matrix (HTML + JSON): rows = merged PRs, columns = review bots,
+# Maintain an in-repo matrix (Markdown + HTML + JSON): rows = merged PRs, columns = review bots,
 # color-coded by feedback presence, address-before-merge, and quota/limit hits.
 on:
   schedule:
