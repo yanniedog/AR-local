@@ -19,8 +19,9 @@ export interface Theme {
 
 const base = {
   spacing: (n: number) => n * 4,
-  radius: { sm: 8, md: 12, lg: 16, xl: 22, pill: 999 },
-  font: { h1: 30, h2: 22, h3: 17, body: 15, small: 13, tiny: 11 },
+  // Dashboard shell radii: panels/cards 12px, stat chips 8px, hero title scale ~1.35rem.
+  radius: { sm: 8, md: 12, lg: 12, xl: 16, pill: 999 },
+  font: { h1: 28, h2: 22, h3: 16, body: 15, small: 13, tiny: 11 },
 };
 
 export const darkTheme: Theme = { dark: true, colors: DARK, ...base };

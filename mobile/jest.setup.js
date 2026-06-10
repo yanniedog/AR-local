@@ -52,6 +52,12 @@ jest.mock('@microsoft/react-native-clarity', () => ({
 jest.mock('expo-application', () => ({
   nativeApplicationVersion: '1.0.0',
   nativeBuildVersion: '1',
+  applicationId: 'com.eyex.australianrates',
+}));
+
+jest.mock('expo-device', () => ({
+  platformApiLevel: 34,
+  isSideLoadingEnabledAsync: jest.fn(async () => false),
 }));
 
 jest.mock('expo-intent-launcher', () => ({
