@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterSheet } from '../src/components/FilterSheet';
@@ -237,29 +237,11 @@ export default function Search() {
       </View>
 
       {selectMode && selected.length >= 2 ? (
-        <Pressable
+        <CompareFab
+          count={selected.length}
+          bottomInset={insets.bottom}
           onPress={() => openCompare(selected)}
-          style={({ pressed }) => ({
-            position: 'absolute',
-            left: theme.spacing(4),
-            right: theme.spacing(4),
-            bottom: theme.spacing(6),
-            backgroundColor: theme.colors.primary,
-            borderRadius: theme.radius.pill,
-            paddingVertical: theme.spacing(4),
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: theme.spacing(2),
-            opacity: pressed ? 0.85 : 1,
-            elevation: 4,
-          })}
-        >
-          <Ionicons name="git-compare" size={18} color={theme.colors.onPrimary} />
-          <AppText variant="body" weight="800" style={{ color: theme.colors.onPrimary }}>
-            Compare {selected.length} products
-          </AppText>
-        </Pressable>
+        />
       ) : null}
 
       <FilterSheet
@@ -283,5 +265,51 @@ export default function Search() {
         }}
       />
     </Screen>
+  );
+}
+
+function CompareFab({
+  count,
+  bottomInset,
+  onPress,
+}: {
+  count: number;
+  bottomInset: number;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const label = `Compare ${count} product${count === 1 ? '' : 's'}`;
+  const isAndroid = Platform.OS === 'android';
+  const edge = theme.spacing(4);
+  const bottom = theme.spacing(6) + bottomInset;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        position: 'absolute',
+        ...(isAndroid
+          ? { right: edge, bottom }
+          : { left: edge, right: edge, bottom: theme.spacing(6) }),
+        backgroundColor: theme.colors.primary,
+        borderRadius: theme.radius.pill,
+        minHeight: isAndroid ? 56 : undefined,
+        paddingVertical: isAndroid ? 0 : theme.spacing(4),
+        paddingHorizontal: isAndroid ? theme.spacing(5) : 0,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: theme.spacing(2),
+        opacity: pressed ? 0.85 : 1,
+        elevation: isAndroid ? 6 : 4,
+      })}
+    >
+      <Ionicons name="git-compare" size={isAndroid ? 24 : 18} color={theme.colors.onPrimary} />
+      <AppText variant="body" weight="800" style={{ color: theme.colors.onPrimary }}>
+        {isAndroid ? `Compare ${count}` : label}
+      </AppText>
+    </Pressable>
   );
 }
