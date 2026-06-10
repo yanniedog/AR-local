@@ -72,7 +72,10 @@ export function buildMatrixMarkdown(report, opts = {}) {
     '', '## Matrix', '', `| ${header} |`, `| ${separator} |`,
   ];
   if (bodyRows.length) bodyRows.forEach((line) => lines.push(`| ${line} |`));
-  else lines.push('| _No merged PRs yet_ | | | | | | | | |');
+  else {
+    const emptyCols = Array(botHeaders.length + 2).fill('').join(' | ');
+    lines.push('| _No merged PRs yet_ | ' + emptyCols + ' |');
+  }
   if (truncated) lines.push('', `_Showing ${maxRows} of ${report.prCount ?? allRows.length} rows._`);
   lines.push('', '## Machine-readable data', '', `JSON: [\`${MATRIX_JSON_FILE}\`](${MATRIX_JSON_FILE}). HTML: [\`${MATRIX_HTML_FILE}\`](${MATRIX_HTML_FILE}).`, '');
   return `${lines.join('\n')}\n`;
