@@ -64,7 +64,7 @@ Protected `main` requires `bot-presence-gate` and `bot-feedback-gate`. A workflo
 
 **Legacy → ruleset migration** (repo still has legacy branch protection on `main`):
 
-1. **Create** a `main` ruleset that mirrors legacy protection: required checks `bot-feedback-gate` + `bot-presence-gate`, strict up-to-date, required conversation resolution, `enforce_admins` (no admin bypass).
+1. **Create** a `main` ruleset that mirrors legacy protection: required checks `bot-feedback-gate` + `bot-presence-gate`, strict up-to-date, required conversation resolution (do not add repository administrators to the bypass list — rulesets have no `enforce_admins` toggle; omitting admins from bypass mirrors legacy behavior).
 2. **Bypass list → Add bypass → GitHub Actions** (mode: **Always**). Optionally scope to `.github/workflows/pr-bot-spreadsheet.yml` and `.github/workflows/mobile-auto-release-on-queue-drain.yml` when path scoping is available.
 3. **Save**, verify with the commands below, then **remove duplicate legacy branch protection** on `main` (Settings → Branches → `main` → Delete rule). Keeping both layers blocks workflow pushes even when the ruleset bypass is correct.
 
