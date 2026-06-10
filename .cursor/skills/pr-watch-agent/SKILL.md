@@ -13,7 +13,7 @@ You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (m
 
 **Authoritative bar:** `WORKFLOW.md` steps **4–9** (+ **5b** synthesis, **8b** Pi when deploy paths change).
 
-**Automation (one cycle):** `npm run pr:watch-once` — list open PRs, `evaluateGates` per PR. Loop with `--watch` or re-invoke the agent.
+**Automation:** `npm run pr:queue:drive` or `npm run pr:watch-once`. See **`docs/HANDOFF.md` §6.1**.
 
 ## Invocation phrases
 
