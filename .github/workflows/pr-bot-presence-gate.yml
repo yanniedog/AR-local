@@ -6,6 +6,8 @@ name: pr-bot-presence-gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'reports/**'
   pull_request_review:
     types: [submitted]
   issue_comment:

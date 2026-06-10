@@ -16,6 +16,8 @@ name: pr-bot-feedback-check
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'reports/**'
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:

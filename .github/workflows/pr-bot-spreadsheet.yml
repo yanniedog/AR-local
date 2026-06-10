@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: pr-bot-spreadsheet
@@ -55,15 +55,30 @@ jobs:
           # Merged-PR events run a full sync (no --pr) so the committed matrix keeps
           # all rows; single-PR mode is workflow_dispatch only and upserts via sync.
           npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
-      - name: Commit and push matrix
+      - name: Commit and push matrix via PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add reports/pr-bot-matrix.html reports/pr-bot-matrix.json
           if git diff --staged --quiet; then
-            echo "Matrix unchanged — no commit"
+            echo "Matrix unchanged - no commit"
             exit 0
           fi
-          git commit -m "chore: update PR bot feedback matrix [skip ci]"
-          git push
+          BRANCH="bot/pr-bot-matrix-sync"
+          git checkout -B "$BRANCH"
+          git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" -m "chore: update PR bot feedback matrix"
+          git push origin "$BRANCH" --force-with-lease
+          EXISTING=$(gh pr list --head "$BRANCH" --base main --state open --json number -q '.[0].number' || true)
+          if [ -z "$EXISTING" ]; then
+            gh pr create --base main --head "$BRANCH" --title "chore: update PR bot feedback matrix" --body "Automated sync from pr-bot-spreadsheet workflow.
+
+Made with [Cursor](https://cursor.com)"
+          else
+            echo "Open PR #$EXISTING already tracks $BRANCH"
+          fi
+          if ! gh pr merge "$BRANCH" --squash --auto --delete-branch; then
+            echo "::warning::Could not enable auto-merge; merge the open bot PR manually after checks pass"
+          fi
