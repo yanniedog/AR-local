@@ -84,6 +84,9 @@ ${checks.map((c) => `     - \`${c}\``).join('\n')}
 4. Require conversation resolution before merging: ON
 5. Do not allow bypassing the above settings (recommended for admins too)
 
+Repo merge method (Settings → General → Pull Requests, or \`npm run repo-merge-settings:apply\`):
+squash only, auto-merge ON, delete head branches ON. Agents: \`npm run pr:merge -- --pr <n>\`.
+
 Note: GitHub cannot block "Close pull request" via branch protection. Agents must not close
 PRs without merge unless the user waives in writing; \`npm run agent:auditor\` flags
 closed-unmerged PRs with open bot threads.

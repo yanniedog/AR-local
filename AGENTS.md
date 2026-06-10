@@ -45,6 +45,8 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Bot wait gate (new PR) | `npm run wait-for-bots` |
 | Bot thread closure gate | `npm run pr:bot-feedback-check -- --pr <n>` |
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
+| Squash auto-merge (step 7) | `npm run pr:merge -- --pr <n>` |
+| Repo squash-only settings | `npm run repo-merge-settings:apply` |
 | PR watch one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = gates failing) |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |

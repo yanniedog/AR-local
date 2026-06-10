@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sync merged PR bot feedback matrix to in-repo HTML + JSON artifacts.
+ * Sync merged PR bot feedback matrix to in-repo Markdown + HTML + JSON artifacts.
  *
  * Usage:
  *   node scripts/pr-bot-spreadsheet-sync.mjs [--limit N] [--pr N] [--dry-run] [--json]
@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEFAULT_MATRIX_DIR,
+  MATRIX_MD_FILE,
   MATRIX_HTML_FILE,
   MATRIX_JSON_FILE,
   resolveMatrixPaths,
@@ -114,7 +115,8 @@ Options:
   --output-dir DIR  Output directory (default "${DEFAULT_MATRIX_DIR}")
 
 Artifacts:
-  ${DEFAULT_MATRIX_DIR}/${MATRIX_HTML_FILE}  — colored HTML table
+  ${DEFAULT_MATRIX_DIR}/${MATRIX_MD_FILE}   — GitHub-rendered markdown table (primary)
+  ${DEFAULT_MATRIX_DIR}/${MATRIX_HTML_FILE}  — colored HTML table (browser)
   ${DEFAULT_MATRIX_DIR}/${MATRIX_JSON_FILE}  — machine-readable matrix`);
     process.exit(0);
   }
@@ -163,17 +165,17 @@ Artifacts:
     }
   }
 
-  const { htmlPath, jsonPath } = resolveMatrixPaths({ report, outputDir: args.outputDir });
-
+  const { mdPath, htmlPath, jsonPath } = resolveMatrixPaths({ report, outputDir: args.outputDir });
   if (args.dryRun) {
     console.error('pr-bot-spreadsheet-sync: dry-run — would write:');
+    console.error(`  ${mdPath}`);
     console.error(`  ${htmlPath}`);
     console.error(`  ${jsonPath}`);
     process.exit(0);
   }
-
   const written = writeMatrixArtifacts({ report, outputDir: args.outputDir });
   console.error(`pr-bot-spreadsheet-sync: wrote ${matrixRows.length} row(s) to:`);
+  console.error(`  ${written.mdPath}`);
   console.error(`  ${written.htmlPath}`);
   console.error(`  ${written.jsonPath}`);
 }

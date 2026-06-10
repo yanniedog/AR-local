@@ -141,7 +141,7 @@ function printRemediation({
     console.log(`    git push -u origin HEAD`);
     console.log(`    npm run pr:bot-feedback-check -- --pr ${n}`);
     console.log(`    npm run wait-for-bots`);
-    console.log(`    gh pr merge ${n} --squash`);
+    console.log(`    npm run pr:merge -- --pr ${n}`);
   }
 
   if (pathClashes.length) {
