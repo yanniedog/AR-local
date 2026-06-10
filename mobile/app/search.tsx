@@ -3,11 +3,13 @@ import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterSheet } from '../src/components/FilterSheet';
-import { EmptyState, LoadingRows } from '../src/components/feedback';
+import { EmptyState } from '../src/components/feedback';
 import { ProductCard } from '../src/components/ProductCard';
-import { Screen } from '../src/components/Screen';
+import { Screen, screenEdgeStyle, screenScrollContentStyle } from '../src/components/Screen';
+import { ToolbarIconButton } from '../src/components/ToolbarIconButton';
 import { SearchBar } from '../src/components/controls';
 import { AppText, Chip, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
@@ -39,6 +41,7 @@ const rowToken = (r: { rate_index?: number | string; product_key: string }) =>
 
 export default function Search() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { section: secRaw, path: pathRaw, sort: sortRaw, scope: scopeRaw } = useLocalSearchParams<{
     section: string;
     path?: string;
@@ -122,7 +125,6 @@ export default function Search() {
   );
 
   const searchSub = useStore((s) => findSearchSubscription(s.subscriptions, searchSnapshot));
-  const searchIndexLoading = enableDeepSearch && !searchIndex;
 
   const onToggleSearchAlert = async () => {
     if (searchSub) {
@@ -147,17 +149,23 @@ export default function Search() {
 
   if (!core) return null;
   const title = path.length ? breadcrumb(section, path).at(-1)! : `${SECTIONS[section].title}`;
+  const filterCount = activeFilterCount(effectiveFilters);
 
   return (
     <Screen>
       <Stack.Screen options={{ title }} />
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 10 }}>
-        <Row gap={10}>
+      <View style={screenEdgeStyle(theme)}>
+        <Row gap={theme.spacing(3)}>
           <View style={{ flex: 1 }}>
             <SearchBar value={query} onChangeText={setQuery} />
           </View>
-          <IconBtn icon="options" count={activeFilterCount(effectiveFilters)} onPress={() => setFilterOpen(true)} />
-          <IconBtn
+          <ToolbarIconButton
+            icon="options"
+            badge={filterCount || undefined}
+            onPress={() => setFilterOpen(true)}
+            accessibilityLabel="Filter products"
+          />
+          <ToolbarIconButton
             icon={selectMode ? 'git-compare' : 'git-compare-outline'}
             active={selectMode}
             onPress={() => {
@@ -165,9 +173,10 @@ export default function Search() {
               setSelectMode((v) => !v);
               setSelected([]);
             }}
+            accessibilityLabel="Select products to compare"
           />
         </Row>
-        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Row gap={theme.spacing(2)} style={{ flexWrap: 'wrap' }}>
           {SORT_OPTIONS.map((o) => (
             <Chip key={o.key} label={o.label} selected={sortKey === o.key} onPress={() => setSortKey(o.key)} />
           ))}
@@ -191,31 +200,28 @@ export default function Search() {
       </View>
 
       <View style={{ flex: 1 }}>
-        {searchIndexLoading ? (
-          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-            <LoadingRows count={8} />
-          </View>
-        ) : (
-          <FlashList
-            data={rows}
-            keyExtractor={(item, i) => `${item.product_key}-${item.rate_index ?? i}`}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 }}
-            renderItem={({ item }) => (
-              <ProductCard
-                row={item}
-                section={section}
-                selectMode={selectMode}
-                selected={selected.includes(rowToken(item))}
-                onPress={() =>
-                  selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key, item.rate_index)
-                }
-              />
-            )}
-            ListEmptyComponent={
-              <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
-            }
-          />
-        )}
+        <FlashList
+          data={rows}
+          keyExtractor={(item, i) => `${item.product_key}-${item.rate_index ?? i}`}
+          contentContainerStyle={{
+            ...screenScrollContentStyle(theme, insets.bottom),
+            paddingBottom: theme.spacing(6) + insets.bottom + theme.spacing(8),
+          }}
+          renderItem={({ item }) => (
+            <ProductCard
+              row={item}
+              section={section}
+              selectMode={selectMode}
+              selected={selected.includes(rowToken(item))}
+              onPress={() =>
+                selectMode ? toggleSelect(rowToken(item)) : openProduct(item.product_key, item.rate_index)
+              }
+            />
+          )}
+          ListEmptyComponent={
+            <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
+          }
+        />
       </View>
 
       {selectMode && selected.length >= 2 ? (
@@ -223,16 +229,16 @@ export default function Search() {
           onPress={() => openCompare(selected)}
           style={({ pressed }) => ({
             position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: 24,
+            left: theme.spacing(4),
+            right: theme.spacing(4),
+            bottom: theme.spacing(6),
             backgroundColor: theme.colors.primary,
             borderRadius: theme.radius.pill,
-            paddingVertical: 14,
+            paddingVertical: theme.spacing(4),
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 8,
+            gap: theme.spacing(2),
             opacity: pressed ? 0.85 : 1,
             elevation: 4,
           })}
@@ -257,55 +263,5 @@ export default function Search() {
         }}
       />
     </Screen>
-  );
-}
-
-function IconBtn({
-  icon,
-  count,
-  active,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  count?: number;
-  active?: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <View>
-      <Pressable
-        onPress={onPress}
-        style={{
-          backgroundColor: active ? theme.colors.primaryMuted : theme.colors.surfaceAlt,
-          borderRadius: theme.radius.md,
-          paddingHorizontal: 12,
-          height: 44,
-          justifyContent: 'center',
-        }}
-      >
-        <Ionicons name={icon} size={20} color={active ? theme.colors.primary : theme.colors.text} />
-      </Pressable>
-      {count ? (
-        <View
-          style={{
-            position: 'absolute',
-            top: -4,
-            right: -4,
-            backgroundColor: theme.colors.primary,
-            borderRadius: 999,
-            minWidth: 18,
-            height: 18,
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingHorizontal: 4,
-          }}
-        >
-          <AppText variant="tiny" weight="800" style={{ color: theme.colors.onPrimary }}>
-            {count}
-          </AppText>
-        </View>
-      ) : null}
-    </View>
   );
 }
