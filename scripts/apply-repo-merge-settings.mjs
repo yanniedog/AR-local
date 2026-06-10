@@ -8,8 +8,18 @@
  * Note: squash is chosen at merge time (gh pr merge --squash), not at gh pr create.
  */
 import { spawnSync } from 'node:child_process';
+import { ghJson, hasGh } from './lib/gh-pr-review-threads.mjs';
 
 const GH_TIMEOUT_MS = 120_000;
+
+function runGh(args, { input } = {}) {
+  const r = spawnSync('gh', args, { encoding: 'utf8', input, timeout: GH_TIMEOUT_MS });
+  if (r.error?.code === 'ETIMEDOUT') {
+    throw new Error(`gh timed out after ${GH_TIMEOUT_MS}ms`);
+  }
+  if (r.error) throw new Error(r.error.message);
+  return r;
+}
 
 /** @type {Record<string, boolean>} */
 const DESIRED = {
@@ -28,15 +38,6 @@ function parseArgs(argv) {
     else if (a === '--dry-run') out.dryRun = true;
   }
   return out;
-}
-
-function ghJson(args) {
-  const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
-  if (r.error) throw new Error(r.error.message);
-  if (r.status !== 0) {
-    throw new Error((r.stderr || r.stdout || '').trim() || `gh exit ${r.status}`);
-  }
-  return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }
 
 function printManualSteps(repo) {
@@ -65,7 +66,7 @@ function main() {
     process.exit(0);
   }
 
-  if (spawnSync('gh', ['--version'], { stdio: 'ignore' }).status !== 0) {
+  if (!hasGh()) {
     console.error('apply-repo-merge-settings: install gh CLI and authenticate');
     process.exit(1);
   }
@@ -105,11 +106,14 @@ function main() {
   }
 
   const input = JSON.stringify(changes);
-  const r = spawnSync(
-    'gh',
-    ['api', '--method', 'PATCH', `repos/${repo}`, '--input', '-'],
-    { encoding: 'utf8', input, timeout: GH_TIMEOUT_MS },
-  );
+  let r;
+  try {
+    r = runGh(['api', '--method', 'PATCH', `repos/${repo}`, '--input', '-'], { input });
+  } catch (e) {
+    console.error(`apply-repo-merge-settings: ${e.message}`);
+    printManualSteps(repo);
+    process.exit(1);
+  }
 
   if (r.status === 0) {
     console.log(`Repo merge settings updated on ${repo}:`);

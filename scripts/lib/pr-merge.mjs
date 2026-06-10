@@ -21,6 +21,22 @@ export function mergePullRequest(prNumber, opts = {}) {
     return { ok: true, stdout: `gh ${args.join(' ')}`, stderr: '', exitCode: 0 };
   }
   const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
+  if (r.error?.code === 'ETIMEDOUT') {
+    return {
+      ok: false,
+      stdout: '',
+      stderr: `gh timed out after ${GH_TIMEOUT_MS}ms`,
+      exitCode: 1,
+    };
+  }
+  if (r.error) {
+    return {
+      ok: false,
+      stdout: '',
+      stderr: r.error.message,
+      exitCode: 1,
+    };
+  }
   return {
     ok: r.status === 0,
     stdout: (r.stdout || '').trim(),
