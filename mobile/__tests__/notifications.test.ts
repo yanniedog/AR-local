@@ -156,4 +156,15 @@ describe('notification deep links', () => {
       '/search?section=Mortgage',
     );
   });
+
+  test('hrefFromNotificationData ignores invalid rateIndex', () => {
+    const href = hrefFromNotificationData({ productKey: 'A|1', rateIndex: 'nope' });
+    expect(href).toEqual({ pathname: '/product/[key]', params: { key: 'A|1' } });
+  });
+
+  test('hrefFromNotificationData returns null for empty payload', () => {
+    expect(hrefFromNotificationData(null)).toBeNull();
+    expect(hrefFromNotificationData({})).toBeNull();
+    expect(hrefFromNotificationData({ url: 'https://example.com' })).toBeNull();
+  });
 });

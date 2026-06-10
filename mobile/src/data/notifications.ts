@@ -10,6 +10,7 @@ import { bestRow } from './selectors';
 import {
   computeSubscriptionChanges,
   largestRateChange,
+  rowIdentity,
   rowsForSearchSubscription,
   type Subscription,
 } from './subscriptions';
@@ -168,7 +169,7 @@ function productRatesByIndex(
 function ratesMap(rows: RateRow[]): Map<string, { row: RateRow; fraction: number | null }> {
   const out = new Map<string, { row: RateRow; fraction: number | null }>();
   for (const row of rows) {
-    out.set(`${row.product_key}#${row.rate_index ?? 0}`, { row, fraction: toFraction(row.rate) });
+    out.set(rowIdentity(row), { row, fraction: toFraction(row.rate) });
   }
   return out;
 }
