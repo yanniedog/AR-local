@@ -14,9 +14,9 @@ import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
 const SECTION_SEG = [
-  { value: 'Mortgage' as SectionKey, label: 'Loans' },
+  { value: 'Mortgage' as SectionKey, label: 'Mortgage' },
   { value: 'Savings' as SectionKey, label: 'Savings' },
-  { value: 'TD' as SectionKey, label: 'Deposits' },
+  { value: 'TD' as SectionKey, label: 'Term Deps' },
 ];
 
 export default function HierarchyScreen() {
