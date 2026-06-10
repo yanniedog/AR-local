@@ -1,6 +1,23 @@
 /** Live payload transfer / processing snapshot (real metrics only). */
 export type PayloadProgressPhase = 'manifest' | 'download' | 'verify' | 'inflate' | 'parse';
 
+export const PAYLOAD_PROGRESS_PHASES: PayloadProgressPhase[] = [
+  'manifest',
+  'download',
+  'verify',
+  'inflate',
+  'parse',
+];
+
+/** Inclusive phase band on the overall 0–100 determinate bar. */
+const PHASE_BANDS: Record<PayloadProgressPhase, readonly [number, number]> = {
+  manifest: [0, 8],
+  download: [8, 88],
+  verify: [88, 92],
+  inflate: [92, 96],
+  parse: [96, 100],
+};
+
 export interface PayloadProgressSnapshot {
   phase: PayloadProgressPhase;
   fileName: string;
@@ -11,6 +28,16 @@ export interface PayloadProgressSnapshot {
 }
 
 export type PayloadProgressHandler = (snapshot: PayloadProgressSnapshot) => void;
+
+export interface PayloadProgressViewModel {
+  /** Overall 0–100 determinate fill for the sync bar. */
+  overallPercent: number;
+  phaseText: string;
+  detailLine: string;
+  etaText: string;
+  rateText: string;
+  fileName: string;
+}
 
 export function fileNameFromUrl(url: string): string {
   try {
@@ -78,4 +105,43 @@ export function phaseLabel(phase: PayloadProgressPhase): string {
     case 'parse':
       return 'parse json';
   }
+}
+
+function lerpBand(
+  band: readonly [number, number],
+  bytesReceived: number,
+  totalBytes: number | null,
+): number {
+  const [lo, hi] = band;
+  const inner = computePercent(bytesReceived, totalBytes);
+  if (inner == null) return lo + (hi - lo) * 0.35;
+  return lo + (inner / 100) * (hi - lo);
+}
+
+/** Map live snapshot to a single 0–100 bar position across all payload phases. */
+export function computeOverallPercent(snapshot: PayloadProgressSnapshot): number {
+  const band = PHASE_BANDS[snapshot.phase];
+  const value = lerpBand(band, snapshot.bytesReceived, snapshot.totalBytes);
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+export function buildPayloadProgressViewModel(
+  snapshot: PayloadProgressSnapshot,
+  now: number = Date.now(),
+): PayloadProgressViewModel {
+  const rate = computeTransferRate(snapshot.bytesReceived, snapshot.startedAt, now);
+  const eta = computeEtaSeconds(snapshot.bytesReceived, snapshot.totalBytes, rate);
+  const phaseText = phaseLabel(snapshot.phase);
+  const rateText = formatTransferRate(rate);
+  const etaText = formatEta(eta);
+  const showTransfer = snapshot.phase === 'manifest' || snapshot.phase === 'download';
+  const detailLine = showTransfer ? `${rateText} · ETA ${etaText}` : snapshot.fileName;
+  return {
+    overallPercent: computeOverallPercent(snapshot),
+    phaseText,
+    detailLine,
+    etaText,
+    rateText,
+    fileName: snapshot.fileName,
+  };
 }

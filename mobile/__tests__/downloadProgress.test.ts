@@ -1,11 +1,14 @@
 import {
+  buildPayloadProgressViewModel,
   computeEtaSeconds,
+  computeOverallPercent,
   computePercent,
   computeTransferRate,
   fileNameFromUrl,
   formatEta,
   formatTransferRate,
   phaseLabel,
+  type PayloadProgressSnapshot,
 } from '../src/data/downloadProgress';
 
 describe('downloadProgress', () => {
@@ -46,5 +49,67 @@ describe('downloadProgress', () => {
   it('labels processing phases', () => {
     expect(phaseLabel('verify')).toBe('verify sha256');
     expect(phaseLabel('inflate')).toBe('decompress gzip');
+  });
+
+  it('computes overall percent across phases', () => {
+    const downloadHalf: PayloadProgressSnapshot = {
+      phase: 'download',
+      fileName: 'core.gz',
+      bytesReceived: 512,
+      totalBytes: 1024,
+      startedAt: 0,
+    };
+    expect(computeOverallPercent(downloadHalf)).toBeGreaterThan(8);
+    expect(computeOverallPercent(downloadHalf)).toBeLessThan(88);
+
+    const parseDone: PayloadProgressSnapshot = {
+      phase: 'parse',
+      fileName: 'core.json',
+      bytesReceived: 100,
+      totalBytes: 100,
+      startedAt: 0,
+    };
+    expect(computeOverallPercent(parseDone)).toBe(100);
+  });
+
+  it('maps each phase band for overall percent', () => {
+    const base = {
+      fileName: 'core.gz',
+      bytesReceived: 0,
+      totalBytes: null as number | null,
+      startedAt: 0,
+    };
+    expect(computeOverallPercent({ ...base, phase: 'manifest' })).toBe(3);
+    expect(
+      computeOverallPercent({ ...base, phase: 'download', bytesReceived: 0, totalBytes: 100 }),
+    ).toBe(8);
+    expect(
+      computeOverallPercent({ ...base, phase: 'download', bytesReceived: 100, totalBytes: 100 }),
+    ).toBe(88);
+    expect(
+      computeOverallPercent({ ...base, phase: 'verify', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(92);
+    expect(
+      computeOverallPercent({ ...base, phase: 'inflate', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(96);
+    expect(
+      computeOverallPercent({ ...base, phase: 'parse', bytesReceived: 10, totalBytes: 10 }),
+    ).toBe(100);
+  });
+
+  it('builds progress view model with phase and ETA line', () => {
+    const vm = buildPayloadProgressViewModel(
+      {
+        phase: 'download',
+        fileName: 'core.gz',
+        bytesReceived: 512_000,
+        totalBytes: 1_024_000,
+        startedAt: Date.now() - 1000,
+      },
+      Date.now(),
+    );
+    expect(vm.phaseText).toBe('download');
+    expect(vm.overallPercent).toBeGreaterThan(0);
+    expect(vm.detailLine).toContain('ETA');
   });
 });
