@@ -7,7 +7,8 @@
  *
  * Env:
  *   GOOGLE_SERVICES_JSON          — Android Firebase client config (project + app id)
- *   FIREBASE_SERVICE_ACCOUNT_JSON — GCP service account key JSON (Crashlytics API auth)
+ *   FIREBASE_USER_OAUTH_JSON      — authorized_user JSON (preferred; Crashlytics reports support)
+ *   FIREBASE_SERVICE_ACCOUNT_JSON — GCP service account key JSON (fallback; some projects return 404)
  *   GH_TOKEN / GITHUB_TOKEN       — GitHub API (issues:write)
  *   GITHUB_REPOSITORY             — owner/repo (default yanniedog/AR-local)
  *   CRASHLYTICS_LOOKBACK_DAYS     — default 7
@@ -30,6 +31,10 @@ import {
   getServiceAccountAccessToken,
   parseServiceAccountJson,
 } from './lib/google-service-account-auth.mjs';
+import {
+  getAuthorizedUserAccessToken,
+  parseAuthorizedUserJson,
+} from './lib/google-user-oauth-auth.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_UTILS = pathToFileURL(join(ROOT, 'mobile/scripts/firebase-json-utils.mjs')).href;
@@ -98,11 +103,14 @@ function ensureGh() {
 async function loadFirebaseConfig(opts) {
   const { parseGoogleServicesJson, isPlaceholderGoogleServices } = await import(MOBILE_UTILS);
 
-  const raw =
+  let raw =
     process.env.GOOGLE_SERVICES_JSON?.trim() ||
     (process.env.GOOGLE_SERVICES_JSON_FILE
       ? readFileSync(process.env.GOOGLE_SERVICES_JSON_FILE, 'utf8')
       : '');
+  if (!raw && opts.mockReport) {
+    raw = readFileSync(join(ROOT, 'mobile/google-services.json.example'), 'utf8');
+  }
 
   if (!raw) {
     throw new Error('GOOGLE_SERVICES_JSON is not set');
@@ -331,7 +339,8 @@ async function createGithubIssue(repo, title, body, labels, dryRun) {
 
 async function main() {
   const opts = parseArgs(process.argv);
-  ensureGh();
+  const pureMockDryRun = opts.dryRun && Boolean(opts.mockReport);
+  if (!pureMockDryRun) ensureGh();
 
   console.log(`crashlytics-to-github-issues: repo=${opts.repo} dryRun=${opts.dryRun}`);
 
@@ -339,15 +348,26 @@ async function main() {
   console.log(`Firebase project=${projectId} app=${appId}`);
 
   let accessToken = '';
+  let authMode = 'none';
   if (!opts.mockReport) {
-    const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
-    if (!saRaw) {
-      throw new Error(
-        'FIREBASE_SERVICE_ACCOUNT_JSON is not set — add a GCP service account key with roles/firebasecrashlytics.viewer',
+    const userRaw = process.env.FIREBASE_USER_OAUTH_JSON?.trim();
+    if (userRaw) {
+      accessToken = await getAuthorizedUserAccessToken(
+        parseAuthorizedUserJson(userRaw, 'FIREBASE_USER_OAUTH_JSON'),
       );
+      authMode = 'user-oauth';
+    } else {
+      const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+      if (!saRaw) {
+        throw new Error(
+          'FIREBASE_USER_OAUTH_JSON is not set — scheduled Crashlytics reports require authorized_user OAuth JSON',
+        );
+      }
+      const serviceAccount = parseServiceAccountJson(saRaw);
+      accessToken = await getServiceAccountAccessToken(serviceAccount);
+      authMode = 'service-account';
     }
-    const serviceAccount = parseServiceAccountJson(saRaw);
-    accessToken = await getServiceAccountAccessToken(serviceAccount);
+    console.log(`Crashlytics auth=${authMode}`);
   }
 
   let groups;
@@ -357,17 +377,18 @@ async function main() {
     const status = err && typeof err === 'object' && 'status' in err ? err.status : undefined;
     if (status === 404) {
       console.error(
-        'Crashlytics reports API returned 404. Enable "Firebase Crashlytics API" in GCP, grant the service account',
-        'roles/firebasecrashlytics.viewer (or roles/firebase.qualityViewer), and confirm Crashlytics has data.',
+        'Crashlytics reports API returned 404. Enable "Firebase Crashlytics API" in GCP and confirm Crashlytics has data.',
       );
-      console.error(
-        'If 404 persists with a service account, Firebase may require user OAuth for some projects — see HANDOFF.md.',
-      );
+      if (authMode === 'service-account') {
+        console.error(
+          'This project rejects service-account report calls with "Method not found"; configure FIREBASE_USER_OAUTH_JSON — see HANDOFF.md.',
+        );
+      }
     }
     throw err;
   }
 
-  const existing = loadExistingCrashlyticsIds(opts.repo);
+  const existing = pureMockDryRun ? new Set() : loadExistingCrashlyticsIds(opts.repo);
   console.log(`Tracked Crashlytics IDs in GitHub: ${existing.size}`);
 
   if (!opts.dryRun) {

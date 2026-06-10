@@ -178,11 +178,13 @@ describe('optional feature prefs', () => {
   });
 
   it('ensureHistoryBanks syncs daily payloads when history ribbon pref is on', async () => {
+    const infoSpy = jest.spyOn(debugLog, 'info').mockImplementation(() => {});
     store.setState({
       prefs: historyRibbonPrefs,
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
+      historyBanksError: 'previous error',
     });
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
@@ -226,6 +228,12 @@ describe('optional feature prefs', () => {
     expect(mockSyncHistoryFromDailyPayloads).toHaveBeenCalled();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
     expect(store.getState().historyBanks?.run_dates).toHaveLength(2);
+    expect(store.getState().historyBanksError).toBeNull();
+    expect(infoSpy).toHaveBeenCalledWith(
+      'store',
+      expect.stringContaining(`ensureHistoryBanks ok run_date=${remoteCore.run_date}`),
+    );
+    infoSpy.mockRestore();
   });
 
   it('ensureHistoryBanks logs start and validation failure to debugLog', async () => {

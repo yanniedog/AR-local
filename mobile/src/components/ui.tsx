@@ -17,6 +17,7 @@ import { hapticLightImpact, hapticSelection } from '../lib/haptics';
 import type { Palette } from '../theme/colors';
 import type { FontVariant } from '../theme/theme';
 import { useTheme } from '../theme/ThemeProvider';
+import { TouchTarget } from './TouchTarget';
 
 const VARIANT_WEIGHT: Partial<Record<FontVariant, '700' | '800'>> = {
   h1: '800',
@@ -124,7 +125,7 @@ export function Chip({
 }) {
   const theme = useTheme();
   return (
-    <Pressable
+    <TouchTarget
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -136,7 +137,6 @@ export function Chip({
         gap: 6,
         paddingHorizontal: 12,
         paddingVertical: 7,
-        minHeight: 48,
         borderRadius: theme.radius.pill,
         borderWidth: 1,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
@@ -161,7 +161,7 @@ export function Chip({
       >
         {label}
       </Text>
-    </Pressable>
+    </TouchTarget>
   );
 }
 

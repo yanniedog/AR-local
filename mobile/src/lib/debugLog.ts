@@ -383,7 +383,6 @@ export function installGlobalErrorHandlers(): void {
     utils.setGlobalHandler((error, isFatal) => {
       const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
       debugLog.error('global', `${isFatal ? 'fatal' : 'js'} ${msg}`);
-      void debugLog.flushToFile();
       previous?.(error, isFatal);
     });
   }
@@ -394,7 +393,6 @@ export function installGlobalErrorHandlers(): void {
   processLike.process?.on?.('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
     debugLog.error('global', `unhandledRejection ${msg}`);
-    void debugLog.flushToFile();
   });
 }
 

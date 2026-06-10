@@ -4,6 +4,13 @@
 name: crashlytics-github-issues
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/crashlytics-github-issues.yml'
+      - 'scripts/crashlytics-to-github-issues.mjs'
+      - 'scripts/fixtures/crashlytics-topIssues-mock.json'
+      - 'scripts/lib/crashlytics-*.mjs'
+      - 'scripts/lib/google-*-oauth-auth.mjs'
   schedule:
     # Every 30 minutes (GitHub Actions cron uses UTC)
     - cron: '*/30 * * * *'
@@ -39,6 +46,7 @@ jobs:
       - name: Sync Crashlytics issues to GitHub
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          FIREBASE_USER_OAUTH_JSON: ${{ secrets.FIREBASE_USER_OAUTH_JSON }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -47,13 +55,16 @@ jobs:
         run: |
           set -euo pipefail
           args=()
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            args+=(--dry-run --mock-report scripts/fixtures/crashlytics-topIssues-mock.json)
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
           fi
-          if [ -n "${{ inputs.mock_report }}" ]; then
+          if [ "${{ github.event_name }}" != "pull_request" ] && [ -n "${{ inputs.mock_report }}" ]; then
             args+=(--mock-report "${{ inputs.mock_report }}")
-          elif [ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
-            echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON secret not set — running mock dry-run only"
+          elif [ "${{ github.event_name }}" != "pull_request" ] && [ -z "${FIREBASE_USER_OAUTH_JSON:-}" ]; then
+            echo "::warning::FIREBASE_USER_OAUTH_JSON not set — live Crashlytics report sync is disabled; running mock dry-run"
             args+=(--dry-run --mock-report scripts/fixtures/crashlytics-topIssues-mock.json)
           fi
+          node --test scripts/lib/*.test.mjs
           node scripts/crashlytics-to-github-issues.mjs "${args[@]}"

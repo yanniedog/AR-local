@@ -8,7 +8,7 @@ import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/compo
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { CompactToggle, SegmentedControl } from '../../src/components/controls';
+import { CompactToggle, SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
@@ -18,7 +18,7 @@ import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
-import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
+import { openBank, openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -96,6 +96,7 @@ export default function Home() {
         productCount={stats.products}
         lenderCount={lenderCount}
         providerCount={stats.providers}
+        onLendersPress={() => router.push('/banks')}
       />
 
       {sectionOptions.length > 1 ? (
@@ -107,6 +108,7 @@ export default function Home() {
         onChange={(value) => setPref('includeNonStandard', value)}
       />
 
+      <SectionCrossfade section={section}>
       <Card style={{ borderColor: `${sectionAccent}44` }}>
         <SpringOnNewData dataKey={heroDataKey}>
           <Row
@@ -148,9 +150,16 @@ export default function Home() {
           </Row>
         </SpringOnNewData>
         {best ? (
-          <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+          <Pressable
+            onLongPress={() => openBank(best.provider)}
+            delayLongPress={450}
+            accessibilityHint="Long press to open lender profile"
+          >
+            <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+          </Pressable>
         ) : null}
       </Card>
+      </SectionCrossfade>
 
       <AppText variant="tiny" weight="700" color="textFaint" style={{ marginBottom: theme.spacing(2) }}>
         SHORTCUTS

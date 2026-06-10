@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 
@@ -50,6 +50,12 @@ export default function Browse() {
             onPress={() => openHierarchy(section)}
             accessibilityLabel="Browse taxonomy tree"
           />
+          <ToolbarIconButton
+            icon="business-outline"
+            onPress={() => router.push('/banks')}
+            accessibilityLabel="Browse lenders"
+            accessibilityHint="Opens searchable lender directory"
+          />
           <ToolbarIconButton icon="search" onPress={() => openSearch(section)} accessibilityLabel="Search products" />
         </Row>
         <CompactToggle
@@ -59,7 +65,7 @@ export default function Browse() {
         />
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView key={section} section={section} path={[]} />
+        <HierarchyView section={section} path={[]} />
       </View>
     </Screen>
   );
