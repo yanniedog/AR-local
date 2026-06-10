@@ -985,9 +985,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             run_date = str(manifest.get("run_date") or "")
             if run_date:
                 for section in ("Mortgage", "Savings", "TD"):
-                    bank_ribbon_payload(run_date, section)
                     bank_section_payload(run_date, section)
                     bank_history_payload(run_date, section)
+                    bank_history_payload("", section)
         except (FileNotFoundError, json.JSONDecodeError, sqlite3.Error):
             pass
 
