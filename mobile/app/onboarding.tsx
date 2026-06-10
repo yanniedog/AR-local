@@ -118,10 +118,12 @@ export default function Onboarding() {
             </AppText>
           </View>
           <Chip
-            label={installAllowed ? 'Allowed' : 'Allow'}
+            label={
+              installAllowed === null ? 'Checking…' : installAllowed ? 'Allowed' : 'Allow'
+            }
             selected={installAllowed === true}
             onPress={() => {
-              if (installAllowed) return;
+              if (installAllowed !== false) return;
               void openInstallPermissionSettings();
             }}
           />

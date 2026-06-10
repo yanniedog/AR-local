@@ -404,13 +404,13 @@ older preview build can update from Settings without reinstalling from expo.dev.
 | Manifest | `REQUEST_INSTALL_PACKAGES` in `mobile/app.json` → `expo.android.permissions` |
 | Check | `expo-device` → `Device.isSideLoadingEnabledAsync()` (`PackageManager.canRequestPackageInstalls`) |
 | Settings deep link | `android.settings.MANAGE_UNKNOWN_APP_SOURCES` with `package:com.eyex.australianrates` |
-| First launch | Onboarding (Android) + Settings → App update show **Allow app updates** when not granted |
+| First launch | Onboarding (Android) + Settings → App update shows **Allow app updates** when not granted |
 | Before install | `ensureInstallPermission()` in `appUpdate.ts` / Settings download flow |
 
 **Persistence:** Android stores “Install unknown apps” **per app** (package name). It **survives
 normal in-app APK updates** when the package (`com.eyex.australianrates`) and signing key are
 unchanged. Users must grant again after uninstall, a new package ID, or a reinstall signed with a
-different key. The app cannot grant this programmatically on Android 8+ — only open system settings.
+different key. The app cannot grant this programmatically on Android 8+ — it can only open system settings.
 
 **Scan-to-install QR (EAS-style, no expo.dev link)**
 
