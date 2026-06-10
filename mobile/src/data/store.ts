@@ -33,6 +33,7 @@ import {
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
 import type { HistoryBanksPayload } from './historyPayload';
 import { normalizeHistoryBanksPayload } from './historyPayload';
+import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
   downloadCore,
@@ -75,7 +76,7 @@ export const DEFAULT_PREFS: Prefs = {
   enableDeepSearch: false,
   showHistoryRibbon: false,
   onboarded: false,
-  interests: ['Mortgage', 'Savings', 'TD'],
+  interests: [...DEFAULT_INTERESTS],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
 };
 
@@ -651,11 +652,32 @@ export const useStore = create<AppState>()(
       },
 
       setActiveSection(section) {
-        set({ activeSection: section });
+        set({ activeSection: resolveInterestSection(get().prefs.interests, section) });
       },
 
       setPref(key, value) {
-        set({ prefs: { ...get().prefs, [key]: value } });
+        if (key === 'interests') {
+          const interests = normalizeInterests(value as SectionKey[]);
+          const prefs = { ...get().prefs, interests };
+          if (!interests.includes(prefs.defaultSection)) {
+            prefs.defaultSection = interests[0];
+          }
+          set({
+            prefs,
+            activeSection: resolveInterestSection(interests, get().activeSection),
+          });
+        } else if (key === 'defaultSection') {
+          const section = value as SectionKey;
+          const interests = normalizeInterests(get().prefs.interests);
+          set({
+            prefs: {
+              ...get().prefs,
+              defaultSection: interests.includes(section) ? section : interests[0],
+            },
+          });
+        } else {
+          set({ prefs: { ...get().prefs, [key]: value } });
+        }
         if (key === 'enableDeepSearch') {
           if (value) {
             void get().ensureSearchIndex();
@@ -675,13 +697,14 @@ export const useStore = create<AppState>()(
       },
 
       completeOnboarding(interests, notifications) {
-        const defaultSection = interests[0] ?? get().prefs.defaultSection;
+        const normalized = normalizeInterests(interests);
+        const defaultSection = normalized[0];
         set({
           activeSection: defaultSection,
           prefs: {
             ...get().prefs,
             onboarded: true,
-            interests: interests.length ? interests : DEFAULT_PREFS.interests,
+            interests: normalized,
             defaultSection,
             notificationsEnabled: notifications,
           },
@@ -719,12 +742,19 @@ export const useStore = create<AppState>()(
       },
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
-        const prefs = { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false };
+        const prefs = {
+          ...DEFAULT_PREFS,
+          ...p?.prefs,
+          showHistoryRibbon: false,
+          interests: normalizeInterests(p?.prefs?.interests ?? DEFAULT_INTERESTS),
+        };
         const persistedActiveSection = p?.activeSection;
         const isValidActiveSection =
           typeof persistedActiveSection === 'string' &&
-          Object.prototype.hasOwnProperty.call(SECTIONS, persistedActiveSection);
-        const activeSection = isValidActiveSection ? persistedActiveSection : prefs.defaultSection;
+          prefs.interests.includes(persistedActiveSection as SectionKey);
+        const activeSection = isValidActiveSection
+          ? (persistedActiveSection as SectionKey)
+          : resolveInterestSection(prefs.interests, prefs.defaultSection);
         return {
           ...current,
           ...p,

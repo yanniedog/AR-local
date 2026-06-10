@@ -6,7 +6,8 @@ import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Card, Divider, Row } from '../../src/components/ui';
-import { SECTIONS, SECTION_ORDER } from '../../src/constants';
+import { SECTIONS } from '../../src/constants';
+import { orderedInterestSections } from '../../src/data/interests';
 import { formatRate, formatRunDate } from '../../src/data/format';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
@@ -17,6 +18,8 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 export default function Trends() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
+  const interests = useStore((s) => s.prefs.interests);
+  const interestSections = useMemo(() => orderedInterestSections(interests), [interests]);
 
   const decisions = useMemo(() => {
     if (!core) return [];
@@ -71,7 +74,7 @@ export default function Trends() {
       <AppText variant="h3" style={{ marginBottom: 10 }}>
         Market snapshot
       </AppText>
-      {SECTION_ORDER.map((key) => {
+      {interestSections.map((key) => {
         const data = core.sections[key];
         if (!data) return null;
         const stats = resolveSectionRibbonStats(data, data.rates, false);

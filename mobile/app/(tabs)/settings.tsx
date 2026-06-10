@@ -6,9 +6,10 @@ import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { AppText, Button, Card, Chip, Divider, Row } from '../../src/components/ui';
+import { AppText, Button, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
+import { moveInterest, orderedInterestSections, toggleInterest } from '../../src/data/interests';
 import {
   ensurePermissions,
   registerBackgroundRefresh,
@@ -79,10 +80,42 @@ export default function Settings() {
         />
       </Section>
 
+      <Section title="Your interests">
+        <Label text="Sections shown on Home, Browse, and Trends" />
+        {orderedInterestSections(prefs.interests).map((key, idx, ordered) => (
+          <InterestOrderRow
+            key={key}
+            title={SECTIONS[key].title}
+            canMoveUp={idx > 0}
+            canMoveDown={idx < ordered.length - 1}
+            canRemove={ordered.length > 1}
+            onMoveUp={() => setPref('interests', moveInterest(prefs.interests, key, 'up'))}
+            onMoveDown={() => setPref('interests', moveInterest(prefs.interests, key, 'down'))}
+            onRemove={() => setPref('interests', toggleInterest(prefs.interests, key))}
+          />
+        ))}
+        {SECTION_ORDER.filter((key) => !prefs.interests.includes(key)).length ? (
+          <>
+            <Divider style={{ marginVertical: 12 }} />
+            <Label text="Add section" />
+            <Row gap={8} style={{ flexWrap: 'wrap' }}>
+              {SECTION_ORDER.filter((key) => !prefs.interests.includes(key)).map((key) => (
+                <Chip
+                  key={key}
+                  label={SECTIONS[key].title}
+                  icon={SECTIONS[key].icon as keyof typeof Ionicons.glyphMap}
+                  onPress={() => setPref('interests', toggleInterest(prefs.interests, key))}
+                />
+              ))}
+            </Row>
+          </>
+        ) : null}
+      </Section>
+
       <Section title="Defaults">
         <Label text="Default category" />
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
-          {SECTION_ORDER.map((key) => (
+          {orderedInterestSections(prefs.interests).map((key) => (
             <Chip
               key={key}
               label={SECTIONS[key].title}
@@ -442,6 +475,52 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </AppText>
       <Card style={{ gap: 4 }}>{children}</Card>
     </View>
+  );
+}
+
+function InterestOrderRow({
+  title,
+  canMoveUp,
+  canMoveDown,
+  canRemove,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+}: {
+  title: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canRemove: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Row style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+      <AppText variant="body" weight="600" style={{ flex: 1 }}>
+        {title}
+      </AppText>
+      <Row gap={4}>
+        <IconButton
+          icon="chevron-up"
+          onPress={onMoveUp}
+          disabled={!canMoveUp}
+          accessibilityLabel={`Move ${title} up`}
+        />
+        <IconButton
+          icon="chevron-down"
+          onPress={onMoveDown}
+          disabled={!canMoveDown}
+          accessibilityLabel={`Move ${title} down`}
+        />
+        <IconButton
+          icon="close"
+          onPress={onRemove}
+          disabled={!canRemove}
+          accessibilityLabel={`Remove ${title}`}
+        />
+      </Row>
+    </Row>
   );
 }
 
