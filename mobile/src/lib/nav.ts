@@ -18,6 +18,12 @@ export const openProduct = (productKey: string, rateIndex?: number) =>
 export const openBank = (provider: string) =>
   router.push({ pathname: '/bank/[provider]', params: { provider } });
 
+/** Dot-delimited Browse drill path from expo-router search params. */
+export const parseBrowsePath = (pathRaw?: string | string[]): string[] => {
+  const raw = Array.isArray(pathRaw) ? pathRaw[0] : pathRaw;
+  return (raw ?? '').split('.').filter(Boolean);
+};
+
 const browseDrillParams = (section: SectionKey, path: string[] = []) => ({
   section: SECTIONS[section].slug,
   ...(path.length ? { path: path.join('.') } : {}),

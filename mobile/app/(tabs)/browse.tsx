@@ -10,14 +10,14 @@ import { Row } from '../../src/components/ui';
 import { sectionFromSlug } from '../../src/constants';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { useStore } from '../../src/data/store';
-import { openHierarchy, openSearch } from '../../src/lib/nav';
+import { openHierarchy, openSearch, parseBrowsePath } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function Browse() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
-  const params = useLocalSearchParams<{ section?: string; path?: string }>();
-  const path = useMemo(() => (params.path ?? '').split('.').filter(Boolean), [params.path]);
+  const params = useLocalSearchParams<{ section?: string; path?: string | string[] }>();
+  const path = useMemo(() => parseBrowsePath(params.path), [params.path]);
   const interests = useStore((s) => s.prefs.interests);
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
