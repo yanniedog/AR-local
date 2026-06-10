@@ -4,7 +4,7 @@ Pure-PIL, deterministic. Run from anywhere:
 
     python mobile/scripts/make-icons.py
 
-Writes PNGs into mobile/assets/. Re-run after tweaking the palette below.
+Writes PNGs into mobile/assets/. Mark matches dashboard `site/assets/branding/ar-mark.svg`.
 """
 
 from __future__ import annotations
@@ -15,63 +15,66 @@ from PIL import Image, ImageDraw
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 
-BG = (11, 15, 23, 255)          # #0b0f17  app/splash background (navy)
-PRIMARY = (59, 130, 246, 255)   # #3b82f6  AR-local blue
-PRIMARY_HI = (96, 165, 250, 255)  # #60a5fa lighter blue
-LINE = (255, 255, 255, 255)
-INK = (4, 18, 43, 255)          # deep navy for marks on the blue tile
+# Pi dashboard dark shell (`site/foundation.css` :root[data-theme="dark"])
+BG = (11, 14, 17, 255)  # #0b0e11
+MARK_BG = (7, 17, 31, 255)  # #07111f
+MARK_TILE = (34, 211, 238, 61)  # cyan gradient wash at ~24% on tile
+ROOF = (226, 248, 255, 255)  # #e2f8ff
+CHART = (125, 211, 252, 255)  # #7dd3fc
 
 
-def _trend_mark(img: Image.Image, box: tuple[int, int, int, int], rounded: bool) -> None:
-    """A rounded AR-local-blue tile with the 'ribbon' motif: a distribution bar with
-    a median marker plus three ascending rate bars — the AR-local dashboard signature."""
-    draw = ImageDraw.Draw(img)
+def _ar_mark(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int]) -> None:
+    """Simplified raster of `ar-mark.svg` (house roof + rising rate chart)."""
     x0, y0, x1, y1 = box
     w = x1 - x0
-    hgt = y1 - y0
-    if rounded:
-        draw.rounded_rectangle(box, radius=int(w * 0.225), fill=PRIMARY)
+    h = y1 - y0
+    radius = int(w * 0.23)
+    draw.rounded_rectangle(box, radius=radius, fill=MARK_BG)
+    inner = (
+        x0 + w * 0.02,
+        y0 + h * 0.02,
+        x1 - w * 0.02,
+        y1 - h * 0.02,
+    )
+    draw.rounded_rectangle(inner, radius=int(radius * 0.9), fill=MARK_TILE)
 
-    padx = w * 0.18
-    inner_w = w - 2 * padx
-    # Three ascending rounded bars (a mini rate chart).
-    bar_n = 3
-    gap = inner_w * 0.10
-    bar_w = (inner_w - gap * (bar_n - 1)) / bar_n
-    base_y = y0 + hgt * 0.74
-    heights = [0.26, 0.40, 0.56]
-    for i, hf in enumerate(heights):
-        bx = x0 + padx + i * (bar_w + gap)
-        top = base_y - hgt * hf
-        draw.rounded_rectangle((bx, top, bx + bar_w, base_y), radius=int(bar_w * 0.32), fill=LINE)
+    cx = (x0 + x1) / 2
+    roof_y = y0 + h * 0.42
+    left_x = x0 + w * 0.10
+    right_x = x1 - w * 0.10
+    peak_y = y0 + h * 0.17
+    draw.line([(left_x, roof_y), (cx, peak_y), (right_x, roof_y)], fill=ROOF, width=max(2, int(w * 0.07)))
 
-    # The ribbon: a rounded distribution bar beneath the chart with a median dot.
-    rib_y0 = y0 + hgt * 0.80
-    rib_y1 = y0 + hgt * 0.875
-    draw.rounded_rectangle((x0 + padx, rib_y0, x1 - padx, rib_y1), radius=int((rib_y1 - rib_y0) / 2), fill=INK)
-    # median marker
-    mx = x0 + padx + inner_w * 0.62
-    r = (rib_y1 - rib_y0) * 0.95
-    cy = (rib_y0 + rib_y1) / 2
-    draw.ellipse((mx - r, cy - r, mx + r, cy + r), fill=LINE)
+    base_y = y0 + h * 0.71
+    draw.line([(x0 + w * 0.19, base_y), (x1 - w * 0.19, base_y)], fill=ROOF, width=max(2, int(w * 0.06)))
+
+    chart = [
+        (x0 + w * 0.24, y0 + h * 0.58),
+        (x0 + w * 0.35, y0 + h * 0.46),
+        (x0 + w * 0.46, y0 + h * 0.52),
+        (x0 + w * 0.62, y0 + h * 0.36),
+    ]
+    draw.line(chart, fill=CHART, width=max(2, int(w * 0.06)), joint="curve")
+    dot_r = max(2, int(w * 0.05))
+    dot_x = x0 + w * 0.66
+    dot_y = y0 + h * 0.40
+    draw.ellipse((dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r), fill=CHART)
 
 
 def make_icon() -> None:
     size = 1024
     img = Image.new("RGBA", (size, size), BG)
     inset = int(size * 0.14)
-    _trend_mark(img, (inset, inset, size - inset, size - inset), rounded=True)
+    _ar_mark(ImageDraw.Draw(img), (inset, inset, size - inset, size - inset))
     img.save(ASSETS / "icon.png")
-    # favicon
     img.resize((64, 64)).save(ASSETS / "favicon.png")
 
 
 def make_adaptive() -> None:
     size = 1024
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    # Android masks the icon; keep the mark within the centre safe zone (~62%).
     margin = int(size * 0.2)
-    _trend_mark(img, (margin, margin, size - margin, size - margin), rounded=True)
+    _ar_mark(ImageDraw.Draw(img), (margin, margin, size - margin, size - margin))
     img.save(ASSETS / "adaptive-icon.png")
 
 
@@ -79,7 +82,7 @@ def make_splash() -> None:
     size = 1024
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     margin = int(size * 0.28)
-    _trend_mark(img, (margin, margin, size - margin, size - margin), rounded=True)
+    _ar_mark(ImageDraw.Draw(img), (margin, margin, size - margin, size - margin))
     img.save(ASSETS / "splash.png")
 
 

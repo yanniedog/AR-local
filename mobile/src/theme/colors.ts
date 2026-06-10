@@ -1,3 +1,7 @@
+/**
+ * Palette tokens aligned with Pi dashboard shell CSS (`site/foundation.css`).
+ * Dark is the dashboard default (`data-theme="dark"` on `dashboard/index.html`).
+ */
 export interface Palette {
   bg: string;
   surface: string;
@@ -18,48 +22,52 @@ export interface Palette {
   shadow: string;
   skeleton: string;
   overlay: string;
+  /** Mortgage section accent (`public-polish.css` home-loans). */
+  sectionAccent: string;
 }
 
 export const DARK: Palette = {
-  bg: '#0b0f17',
-  surface: '#121826',
-  surfaceAlt: '#0e1420',
-  card: '#161d2e',
-  border: '#232c40',
-  text: '#e6edf7',
-  textMuted: '#9aa7bd',
-  textFaint: '#6b7891',
-  primary: '#60a5fa',
-  primaryMuted: '#16263f',
-  onPrimary: '#04122b',
-  success: '#3fb950',
-  warning: '#d29922',
-  danger: '#f85149',
-  chip: '#1c2438',
-  chipText: '#c3cee0',
+  bg: '#0b0e11',
+  surface: '#161d26',
+  surfaceAlt: '#12181f',
+  card: '#1b2530',
+  border: '#2a3442',
+  text: '#edf3f9',
+  textMuted: '#98a6b5',
+  textFaint: '#6f7d8c',
+  primary: '#2563eb',
+  primaryMuted: '#1e2a3d',
+  onPrimary: '#ffffff',
+  success: '#1fb978',
+  warning: '#f59e0b',
+  danger: '#ef4444',
+  chip: '#1b2530',
+  chipText: '#c5ced8',
   shadow: '#00000088',
-  skeleton: '#1b2334',
-  overlay: '#00000066',
+  skeleton: '#212d3a',
+  overlay: '#05080cb8',
+  sectionAccent: '#3b82f6',
 };
 
 export const LIGHT: Palette = {
-  bg: '#f4f6fb',
+  bg: '#f3f6fa',
   surface: '#ffffff',
-  surfaceAlt: '#eef2f9',
+  surfaceAlt: '#edf2f8',
   card: '#ffffff',
-  border: '#e2e8f2',
-  text: '#0b1220',
-  textMuted: '#5b6678',
-  textFaint: '#8b95a7',
-  primary: '#3b82f6',
-  primaryMuted: '#dbeafe',
+  border: '#dce3eb',
+  text: '#102033',
+  textMuted: '#4f6276',
+  textFaint: '#7a8a9a',
+  primary: '#2563eb',
+  primaryMuted: '#e8effd',
   onPrimary: '#ffffff',
-  success: '#1a7f37',
-  warning: '#9a6700',
-  danger: '#cf222e',
-  chip: '#eef2f9',
-  chipText: '#3a4254',
-  shadow: '#0b122016',
+  success: '#0a6d49',
+  warning: '#8a4b00',
+  danger: '#c2410c',
+  chip: '#eef3f8',
+  chipText: '#24364a',
+  shadow: '#10203316',
   skeleton: '#e7ecf4',
-  overlay: '#0b122040',
+  overlay: '#10203347',
+  sectionAccent: '#3b82f6',
 };
