@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 
+import { resolveBankLogoSources, resolveBrandShort } from '../data/bankBrand';
 import { useStore } from '../data/store';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -17,15 +18,26 @@ function contrastText(hex: string): string {
 export function BankAvatar({ provider, size = 42 }: { provider: string; size?: number }) {
   const theme = useTheme();
   const brand = useStore((s) => s.core?.brands?.[provider]);
-  const [logoFailed, setLogoFailed] = useState(false);
+  const sources = useMemo(
+    () => resolveBankLogoSources(provider, brand?.logo),
+    [provider, brand?.logo],
+  );
+  const [prevSources, setPrevSources] = useState(sources);
+  const [sourceIdx, setSourceIdx] = useState(0);
+  const [exhausted, setExhausted] = useState(false);
+
+  if (sources !== prevSources) {
+    setPrevSources(sources);
+    setSourceIdx(0);
+    setExhausted(false);
+  }
+
   const color = brand?.color ?? theme.colors.chipText;
-  const short = (brand?.short ?? provider.slice(0, 2)).toUpperCase().slice(0, 5);
+  const short = resolveBrandShort(provider, brand?.short).toUpperCase().slice(0, 5);
   const fontSize = short.length <= 3 ? size * 0.34 : size * 0.26;
-  const logo = brand?.logo;
+  const activeSource = sources[sourceIdx];
 
-  useEffect(() => setLogoFailed(false), [provider, logo]);
-
-  if (logo && !logoFailed) {
+  if (activeSource != null && !exhausted) {
     return (
       <View
         style={{
@@ -39,10 +51,13 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
       >
         <Image
           accessible={false}
-          source={{ uri: logo }}
+          source={typeof activeSource === 'number' ? activeSource : { uri: activeSource }}
           resizeMode="contain"
           style={{ width: size * 0.88, height: size * 0.88 }}
-          onError={() => setLogoFailed(true)}
+          onError={() => {
+            if (sourceIdx + 1 < sources.length) setSourceIdx((idx) => idx + 1);
+            else setExhausted(true);
+          }}
         />
       </View>
     );
