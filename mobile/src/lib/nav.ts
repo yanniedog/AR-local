@@ -37,7 +37,7 @@ export const openBrowse = (section: SectionKey) => openBrowseDrill(section, []);
 export const openHierarchy = (section: SectionKey, path: string[] = []) =>
   router.push({
     pathname: '/hierarchy',
-    params: { section: SECTIONS[section].slug, ...(path.length ? { path: path.join('.') } : {}) },
+    params: browseDrillParams(section, path),
   } as unknown as Href);
 
 /** @deprecated Use openBrowseDrill — drills inside Browse tab instead of stacking /node. */

@@ -5,6 +5,7 @@ import * as TaskManager from 'expo-task-manager';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { SECTIONS } from '../constants';
 import { RATE_MOVE_BPS_THRESHOLD } from '../config';
 import type {
   CorePayload,
@@ -716,11 +717,16 @@ export const useStore = create<AppState>()(
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
         const prefs = { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false };
+        const persistedActiveSection = p?.activeSection;
+        const isValidActiveSection =
+          typeof persistedActiveSection === 'string' &&
+          Object.prototype.hasOwnProperty.call(SECTIONS, persistedActiveSection);
+        const activeSection = isValidActiveSection ? persistedActiveSection : prefs.defaultSection;
         return {
           ...current,
           ...p,
           prefs,
-          activeSection: p?.activeSection ?? prefs.defaultSection,
+          activeSection,
         };
       },
       // Flip `hydrated` once persisted state is restored, so the initial route
