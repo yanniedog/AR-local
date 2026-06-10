@@ -34,8 +34,8 @@ export function androidRipple(color: string, borderless = false) {
   return Platform.OS === 'android' ? { color, borderless } : undefined;
 }
 
-function pressedOpacity(pressed: boolean, amount = 0.7) {
-  return Platform.OS !== 'android' && pressed ? { opacity: amount } : null;
+function pressedOpacity(pressed: boolean, amount = 0.7): { opacity: number } | Record<string, never> {
+  return Platform.OS !== 'android' && pressed ? { opacity: amount } : {};
 }
 
 export function AppText({
