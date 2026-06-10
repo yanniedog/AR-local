@@ -12,6 +12,9 @@ runs/*.*
 
 node_modules/
 
+# Local git worktrees (agent parallel checkouts)
+.worktrees/
+
 # Agent auditor session artifacts (local only)
 .git/auditor/
 
