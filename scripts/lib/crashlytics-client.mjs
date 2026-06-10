@@ -5,15 +5,54 @@
 const API_BASE = 'https://firebasecrashlytics.googleapis.com/v1alpha';
 
 /**
+ * Flatten a protobuf message object into dot-separated query keys.
+ * Google REST transcoding rejects JSON blobs for message-typed query params.
+ *
+ * @param {string} prefix
+ * @param {unknown} value
+ * @param {Record<string, string>} [out]
+ * @returns {Record<string, string>}
+ */
+export function flattenMessageQueryParams(prefix, value, out = {}) {
+  if (value === undefined || value === null) return out;
+  if (Array.isArray(value)) {
+    const primitives = value
+      .filter((item) => item !== undefined && item !== null && typeof item !== 'object')
+      .map(String);
+    if (primitives.length === 1) out[prefix] = primitives[0];
+    else if (primitives.length > 1) out[prefix] = primitives;
+    return out;
+  }
+  if (typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      const next = prefix ? `${prefix}.${key}` : key;
+      flattenMessageQueryParams(next, child, out);
+    }
+    return out;
+  }
+  out[prefix] = String(value);
+  return out;
+}
+
+/** @typedef {Record<string, string | number | string[] | undefined>} CrashlyticsQuery */
+
+/**
  * @param {string} accessToken
  * @param {string} method
  * @param {string} path  e.g. projects/my-proj/apps/1:123:android:abc/reports/topIssues
- * @param {Record<string, string | number | undefined>} [query]
+ * @param {CrashlyticsQuery} [query]
  */
 export async function crashlyticsRequest(accessToken, method, path, query = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === undefined || item === null || item === '') continue;
+        params.append(key, String(item));
+      }
+      continue;
+    }
     params.set(key, String(value));
   }
   const qs = params.toString();
@@ -68,7 +107,7 @@ export async function fetchReport(accessToken, projectId, appId, reportName, opt
     pageToken: options.pageToken,
   };
   if (options.filter) {
-    query.filter = JSON.stringify(options.filter);
+    Object.assign(query, flattenMessageQueryParams('filter', options.filter));
   }
   return crashlyticsRequest(accessToken, 'GET', path, query);
 }
