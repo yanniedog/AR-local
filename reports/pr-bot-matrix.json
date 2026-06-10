@@ -1,7 +1,7 @@
 {
   "repo": "yanniedog/AR-local",
   "prCount": 50,
-  "generatedAt": "2026-06-10T06:47:07.513Z",
+  "generatedAt": "2026-06-10T07:20:29.110Z",
   "bots": [
     {
       "key": "gemini",
@@ -35,6 +35,44 @@
     "red": "quota/limit only"
   },
   "rows": [
+    {
+      "number": 273,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T06:47:32Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/273",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
     {
       "number": 271,
       "title": "fix(mobile): make history ribbon fast and discoverable",
@@ -1864,44 +1902,6 @@
       "title": "Crashlytics: auto-open GitHub issues from Firebase topIssues",
       "mergedAt": "2026-06-10T00:10:01Z",
       "url": "https://github.com/yanniedog/AR-local/pull/223",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 222,
-      "title": "feat(mobile): Android install permission for APK self-update",
-      "mergedAt": "2026-06-10T00:06:00Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/222",
       "cells": {
         "gemini": {
           "status": "red",
