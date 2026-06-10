@@ -1,0 +1,31 @@
+{
+  "version": "1.0.4",
+  "date": "2026-06-10",
+  "summaryBullets": [
+    "Fix mobile band path crash on single data point (#228)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "Fix mobile band path crash on single data point (#228)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.4"
+        },
+        {
+          "text": "Since tag: app-v1.0.3"
+        }
+      ]
+    }
+  ]
+}
