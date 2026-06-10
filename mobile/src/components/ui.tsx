@@ -80,9 +80,16 @@ export function Card({ style, children, ...rest }: ViewProps) {
         {
           backgroundColor: theme.colors.card,
           borderRadius: theme.radius.lg,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.colors.border,
           padding: theme.spacing(4),
+          ...(Platform.OS === 'android' ? { elevation: 1 } : null),
+          ...(Platform.OS === 'ios'
+            ? {
+                shadowColor: theme.colors.shadow,
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: theme.dark ? 0.28 : 0.08,
+                shadowRadius: 2,
+              }
+            : null),
         },
         style,
       ]}
@@ -119,6 +126,9 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: !!selected }}
       android_ripple={androidRipple(theme.colors.primaryMuted)}
       style={({ pressed }) => ({
         flexDirection: 'row',
@@ -126,6 +136,7 @@ export function Chip({
         gap: 6,
         paddingHorizontal: 12,
         paddingVertical: 7,
+        minHeight: 48,
         borderRadius: theme.radius.pill,
         borderWidth: 1,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
@@ -245,10 +256,19 @@ export function IconButton({
         onPress?.();
       }}
       hitSlop={10}
+      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       android_ripple={androidRipple(theme.colors.primaryMuted, true)}
       style={({ pressed }) => [
-        { padding: 6, borderRadius: theme.radius.sm, overflow: 'hidden', ...pressedOpacity(pressed, 0.6) },
+        {
+          minWidth: 48,
+          minHeight: 48,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: theme.radius.sm,
+          overflow: 'hidden',
+          ...pressedOpacity(pressed, 0.6),
+        },
         style,
       ]}
       {...rest}

@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
 import { formatRate, formatRateDigits } from '../data/format';
+import { rbaChartA11ySummary } from '../lib/a11ySummaries';
 import type { RbaEntry } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText } from './ui';
@@ -36,11 +37,18 @@ export function RbaChart({ data, height = 160 }: { data: RbaEntry[]; height?: nu
   }
 
   const last = data[data.length - 1];
+  const a11ySummary = rbaChartA11ySummary(data);
 
   return (
-    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ width: '100%', height }}>
+    <View
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={a11ySummary}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      style={{ width: '100%', height }}
+    >
       {width > 0 ? (
-        <Svg width={width} height={height}>
+        <Svg width={width} height={height} importantForAccessibility="no-hide-descendants">
           <Line x1={padL} y1={y(maxR)} x2={width - padR} y2={y(maxR)} stroke={theme.colors.border} strokeWidth={1} />
           <Line x1={padL} y1={y(minR)} x2={width - padR} y2={y(minR)} stroke={theme.colors.border} strokeWidth={1} />
           <SvgText x={width - padR + 4} y={y(maxR) + 4} fontSize={10} fill={theme.colors.textFaint}>
