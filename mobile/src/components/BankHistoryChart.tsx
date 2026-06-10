@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, View, type GestureResponderEvent, type PointerEvent } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -16,6 +16,7 @@ import {
   rbaChangesInWindow,
   rbaStepForDates,
   sliceChartTimeline,
+  sliceIndexFromPlotX,
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
 import { bankHistoryChartA11ySummary } from '../lib/a11ySummaries';
@@ -33,6 +34,7 @@ const WINDOW_OPTIONS: { value: HistoryWindow; label: string }[] = [
 ];
 
 const DRAW_MS = 850;
+const TOUCH_DECIDE_PX = 8;
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -127,6 +129,9 @@ export function BankHistoryChart({
   const [width, setWidth] = useState(0);
   const [window, setWindow] = useState<HistoryWindow>('30D');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [hoverDate, setHoverDate] = useState<string | null>(null);
+  const touchModeRef = useRef<'h' | 'v' | null>(null);
+  const touchStartRef = useRef({ x: 0, y: 0 });
   const drawProgress = useFirstMountDrawIn();
   const strokeLength = useMemo(() => Math.max(1, Math.max(1, width - 52) * 1.2), [width]);
   const lineDrawProps = useAnimatedProps(() => ({
@@ -205,14 +210,82 @@ export function BankHistoryChart({
   const bandFill = withAlpha(rateInk, theme.dark ? 0.35 : 0.28);
   const rbaInk = theme.colors.rba;
   const rbaBand = withAlpha(rbaInk, 0.42);
+  const crosshairColor = withAlpha(theme.colors.primary, theme.dark ? 0.6 : 0.55);
 
   const labelEvery = axisLabelInterval(plotDates.length);
-  const activeDate = selectedDate && plotDates.includes(selectedDate) ? selectedDate : plotDates.at(-1) ?? '';
+  const pinnedDate =
+    selectedDate && plotDates.includes(selectedDate) ? selectedDate : plotDates.at(-1) ?? '';
+  const activeDate =
+    hoverDate && plotDates.includes(hoverDate) ? hoverDate : pinnedDate;
+  const activeIndex = Math.max(0, plotDates.indexOf(activeDate));
   const activePoint = plotPoints.find((p) => p.date === activeDate);
 
   const handleSlicePress = (date: string) => {
     setSelectedDate(date);
     onDateSelect?.(date);
+  };
+
+  const setHoverFromPlotX = (plotLocalX: number) => {
+    const idx = sliceIndexFromPlotX(plotLocalX, innerW, plotDates.length);
+    const date = plotDates[idx];
+    if (date) setHoverDate(date);
+  };
+
+  const onTouchStartScrub = (e: GestureResponderEvent) => {
+    if (e.nativeEvent.touches.length !== 1) {
+      touchModeRef.current = 'v';
+      return;
+    }
+    touchModeRef.current = null;
+    const t = e.nativeEvent.touches[0];
+    touchStartRef.current = { x: t.locationX, y: t.locationY };
+  };
+
+  const onTouchMoveScrub = (e: GestureResponderEvent) => {
+    if (e.nativeEvent.touches.length !== 1) return;
+    const t = e.nativeEvent.touches[0];
+    if (touchModeRef.current === null) {
+      const dx = Math.abs(t.locationX - touchStartRef.current.x);
+      const dy = Math.abs(t.locationY - touchStartRef.current.y);
+      if (dx < TOUCH_DECIDE_PX && dy < TOUCH_DECIDE_PX) return;
+      touchModeRef.current = dx > dy ? 'h' : 'v';
+    }
+    if (touchModeRef.current !== 'h') return;
+    setHoverFromPlotX(t.locationX);
+  };
+
+  const onTouchEndScrub = (e: GestureResponderEvent) => {
+    const t = e.nativeEvent.changedTouches[0];
+    const mode = touchModeRef.current;
+    if (t && mode === null) {
+      const idx = sliceIndexFromPlotX(t.locationX, innerW, plotDates.length);
+      const date = plotDates[idx];
+      if (date) handleSlicePress(date);
+    }
+    touchModeRef.current = null;
+    setHoverDate(null);
+  };
+
+  const onPointerMoveScrub = (e: PointerEvent) => {
+    setHoverFromPlotX(e.nativeEvent.offsetX);
+  };
+
+  const onPointerDownScrub = (e: PointerEvent) => {
+    const idx = sliceIndexFromPlotX(e.nativeEvent.offsetX, innerW, plotDates.length);
+    const date = plotDates[idx];
+    if (date) handleSlicePress(date);
+  };
+
+  const onAccessibilityScrub = (e: { nativeEvent: { actionName: string } }) => {
+    if (e.nativeEvent.actionName === 'increment') {
+      const nextIdx = Math.min(plotDates.length - 1, activeIndex + 1);
+      const date = plotDates[nextIdx];
+      if (date) handleSlicePress(date);
+    } else if (e.nativeEvent.actionName === 'decrement') {
+      const prevIdx = Math.max(0, activeIndex - 1);
+      const date = plotDates[prevIdx];
+      if (date) handleSlicePress(date);
+    }
   };
 
   const chartSummary = bankHistoryChartA11ySummary({
@@ -362,34 +435,53 @@ export function BankHistoryChart({
               return null;
             })}
 
+            {plotDates.length > 1 ? (
+              <Line
+                x1={xAt(activeIndex)}
+                y1={padT}
+                x2={xAt(activeIndex)}
+                y2={padT + innerH}
+                stroke={crosshairColor}
+                strokeWidth={1.4}
+                strokeDasharray="4 3"
+              />
+            ) : null}
+
             {activePoint?.mean != null && isFiniteNumber(activePoint.mean) ? (
-              <CrossMarker cx={xAt(plotDates.indexOf(activeDate))} cy={yAt(activePoint.mean)} color={ribbonColor} />
+              <CrossMarker cx={xAt(activeIndex)} cy={yAt(activePoint.mean)} color={ribbonColor} />
             ) : null}
           </Svg>
         ) : null}
 
         {plotDates.length > 1 ? (
           <View
+            onTouchStart={onTouchStartScrub}
+            onTouchMove={onTouchMoveScrub}
+            onTouchEnd={onTouchEndScrub}
+            {...(Platform.OS === 'web'
+              ? {
+                  onPointerMove: onPointerMoveScrub,
+                  onPointerLeave: () => setHoverDate(null),
+                  onPointerDown: onPointerDownScrub,
+                }
+              : {})}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel="Scrub history ribbon by date"
+            accessibilityHint="Drag horizontally to preview a date; tap to pin"
+            accessibilityActions={[
+              { name: 'increment', label: 'Next date' },
+              { name: 'decrement', label: 'Previous date' },
+            ]}
+            onAccessibilityAction={onAccessibilityScrub}
             style={{
               position: 'absolute',
               left: padL,
               right: padR,
               top: padT,
               bottom: padB,
-              flexDirection: 'row',
             }}
-          >
-            {plotDates.map((date) => (
-              <Pressable
-                key={date}
-                onPress={() => handleSlicePress(date)}
-                style={{ flex: 1 }}
-                accessibilityRole="button"
-                accessibilityLabel={`Select ${date}`}
-                accessibilityHint="Updates chart summary for this date"
-              />
-            ))}
-          </View>
+          />
         ) : null}
       </View>
 
