@@ -52,8 +52,7 @@ export function activeFilterCount(f: Filters): number {
     f.depositKinds.length +
     f.interestPayments.length +
     f.accountFeatures.length +
-    f.eligibilityCriteria.length +
-    (f.includeNonStandard ? 1 : 0)
+    f.eligibilityCriteria.length
   );
 }
 

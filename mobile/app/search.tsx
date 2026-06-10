@@ -255,10 +255,7 @@ export default function Search() {
         section={section}
         filters={effectiveFilters}
         detailsProducts={details?.products}
-        onApply={(next) => {
-          setPref('includeNonStandard', next.includeNonStandard);
-          setFilters(next);
-        }}
+        onApply={setFilters}
       />
       <ProPaywall
         visible={paywallVisible}

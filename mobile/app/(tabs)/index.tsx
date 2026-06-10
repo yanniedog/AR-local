@@ -8,7 +8,7 @@ import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/compo
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { CompactToggle, SectionCrossfade, SegmentedControl } from '../../src/components/controls';
+import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
@@ -41,7 +41,6 @@ export default function Home() {
   const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
   const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
   const bankInsights = useStore((s) => s.bankInsights);
-  const setPref = useStore((s) => s.setPref);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const pulse = useMemo(
     () => (showBankInsights ? marketPulse(bankInsights, 7) : null),
@@ -113,11 +112,6 @@ export default function Home() {
       {sectionOptions.length > 1 ? (
         <SegmentedControl options={sectionOptions} value={section} onChange={setActiveSection} />
       ) : null}
-      <CompactToggle
-        label="Include non-standard accounts"
-        value={includeNonStandard}
-        onChange={(value) => setPref('includeNonStandard', value)}
-      />
 
       <SectionCrossfade section={section}>
       <Card style={{ borderColor: `${sectionAccent}44` }}>
