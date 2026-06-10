@@ -6,12 +6,18 @@ import { SECTIONS } from '../constants';
 import { formatRate } from '../data/format';
 import type { RateStats } from '../data/taxonomy';
 import type { SectionKey } from '../types';
+import type { Palette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Row } from './ui';
 
+/** Section-aware rate ink: loans use success, deposits use primary (rateDeposit role). */
+function sectionFillColor(lowerIsBetter: boolean, colors: Palette) {
+  return lowerIsBetter ? colors.success : colors.primary;
+}
+
 /**
  * The AR-local "ribbon": a rate-distribution bar (min..max) with median + mean
- * markers, coloured by section direction (green = best end). Optionally overlays
+ * markers on a neutral track with muted section tint. Optionally overlays
  * the RBA cash rate for home loans.
  */
 export function Ribbon({
@@ -32,7 +38,7 @@ export function Ribbon({
   const layoutW = w > 0 ? w : Math.max(1, screenW - 64);
   // Unique per instance — multiple ribbons render on one screen and SVG ids must not
   // collide. Must be before any early return (rules-of-hooks).
-  const gradId = `grad-${React.useId().replace(/:/g, '')}`;
+  const fillGradId = `ribbon-fill-${React.useId().replace(/:/g, '')}`;
   const { min, max, median, mean } = stats;
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
 
@@ -48,13 +54,16 @@ export function Ribbon({
   const barY = compact ? 8 : 14;
   const barH = compact ? 10 : 14;
   const pad = 2;
+  const tickW = 4;
   const span = max - min || 1;
-  const x = (v: number) => pad + ((v - min) / span) * (Math.max(1, layoutW) - 2 * pad);
+  const barW = Math.max(1, layoutW - 2 * pad);
+  const x = (v: number) => pad + ((v - min) / span) * barW;
 
   const goodColor = theme.colors.success;
   const badColor = theme.colors.danger;
   const leftColor = lowerIsBetter ? goodColor : badColor;
   const rightColor = lowerIsBetter ? badColor : goodColor;
+  const fillBase = sectionFillColor(lowerIsBetter, theme.colors);
   const rba = rbaRate != null ? rbaRate / 100 : null;
   const rbaIn = rba != null && rba >= min && rba <= max;
 
@@ -63,13 +72,16 @@ export function Ribbon({
       <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ width: '100%', height: h }}>
         <Svg width={layoutW} height={h}>
           <Defs>
-            <LinearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor={leftColor} stopOpacity={0.85} />
-              <Stop offset="0.5" stopColor={theme.colors.warning} stopOpacity={0.8} />
-              <Stop offset="1" stopColor={rightColor} stopOpacity={0.85} />
+            <LinearGradient id={fillGradId} x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor={fillBase} stopOpacity={0.12} />
+              <Stop offset="0.5" stopColor={fillBase} stopOpacity={0.2} />
+              <Stop offset="1" stopColor={fillBase} stopOpacity={0.12} />
             </LinearGradient>
           </Defs>
-          <Rect x={pad} y={barY} width={Math.max(1, layoutW - 2 * pad)} height={barH} rx={barH / 2} fill={`url(#${gradId})`} />
+          <Rect x={pad} y={barY} width={barW} height={barH} rx={barH / 2} fill={theme.colors.surfaceAlt} />
+          <Rect x={pad} y={barY} width={barW} height={barH} rx={barH / 2} fill={`url(#${fillGradId})`} />
+          <Rect x={pad} y={barY} width={tickW} height={barH} rx={1} fill={leftColor} />
+          <Rect x={pad + barW - tickW} y={barY} width={tickW} height={barH} rx={1} fill={rightColor} />
           {mean !== null ? (
             <Line x1={x(mean)} y1={barY - 3} x2={x(mean)} y2={barY + barH + 3} stroke={theme.colors.text} strokeWidth={1.5} />
           ) : null}
