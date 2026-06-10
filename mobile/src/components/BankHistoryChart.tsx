@@ -1,5 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { BankHistoryPoint, HistoryWindow, RbaEntry, SectionKey } from '../types';
@@ -27,6 +33,20 @@ const WINDOW_OPTIONS: { value: HistoryWindow; label: string }[] = [
 
 const RBA_COLOR = '#f59e0b';
 const RBA_BAND = 'rgba(234, 179, 8, 0.42)';
+const DRAW_MS = 850;
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+function useFirstMountDrawIn(duration = DRAW_MS) {
+  const progress = useSharedValue(0);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    progress.value = withTiming(1, { duration, easing: Easing.out(Easing.cubic) });
+  }, [duration, progress]);
+  return progress;
+}
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -108,6 +128,14 @@ export function BankHistoryChart({
   const [width, setWidth] = useState(0);
   const [window, setWindow] = useState<HistoryWindow>('30D');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const drawProgress = useFirstMountDrawIn();
+  const strokeLength = useMemo(() => Math.max(1, Math.max(1, width - 52) * 1.2), [width]);
+  const lineDrawProps = useAnimatedProps(() => ({
+    strokeDashoffset: strokeLength * (1 - drawProgress.value),
+  }));
+  const bandDrawProps = useAnimatedProps(() => ({
+    opacity: drawProgress.value,
+  }));
 
   const timeline = allDates ?? dates;
   const sliced = useMemo(() => {
@@ -265,23 +293,50 @@ export function BankHistoryChart({
               );
             })}
 
-            {band ? <Path d={band} fill={bandFill} stroke="none" /> : null}
+            {band ? (
+              <AnimatedPath animatedProps={bandDrawProps} d={band} fill={bandFill} stroke="none" />
+            ) : null}
             {minLine ? (
-              <Path d={minLine} stroke={ribbonColor} strokeWidth={0.8} fill="none" opacity={0.45} />
+              <AnimatedPath
+                animatedProps={lineDrawProps}
+                d={minLine}
+                stroke={ribbonColor}
+                strokeWidth={0.8}
+                fill="none"
+                opacity={0.45}
+                strokeDasharray={strokeLength}
+              />
             ) : null}
             {maxLine ? (
-              <Path d={maxLine} stroke={ribbonColor} strokeWidth={0.8} fill="none" opacity={0.45} />
+              <AnimatedPath
+                animatedProps={lineDrawProps}
+                d={maxLine}
+                stroke={ribbonColor}
+                strokeWidth={0.8}
+                fill="none"
+                opacity={0.45}
+                strokeDasharray={strokeLength}
+              />
             ) : null}
             {meanLine ? (
-              <Path d={meanLine} stroke={ribbonColor} strokeWidth={2} fill="none" strokeLinecap="round" />
+              <AnimatedPath
+                animatedProps={lineDrawProps}
+                d={meanLine}
+                stroke={ribbonColor}
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={strokeLength}
+              />
             ) : null}
             {rbaLine ? (
-              <Path
+              <AnimatedPath
+                animatedProps={lineDrawProps}
                 d={rbaLine}
                 stroke={RBA_COLOR}
                 strokeWidth={2}
                 fill="none"
-                strokeDasharray="6 4"
+                strokeDasharray={strokeLength}
                 opacity={0.85}
               />
             ) : null}

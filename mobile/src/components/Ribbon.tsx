@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
 import { SECTIONS } from '../constants';
@@ -10,6 +16,22 @@ import type { SectionKey } from '../types';
 import type { Palette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Row } from './ui';
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
+const AnimatedLine = Animated.createAnimatedComponent(Line);
+
+const DRAW_MS = 720;
+
+function useFirstMountDrawIn(duration = DRAW_MS) {
+  const progress = useSharedValue(0);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    progress.value = withTiming(1, { duration, easing: Easing.out(Easing.cubic) });
+  }, [duration, progress]);
+  return progress;
+}
 
 /** Section-aware rate ink: loans use success, deposits use primary (rateDeposit role). */
 function sectionFillColor(lowerIsBetter: boolean, colors: Palette) {
@@ -35,13 +57,36 @@ export function Ribbon({
   const theme = useTheme();
   const { width: screenW } = useWindowDimensions();
   const [w, setW] = useState(0);
-  // FlashList headers and first paint can report 0 width — fall back so the bar renders.
+  const drawProgress = useFirstMountDrawIn();
   const layoutW = w > 0 ? w : Math.max(1, screenW - 64);
-  // Unique per instance — multiple ribbons render on one screen and SVG ids must not
-  // collide. Must be before any early return (rules-of-hooks).
   const fillGradId = `ribbon-fill-${React.useId().replace(/:/g, '')}`;
   const { min, max, median, mean } = stats;
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
+
+  const h = compact ? 30 : 44;
+  const barY = compact ? 8 : 14;
+  const barH = compact ? 10 : 14;
+  const pad = 2;
+  const tickW = 4;
+  const barW = Math.max(1, layoutW - 2 * pad);
+  const meanLineLen = h + 6;
+  const rbaLineLen = h + 10;
+
+  const barAnimatedProps = useAnimatedProps(() => ({
+    width: Math.max(1, barW * drawProgress.value),
+  }));
+
+  const rightTickAnimatedProps = useAnimatedProps(() => ({
+    x: pad + Math.max(tickW, barW * drawProgress.value) - tickW,
+  }));
+
+  const meanAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: meanLineLen * (1 - drawProgress.value),
+  }));
+
+  const rbaAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: rbaLineLen * (1 - drawProgress.value),
+  }));
 
   if (min === null || max === null) {
     return (
@@ -51,13 +96,7 @@ export function Ribbon({
     );
   }
 
-  const h = compact ? 30 : 44;
-  const barY = compact ? 8 : 14;
-  const barH = compact ? 10 : 14;
-  const pad = 2;
-  const tickW = 4;
   const span = max - min || 1;
-  const barW = Math.max(1, layoutW - 2 * pad);
   const x = (v: number) => pad + ((v - min) / span) * barW;
 
   const goodColor = theme.colors.success;
@@ -84,19 +123,58 @@ export function Ribbon({
               <Stop offset="1" stopColor={fillBase} stopOpacity={0.12} />
             </LinearGradient>
           </Defs>
-          <Rect x={pad} y={barY} width={barW} height={barH} rx={barH / 2} fill={theme.colors.surfaceAlt} />
-          <Rect x={pad} y={barY} width={barW} height={barH} rx={barH / 2} fill={`url(#${fillGradId})`} />
+          <AnimatedRect
+            animatedProps={barAnimatedProps}
+            x={pad}
+            y={barY}
+            height={barH}
+            rx={barH / 2}
+            fill={theme.colors.surfaceAlt}
+          />
+          <AnimatedRect
+            animatedProps={barAnimatedProps}
+            x={pad}
+            y={barY}
+            height={barH}
+            rx={barH / 2}
+            fill={`url(#${fillGradId})`}
+          />
           <Rect x={pad} y={barY} width={tickW} height={barH} rx={1} fill={leftColor} />
-          <Rect x={pad + barW - tickW} y={barY} width={tickW} height={barH} rx={1} fill={rightColor} />
+          <AnimatedRect
+            animatedProps={rightTickAnimatedProps}
+            y={barY}
+            width={tickW}
+            height={barH}
+            rx={1}
+            fill={rightColor}
+          />
           {mean !== null ? (
-            <Line x1={x(mean)} y1={barY - 3} x2={x(mean)} y2={barY + barH + 3} stroke={theme.colors.text} strokeWidth={1.5} />
+            <AnimatedLine
+              animatedProps={meanAnimatedProps}
+              x1={x(mean)}
+              y1={barY - 3}
+              x2={x(mean)}
+              y2={barY + barH + 3}
+              stroke={theme.colors.text}
+              strokeWidth={1.5}
+              strokeDasharray={`${meanLineLen}`}
+            />
           ) : null}
           {median !== null ? (
             <Circle cx={x(median)} cy={barY + barH / 2} r={barH / 2 + 1} fill={theme.colors.surface} stroke={theme.colors.text} strokeWidth={2} />
           ) : null}
           {rbaIn ? (
             <>
-              <Line x1={x(rba!)} y1={barY - 5} x2={x(rba!)} y2={barY + barH + 5} stroke={theme.colors.primary} strokeWidth={2} strokeDasharray="2,2" />
+              <AnimatedLine
+                animatedProps={rbaAnimatedProps}
+                x1={x(rba!)}
+                y1={barY - 5}
+                x2={x(rba!)}
+                y2={barY + barH + 5}
+                stroke={theme.colors.primary}
+                strokeWidth={2}
+                strokeDasharray={`${rbaLineLen}`}
+              />
               {!compact ? (
                 <SvgText x={x(rba!)} y={barY + barH + 14} fontSize={9} fill={theme.colors.primary} textAnchor="middle">
                   RBA
