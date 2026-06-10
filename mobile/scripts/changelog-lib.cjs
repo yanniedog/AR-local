@@ -48,11 +48,16 @@ function versionEq(a, b) {
 }
 
 function normalizeBullet(value) {
-  if (typeof value === "string") return { text: value.trim() };
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? { text } : null;
+  }
   if (value && typeof value === "object" && typeof value.text === "string") {
-    const bullet = { text: value.text.trim() };
+    const text = value.text.trim();
+    if (!text) return null;
+    const bullet = { text };
     if (Array.isArray(value.children) && value.children.length) {
-      bullet.children = value.children.map(normalizeBullet);
+      bullet.children = value.children.map(normalizeBullet).filter(Boolean);
     }
     return bullet;
   }

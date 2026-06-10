@@ -1,5 +1,6 @@
 import {
   changelogSummaryUrl,
+  changelogSummaryUrlFromManifestUrl,
   selectCumulativeChangelogs,
   type ChangelogManifestVersion,
 } from '../src/lib/changelog';
@@ -30,6 +31,29 @@ describe('changelog', () => {
     expect(changelogSummaryUrl('yanniedog/AR-local', 'app-apk-latest')).toBe(
       'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/changelog-summary.json',
     );
+  });
+
+  it('changelogSummaryUrlFromManifestUrl derives summary URL from manifest URL', () => {
+    expect(
+      changelogSummaryUrlFromManifestUrl(
+        'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json',
+      ),
+    ).toBe(
+      'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/changelog-summary.json',
+    );
+    expect(
+      changelogSummaryUrlFromManifestUrl(
+        'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json?cache=1',
+      ),
+    ).toBe(
+      'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/changelog-summary.json',
+    );
+  });
+
+  it('changelogSummaryUrlFromManifestUrl falls back for non-rolling manifests', () => {
+    expect(
+      changelogSummaryUrlFromManifestUrl('https://example.com/releases/app-v1.0.0.json'),
+    ).toBe(changelogSummaryUrl());
   });
 
   it('selectCumulativeChangelogs returns skipped versions only', () => {

@@ -417,8 +417,8 @@ function UpdateChangelogList({ entries }: { entries: VersionChangelogSummary[] }
             <AppText variant="small" weight="700">
               {entry.version}
             </AppText>
-            {entry.summaryBullets.map((bullet) => (
-              <AppText key={bullet} variant="tiny" color="textFaint" style={{ marginLeft: 8 }}>
+            {entry.summaryBullets.map((bullet, idx) => (
+              <AppText key={`${entry.version}-${idx}`} variant="tiny" color="textFaint" style={{ marginLeft: 8 }}>
                 • {bullet}
               </AppText>
             ))}

@@ -62,7 +62,7 @@ describe('changelog-lib', () => {
     expect(picked.map((v: { summaryBullets: string[] }) => v.summaryBullets[0])).toEqual(['Second', 'Third']);
   });
 
-  it('renderGithubReleaseBody wraps sections in details', () => {
+  it('renderGithubReleaseBody wraps sections in details and includes install + changelog info', () => {
     const body = renderGithubReleaseBody({
       entry: {
         version: '1.0.0',
@@ -76,5 +76,8 @@ describe('changelog-lib', () => {
     expect(body).toContain('<details>');
     expect(body).toContain('Line one');
     expect(body).toContain('Build 42');
+    expect(body).toContain('<summary>Install</summary>');
+    expect(body).toContain('changelog-summary.json');
+    expect(body).toContain('Rolling manifest');
   });
 });
