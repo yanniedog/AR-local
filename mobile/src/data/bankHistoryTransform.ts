@@ -91,6 +91,15 @@ export function historyDatesInWindow(dates: string[], window: HistoryWindow): st
   return sorted.filter((item) => item.ts >= cutoff).map((item) => item.date);
 }
 
+/** Nearest time-slice index from X within the plot area (0..plotWidth). Dashboard chart.js parity. */
+export function sliceIndexFromPlotX(plotLocalX: number, plotWidth: number, sliceCount: number): number {
+  if (sliceCount <= 1) return 0;
+  const width = Math.max(1, plotWidth);
+  const clamped = Math.max(0, Math.min(width, plotLocalX));
+  const idx = Math.round((clamped / width) * (sliceCount - 1));
+  return Math.max(0, Math.min(sliceCount - 1, idx));
+}
+
 export function sliceChartTimeline(
   dates: string[],
   points: BankHistoryPoint[],
