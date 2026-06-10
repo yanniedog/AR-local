@@ -8,8 +8,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useStore } from '../data/store';
 import type { Theme } from '../theme/theme';
 import { useTheme } from '../theme/ThemeProvider';
+import { DataHealthBanner } from './feedback';
+
+const BANNER_WRAP = { paddingHorizontal: 16, paddingTop: 12 } as const;
+
+/** Shared data-health strip for tab and stack screens. */
+export function DataHealthBannerStrip() {
+  const source = useStore((s) => s.source);
+  const offline = useStore((s) => s.offline);
+  return (
+    <View style={BANNER_WRAP}>
+      <DataHealthBanner source={source} offline={offline} />
+    </View>
+  );
+}
 
 /** Horizontal + top padding for fixed screen headers (toolbars). */
 export function screenEdgeStyle(theme: Theme): ViewStyle {
@@ -42,10 +57,16 @@ export function ScreenContent({ style, children, ...rest }: ViewProps) {
 }
 
 /** Full-screen container with themed background (tabs, stack bodies). */
-export function Screen({ style, children, ...rest }: ViewProps) {
+export function Screen({
+  style,
+  children,
+  showDataHealthBanner = true,
+  ...rest
+}: ViewProps & { showDataHealthBanner?: boolean }) {
   const theme = useTheme();
   return (
     <View style={[{ flex: 1, backgroundColor: theme.colors.bg }, style]} {...rest}>
+      {showDataHealthBanner ? <DataHealthBannerStrip /> : null}
       {children}
     </View>
   );
@@ -56,8 +77,9 @@ export function ScreenScrollView({
   style,
   contentContainerStyle,
   children,
+  showDataHealthBanner = true,
   ...rest
-}: ScrollViewProps) {
+}: ScrollViewProps & { showDataHealthBanner?: boolean }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -66,6 +88,7 @@ export function ScreenScrollView({
       contentContainerStyle={[screenScrollContentStyle(theme, insets.bottom), contentContainerStyle]}
       {...rest}
     >
+      {showDataHealthBanner ? <DataHealthBannerStrip /> : null}
       {children}
     </ScrollView>
   );

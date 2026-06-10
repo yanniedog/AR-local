@@ -1,4 +1,4 @@
-import { resolveOfflineBanner } from '../src/components/bannerState';
+import { resolveOfflineBanner, resolveRefreshOutcomeSnackbar } from '../src/components/bannerState';
 import type { PayloadProgressSnapshot } from '../src/data/downloadProgress';
 
 const progress: PayloadProgressSnapshot = {
@@ -55,5 +55,29 @@ describe('resolveOfflineBanner', () => {
     const view = resolveOfflineBanner('sample', true, true, null);
     expect(view.mode).toBe('connecting');
     expect(view.showLiveProgress).toBe(false);
+  });
+});
+
+describe('resolveRefreshOutcomeSnackbar', () => {
+  it('formats success with run date', () => {
+    const view = resolveRefreshOutcomeSnackbar('success', '9 Jun 2026');
+    expect(view.kind).toBe('success');
+    expect(view.message).toContain('Rates updated');
+    expect(view.message).toContain('9 Jun 2026');
+    expect(view.action).toBe('dismiss');
+  });
+
+  it('offers retry on failure', () => {
+    const view = resolveRefreshOutcomeSnackbar('failure', null);
+    expect(view.kind).toBe('failure');
+    expect(view.action).toBe('retry');
+    expect(view.actionLabel).toBe('Retry');
+  });
+
+  it('links to settings on wifi skip', () => {
+    const view = resolveRefreshOutcomeSnackbar('wifi-skip', null);
+    expect(view.kind).toBe('wifi-skip');
+    expect(view.action).toBe('settings');
+    expect(view.message).toContain('Wi');
   });
 });

@@ -54,6 +54,7 @@ function resetStore() {
     offline: false,
     lastCheckedAt: null,
     payloadProgress: null,
+    refreshOutcome: null,
     hydrated: true,
     prefs: useStore.getState().prefs,
     favorites: [],
@@ -96,6 +97,7 @@ describe('store refresh lifecycle', () => {
     expect(state.refreshing).toBe(false);
     expect(state.payloadProgress).toBeNull();
     expect(state.offline).toBe(false);
+    expect(state.refreshOutcome).toBe('success');
   });
 
   it('sets source remote after download and clears refreshing', async () => {
@@ -117,6 +119,7 @@ describe('store refresh lifecycle', () => {
     expect(useStore.getState().source).toBe('remote');
     expect(useStore.getState().refreshing).toBe(false);
     expect(useStore.getState().payloadProgress).toBeNull();
+    expect(useStore.getState().refreshOutcome).toBe('success');
   });
 
   it('clears refreshing and flags offline on fetch failure', async () => {
@@ -130,6 +133,7 @@ describe('store refresh lifecycle', () => {
     expect(state.payloadProgress).toBeNull();
     expect(state.offline).toBe(true);
     expect(state.source).toBe('sample');
+    expect(state.refreshOutcome).toBe('failure');
   });
 
   it('clears refreshing and flags offline on downloadCore failure', async () => {
@@ -143,5 +147,21 @@ describe('store refresh lifecycle', () => {
     expect(state.payloadProgress).toBeNull();
     expect(state.offline).toBe(true);
     expect(state.source).toBe('sample');
+    expect(state.refreshOutcome).toBe('failure');
+  });
+
+  it('sets wifi-skip outcome when wifi-only pref blocks background refresh', async () => {
+    useStore.setState({
+      prefs: { ...useStore.getState().prefs, wifiOnly: true },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock
+    const Network = require('expo-network');
+    Network.getNetworkStateAsync.mockResolvedValueOnce({ type: 'CELLULAR' });
+
+    const changed = await useStore.getState().refresh({});
+
+    expect(changed).toBe(false);
+    expect(useStore.getState().refreshOutcome).toBe('wifi-skip');
+    expect(mockFetchManifest).not.toHaveBeenCalled();
   });
 });
