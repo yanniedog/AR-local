@@ -40,6 +40,7 @@ function run(cmd, args, { allowFail = false, timeout = 60000 } = {}) {
 }
 
 function gitConfig() {
+  if (process.env.GITHUB_ACTIONS !== 'true') return;
   run('git', ['config', 'user.name', GH_ACTIONS_NAME]);
   run('git', ['config', 'user.email', GH_ACTIONS_EMAIL]);
 }

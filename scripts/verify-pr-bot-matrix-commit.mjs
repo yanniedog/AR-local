@@ -24,6 +24,7 @@ for (const [path, want] of [
 
 for (const [name, paths, want] of [
   ['exact matrix pair', [...MATRIX_COMMIT_REL_PATHS], true],
+  ['duplicate html', ['reports/pr-bot-matrix.html', 'reports/pr-bot-matrix.html'], false],
   ['html only', ['reports/pr-bot-matrix.html'], false],
   ['matrix + workflow', [...MATRIX_COMMIT_REL_PATHS, '.github/workflows/pr-bot-spreadsheet.yml'], false],
   ['empty', [], false],
