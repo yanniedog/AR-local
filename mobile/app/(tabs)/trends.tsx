@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
@@ -54,6 +54,27 @@ export default function Trends() {
   const insightsRequestKey = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
+  const [retryingInsights, setRetryingInsights] = useState(false);
+  const [retryingHistory, setRetryingHistory] = useState(false);
+
+  const handleRetryInsights = async () => {
+    setRetryingInsights(true);
+    try {
+      await retryBankInsights();
+    } finally {
+      setRetryingInsights(false);
+    }
+  };
+
+  const handleRetryHistory = async () => {
+    setRetryingHistory(true);
+    try {
+      await retryHistoryBanks();
+    } finally {
+      setRetryingHistory(false);
+    }
+  };
+
   const interestSections = useMemo(() => orderedInterestSections(interests), [interests]);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const historyModel = useMemo(
@@ -119,7 +140,13 @@ export default function Trends() {
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
                   {bankInsightsError}
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void retryBankInsights()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={handleRetryInsights}
+                  loading={retryingInsights}
+                  disabled={retryingInsights}
+                />
               </Row>
             ) : null}
           </Card>
@@ -240,7 +267,13 @@ export default function Trends() {
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
                   {historyBanksError}
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void retryHistoryBanks()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={handleRetryHistory}
+                  loading={retryingHistory}
+                  disabled={retryingHistory}
+                />
               </Row>
             ) : null}
           </>
