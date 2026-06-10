@@ -42,14 +42,24 @@ function eventsForBot(events, botKey) {
 }
 
 /**
- * Review submission or PR reaction counts as feedback even when the body is empty/trivial.
+ * Review submission counts as feedback when it is not a quota/limit notice.
+ * Empty non-quota reviews still count; reactions always count.
  *
+ * @param {import('./pr-bot-spreadsheet-fetch.mjs').BotEvent} event
+ */
+function isSubstantiveReview(event) {
+  if (event.kind !== 'review') return false;
+  return !isQuotaBotMessage(event.body);
+}
+
+/**
  * @param {import('./pr-bot-spreadsheet-fetch.mjs').BotEvent[]} botEvents
  */
 function hasNonNoiseFeedback(botEvents) {
   if (!botEvents.length) return false;
-  if (botEvents.some((e) => e.kind === 'review' || e.kind === 'reaction')) return true;
-  return botEvents.some((e) => !e.noise);
+  if (botEvents.some((e) => e.kind === 'reaction')) return true;
+  if (botEvents.some((e) => isSubstantiveReview(e))) return true;
+  return botEvents.some((e) => e.kind !== 'review' && !e.noise);
 }
 
 /**

@@ -127,6 +127,35 @@ export function fetchPrBotEvents(owner, name, prNumber) {
 }
 
 /**
+ * @param {string | undefined} isoTimestamp
+ * @param {string | undefined} mergedAt
+ */
+function atOrBeforeMerge(isoTimestamp, mergedAt) {
+  if (!mergedAt || !isoTimestamp) return true;
+  return new Date(isoTimestamp).getTime() <= new Date(mergedAt).getTime();
+}
+
+/**
+ * Historical matrix cells reflect bot activity and thread state at merge time only.
+ *
+ * @param {{ meta: object, events: BotEvent[], threads: object[] }} payload
+ */
+export function slicePayloadAtMerge(payload) {
+  const mergedAt = payload.meta?.mergedAt;
+  const events = (payload.events || []).filter((e) => atOrBeforeMerge(e.at, mergedAt));
+  const threads = (payload.threads || [])
+    .map((t) => ({
+      ...t,
+      isResolved: false,
+      comments: {
+        nodes: (t.comments?.nodes || []).filter((c) => atOrBeforeMerge(c.createdAt, mergedAt)),
+      },
+    }))
+    .filter((t) => (t.comments?.nodes || []).length > 0);
+  return { ...payload, events, threads };
+}
+
+/**
  * @param {string} owner
  * @param {string} name
  * @param {number} prNumber
@@ -153,7 +182,7 @@ export async function fetchPrBotMatrixRow(owner, name, prNumber) {
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));
 
-  return {
+  return slicePayloadAtMerge({
     meta: {
       number: threadPayload.number,
       title: threadPayload.title,
@@ -163,7 +192,7 @@ export async function fetchPrBotMatrixRow(owner, name, prNumber) {
     },
     events,
     threads: threadPayload.threads || [],
-  };
+  });
 }
 
 export { hasGh, repoSlug };

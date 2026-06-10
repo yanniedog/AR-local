@@ -51,9 +51,9 @@ jobs:
           ARGS=(--limit "${{ inputs.limit || '50' }}")
           if [ -n "${{ inputs.pr_number }}" ]; then
             ARGS+=(--pr "${{ inputs.pr_number }}")
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS+=(--pr "${{ github.event.pull_request.number }}")
           fi
+          # Merged-PR events run a full sync (no --pr) so the committed matrix keeps
+          # all rows; single-PR mode is workflow_dispatch only and upserts via sync.
           npm run pr:bot-spreadsheet:sync -- "${ARGS[@]}"
       - name: Commit and push matrix
         run: |

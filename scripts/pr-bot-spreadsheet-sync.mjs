@@ -11,6 +11,8 @@
 import {
   classifyAllBotCells,
 } from './lib/pr-bot-cell-status.mjs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   DEFAULT_MATRIX_DIR,
   MATRIX_HTML_FILE,
@@ -48,6 +50,42 @@ function parseArgs(argv) {
     else if (a.startsWith('--output-dir=')) out.outputDir = a.slice('--output-dir='.length);
   }
   return out;
+}
+
+function rowToReportEntry(row) {
+  return {
+    number: row.meta.number,
+    title: row.meta.title,
+    mergedAt: row.meta.mergedAt,
+    url: row.meta.url,
+    cells: Object.fromEntries(
+      SPREADSHEET_BOT_KEYS.map((k) => [
+        k,
+        { status: row.cells[k].status, label: row.cells[k].label, reason: row.cells[k].reason },
+      ]),
+    ),
+  };
+}
+
+function loadExistingReportRows(outputDir) {
+  const jsonPath = path.join(path.resolve(process.cwd(), outputDir), MATRIX_JSON_FILE);
+  if (!existsSync(jsonPath)) return [];
+  try {
+    const data = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    return Array.isArray(data.rows) ? data.rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeReportRows(existingRows, matrixRows) {
+  const byNumber = new Map(existingRows.map((row) => [row.number, row]));
+  for (const row of matrixRows) {
+    byNumber.set(row.meta.number, rowToReportEntry(row));
+  }
+  return [...byNumber.values()].sort(
+    (a, b) => new Date(b.mergedAt || 0) - new Date(a.mergedAt || 0),
+  );
 }
 
 async function buildMatrix(owner, name, prNumbers) {
@@ -102,19 +140,15 @@ Artifacts:
 
   console.error(`pr-bot-spreadsheet-sync: scanning ${prNumbers.length} merged PR(s) in ${owner}/${name}…`);
   const matrixRows = await buildMatrix(owner, name, prNumbers);
+  const freshRows = matrixRows.map((row) => rowToReportEntry(row));
+  const reportRows = args.pr
+    ? mergeReportRows(loadExistingReportRows(args.outputDir), matrixRows)
+    : freshRows;
 
   const report = {
     repo: `${owner}/${name}`,
-    prCount: matrixRows.length,
-    rows: matrixRows.map((r) => ({
-      number: r.meta.number,
-      title: r.meta.title,
-      mergedAt: r.meta.mergedAt,
-      url: r.meta.url,
-      cells: Object.fromEntries(
-        SPREADSHEET_BOT_KEYS.map((k) => [k, { status: r.cells[k].status, label: r.cells[k].label, reason: r.cells[k].reason }]),
-      ),
-    })),
+    prCount: reportRows.length,
+    rows: reportRows,
   };
 
   if (args.json) {
