@@ -5,17 +5,27 @@ import { DARK, LIGHT, type Palette } from './colors';
 /** Brand seed when Material You / dynamic color is unavailable (iOS, older Android, Expo Go). */
 export const BRAND_SOURCE_COLOR = '#2563eb';
 
-/** Status colors stay fixed across dynamic schemes so rate semantics stay recognizable. */
+/** Status and data-ink colors stay fixed across dynamic schemes. */
 const SEMANTIC = {
   dark: {
     success: DARK.success,
     warning: DARK.warning,
     danger: DARK.danger,
+    rba: DARK.rba,
+    onRba: DARK.onRba,
+    rateLoan: DARK.rateLoan,
+    rateDeposit: DARK.rateDeposit,
+    favorite: DARK.favorite,
   },
   light: {
     success: LIGHT.success,
     warning: LIGHT.warning,
     danger: LIGHT.danger,
+    rba: LIGHT.rba,
+    onRba: LIGHT.onRba,
+    rateLoan: LIGHT.rateLoan,
+    rateDeposit: LIGHT.rateDeposit,
+    favorite: LIGHT.favorite,
   },
 } as const;
 
@@ -45,6 +55,10 @@ export function paletteFromM3Scheme(scheme: Material3Scheme, dark: boolean): Pal
     shadow: scheme.shadow,
     skeleton: scheme.surfaceContainerHighest,
     overlay: scheme.scrim,
-    sectionAccent: scheme.tertiary,
+    rba: semantic.rba,
+    onRba: semantic.onRba,
+    rateLoan: semantic.rateLoan,
+    rateDeposit: semantic.rateDeposit,
+    favorite: semantic.favorite,
   };
 }
