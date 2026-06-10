@@ -12,7 +12,9 @@ import {
   alignPointsToTimeline,
   historyDatesInWindow,
   normalizeTimelineDates,
+  sanitizeRibbonPoint,
 } from './bankHistoryTransform';
+import { debugLog } from '../lib/debugLog';
 import { toFraction } from './format';
 import { rowsUnder } from './taxonomy';
 
@@ -99,14 +101,14 @@ function currentRibbonFallback(
   const date = String(core.run_date || '').slice(0, 10);
   if (!date) return null;
   const range = sectionData.ribbon?.range;
-  const point: BankHistoryPoint = {
-    date,
+  const point = sanitizeRibbonPoint(date, {
     min: range?.min ?? null,
     max: range?.max ?? null,
     mean: range?.mean ?? null,
     median: range?.median ?? null,
     count: sectionData.ribbon?.counts?.rates ?? 0,
-  };
+  });
+  if (point.min == null && point.max == null && point.mean == null) return null;
 
   return {
     section,
@@ -132,47 +134,55 @@ export function selectBankHistoryChartModel(
   section: SectionKey,
   window: HistoryWindow = 'All',
 ): BankHistoryChartModel | null {
-  const { core, historyBanks, historyCache, includeNonStandard = false } = state;
-  if (!core) return null;
+  try {
+    const { core, historyBanks, historyCache, includeNonStandard = false } = state;
+    if (!core) return null;
 
-  const prebuilt = chartModelFromPrebuiltHistory(historyBanks, section, window);
-  if (prebuilt?.dates.length) {
+    const prebuilt = chartModelFromPrebuiltHistory(historyBanks, section, window);
+    if (prebuilt?.dates.length) {
+      return {
+        section,
+        dates: prebuilt.dates,
+        points: prebuilt.points,
+        allDates: prebuilt.allDates,
+      };
+    }
+
+    if (historyCache && historyCache.section === section && historyCache.rates?.length) {
+      const sectionRows = core.sections[section]?.rates ?? [];
+      const hierRows = rowsUnder(sectionRows, section, []);
+      const visibleKeys = new Set(
+        hierRows
+          .filter((row) => includeNonStandard || row.account_class !== 'non_standard')
+          .map((row) => row.product_key),
+      );
+      const filtered = historyCache.rates.filter((row) => visibleKeys.has(row.product_key));
+      const retained = normalizeTimelineDates(historyCache.run_dates || []);
+      const aggregate = buildAggregateRibbonFromHistory(filtered, retained, window);
+      if (!aggregate.dates.length) return null;
+      return {
+        section,
+        dates: aggregate.dates,
+        points: alignPointsToTimeline(aggregate.dates, aggregate.points),
+        allDates: aggregate.allDates,
+      };
+    }
+
+    const fallback = currentRibbonFallback(core, section, includeNonStandard);
+    if (!fallback) return null;
     return {
       section,
-      dates: prebuilt.dates,
-      points: prebuilt.points,
-      allDates: prebuilt.allDates,
+      dates: fallback.dates,
+      points: fallback.points,
+      allDates: fallback.allDates ?? fallback.dates,
     };
-  }
-
-  if (historyCache && historyCache.section === section && historyCache.rates?.length) {
-    const sectionRows = core.sections[section]?.rates ?? [];
-    const hierRows = rowsUnder(sectionRows, section, []);
-    const visibleKeys = new Set(
-      hierRows
-        .filter((row) => includeNonStandard || row.account_class !== 'non_standard')
-        .map((row) => row.product_key),
+  } catch (err) {
+    debugLog.error(
+      'historySelectors',
+      `selectBankHistoryChartModel failed section=${section}: ${String((err as Error)?.message ?? err)}`,
     );
-    const filtered = historyCache.rates.filter((row) => visibleKeys.has(row.product_key));
-    const retained = normalizeTimelineDates(historyCache.run_dates || []);
-    const aggregate = buildAggregateRibbonFromHistory(filtered, retained, window);
-    if (!aggregate.dates.length) return null;
-    return {
-      section,
-      dates: aggregate.dates,
-      points: alignPointsToTimeline(aggregate.dates, aggregate.points),
-      allDates: aggregate.allDates,
-    };
+    return null;
   }
-
-  const fallback = currentRibbonFallback(core, section, includeNonStandard);
-  if (!fallback) return null;
-  return {
-    section,
-    dates: fallback.dates,
-    points: fallback.points,
-    allDates: fallback.allDates ?? fallback.dates,
-  };
 }
 
 /** Read on-device history cache from store state when wired. */

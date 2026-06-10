@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import Svg, { Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { BankHistoryPoint, HistoryWindow, RbaEntry, SectionKey } from '../types';
 import {
@@ -26,6 +26,14 @@ const WINDOW_OPTIONS: { value: HistoryWindow; label: string }[] = [
 const RBA_COLOR = '#f59e0b';
 const RBA_BAND = 'rgba(234, 179, 8, 0.42)';
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function finiteCoord(value: number): number | null {
+  return Number.isFinite(value) ? value : null;
+}
+
 export interface BankHistoryChartProps {
   dates: string[];
   points: BankHistoryPoint[];
@@ -49,9 +57,13 @@ function bandPath(
   for (let i = 0; i < dates.length; i += 1) {
     const min = mins[i];
     const max = maxs[i];
-    if (min == null || max == null) continue;
-    upper.push(`${xAt(i)},${yAt(max)}`);
-    lower.unshift(`${xAt(i)},${yAt(min)}`);
+    if (!isFiniteNumber(min) || !isFiniteNumber(max)) continue;
+    const x = finiteCoord(xAt(i));
+    const yMin = finiteCoord(yAt(min));
+    const yMax = finiteCoord(yAt(max));
+    if (x == null || yMin == null || yMax == null) continue;
+    upper.push(`${x},${yMax}`);
+    lower.unshift(`${x},${yMin}`);
   }
   if (!upper.length) return null;
   return `M ${upper[0]} L ${upper.slice(1).join(' L ')} L ${lower.join(' L ')} Z`;
@@ -66,8 +78,11 @@ function linePath(
   let started = false;
   for (let i = 0; i < values.length; i += 1) {
     const v = values[i];
-    if (v == null) continue;
-    const seg = `${started ? 'L' : 'M'} ${xAt(i)} ${yAt(v)}`;
+    if (!isFiniteNumber(v)) continue;
+    const x = finiteCoord(xAt(i));
+    const y = finiteCoord(yAt(v));
+    if (x == null || y == null) continue;
+    const seg = `${started ? 'L' : 'M'} ${x} ${y}`;
     d += started ? ` ${seg}` : seg;
     started = true;
   }
@@ -83,13 +98,20 @@ function stepPath(
   let started = false;
   for (let i = 0; i < values.length; i += 1) {
     const v = values[i];
-    if (v == null) continue;
+    if (!isFiniteNumber(v)) continue;
+    const x = finiteCoord(xAt(i));
+    const y = finiteCoord(yAt(v));
+    if (x == null || y == null) continue;
     if (!started) {
-      d = `M ${xAt(i)} ${yAt(v)}`;
+      d = `M ${x} ${y}`;
       started = true;
       continue;
     }
-    d += ` L ${xAt(i)} ${yAt(values[i - 1] ?? v)} L ${xAt(i)} ${yAt(v)}`;
+    const prev = values[i - 1];
+    const prevY =
+      isFiniteNumber(prev) ? finiteCoord(yAt(prev)) : y;
+    if (prevY == null) continue;
+    d += ` L ${x} ${prevY} L ${x} ${y}`;
   }
   return d || null;
 }
@@ -142,6 +164,14 @@ export function BankHistoryChart({
   );
 
   if (!plotDates.length || !plotPoints.length) return null;
+
+  const hasPlottableValues = plotPoints.some(
+    (p) => isFiniteNumber(p.min) || isFiniteNumber(p.max) || isFiniteNumber(p.mean),
+  );
+  if (!hasPlottableValues) {
+    debugLog.warn('BankHistoryChart', 'no finite plot values');
+    return null;
+  }
 
   const padL = 44;
   const padR = 8;
@@ -285,7 +315,7 @@ export function BankHistoryChart({
               return null;
             })}
 
-            {activePoint?.mean != null ? (
+            {activePoint?.mean != null && isFiniteNumber(activePoint.mean) ? (
               <CrossMarker cx={xAt(plotDates.indexOf(activeDate))} cy={yAt(activePoint.mean)} color={ribbonColor} />
             ) : null}
           </Svg>
@@ -332,10 +362,11 @@ export function BankHistoryChart({
 }
 
 function CrossMarker({ cx, cy, color }: { cx: number; cy: number; color: string }) {
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
   return (
-    <>
+    <G>
       <Line x1={cx} y1={cy - 4} x2={cx} y2={cy + 4} stroke={color} strokeWidth={2} />
       <Line x1={cx - 4} y1={cy} x2={cx + 4} y2={cy} stroke={color} strokeWidth={2} />
-    </>
+    </G>
   );
 }

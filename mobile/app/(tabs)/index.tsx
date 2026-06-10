@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { RbaChart } from '../../src/components/charts';
 import { OfflineBanner } from '../../src/components/feedback';
 import { HomeHero } from '../../src/components/HomeHero';
@@ -177,13 +178,15 @@ export default function Home() {
             <AppText variant="h3" style={{ marginBottom: 8 }}>
               {meta.title} history
             </AppText>
-            <BankHistoryChart
-              dates={historyModel.dates}
-              points={historyModel.points}
-              allDates={historyModel.allDates}
-              rba={section === 'Mortgage' ? core.rba : undefined}
-              section={section}
-            />
+            <ChartErrorBoundary name="BankHistoryChart">
+              <BankHistoryChart
+                dates={historyModel.dates}
+                points={historyModel.points}
+                allDates={historyModel.allDates}
+                rba={section === 'Mortgage' ? core.rba : undefined}
+                section={section}
+              />
+            </ChartErrorBoundary>
           </Card>
         ) : historyBanksError ? (
           <Card style={{ marginBottom: 14 }}>

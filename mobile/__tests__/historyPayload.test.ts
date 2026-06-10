@@ -4,7 +4,9 @@ import {
   normalizeHistoryBanksPayload,
   type HistoryBanksPayload,
 } from '../src/data/historyPayload';
+import * as bankHistoryTransform from '../src/data/bankHistoryTransform';
 import { selectBankHistoryChartModel } from '../src/data/historySelectors';
+import { debugLog } from '../src/lib/debugLog';
 import type { CorePayload } from '../src/types';
 
 const sample = core as CorePayload;
@@ -74,6 +76,33 @@ describe('historyPayload', () => {
   test('normalizeHistoryBanksPayload accepts valid section points', () => {
     const normalized = normalizeHistoryBanksPayload(prebuilt);
     expect(normalized?.sections.Mortgage?.points).toHaveLength(3);
+  });
+
+  test('selectBankHistoryChartModel sanitizes corrupt ribbon fallback (no throw)', () => {
+    const corrupt = JSON.parse(JSON.stringify(sample)) as CorePayload;
+    corrupt.sections.Mortgage.ribbon = {
+      range: { min: Number.NaN, max: 'not-a-rate' as unknown as number, mean: Infinity },
+      counts: { rates: 1, providers: 1 },
+    };
+    const model = selectBankHistoryChartModel({ core: corrupt }, 'Mortgage');
+    expect(model).toBeNull();
+  });
+
+  test('chartModelFromPrebuiltHistory logs and returns null on internal failure', () => {
+    const errorSpy = jest.spyOn(debugLog, 'error').mockImplementation(() => {});
+    jest.spyOn(bankHistoryTransform, 'sliceChartTimeline').mockImplementationOnce(() => {
+      throw new Error('slice blew up');
+    });
+
+    const result = chartModelFromPrebuiltHistory(prebuilt, 'Mortgage', '30D');
+    expect(result).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'historyPayload',
+      expect.stringContaining('chartModelFromPrebuiltHistory failed'),
+    );
+
+    errorSpy.mockRestore();
+    jest.restoreAllMocks();
   });
 });
 

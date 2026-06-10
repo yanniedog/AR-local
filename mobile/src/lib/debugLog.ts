@@ -266,6 +266,7 @@ export const debugLog = {
   },
   error(tag: string, message: string): void {
     append('error', tag, message);
+    void flushPendingToFile();
   },
   async clear(): Promise<void> {
     fileWriteEpoch += 1;
@@ -358,6 +359,44 @@ export function formatLogUploadBody(entriesText: string, meta?: Record<string, s
 }
 
 export const PASTE_RS_URL = 'https://paste.rs/';
+
+type GlobalErrorUtils = {
+  getGlobalHandler?: () => (error: unknown, isFatal?: boolean) => void;
+  setGlobalHandler?: (handler: (error: unknown, isFatal?: boolean) => void) => void;
+};
+
+let globalHandlersInstalled = false;
+
+/** Test hook — allow reinstalling handlers between Jest cases. */
+export function resetGlobalErrorHandlersForTests(): void {
+  globalHandlersInstalled = false;
+}
+
+/** Log fatal JS errors and unhandled rejections before the process/native layer exits. */
+export function installGlobalErrorHandlers(): void {
+  if (globalHandlersInstalled) return;
+  globalHandlersInstalled = true;
+
+  const utils = (global as typeof global & { ErrorUtils?: GlobalErrorUtils }).ErrorUtils;
+  if (utils?.setGlobalHandler) {
+    const previous = utils.getGlobalHandler?.();
+    utils.setGlobalHandler((error, isFatal) => {
+      const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      debugLog.error('global', `${isFatal ? 'fatal' : 'js'} ${msg}`);
+      void debugLog.flushToFile();
+      previous?.(error, isFatal);
+    });
+  }
+
+  const processLike = global as typeof global & {
+    process?: { on?: (event: string, listener: (reason: unknown) => void) => void };
+  };
+  processLike.process?.on?.('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+    debugLog.error('global', `unhandledRejection ${msg}`);
+    void debugLog.flushToFile();
+  });
+}
 
 /** POST plain text to paste.rs; response body is the paste URL. */
 export async function uploadLogsToPasteRs(

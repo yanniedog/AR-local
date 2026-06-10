@@ -8,7 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorScreen } from '../src/components/ErrorScreen';
 import { useStore } from '../src/data/store';
-import { debugLog } from '../src/lib/debugLog';
+import { debugLog, installGlobalErrorHandlers } from '../src/lib/debugLog';
 import { setDiagnosticsEnabled } from '../src/lib/observability';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
@@ -33,6 +33,7 @@ function RootNavigator() {
   }, [hydrated, diagnosticsEnabled]);
 
   useEffect(() => {
+    installGlobalErrorHandlers();
     void debugLog.restoreFromStorage().then(() => {
       debugLog.info('app', 'bootstrap starting');
       void bootstrap();
