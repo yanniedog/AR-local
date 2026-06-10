@@ -5,7 +5,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
-import { ScreenScrollView } from '../../src/components/Screen';
+import { Screen, ScreenScrollView } from '../../src/components/Screen';
+import { UndoSnackbar } from '../../src/components/Snackbar';
+import { SubscriptionRow } from '../../src/components/SubscriptionRow';
 import { AppText, Button, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
@@ -34,6 +36,7 @@ import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
 import { dataSourceLabel } from '../../src/lib/nextIngest';
 import { useTheme } from '../../src/theme/ThemeProvider';
+import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
 
 const THRESHOLDS = [1, 5, 10, 25];
 
@@ -48,7 +51,17 @@ export default function Settings() {
   const lastCheckedAt = useStore((s) => s.lastCheckedAt);
   const subscriptions = useStore((s) => s.subscriptions);
   const removeSubscription = useStore((s) => s.removeSubscription);
+  const restoreSubscription = useStore((s) => s.restoreSubscription);
+  const { snack, showUndo, undo } = useUndoSnackbar();
   const theme = useTheme();
+
+  const removeSubscriptionWithUndo = useCallback(
+    (sub: Subscription) => {
+      removeSubscription(sub.id);
+      showUndo(`Removed ${sub.label}`, () => restoreSubscription(sub));
+    },
+    [removeSubscription, restoreSubscription, showUndo],
+  );
 
   const onToggleNotifications = async (value: boolean) => {
     if (value) {
@@ -66,7 +79,8 @@ export default function Settings() {
   };
 
   return (
-    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <Screen>
+    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 40 }}>
       <Section title="Appearance">
         <Label text="Theme" />
         <SegmentedControl<ThemeMode>
@@ -181,7 +195,8 @@ export default function Settings() {
                   key={sub.id}
                   kind={sub.kind === 'product' ? 'Product' : 'Search'}
                   label={sub.label}
-                  onRemove={() => removeSubscription(sub.id)}
+                  onSwipeRemove={() => removeSubscriptionWithUndo(sub)}
+                  onConfirmRemove={() => removeSubscription(sub.id)}
                 />
               ))
             ) : (
@@ -298,6 +313,8 @@ export default function Settings() {
         </AppText>
       </Section>
     </ScreenScrollView>
+    <UndoSnackbar snack={snack} onUndo={undo} />
+    </Screen>
   );
 }
 
@@ -565,40 +582,6 @@ function ToggleRow({
         trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
       />
     </Row>
-  );
-}
-
-function SubscriptionRow({
-  kind,
-  label,
-  onRemove,
-}: {
-  kind: 'Product' | 'Search';
-  label: string;
-  onRemove: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onRemove}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        paddingVertical: 8,
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      <View style={{ flex: 1 }}>
-        <AppText variant="tiny" color="textFaint">
-          {kind}
-        </AppText>
-        <AppText variant="small" weight="600">
-          {label}
-        </AppText>
-      </View>
-      <Ionicons name="close-circle-outline" size={20} color={theme.colors.textMuted} />
-    </Pressable>
   );
 }
 
