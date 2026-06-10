@@ -1,0 +1,125 @@
+{
+  "version": "1.0.7",
+  "date": "2026-06-10",
+  "summaryBullets": [
+    "fix(mobile): make history ribbon fast and discoverable (#271)",
+    "chore(mobile): auto-release bump to v1.0.6 (after dc3d32c) (#269)",
+    "chore(mobile): auto-release bump to v1.0.5 (after 1c3ea10) (#260)",
+    "fix(mobile): stop tab layout crash from snackbar tab bar height hook (#266)",
+    "fix: close recent merge audit gaps (#259)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "fix(mobile): make history ribbon fast and discoverable (#271)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.6 (after dc3d32c) (#269)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.5 (after 1c3ea10) (#260)"
+        },
+        {
+          "text": "fix(mobile): stop tab layout crash from snackbar tab bar height hook (#266)"
+        },
+        {
+          "text": "fix: close recent merge audit gaps (#259)"
+        },
+        {
+          "text": "mobile: 48dp TouchTarget primitive (rec #8) (#238)"
+        },
+        {
+          "text": "feat(mobile): animated segment pill and section crossfade (rec #23) (#248)"
+        },
+        {
+          "text": "mobile: wire lenders directory into Home and Browse (rec #7)"
+        },
+        {
+          "text": "Mobile rec14: section accentColor and data-ink tokens (#253)"
+        },
+        {
+          "text": "mobile: payload sync progress bar + spring hero (rec #12) (#246)"
+        },
+        {
+          "text": "fix(mobile): sync history ribbon from daily payloads (#257)"
+        },
+        {
+          "text": "Restructure Home for progressive disclosure (rec #20). (#239)"
+        },
+        {
+          "text": "feat(mobile): bottom-sheet filters and Android compare FAB (#256)"
+        },
+        {
+          "text": "feat(mobile): global data-health banner and refresh snackbars (#252)"
+        },
+        {
+          "text": "feat(mobile): splash logo morph and chart draw-in animations (#247)"
+        },
+        {
+          "text": "feat(mobile): Rate Intelligence Pro freemium gates (#255)"
+        },
+        {
+          "text": "mobile: filter and reorder sections via prefs.interests (#251)"
+        },
+        {
+          "text": "feat(mobile): rec18 chart/ribbon TalkBack and control a11y (#244)"
+        },
+        {
+          "text": "feat(mobile): Material You MD3 dynamic color (rec #1) (#249)"
+        },
+        {
+          "text": "feat(mobile): M3 navigation bar with Material Symbols on Android (#254)"
+        },
+        {
+          "text": "mobile: rec19 spatial scaffold + CategoryRow + ToolbarIconButton (#236)"
+        },
+        {
+          "text": "mobile: swipe-to-remove with undo snackbar (rec #24) (#242)"
+        },
+        {
+          "text": "mobile: Android ripple + haptics (rec #9) (#245)"
+        },
+        {
+          "text": "feat(mobile): notification tap routing via arrates:// deep links (rec16) (#243)"
+        },
+        {
+          "text": "mobile: unify taxonomy drill via Browse tab (rec #6) (#237)"
+        },
+        {
+          "text": "mobile: store error recovery screen (rec #5) (#250)"
+        },
+        {
+          "text": "mobile(rec13): Reanimated shimmer skeletons for async surfaces (#235)"
+        },
+        {
+          "text": "mobile: rate typography tokens and en-AU formatRate (#241)"
+        },
+        {
+          "text": "mobile: rebuild compare as vertical comparison table (rec #22) (#233)"
+        },
+        {
+          "text": "mobile: value-first 2-step onboarding (rec #11) (#234)"
+        },
+        {
+          "text": "feat(mobile): premium ribbon neutral track and end ticks (#232)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.7"
+        },
+        {
+          "text": "Since tag: app-v1.0.4"
+        }
+      ]
+    }
+  ]
+}
