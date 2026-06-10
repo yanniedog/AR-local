@@ -6,13 +6,12 @@ import { BankHistoryChart } from '../../src/components/BankHistoryChart';
 import { CategoryRow } from '../../src/components/CategoryRow';
 import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { RbaChart } from '../../src/components/charts';
-import { OfflineBanner } from '../../src/components/feedback';
 import { HomeHero } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
-import { AppText, Card, Chip, Row } from '../../src/components/ui';
+import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
@@ -91,7 +90,9 @@ export default function Home() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
       }
     >
-      <OfflineBanner source={source} offline={offline} />
+      <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
+        <IconButton icon="refresh" onPress={onRefresh} accessibilityLabel="Refresh" />
+      </Row>
 
       <HomeHero
         runDateLabel={formatRunDate(core.run_date)}

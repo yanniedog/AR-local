@@ -4,6 +4,7 @@ import React from 'react';
 import { Platform } from 'react-native';
 
 import { BrandLockup } from '../../src/components/BrandLockup';
+import { RefreshOutcomeSnackbar } from '../../src/components/feedback';
 import { M3NavigationBar } from '../../src/components/M3NavigationBar';
 import { getTabIonicon } from '../../src/lib/tabIcons';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -13,6 +14,7 @@ export default function TabsLayout() {
   const isAndroid = Platform.OS === 'android';
 
   return (
+    <>
     <Tabs
       tabBar={isAndroid ? (props) => <M3NavigationBar {...props} /> : undefined}
       screenOptions={{
@@ -91,5 +93,7 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    <RefreshOutcomeSnackbar />
+    </>
   );
 }

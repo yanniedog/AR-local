@@ -45,12 +45,14 @@ export default function Watchlist() {
 
   if (!items.length) {
     return (
-      <EmptyState
-        icon="star-outline"
-        title="No saved products yet"
-        subtitle="Tap the star on any product to add it to your watchlist and get rate-change alerts."
-        fill
-      />
+      <Screen>
+        <EmptyState
+          icon="star-outline"
+          title="No saved products yet"
+          subtitle="Tap the star on any product to add it to your watchlist and get rate-change alerts."
+          fill
+        />
+      </Screen>
     );
   }
 

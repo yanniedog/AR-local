@@ -49,6 +49,7 @@ import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
 import { effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
+import type { RefreshOutcomeKind } from '../components/bannerState';
 
 export interface Prefs {
   themeMode: ThemeMode;
@@ -103,6 +104,8 @@ interface AppState {
   lastCheckedAt: string | null;
   /** Live payload fetch metrics while upgrading from bundled sample. */
   payloadProgress: PayloadProgressSnapshot | null;
+  /** Transient snackbar after refresh completes (success / failure / Wi-Fi skip). */
+  refreshOutcome: RefreshOutcomeKind | null;
   /** True once persisted prefs/favorites have rehydrated from AsyncStorage. */
   hydrated: boolean;
   /** Last-selected product section; synced across Home and Browse. */
@@ -148,6 +151,7 @@ interface AppState {
   setActiveSection: (section: SectionKey) => void;
   completeOnboarding: (interests: SectionKey[], notifications: boolean) => void;
   clearCache: () => Promise<void>;
+  clearRefreshOutcome: () => void;
 }
 
 async function onWifi(): Promise<boolean> {
@@ -197,6 +201,7 @@ export const useStore = create<AppState>()(
       offline: false,
       lastCheckedAt: null,
       payloadProgress: null,
+      refreshOutcome: null,
       hydrated: false,
       activeSection: DEFAULT_PREFS.defaultSection,
 
@@ -311,7 +316,7 @@ export const useStore = create<AppState>()(
         const prefs = get().prefs;
         if (prefs.wifiOnly && !manual && !(await onWifi())) {
           debugLog.debug('store', 'refresh skipped (wifi-only, not on Wi-Fi)');
-          set({ lastCheckedAt: new Date().toISOString() });
+          set({ lastCheckedAt: new Date().toISOString(), refreshOutcome: 'wifi-skip' });
           return false;
         }
         debugLog.info('store', `refresh start manual=${manual} force=${force}`);
@@ -345,6 +350,7 @@ export const useStore = create<AppState>()(
             // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
             warmOptionalAssets();
+            set({ refreshOutcome: 'success' });
             return false;
           }
 
@@ -415,6 +421,7 @@ export const useStore = create<AppState>()(
             debugLog.info('store', `notified ${messages.length} rate-change message(s)`);
           }
           debugLog.info('store', `refresh ok run_date=${core.run_date} changed=true`);
+          set({ refreshOutcome: 'success' });
           return true;
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
@@ -425,6 +432,7 @@ export const useStore = create<AppState>()(
             status: hasData ? 'ready' : 'error',
             error: hasData ? null : msg,
             lastCheckedAt: new Date().toISOString(),
+            refreshOutcome: 'failure',
           });
           return false;
         } finally {
@@ -736,6 +744,10 @@ export const useStore = create<AppState>()(
           source: 'sample',
         });
         await get().bootstrap();
+      },
+
+      clearRefreshOutcome() {
+        set({ refreshOutcome: null });
       },
     }),
     {
