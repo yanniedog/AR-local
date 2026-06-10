@@ -1,9 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useRef } from 'react';
-import { Pressable, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 
 import { useTheme } from '../theme/ThemeProvider';
+
+function marginBottomFromStyle(style?: StyleProp<ViewStyle>): number {
+  const flat = StyleSheet.flatten(style);
+  return typeof flat?.marginBottom === 'number' ? flat.marginBottom : 0;
+}
 
 export function SwipeableRow({
   children,
@@ -15,7 +20,7 @@ export function SwipeableRow({
   children: React.ReactNode;
   onDelete: () => void;
   enabled?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   deleteLabel?: string;
 }) {
   const theme = useTheme();
@@ -36,7 +41,7 @@ export function SwipeableRow({
         justifyContent: 'center',
         alignItems: 'center',
         width: 80,
-        marginBottom: typeof style?.marginBottom === 'number' ? style.marginBottom : 0,
+        marginBottom: marginBottomFromStyle(style),
         borderTopRightRadius: theme.radius.lg,
         borderBottomRightRadius: theme.radius.lg,
       }}

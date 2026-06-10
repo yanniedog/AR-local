@@ -56,7 +56,7 @@ export default function Watchlist() {
 
   return (
     <Screen>
-      <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 96 }}>
+      <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 32 }}>
         <AppText variant="small" color="textMuted" style={{ marginBottom: 12 }}>
           {items.length} saved {items.length === 1 ? 'product' : 'products'}
         </AppText>
