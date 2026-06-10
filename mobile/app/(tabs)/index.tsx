@@ -95,6 +95,7 @@ export default function Home() {
       </Row>
 
       <HomeHero
+        dataKey={core.run_date}
         runDateLabel={formatRunDate(core.run_date)}
         runAgeLabel={relativeDate(`${core.run_date}T00:00:00Z`)}
         source={source}
