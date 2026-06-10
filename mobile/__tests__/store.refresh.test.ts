@@ -164,4 +164,10 @@ describe('store refresh lifecycle', () => {
     expect(useStore.getState().refreshOutcome).toBe('wifi-skip');
     expect(mockFetchManifest).not.toHaveBeenCalled();
   });
+
+  it('clearRefreshOutcome resets snackbar state', () => {
+    useStore.setState({ refreshOutcome: 'success' });
+    useStore.getState().clearRefreshOutcome();
+    expect(useStore.getState().refreshOutcome).toBeNull();
+  });
 });
