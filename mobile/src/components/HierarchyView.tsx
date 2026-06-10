@@ -86,6 +86,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
         it.kind === 'node' ? `n-${it.node.seg}` : `p-${it.row.product_key}-${it.row.rate_index ?? i}`
       }
       contentContainerStyle={screenScrollContentStyle(theme, insets.bottom)}
+      ItemSeparatorComponent={() => <View style={{ height: theme.spacing(3) }} />}
       ListHeaderComponent={header}
       ListEmptyComponent={<EmptyState title="No products here" />}
       renderItem={({ item }) =>

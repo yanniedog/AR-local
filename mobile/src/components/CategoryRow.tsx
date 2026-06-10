@@ -47,7 +47,6 @@ export function CategoryRow({
         borderLeftWidth: showAccent ? 3 : 1,
         borderLeftColor: showAccent ? accentColor : theme.colors.border,
         padding: theme.spacing(4),
-        marginBottom: ribbonStats ? theme.spacing(3) : 0,
         opacity: pressed ? 0.85 : 1,
       })}
     >
