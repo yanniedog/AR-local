@@ -21,6 +21,7 @@ import { bestRow } from '../../src/data/selectors';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
+import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -36,7 +37,7 @@ export default function Home() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
-  const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
+  const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);

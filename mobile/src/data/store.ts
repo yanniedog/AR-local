@@ -48,6 +48,7 @@ export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
+import { effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
 
 export interface Prefs {
   themeMode: ThemeMode;
@@ -61,6 +62,8 @@ export interface Prefs {
   enableDeepSearch: boolean;
   /** Section ribbon time-series chart on Home (off by default). */
   showHistoryRibbon: boolean;
+  /** Rate Intelligence Pro — local stub until store IAP is wired. */
+  rateIntelligencePro: boolean;
   onboarded: boolean;
   interests: SectionKey[];
   rateMoveThresholdBps: number;
@@ -75,6 +78,7 @@ export const DEFAULT_PREFS: Prefs = {
   includeNonStandard: false,
   enableDeepSearch: false,
   showHistoryRibbon: false,
+  rateIntelligencePro: false,
   onboarded: false,
   interests: [...DEFAULT_INTERESTS],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
@@ -215,8 +219,8 @@ export const useStore = create<AppState>()(
           const prefs = get().prefs;
           const bundle = await cache.readBundle();
           const [cachedSearch, cachedHistory] = await Promise.all([
-            prefs.enableDeepSearch ? cache.readSearchIndex() : Promise.resolve(null),
-            prefs.showHistoryRibbon ? readValidatedHistoryBanks() : Promise.resolve(null),
+            effectiveDeepSearch(prefs) ? cache.readSearchIndex() : Promise.resolve(null),
+            effectiveHistoryRibbon(prefs) ? readValidatedHistoryBanks() : Promise.resolve(null),
           ]);
           if (bundle) {
             debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
@@ -300,8 +304,8 @@ export const useStore = create<AppState>()(
         };
         const warmOptionalAssets = () => {
           const p = get().prefs;
-          if (p.enableDeepSearch) void get().ensureSearchIndex();
-          if (p.showHistoryRibbon) void get().ensureHistoryBanks();
+          if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
+          if (effectiveHistoryRibbon(p)) void get().ensureHistoryBanks();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -511,7 +515,7 @@ export const useStore = create<AppState>()(
       },
 
       async ensureSearchIndex() {
-        if (!get().prefs.enableDeepSearch) return;
+        if (!effectiveDeepSearch(get().prefs)) return;
         const { core, manifest, source, searchIndex } = get();
         if (!core || !manifest?.files.search_index) return;
         const asset = manifest.files.search_index;
@@ -542,7 +546,7 @@ export const useStore = create<AppState>()(
       },
 
       async ensureHistoryBanks() {
-        if (!get().prefs.showHistoryRibbon) return;
+        if (!effectiveHistoryRibbon(get().prefs)) return;
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
         if (!core) {
@@ -796,8 +800,8 @@ try {
         if (shouldWarmDetails(state.prefs, state.subscriptions)) {
           await state.ensureDetails();
         }
-        if (state.prefs.enableDeepSearch) await state.ensureSearchIndex();
-        if (state.prefs.showHistoryRibbon) await state.ensureHistoryBanks();
+        if (effectiveDeepSearch(state.prefs)) await state.ensureSearchIndex();
+        if (effectiveHistoryRibbon(state.prefs)) await state.ensureHistoryBanks();
         const changed = await useStore.getState().refresh({});
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
