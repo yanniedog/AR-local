@@ -41,7 +41,7 @@ export default function Trends() {
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>
           <AppText variant="h3">RBA cash rate</AppText>
-          <AppText variant="rateHero" style={{ color: theme.colors.primary }}>
+          <AppText variant="rateHero" style={{ color: theme.colors.rba }}>
             {currentRba ? formatRate(currentRba.rate) : '—'}
           </AppText>
         </Row>
@@ -109,7 +109,7 @@ export default function Trends() {
                   <Ionicons
                     name={SECTIONS[key].icon as keyof typeof Ionicons.glyphMap}
                     size={18}
-                    color={theme.colors.primary}
+                    color={SECTIONS[key].accentColor}
                   />
                   <AppText variant="body" weight="700">
                     {SECTIONS[key].title}
@@ -122,7 +122,9 @@ export default function Trends() {
                   <AppText
                     variant="body"
                     weight="800"
-                    style={{ color: SECTIONS[key].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
+                    style={{
+                      color: SECTIONS[key].lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit,
+                    }}
                   >
                     {bestRate}
                   </AppText>

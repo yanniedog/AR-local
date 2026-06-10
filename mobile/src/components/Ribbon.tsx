@@ -171,12 +171,12 @@ export function Ribbon({
                 y1={barY - 5}
                 x2={x(rba!)}
                 y2={barY + barH + 5}
-                stroke={theme.colors.primary}
+                stroke={theme.colors.rba}
                 strokeWidth={2}
                 strokeDasharray={`${rbaLineLen}`}
               />
               {!compact ? (
-                <SvgText x={x(rba!)} y={barY + barH + 14} fontSize={9} fill={theme.colors.primary} textAnchor="middle">
+                <SvgText x={x(rba!)} y={barY + barH + 14} fontSize={9} fill={theme.colors.rba} textAnchor="middle">
                   RBA
                 </SvgText>
               ) : null}

@@ -33,7 +33,8 @@ export function CategoryRow({
 }) {
   const theme = useTheme();
   const meta = SECTIONS[section];
-  const accentColor = accent ?? (meta.lowerIsBetter ? theme.colors.success : theme.colors.primary);
+  const chromeAccent = accent ?? meta.accentColor;
+  const rateColor = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const productLabel = productCount === 1 ? 'product' : 'products';
 
   return (
@@ -45,7 +46,7 @@ export function CategoryRow({
         borderWidth: 1,
         borderColor: theme.colors.border,
         borderLeftWidth: showAccent ? 3 : 1,
-        borderLeftColor: showAccent ? accentColor : theme.colors.border,
+        borderLeftColor: showAccent ? chromeAccent : theme.colors.border,
         padding: theme.spacing(4),
         opacity: pressed ? 0.85 : 1,
       })}
@@ -66,7 +67,7 @@ export function CategoryRow({
           </AppText>
         </View>
         <Row gap={theme.spacing(1)}>
-          <AppText variant="h3" weight="800" style={{ color: accentColor }}>
+          <AppText variant="h3" weight="800" style={{ color: rateColor }}>
             {rate !== null ? `${(rate * 100).toFixed(2)}%` : '—'}
           </AppText>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />

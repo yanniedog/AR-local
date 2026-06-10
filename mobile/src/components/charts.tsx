@@ -105,14 +105,14 @@ export function RbaChart({ data, height = 160 }: { data: RbaEntry[]; height?: nu
           <AnimatedPath
             animatedProps={pathAnimatedProps}
             d={pathD}
-            stroke={theme.colors.primary}
+            stroke={theme.colors.rba}
             strokeWidth={2.5}
             fill="none"
             strokeDasharray={pathLength}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <Circle cx={x(data.length - 1)} cy={y(last.rate)} r={4} fill={theme.colors.primary} />
+          <Circle cx={x(data.length - 1)} cy={y(last.rate)} r={4} fill={theme.colors.rba} />
           <SvgText
             x={x(data.length - 1)}
             y={y(last.rate) - 8}

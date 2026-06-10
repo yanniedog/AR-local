@@ -1,3 +1,4 @@
+import { withAlpha } from '../src/theme/colors';
 import { BRAND_SOURCE_COLOR, paletteFromM3Scheme } from '../src/theme/m3Palette';
 import { darkTheme, lightTheme, resolveM3Theme, resolveTheme } from '../src/theme/theme';
 import type { Material3Scheme, Material3Theme } from '@pchmn/expo-material3-theme';
@@ -78,16 +79,13 @@ describe('resolveTheme', () => {
   it('returns light theme when mode is light', () => {
     expect(resolveTheme('light', 'dark')).toBe(lightTheme);
   });
-
   it('returns dark theme when mode is dark', () => {
     expect(resolveTheme('dark', 'light')).toBe(darkTheme);
   });
-
   it('follows system appearance when mode is system', () => {
     expect(resolveTheme('system', 'light')).toBe(lightTheme);
     expect(resolveTheme('system', 'dark')).toBe(darkTheme);
   });
-
   it('defaults to dark when system appearance is unknown', () => {
     expect(resolveTheme('system', null)).toBe(darkTheme);
     expect(resolveTheme('system', undefined)).toBe(darkTheme);
@@ -128,13 +126,19 @@ describe('theme palettes', () => {
     expect(darkTheme.colors.overlay).toMatch(/^#/);
   });
 
-  it('keeps static fallback palettes for tests and non-M3 paths', () => {
+  it('keeps static fallback palettes with data-ink tokens', () => {
     expect(darkTheme.colors.bg).toBe('#0b0e11');
     expect(lightTheme.colors.bg).toBe('#f3f6fa');
-    expect(darkTheme.colors.primary).toBe('#2563eb');
-    expect(lightTheme.colors.primary).toBe('#2563eb');
-    expect(darkTheme.colors.sectionAccent).toBe('#3b82f6');
-    expect(lightTheme.colors.sectionAccent).toBe('#3b82f6');
+    expect(darkTheme.colors.rba).toBe('#f59e0b');
+    expect(lightTheme.colors.rba).toBe('#b45309');
+    expect(darkTheme.colors.rateLoan).toBe('#1fb978');
+    expect(lightTheme.colors.rateLoan).toBe('#0a6d49');
+    expect(darkTheme.colors.rateDeposit).toBe('#3b82f6');
+    expect(lightTheme.colors.rateDeposit).toBe('#2563eb');
+    expect(darkTheme.colors.favorite).toBe('#eab308');
+    expect(lightTheme.colors.favorite).toBe('#ca8a04');
+    expect(darkTheme.colors.onRba).toBe('#0b0e11');
+    expect(lightTheme.colors.onRba).toBe('#ffffff');
   });
 
   it('includes rate typography tokens and line heights', () => {
@@ -147,5 +151,11 @@ describe('theme palettes', () => {
 
   it('exports brand seed for Material You fallback', () => {
     expect(BRAND_SOURCE_COLOR).toBe('#2563eb');
+  });
+});
+
+describe('withAlpha', () => {
+  it('converts hex to rgba', () => {
+    expect(withAlpha('#3b82f6', 0.35)).toBe('rgba(59, 130, 246, 0.35)');
   });
 });

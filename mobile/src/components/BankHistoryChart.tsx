@@ -21,6 +21,7 @@ import { SECTIONS } from '../constants';
 import { bankHistoryChartA11ySummary } from '../lib/a11ySummaries';
 import { buildBandPath } from '../lib/chartSvgPaths';
 import { debugLog } from '../lib/debugLog';
+import { withAlpha } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText, Chip, Row } from './ui';
 
@@ -31,8 +32,6 @@ const WINDOW_OPTIONS: { value: HistoryWindow; label: string }[] = [
   { value: 'All', label: 'All' },
 ];
 
-const RBA_COLOR = '#f59e0b';
-const RBA_BAND = 'rgba(234, 179, 8, 0.42)';
 const DRAW_MS = 850;
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -201,10 +200,11 @@ export function BankHistoryChart({
   const maxLine = linePath(maxs, xAt, yAt);
   const rbaLine = showRba ? stepPath(rbaSteps, xAt, yAt) : null;
 
-  const ribbonColor = SECTIONS[section].lowerIsBetter ? theme.colors.success : theme.colors.primary;
-  const fillColor = theme.dark ? 'rgba(63, 185, 80, 0.35)' : 'rgba(26, 127, 55, 0.28)';
-  const loanFill = theme.dark ? 'rgba(96, 165, 250, 0.35)' : 'rgba(59, 130, 246, 0.28)';
-  const bandFill = SECTIONS[section].lowerIsBetter ? fillColor : loanFill;
+  const rateInk = SECTIONS[section].lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
+  const ribbonColor = rateInk;
+  const bandFill = withAlpha(rateInk, theme.dark ? 0.35 : 0.28);
+  const rbaInk = theme.colors.rba;
+  const rbaBand = withAlpha(rbaInk, 0.42);
 
   const labelEvery = axisLabelInterval(plotDates.length);
   const activeDate = selectedDate && plotDates.includes(selectedDate) ? selectedDate : plotDates.at(-1) ?? '';
@@ -278,13 +278,13 @@ export function BankHistoryChart({
                     y={padT}
                     width={Math.min(width - padR, x + half) - Math.max(padL, x - half)}
                     height={innerH}
-                    fill={RBA_BAND}
+                    fill={rbaBand}
                   />
                   <SvgText
                     x={Math.max(padL + 2, x - half + 2)}
                     y={padT + 10}
                     fontSize={9}
-                    fill={RBA_COLOR}
+                    fill={rbaInk}
                     fontWeight="600"
                   >
                     {mark.bp > 0 ? `+${mark.bp}` : mark.bp} bps
@@ -333,7 +333,7 @@ export function BankHistoryChart({
               <AnimatedPath
                 animatedProps={lineDrawProps}
                 d={rbaLine}
-                stroke={RBA_COLOR}
+                stroke={rbaInk}
                 strokeWidth={2}
                 fill="none"
                 strokeDasharray={strokeLength}
