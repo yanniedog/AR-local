@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-10T01:20:21.614Z",
+  "generated_at": "2026-06-10T04:10:24.387Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -34,6 +34,18 @@
         "Fix mobile band path crash on single data point (#228)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.4"
+    },
+    {
+      "version": "1.0.5",
+      "date": "2026-06-10",
+      "summaryBullets": [
+        "fix: close recent merge audit gaps (#259)",
+        "mobile: 48dp TouchTarget primitive (rec #8) (#238)",
+        "feat(mobile): animated segment pill and section crossfade (rec #23) (#248)",
+        "mobile: wire lenders directory into Home and Browse (rec #7)",
+        "Mobile rec14: section accentColor and data-ink tokens (#253)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.5"
     }
   ]
 }
