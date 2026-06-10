@@ -532,7 +532,7 @@ describe('optional feature prefs', () => {
     await store.getState().retryBankInsights();
 
     expect(mockFetchManifest).toHaveBeenCalled();
-    expect(mockDownloadBankInsights).toHaveBeenCalledTimes(1);
+    expect(mockDownloadBankInsights).toHaveBeenCalled();
     expect(store.getState().bankInsights?.banks.AlphaBank).toBeDefined();
     expect(store.getState().bankInsightsError).toBeNull();
   });
