@@ -6,7 +6,8 @@ import { Alert, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterSheet } from '../src/components/FilterSheet';
-import { EmptyState } from '../src/components/feedback';
+import { EmptyState, LoadingRows } from '../src/components/feedback';
+import { ProPaywall } from '../src/components/ProPaywall';
 import { ProductCard } from '../src/components/ProductCard';
 import { Screen, screenEdgeStyle, screenScrollContentStyle } from '../src/components/Screen';
 import { ToolbarIconButton } from '../src/components/ToolbarIconButton';
@@ -24,9 +25,11 @@ import {
 import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifications';
 import { findSearchSubscription } from '../src/data/subscriptions';
 import { useStore } from '../src/data/store';
+import { useProPaywall } from '../src/hooks/useProPaywall';
 import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
 import { hapticSelection } from '../src/lib/haptics';
 import { openCompare, openProduct } from '../src/lib/nav';
+import { canAddAlertSubscription, effectiveDeepSearch } from '../src/lib/proAccess';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
@@ -54,7 +57,8 @@ export default function Search() {
   const core = useStore((s) => s.core);
   const details = useStore((s) => s.details);
   const searchIndex = useStore((s) => s.searchIndex);
-  const enableDeepSearch = useStore((s) => s.prefs.enableDeepSearch);
+  const deepSearchActive = useStore((s) => effectiveDeepSearch(s.prefs));
+  const subscriptions = useStore((s) => s.subscriptions);
   const ensureDetails = useStore((s) => s.ensureDetails);
   const ensureSearchIndex = useStore((s) => s.ensureSearchIndex);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
@@ -62,11 +66,12 @@ export default function Search() {
   const setPref = useStore((s) => s.setPref);
   const subscribeSearch = useStore((s) => s.subscribeSearch);
   const unsubscribeSearch = useStore((s) => s.unsubscribeSearch);
+  const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
   useEffect(() => {
-    if (!enableDeepSearch) return;
+    if (!deepSearchActive) return;
     void ensureSearchIndex();
     void ensureDetails();
-  }, [enableDeepSearch, ensureDetails, ensureSearchIndex]);
+  }, [deepSearchActive, ensureDetails, ensureSearchIndex]);
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
@@ -94,14 +99,14 @@ export default function Search() {
         { ...effectiveFilters, query },
         sortKey,
         section,
-        enableDeepSearch ? details?.products : null,
-        enableDeepSearch ? searchIndex : null,
+        deepSearchActive ? details?.products : null,
+        deepSearchActive ? searchIndex : null,
       ),
-    [baseRows, effectiveFilters, query, sortKey, section, enableDeepSearch, details?.products, searchIndex],
+    [baseRows, effectiveFilters, query, sortKey, section, deepSearchActive, details?.products, searchIndex],
   );
 
   const showDeepSearchHint =
-    !!query.trim() && !enableDeepSearch && rows.length === 0 && !activeFilterCount(effectiveFilters);
+    !!query.trim() && !deepSearchActive && rows.length === 0 && !activeFilterCount(effectiveFilters);
 
   const searchSnapshot = useMemo(
     () => ({
@@ -129,6 +134,10 @@ export default function Search() {
   const onToggleSearchAlert = async () => {
     if (searchSub) {
       unsubscribeSearch(searchSub.id);
+      return;
+    }
+    if (!canAddAlertSubscription(subscriptions, useStore.getState().prefs)) {
+      requestPro('alert_limit');
       return;
     }
     const ok = await ensurePermissions();
@@ -193,9 +202,11 @@ export default function Search() {
           </AppText>
         ) : null}
         {showDeepSearchHint ? (
-          <AppText variant="tiny" color="textFaint">
-            Enable Deep product search in Settings for fees and features.
-          </AppText>
+          <Pressable onPress={() => requestPro('deep_search')}>
+            <AppText variant="tiny" color="primary" style={{ lineHeight: 16 }}>
+              Deep product search (Pro) matches fees and features — tap to upgrade.
+            </AppText>
+          </Pressable>
         ) : null}
       </View>
 
@@ -260,6 +271,14 @@ export default function Search() {
         onApply={(next) => {
           setPref('includeNonStandard', next.includeNonStandard);
           setFilters(next);
+        }}
+      />
+      <ProPaywall
+        visible={paywallVisible}
+        intent={paywallIntent}
+        onClose={closePaywall}
+        onUpgraded={() => {
+          if (paywallIntent === 'deep_search') setPref('enableDeepSearch', true);
         }}
       />
     </Screen>

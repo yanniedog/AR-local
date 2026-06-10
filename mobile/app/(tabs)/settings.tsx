@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
+import { ProPaywall } from '../../src/components/ProPaywall';
 import { Screen, ScreenScrollView } from '../../src/components/Screen';
 import { UndoSnackbar } from '../../src/components/Snackbar';
 import { SubscriptionRow } from '../../src/components/SubscriptionRow';
@@ -18,6 +19,7 @@ import {
   unregisterBackgroundRefresh,
 } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import { useProPaywall } from '../../src/hooks/useProPaywall';
 import {
   checkForAppUpdate,
   downloadAndInstallUpdate,
@@ -35,6 +37,12 @@ import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
 import { dataSourceLabel } from '../../src/lib/nextIngest';
+import {
+  effectiveDeepSearch,
+  effectiveHistoryRibbon,
+  hasProAccess,
+  RATE_INTELLIGENCE_PRO,
+} from '../../src/lib/proAccess';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
 
@@ -54,6 +62,25 @@ export default function Settings() {
   const restoreSubscription = useStore((s) => s.restoreSubscription);
   const { snack, showUndo, undo } = useUndoSnackbar();
   const theme = useTheme();
+  const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
+
+  const onToggleDeepSearch = (value: boolean) => {
+    if (!value) {
+      setPref('enableDeepSearch', false);
+      return;
+    }
+    if (!requestPro('deep_search')) return;
+    setPref('enableDeepSearch', true);
+  };
+
+  const onToggleHistoryRibbon = (value: boolean) => {
+    if (!value) {
+      setPref('showHistoryRibbon', false);
+      return;
+    }
+    if (!requestPro('history_ribbon')) return;
+    setPref('showHistoryRibbon', true);
+  };
 
   const removeSubscriptionWithUndo = useCallback(
     (sub: Subscription) => {
@@ -81,6 +108,29 @@ export default function Settings() {
   return (
     <Screen>
     <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 40 }}>
+      <Section title={RATE_INTELLIGENCE_PRO}>
+        <InfoRow label="Status" value={hasProAccess(prefs) ? 'Active' : 'Free'} />
+        {!hasProAccess(prefs) ? (
+          <>
+            <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, lineHeight: 16 }}>
+              1 rate alert included. Pro unlocks unlimited alerts, deep search, and history ribbon.
+            </AppText>
+            <Button
+              title="Upgrade to Pro"
+              icon="sparkles"
+              style={{ marginTop: 10 }}
+              onPress={() => {
+                requestPro('alert_limit');
+              }}
+            />
+          </>
+        ) : (
+          <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, lineHeight: 16 }}>
+            All Pro features unlocked on this device.
+          </AppText>
+        )}
+      </Section>
+
       <Section title="Appearance">
         <Label text="Theme" />
         <SegmentedControl<ThemeMode>
@@ -142,8 +192,9 @@ export default function Settings() {
         <ToggleRow
           icon="analytics-outline"
           label="History ribbon chart"
-          value={prefs.showHistoryRibbon}
-          onChange={(v) => setPref('showHistoryRibbon', v)}
+          sub={hasProAccess(prefs) ? undefined : 'Pro'}
+          value={effectiveHistoryRibbon(prefs)}
+          onChange={onToggleHistoryRibbon}
         />
       </Section>
 
@@ -151,17 +202,21 @@ export default function Settings() {
         <ToggleRow
           icon="search-outline"
           label="Deep product search"
-          sub="Search fees and features; downloads details + search index"
-          value={prefs.enableDeepSearch}
-          onChange={(v) => setPref('enableDeepSearch', v)}
+          sub={
+            hasProAccess(prefs)
+              ? 'Search fees and features; downloads details + search index'
+              : 'Pro · search fees and features'
+          }
+          value={effectiveDeepSearch(prefs)}
+          onChange={onToggleDeepSearch}
         />
         <Divider style={{ marginVertical: 12 }} />
         <ToggleRow
           icon="analytics-outline"
           label="History ribbon chart"
-          sub="Multi-day rate range chart; downloads history payload"
-          value={prefs.showHistoryRibbon}
-          onChange={(v) => setPref('showHistoryRibbon', v)}
+          sub={hasProAccess(prefs) ? 'Multi-day rate range chart; downloads history payload' : 'Pro'}
+          value={effectiveHistoryRibbon(prefs)}
+          onChange={onToggleHistoryRibbon}
         />
       </Section>
 
@@ -312,6 +367,16 @@ export default function Settings() {
           General information only — not financial advice. Confirm rates with the lender before applying.
         </AppText>
       </Section>
+
+      <ProPaywall
+        visible={paywallVisible}
+        intent={paywallIntent}
+        onClose={closePaywall}
+        onUpgraded={() => {
+          if (paywallIntent === 'deep_search') setPref('enableDeepSearch', true);
+          if (paywallIntent === 'history_ribbon') setPref('showHistoryRibbon', true);
+        }}
+      />
     </ScreenScrollView>
     <UndoSnackbar snack={snack} onUndo={undo} />
     </Screen>

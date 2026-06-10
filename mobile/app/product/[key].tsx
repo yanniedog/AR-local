@@ -5,6 +5,7 @@ import { Alert, Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
 import { DetailLoadingLines, EmptyState } from '../../src/components/feedback';
+import { ProPaywall } from '../../src/components/ProPaywall';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Button, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
@@ -20,7 +21,9 @@ import { sortRows } from '../../src/data/selectors';
 import { findByKey } from '../../src/data/selectors';
 import { ensurePermissions, registerBackgroundRefresh } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openBank } from '../../src/lib/nav';
+import { canAddAlertSubscription } from '../../src/lib/proAccess';
 import type { DetailItem, RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -42,6 +45,8 @@ export default function ProductDetail() {
   const subscribed = useStore((s) => s.isProductSubscribed(productKey, rateIndex));
   const subscribeProduct = useStore((s) => s.subscribeProduct);
   const unsubscribeProduct = useStore((s) => s.unsubscribeProduct);
+  const subscriptions = useStore((s) => s.subscriptions);
+  const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
 
   useEffect(() => {
     void ensureDetails({ forProductView: true });
@@ -75,6 +80,10 @@ export default function ProductDetail() {
   const onToggleNotify = async () => {
     if (subscribed) {
       unsubscribeProduct(productKey, rateIndex);
+      return;
+    }
+    if (!canAddAlertSubscription(subscriptions, useStore.getState().prefs)) {
+      requestPro('alert_limit');
       return;
     }
     const ok = await ensurePermissions();
@@ -195,6 +204,7 @@ export default function ProductDetail() {
           </AppText>
         ) : null}
       </ScreenScrollView>
+      <ProPaywall visible={paywallVisible} intent={paywallIntent} onClose={closePaywall} />
     </>
   );
 }
