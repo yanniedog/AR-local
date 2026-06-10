@@ -52,17 +52,8 @@ jobs:
           fi
           if [ -n "${{ inputs.mock_report }}" ]; then
             args+=(--mock-report "${{ inputs.mock_report }}")
+          elif [ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON secret not set — running mock dry-run only"
+            args+=(--dry-run --mock-report scripts/fixtures/crashlytics-topIssues-mock.json)
           fi
           node scripts/crashlytics-to-github-issues.mjs "${args[@]}"
-
-      - name: Dry-run with mock report (when secrets missing)
-        if: failure() && secrets.FIREBASE_SERVICE_ACCOUNT_JSON == ''
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON secret not set — running mock dry-run only"
-          node scripts/crashlytics-to-github-issues.mjs \
-            --dry-run \
-            --mock-report scripts/fixtures/crashlytics-topIssues-mock.json
