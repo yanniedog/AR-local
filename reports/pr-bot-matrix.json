@@ -1,7 +1,7 @@
 {
   "repo": "yanniedog/AR-local",
   "prCount": 50,
-  "generatedAt": "2026-06-10T13:05:15.207Z",
+  "generatedAt": "2026-06-10T13:08:28.132Z",
   "bots": [
     {
       "key": "gemini",
@@ -35,6 +35,82 @@
     "red": "quota/limit only"
   },
   "rows": [
+    {
+      "number": 283,
+      "title": "Default squash auto-merge for all PRs",
+      "mergedAt": "2026-06-10T13:07:22Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/283",
+      "cells": {
+        "gemini": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 292,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T13:05:53Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/292",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
     {
       "number": 285,
       "title": "fix(mobile): Browse subsection drill-down",
@@ -1632,44 +1708,6 @@
       }
     },
     {
-      "number": 236,
-      "title": "mobile: rec19 spatial scaffold + CategoryRow + ToolbarIconButton",
-      "mergedAt": "2026-06-10T02:50:15Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/236",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
       "number": 242,
       "title": "mobile: swipe-to-remove with undo snackbar (rec #24)",
       "mergedAt": "2026-06-10T02:46:49Z",
@@ -1826,44 +1864,6 @@
       "title": "mobile: store error recovery screen (rec #5)",
       "mergedAt": "2026-06-10T02:41:43Z",
       "url": "https://github.com/yanniedog/AR-local/pull/250",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 235,
-      "title": "mobile(rec13): Reanimated shimmer skeletons for async surfaces",
-      "mergedAt": "2026-06-10T02:40:29Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/235",
       "cells": {
         "gemini": {
           "status": "red",
