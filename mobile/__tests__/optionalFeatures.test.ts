@@ -1,4 +1,4 @@
-import type { CorePayload, Manifest } from '../src/types';
+﻿import type { CorePayload, Manifest } from '../src/types';
 import { shouldWarmDetails } from '../src/data/optionalPrefs';
 import { sampleCore, sampleManifest } from '../src/data/sample';
 import { DEFAULT_PREFS, useStore } from '../src/data/store';
@@ -459,7 +459,6 @@ describe('optional feature prefs', () => {
     expect(store.getState().bankInsightsError).toMatch(/unavailable/i);
   });
 
-<<<<<<< HEAD
   it('ensureBankInsights force bypasses fresh cache and re-downloads', async () => {
     const insights = {
       schema_version: 1,
@@ -468,27 +467,13 @@ describe('optional feature prefs', () => {
       banks: {},
       events: [],
     };
-=======
-  it('ensureBankInsights force bypasses in-memory cache and re-downloads', async () => {
-    mockDownloadBankInsights.mockClear();
->>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     store.setState({
       prefs: proPrefs,
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
-<<<<<<< HEAD
       bankInsights: insights,
       bankInsightsError: 'stale error',
-=======
-      bankInsights: {
-        schema_version: 1,
-        run_date: remoteCore.run_date,
-        run_dates: [remoteCore.run_date],
-        banks: {},
-        events: [],
-      },
->>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     });
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
