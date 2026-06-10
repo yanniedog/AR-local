@@ -4,7 +4,7 @@ import React, { useEffect } from 'react';
 import { Alert, Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
-import { EmptyState } from '../../src/components/feedback';
+import { DetailLoadingLines, EmptyState } from '../../src/components/feedback';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { AppText, Button, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
@@ -248,9 +248,7 @@ function DetailGroup({
       <SectionTitle text={title} icon={icon} />
       <Card>
         {loading && !items ? (
-          <AppText variant="small" color="textFaint">
-            Loading…
-          </AppText>
+          <DetailLoadingLines />
         ) : (
           (items ?? []).map((it, i) => (
             <View key={i}>
