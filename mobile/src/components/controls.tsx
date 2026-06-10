@@ -19,6 +19,7 @@ import Animated, {
 
 import { hapticSelection } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeProvider';
+import { TouchTarget } from './TouchTarget';
 import { androidRipple, AppText } from './ui';
 
 const PILL_SPRING = { damping: 20, stiffness: 280, mass: 0.8 };
@@ -130,7 +131,7 @@ export function SegmentedControl<T extends string>({
       {options.map((opt) => {
         const active = opt.value === value;
         return (
-          <Pressable
+          <TouchTarget
             key={opt.value}
             onPress={() => {
               if (opt.value !== value) hapticSelection();
@@ -143,8 +144,6 @@ export function SegmentedControl<T extends string>({
             android_ripple={androidRipple(theme.colors.primaryMuted)}
             style={{
               flex: 1,
-              paddingVertical: 9,
-              minHeight: 48,
               borderRadius: theme.radius.sm,
               alignItems: 'center',
               justifyContent: 'center',
@@ -158,7 +157,7 @@ export function SegmentedControl<T extends string>({
             >
               {opt.label}
             </AppText>
-          </Pressable>
+          </TouchTarget>
         );
       })}
     </View>

@@ -9,6 +9,7 @@ import { ProPaywall } from '../../src/components/ProPaywall';
 import { Screen, ScreenScrollView } from '../../src/components/Screen';
 import { UndoSnackbar } from '../../src/components/Snackbar';
 import { SubscriptionRow } from '../../src/components/SubscriptionRow';
+import { TOUCH_TARGET_MIN, TouchTarget } from '../../src/components/TouchTarget';
 import { AppText, Button, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
@@ -316,13 +317,13 @@ export default function Settings() {
           may be required for full SDK teardown.
         </AppText>
         <Divider style={{ marginVertical: 12 }} />
-        <Pressable
+        <TouchTarget
+          fill
           onPress={() => router.push('/debug-log' as Href)}
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
-            paddingVertical: 6,
             opacity: pressed ? 0.7 : 1,
           })}
         >
@@ -336,7 +337,7 @@ export default function Settings() {
             </AppText>
           </View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-        </Pressable>
+        </TouchTarget>
       </Section>
 
       <AppUpdateSection />
@@ -346,14 +347,14 @@ export default function Settings() {
           label="Version"
           value={`${Application.nativeApplicationVersion ?? '1.0.0'} (${Application.nativeBuildVersion ?? '0'})`}
         />
-        <Pressable
+        <TouchTarget
+          fill
           onPress={() => router.push('/terms' as Href)}
           style={{
             marginTop: 12,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 10,
-            paddingVertical: 10,
           }}
         >
           <Ionicons name="document-text-outline" size={20} color={theme.colors.primary} />
@@ -362,7 +363,7 @@ export default function Settings() {
             <AppText variant="tiny" color="textFaint">Data sources and legal notices</AppText>
           </View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-        </Pressable>
+        </TouchTarget>
         <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
           General information only — not financial advice. Confirm rates with the lender before applying.
         </AppText>
@@ -629,7 +630,7 @@ function ToggleRow({
 }) {
   const theme = useTheme();
   return (
-    <Row gap={12}>
+    <Row gap={12} style={{ minHeight: TOUCH_TARGET_MIN }}>
       <Ionicons name={icon} size={20} color={theme.colors.primary} />
       <View style={{ flex: 1 }}>
         <AppText variant="body" weight="600">
