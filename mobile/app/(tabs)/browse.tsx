@@ -17,7 +17,7 @@ export default function Browse() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
   const params = useLocalSearchParams<{ section?: string; path?: string | string[] }>();
-  const path = useMemo(() => parseBrowsePath(params.path), [params.path]);
+  const drillPath = useMemo(() => parseBrowsePath(params.path), [params.path]);
   const interests = useStore((s) => s.prefs.interests);
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
@@ -46,7 +46,7 @@ export default function Browse() {
           </View>
           <ToolbarIconButton
             icon="git-network-outline"
-            onPress={() => openHierarchy(section)}
+            onPress={() => openHierarchy(section, drillPath)}
             accessibilityLabel="Browse taxonomy tree"
           />
           <ToolbarIconButton
@@ -59,7 +59,7 @@ export default function Browse() {
         </Row>
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView section={section} path={path} />
+        <HierarchyView section={section} path={drillPath} />
       </View>
     </Screen>
   );
