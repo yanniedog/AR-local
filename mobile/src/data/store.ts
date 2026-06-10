@@ -5,6 +5,7 @@ import * as TaskManager from 'expo-task-manager';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { SECTIONS } from '../constants';
 import { RATE_MOVE_BPS_THRESHOLD } from '../config';
 import type {
   CorePayload,
@@ -98,6 +99,8 @@ interface AppState {
   payloadProgress: PayloadProgressSnapshot | null;
   /** True once persisted prefs/favorites have rehydrated from AsyncStorage. */
   hydrated: boolean;
+  /** Last-selected product section; synced across Home and Browse. */
+  activeSection: SectionKey;
 
   prefs: Prefs;
   favorites: string[];
@@ -135,6 +138,7 @@ interface AppState {
     filters: FilterSnapshot;
   }) => Subscription | undefined;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
+  setActiveSection: (section: SectionKey) => void;
   completeOnboarding: (interests: SectionKey[], notifications: boolean) => void;
   clearCache: () => Promise<void>;
 }
@@ -187,6 +191,7 @@ export const useStore = create<AppState>()(
       lastCheckedAt: null,
       payloadProgress: null,
       hydrated: false,
+      activeSection: DEFAULT_PREFS.defaultSection,
 
       prefs: DEFAULT_PREFS,
       favorites: [],
@@ -642,6 +647,10 @@ export const useStore = create<AppState>()(
         return lookupSearchSubscription(get().subscriptions, input);
       },
 
+      setActiveSection(section) {
+        set({ activeSection: section });
+      },
+
       setPref(key, value) {
         set({ prefs: { ...get().prefs, [key]: value } });
         if (key === 'enableDeepSearch') {
@@ -663,12 +672,14 @@ export const useStore = create<AppState>()(
       },
 
       completeOnboarding(interests, notifications) {
+        const defaultSection = interests[0] ?? get().prefs.defaultSection;
         set({
+          activeSection: defaultSection,
           prefs: {
             ...get().prefs,
             onboarded: true,
             interests: interests.length ? interests : DEFAULT_PREFS.interests,
-            defaultSection: interests[0] ?? get().prefs.defaultSection,
+            defaultSection,
             notificationsEnabled: notifications,
           },
         });
@@ -696,14 +707,26 @@ export const useStore = create<AppState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => {
         const { showHistoryRibbon: _sessionOnly, ...prefsToPersist } = s.prefs;
-        return { prefs: prefsToPersist, favorites: s.favorites, subscriptions: s.subscriptions };
+        return {
+          prefs: prefsToPersist,
+          favorites: s.favorites,
+          subscriptions: s.subscriptions,
+          activeSection: s.activeSection,
+        };
       },
       merge: (persisted, current) => {
         const p = persisted as Partial<AppState> | undefined;
+        const prefs = { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false };
+        const persistedActiveSection = p?.activeSection;
+        const isValidActiveSection =
+          typeof persistedActiveSection === 'string' &&
+          Object.prototype.hasOwnProperty.call(SECTIONS, persistedActiveSection);
+        const activeSection = isValidActiveSection ? persistedActiveSection : prefs.defaultSection;
         return {
           ...current,
           ...p,
-          prefs: { ...DEFAULT_PREFS, ...p?.prefs, showHistoryRibbon: false },
+          prefs,
+          activeSection,
         };
       },
       // Flip `hydrated` once persisted state is restored, so the initial route

@@ -1,6 +1,7 @@
 import { router, type Href } from 'expo-router';
 
 import { SECTIONS } from '../constants';
+import { useStore } from '../data/store';
 import type { SortKey } from '../data/selectors';
 import type { SectionKey } from '../types';
 
@@ -17,18 +18,30 @@ export const openProduct = (productKey: string, rateIndex?: number) =>
 export const openBank = (provider: string) =>
   router.push({ pathname: '/bank/[provider]', params: { provider } });
 
-export const openBrowse = (section: SectionKey) =>
-  router.push({ pathname: '/browse', params: { section: SECTIONS[section].slug } });
+const browseDrillParams = (section: SectionKey, path: string[] = []) => ({
+  section: SECTIONS[section].slug,
+  ...(path.length ? { path: path.join('.') } : {}),
+});
+
+/** Switch to Browse tab and drill to a taxonomy node (replaces stacked /node pushes). */
+export const openBrowseDrill = (section: SectionKey, path: string[] = []) => {
+  useStore.getState().setActiveSection(section);
+  router.navigate({
+    pathname: '/browse',
+    params: browseDrillParams(section, path),
+  } as unknown as Href);
+};
+
+export const openBrowse = (section: SectionKey) => openBrowseDrill(section, []);
 
 export const openHierarchy = (section: SectionKey, path: string[] = []) =>
   router.push({
     pathname: '/hierarchy',
-    params: { section: SECTIONS[section].slug, ...(path.length ? { path: path.join('.') } : {}) },
+    params: browseDrillParams(section, path),
   } as unknown as Href);
 
-// Drill one level into the taxonomy hierarchy (path = dot-joined segments).
-export const openNode = (section: SectionKey, path: string[]) =>
-  router.push({ pathname: '/node', params: { section, path: path.join('.') } });
+/** @deprecated Use openBrowseDrill — drills inside Browse tab instead of stacking /node. */
+export const openNode = (section: SectionKey, path: string[]) => openBrowseDrill(section, path);
 
 export const openSearch = (section: SectionKey, sort?: SortKey) =>
   router.push({ pathname: '/search', params: { section, ...(sort ? { sort } : {}) } });
