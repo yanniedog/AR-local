@@ -223,3 +223,15 @@ export function gateBranchFreshMeta(meta) {
     detail: state.detail || 'Branch current with base',
   };
 }
+
+export function gateAutoMergeEnabled(meta) {
+  const enabled = isAutoMergeEnabled(meta);
+  return {
+    id: 'auto-merge',
+    pass: enabled,
+    detail: enabled
+      ? `Squash auto-merge enabled (${meta?.autoMergeRequest?.enabledAt || 'active'})`
+      : 'Squash auto-merge not enabled',
+    action: enabled ? undefined : `npm run pr:merge -- --pr ${meta?.number} --enable-only`,
+  };
+}

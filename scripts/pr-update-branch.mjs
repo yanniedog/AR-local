@@ -46,8 +46,12 @@ function main() {
   }
 
   try {
-    if (args.progress || args.enableAuto) {
-      const result = progressPullRequest(args.pr, { dryRun: args.dryRun, syncBranch: true, enableAuto: true });
+    if (args.progress) {
+      const result = progressPullRequest(args.pr, {
+        dryRun: args.dryRun,
+        syncBranch: true,
+        enableAuto: args.enableAuto,
+      });
       if (result.sync) console.log(`pr-update-branch: sync ${result.sync.action} — ${result.sync.detail}`);
       if (result.autoMerge) console.log(`pr-update-branch: auto-merge ${result.autoMerge.action} — ${result.autoMerge.detail}`);
       if (result.blocked) {
