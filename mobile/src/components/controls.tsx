@@ -23,6 +23,7 @@ export function SegmentedControl<T extends string>({
   const theme = useTheme();
   return (
     <View
+      accessibilityRole="tablist"
       style={{
         flexDirection: 'row',
         backgroundColor: theme.colors.surfaceAlt,
@@ -39,13 +40,18 @@ export function SegmentedControl<T extends string>({
               if (opt.value !== value) hapticSelection();
               onChange(opt.value);
             }}
+            accessibilityRole="tab"
+            accessibilityLabel={opt.label}
+            accessibilityState={{ selected: active }}
             android_ripple={androidRipple(theme.colors.primaryMuted)}
             style={{
               flex: 1,
               paddingVertical: 9,
+              minHeight: 48,
               borderRadius: theme.radius.sm,
               backgroundColor: active ? theme.colors.card : 'transparent',
               alignItems: 'center',
+              justifyContent: 'center',
               overflow: 'hidden',
               shadowColor: active ? theme.colors.shadow : 'transparent',
               shadowOpacity: active ? 1 : 0,

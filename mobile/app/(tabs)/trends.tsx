@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
@@ -11,6 +11,7 @@ import { formatRate, formatRunDate } from '../../src/data/format';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
+import { rateValueLabel, rbaDecisionA11yLabel } from '../../src/lib/a11ySummaries';
 import { openBrowse } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -48,17 +49,30 @@ export default function Trends() {
         </AppText>
         {decisions.map((d) => {
           const up = d.rate > d.prior;
+          const down = d.rate < d.prior;
+          const direction = up ? 'Increased' : down ? 'Decreased' : 'Unchanged';
           return (
-            <Row key={d.date} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Row
+              key={d.date}
+              style={{ justifyContent: 'space-between', paddingVertical: 6 }}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={rbaDecisionA11yLabel(d.prior, d.rate, formatRunDate(d.date))}
+            >
               <AppText variant="small" color="textMuted">
                 {formatRunDate(d.date)}
               </AppText>
               <Row gap={6}>
-                <Ionicons
-                  name={up ? 'arrow-up' : 'arrow-down'}
-                  size={14}
-                  color={up ? theme.colors.danger : theme.colors.success}
-                />
+                <AppText variant="tiny" color="textFaint">
+                  {direction}
+                </AppText>
+                {up || down ? (
+                  <Ionicons
+                    name={up ? 'arrow-up' : 'arrow-down'}
+                    size={14}
+                    color={up ? theme.colors.danger : theme.colors.success}
+                  />
+                ) : null}
                 <AppText variant="small" weight="700">
                   {formatRate(d.prior)} → {formatRate(d.rate)}
                 </AppText>
@@ -77,8 +91,15 @@ export default function Trends() {
         const stats = resolveSectionRibbonStats(data, data.rates, false);
         if (stats.min === null) return null;
         const best = bestRow(data.rates, key);
+        const bestLabel = rateValueLabel(key, 'best');
+        const bestRate = best ? formatRate(best.rate) : '—';
         return (
-          <Pressable key={key} onPress={() => openBrowse(key)}>
+          <Pressable
+            key={key}
+            onPress={() => openBrowse(key)}
+            accessibilityRole="button"
+            accessibilityLabel={`${SECTIONS[key].title}, ${bestLabel} ${bestRate}`}
+          >
             <Card style={{ marginBottom: 12 }}>
               <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}>
                 <Row gap={8}>
@@ -91,13 +112,18 @@ export default function Trends() {
                     {SECTIONS[key].title}
                   </AppText>
                 </Row>
-                <AppText
-                  variant="body"
-                  weight="800"
-                  style={{ color: SECTIONS[key].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
-                >
-                  {best ? formatRate(best.rate) : '—'}
-                </AppText>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <AppText variant="tiny" color="textFaint">
+                    {bestLabel}
+                  </AppText>
+                  <AppText
+                    variant="body"
+                    weight="800"
+                    style={{ color: SECTIONS[key].lowerIsBetter ? theme.colors.success : theme.colors.primary }}
+                  >
+                    {bestRate}
+                  </AppText>
+                </View>
               </Row>
               <Ribbon stats={stats} section={key} />
             </Card>

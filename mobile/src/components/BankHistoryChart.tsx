@@ -12,6 +12,7 @@ import {
   sliceChartTimeline,
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
+import { bankHistoryChartA11ySummary } from '../lib/a11ySummaries';
 import { buildBandPath } from '../lib/chartSvgPaths';
 import { debugLog } from '../lib/debugLog';
 import { useTheme } from '../theme/ThemeProvider';
@@ -186,6 +187,14 @@ export function BankHistoryChart({
     onDateSelect?.(date);
   };
 
+  const chartSummary = bankHistoryChartA11ySummary({
+    section,
+    window,
+    activeDate,
+    activePoint,
+    showRba,
+  });
+
   return (
     <View>
       <Row gap={6} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
@@ -199,9 +208,15 @@ export function BankHistoryChart({
         ))}
       </Row>
 
-      <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ width: '100%', height }}>
+      <View
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={chartSummary}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        style={{ width: '100%', height }}
+      >
         {width > 0 ? (
-          <Svg width={width} height={height}>
+          <Svg width={width} height={height} importantForAccessibility="no-hide-descendants">
             {[0, 0.5, 1].map((frac) => {
               const v = yDomain.min + span * frac;
               const y = yAt(v);
@@ -314,7 +329,9 @@ export function BankHistoryChart({
                 key={date}
                 onPress={() => handleSlicePress(date)}
                 style={{ flex: 1 }}
+                accessibilityRole="button"
                 accessibilityLabel={`Select ${date}`}
+                accessibilityHint="Updates chart summary for this date"
               />
             ))}
           </View>
