@@ -159,6 +159,113 @@ def test_history_payload_discovers_sibling_run_exports(tmp_path):
     assert [point["date"] for point in history["sections"]["Savings"]["points"]] == history["run_dates"]
 
 
+def _write_history_day(runs, date, rows):
+    exports = runs / date / "_exports"
+    cache = exports / "dashboard-cache" / date
+    cache.mkdir(parents=True)
+    (cache / "banks.json").write_text(json.dumps({"rates": rows}), encoding="utf-8")
+    return exports
+
+
+def _history_assets_from(exports, run_date):
+    return app_payload_mobile.build_history_assets(
+        exports,
+        run_date=run_date,
+        load_json=app_payload._load_json,
+        section_filter=app_payload.section_filter,
+        normalized_rate_value=app_payload._normalized_rate_value,
+    )
+
+
+def test_build_history_assets_bank_series_and_events(tmp_path):
+    runs = tmp_path / "runs"
+
+    def savings(provider, key, rate):
+        return {
+            "dataset": "Savings",
+            "provider": provider,
+            "product_key": key,
+            "rate": rate,
+            "rate_family": "deposit",
+        }
+
+    _write_history_day(
+        runs, "2026-06-08", [savings("Alpha", "A|1", "0.0500"), savings("Beta", "B|1", "0.0400")]
+    )
+    # Alpha cuts its only product by 25 bps; Beta drops out for a day.
+    _write_history_day(runs, "2026-06-09", [savings("Alpha", "A|1", "0.0475")])
+    exports = _write_history_day(
+        runs, "2026-06-10", [savings("Alpha", "A|1", "0.0475"), savings("Beta", "B|1", "0.0450")]
+    )
+
+    history, bank_history = _history_assets_from(exports, "2026-06-10")
+
+    # Section aggregate asset is unchanged by the combined pass.
+    assert history["run_dates"] == ["2026-06-08", "2026-06-09", "2026-06-10"]
+    assert [p["date"] for p in history["sections"]["Savings"]["points"]] == history["run_dates"]
+
+    assert bank_history["run_dates"] == history["run_dates"]
+    alpha = bank_history["banks"]["Alpha"]["Savings"]
+    assert alpha["best"] == [pytest.approx(0.05), pytest.approx(0.0475), pytest.approx(0.0475)]
+    assert alpha["median"] == alpha["best"]  # single product
+    assert alpha["count"] == [1, 1, 1]
+    beta = bank_history["banks"]["Beta"]["Savings"]
+    assert beta["best"] == [pytest.approx(0.04), None, pytest.approx(0.045)]
+    assert beta["count"] == [1, None, 1]
+
+    # One event: Alpha's matched-product cut. Beta has no baseline after its gap.
+    assert bank_history["events"] == [
+        {
+            "date": "2026-06-09",
+            "provider": "Alpha",
+            "section": "Savings",
+            "dir": "cut",
+            "moved": 1,
+            "total": 1,
+            "avg_bps": -25.0,
+        }
+    ]
+
+
+def test_build_history_assets_event_direction_and_threshold(tmp_path):
+    runs = tmp_path / "runs"
+
+    def loan(provider, key, rate):
+        return {
+            "dataset": "Mortgage",
+            "provider": provider,
+            "product_key": key,
+            "rate": rate,
+            "rate_family": "lending",
+            "rate_type": "VARIABLE",
+        }
+
+    _write_history_day(
+        runs,
+        "2026-06-09",
+        [loan("Gamma", "G|1", "0.0600"), loan("Gamma", "G|2", "0.0650"), loan("Gamma", "G|3", "0.0700")],
+    )
+    # G|1 +25 bps, G|2 -25 bps, G|3 +0.1 bp (below the 5 bps threshold -> ignored).
+    exports = _write_history_day(
+        runs,
+        "2026-06-10",
+        [loan("Gamma", "G|1", "0.0625"), loan("Gamma", "G|2", "0.0625"), loan("Gamma", "G|3", "0.07001")],
+    )
+
+    _history, bank_history = _history_assets_from(exports, "2026-06-10")
+
+    assert len(bank_history["events"]) == 1
+    event = bank_history["events"][0]
+    assert event["dir"] == "mixed"
+    assert event["moved"] == 2
+    assert event["total"] == 3
+    assert event["avg_bps"] == pytest.approx(0.0)
+    # Mortgage best is the lowest advertised rate.
+    gamma = bank_history["banks"]["Gamma"]["Mortgage"]
+    assert gamma["best"] == [pytest.approx(0.06), pytest.approx(0.0625)]
+    assert gamma["count"] == [3, 3]
+
+
 def test_dated_tag_naming():
     assert app_payload.dated_tag("2026-06-08") == "app-payload-2026-06-08"
     assert app_payload.is_dated_tag("app-payload-2026-06-08")
@@ -185,6 +292,11 @@ def test_optional_assets_are_rolling_only(tmp_path):
                 }
             }
         },
+        "bank_history": {
+            "run_dates": ["2026-06-10"],
+            "banks": {"Bank": {"Savings": {"median": [0.04], "best": [0.05], "count": [2]}}},
+            "events": [],
+        },
     }
     rolling = app_payload._package(
         {"schema_version": 1},
@@ -203,7 +315,7 @@ def test_optional_assets_are_rolling_only(tmp_path):
         **kwargs,
     )
 
-    assert {"search_index", "history_banks"} <= rolling["files"].keys()
+    assert {"search_index", "history_banks", "bank_history"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
 
@@ -413,6 +525,7 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
         "details.json.gz",
         "search-index.json.gz",
         "history-banks.json.gz",
+        "bank-history.json.gz",
     ]
     for name in names:
         (tmp_path / name).write_bytes(b"asset")
@@ -426,6 +539,7 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
                     "details": {"name": names[1]},
                     "search_index": {"name": names[2]},
                     "history_banks": {"name": names[3]},
+                    "bank_history": {"name": names[4]},
                 },
             }
         ),
@@ -439,10 +553,17 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
     output = capsys.readouterr().out
     assert "search-index.json.gz" in output
     assert "history-banks.json.gz" in output
+    assert "bank-history.json.gz" in output
 
 
 def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
-    names = ["core.json.gz", "details.json.gz", "search-index.json.gz", "history-banks.json.gz"]
+    names = [
+        "core.json.gz",
+        "details.json.gz",
+        "search-index.json.gz",
+        "history-banks.json.gz",
+        "bank-history.json.gz",
+    ]
     for name in names:
         (tmp_path / name).write_bytes(b"asset")
     (tmp_path / "manifest.json").write_text(
@@ -455,6 +576,7 @@ def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
                     "details": {"name": names[1]},
                     "search_index": {"name": names[2]},
                     "history_banks": {"name": names[3]},
+                    "bank_history": {"name": names[4]},
                 },
             }
         ),
@@ -481,6 +603,30 @@ def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
     assert app_payload.publish_payload(tmp_path) is True
     assert protected["keep"] == set(names)
     assert any("history-banks.json.gz" in " ".join(command) for command in uploads)
+    assert any("bank-history.json.gz" in " ".join(command) for command in uploads)
+
+
+def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
+    # 49 content-addressed bank-history assets, oldest first; keep window is 48.
+    rows = [
+        (f"bank-history-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
+        for i in range(49)
+    ]
+    listing = "\n".join(f"{name}\t{created}" for name, created in rows)
+    deletes = []
+
+    def fake_run(args, **_kwargs):
+        if "view" in args:
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        deletes.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
+
+    assert deleted == 1
+    assert any(rows[0][0] in command for command in deletes), "oldest bank-history asset pruned"
 
 
 @pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")

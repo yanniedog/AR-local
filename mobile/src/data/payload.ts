@@ -6,6 +6,7 @@ import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
 import { debugLog } from '../lib/debugLog';
 import { versionLt } from '../lib/versionCompare';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
+import { normalizeBankInsightsPayload } from './bankInsights';
 import { normalizeHistoryBanksPayload } from './historyPayload';
 import {
   fileNameFromUrl,
@@ -252,6 +253,24 @@ export async function downloadSearchIndex(
 ): Promise<SearchIndexResult> {
   const text = await downloadInflate(url, expectedSha, opts);
   return { text, searchIndex: JSON.parse(text) as SearchIndexResult['searchIndex'] };
+}
+
+export interface BankInsightsResult {
+  text: string;
+  bankInsights: import('./bankInsights').BankInsightsPayload;
+}
+
+export async function downloadBankInsights(
+  url: string,
+  expectedSha?: string,
+  opts: DownloadOpts = {},
+): Promise<BankInsightsResult> {
+  const text = await downloadInflate(url, expectedSha, opts);
+  const bankInsights = normalizeBankInsightsPayload(JSON.parse(text) as unknown);
+  if (!bankInsights) {
+    throw new Error('bank_history payload failed validation');
+  }
+  return { text, bankInsights };
 }
 
 export interface HistoryBanksResult {

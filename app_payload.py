@@ -535,7 +535,7 @@ def build_payload(
     search_index = app_payload_mobile.build_search_index(
         all_core_rows, details["products"], run_date=run_date, schema_version=SCHEMA_VERSION
     )
-    history_banks = app_payload_mobile.build_history_banks(
+    history_banks, bank_history = app_payload_mobile.build_history_assets(
         exports_dir,
         run_date=run_date,
         load_json=_load_json,
@@ -554,6 +554,7 @@ def build_payload(
         counts=counts,
         search_index=search_index,
         history_banks=history_banks,
+        bank_history=bank_history,
     )
 
 
@@ -568,6 +569,7 @@ def _package(
     counts: Dict[str, Any],
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
+    bank_history: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -583,6 +585,10 @@ def _package(
     if is_rolling_tag(tag) and history_banks and history_banks.get("sections"):
         files["history_banks"] = _asset(
             out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
+        )
+    if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
+        files["bank_history"] = _asset(
+            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -862,7 +868,7 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     data: List[Tuple[str, str]] = []
     for line in listed.stdout.splitlines():
         name, _, created = line.partition("\t")
-        if name.startswith(("core-", "details-", "search-index-", "history-banks-")) and name.endswith(".json.gz"):
+        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-")) and name.endswith(".json.gz"):
             data.append((name, created))
     data.sort(key=lambda x: x[1], reverse=True)  # newest first
     deleted = 0

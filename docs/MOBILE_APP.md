@@ -49,6 +49,21 @@ chart downloads one pre-aggregated `history-banks-*.json.gz` asset from the roll
 release. The compact asset is built from all valid `runs/<date>/_exports` snapshots
 on the Pi and is protected from rolling-release pruning while its manifest is live.
 
+### Bank intelligence (`bank-history-*.json.gz`)
+
+The historical-series moat: a second rolling-only optional asset
+(`manifest.files.bank_history`) built in the same single pass as the history ribbon
+(`app_payload_mobile.build_history_assets`). It carries, per provider × section,
+daily `median` / `best` / `count` series positionally aligned to `run_dates`, plus
+precomputed **rate-move events** — matched `product_key` best-rate deltas ≥ 5 bps
+between consecutive runs, aggregated to
+`{date, provider, section, dir: cut|hike|mixed, moved, total, avg_bps}`.
+
+The app (Pro tier, no extra pref) renders it with zero on-device aggregation:
+bank-moves feed + movers leaderboard + RBA pass-through scorecard in
+**Charts & trends**, and a per-lender rate-history chart + move timeline on each
+bank page (`mobile/src/data/bankInsights.ts`).
+
 Each ingest `run_date` also gets an immutable GitHub Release tag
 `app-payload-YYYY-MM-DD` with exactly three assets (`manifest.json`, one `core-*.json.gz`,
 one `details-*.json.gz`). The rolling `app-payload-latest` tag stays the canonical

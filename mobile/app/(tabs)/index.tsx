@@ -12,12 +12,13 @@ import { CompactToggle, SectionCrossfade, SegmentedControl } from '../../src/com
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
+import { marketPulse } from '../../src/data/bankInsights';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
+import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { openBank, openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -38,8 +39,14 @@ export default function Home() {
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
+  const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
+  const bankInsights = useStore((s) => s.bankInsights);
   const setPref = useStore((s) => s.setPref);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
+  const pulse = useMemo(
+    () => (showBankInsights ? marketPulse(bankInsights, 7) : null),
+    [bankInsights, showBankInsights],
+  );
 
   useEffect(() => {
     const resolved = resolveInterestSection(interests, section);
@@ -71,9 +78,13 @@ export default function Home() {
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
-  const trendsDetail = showHistoryRibbon
-    ? `${meta.title} history ribbon, RBA cash rate, market snapshot`
-    : 'RBA cash rate, market snapshot, history ribbon Pro';
+  const trendsDetail = pulse?.banksMoved
+    ? `${pulse.banksMoved} bank${pulse.banksMoved === 1 ? '' : 's'} moved rates this week — see who cut and who hiked`
+    : showBankInsights
+      ? 'Bank moves feed, RBA pass-through, market history'
+      : showHistoryRibbon
+        ? `${meta.title} history ribbon, RBA cash rate, market snapshot`
+        : 'Bank moves, RBA pass-through & rate history — Pro';
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
 
@@ -207,7 +218,7 @@ export default function Home() {
             </View>
             <View style={{ flex: 1, paddingRight: theme.spacing(2) }}>
               <AppText variant="body" weight="700">
-                {showHistoryRibbon ? 'History ribbon & trends' : 'Charts & trends'}
+                {showBankInsights ? 'Bank intelligence & trends' : 'Charts & trends'}
               </AppText>
               <AppText variant="tiny" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
                 {trendsDetail}

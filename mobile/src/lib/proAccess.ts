@@ -6,7 +6,7 @@ export const RATE_INTELLIGENCE_PRO = 'Rate Intelligence Pro';
 /** Free tier: one product or search alert; additional alerts require Pro. */
 export const FREE_ALERT_SLOTS = 1;
 
-export type ProGateIntent = 'alert_limit' | 'deep_search' | 'history_ribbon';
+export type ProGateIntent = 'alert_limit' | 'deep_search' | 'history_ribbon' | 'bank_insights';
 
 export function hasProAccess(prefs: Pick<Prefs, 'rateIntelligencePro'>): boolean {
   return prefs.rateIntelligencePro;
@@ -18,6 +18,11 @@ export function effectiveDeepSearch(prefs: Pick<Prefs, 'enableDeepSearch' | 'rat
 
 export function effectiveHistoryRibbon(prefs: Pick<Prefs, 'showHistoryRibbon' | 'rateIntelligencePro'>): boolean {
   return prefs.showHistoryRibbon && hasProAccess(prefs);
+}
+
+/** Bank intelligence (per-bank history + rate-move events) ships with Pro — no extra pref. */
+export function effectiveBankInsights(prefs: Pick<Prefs, 'rateIntelligencePro'>): boolean {
+  return hasProAccess(prefs);
 }
 
 export function canAddAlertSubscription(
@@ -61,6 +66,17 @@ export function proGateCopy(intent: ProGateIntent): { title: string; body: strin
           'RBA overlay on mortgage history',
           'Deep product search',
           'Unlimited rate alerts',
+        ],
+      };
+    case 'bank_insights':
+      return {
+        title: RATE_INTELLIGENCE_PRO,
+        body: 'Only Australian Rates tracks every bank, every day. See who cut, who hiked, and who passes RBA changes on.',
+        bullets: [
+          'Daily rate-move feed across every tracked lender',
+          'Biggest movers leaderboards',
+          'RBA pass-through scorecard',
+          'Per-bank rate history charts',
         ],
       };
   }

@@ -124,6 +124,8 @@ export interface Manifest {
     details: ManifestFile;
     search_index?: ManifestFile;
     history_banks?: ManifestFile;
+    /** Per-bank daily series + rate-move events (bank intelligence asset). */
+    bank_history?: ManifestFile;
   };
 }
 
