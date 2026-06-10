@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { SECTIONS } from '../constants';
@@ -20,7 +20,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { ProductCard } from './ProductCard';
 import { Ribbon } from './Ribbon';
 import { AppText, Card, Row } from './ui';
-import { EmptyState } from './feedback';
+import { EmptyState, LoadingRows } from './feedback';
 
 type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow };
 
@@ -32,6 +32,13 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const [listReady, setListReady] = useState(false);
+
+  useEffect(() => {
+    setListReady(false);
+    const frame = requestAnimationFrame(() => setListReady(true));
+    return () => cancelAnimationFrame(frame);
+  }, [section, path]);
 
   const { stats, children, items } = useMemo(() => {
     const all = rows ?? [];
@@ -55,7 +62,13 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
     return { stats, children: kids, items: data };
   }, [rows, sectionData, section, path, includeNonStandard]);
 
-  if (!rows) return null;
+  if (!rows || !listReady) {
+    return (
+      <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+        <LoadingRows count={5} />
+      </View>
+    );
+  }
 
   const isLeaf = children.length === 0;
 

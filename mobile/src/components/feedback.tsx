@@ -1,6 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Pressable, View, type DimensionValue, type ViewStyle } from 'react-native';
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 
 import type { PayloadProgressSnapshot } from '../data/downloadProgress';
 import {
@@ -141,19 +149,126 @@ export function EmptyState({
   );
 }
 
-export function LoadingRows({ count = 6 }: { count?: number }) {
+const SHIMMER_SWEEP = 120;
+
+function ShimmerBox({
+  height,
+  width = '100%',
+  borderRadius,
+  style,
+}: {
+  height: number;
+  width?: DimensionValue;
+  borderRadius: number;
+  style?: ViewStyle;
+}) {
+  const theme = useTheme();
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withRepeat(
+      withTiming(1, { duration: 1500, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [progress]);
+
+  const shineStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(progress.value, [0, 1], [-SHIMMER_SWEEP, 320]),
+      },
+    ],
+  }));
+
+  const shineColor = theme.dark ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.55)';
+
+  return (
+    <View
+      style={[
+        {
+          height,
+          width,
+          borderRadius,
+          backgroundColor: theme.colors.skeleton,
+          overflow: 'hidden',
+        },
+        style,
+      ]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: SHIMMER_SWEEP,
+            backgroundColor: shineColor,
+          },
+          shineStyle,
+        ]}
+      />
+    </View>
+  );
+}
+
+function ProductCardSkeleton() {
   const theme = useTheme();
   return (
-    <View>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        backgroundColor: theme.colors.card,
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        marginBottom: 10,
+      }}
+    >
+      <ShimmerBox height={44} width={44} borderRadius={22} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <ShimmerBox height={14} width="72%" borderRadius={theme.radius.sm} />
+        <ShimmerBox height={12} width="48%" borderRadius={theme.radius.sm} />
+      </View>
+      <ShimmerBox height={20} width={56} borderRadius={theme.radius.sm} />
+    </View>
+  );
+}
+
+/** Product-card-shaped shimmer placeholders for lists and browse remounts. */
+export function LoadingRows({ count = 6 }: { count?: number }) {
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel="Loading content">
       {Array.from({ length: count }).map((_, i) => (
-        <View
+        <ProductCardSkeleton key={i} />
+      ))}
+    </View>
+  );
+}
+
+const DETAIL_LINE_WIDTHS: DimensionValue[] = ['68%', '52%', '44%'];
+
+/** Compact shimmer lines for product detail groups. */
+export function DetailLoadingLines({ lines = 3 }: { lines?: number }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{ gap: 10 }}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading product details"
+    >
+      {Array.from({ length: lines }).map((_, i) => (
+        <ShimmerBox
           key={i}
-          style={{
-            height: 76,
-            borderRadius: theme.radius.lg,
-            backgroundColor: theme.colors.skeleton,
-            marginBottom: 10,
-          }}
+          height={14}
+          width={DETAIL_LINE_WIDTHS[i % DETAIL_LINE_WIDTHS.length]}
+          borderRadius={theme.radius.sm}
         />
       ))}
     </View>
