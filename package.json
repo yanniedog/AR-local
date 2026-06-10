@@ -12,6 +12,7 @@
     "pr:bot-matrix:commit": "node scripts/pr-bot-matrix-commit.mjs",
     "pr:bot-matrix:verify": "node scripts/verify-pr-bot-matrix-writer.mjs",
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
+    "mobile:auto-release:verify": "node scripts/verify-mobile-auto-release-commit.mjs",
     "pr:bot-matrix-commit:verify": "node scripts/verify-pr-bot-matrix-commit.mjs",
     "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
     "close-loop:check": "node scripts/close-loop-check.mjs",

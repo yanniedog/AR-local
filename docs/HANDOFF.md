@@ -328,11 +328,15 @@ apply to the new package name; Play Store treats the new ID as a different app.
 **Auto release when PR queue drains:** `.github/workflows/mobile-auto-release-on-queue-drain.yml`
 — on squash-merge of a PR to `main`, counts remaining open PRs (`gh pr list --state open --base main`).
 If **> 0**, exits cleanly. If **0** (last PR landed), bumps `expo.version` patch in `mobile/app.json`
-via `mobile/scripts/mobile-auto-release-on-drain.mjs`, opens a bump PR to `main` with auto-merge
-(branch protection blocks direct pushes — requires `bot-feedback-gate` + `bot-presence-gate`).
-When the bump PR lands, **mobile-android-apk** below builds the APK. Use **`workflow_dispatch`**
-on this workflow to recover a missed bump (e.g. after a failed drain run). Concurrency group
+via `mobile/scripts/mobile-auto-release-on-drain.mjs`, commits `mobile/app.json` + `mobile/changelog/**`,
+and **pushes directly to `main`** (no bump PR). When the push lands, **mobile-android-apk** below builds
+the APK. Use **`workflow_dispatch`** to recover a missed bump. Concurrency group
 `mobile-auto-release-on-drain` (`cancel-in-progress: false`) serializes drain checks.
+
+**Direct commit to main (one-time GitHub setup):** Add **GitHub Actions** to the `main` ruleset bypass list
+(Settings → Rules → Rulesets). Optionally scope to `.github/workflows/mobile-auto-release-on-queue-drain.yml`.
+If push fails, the drain script falls back to a gate-exempt bump PR (`scripts/lib/pr-gate-exempt.mjs`).
+Close obsolete bump PRs (e.g. `#276`) after direct push is verified.
 
 **Primary internal Android build (free, unlimited):** `.github/workflows/mobile-android-apk.yml`
 — runs on `ubuntu-latest` (JDK 17, Android SDK): materialize Firebase → bump `versionCode`
