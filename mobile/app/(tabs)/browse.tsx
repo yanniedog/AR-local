@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { HierarchyView } from '../../src/components/HierarchyView';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { Screen } from '../../src/components/Screen';
-import { Row } from '../../src/components/ui';
-import { sectionFromSlug } from '../../src/constants';
+import { AppText, Row } from '../../src/components/ui';
+import { SECTIONS, sectionFromSlug } from '../../src/constants';
+import { breadcrumb } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { openHierarchy, openSearch } from '../../src/lib/nav';
+import { openBrowseDrill, openHierarchy, openSearch } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -22,31 +23,42 @@ const SECTION_SEG = [
 export default function Browse() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
-  const params = useLocalSearchParams<{ section?: string }>();
-  const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const params = useLocalSearchParams<{ section?: string; path?: string }>();
+  const section = useStore((s) => s.activeSection);
+  const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const setPref = useStore((s) => s.setPref);
-  const routed = params.section ? sectionFromSlug(params.section) : undefined;
-  const [section, setSection] = useState<SectionKey>(routed ?? defaultSection);
 
-  // Honour deep-links (e.g. Trends -> openBrowse(section)) when the route param changes.
+  const routedSection = params.section ? sectionFromSlug(params.section) : undefined;
+  const drillPath = useMemo(() => (params.path ?? '').split('.').filter(Boolean), [params.path]);
+  const crumbs = useMemo(() => breadcrumb(section, drillPath), [section, drillPath]);
+
+  // Honour deep-links (e.g. Home category tap, Trends -> openBrowse) when route params change.
   useEffect(() => {
-    const r = params.section ? sectionFromSlug(params.section) : undefined;
-    if (r && r !== section) setSection(r);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.section]);
+    if (routedSection && routedSection !== section) setActiveSection(routedSection);
+  }, [routedSection, section, setActiveSection]);
+
+  const onSectionChange = useCallback(
+    (next: SectionKey) => {
+      setActiveSection(next);
+      openBrowseDrill(next, []);
+    },
+    [setActiveSection],
+  );
 
   if (!core) return null;
+
+  const title = crumbs[crumbs.length - 1] || SECTIONS[section].title;
 
   return (
     <Screen>
       <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
         <Row gap={10}>
           <View style={{ flex: 1 }}>
-            <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+            <SegmentedControl options={SECTION_SEG} value={section} onChange={onSectionChange} />
           </View>
           <Pressable
-            onPress={() => openHierarchy(section)}
+            onPress={() => openHierarchy(section, drillPath)}
             style={{
               backgroundColor: theme.colors.surfaceAlt,
               borderRadius: theme.radius.md,
@@ -79,10 +91,14 @@ export default function Browse() {
             onChange={(value) => setPref('includeNonStandard', value)}
           />
         </View>
+        {drillPath.length ? (
+          <AppText variant="tiny" color="textFaint" numberOfLines={2} style={{ marginTop: 10 }}>
+            {title} · {crumbs.join('  ›  ')}
+          </AppText>
+        ) : null}
       </View>
       <View style={{ flex: 1 }}>
-        {/* key forces a fresh drill-down root when the section changes */}
-        <HierarchyView key={section} section={section} path={[]} />
+        <HierarchyView key={`${section}-${drillPath.join('.')}`} section={section} path={drillPath} />
       </View>
     </Screen>
   );

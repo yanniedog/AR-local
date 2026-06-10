@@ -14,7 +14,7 @@ import {
   type TaxoNode,
 } from '../data/taxonomy';
 import { useStore } from '../data/store';
-import { openNode, openProduct, openProductsList } from '../lib/nav';
+import { openBrowseDrill, openProduct, openProductsList } from '../lib/nav';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { ProductCard } from './ProductCard';
@@ -121,7 +121,7 @@ function NodeCard({ section, path, node }: { section: SectionKey; path: string[]
   const best = SECTIONS[section].lowerIsBetter ? node.stats.min : node.stats.max;
   return (
     <Pressable
-      onPress={() => openNode(section, [...path, node.seg])}
+      onPress={() => openBrowseDrill(section, [...path, node.seg])}
       style={({ pressed }) => ({
         backgroundColor: theme.colors.card,
         borderRadius: theme.radius.lg,
