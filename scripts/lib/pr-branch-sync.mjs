@@ -105,15 +105,6 @@ export function updatePrBranch(prNumber, { dryRun = false, force = false } = {})
       exitCode: 0,
     };
   }
-  if (!force && state.status !== 'behind' && state.status !== 'blocked' && state.status !== 'unknown') {
-    return {
-      ok: true,
-      action: 'skipped',
-      detail: 'branch already current',
-      headRefName: meta.headRefName,
-      exitCode: 0,
-    };
-  }
   const result = ghUpdateBranch(prNumber, { dryRun });
   if (!result.ok) {
     const hint =

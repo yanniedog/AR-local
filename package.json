@@ -32,8 +32,6 @@
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
     "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
     "pr:merge": "node scripts/pr-merge.mjs",
-    "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
-    "pr:update-branch": "node scripts/pr-update-branch.mjs",
     "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs"
   }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { progressPullRequest } from './lib/pr-branch-sync.mjs';
+import { progressPullRequest, enableSquashAutoMerge } from './lib/pr-branch-sync.mjs';
 import { hasGh } from './lib/gh-pr-review-threads.mjs';
 
 function parseArgs(argv) {
@@ -18,6 +18,11 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv);
   if (!hasGh() || !args.pr) { console.error('pr-merge: gh + --pr required'); process.exit(1); }
+  if (args.enableOnly) {
+    const auto = enableSquashAutoMerge(args.pr, { dryRun: args.dryRun });
+    console.log(`auto-merge ${auto.action}: ${auto.detail}`);
+    process.exit(auto.ok ? 0 : auto.exitCode || 1);
+  }
   const r = progressPullRequest(args.pr, { dryRun: args.dryRun, syncBranch: !args.noSync, enableAuto: true });
   if (r.sync && !args.noSync) console.log(`sync ${r.sync.action}: ${r.sync.detail}`);
   if (r.autoMerge) console.log(`auto-merge ${r.autoMerge.action}: ${r.autoMerge.detail}`);
