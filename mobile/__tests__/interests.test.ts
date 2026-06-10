@@ -21,7 +21,7 @@ describe('interests helpers', () => {
 
   it('builds segment options in interest order', () => {
     expect(sectionSegmentOptions(['TD', 'Mortgage'])).toEqual([
-      { value: 'TD', label: 'Term Deps' },
+      { value: 'TD', label: 'Term Deposits' },
       { value: 'Mortgage', label: 'Mortgage' },
     ]);
   });
