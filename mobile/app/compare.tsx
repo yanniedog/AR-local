@@ -221,7 +221,6 @@ export default function Compare() {
                           {formatRate(e.row.rate)}
                         </AppText>
                       </View>,
-                      isBest,
                       entryHighlightBg,
                     )}
 
