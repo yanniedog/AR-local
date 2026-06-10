@@ -1,7 +1,7 @@
 {
   "repo": "yanniedog/AR-local",
   "prCount": 50,
-  "generatedAt": "2026-06-10T04:31:22.718Z",
+  "generatedAt": "2026-06-10T04:35:24.540Z",
   "bots": [
     {
       "key": "gemini",
@@ -35,6 +35,82 @@
     "red": "quota/limit only"
   },
   "rows": [
+    {
+      "number": 266,
+      "title": "fix(mobile): stop tab layout crash from snackbar tab bar height hook",
+      "mergedAt": "2026-06-10T04:34:42Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/266",
+      "cells": {
+        "gemini": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 263,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T04:32:41Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/263",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
     {
       "number": 265,
       "title": "fix: skip bot gates for reports-only matrix PRs",
@@ -1841,82 +1917,6 @@
           "status": "green",
           "label": "OK",
           "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 215,
-      "title": "chore(mobile): bump app version to 1.0.2",
-      "mergedAt": "2026-06-09T22:39:25Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/215",
-      "cells": {
-        "gemini": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 214,
-      "title": "Fix mobile history ribbon crash on enable and cold start",
-      "mergedAt": "2026-06-09T22:26:46Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/214",
-      "cells": {
-        "gemini": {
-          "status": "yellow",
-          "label": "Open",
-          "reason": "2 unaddressed thread(s) at merge"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "yellow",
-          "label": "Open",
-          "reason": "2 unaddressed thread(s) at merge"
         },
         "copilot": {
           "status": "grey",
