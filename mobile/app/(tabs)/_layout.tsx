@@ -1,28 +1,46 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform } from 'react-native';
 
 import { BrandLockup } from '../../src/components/BrandLockup';
+import { M3NavigationBar } from '../../src/components/M3NavigationBar';
+import { getTabIonicon } from '../../src/lib/tabIcons';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function TabsLayout() {
   const theme = useTheme();
+  const isAndroid = Platform.OS === 'android';
+
   return (
     <Tabs
+      tabBar={isAndroid ? (props) => <M3NavigationBar {...props} /> : undefined}
       screenOptions={{
         headerStyle: {
-          backgroundColor: theme.colors.surface,
+          backgroundColor: isAndroid ? theme.colors.surfaceAlt : theme.colors.surface,
           borderBottomColor: theme.colors.border,
         },
-        headerTitleStyle: { color: theme.colors.text, fontWeight: '700', letterSpacing: -0.3 },
+        headerTitleStyle: {
+          color: theme.colors.text,
+          fontWeight: isAndroid ? '500' : '700',
+          letterSpacing: isAndroid ? 0 : -0.3,
+          fontSize: isAndroid ? 22 : undefined,
+        },
+        headerTitleAlign: isAndroid ? 'center' : 'left',
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-        },
+        tabBarStyle: isAndroid
+          ? {
+              backgroundColor: theme.colors.surfaceAlt,
+              borderTopWidth: 0,
+              elevation: 0,
+            }
+          : {
+              backgroundColor: theme.colors.surface,
+              borderTopColor: theme.colors.border,
+            },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
@@ -31,35 +49,45 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           headerTitle: () => <BrandLockup markSize={28} />,
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          tabBarIcon: isAndroid
+            ? () => null
+            : ({ color, size }) => <Ionicons name={getTabIonicon('index')!} size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="browse"
         options={{
           title: 'Browse',
-          tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
+          tabBarIcon: isAndroid
+            ? () => null
+            : ({ color, size }) => <Ionicons name={getTabIonicon('browse')!} size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="watchlist"
         options={{
           title: 'Watchlist',
-          tabBarIcon: ({ color, size }) => <Ionicons name="star" size={size} color={color} />,
+          tabBarIcon: isAndroid
+            ? () => null
+            : ({ color, size }) => <Ionicons name={getTabIonicon('watchlist')!} size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="trends"
         options={{
           title: 'Trends',
-          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} />,
+          tabBarIcon: isAndroid
+            ? () => null
+            : ({ color, size }) => <Ionicons name={getTabIonicon('trends')!} size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
+          tabBarIcon: isAndroid
+            ? () => null
+            : ({ color, size }) => <Ionicons name={getTabIonicon('settings')!} size={size} color={color} />,
         }}
       />
     </Tabs>
