@@ -7,6 +7,7 @@ import {
   rbaStepForDates,
   sanitizeRibbonPoint,
   sliceChartTimeline,
+  sliceIndexFromPlotX,
 } from '../src/data/bankHistoryTransform';
 import type { RbaEntry } from '../src/types';
 
@@ -65,6 +66,14 @@ describe('bankHistoryTransform', () => {
 
     const y1 = historyDatesInWindow(dates, '1Y');
     expect(y1.length).toBe(dates.length);
+  });
+
+  it('maps plot X to nearest slice index', () => {
+    expect(sliceIndexFromPlotX(0, 100, 5)).toBe(0);
+    expect(sliceIndexFromPlotX(100, 100, 5)).toBe(4);
+    expect(sliceIndexFromPlotX(50, 100, 5)).toBe(2);
+    expect(sliceIndexFromPlotX(25, 100, 3)).toBe(1);
+    expect(sliceIndexFromPlotX(10, 100, 1)).toBe(0);
   });
 
   it('builds RBA step values and change marks for mortgage overlay', () => {
