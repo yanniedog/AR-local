@@ -20,7 +20,7 @@ Every repo change follows: `agent/<slug>` branch → PR to `main` → CI → wai
 5. **`npm run wait-for-bots`** after creating a PR; exit 2 means bots/CI not settled — loop until exit 0 (or `--watch`). After tagging bots: `npm run wait-for-bots -- --bot-tag` then loop. Code pushes alone do not restart the wait.
 5b. Synthesize all threads → post `## Feedback plan` → then one push → in-thread replies.
 6. Thread closure on every substantive thread before merge.
-7. Merge (`gh pr merge --squash`) only after 5–6.
+7. Merge (`npm run pr:merge` / `gh pr merge --auto --squash --delete-branch`) only after 5–6.
 8. **Local:** restart/reload **`cdr_dashboard_server.py`** (or your launcher) so `main` is what runs; confirm **`site`** / **`--site-root`** as needed.
 9. **Local:** **`npm run verify:local -- --base-url=<printed-dashboard-url>/`**; use Browser MCP when validating UI. Exit code must be **0**.
 

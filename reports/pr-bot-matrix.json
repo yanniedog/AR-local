@@ -1,7 +1,7 @@
 {
   "repo": "yanniedog/AR-local",
   "prCount": 50,
-  "generatedAt": "2026-06-10T12:50:08.302Z",
+  "generatedAt": "2026-06-10T13:08:28.132Z",
   "bots": [
     {
       "key": "gemini",
@@ -35,6 +35,196 @@
     "red": "quota/limit only"
   },
   "rows": [
+    {
+      "number": 283,
+      "title": "Default squash auto-merge for all PRs",
+      "mergedAt": "2026-06-10T13:07:22Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/283",
+      "cells": {
+        "gemini": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 292,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T13:05:53Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/292",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 285,
+      "title": "fix(mobile): Browse subsection drill-down",
+      "mergedAt": "2026-06-10T13:04:23Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/285",
+      "cells": {
+        "gemini": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 276,
+      "title": "chore(mobile): auto-release bump to v1.0.8 (after b481ace)",
+      "mergedAt": "2026-06-10T12:57:14Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/276",
+      "cells": {
+        "gemini": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 287,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T12:50:39Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/287",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
     {
       "number": 282,
       "title": "Pi runtime health watchdog with tailscale self-heal",
@@ -1518,44 +1708,6 @@
       }
     },
     {
-      "number": 236,
-      "title": "mobile: rec19 spatial scaffold + CategoryRow + ToolbarIconButton",
-      "mergedAt": "2026-06-10T02:50:15Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/236",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
       "number": 242,
       "title": "mobile: swipe-to-remove with undo snackbar (rec #24)",
       "mergedAt": "2026-06-10T02:46:49Z",
@@ -1746,162 +1898,10 @@
       }
     },
     {
-      "number": 235,
-      "title": "mobile(rec13): Reanimated shimmer skeletons for async surfaces",
-      "mergedAt": "2026-06-10T02:40:29Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/235",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
       "number": 241,
       "title": "mobile: rate typography tokens and en-AU formatRate (rec #10)",
       "mergedAt": "2026-06-10T02:39:26Z",
       "url": "https://github.com/yanniedog/AR-local/pull/241",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 233,
-      "title": "mobile: rebuild compare as vertical comparison table (rec #22)",
-      "mergedAt": "2026-06-10T02:32:44Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/233",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 234,
-      "title": "mobile: value-first 2-step onboarding (rec #11)",
-      "mergedAt": "2026-06-10T02:25:14Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/234",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 232,
-      "title": "feat(mobile): premium ribbon neutral track and end ticks (rec #15)",
-      "mergedAt": "2026-06-10T02:15:39Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/232",
       "cells": {
         "gemini": {
           "status": "red",
