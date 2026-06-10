@@ -84,7 +84,9 @@ export default function Compare() {
   const bestVal =
     sameSection && valid.length ? (lowerIsBetter ? Math.min(...valid) : Math.max(...valid)) : null;
   const bestTone = lowerIsBetter ? 'success' : 'primary';
-  const rateColor = lowerIsBetter ? theme.colors.success : theme.colors.primary;
+
+  const rateColorFor = (section: SectionKey) =>
+    SECTIONS[section].lowerIsBetter ? theme.colors.success : theme.colors.primary;
 
   const attrRows: AttrRow[] = [
     {
@@ -126,7 +128,7 @@ export default function Compare() {
     key: string,
     height: number,
     content: React.ReactNode,
-    highlight?: boolean,
+    backgroundColor: string = theme.colors.card,
   ) => (
     <View
       key={key}
@@ -136,7 +138,7 @@ export default function Compare() {
           width: COL_W,
           height,
           borderColor: theme.colors.border,
-          backgroundColor: highlight ? theme.colors.primaryMuted : theme.colors.card,
+          backgroundColor,
         },
       ]}
     >
@@ -176,6 +178,8 @@ export default function Compare() {
               {entries.map((e, idx) => {
                 const f = fractions[idx];
                 const isBest = bestVal !== null && f === bestVal;
+                const entryRateColor = rateColorFor(e.section);
+                const entryHighlightBg = isBest ? theme.colors.primaryMuted : theme.colors.card;
                 return (
                   <View
                     key={`${e.row.product_key}#${e.row.rate_index ?? idx}`}
@@ -210,12 +214,13 @@ export default function Compare() {
                         <AppText
                           variant="h3"
                           weight="800"
-                          style={{ color: rateColor, fontVariant: ['tabular-nums'] }}
+                          style={{ color: entryRateColor, fontVariant: ['tabular-nums'] }}
                         >
                           {formatRate(e.row.rate)}
                         </AppText>
                       </View>,
                       isBest,
+                      entryHighlightBg,
                     )}
 
                     {/* Attribute rows */}
