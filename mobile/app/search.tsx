@@ -130,6 +130,7 @@ export default function Search() {
   );
 
   const searchSub = useStore((s) => findSearchSubscription(s.subscriptions, searchSnapshot));
+  const searchIndexLoading = deepSearchActive && !searchIndex;
 
   const onToggleSearchAlert = async () => {
     if (searchSub) {
