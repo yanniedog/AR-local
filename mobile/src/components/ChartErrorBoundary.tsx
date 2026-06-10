@@ -22,7 +22,6 @@ export class ChartErrorBoundary extends React.Component<Props, State> {
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     const frame = info.componentStack?.split('\n').find((line) => line.trim())?.trim() ?? '';
     debugLog.error(this.props.name, `render failed: ${error.message}${frame ? ` @ ${frame}` : ''}`);
-    void debugLog.flushToFile();
   }
 
   render(): React.ReactNode {

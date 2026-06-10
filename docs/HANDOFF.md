@@ -447,8 +447,8 @@ ANRs in the same report) and opens a GitHub issue for each new Crashlytics issue
 
 1. Reads `GOOGLE_SERVICES_JSON` for Firebase `project_id` and Android `mobilesdk_app_id`
    (`com.eyex.australianrates`).
-2. Authenticates to the Crashlytics REST API with `FIREBASE_SERVICE_ACCOUNT_JSON` (GCP service
-   account key — **not** the client `google-services.json`).
+2. Authenticates to the Crashlytics REST API with `FIREBASE_USER_OAUTH_JSON` (`authorized_user`
+   JSON). Service-account report calls currently return `404 Method not found` for this project.
 3. Fetches `reports/topIssues` for the last 7 days (open issues only).
 4. Skips Crashlytics IDs already tracked in GitHub (HTML comment
    `<!-- crashlytics-issue-id: … -->` in any issue labeled `crashlytics`).
@@ -461,16 +461,18 @@ ANRs in the same report) and opens a GitHub issue for each new Crashlytics issue
 | Secret | Status (2026-06-10) | Required | Purpose |
 |---|---|---|---|
 | `GOOGLE_SERVICES_JSON` | **Set** | Yes | Resolve Firebase project + Android app ID |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | **Not set — operator must add** | Yes | Crashlytics API auth (service account key JSON) |
+| `FIREBASE_USER_OAUTH_JSON` | **Not set — operator must add** | Yes | Crashlytics report auth (`authorized_user` JSON) |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | **Set, but unsupported for reports** | No | Retained for non-report Firebase automation |
 | `GITHUB_TOKEN` | Built-in per workflow run | Yes | Create issues (same repo; `issues: write`) |
 
-**One-time GCP setup for `FIREBASE_SERVICE_ACCOUNT_JSON`**
+**One-time OAuth setup for `FIREBASE_USER_OAUTH_JSON`**
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → same project as Firebase →
-   **IAM & Admin** → **Service Accounts** → create (or reuse) a key-enabled account.
-2. Grant **`roles/firebasecrashlytics.viewer`** (read-only) or **`roles/firebase.qualityViewer`**.
-3. **APIs & Services** → enable **Firebase Crashlytics API** (`firebasecrashlytics.googleapis.com`).
-4. Download JSON key → paste full body into GitHub secret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+1. Enable **Firebase Crashlytics API** (`firebasecrashlytics.googleapis.com`) in the same GCP project.
+2. Create Google application-default credentials with a user that can read the Firebase project:
+   `gcloud auth application-default login`.
+3. Paste the resulting `authorized_user` JSON into GitHub secret `FIREBASE_USER_OAUTH_JSON`.
+4. Until that secret exists, scheduled and PR runs execute the committed mock report as a dry-run
+   and finish successfully without creating issues.
 
 **Manual test**
 
@@ -482,17 +484,17 @@ node scripts/crashlytics-to-github-issues.mjs \
   --dry-run \
   --mock-report scripts/fixtures/crashlytics-topIssues-mock.json
 
-# Live poll (after FIREBASE_SERVICE_ACCOUNT_JSON is set)
-GOOGLE_SERVICES_JSON=… FIREBASE_SERVICE_ACCOUNT_JSON=… GH_TOKEN=… \
+# Live poll (after FIREBASE_USER_OAUTH_JSON is set)
+GOOGLE_SERVICES_JSON=… FIREBASE_USER_OAUTH_JSON=… GH_TOKEN=… \
   npm run crashlytics:sync-issues
 ```
 
 GitHub Actions → **crashlytics-github-issues** → Run workflow → optional **dry_run** or
 **mock_report** `scripts/fixtures/crashlytics-topIssues-mock.json`.
 
-**Known limitation:** Some Firebase projects return HTTP 404 for Crashlytics report endpoints when
-using a service account (user OAuth works). If the workflow fails with 404 after IAM/API setup,
-confirm data exists in the Firebase console; if still 404, Firebase may require allowlisting — see
+**Known limitation:** This Firebase project returns HTTP 404 for Crashlytics report endpoints when
+using a service account; user OAuth works. The workflow therefore does not attempt a live scheduled
+poll without `FIREBASE_USER_OAUTH_JSON`. See
 [firebase-tools#10004](https://github.com/firebase/firebase-tools/issues/10004). BigQuery export is
 the fallback for advanced setups (Blaze plan).
 

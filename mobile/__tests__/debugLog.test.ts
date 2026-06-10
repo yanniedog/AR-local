@@ -251,6 +251,7 @@ describe('debugLog integration', () => {
   it('installGlobalErrorHandlers forwards fatal errors to debugLog', () => {
     debugLog.clear();
     resetGlobalErrorHandlersForTests();
+    const flushSpy = jest.spyOn(debugLog, 'flushToFile').mockResolvedValue(undefined);
     const g = global as typeof global & {
       ErrorUtils?: {
         getGlobalHandler?: () => (error: unknown, isFatal?: boolean) => void;
@@ -269,5 +270,7 @@ describe('debugLog integration', () => {
 
     expect(debugLog.getText()).toContain('[ERROR] global: fatal Error: ribbon blew up');
     expect(previous).toHaveBeenCalled();
+    expect(flushSpy).not.toHaveBeenCalled();
+    flushSpy.mockRestore();
   });
 });

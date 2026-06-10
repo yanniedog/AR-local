@@ -231,7 +231,11 @@ export default function Search() {
             />
           )}
           ListEmptyComponent={
-            <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
+            searchIndexLoading ? (
+              <LoadingRows />
+            ) : (
+              <EmptyState title="No matching products" subtitle="Try clearing filters or a different search." />
+            )
           }
         />
       </View>

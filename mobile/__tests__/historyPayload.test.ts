@@ -89,6 +89,23 @@ describe('historyPayload', () => {
     expect(model).toBeNull();
   });
 
+  test('selectBankHistoryChartModel logs and returns null on internal failure', () => {
+    const errorSpy = jest.spyOn(debugLog, 'error').mockImplementation(() => {});
+    jest.spyOn(bankHistoryTransform, 'sanitizeRibbonPoint').mockImplementationOnce(() => {
+      throw new Error('sanitize blew up');
+    });
+
+    const result = selectBankHistoryChartModel({ core: sample }, 'Mortgage');
+
+    expect(result).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'historySelectors',
+      expect.stringContaining('selectBankHistoryChartModel failed section=Mortgage'),
+    );
+
+    jest.restoreAllMocks();
+  });
+
   test('chartModelFromPrebuiltHistory logs and returns null on internal failure', () => {
     const errorSpy = jest.spyOn(debugLog, 'error').mockImplementation(() => {});
     jest.spyOn(bankHistoryTransform, 'sliceChartTimeline').mockImplementationOnce(() => {
