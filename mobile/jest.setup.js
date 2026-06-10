@@ -31,6 +31,22 @@ jest.mock('expo-system-ui', () => ({
   setBackgroundColorAsync: jest.fn(async () => {}),
 }));
 
+jest.mock('@pchmn/expo-material3-theme', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
+  const { createMaterial3Theme } = jest.requireActual('@pchmn/expo-material3-theme');
+  const theme = createMaterial3Theme('#2563eb');
+  return {
+    __esModule: true,
+    isDynamicThemeSupported: false,
+    createMaterial3Theme,
+    useMaterial3Theme: jest.fn(() => ({
+      theme,
+      updateTheme: jest.fn(),
+      resetTheme: jest.fn(),
+    })),
+  };
+});
+
 jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
