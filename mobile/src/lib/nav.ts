@@ -3,6 +3,7 @@ import { router, type Href } from 'expo-router';
 import { SECTIONS } from '../constants';
 import { useStore } from '../data/store';
 import type { SortKey } from '../data/selectors';
+import { logNavDrillAttempt, markDrillAttempt } from './degradationLog';
 import type { SectionKey } from '../types';
 
 // Use expo-router's object form so it handles param encoding/decoding. Passing
@@ -32,6 +33,8 @@ const browseDrillParams = (section: SectionKey, path: string[] = []) => ({
 /** Switch to Browse tab and drill to a taxonomy node (replaces stacked /node pushes). */
 export const openBrowseDrill = (section: SectionKey, path: string[] = []) => {
   useStore.getState().setActiveSection(section);
+  markDrillAttempt(section, path);
+  logNavDrillAttempt({ fn: 'openBrowseDrill', section, path });
   router.navigate({
     pathname: '/browse',
     params: browseDrillParams(section, path),

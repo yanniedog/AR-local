@@ -54,6 +54,7 @@ import { sampleCore, sampleDetails, sampleManifest } from './sample';
 export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
+import { logDegradation, logEnsureSkipped, logRetry, logStoreRefreshSkipped } from '../lib/degradationLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
 import { effectiveBankInsights, effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
 import type { RefreshOutcomeKind } from '../components/bannerState';
@@ -275,11 +276,20 @@ export const useStore = create<AppState>()(
       },
 
       async retryDataLoad() {
+        logRetry('retryDataLoad', 'start');
         debugLog.info('store', 'retryDataLoad');
         set({ status: 'idle', error: null });
         await get().bootstrap();
-        if (get().status !== 'ready') return;
+        if (get().status !== 'ready') {
+          logRetry('retryDataLoad', 'failure', get().error ?? undefined);
+          return;
+        }
         await get().refresh({ force: true, manual: true });
+        if (get().refreshOutcome === 'failure') {
+          logRetry('retryDataLoad', 'failure', get().error ?? 'refresh failed');
+        } else {
+          logRetry('retryDataLoad', 'success');
+        }
       },
 
       async loadSampleFallback() {
@@ -329,9 +339,10 @@ export const useStore = create<AppState>()(
           if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
           if (effectiveBankInsights(p)) void get().ensureBankInsights();
         };
-        if (get().refreshing) return false;
+        if (get().refreshing) { logStoreRefreshSkipped('already_refreshing'); return false; }
         const prefs = get().prefs;
         if (prefs.wifiOnly && !manual && !(await onWifi())) {
+          logStoreRefreshSkipped('wifi_only');
           debugLog.debug('store', 'refresh skipped (wifi-only, not on Wi-Fi)');
           set({ lastCheckedAt: new Date().toISOString(), refreshOutcome: 'wifi-skip' });
           return false;
@@ -518,7 +529,9 @@ export const useStore = create<AppState>()(
           // (re-read source — a refresh may have switched us to remote mid-flight).
           if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } catch (err) {
-          debugLog.warn('store', `ensureDetails failed: ${String((err as Error)?.message ?? err)}`);
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureDetails failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureDetails', error: msg });
           // A live details download failed: leave details unavailable rather than
           // show stale sample fees/features next to current rates. Only use the
           // bundled sample when the rest of the data is also the sample.
@@ -540,7 +553,7 @@ export const useStore = create<AppState>()(
       },
 
       async ensureSearchIndex() {
-        if (!effectiveDeepSearch(get().prefs)) return;
+        if (!effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
         const { core, manifest, source, searchIndex } = get();
         if (!core || !manifest?.files.search_index) return;
         const asset = manifest.files.search_index;
@@ -566,13 +579,15 @@ export const useStore = create<AppState>()(
           });
           set({ searchIndex: fresh });
         } catch (err) {
-          debugLog.warn('store', `ensureSearchIndex failed: ${String((err as Error)?.message ?? err)}`);
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureSearchIndex failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureSearchIndex', error: msg });
         }
       },
 
       async ensureHistoryBanks(opts = {}) {
         const { force = false } = opts;
-        if (!effectiveHistoryRibbon(get().prefs)) return;
+        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
         if (force) set({ historyBanksError: null });
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
@@ -694,7 +709,7 @@ export const useStore = create<AppState>()(
 
       async ensureBankInsights(opts = {}) {
         const { force = false } = opts;
-        if (!effectiveBankInsights(get().prefs)) return;
+        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
         if (source !== 'remote' || !manifest) {
@@ -703,6 +718,7 @@ export const useStore = create<AppState>()(
         }
         const asset = manifest.files.bank_history;
         if (!asset) {
+          logDegradation('warn', 'store.ensureUnavailable', { fn: 'ensureBankInsights', reason: 'manifest_missing_asset' });
           set({ bankInsightsError: 'bank history unavailable' });
           return;
         }
@@ -737,6 +753,7 @@ export const useStore = create<AppState>()(
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
           debugLog.warn('store', `ensureBankInsights failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureBankInsights', error: msg });
           const fallback = force ? bankInsights : cached ?? bankInsights ?? null;
           set({ bankInsights: fallback, bankInsightsError: msg });
         }
@@ -753,7 +770,7 @@ export const useStore = create<AppState>()(
       },
 
       async retryBankInsights() {
-        if (!effectiveBankInsights(get().prefs)) return;
+        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('retryBankInsights', 'proGate'); return; }
         set({ bankInsightsError: null });
         const { manifest } = get();
         if (!manifest?.files.bank_history) {

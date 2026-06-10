@@ -10,6 +10,7 @@ import { Row } from '../../src/components/ui';
 import { sectionFromSlug } from '../../src/constants';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { useStore } from '../../src/data/store';
+import { checkDrillOutcome, logNavParamDrop } from '../../src/lib/degradationLog';
 import { openHierarchy, openSearch, parseBrowsePath } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -29,9 +30,15 @@ export default function Browse() {
   }, [interests, section, setActiveSection]);
 
   useEffect(() => {
-    const r = params.section ? sectionFromSlug(params.section) : undefined;
+    const slug = params.section;
+    const r = slug ? sectionFromSlug(slug) : undefined;
+    if (slug && !r) logNavParamDrop({ screen: 'browse', param: 'section', actual: String(Array.isArray(slug) ? slug[0] : slug) });
     if (r) setActiveSection(resolveInterestSection(interests, r));
   }, [params.section, interests, setActiveSection]);
+
+  useEffect(() => {
+    checkDrillOutcome(section, drillPath);
+  }, [section, drillPath]);
 
   if (!core) return null;
 

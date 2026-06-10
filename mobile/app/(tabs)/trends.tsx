@@ -28,6 +28,7 @@ import { bestRow } from '../../src/data/selectors';
 import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { rateValueLabel, rbaDecisionA11yLabel } from '../../src/lib/a11ySummaries';
+import { runStoreRetry } from '../../src/lib/degradationLog';
 import { openBrowse } from '../../src/lib/nav';
 import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -60,7 +61,12 @@ export default function Trends() {
   const handleRetryInsights = async () => {
     setRetryingInsights(true);
     try {
-      await retryBankInsights();
+      await runStoreRetry(
+        'retryBankInsights',
+        () => retryBankInsights(),
+        () => !!useStore.getState().bankInsights,
+        () => useStore.getState().bankInsightsError,
+      );
     } finally {
       setRetryingInsights(false);
     }
@@ -69,7 +75,12 @@ export default function Trends() {
   const handleRetryHistory = async () => {
     setRetryingHistory(true);
     try {
-      await retryHistoryBanks();
+      await runStoreRetry(
+        'retryHistoryBanks',
+        () => retryHistoryBanks(),
+        () => !!useStore.getState().historyBanks && !useStore.getState().historyBanksError,
+        () => useStore.getState().historyBanksError,
+      );
     } finally {
       setRetryingHistory(false);
     }
