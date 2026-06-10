@@ -149,27 +149,26 @@ export function buildMatrixJson(report) {
  */
 export function resolveMatrixPaths({ report, outputDir = DEFAULT_MATRIX_DIR }) {
   const dir = path.resolve(process.cwd(), outputDir);
+  const mdPath = path.join(dir, MATRIX_MD_FILE);
   const htmlPath = path.join(dir, MATRIX_HTML_FILE);
   const jsonPath = path.join(dir, MATRIX_JSON_FILE);
   const stamped = { ...report, generatedAt: report.generatedAt || new Date().toISOString() };
   return {
+    mdPath,
     htmlPath,
     jsonPath,
+    markdown: buildMatrixMarkdown(stamped),
     html: buildMatrixHtml(stamped),
     json: buildMatrixJson(stamped),
+    prBody: buildMatrixPrBody(stamped),
   };
 }
 
-/**
- * @param {object} opts
- * @param {object} opts.report
- * @param {string} [opts.outputDir]
- * @returns {{ htmlPath: string, jsonPath: string }}
- */
 export function writeMatrixArtifacts({ report, outputDir = DEFAULT_MATRIX_DIR }) {
-  const { htmlPath, jsonPath, html, json } = resolveMatrixPaths({ report, outputDir });
-  mkdirSync(path.dirname(htmlPath), { recursive: true });
+  const { mdPath, htmlPath, jsonPath, markdown, html, json } = resolveMatrixPaths({ report, outputDir });
+  mkdirSync(path.dirname(mdPath), { recursive: true });
+  writeFileSync(mdPath, markdown, 'utf8');
   writeFileSync(htmlPath, html, 'utf8');
   writeFileSync(jsonPath, json, 'utf8');
-  return { htmlPath, jsonPath };
+  return { mdPath, htmlPath, jsonPath };
 }
