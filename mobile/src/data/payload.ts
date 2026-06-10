@@ -4,6 +4,7 @@ import { gunzipSync, strFromU8 } from 'fflate';
 
 import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
 import { debugLog } from '../lib/debugLog';
+import { logFetchHttpError } from '../lib/degradationLog';
 import { versionLt } from '../lib/versionCompare';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
 import { normalizeBankInsightsPayload } from './bankInsights';
@@ -95,10 +96,12 @@ async function downloadBytes(
         resolve(buf);
         return;
       }
+      logFetchHttpError(url, xhr.status, phase);
       reject(new Error(`asset HTTP ${xhr.status}`));
     };
     xhr.onerror = () => {
       debugLog.error('payload', `download failed url=${url}`);
+      logFetchHttpError(url, 0, `${phase}:network_error`);
       reject(new Error('network error'));
     };
     xhr.send();

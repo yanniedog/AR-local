@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { useStore } from '../data/store';
+import { logProGateBlocked } from '../lib/degradationLog';
 import { hasProAccess, type ProGateIntent } from '../lib/proAccess';
 
 export function useProPaywall() {
@@ -13,6 +14,7 @@ export function useProPaywall() {
   const requestPro = useCallback(
     (intent: ProGateIntent): boolean => {
       if (hasProAccess({ rateIntelligencePro: pro })) return true;
+      logProGateBlocked(intent);
       setGate({ visible: true, intent });
       return false;
     },

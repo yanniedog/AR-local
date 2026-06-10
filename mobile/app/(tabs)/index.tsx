@@ -19,6 +19,7 @@ import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
+import { logCategoryRowPress } from '../../src/lib/degradationLog';
 import { openBank, openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -247,7 +248,7 @@ export default function Home() {
           section={section}
           accent={sectionAccent}
           showAccent
-          onPress={() => openNode(section, [node.seg])}
+          onPress={() => { const nextPath = [node.seg]; logCategoryRowPress({ section, label: node.label, pathBefore: [], pathAfter: nextPath, source: 'home' }); openNode(section, nextPath); }}
         />
       ))}
     </ScreenScrollView>

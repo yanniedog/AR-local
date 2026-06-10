@@ -4,6 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { M3_NAV_BAR_HEIGHT } from '../lib/androidChrome';
+import { logTabNoOp } from '../lib/degradationLog';
 import { getTabLabel, getTabMaterialSymbol } from '../lib/tabIcons';
 import { useTheme } from '../theme/ThemeProvider';
 import { MaterialSymbol } from './MaterialSymbol';
@@ -35,7 +36,11 @@ export function M3NavigationBar({ state, descriptors, navigation }: BottomTabBar
             target: route.key,
             canPreventDefault: true,
           });
-          if (!focused && !event.defaultPrevented) {
+          if (focused) {
+            logTabNoOp(route.name);
+            return;
+          }
+          if (!event.defaultPrevented) {
             navigation.navigate(route.name, route.params);
           }
         };

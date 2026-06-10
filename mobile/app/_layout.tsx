@@ -30,10 +30,11 @@ import { routeFromNotificationResponse } from '../src/data/notifications';
 import { useStore } from '../src/data/store';
 import { androidStackScreenOptions } from '../src/lib/androidChrome';
 import { debugLog, installGlobalErrorHandlers } from '../src/lib/debugLog';
+import { logSwallowedError } from '../src/lib/degradationLog';
 import { setDiagnosticsEnabled } from '../src/lib/observability';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch((err) => logSwallowedError('splash.preventAutoHide', err));
 
 const SPLASH_MARK = 88;
 const MORPH_MS = 680;
@@ -208,7 +209,7 @@ function RootNavigator() {
 
   useEffect(() => {
     if (!appReady) return;
-    SplashScreen.hideAsync().catch(() => {});
+    SplashScreen.hideAsync().catch((err) => logSwallowedError('splash.hide', err));
   }, [appReady]);
 
   useEffect(() => {

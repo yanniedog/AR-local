@@ -6,12 +6,14 @@ import { Platform } from 'react-native';
 import { BrandLockup } from '../../src/components/BrandLockup';
 import { RefreshOutcomeSnackbar } from '../../src/components/feedback';
 import { M3NavigationBar } from '../../src/components/M3NavigationBar';
+import { logTabNoOp } from '../../src/lib/degradationLog';
 import { getTabIonicon } from '../../src/lib/tabIcons';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function TabsLayout() {
   const theme = useTheme();
   const isAndroid = Platform.OS === 'android';
+  const tabPressListener = ({ navigation, route }: { navigation: { getState: () => { index: number; routes: { name: string }[] } }; route: { name: string } }) => ({ tabPress: () => { const state = navigation.getState(); if (state.routes[state.index]?.name === route.name) logTabNoOp(route.name); } });
 
   return (
     <>
@@ -48,6 +50,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
+        listeners={tabPressListener}
         options={{
           title: 'Home',
           headerTitle: () => <BrandLockup markSize={28} />,
@@ -58,6 +61,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="browse"
+        listeners={tabPressListener}
         options={{
           title: 'Browse',
           tabBarIcon: isAndroid
@@ -67,6 +71,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="watchlist"
+        listeners={tabPressListener}
         options={{
           title: 'Watchlist',
           tabBarIcon: isAndroid
@@ -76,6 +81,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="trends"
+        listeners={tabPressListener}
         options={{
           title: 'Trends',
           tabBarIcon: isAndroid
@@ -85,6 +91,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="settings"
+        listeners={tabPressListener}
         options={{
           title: 'Settings',
           tabBarIcon: isAndroid

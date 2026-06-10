@@ -54,6 +54,7 @@ import { sampleCore, sampleDetails, sampleManifest } from './sample';
 export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
+import { logDegradation, logEnsureSkipped, logRetry, logStoreRefreshSkipped } from '../lib/degradationLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
 import { effectiveBankInsights, effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
 import type { RefreshOutcomeKind } from '../components/bannerState';
@@ -70,7 +71,7 @@ export interface Prefs {
   enableDeepSearch: boolean;
   /** Section ribbon time-series chart in Charts & trends (off by default). */
   showHistoryRibbon: boolean;
-  /** Rate Intelligence Pro — local stub until store IAP is wired. */
+  /** Rate Intelligence Pro â€” local stub until store IAP is wired. */
   rateIntelligencePro: boolean;
   onboarded: boolean;
   interests: SectionKey[];
@@ -253,7 +254,7 @@ export const useStore = create<AppState>()(
               ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
             });
           } else {
-            debugLog.info('store', 'cache miss — seeding bundled sample');
+            debugLog.info('store', 'cache miss â€” seeding bundled sample');
             await installSampleSeed();
             set({
               core: sampleCore,
@@ -274,11 +275,17 @@ export const useStore = create<AppState>()(
       },
 
       async retryDataLoad() {
+        logRetry('retryDataLoad', 'start');
         debugLog.info('store', 'retryDataLoad');
         set({ status: 'idle', error: null });
         await get().bootstrap();
-        if (get().status !== 'ready') return;
+        if (get().status !== 'ready') {
+          logRetry('retryDataLoad', 'failure', get().error ?? undefined);
+          return;
+        }
         await get().refresh({ force: true, manual: true });
+        if (get().status === 'ready') logRetry('retryDataLoad', 'success');
+        else logRetry('retryDataLoad', 'failure', get().error ?? undefined);
       },
 
       async loadSampleFallback() {
@@ -328,9 +335,10 @@ export const useStore = create<AppState>()(
           if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
           if (effectiveBankInsights(p)) void get().ensureBankInsights();
         };
-        if (get().refreshing) return false;
+        if (get().refreshing) { logStoreRefreshSkipped('already_refreshing'); return false; }
         const prefs = get().prefs;
         if (prefs.wifiOnly && !manual && !(await onWifi())) {
+          logStoreRefreshSkipped('wifi_only');
           debugLog.debug('store', 'refresh skipped (wifi-only, not on Wi-Fi)');
           set({ lastCheckedAt: new Date().toISOString(), refreshOutcome: 'wifi-skip' });
           return false;
@@ -340,7 +348,7 @@ export const useStore = create<AppState>()(
         const onProgress = (snapshot: PayloadProgressSnapshot) => set({ payloadProgress: snapshot });
         try {
           const remote = await fetchManifest(undefined, onProgress);
-          // Do NOT install the remote manifest yet — if the core download fails we'd
+          // Do NOT install the remote manifest yet â€” if the core download fails we'd
           // be left with a new manifest paired with the old core, poisoning the
           // metadata-only freshness check. Install it only once its core is in hand.
           set({ offline: false, lastCheckedAt: new Date().toISOString() });
@@ -353,7 +361,7 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             debugLog.debug('store', `refresh up-to-date run_date=${remote.run_date}`);
-            // Core already matches on disk — adopt manifest and sync in-memory source
+            // Core already matches on disk â€” adopt manifest and sync in-memory source
             // so the sample-connect banner dismisses after a successful refresh.
             const bundle = await cache.readBundle();
             set({
@@ -363,7 +371,7 @@ export const useStore = create<AppState>()(
               ...(bundle ? { core: bundle.core } : {}),
             });
             // Details may have been republished for the same run_date (e.g. corrected
-            // fees) — ensureDetails re-checks the details sha.
+            // fees) â€” ensureDetails re-checks the details sha.
             await warmDetails();
             warmOptionalAssets();
             set({ refreshOutcome: 'success' });
@@ -414,7 +422,7 @@ export const useStore = create<AppState>()(
             details: detailsUnchanged ? get().details : null,
           });
 
-          // Local notifications on meaningful change — only when the baseline was a
+          // Local notifications on meaningful change â€” only when the baseline was a
           // previously-installed remote dataset, never the bundled sample (otherwise
           // the first live refresh would alert on sample-vs-real differences).
           // Warm details before diffing so detail-filtered search subscriptions see products.
@@ -496,7 +504,7 @@ export const useStore = create<AppState>()(
             if (!datasetUnchanged()) return;
             await cache.writeDetails(text);
             // Re-check after the awaited write: a newer refresh may have installed its
-            // core/meta while writeDetails was suspended — don't clobber it.
+            // core/meta while writeDetails was suspended â€” don't clobber it.
             if (!datasetUnchanged()) return;
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.
@@ -514,10 +522,12 @@ export const useStore = create<AppState>()(
             return;
           }
           // Only fall back to the bundled sample when we are *still* on sample data
-          // (re-read source — a refresh may have switched us to remote mid-flight).
+          // (re-read source â€” a refresh may have switched us to remote mid-flight).
           if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } catch (err) {
-          debugLog.warn('store', `ensureDetails failed: ${String((err as Error)?.message ?? err)}`);
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureDetails failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureDetails', error: msg });
           // A live details download failed: leave details unavailable rather than
           // show stale sample fees/features next to current rates. Only use the
           // bundled sample when the rest of the data is also the sample.
@@ -526,7 +536,7 @@ export const useStore = create<AppState>()(
           set({ detailsLoading: false });
           // If a concurrent refresh moved the dataset past what this invocation
           // captured (a new run OR a same-run core/details correction), our result was
-          // discarded — schedule a load for the now-current dataset. Bounded: it only
+          // discarded â€” schedule a load for the now-current dataset. Bounded: it only
           // re-runs while the manifest keeps changing, and the top-of-function freshness
           // check no-ops once details are current.
           const cur = get();
@@ -539,7 +549,7 @@ export const useStore = create<AppState>()(
       },
 
       async ensureSearchIndex() {
-        if (!effectiveDeepSearch(get().prefs)) return;
+        if (!effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
         const { core, manifest, source, searchIndex } = get();
         if (!core || !manifest?.files.search_index) return;
         const asset = manifest.files.search_index;
@@ -565,12 +575,14 @@ export const useStore = create<AppState>()(
           });
           set({ searchIndex: fresh });
         } catch (err) {
-          debugLog.warn('store', `ensureSearchIndex failed: ${String((err as Error)?.message ?? err)}`);
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureSearchIndex failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureSearchIndex', error: msg });
         }
       },
 
       async ensureHistoryBanks() {
-        if (!effectiveHistoryRibbon(get().prefs)) return;
+        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
         if (!core) {
@@ -681,7 +693,7 @@ export const useStore = create<AppState>()(
 
       async ensureBankInsights(opts = {}) {
         const { force = false } = opts;
-        if (!effectiveBankInsights(get().prefs)) return;
+        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
         if (source !== 'remote' || !manifest) {
@@ -690,6 +702,7 @@ export const useStore = create<AppState>()(
         }
         const asset = manifest.files.bank_history;
         if (!asset) {
+          logDegradation('warn', 'store.ensureUnavailable', { fn: 'ensureBankInsights', reason: 'manifest_missing_asset' });
           set({ bankInsightsError: 'bank history unavailable' });
           return;
         }
@@ -724,13 +737,14 @@ export const useStore = create<AppState>()(
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
           debugLog.warn('store', `ensureBankInsights failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureBankInsights', error: msg });
           const fallback = force ? bankInsights : cached ?? bankInsights ?? null;
           set({ bankInsights: fallback, bankInsightsError: msg });
         }
       },
 
       async retryBankInsights() {
-        if (!effectiveBankInsights(get().prefs)) return;
+        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('retryBankInsights', 'proGate'); return; }
         set({ bankInsightsError: null });
         if (!get().manifest?.files.bank_history) {
           await get().refresh({ manual: true, force: true });
@@ -921,7 +935,7 @@ export const useStore = create<AppState>()(
 );
 
 // OS-scheduled background refresh. Defined here (not in notifications.ts) so it can
-// rehydrate persisted prefs/favorites and call refresh() directly — important when
+// rehydrate persisted prefs/favorites and call refresh() directly â€” important when
 // the app is launched headless (terminated) and the UI never mounted.
 try {
   if (typeof TaskManager.isTaskDefined === 'function' && !TaskManager.isTaskDefined(BACKGROUND_TASK)) {
@@ -932,7 +946,7 @@ try {
         } catch {
           // proceed with defaults if rehydrate fails
         }
-        // persist excludes core/manifest — load them from disk so the diff has a
+        // persist excludes core/manifest â€” load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
         const state = useStore.getState();
@@ -950,5 +964,5 @@ try {
     });
   }
 } catch {
-  // TaskManager unavailable (e.g. web / test env) — background refresh is optional.
+  // TaskManager unavailable (e.g. web / test env) â€” background refresh is optional.
 }

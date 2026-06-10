@@ -18,6 +18,7 @@ import { buildPayloadProgressViewModel } from '../data/downloadProgress';
 import { formatRunDate } from '../data/format';
 import { useStore } from '../data/store';
 import { getTabBarContentHeight } from '../lib/androidChrome';
+import { logRetry } from '../lib/degradationLog';
 import { useTheme } from '../theme/ThemeProvider';
 import { resolveOfflineBanner, resolveRefreshOutcomeSnackbar } from './bannerState';
 import { AppText, Row } from './ui';
@@ -274,7 +275,7 @@ export function RefreshOutcomeSnackbar() {
 
   const onAction = () => {
     clearRefreshOutcome();
-    if (model.action === 'retry') void refresh({ manual: true, force: true });
+    if (model.action === 'retry') { logRetry('refresh', 'start'); void refresh({ manual: true, force: true }).then((changed) => { const outcome = useStore.getState().refreshOutcome; if (outcome === 'failure') logRetry('refresh', 'failure', useStore.getState().error ?? 'refresh failed'); else logRetry('refresh', 'success', changed ? 'data_changed' : 'up_to_date'); }); }
     if (model.action === 'settings') router.push('/settings');
   };
 
