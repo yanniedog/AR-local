@@ -601,6 +601,7 @@ the committed sample); the **Pi is the primary daily publisher**.
   protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
 - **Enable auto-merge**: `npm run pr:merge -- --pr <n>` (`gh pr merge <n> --auto --squash --delete-branch`). It lands when all required checks
   are green and **0 review threads are unresolved**.
+- **Bot matrix & direct-to-main bypass (one-time operator):** `pr-bot-spreadsheet` and `mobile-auto-release-on-queue-drain` commit directly to `main` (reports-only / version bump). GitHub rejects those pushes unless **GitHub Actions** is on the `main` **ruleset** bypass list. The REST API cannot add that bypass on this personal repo (422) — use **Settings → Rules → Rulesets →** open `main` ruleset → **Bypass list → GitHub Actions → Always**, then delete duplicate **legacy** branch protection on `main`. Full click-path, migration steps, and verify commands: [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md) → "Direct commit to main".
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.
   Read each thread before resolving; don't auto-resolve unread threads.
 - Commit trailer used here: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`

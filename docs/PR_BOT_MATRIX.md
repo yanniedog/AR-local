@@ -60,11 +60,31 @@ After sync, the job commits matrix artifacts **directly to `main`** via `npm run
 
 Protected `main` requires `bot-presence-gate` and `bot-feedback-gate`. A workflow push does not run those checks first, so GitHub rejects the push unless **GitHub Actions** is on the ruleset bypass list.
 
-**Settings → Rules → Rulesets** (repo uses legacy branch protection today; add a ruleset bypass — do not remove human merge gates):
+**API limitation:** `gh api` cannot add a GitHub Actions ruleset bypass on this personal repo (`yanniedog/AR-local` returns HTTP **422** when POSTing `bypass_actors` with `actor_id` 15368). Use the GitHub UI below — do not rely on `scripts/apply-branch-protection.mjs` or API automation for the bypass step.
 
-1. Open the `main` branch ruleset (or create one mirroring required checks: `bot-feedback-gate`, `bot-presence-gate`, conversation resolution).
-2. **Bypass list → Add bypass → GitHub Actions** (mode: **Always**, or scope to workflow file `.github/workflows/pr-bot-spreadsheet.yml` when available).
-3. Save. Re-run `pr-bot-spreadsheet` (`workflow_dispatch`) to confirm the push succeeds.
+**Legacy → ruleset migration** (repo still has legacy branch protection on `main`):
+
+1. **Create** a `main` ruleset that mirrors legacy protection: required checks `bot-feedback-gate` + `bot-presence-gate`, strict up-to-date, required conversation resolution, `enforce_admins` (no admin bypass).
+2. **Bypass list → Add bypass → GitHub Actions** (mode: **Always**). Optionally scope to `.github/workflows/pr-bot-spreadsheet.yml` and `.github/workflows/mobile-auto-release-on-queue-drain.yml` when path scoping is available.
+3. **Save**, verify with the commands below, then **remove duplicate legacy branch protection** on `main` (Settings → Branches → `main` → Delete rule). Keeping both layers blocks workflow pushes even when the ruleset bypass is correct.
+
+**Settings → Rules → Rulesets** click-path:
+
+1. Open the `main` branch ruleset (or the one created in step 1 above).
+2. **Bypass list → Add bypass → GitHub Actions** (mode: **Always**, or scope to workflow files when available).
+3. Save.
+
+**Verify** (after bypass + legacy rule removed):
+
+```sh
+# Local self-tests (no GitHub push)
+npm run pr:bot-matrix-commit:verify
+npm run pr:bot-matrix:verify
+
+# End-to-end: Actions → pr-bot-spreadsheet → Run workflow (workflow_dispatch)
+# Expect: job completes and commits reports/pr-bot-matrix.{md,html,json} to main
+gh run list --workflow=pr-bot-spreadsheet.yml --limit 3
+```
 
 If push fails with `protected branch hook declined`, the workflow logs `MATRIX_PUSH_BYPASS_HINT` from `scripts/lib/pr-bot-matrix-commit.mjs`.
 
