@@ -61,16 +61,26 @@ function git(args) {
   return (res.stdout || '').trim();
 }
 
+function syncMain() {
+  git(['fetch', 'origin', 'main', '--quiet']);
+  git(['checkout', '-B', 'main', 'origin/main']);
+}
+
 function countOpenPrsToMain() {
   const raw = gh(['pr', 'list', '--state', 'open', '--base', 'main', '--json', 'number', '--repo', repo]);
   const rows = JSON.parse(raw || '[]');
   return Array.isArray(rows) ? rows.length : 0;
 }
 
-async function waitForQueueDrain() {
+export async function waitForQueueDrain({
+  countOpen = countOpenPrsToMain,
+  sleep = delay,
+  syncAfterDrain = syncMain,
+} = {}) {
   for (let attempt = 1; attempt <= POLL_ATTEMPTS; attempt++) {
-    const open = countOpenPrsToMain();
+    const open = countOpen();
     if (open === 0) {
+      syncAfterDrain();
       return 0;
     }
     if (open > 1) {
@@ -86,9 +96,9 @@ async function waitForQueueDrain() {
       console.log('mobile-auto-release-on-drain: queue not drained after polling — skip release');
       return open;
     }
-    await delay(POLL_SECONDS * 1000);
+    await sleep(POLL_SECONDS * 1000);
   }
-  return countOpenPrsToMain();
+  return countOpen();
 }
 
 function readHeadCommitMessage() {
@@ -195,8 +205,7 @@ async function main() {
     process.exit(1);
   }
 
-  git(['fetch', 'origin', 'main', '--quiet']);
-  git(['checkout', '-B', 'main', 'origin/main']);
+  syncMain();
 
   const remaining = dryRun ? 0 : await waitForQueueDrain();
   if (dryRun) {
