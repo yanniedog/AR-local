@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { useNextIngestCountdown } from '../hooks/useNextIngestCountdown';
@@ -43,6 +43,7 @@ export function HomeHero({
   lenderCount,
   providerCount,
   dataKey,
+  onLendersPress,
 }: {
   runDateLabel: string;
   runAgeLabel: string;
@@ -53,6 +54,7 @@ export function HomeHero({
   providerCount: number;
   /** Changes when a new payload is installed — drives spring motion. */
   dataKey: string;
+  onLendersPress?: () => void;
 }) {
   const theme = useTheme();
   const sourceLabel = dataSourceLabel(source);
@@ -125,7 +127,13 @@ export function HomeHero({
       <SpringOnNewData dataKey={statsKey}>
         <Row gap={8} style={{ marginTop: 10 }}>
           <StatPill label="Products" value={String(productCount)} />
-          <StatPill label="Lenders" value={String(lenderCount)} />
+          <StatPill
+            label="Lenders"
+            value={String(lenderCount)}
+            onPress={onLendersPress}
+            accessibilityLabel={`${lenderCount} lenders`}
+            accessibilityHint={onLendersPress ? 'Opens lender directory' : undefined}
+          />
           <StatPill label="In section" value={String(providerCount)} />
         </Row>
       </SpringOnNewData>
@@ -158,27 +166,55 @@ export function HomeRefreshCountdown() {
   );
 }
 
-function StatPill({ label, value }: { label: string; value: string }) {
+function StatPill({
+  label,
+  value,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+}: {
+  label: string;
+  value: string;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+}) {
   const theme = useTheme();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: theme.colors.card,
-        borderRadius: theme.radius.sm,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        paddingVertical: 8,
-        paddingHorizontal: 6,
-        alignItems: 'center',
-      }}
-    >
+  const style = {
+    flex: 1 as const,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    alignItems: 'center' as const,
+  };
+
+  const content = (
+    <>
       <AppText variant="body" weight="800">
         {value}
       </AppText>
       <AppText variant="tiny" color="textMuted" weight="700" style={{ marginTop: 2, letterSpacing: 0.4 }}>
         {label}
       </AppText>
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={style}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      style={({ pressed }) => [style, { opacity: pressed ? 0.85 : 1 }]}
+    >
+      {content}
+    </Pressable>
   );
 }

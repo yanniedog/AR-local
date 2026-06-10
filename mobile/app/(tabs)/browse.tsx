@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 
@@ -49,6 +49,12 @@ export default function Browse() {
             icon="git-network-outline"
             onPress={() => openHierarchy(section)}
             accessibilityLabel="Browse taxonomy tree"
+          />
+          <ToolbarIconButton
+            icon="business-outline"
+            onPress={() => router.push('/banks')}
+            accessibilityLabel="Browse lenders"
+            accessibilityHint="Opens searchable lender directory"
           />
           <ToolbarIconButton icon="search" onPress={() => openSearch(section)} accessibilityLabel="Search products" />
         </Row>
