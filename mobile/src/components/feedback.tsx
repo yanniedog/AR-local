@@ -164,6 +164,7 @@ function ShimmerBox({
 }) {
   const theme = useTheme();
   const progress = useSharedValue(0);
+  const trackWidth = useSharedValue(0);
 
   useEffect(() => {
     progress.value = withRepeat(
@@ -176,7 +177,11 @@ function ShimmerBox({
   const shineStyle = useAnimatedStyle(() => ({
     transform: [
       {
-        translateX: interpolate(progress.value, [0, 1], [-SHIMMER_SWEEP, 320]),
+        translateX: interpolate(
+          progress.value,
+          [0, 1],
+          [-SHIMMER_SWEEP, Math.max(trackWidth.value, SHIMMER_SWEEP)],
+        ),
       },
     ],
   }));
@@ -185,6 +190,9 @@ function ShimmerBox({
 
   return (
     <View
+      onLayout={(e) => {
+        trackWidth.value = e.nativeEvent.layout.width;
+      }}
       style={[
         {
           height,
