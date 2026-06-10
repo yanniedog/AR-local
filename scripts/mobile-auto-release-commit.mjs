@@ -48,7 +48,16 @@ export function pushHeadToMain({
     if (attempt > 1) {
       console.error(`mobile-auto-release-commit: retry ${attempt}/${maxAttempts} after rebase`);
     }
-    run('git', ['pull', '--rebase', 'origin', branch]);
+    const pull = run('git', ['pull', '--rebase', 'origin', branch], { allowFail: true });
+    if (pull.status !== 0) {
+      const errText = (pull.stderr || pull.stdout || '').trim();
+      console.error(`mobile-auto-release-commit: pull failed: ${errText}`);
+      run('git', ['rebase', '--abort'], { allowFail: true });
+      if (attempt === maxAttempts) {
+        return { ok: false, protected: false, error: errText };
+      }
+      continue;
+    }
 
     const push = run('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
     if (push.status === 0) {
