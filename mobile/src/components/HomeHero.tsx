@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useEffect, type ReactNode } from 'react';
 import { View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { useNextIngestCountdown } from '../hooks/useNextIngestCountdown';
 import { dataSourceLabel } from '../lib/nextIngest';
@@ -8,6 +9,30 @@ import type { PayloadSource } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BrandLockup } from './BrandLockup';
 import { AppText, Card, Row } from './ui';
+
+const SPRING = { damping: 14, stiffness: 180, mass: 0.8 };
+
+/** Spring scale wrapper for hero stats / ribbon when `dataKey` changes (new payload). */
+export function SpringOnNewData({
+  dataKey,
+  children,
+}: {
+  dataKey: string;
+  children: ReactNode;
+}) {
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = 0.94;
+    scale.value = withSpring(1, SPRING);
+  }, [dataKey, scale]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
 
 export function HomeHero({
   runDateLabel,
@@ -17,6 +42,7 @@ export function HomeHero({
   productCount,
   lenderCount,
   providerCount,
+  dataKey,
 }: {
   runDateLabel: string;
   runAgeLabel: string;
@@ -25,11 +51,24 @@ export function HomeHero({
   productCount: number;
   lenderCount: number;
   providerCount: number;
+  /** Changes when a new payload is installed — drives spring motion. */
+  dataKey: string;
 }) {
   const theme = useTheme();
   const sourceLabel = dataSourceLabel(source);
   const statusIcon = offline ? 'cloud-offline-outline' : source === 'remote' ? 'cloud-done' : 'albums-outline';
   const statusColor = offline ? theme.colors.warning : theme.colors.success;
+  const statsKey = `${dataKey}:${productCount}:${lenderCount}:${providerCount}`;
+  const datePulse = useSharedValue(1);
+
+  useEffect(() => {
+    datePulse.value = 0.92;
+    datePulse.value = withSpring(1, SPRING);
+  }, [dataKey, datePulse]);
+
+  const dateStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: datePulse.value }],
+  }));
 
   return (
     <View
@@ -57,9 +96,11 @@ export function HomeHero({
           <AppText variant="h2" weight="800" style={{ lineHeight: 28 }}>
             Home loan rates, tracked.
           </AppText>
-          <AppText variant="tiny" color="textMuted" style={{ marginTop: 3 }}>
-            {runDateLabel} · {runAgeLabel}
-          </AppText>
+          <Animated.View style={dateStyle}>
+            <AppText variant="tiny" color="textMuted" style={{ marginTop: 3 }}>
+              {runDateLabel} · {runAgeLabel}
+            </AppText>
+          </Animated.View>
         </View>
         <View
           style={{
@@ -81,11 +122,13 @@ export function HomeHero({
         </View>
       </Row>
 
-      <Row gap={8} style={{ marginTop: 10 }}>
-        <StatPill label="Products" value={String(productCount)} />
-        <StatPill label="Lenders" value={String(lenderCount)} />
-        <StatPill label="In section" value={String(providerCount)} />
-      </Row>
+      <SpringOnNewData dataKey={statsKey}>
+        <Row gap={8} style={{ marginTop: 10 }}>
+          <StatPill label="Products" value={String(productCount)} />
+          <StatPill label="Lenders" value={String(lenderCount)} />
+          <StatPill label="In section" value={String(providerCount)} />
+        </Row>
+      </SpringOnNewData>
     </View>
   );
 }

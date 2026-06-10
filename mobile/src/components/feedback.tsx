@@ -6,117 +6,219 @@ import { Animated as RNAnimated, Pressable, View, type DimensionValue, type View
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
+  FadeIn,
+  FadeOut,
   interpolate,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-
 import type { PayloadProgressSnapshot } from '../data/downloadProgress';
-import {
-  computeEtaSeconds,
-  computePercent,
-  computeTransferRate,
-  formatEta,
-  formatTransferRate,
-  phaseLabel,
-} from '../data/downloadProgress';
+import { buildPayloadProgressViewModel } from '../data/downloadProgress';
 import { formatRunDate } from '../data/format';
 import { useStore } from '../data/store';
 import { useTheme } from '../theme/ThemeProvider';
 import { resolveOfflineBanner, resolveRefreshOutcomeSnackbar } from './bannerState';
 import { AppText, Row } from './ui';
 
-/** Collapsible live transfer metrics — collapsed by default. */
-export function PayloadProgressDetails({ progress }: { progress: PayloadProgressSnapshot }) {
+const BANNER_FADE_MS = 320;
+const SUCCESS_HOLD_MS = 900;
+
+/** Always-visible determinate sync bar with phase label and ETA. */
+export function PayloadProgressBar({
+  progress,
+  caption,
+}: {
+  progress: PayloadProgressSnapshot;
+  caption?: string;
+}) {
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const rate = computeTransferRate(progress.bytesReceived, progress.startedAt);
-  const pct = computePercent(progress.bytesReceived, progress.totalBytes);
-  const eta = computeEtaSeconds(progress.bytesReceived, progress.totalBytes, rate);
-  const showTransfer = progress.phase === 'manifest' || progress.phase === 'download';
+  const vm = buildPayloadProgressViewModel(progress);
+  const fill = useSharedValue(vm.overallPercent / 100);
+
+  useEffect(() => {
+    fill.value = withTiming(vm.overallPercent / 100, { duration: 180 });
+  }, [fill, vm.overallPercent]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${Math.max(0, Math.min(1, fill.value)) * 100}%`,
+  }));
 
   return (
-    <View style={{ flex: 1 }}>
-      <Row gap={6}>
-        <AppText variant="small" color="textMuted" style={{ flex: 1 }}>
-          Showing bundled sample data — connecting for the latest…
+    <View style={{ flex: 1, gap: 6 }}>
+      {caption ? (
+        <AppText variant="small" color="textMuted" numberOfLines={2}>
+          {caption}
         </AppText>
-        <Pressable
-          onPress={() => setExpanded((v) => !v)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? 'Hide download progress' : 'Show download progress'}
-        >
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={14}
-            color={theme.colors.textMuted}
-          />
-        </Pressable>
-      </Row>
-      {expanded ? (
-        <View style={{ marginTop: 6, gap: 2 }}>
-          <AppText variant="tiny" color="textMuted" numberOfLines={1}>
-            File: {progress.fileName}
-          </AppText>
-          {showTransfer ? (
-            <>
-              <AppText variant="tiny" color="textMuted">
-                Rate: {formatTransferRate(rate)}
-              </AppText>
-              <AppText variant="tiny" color="textMuted">
-                Done: {pct != null ? `${pct}%` : '—'}
-              </AppText>
-              <AppText variant="tiny" color="textMuted">
-                ETA: {formatEta(eta)}
-              </AppText>
-            </>
-          ) : (
-            <AppText variant="tiny" color="textMuted">
-              Step: {phaseLabel(progress.phase)}
-            </AppText>
-          )}
-        </View>
       ) : null}
+      <Row style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <AppText variant="tiny" weight="700" color="textMuted" style={{ flex: 1, paddingRight: 8 }}>
+          {vm.phaseText}
+        </AppText>
+        <AppText variant="tiny" weight="700" color="primary">
+          {vm.overallPercent}%
+        </AppText>
+      </Row>
+      <View
+        style={{
+          height: 6,
+          borderRadius: theme.radius.pill,
+          backgroundColor: theme.colors.chip,
+          overflow: 'hidden',
+        }}
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: 100, now: vm.overallPercent }}
+      >
+        <Animated.View
+          style={[
+            {
+              height: '100%',
+              borderRadius: theme.radius.pill,
+              backgroundColor: theme.colors.primary,
+            },
+            fillStyle,
+          ]}
+        />
+      </View>
+      <AppText variant="tiny" color="textFaint" numberOfLines={1}>
+        {vm.detailLine}
+      </AppText>
     </View>
   );
+}
+
+/** @deprecated Use PayloadProgressBar. */
+export const PayloadProgressDetails = PayloadProgressBar;
+
+type BannerSurface = 'offline' | 'connecting' | 'syncing' | 'success';
+
+function resolveBannerSurface(
+  source: string,
+  offline: boolean,
+  refreshing: boolean,
+  payloadProgress: PayloadProgressSnapshot | null,
+  showSuccess: boolean,
+): { surface: BannerSurface; message: string; showProgress: boolean } | null {
+  if (showSuccess) {
+    return { surface: 'success', message: 'Live rates updated', showProgress: false };
+  }
+
+  if (refreshing && payloadProgress) {
+    if (source === 'sample') {
+      return {
+        surface: 'connecting',
+        message: 'Showing bundled sample data — connecting for the latest…',
+        showProgress: true,
+      };
+    }
+    return {
+      surface: 'syncing',
+      message: 'Syncing latest rates…',
+      showProgress: true,
+    };
+  }
+
+  const banner = resolveOfflineBanner(source, offline, refreshing, payloadProgress);
+  if (banner.mode === 'hidden') return null;
+
+  if (banner.mode === 'connecting') {
+    return {
+      surface: 'connecting',
+      message: banner.message,
+      showProgress: banner.showLiveProgress,
+    };
+  }
+
+  return {
+    surface: 'offline',
+    message: banner.message,
+    showProgress: false,
+  };
 }
 
 export function OfflineBanner({ source, offline }: { source: string; offline: boolean }) {
   const theme = useTheme();
   const payloadProgress = useStore((s) => s.payloadProgress);
   const refreshing = useStore((s) => s.refreshing);
-  const banner = resolveOfflineBanner(source, offline, refreshing, payloadProgress);
-  if (banner.mode === 'hidden') return null;
-  const sample = banner.mode === 'connecting' || banner.mode === 'offline-sample';
+  const prevRefreshing = useRef(refreshing);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const wasRefreshing = prevRefreshing.current;
+    prevRefreshing.current = refreshing;
+
+    if (wasRefreshing && !refreshing && source === 'remote' && !offline) {
+      setShowSuccess(true);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => setShowSuccess(false), SUCCESS_HOLD_MS + BANNER_FADE_MS);
+    }
+  }, [refreshing, source, offline]);
+
+  useEffect(
+    () => () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    },
+    [],
+  );
+
+  const bannerView = resolveBannerSurface(source, offline, refreshing, payloadProgress, showSuccess);
+  if (!bannerView) return null;
+
+  const { surface, message, showProgress } = bannerView;
+  const sampleTone = surface === 'connecting' || surface === 'success';
+  const iconName =
+    surface === 'success'
+      ? 'checkmark-circle-outline'
+      : surface === 'syncing'
+        ? 'cloud-download-outline'
+        : sampleTone
+          ? 'flask-outline'
+          : 'cloud-offline-outline';
+  const iconColor =
+    surface === 'success'
+      ? theme.colors.success
+      : sampleTone
+        ? theme.colors.primary
+        : theme.colors.warning;
+
   return (
-    <Row
-      gap={8}
-      style={{
-        backgroundColor: sample ? theme.colors.primaryMuted : theme.colors.chip,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: theme.radius.md,
-        marginBottom: 12,
-        alignItems: banner.showLiveProgress ? 'flex-start' : 'center',
-      }}
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(BANNER_FADE_MS)}
+      style={{ marginBottom: 12 }}
     >
-      <Ionicons
-        name={sample ? 'flask-outline' : 'cloud-offline-outline'}
-        size={16}
-        color={sample ? theme.colors.primary : theme.colors.warning}
-        style={banner.showLiveProgress ? { marginTop: 2 } : undefined}
-      />
-      {banner.showLiveProgress && payloadProgress ? (
-        <PayloadProgressDetails progress={payloadProgress} />
-      ) : (
-        <AppText variant="small" color="textMuted" style={{ flex: 1 }}>
-          {banner.message}
-        </AppText>
-      )}
-    </Row>
+      <Row
+        gap={8}
+        style={{
+          backgroundColor:
+            surface === 'success'
+              ? `${theme.colors.success}22`
+              : sampleTone
+                ? theme.colors.primaryMuted
+                : theme.colors.chip,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderRadius: theme.radius.md,
+          alignItems: showProgress && payloadProgress ? 'flex-start' : 'center',
+        }}
+      >
+        <Ionicons
+          name={iconName}
+          size={16}
+          color={iconColor}
+          style={showProgress && payloadProgress ? { marginTop: 2 } : undefined}
+        />
+        {showProgress && payloadProgress ? (
+          <PayloadProgressBar progress={payloadProgress} caption={message} />
+        ) : (
+          <AppText variant="small" color="textMuted" style={{ flex: 1 }}>
+            {message}
+          </AppText>
+        )}
+      </Row>
+    </Animated.View>
   );
 }
 
