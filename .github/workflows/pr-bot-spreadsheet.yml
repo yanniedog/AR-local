@@ -77,6 +77,6 @@ jobs:
           else
             echo "Open PR #$EXISTING already tracks $BRANCH"
           fi
-          if ! gh pr merge "$BRANCH" --squash --auto --delete-branch; then
+          if ! gh pr merge "$BRANCH" --auto --squash --delete-branch; then
             echo "::warning::Could not enable auto-merge; merge the open bot PR manually after checks pass"
           fi

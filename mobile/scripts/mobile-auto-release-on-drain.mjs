@@ -145,7 +145,7 @@ function bumpBranchName(nextVersion) {
 }
 
 function enableAutoMerge(prNumber) {
-  gh(['pr', 'merge', String(prNumber), '--squash', '--auto', '--repo', repo]);
+  gh(['pr', 'merge', String(prNumber), '--auto', '--squash', '--delete-branch', '--repo', repo]);
 }
 
 function publishViaPullRequest(next, message) {

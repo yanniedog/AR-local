@@ -201,7 +201,7 @@ Do not spawn five parallel pr-fix workers on the **same PR** — one orchestrato
 4. npm run pr:bot-feedback-check -- --pr <n>
 5. npm run wait-for-bots until exit 0 (gemini + codex + sourcery each posted since anchor; exit 1 = do not merge)
 6. In-thread implement/defer/decline on every substantive bot/human thread
-7. gh pr merge --squash only after GitHub checks bot-presence-gate + pr-bot-feedback-check green, wait-for-bots exit 0, pr:bot-feedback-check exit 0, and threads closed — **never** on CI green alone
+7. npm run pr:merge (`gh pr merge --auto --squash --delete-branch`) only after GitHub checks bot-presence-gate + pr-bot-feedback-check green, wait-for-bots exit 0, pr:bot-feedback-check exit 0, and threads closed — **never** on CI green alone
 8. Pi verify / npm run verify:local when code shipped
 9. npm run chief:scan — must exit 0 before chief marks cycle complete
 ```
