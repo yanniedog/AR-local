@@ -49,7 +49,8 @@ export default function Trends() {
         </AppText>
         {decisions.map((d) => {
           const up = d.rate > d.prior;
-          const direction = up ? 'Increased' : d.rate < d.prior ? 'Decreased' : 'Unchanged';
+          const down = d.rate < d.prior;
+          const direction = up ? 'Increased' : down ? 'Decreased' : 'Unchanged';
           return (
             <Row
               key={d.date}
@@ -65,11 +66,13 @@ export default function Trends() {
                 <AppText variant="tiny" color="textFaint">
                   {direction}
                 </AppText>
-                <Ionicons
-                  name={up ? 'arrow-up' : 'arrow-down'}
-                  size={14}
-                  color={up ? theme.colors.danger : theme.colors.success}
-                />
+                {up || down ? (
+                  <Ionicons
+                    name={up ? 'arrow-up' : 'arrow-down'}
+                    size={14}
+                    color={up ? theme.colors.danger : theme.colors.success}
+                  />
+                ) : null}
                 <AppText variant="small" weight="700">
                   {formatRate(d.prior)} → {formatRate(d.rate)}
                 </AppText>
