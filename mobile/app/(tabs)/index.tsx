@@ -72,8 +72,8 @@ export default function Home() {
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const trendsDetail = showHistoryRibbon
-    ? `${meta.title} history, RBA cash rate, market ribbons`
-    : 'RBA cash rate, market ribbons, recent decisions';
+    ? `${meta.title} history ribbon, RBA cash rate, market snapshot`
+    : 'RBA cash rate, market snapshot, history ribbon Pro';
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
 
@@ -207,7 +207,7 @@ export default function Home() {
             </View>
             <View style={{ flex: 1, paddingRight: theme.spacing(2) }}>
               <AppText variant="body" weight="700">
-                Charts & trends
+                {showHistoryRibbon ? 'History ribbon & trends' : 'Charts & trends'}
               </AppText>
               <AppText variant="tiny" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
                 {trendsDetail}

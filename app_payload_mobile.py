@@ -53,32 +53,70 @@ def _banks(exports_dir: Path, run_date: str):
         if s.is_file(): return s
     return None
 
+def _history_dates(exports_dir: Path, run_date: str) -> List[str]:
+    dates = set()
+    direct = exports_dir / "dashboard-cache"
+    if direct.is_dir():
+        dates.update(
+            child.name
+            for child in direct.iterdir()
+            if child.is_dir() and child.name <= run_date and (child / "banks.json").is_file()
+        )
+    root = _runs_root(exports_dir)
+    if root:
+        dates.update(
+            child.name
+            for child in root.iterdir()
+            if child.is_dir()
+            and child.name <= run_date
+            and (child / "_exports" / "dashboard-cache" / child.name / "banks.json").is_file()
+        )
+    return sorted(dates)
+
+def _history_point(rows, section, normalized_rate_value):
+    keys = [str(row.get("product_key") or row.get("product_id") or "") for row in rows]
+    percent_style = {
+        key for key, row in zip(keys, rows) if key and float(row.get("rate") or 0) > 1
+    }
+    values = [
+        normalized
+        for key, row in zip(keys, rows)
+        if (normalized := normalized_rate_value(row.get("rate"), section, key in percent_style)) is not None
+    ]
+    if not values:
+        return None
+    ordered = sorted(values)
+    count = len(ordered)
+    mid = count // 2
+    median = ordered[mid] if count % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return {
+        "min": ordered[0],
+        "max": ordered[-1],
+        "mean": sum(ordered) / count,
+        "median": median,
+        "count": count,
+    }
+
 def build_history_banks(exports_dir, *, run_date, load_json, section_filter, normalized_rate_value, schema_version=1):
-    dates = sorted({c.name for c in (exports_dir / "dashboard-cache").iterdir() if c.is_dir() and c.name <= run_date and (c / "banks.json").is_file()} if (exports_dir / "dashboard-cache").is_dir() else [])
-    sections = {}
-    for section in VALID_SECTIONS:
-        by_date = {}
-        for d in dates:
-            path = _banks(exports_dir, d)
-            if not path: continue
-            rows = [r for r in (load_json(path).get("rates") or []) if isinstance(r, dict) and r.get("dataset") == section and section_filter(section, r)]
-            values = []
-            keys = [str(r.get("product_key") or r.get("product_id") or "") for r in rows]
-            pct = {k for k, r in zip(keys, rows) if k and float(r.get("rate") or 0) > 1}
-            for key, row in zip(keys, rows):
-                norm = normalized_rate_value(row.get("rate"), section, key in pct)
-                if norm is not None: values.append(norm)
-            if not values: continue
-            slot = by_date.setdefault(d, {"rates": [], "min": None, "max": None, "sum": 0.0, "count": 0})
-            slot["rates"].extend(values)
-            slot["min"] = min(slot["min"], min(values)) if slot["min"] is not None else min(values)
-            slot["max"] = max(slot["max"], max(values)) if slot["max"] is not None else max(values)
-            slot["sum"] += sum(values); slot["count"] += len(values)
-        points = []
-        for date, slot in sorted(by_date.items()):
-            if slot["count"] <= 0: continue
-            ordered = sorted(slot["rates"]); n = len(ordered); mid = n // 2
-            med = ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
-            points.append({"date": date, "min": slot["min"], "max": slot["max"], "mean": slot["sum"]/slot["count"], "median": med, "count": slot["count"]})
-        if points: sections[section] = {"points": points}
+    dates = _history_dates(exports_dir, run_date)
+    points_by_section = {section: [] for section in VALID_SECTIONS}
+    for date in dates:
+        path = _banks(exports_dir, date)
+        if not path:
+            continue
+        rates = [row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)]
+        for section in VALID_SECTIONS:
+            rows = [
+                row
+                for row in rates
+                if row.get("dataset") == section and section_filter(section, row)
+            ]
+            point = _history_point(rows, section, normalized_rate_value)
+            if point:
+                points_by_section[section].append({"date": date, **point})
+    sections = {
+        section: {"points": points}
+        for section, points in points_by_section.items()
+        if points
+    }
     return {"schema_version": schema_version, "run_date": run_date, "run_dates": dates, "sections": sections}

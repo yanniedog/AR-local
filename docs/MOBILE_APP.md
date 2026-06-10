@@ -42,14 +42,20 @@ Content files are **content-hashed and contain no wall-clock field**, so a same-
 rebuild (e.g. the watchdog rerun) produces identical bytes and the app skips a
 needless re-download.
 
-### History ribbon (per-date snapshots)
+### History ribbon
+
+The premium chart lives in **Charts & trends**. Enabling it is instant; opening the
+chart downloads one pre-aggregated `history-banks-*.json.gz` asset from the rolling
+release. The compact asset is built from all valid `runs/<date>/_exports` snapshots
+on the Pi and is protected from rolling-release pruning while its manifest is live.
 
 Each ingest `run_date` also gets an immutable GitHub Release tag
 `app-payload-YYYY-MM-DD` with exactly three assets (`manifest.json`, one `core-*.json.gz`,
 one `details-*.json.gz`). The rolling `app-payload-latest` tag stays the canonical
 “newest” manifest the app polls daily.
 
-For incremental backfill, fetch `dates-index.json` on the rolling release
+If the compact history asset is unavailable, the app falls back to incremental
+backfill via `dates-index.json` on the rolling release
 (`mobile/src/config.ts` → `DATES_INDEX_URL`). It lists every published `run_date`
 from `2026-05-13` upward; download only missing dates via
 `datedManifestUrl(runDate)` → per-tag `manifest.json` → core/details URLs inside.

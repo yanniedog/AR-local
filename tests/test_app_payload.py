@@ -12,6 +12,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
+import app_payload_mobile  # noqa: E402
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
 HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
@@ -120,6 +122,43 @@ def test_build_dates_index_sorted_and_bounded():
     assert "{run_date}" in index["dated_manifest_url_pattern"]
 
 
+def test_history_payload_discovers_sibling_run_exports(tmp_path):
+    runs = tmp_path / "runs"
+    current_exports = None
+    for date, rate in (("2026-06-09", "0.04"), ("2026-06-10", "0.05")):
+        exports = runs / date / "_exports"
+        cache = exports / "dashboard-cache" / date
+        cache.mkdir(parents=True)
+        (cache / "banks.json").write_text(
+            json.dumps(
+                {
+                    "rates": [
+                        {
+                            "dataset": "Savings",
+                            "provider": "Bank",
+                            "product_key": f"Bank|{date}",
+                            "rate": rate,
+                            "rate_family": "deposit",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        current_exports = exports
+
+    history = app_payload_mobile.build_history_banks(
+        current_exports,
+        run_date="2026-06-10",
+        load_json=app_payload._load_json,
+        section_filter=app_payload.section_filter,
+        normalized_rate_value=app_payload._normalized_rate_value,
+    )
+
+    assert history["run_dates"] == ["2026-06-09", "2026-06-10"]
+    assert [point["date"] for point in history["sections"]["Savings"]["points"]] == history["run_dates"]
+
+
 def test_dated_tag_naming():
     assert app_payload.dated_tag("2026-06-08") == "app-payload-2026-06-08"
     assert app_payload.is_dated_tag("app-payload-2026-06-08")
@@ -132,6 +171,40 @@ def test_dated_tag_naming():
 def test_is_rolling_tag():
     assert app_payload.is_rolling_tag("app-payload-latest")
     assert not app_payload.is_rolling_tag("app-payload-2026-06-08")
+
+
+def test_optional_assets_are_rolling_only(tmp_path):
+    kwargs = {
+        "repo": app_payload.DEFAULT_REPO,
+        "counts": {},
+        "search_index": {"products": {"Bank|1": "bank product"}},
+        "history_banks": {
+            "sections": {
+                "Savings": {
+                    "points": [{"date": "2026-06-10", "min": 0.04, "max": 0.05}]
+                }
+            }
+        },
+    }
+    rolling = app_payload._package(
+        {"schema_version": 1},
+        {"schema_version": 1},
+        "2026-06-10",
+        tmp_path / "rolling",
+        tag=app_payload.DEFAULT_TAG,
+        **kwargs,
+    )
+    dated = app_payload._package(
+        {"schema_version": 1},
+        {"schema_version": 1},
+        "2026-06-10",
+        tmp_path / "dated",
+        tag=app_payload.dated_tag("2026-06-10"),
+        **kwargs,
+    )
+
+    assert {"search_index", "history_banks"} <= rolling["files"].keys()
+    assert set(dated["files"]) == {"core", "details"}
 
 
 def test_dated_release_title():
@@ -332,6 +405,82 @@ def test_build_is_deterministic(tmp_path):
     # gzip mtime is pinned to 0, so identical input yields identical core bytes.
     assert a["files"]["core"]["sha256"] == b["files"]["core"]["sha256"]
     assert a["files"]["details"]["sha256"] == b["files"]["details"]["sha256"]
+
+
+def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys):
+    names = [
+        "core.json.gz",
+        "details.json.gz",
+        "search-index.json.gz",
+        "history-banks.json.gz",
+    ]
+    for name in names:
+        (tmp_path / name).write_bytes(b"asset")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_date": "2026-06-10",
+                "generated_at": "2026-06-10T00:00:00Z",
+                "files": {
+                    "core": {"name": names[0]},
+                    "details": {"name": names[1]},
+                    "search_index": {"name": names[2]},
+                    "history_banks": {"name": names[3]},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
+    monkeypatch.setattr(app_payload, "_gh_authed", lambda _gh: True)
+
+    assert app_payload.publish_payload(tmp_path, dry_run=True) is False
+
+    output = capsys.readouterr().out
+    assert "search-index.json.gz" in output
+    assert "history-banks.json.gz" in output
+
+
+def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
+    names = ["core.json.gz", "details.json.gz", "search-index.json.gz", "history-banks.json.gz"]
+    for name in names:
+        (tmp_path / name).write_bytes(b"asset")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_date": "2026-06-10",
+                "generated_at": "2026-06-10T00:00:00Z",
+                "files": {
+                    "core": {"name": names[0]},
+                    "details": {"name": names[1]},
+                    "search_index": {"name": names[2]},
+                    "history_banks": {"name": names[3]},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    uploads = []
+    protected = {}
+    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
+    monkeypatch.setattr(app_payload, "_gh_authed", lambda _gh: True)
+    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda _repo, _tag: ("missing", None))
+    monkeypatch.setattr(app_payload, "_update_release_title", lambda *_args: True)
+    monkeypatch.setattr(
+        app_payload,
+        "_prune_release_assets",
+        lambda _gh, _repo, _tag, keep: protected.update(keep=keep) or 0,
+    )
+
+    def fake_run(args, **_kwargs):
+        uploads.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    assert app_payload.publish_payload(tmp_path) is True
+    assert protected["keep"] == set(names)
+    assert any("history-banks.json.gz" in " ".join(command) for command in uploads)
 
 
 @pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")

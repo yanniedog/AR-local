@@ -576,11 +576,11 @@ def _package(
         "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
         "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
     }
-    if search_index and search_index.get("products"):
+    if is_rolling_tag(tag) and search_index and search_index.get("products"):
         files["search_index"] = _asset(
             out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base
         )
-    if history_banks and history_banks.get("sections"):
+    if is_rolling_tag(tag) and history_banks and history_banks.get("sections"):
         files["history_banks"] = _asset(
             out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
         )
@@ -943,7 +943,7 @@ def publish_payload(
     if not manifest_path.exists():
         raise FileNotFoundError(f"no manifest.json in {payload_dir} (run build first)")
     manifest = _load_json(manifest_path)
-    names = [manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]]
+    names = [entry["name"] for entry in manifest["files"].values()]
     # Upload the data assets first and the manifest LAST, so the rolling manifest is
     # never left pointing at a missing/half-replaced asset if an upload fails.
     data_assets = [payload_dir / n for n in names]
@@ -969,11 +969,9 @@ def publish_payload(
 
     our_run_date = str(manifest.get("run_date") or "")
     our_gen = str(manifest.get("generated_at") or "")
-    core_name = manifest["files"]["core"]["name"]
-    details_name = manifest["files"]["details"]["name"]
     print(
         f"[app_payload] publish starting run_date={our_run_date} tag={tag} repo={repo} "
-        f"assets=[{core_name}, {details_name}, manifest.json]"
+        f"assets={[*names, 'manifest.json']}"
     )
     rolling = is_rolling_tag(tag)
     title = release_title(our_run_date) if rolling else dated_release_title(our_run_date)
@@ -1097,7 +1095,7 @@ def publish_payload(
     if rolling:
         # Prune obsolete assets so the rolling release never hits GitHub's 1000-asset cap.
         try:
-            keep = {manifest["files"]["core"]["name"], manifest["files"]["details"]["name"]}
+            keep = set(names)
             pruned = _prune_release_assets(gh, repo, tag, keep)
             if pruned:
                 print(f"[app_payload] pruned {pruned} obsolete release asset(s)")

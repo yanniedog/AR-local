@@ -553,7 +553,7 @@ the fallback for advanced setups (Blaze plan).
 
 | Tag | Purpose | Assets |
 |-----|---------|--------|
-| `app-payload-latest` | Mobile app polls this for the newest `run_date` | Rolling manifest + `dates-index.json` + ~20 recent core/details (pruned) |
+| `app-payload-latest` | Mobile app polls this for the newest `run_date` | Rolling manifest + `dates-index.json` + compact history/search + ~20 recent core/details (pruned) |
 | `app-payload-YYYY-MM-DD` | Immutable snapshot for that ingest date | Exactly 3 assets (manifest + core + details); never pruned |
 
 Release **titles**: dated `Australian Rates payload — YYYY-MM-DD`; rolling

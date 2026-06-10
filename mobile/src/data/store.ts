@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { SECTIONS } from '../constants';
-import { DATES_INDEX_URL, RATE_MOVE_BPS_THRESHOLD } from '../config';
+import { RATE_MOVE_BPS_THRESHOLD } from '../config';
 import type {
   CorePayload,
   DetailsPayload,
@@ -33,9 +33,6 @@ import {
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
 import {
   dailyHistorySha,
-  historyBanksCoversDates,
-  historyDatesUpTo,
-  parseDatesIndex,
   syncHistoryFromDailyPayloads,
 } from './historyDaily';
 import type { HistoryBanksPayload } from './historyPayload';
@@ -68,7 +65,7 @@ export interface Prefs {
   includeNonStandard: boolean;
   /** Fulltext search across product info (off by default). */
   enableDeepSearch: boolean;
-  /** Section ribbon time-series chart on Home (off by default). */
+  /** Section ribbon time-series chart in Charts & trends (off by default). */
   showHistoryRibbon: boolean;
   /** Rate Intelligence Pro — local stub until store IAP is wired. */
   rateIntelligencePro: boolean;
@@ -317,7 +314,6 @@ export const useStore = create<AppState>()(
         const warmOptionalAssets = () => {
           const p = get().prefs;
           if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
-          if (effectiveHistoryRibbon(p)) void get().ensureHistoryBanks();
         };
         if (get().refreshing) return false;
         const prefs = get().prefs;
@@ -575,31 +571,6 @@ export const useStore = create<AppState>()(
 
         const meta = await cache.readMeta();
         const cached = historyBanks ?? (await readValidatedHistoryBanks());
-        const dailySha = cached ? dailyHistorySha(cached.run_dates) : null;
-
-        let wantedDates: string[] = [];
-        try {
-          const sep = DATES_INDEX_URL.includes('?') ? '&' : '?';
-          const res = await fetch(`${DATES_INDEX_URL}${sep}_=${Date.now()}`);
-          if (res.ok) {
-            const index = parseDatesIndex(await res.json());
-            if (index) wantedDates = historyDatesUpTo(index, core.run_date);
-          }
-        } catch {
-          // non-fatal — sync will refetch the index
-        }
-
-        if (
-          cached &&
-          cached.run_date === core.run_date &&
-          (meta?.historyBanksSha === dailySha ||
-            (!wantedDates.length && cached.run_dates.length > 1)) &&
-          (wantedDates.length === 0 || historyBanksCoversDates(cached, wantedDates))
-        ) {
-          if (!historyBanks) set({ historyBanks: cached, historyBanksError: null });
-          else set({ historyBanksError: null });
-          return;
-        }
 
         const installHistory = async (validated: HistoryBanksPayload, sha: string) => {
           const text = JSON.stringify(validated);
@@ -617,6 +588,34 @@ export const useStore = create<AppState>()(
             `ensureHistoryBanks ok run_date=${validated.run_date} slices=${validated.run_dates.length}`,
           );
         };
+
+        const compactAsset = manifest.files.history_banks;
+        if (compactAsset) {
+          if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === compactAsset.sha256) {
+            set({ historyBanks: cached, historyBanksError: null });
+            return;
+          }
+          try {
+            const { historyBanks: fresh } = await downloadHistoryBanks(
+              compactAsset.url,
+              compactAsset.sha256,
+            );
+            const validated = normalizeHistoryBanksPayload(fresh);
+            if (!validated) throw new Error('history_banks payload failed validation');
+            await installHistory(validated, compactAsset.sha256);
+            return;
+          } catch (err) {
+            debugLog.warn(
+              'store',
+              `ensureHistoryBanks compact asset failed: ${String((err as Error)?.message ?? err)}`,
+            );
+          }
+        }
+
+        if (cached && cached.run_date === core.run_date && cached.run_dates.length > 1) {
+          set({ historyBanks: cached, historyBanksError: null });
+          return;
+        }
 
         try {
           const synced = await syncHistoryFromDailyPayloads({
@@ -652,7 +651,7 @@ export const useStore = create<AppState>()(
         }
 
         try {
-          const { text, historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
+          const { historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
           const validated = normalizeHistoryBanksPayload(fresh);
           if (!validated) {
             debugLog.error('store', 'ensureHistoryBanks rejected payload after download (validation failed)');
@@ -766,12 +765,7 @@ export const useStore = create<AppState>()(
           }
         }
         if (key === 'showHistoryRibbon') {
-          if (value) {
-            set({ historyBanksError: null });
-            void get().ensureHistoryBanks();
-          } else {
-            set({ historyBanks: null, historyBanksError: null });
-          }
+          set({ historyBanksError: null });
         }
       },
 
@@ -815,9 +809,8 @@ export const useStore = create<AppState>()(
       name: 'ar-rates',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => {
-        const { showHistoryRibbon: _sessionOnly, ...prefsToPersist } = s.prefs;
         return {
-          prefs: prefsToPersist,
+          prefs: s.prefs,
           favorites: s.favorites,
           subscriptions: s.subscriptions,
           activeSection: s.activeSection,
@@ -828,7 +821,6 @@ export const useStore = create<AppState>()(
         const prefs = {
           ...DEFAULT_PREFS,
           ...p?.prefs,
-          showHistoryRibbon: false,
           interests: normalizeInterests(p?.prefs?.interests ?? DEFAULT_INTERESTS),
         };
         const persistedActiveSection = p?.activeSection;
@@ -874,7 +866,6 @@ try {
           await state.ensureDetails();
         }
         if (effectiveDeepSearch(state.prefs)) await state.ensureSearchIndex();
-        if (effectiveHistoryRibbon(state.prefs)) await state.ensureHistoryBanks();
         const changed = await useStore.getState().refresh({});
         return changed
           ? BackgroundFetch.BackgroundFetchResult.NewData
