@@ -1,4 +1,4 @@
-﻿import type { CorePayload, Manifest } from '../src/types';
+import type { CorePayload, Manifest } from '../src/types';
 import { shouldWarmDetails } from '../src/data/optionalPrefs';
 import { sampleCore, sampleManifest } from '../src/data/sample';
 import { DEFAULT_PREFS, useStore } from '../src/data/store';
