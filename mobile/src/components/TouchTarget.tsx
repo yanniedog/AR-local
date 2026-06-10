@@ -29,11 +29,11 @@ export function TouchTarget({
 }: TouchTargetProps) {
   const base: ViewStyle = {
     minHeight: TOUCH_TARGET_MIN,
-    justifyContent: 'center',
     alignItems: 'center',
   };
   if (square) {
     base.minWidth = TOUCH_TARGET_MIN;
+    base.justifyContent = 'center';
   }
   if (fill) {
     base.alignSelf = 'stretch';
