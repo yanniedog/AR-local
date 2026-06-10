@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated as RNAnimated, Pressable, View, type DimensionValue, type ViewStyle } from 'react-native';
@@ -18,6 +17,7 @@ import type { PayloadProgressSnapshot } from '../data/downloadProgress';
 import { buildPayloadProgressViewModel } from '../data/downloadProgress';
 import { formatRunDate } from '../data/format';
 import { useStore } from '../data/store';
+import { getTabBarContentHeight } from '../lib/androidChrome';
 import { useTheme } from '../theme/ThemeProvider';
 import { resolveOfflineBanner, resolveRefreshOutcomeSnackbar } from './bannerState';
 import { AppText, Row } from './ui';
@@ -235,7 +235,7 @@ const SNACKBAR_DISMISS_MS: Record<'success' | 'failure' | 'wifi-skip', number> =
 export function RefreshOutcomeSnackbar() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
+  const tabBarHeight = getTabBarContentHeight();
   const outcome = useStore((s) => s.refreshOutcome);
   const core = useStore((s) => s.core);
   const clearRefreshOutcome = useStore((s) => s.clearRefreshOutcome);
