@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, Platform, Pressable, Switch, View } from 'react-native';
+import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -21,6 +21,7 @@ import {
   getInstalledAppInfo,
   type ApkManifest,
   type UpdateCheckResult,
+  type VersionChangelogSummary,
 } from '../../src/lib/appUpdate';
 import {
   canInstallApkUpdates,
@@ -271,6 +272,7 @@ function AppUpdateSection() {
   const installed = getInstalledAppInfo();
   const [checkResult, setCheckResult] = useState<UpdateCheckResult | null>(null);
   const [remote, setRemote] = useState<ApkManifest | null>(null);
+  const [changelogs, setChangelogs] = useState<VersionChangelogSummary[]>([]);
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadPct, setDownloadPct] = useState<number | null>(null);
@@ -293,11 +295,15 @@ function AppUpdateSection() {
     setChecking(true);
     setError(null);
     setCheckResult(null);
+    setChangelogs([]);
     try {
       const result = await checkForAppUpdate();
       setCheckResult(result);
       if (result.status === 'available' || result.status === 'current') {
         setRemote(result.remote);
+      }
+      if (result.status === 'available') {
+        setChangelogs(result.changelogs);
       }
       if (result.status === 'error') {
         setError(result.message);
@@ -367,6 +373,9 @@ function AppUpdateSection() {
           {error}
         </AppText>
       ) : null}
+      {updateAvailable && changelogs.length ? (
+        <UpdateChangelogList entries={changelogs} />
+      ) : null}
       <Row gap={12} style={{ marginTop: 12 }}>
         <Button
           title="Check for update"
@@ -393,6 +402,35 @@ function AppUpdateSection() {
         the same package and signing key.
       </AppText>
     </Section>
+  );
+}
+
+function UpdateChangelogList({ entries }: { entries: VersionChangelogSummary[] }) {
+  return (
+    <View style={{ marginTop: 10, maxHeight: 220 }}>
+      <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 6 }}>
+        WHAT&apos;S NEW
+      </AppText>
+      <ScrollView nestedScrollEnabled>
+        {entries.map((entry) => (
+          <View key={entry.version} style={{ marginBottom: 10 }}>
+            <AppText variant="small" weight="700">
+              {entry.version}
+            </AppText>
+            {entry.summaryBullets.map((bullet, idx) => (
+              <AppText key={`${entry.version}-${idx}`} variant="tiny" color="textFaint" style={{ marginLeft: 8 }}>
+                • {bullet}
+              </AppText>
+            ))}
+            <Pressable onPress={() => void Linking.openURL(entry.releaseUrl)}>
+              <AppText variant="tiny" color="primary" style={{ marginTop: 4 }}>
+                Full changelog
+              </AppText>
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 

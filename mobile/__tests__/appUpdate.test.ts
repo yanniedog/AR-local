@@ -17,6 +17,31 @@ const installed = { version: '1.0.0', buildNumber: '41' };
 const manifestUrl =
   'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json';
 
+const changelogSummary = {
+  schema_version: 1,
+  repo: 'yanniedog/AR-local',
+  versions: [
+    {
+      version: '1.0.0',
+      date: null,
+      summaryBullets: ['First'],
+      releaseUrl: 'https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.0',
+    },
+    {
+      version: '1.0.1',
+      date: null,
+      summaryBullets: ['Second'],
+      releaseUrl: 'https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.1',
+    },
+    {
+      version: '1.0.2',
+      date: null,
+      summaryBullets: ['Third'],
+      releaseUrl: 'https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.2',
+    },
+  ],
+};
+
 describe('appUpdateLogic', () => {
   beforeEach(() => {
     global.fetch = jest.fn();
@@ -43,6 +68,7 @@ describe('appUpdateLogic', () => {
     expect(result.status).toBe('available');
     if (result.status === 'available') {
       expect(result.remote.build_number).toBe('42');
+      expect(result.changelogs).toEqual([]);
     }
   });
 
@@ -61,6 +87,40 @@ describe('appUpdateLogic', () => {
     expect(result.status).toBe('error');
     if (result.status === 'error') {
       expect(result.message).toContain('404');
+    }
+  });
+
+  it('attaches cumulative changelogs when remote semver is newer', async () => {
+    const remote: ApkManifest = {
+      schema_version: 1,
+      version: '1.0.2',
+      build_number: '11',
+      download_url: 'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk',
+    };
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => remote })
+      .mockResolvedValueOnce({ ok: true, json: async () => changelogSummary });
+
+    const result = await checkForAppUpdateAt(manifestUrl, installed);
+    expect(result.status).toBe('available');
+    if (result.status === 'available') {
+      expect(result.changelogs.map((c) => c.summaryBullets[0])).toEqual(['Second', 'Third']);
+    }
+  });
+
+  it('omits changelogs on same-version build bump', async () => {
+    const remote: ApkManifest = {
+      schema_version: 1,
+      version: '1.0.0',
+      build_number: '43',
+      download_url: 'https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk',
+    };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => remote });
+
+    const result = await checkForAppUpdateAt(manifestUrl, installed);
+    expect(result.status).toBe('available');
+    if (result.status === 'available') {
+      expect(result.changelogs).toEqual([]);
     }
   });
 });

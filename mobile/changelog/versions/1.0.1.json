@@ -1,0 +1,14 @@
+{
+  "version": "1.0.1",
+  "date": "2026-06-05",
+  "summaryBullets": ["Second"],
+  "sections": [
+    {
+      "title": "Updates",
+      "bullets": [
+        { "text": "Versioned GitHub releases (app-v{semver})" },
+        { "text": "Monotonic Android versionCode bump in CI" }
+      ]
+    }
+  ]
+}

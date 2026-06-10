@@ -81,8 +81,9 @@ describe('historyPayload', () => {
   test('selectBankHistoryChartModel sanitizes corrupt ribbon fallback (no throw)', () => {
     const corrupt = JSON.parse(JSON.stringify(sample)) as CorePayload;
     corrupt.sections.Mortgage.ribbon = {
-      range: { min: Number.NaN, max: 'not-a-rate' as unknown as number, mean: Infinity },
-      counts: { rates: 1, providers: 1 },
+      range: { min: Number.NaN, max: 'not-a-rate' as unknown as number, mean: Infinity, median: null },
+      counts: { rates: 1, products: 0, providers: 1 },
+      providers: [],
     };
     const model = selectBankHistoryChartModel({ core: corrupt }, 'Mortgage');
     expect(model).toBeNull();

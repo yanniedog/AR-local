@@ -717,9 +717,15 @@ mobile/scripts/ensure-firebase-config.mjs  # copy .example Firebase configs when
 mobile/google-services.json.example     # Firebase Android placeholder (copy to gitignored path)
 mobile/GoogleService-Info.plist.example # Firebase iOS placeholder
 mobile/firebase.json                    # Crashlytics native config (no secrets)
-mobile/src/lib/appUpdateLogic.ts       # in-app update: manifest fetch + version compare
+mobile/src/lib/appUpdateLogic.ts       # in-app update: manifest fetch + version compare + cumulative changelogs
 mobile/src/lib/appUpdate.ts            # in-app update: APK download + system installer
+mobile/src/lib/changelog.ts            # changelog-summary fetch + cumulative version summaries
 mobile/src/lib/versionCompare.ts       # semver / versionCode compare helper
+mobile/changelog/versions/{semver}.json  # per-version GH + in-app summary bullets
+mobile/changelog/manifest.json           # generated from versions/*.json (npm run changelog:manifest)
+mobile/scripts/changelog-lib.cjs         # shared changelog render/build helpers (Node + tests)
+mobile/scripts/build-changelog-manifest.mjs
+mobile/scripts/ensure-changelog-entry.mjs
 mobile/scripts/publish-apk-manifest.mjs # publish app-preview.apk + manifest + QR + install.html to GH release
 mobile/scripts/bump-android-version-code.mjs  # monotonic versionCode from rolling manifest
 mobile/scripts/materialize-android-keystore.mjs  # EAS keystore fetch or B64 secret for GHA signing

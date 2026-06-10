@@ -20,8 +20,14 @@ export type {
   DownloadProgress,
   InstalledAppInfo,
   UpdateCheckResult,
+  VersionChangelogSummary,
 } from './appUpdateLogic';
 export { fetchApkManifest, remoteIsNewer } from './appUpdateLogic';
+export {
+  changelogSummaryUrlFromManifestUrl,
+  fetchChangelogSummary,
+  selectCumulativeChangelogs,
+} from './changelog';
 
 const APK_CACHE = `${FileSystem.cacheDirectory ?? ''}app-update.apk`;
 
