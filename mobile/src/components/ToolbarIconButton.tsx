@@ -10,12 +10,14 @@ export function ToolbarIconButton({
   icon,
   onPress,
   accessibilityLabel,
+  accessibilityHint,
   active,
   badge,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   active?: boolean;
   badge?: number;
 }) {
@@ -25,6 +27,7 @@ export function ToolbarIconButton({
       <Pressable
         onPress={onPress}
         accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
         style={{
           backgroundColor: active ? theme.colors.primaryMuted : theme.colors.surfaceAlt,
           borderRadius: theme.radius.md,

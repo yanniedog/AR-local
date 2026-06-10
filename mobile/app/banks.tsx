@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { BankAvatar } from '../src/components/BankAvatar';
@@ -48,15 +48,24 @@ export default function Banks() {
 function BankRow({ group }: { group: ProviderGroup }) {
   const theme = useTheme();
   const sections = Object.keys(group.bestBySection) as SectionKey[];
+  const longPressed = useRef(false);
   const open = useCallback(() => openBank(group.provider), [group.provider]);
   const onLongPress = useCallback(() => {
+    longPressed.current = true;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    open();
+  }, [open]);
+  const onPress = useCallback(() => {
+    if (longPressed.current) {
+      longPressed.current = false;
+      return;
+    }
     open();
   }, [open]);
 
   return (
     <Pressable
-      onPress={open}
+      onPress={onPress}
       onLongPress={onLongPress}
       accessibilityHint="Long press for haptic confirmation before opening lender profile"
       style={({ pressed }) => ({
