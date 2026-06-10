@@ -8,7 +8,7 @@ export const DEFAULT_INTERESTS: SectionKey[] = ['Mortgage', 'Savings', 'TD'];
 export const SECTION_SEG_LABELS: Record<SectionKey, string> = {
   Mortgage: 'Mortgage',
   Savings: 'Savings',
-  TD: 'Term Deps',
+  TD: 'Term Deposits',
 };
 
 const VALID = new Set<SectionKey>(SECTION_ORDER);
