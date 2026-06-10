@@ -7,17 +7,17 @@ import { CompactToggle, SegmentedControl } from '../src/components/controls';
 import { Screen } from '../src/components/Screen';
 import { TaxonomyTreeView } from '../src/components/TaxonomyTreeView';
 import { Row } from '../src/components/ui';
-import { sectionFromSlug } from '../src/constants';
+import { SECTION_ORDER, sectionFromSlug } from '../src/constants';
+import { SECTION_SEG_LABELS } from '../src/data/interests';
 import { useStore } from '../src/data/store';
 import { openSearch } from '../src/lib/nav';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
-const SECTION_SEG = [
-  { value: 'Mortgage' as SectionKey, label: 'Mortgage' },
-  { value: 'Savings' as SectionKey, label: 'Savings' },
-  { value: 'TD' as SectionKey, label: 'Term Deps' },
-];
+const SECTION_SEG = SECTION_ORDER.map((value) => ({
+  value,
+  label: SECTION_SEG_LABELS[value],
+}));
 
 export default function HierarchyScreen() {
   const theme = useTheme();
