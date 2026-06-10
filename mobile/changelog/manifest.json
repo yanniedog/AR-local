@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-10T04:10:24.387Z",
+  "generated_at": "2026-06-10T05:00:39.706Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -46,6 +46,18 @@
         "Mobile rec14: section accentColor and data-ink tokens (#253)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.5"
+    },
+    {
+      "version": "1.0.6",
+      "date": "2026-06-10",
+      "summaryBullets": [
+        "chore(mobile): auto-release bump to v1.0.5 (after 1c3ea10) (#260)",
+        "fix(mobile): stop tab layout crash from snackbar tab bar height hook (#266)",
+        "fix: close recent merge audit gaps (#259)",
+        "mobile: 48dp TouchTarget primitive (rec #8) (#238)",
+        "feat(mobile): animated segment pill and section crossfade (rec #23) (#248)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.6"
     }
   ]
 }
