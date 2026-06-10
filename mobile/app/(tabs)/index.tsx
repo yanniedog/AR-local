@@ -13,7 +13,7 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
@@ -128,8 +128,8 @@ export default function Home() {
             <AppText variant="small" color="textMuted" style={{ marginTop: 2 }}>
               {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate in section
             </AppText>
-            <AppText variant="h1" weight="800" style={{ color: accent, marginTop: 4 }}>
-              {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
+            <AppText variant="rateHero" style={{ color: accent, marginTop: 4 }}>
+              {formatRate(heroRate)}
             </AppText>
           </View>
           {section === 'Mortgage' && rba ? (
@@ -145,8 +145,8 @@ export default function Home() {
               <AppText variant="tiny" color="textFaint">
                 RBA cash
               </AppText>
-              <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
-                {rba.rate.toFixed(2)}%
+              <AppText variant="rate" style={{ color: theme.colors.primary }}>
+                {formatRate(rba.rate)}
               </AppText>
             </View>
           ) : null}
@@ -241,8 +241,8 @@ export default function Home() {
                 </AppText>
               </View>
               <Row gap={4}>
-                <AppText variant="h3" weight="800" style={{ color: accent }}>
-                  {nodeBest !== null ? `${(nodeBest * 100).toFixed(2)}%` : '—'}
+                <AppText variant="rate" style={{ color: accent }}>
+                  {formatRate(nodeBest)}
                 </AppText>
                 <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
               </Row>

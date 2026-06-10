@@ -34,4 +34,12 @@ describe('theme palettes', () => {
     expect(darkTheme.colors.sectionAccent).toBe('#3b82f6');
     expect(lightTheme.colors.sectionAccent).toBe('#3b82f6');
   });
+
+  it('includes rate typography tokens and line heights', () => {
+    expect(lightTheme.font.rate).toBe(20);
+    expect(lightTheme.font.rateHero).toBe(28);
+    expect(lightTheme.lineHeight.rate).toBe(24);
+    expect(lightTheme.lineHeight.rateHero).toBe(34);
+    expect(darkTheme.lineHeight.body).toBe(22);
+  });
 });

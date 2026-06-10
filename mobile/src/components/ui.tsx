@@ -13,9 +13,20 @@ import {
 } from 'react-native';
 
 import type { Palette } from '../theme/colors';
+import type { FontVariant } from '../theme/theme';
 import { useTheme } from '../theme/ThemeProvider';
 
-type FontVariant = 'h1' | 'h2' | 'h3' | 'body' | 'small' | 'tiny';
+const VARIANT_WEIGHT: Partial<Record<FontVariant, '700' | '800'>> = {
+  h1: '800',
+  h2: '700',
+  h3: '700',
+  rate: '700',
+  rateHero: '700',
+};
+
+function maxFontSizeMultiplierFor(variant: FontVariant): number {
+  return variant === 'tiny' || variant === 'small' || variant === 'rate' ? 1.2 : 1.35;
+}
 
 export function AppText({
   variant = 'body',
@@ -31,11 +42,19 @@ export function AppText({
   const theme = useTheme();
   return (
     <Text
+      allowFontScaling
+      maxFontSizeMultiplier={maxFontSizeMultiplierFor(variant)}
       style={[
-        { color: theme.colors[color], fontSize: theme.font[variant], fontWeight: weight },
-        variant === 'h1' && { fontWeight: '800', letterSpacing: -0.5 },
-        variant === 'h2' && { fontWeight: '700', letterSpacing: -0.3 },
-        variant === 'h3' && { fontWeight: '700' },
+        {
+          color: theme.colors[color],
+          fontSize: theme.font[variant],
+          lineHeight: theme.lineHeight[variant],
+          fontWeight: weight ?? VARIANT_WEIGHT[variant],
+        },
+        variant === 'h1' && { letterSpacing: -0.5 },
+        variant === 'h2' && { letterSpacing: -0.3 },
+        variant === 'rateHero' && { letterSpacing: -0.5 },
+        (variant === 'rate' || variant === 'rateHero') && { fontVariant: ['tabular-nums'] },
         style,
       ]}
       {...rest}
