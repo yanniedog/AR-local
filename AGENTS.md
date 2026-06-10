@@ -97,7 +97,7 @@ Session **coordination authority** ? path locks, PR assignment, dedupe redundant
 
 **If chief reminders still inject:** Cursor also loads `%USERPROFILE%\.cursor\hooks.json`. Remove `orchestrator-remind.mjs` from `subagentStop`/`stop` there (repo `.cursor/hooks.json` is empty). Reload the window (Developer: Reload Window).
 
-**Relationship to orchestrator:** chief owns coordination when invoked; orchestrator owns ship bar. Say **"run workflow orchestrator"** without chief, or chief may delegate. Orchestrator does not spawn chief.
+**Relationship to orchestrator:** chief owns coordination and spawns **one pr-fix/babysit per open PR**; orchestrator coordinates queue (splits, routing, ordering), not thread closure. Say **"run workflow orchestrator"** without chief, or chief may delegate. Orchestrator does not spawn chief.
 
 ## Continuous workflow orchestrator
 
@@ -111,7 +111,7 @@ Ship-bar guardian (reports to chief agent). Cursor subagents are **not** OS daem
 
 **Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
 
-**Policy:** one logical task → one branch → one PR. Chief prevents path conflicts when invoked; orchestrator executes split and ship bar.
+**Policy:** one logical task → one branch → one PR; **one dedicated pr-fix/babysit worker per open PR** for ship bar. Chief prevents path conflicts when invoked; orchestrator coordinates queue and splits; pr-fix owns each PR through merge.
 
 ## Team agents (specialized workers)
 
@@ -124,7 +124,7 @@ Chief assigns **one writer per path prefix and branch** when invoked. Each skill
 | Ingest | [`.cursor/skills/ingest-agent/SKILL.md`](.cursor/skills/ingest-agent/SKILL.md) | **run ingest bring-up** | `cdr_daily.py` / `cdr_outputs.py` / `runs/`; real data only |
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR gates | [`.cursor/skills/pr-gates-agent/SKILL.md`](.cursor/skills/pr-gates-agent/SKILL.md) | **run pr gates agent** / **ensure PR gates** | Read-only: `npm run pr:gates:check`; hand off failures to pr-fix |
-| PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | One PR: threads, CI, synthesis; orchestrator merges after gates pass |
+| PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | **One dedicated worker per open PR:** threads, CI, synthesis, gates, squash merge |
 | PR watch | [`.cursor/skills/pr-watch-agent/SKILL.md`](.cursor/skills/pr-watch-agent/SKILL.md) | **run pr watch** / **watch open PRs** | Continuous open-PR loop: gates, merge (oldest first), Pi deploy + verify; `npm run pr:watch-once`; chief holds path locks |
 | Parity | [`.cursor/skills/parity-agent/SKILL.md`](.cursor/skills/parity-agent/SKILL.md) | **run parity check** | Prod vs local/Pi layout/CSS; not functional QA |
 | Post-merge verify | [`.cursor/skills/post-merge-verify-agent/SKILL.md`](.cursor/skills/post-merge-verify-agent/SKILL.md) | **run post-merge verify** | `WORKFLOW.md` steps 8-9 after merge |

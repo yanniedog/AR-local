@@ -10,6 +10,7 @@
     "pr:bot-feedback-audit": "node scripts/pr-bot-feedback-check.mjs --audit-merged --limit 20",
     "pr:bot-spreadsheet:sync": "node scripts/pr-bot-spreadsheet-sync.mjs",
     "pr:bot-matrix:commit": "node scripts/pr-bot-matrix-commit.mjs",
+    "pr:bot-matrix:verify": "node scripts/verify-pr-bot-matrix-writer.mjs",
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
     "mobile:auto-release:verify": "node scripts/verify-mobile-auto-release-commit.mjs",
     "pr:bot-matrix-commit:verify": "node scripts/verify-pr-bot-matrix-commit.mjs",
