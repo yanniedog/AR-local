@@ -1,15 +1,15 @@
 ---
-description: "Spawn chief agent for multi-agent coordination; chief delegates ship bar to workflow orchestrator"
+description: "Spawn chief agent for multi-agent coordination; one pr-fix/babysit worker per open PR"
 alwaysApply: true
 ---
 
 # Chief agent (coordination layer)
 
-AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, branch assignment, worktree dedupe, commit attribution). Orchestrator owns **ship bar** (git/PR/CI/bot wait/merge/Pi) **only when chief delegates**. Orchestrator **does not** spawn chief.
+AR-local uses a **chief agent** above the workflow orchestrator. Chief owns **who works on what** (path locks, branch assignment, worktree dedupe, commit attribution). **Standing policy:** chief spawns **one dedicated pr-fix/babysit worker per open PR** for bot feedback, thread closure, and merge. Orchestrator **coordinates the queue** (split PRs, routing, ordering) — it does **not** substitute for per-PR ship bar. Orchestrator **does not** spawn chief.
 
 ## Non-negotiable: solution-first
 
-Chief **never** ends a cycle reporting blockers without an **active remediation subagent** already spawned. Forbidden: "orchestrator not delegated", "paused until remediation", "blocked" (without worker ID). **`chief:scan` exit 1 → spawn remediation** (orchestrator or pr-fix), not stop.
+Chief **never** ends a cycle reporting blockers without an **active remediation subagent** already spawned. Forbidden: "orchestrator not delegated", "paused until remediation", "blocked" (without worker ID). **`chief:scan` exit 1 → spawn remediation** (one pr-fix per open PR, plus orchestrator only for split/routing), not stop.
 
 ## Session start
 
@@ -20,7 +20,7 @@ Task tool: subagent_type=generalPurpose, run_in_background=true
 Prompt: Follow .cursor/skills/chief-agent/SKILL.md — run pre-delegate checklist (npm run chief:scan), one SCAN→LOCK CHECK→PLAN→DELEGATE cycle, spawn remediation on exit 1, report locks + active worker IDs.
 ```
 
-Chief runs `npm run chief:scan` before delegating. Exit **1** → run remediation protocol: partition dirty tree, spawn **one** orchestrator or pr-fix worker with REMEDIATION checklist from scan output.
+Chief runs `npm run chief:scan` before delegating. Exit **1** → run remediation protocol: partition dirty tree, spawn **one pr-fix/babysit worker per open PR** (plus orchestrator only for split/routing) with REMEDIATION checklist from scan output.
 
 ## Pre-delegate checklist (chief must run)
 
@@ -36,7 +36,8 @@ Chief runs `npm run chief:scan` before delegating. Exit **1** → run remediatio
 - **One writer per `agent/<slug>` branch** — chief assigns branch lock before spawn; forbid second writer.
 - **One active worktree per feature PR** — spawn remediation owner to resolve contention; do not idle-report.
 - **Commit attribution** — verify `git log -1` and current branch match intended PR before push.
-- **No parallel orchestrator cycles** — resume/interrupt duplicate within **5 minutes**; one orchestrator at a time.
+- **One ship-bar writer per PR number** — dedicated pr-fix/babysit worker; never two on the same PR. Parallel workers only across disjoint PR numbers.
+- **No parallel orchestrator cycles** — resume/interrupt duplicate within **5 minutes**; one orchestrator at a time (queue coordination only).
 
 ## After substantive subagent work
 
@@ -44,14 +45,14 @@ When a `Task` subagent returns after **implementation**, **ingest**, **dashboard
 
 1. Spawn or resume **chief** (not orchestrator directly) unless chief is already in flight or waived.
 2. Chief re-runs scan, updates branch lock registry, dedupes orchestrator spawns.
-3. Chief delegates **one** orchestrator cycle or path owner per non-overlapping queue item — or spawns remediation if scan exit 1.
+3. Chief spawns **one pr-fix/babysit worker per open PR** and delegates orchestrator for queue/split/routing when needed — or spawns remediation if scan exit 1.
 
 ## Remediation (not escalation-by-idle)
 
 On clash (`chief:scan` exit 1, path overlap, worktree duplicate, mis-commit branch, merge conflicts):
 
 1. Partition paths per PR; print plan with affected branch/PR.
-2. **Spawn one remediation owner** (orchestrator for ship bar / rebase; pr-fix for single PR threads).
+2. **Spawn one pr-fix/babysit worker per affected PR** (full ship bar through merge); orchestrator only for split/routing/rebase coordination.
 3. Name **active subagent transcript ID** in summary.
 4. Re-scan when worker returns; repeat until exit 0 or hard blocker with evidence.
 
@@ -59,7 +60,7 @@ Do not spawn five parallel pr-fix workers on the **same PR**.
 
 ## Ship-bar gate
 
-Chief **never** marks "done" until orchestrator reports thread closure + merge **or** explicit user waiver. Do not end while `ship:closeout:strict` exits **2** for an open PR. Orchestrator **must not merge** with open substantive bot/human inline threads (see workflow-orchestrator skill).
+Chief **never** marks "done" until each open PR's pr-fix worker reports thread closure + merge **or** explicit user waiver for that PR. Do not end while `ship:closeout:strict` exits **2** for an open PR. Pr-fix workers **must not merge** with open substantive bot/human inline threads (see pr-fix-agent skill).
 
 ## Manual invoke
 
@@ -71,6 +72,6 @@ User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md
 
 ## Orchestrator relationship
 
-- Chief → orchestrator for ship bar, split PRs, Pi deploy (one cycle at a time).
-- Orchestrator → path owners (ingest, dashboard, pr-fix) per its routing table; reports completion to chief via parent re-scan.
+- Chief → **one pr-fix/babysit per open PR** for ship bar; orchestrator for queue coordination, split PRs, merge order (one cycle at a time).
+- Orchestrator → spawns/resumes pr-fix per PR + path owners (ingest, dashboard); reports completion to chief via parent re-scan.
 - Parent agents spawn **chief first**; do not spawn orchestrator directly unless chief waived or chief delegates this turn.

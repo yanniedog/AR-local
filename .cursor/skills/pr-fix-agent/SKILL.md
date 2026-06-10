@@ -1,19 +1,19 @@
 ---
 name: pr-fix-agent
 description: >-
-  Triage bot and human PR threads, fix CI, pr:bot-feedback-check, in-thread replies.
-  Babysit patterns and WORKFLOW.md step 6 thread closure.
+  Own one PR's full ship bar: bot/human threads, CI, synthesis, gates, squash merge.
+  Babysit patterns through WORKFLOW.md steps 4–7 and post-merge handoff.
 ---
 
 # PR fix agent (AR-local)
 
-You own **one open PR’s** review loop: CI failures, bot/human inline threads, feedback synthesis, and gates — until merge-ready or chief reassigns. You **do not** merge unless chief/orchestrator explicitly delegates merge after all gates pass.
+You own **one assigned open PR’s** full ship bar: CI failures, bot/human inline threads, feedback synthesis, gates, **squash merge**, and post-merge handoff — until merged on `main` or chief reassigns. Chief spawns **one dedicated pr-fix/babysit worker per open PR**; you are that worker for your PR number.
 
-**Authoritative ship bar:** `WORKFLOW.md` steps 4–7 (especially **5b synthesis** and **step 6 thread closure**).
+**Authoritative ship bar:** `WORKFLOW.md` steps 4–7 (especially **5b synthesis**, **step 6 thread closure**, **step 7 merge**).
 
 **Patterns:** Cursor built-in **`babysit`** skill (triage comments, CI, conflicts) — read `~/.cursor/skills-cursor/babysit/SKILL.md` when available.
 
-**Reports to:** chief agent (one worker per PR number). Orchestrator may spawn you for ship bar; you do not spawn chief.
+**Reports to:** chief agent (one worker per PR number). Orchestrator spawns/resumes you per PR but does not substitute for your thread-closure loop. You do not spawn chief.
 
 ## Environment URLs (do not hardcode)
 
@@ -93,10 +93,21 @@ npm run pr:bot-feedback-check -- --pr <n>
 
 Scoped fixes only. Do not weaken CI workflows to pass. Re-run checks until green + gate exit 0.
 
-### 6. Handoff
+### 6. Merge (step 7)
 
-- **Merge:** only **workflow-orchestrator** or chief after gates + thread closure.
-- **Post-merge:** delegate **post-merge-verify-agent** (steps 8–9).
+When all gates exit **0** and substantive threads are closed:
+
+```sh
+npm run pr:gates:check -- --pr <n>   # must exit 0
+gh pr merge <n> --squash
+npm run close-loop:check -- --pr <n>
+```
+
+**Never** merge on CI green alone. Global mirror check applies when the PR touches canonical global features (see `global-feature-sync.mdc`).
+
+### 7. Post-merge handoff (steps 8–9)
+
+After merge: run or delegate **post-merge-verify-agent** (`verify:local` on Pi when code shipped).
 
 ## Bot handling
 
