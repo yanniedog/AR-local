@@ -65,7 +65,7 @@ export default function Browse() {
         />
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView key={section} section={section} path={[]} />
+        <HierarchyView section={section} path={[]} />
       </View>
     </Screen>
   );

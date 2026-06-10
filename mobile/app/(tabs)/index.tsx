@@ -8,7 +8,7 @@ import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/compo
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { CompactToggle, SegmentedControl } from '../../src/components/controls';
+import { CompactToggle, SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
@@ -108,6 +108,7 @@ export default function Home() {
         onChange={(value) => setPref('includeNonStandard', value)}
       />
 
+      <SectionCrossfade section={section}>
       <Card style={{ borderColor: `${sectionAccent}44` }}>
         <SpringOnNewData dataKey={heroDataKey}>
           <Row
@@ -158,6 +159,7 @@ export default function Home() {
           </Pressable>
         ) : null}
       </Card>
+      </SectionCrossfade>
 
       <AppText variant="tiny" weight="700" color="textFaint" style={{ marginBottom: theme.spacing(2) }}>
         SHORTCUTS
