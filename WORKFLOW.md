@@ -113,13 +113,13 @@ npm run pr:bot-feedback-check -- --pr <n>
 
 Exit **1** when the PR has unresolved review threads or bot threads without an owner closure reply. `npm run ship:closeout:strict` runs this check when an open PR exists for the current branch. CI job **`bot-feedback-gate`** runs the same script on every PR event (with `--skip-bot-presence` because **`bot-presence-gate`** covers bot wait separately).
 
-Do **not** `gh pr merge --squash` while the gate fails. If a PR merged early, run `npm run pr:bot-feedback-audit`, post in-thread replies on the merged PR, and open a scoped post-merge fix PR when code changes were skipped.
+Do **not** `npm run pr:merge` / `gh pr merge --auto --squash` while the gate fails. If a PR merged early, run `npm run pr:bot-feedback-audit`, post in-thread replies on the merged PR, and open a scoped post-merge fix PR when code changes were skipped.
 
 **Close without merge:** GitHub branch protection cannot block the "Close pull request" button. Agents must **not** close a PR without merge unless the user waives in writing. `npm run agent:auditor` fails on recently closed-unmerged PRs that still have open bot threads.
 
 ### 7. Merge
 
-Prefer **`gh pr merge --auto --squash`** once steps 5–6 are done and threads are closed: auto-merge lands the PR the moment required checks pass, and for stacked/sequential PRs it also handles the strict-mode "branch out of date" update+re-check without a manual `gh pr update-branch` + poll loop. Plain `gh pr merge --squash` is fine for a single ready PR.
+**Default:** **`npm run pr:merge -- --pr <n>`** once steps 5–6 are done and threads are closed — runs `gh pr merge --auto --squash --delete-branch`. Auto-merge lands the PR when required checks pass, and for stacked/sequential PRs it handles strict-mode "branch out of date" update+re-check without a manual `gh pr update-branch` + poll loop. Squash is merge-time only (`gh pr create` does not set merge method). See **`.github/MERGE_POLICY.md`**.
 
 Merge only after steps 5–6 **and**:
 
@@ -227,6 +227,7 @@ Only an explicit written waiver for that specific PR waives bot closeout for tha
 Enforce merge gates on `main` so squash merge is blocked until bots respond and threads are closed.
 
 ```sh
+npm run repo-merge-settings:apply   # squash-only + auto-merge + delete branch (admin token)
 npm run branch-protection:apply
 ```
 

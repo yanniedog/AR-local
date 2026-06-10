@@ -599,7 +599,7 @@ the committed sample); the **Pi is the primary daily publisher**.
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
   `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
   protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
-- **Enable auto-merge**: `gh pr merge <n> --squash --auto`. It lands when all required checks
+- **Enable auto-merge**: `npm run pr:merge -- --pr <n>` (`gh pr merge <n> --auto --squash --delete-branch`). It lands when all required checks
   are green and **0 review threads are unresolved**.
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.
   Read each thread before resolving; don't auto-resolve unread threads.

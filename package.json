@@ -10,6 +10,7 @@
     "pr:bot-feedback-audit": "node scripts/pr-bot-feedback-check.mjs --audit-merged --limit 20",
     "pr:bot-spreadsheet:sync": "node scripts/pr-bot-spreadsheet-sync.mjs",
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
+    "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
     "close-loop:check": "node scripts/close-loop-check.mjs",
     "ship:closeout:strict": "python ship_closeout_strict.py",
     "verify:local": "python verify_local.py",
@@ -24,6 +25,8 @@
     "chief:scan": "node scripts/chief-scan.mjs",
     "agent:auditor": "node scripts/agent-auditor-scan.mjs",
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
+    "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
+    "pr:merge": "node scripts/pr-merge.mjs",
     "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs"
   }
 }

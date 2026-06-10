@@ -97,7 +97,8 @@ Merge **only** when `pr:gates:check` exit **0** (CI, GitHub `bot-*` gates, wait-
 #### 5. Merge (step 7)
 
 ```sh
-gh pr merge <n> --squash --delete-branch
+npm run pr:merge -- --pr <n>
+# gh pr merge <n> --auto --squash --delete-branch
 npm run close-loop:check -- --pr <n>
 npm run git:graph-hygiene
 ```
