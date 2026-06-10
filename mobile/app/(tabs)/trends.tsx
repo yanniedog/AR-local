@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Pressable, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
 import {
@@ -41,6 +42,7 @@ export default function Trends() {
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
+  const retryHistoryBanks = useStore((s) => s.retryHistoryBanks);
   const bankInsights = useStore((s) => s.bankInsights);
   const bankInsightsError = useStore((s) => s.bankInsightsError);
   const ensureBankInsights = useStore((s) => s.ensureBankInsights);
@@ -50,6 +52,29 @@ export default function Trends() {
   const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
   const historyRequestKey = useRef<string | null>(null);
   const insightsRequestKey = useRef<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
+  const [retryingInsights, setRetryingInsights] = useState(false);
+  const [retryingHistory, setRetryingHistory] = useState(false);
+
+  const handleRetryInsights = async () => {
+    setRetryingInsights(true);
+    try {
+      await retryBankInsights();
+    } finally {
+      setRetryingInsights(false);
+    }
+  };
+
+  const handleRetryHistory = async () => {
+    setRetryingHistory(true);
+    try {
+      await retryHistoryBanks();
+    } finally {
+      setRetryingHistory(false);
+    }
+  };
+
   const interestSections = useMemo(() => orderedInterestSections(interests), [interests]);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const historyModel = useMemo(
@@ -93,7 +118,7 @@ export default function Trends() {
   const currentRba = core.rba.at(-1);
 
   return (
-    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+    <ScreenScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
       {showBankInsights ? (
         <>
           {bankInsights ? (
@@ -115,7 +140,13 @@ export default function Trends() {
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
                   {bankInsightsError}
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void retryBankInsights()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={handleRetryInsights}
+                  loading={retryingInsights}
+                  disabled={retryingInsights}
+                />
               </Row>
             ) : null}
           </Card>
@@ -234,9 +265,15 @@ export default function Trends() {
             {historyBanksError ? (
               <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
-                  History unavailable
+                  {historyBanksError}
                 </AppText>
-                <Button title="Retry" variant="ghost" onPress={() => void ensureHistoryBanks()} />
+                <Button
+                  title="Retry"
+                  variant="ghost"
+                  onPress={handleRetryHistory}
+                  loading={retryingHistory}
+                  disabled={retryingHistory}
+                />
               </Row>
             ) : null}
           </>

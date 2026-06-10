@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { CategoryRow } from '../../src/components/CategoryRow';
 import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
@@ -53,6 +54,8 @@ export default function Home() {
   }, [interests, section, setActiveSection]);
 
   const onRefresh = useCallback(() => void refresh({ manual: true, force: true }), [refresh]);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   const sectionRows = core?.sections[section]?.rates;
   const sectionData = core?.sections[section];
@@ -89,12 +92,18 @@ export default function Home() {
 
   return (
     <ScreenScrollView
+      ref={scrollRef}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
       }
     >
       <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
-        <IconButton icon="refresh" onPress={onRefresh} accessibilityLabel="Refresh" />
+        <IconButton
+          icon="refresh"
+          onPress={onRefresh}
+          disabled={refreshing}
+          accessibilityLabel="Refresh"
+        />
       </Row>
 
       <HomeHero

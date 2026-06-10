@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
+import { useScrollToTop } from '@react-navigation/native';
 import { useRouter, type Href } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
@@ -64,6 +65,8 @@ export default function Settings() {
   const { snack, showUndo, undo } = useUndoSnackbar();
   const theme = useTheme();
   const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   const onToggleDeepSearch = (value: boolean) => {
     if (!value) {
@@ -108,7 +111,7 @@ export default function Settings() {
 
   return (
     <Screen>
-    <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 40 }}>
+    <ScreenScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 40 }}>
       <Section title={RATE_INTELLIGENCE_PRO}>
         <InfoRow label="Status" value={hasProAccess(prefs) ? 'Active' : 'Free'} />
         {!hasProAccess(prefs) ? (
