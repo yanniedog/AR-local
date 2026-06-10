@@ -17,7 +17,7 @@ import {
 import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-wait-state.mjs';
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
 import { isBotNoise } from './scripts/lib/bot-noise.mjs';
-import { isReportsOnlyPr } from './scripts/lib/pr-reports-only.mjs';
+import { gateExemptReason } from './scripts/lib/pr-gate-exempt.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -491,10 +491,9 @@ async function main() {
     process.exit(1);
   }
 
-  if (isReportsOnlyPr(prNumber)) {
-    console.log(
-      `>>> Bot wait skipped for PR #${prNumber} (reports/** only — matrix publish PR; no bot review expected).`,
-    );
+  const exempt = gateExemptReason(prNumber);
+  if (exempt) {
+    console.log(`>>> Bot wait skipped for PR #${prNumber} (${exempt} — gate-exempt chore PR).`);
     process.exit(0);
   }
   let state = readState(prNumber) || {};

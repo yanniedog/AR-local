@@ -22,7 +22,7 @@ payloads via **`app_payload.py`** to **`app-payload-latest`** (dated
 Preview Android APKs are built on **`main`** by **`mobile-android-apk`** (GitHub Actions,
 local Gradle) and published to **`app-apk-latest`**; semver snapshots use **`app-v*`** tags.
 When the last open PR squashes to **`main`**, **`mobile-auto-release-on-queue-drain`**
-auto-bumps **`expo.version`** and triggers a new APK build.
+auto-bumps **`expo.version`** (direct push to **`main`**, gate-exempt PR fallback) and triggers a new APK build.
 
 See **`docs/MOBILE_APP.md`** (payload contract), **`docs/HANDOFF.md`** (ops + verify), and
 **`mobile/scripts/update-readme-app-install.mjs`** (refresh the install table from

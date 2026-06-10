@@ -1,15 +1,7 @@
 #!/usr/bin/env node
 /**
- * When the last open PR to main is squash-merged, bump expo.version and open a PR to main.
- * Branch protection requires bot gates on main; direct push is rejected (GH006).
- * mobile-android-apk.yml builds the APK after the bump PR squash-merges.
- *
- * Env:
- *   GH_TOKEN / GITHUB_TOKEN — required
- *   GITHUB_REPOSITORY — owner/repo
- *   MERGE_SHA — squash merge commit (optional idempotency hint)
- *
- * Usage: node scripts/mobile-auto-release-on-drain.mjs [--repo owner/name] [--dry-run]
+ * When the last open PR to main is squash-merged, bump expo.version and push directly to main.
+ * Fallback: open a gate-exempt bump PR when protected main rejects the push.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -17,6 +9,8 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { bumpPatchVersion } from './bump-app-patch-version-pure.cjs';
+import { pushHeadToMain } from '../../scripts/mobile-auto-release-commit.mjs';
+import { AUTO_RELEASE_BUMP_PREFIX } from '../../scripts/lib/pr-mobile-auto-release-commit.mjs';
 
 const mobileDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = join(mobileDir, '..');
@@ -30,7 +24,7 @@ const repo =
 const ghToken = process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim();
 const mergeSha = process.env.MERGE_SHA?.trim() || '';
 
-const AUTO_BUMP_PREFIX = 'chore(mobile): auto-release bump to v';
+export const AUTO_BUMP_PREFIX = AUTO_RELEASE_BUMP_PREFIX;
 const POLL_ATTEMPTS = 6;
 const POLL_SECONDS = 20;
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -110,27 +104,15 @@ function readHeadCommitSha() {
 }
 
 function alreadyAutoBumpedOnHead() {
-  const subject = readHeadCommitMessage();
-  return subject.startsWith(AUTO_BUMP_PREFIX);
+  return readHeadCommitMessage().startsWith(AUTO_BUMP_PREFIX);
 }
 
 function listOpenAutoBumpPrs(nextVersion) {
   const raw = gh([
-    'pr',
-    'list',
-    '--state',
-    'open',
-    '--base',
-    'main',
-    '--json',
-    'number,title,url',
-    '--repo',
-    repo,
+    'pr', 'list', '--state', 'open', '--base', 'main', '--json', 'number,title,url', '--repo', repo,
   ]);
   const rows = JSON.parse(raw || '[]');
-  if (!Array.isArray(rows)) {
-    return [];
-  }
+  if (!Array.isArray(rows)) return [];
   const titlePrefix = `${AUTO_BUMP_PREFIX}${nextVersion}`;
   return rows.filter((row) => row.title?.startsWith(titlePrefix));
 }
@@ -145,7 +127,7 @@ function bumpBranchName(nextVersion) {
 }
 
 function enableAutoMerge(prNumber) {
-  gh(['pr', 'merge', String(prNumber), '--auto', '--squash', '--delete-branch', '--repo', repo]);
+  gh(['pr', 'merge', String(prNumber), '--squash', '--auto', '--repo', repo]);
 }
 
 function publishViaPullRequest(next, message) {
@@ -153,9 +135,7 @@ function publishViaPullRequest(next, message) {
   const existing = listOpenAutoBumpPrs(next);
   if (existing.length > 0) {
     const pr = existing[0];
-    console.log(
-      `mobile-auto-release-on-drain: open bump PR #${pr.number} (${pr.url}) — ensure auto-merge`,
-    );
+    console.log(`mobile-auto-release-on-drain: open bump PR #${pr.number} (${pr.url}) — ensure auto-merge`);
     enableAutoMerge(pr.number);
     return pr.number;
   }
@@ -169,34 +149,40 @@ function publishViaPullRequest(next, message) {
     '',
     `- Version: **${next}**${prHint}`,
     '',
-    'Auto-merge enabled; **mobile-android-apk** builds when this lands on `main`.',
+    'Gate-exempt auto-release PR (bot gates skipped). Auto-merge enabled; **mobile-android-apk** builds when this lands on `main`.',
+    '',
+    'Prefer direct push to `main` via `mobile-auto-release-on-queue-drain` — fallback when ruleset bypass is not configured.',
   ].join('\n');
 
   const prUrl = gh([
-    'pr',
-    'create',
-    '--base',
-    'main',
-    '--head',
-    branchName,
-    '--title',
-    message,
-    '--body',
-    body,
-    '--repo',
-    repo,
+    'pr', 'create', '--base', 'main', '--head', branchName, '--title', message, '--body', body, '--repo', repo,
   ]);
-
   const prNumber = prUrl.match(/\/pull\/(\d+)/)?.[1];
-  if (!prNumber) {
-    throw new Error(`mobile-auto-release-on-drain: could not parse PR number from ${prUrl}`);
-  }
+  if (!prNumber) throw new Error(`mobile-auto-release-on-drain: could not parse PR number from ${prUrl}`);
 
   enableAutoMerge(prNumber);
-  console.log(
-    `mobile-auto-release-on-drain: opened PR #${prNumber} with auto-merge (${prUrl}); mobile-android-apk runs after merge`,
-  );
+  console.log(`mobile-auto-release-on-drain: opened fallback PR #${prNumber} with auto-merge (${prUrl})`);
   return Number(prNumber);
+}
+
+function publishDirectToMain(next, message) {
+  if (dryRun) {
+    console.log(`mobile-auto-release-on-drain: dry-run — would push ${message} to main`);
+    return 'dry-run';
+  }
+
+  const push = pushHeadToMain();
+  if (push.ok) {
+    console.log(`mobile-auto-release-on-drain: pushed v${next} to main; mobile-android-apk runs on push`);
+    return 'direct';
+  }
+
+  if (push.protected) {
+    console.warn('mobile-auto-release-on-drain: direct push blocked — falling back to gate-exempt bump PR');
+    return publishViaPullRequest(next, message);
+  }
+
+  throw new Error(push.error || 'mobile-auto-release-on-drain: push to main failed');
 }
 
 async function main() {
@@ -208,17 +194,11 @@ async function main() {
   syncMain();
 
   const remaining = dryRun ? 0 : await waitForQueueDrain();
-  if (dryRun) {
-    console.log('mobile-auto-release-on-drain: dry-run — skipping open PR count (assume drained)');
-  }
-  if (remaining !== 0) {
-    process.exit(0);
-  }
+  if (dryRun) console.log('mobile-auto-release-on-drain: dry-run — skipping open PR count (assume drained)');
+  if (remaining !== 0) process.exit(0);
 
   if (alreadyAutoBumpedOnHead()) {
-    console.log(
-      `mobile-auto-release-on-drain: origin/main already at auto-release bump (${readHeadCommitSha()}) — skip`,
-    );
+    console.log(`mobile-auto-release-on-drain: origin/main already at auto-release bump (${readHeadCommitSha()}) — skip`);
     process.exit(0);
   }
 
@@ -228,25 +208,18 @@ async function main() {
 
   const pending = listOpenAutoBumpPrs(next);
   if (pending.length > 0) {
-    console.log(
-      `mobile-auto-release-on-drain: bump PR already open for v${next} (#${pending[0].number}) — skip`,
-    );
+    console.log(`mobile-auto-release-on-drain: bump PR already open for v${next} (#${pending[0].number}) — skip`);
     enableAutoMerge(pending[0].number);
     process.exit(0);
   }
 
   if (dryRun) {
-    console.log(`mobile-auto-release-on-drain: dry-run — would open PR ${bumpBranchName(next)}`);
+    console.log(`mobile-auto-release-on-drain: dry-run — would bump and push v${next} to main`);
     process.exit(0);
   }
 
-  const bump = spawnSync('node', ['scripts/bump-app-patch-version.mjs'], {
-    encoding: 'utf8',
-    cwd: mobileDir,
-  });
-  if (bump.status !== 0) {
-    throw new Error((bump.stderr || bump.stdout || 'bump-app-patch-version failed').trim());
-  }
+  const bump = spawnSync('node', ['scripts/bump-app-patch-version.mjs'], { encoding: 'utf8', cwd: mobileDir });
+  if (bump.status !== 0) throw new Error((bump.stderr || bump.stdout || 'bump-app-patch-version failed').trim());
 
   const ensureEntry = spawnSync(
     'node',
@@ -273,7 +246,7 @@ async function main() {
   const message = `${AUTO_BUMP_PREFIX}${next}${prHint}`;
   git(['commit', '-m', message]);
 
-  publishViaPullRequest(next, message);
+  publishDirectToMain(next, message);
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
