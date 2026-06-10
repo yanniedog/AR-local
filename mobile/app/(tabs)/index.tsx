@@ -4,14 +4,14 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
 import { CategoryRow } from '../../src/components/CategoryRow';
-import { HomeHero, HomeRefreshCountdown } from '../../src/components/HomeHero';
+import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { CompactToggle, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
@@ -73,6 +73,8 @@ export default function Home() {
   const trendsDetail = showHistoryRibbon
     ? `${meta.title} history, RBA cash rate, market ribbons`
     : 'RBA cash rate, market ribbons, recent decisions';
+  const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
+  const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
 
   return (
     <ScreenScrollView
@@ -85,6 +87,7 @@ export default function Home() {
       </Row>
 
       <HomeHero
+        dataKey={core.run_date}
         runDateLabel={formatRunDate(core.run_date)}
         runAgeLabel={relativeDate(`${core.run_date}T00:00:00Z`)}
         source={source}
@@ -104,37 +107,45 @@ export default function Home() {
       />
 
       <Card style={{ borderColor: `${accent}44` }}>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: best ? theme.spacing(3) : 0 }}>
-          <View style={{ flex: 1, paddingRight: theme.spacing(3) }}>
-            <AppText variant="tiny" color="textFaint" weight="700">
-              BEST IN {meta.title.toUpperCase()}
-            </AppText>
-            <AppText variant="small" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
-              {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate today
-            </AppText>
-            <AppText variant="h1" weight="800" style={{ color: accent, marginTop: theme.spacing(1) }}>
-              {heroRate !== null ? `${(heroRate * 100).toFixed(2)}%` : '—'}
-            </AppText>
-          </View>
-          {section === 'Mortgage' && rba ? (
-            <View
-              style={{
-                alignItems: 'flex-end',
-                backgroundColor: theme.colors.chip,
-                paddingHorizontal: theme.spacing(3),
-                paddingVertical: theme.spacing(2),
-                borderRadius: theme.radius.md,
-              }}
-            >
-              <AppText variant="tiny" color="textFaint">
-                RBA cash
+        <SpringOnNewData dataKey={heroDataKey}>
+          <Row
+            style={{
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              marginBottom: best ? theme.spacing(3) : 0,
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: theme.spacing(3) }}>
+              <AppText variant="tiny" color="textFaint" weight="700">
+                BEST IN {meta.title.toUpperCase()}
               </AppText>
-              <AppText variant="h3" weight="800" style={{ color: theme.colors.primary }}>
-                {rba.rate.toFixed(2)}%
+              <AppText variant="small" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
+                {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate today
+              </AppText>
+              <AppText variant="rateHero" style={{ color: accent, marginTop: theme.spacing(1) }}>
+                {formatRate(heroRate)}
               </AppText>
             </View>
-          ) : null}
-        </Row>
+            {section === 'Mortgage' && rba ? (
+              <View
+                style={{
+                  alignItems: 'flex-end',
+                  backgroundColor: theme.colors.chip,
+                  paddingHorizontal: theme.spacing(3),
+                  paddingVertical: theme.spacing(2),
+                  borderRadius: theme.radius.md,
+                }}
+              >
+                <AppText variant="tiny" color="textFaint">
+                  RBA cash
+                </AppText>
+                <AppText variant="rate" style={{ color: theme.colors.primary }}>
+                  {formatRate(rba.rate)}
+                </AppText>
+              </View>
+            ) : null}
+          </Row>
+        </SpringOnNewData>
         {best ? (
           <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
         ) : null}
@@ -203,7 +214,9 @@ export default function Home() {
         <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: theme.spacing(2) }}>
           {meta.title} distribution
         </AppText>
-        <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
+        <SpringOnNewData dataKey={ribbonDataKey}>
+          <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
+        </SpringOnNewData>
       </Card>
 
       <AppText variant="small" weight="700" color="textMuted">
