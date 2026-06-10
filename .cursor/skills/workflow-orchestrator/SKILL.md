@@ -102,7 +102,7 @@ Chief enforces; orchestrator blocks merge at step 7 until the mirror exists or i
 
 For **each** open PR from `gh pr list --state open`:
 
-1. If no active pr-fix/babysit transcript for PR #N — spawn one (`pr-fix-agent` + babysit skill).
+1. Scan `agent-transcripts/**/subagents/*.jsonl` (mtime, last ~2h). If no active pr-fix/babysit transcript for PR #N — **spawn or resume** one (`pr-fix-agent` + babysit skill; use `Task` `resume` when a stopped worker already owns that PR).
 2. Worker owns that PR through `wait-for-bots` → synthesis (5b) → thread closure → `pr:gates:check` → squash merge.
 3. Orchestrator **does not** close threads or merge on behalf of multiple PRs in one turn — it ensures every PR has its worker and tracks blockers.
 

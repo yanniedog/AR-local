@@ -98,9 +98,10 @@ Scoped fixes only. Do not weaken CI workflows to pass. Re-run checks until green
 When all gates exit **0** and substantive threads are closed:
 
 ```sh
-npm run pr:gates:check -- --pr <n>   # must exit 0
-gh pr merge <n> --squash
-npm run close-loop:check -- --pr <n>
+npm run pr:gates:check -- --pr <pr-number>   # must exit 0
+gh pr merge <pr-number> --squash
+npm run close-loop:check -- --pr <pr-number>
+npm run close-loop:check -- --post-merge-gap
 ```
 
 **Never** merge on CI green alone. Global mirror check applies when the PR touches canonical global features (see `global-feature-sync.mdc`).
