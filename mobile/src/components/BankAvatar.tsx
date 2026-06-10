@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 
 import { resolveBankLogoSources, resolveBrandShort } from '../data/bankBrand';
@@ -22,17 +22,20 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
     () => resolveBankLogoSources(provider, brand?.logo),
     [provider, brand?.logo],
   );
+  const [prevSources, setPrevSources] = useState(sources);
   const [sourceIdx, setSourceIdx] = useState(0);
   const [exhausted, setExhausted] = useState(false);
+
+  if (sources !== prevSources) {
+    setPrevSources(sources);
+    setSourceIdx(0);
+    setExhausted(false);
+  }
+
   const color = brand?.color ?? theme.colors.chipText;
   const short = resolveBrandShort(provider, brand?.short).toUpperCase().slice(0, 5);
   const fontSize = short.length <= 3 ? size * 0.34 : size * 0.26;
   const activeSource = sources[sourceIdx];
-
-  useEffect(() => {
-    setSourceIdx(0);
-    setExhausted(false);
-  }, [provider, sources]);
 
   if (activeSource != null && !exhausted) {
     return (
