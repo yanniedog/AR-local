@@ -22,3 +22,11 @@ export function androidStackScreenOptions(theme: Theme) {
 
 /** M3 navigation bar height (icon + label + padding, excluding safe-area inset). */
 export const M3_NAV_BAR_HEIGHT = 80;
+
+/** iOS default tab bar content height (safe-area inset added separately). */
+export const IOS_TAB_BAR_HEIGHT = 49;
+
+/** Tab bar content height for overlays mounted outside tab screens (e.g. snackbars). */
+export function getTabBarContentHeight(): number {
+  return Platform.OS === 'android' ? M3_NAV_BAR_HEIGHT : IOS_TAB_BAR_HEIGHT;
+}
