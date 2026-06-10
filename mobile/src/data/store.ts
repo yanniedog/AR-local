@@ -133,8 +133,14 @@ interface AppState {
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
   ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
   ensureSearchIndex: () => Promise<void>;
+<<<<<<< HEAD
   ensureHistoryBanks: () => Promise<void>;
   ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
+=======
+  ensureHistoryBanks: (opts?: { force?: boolean }) => Promise<void>;
+  ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
+  retryHistoryBanks: () => Promise<void>;
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
   retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
@@ -569,8 +575,10 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async ensureHistoryBanks() {
+      async ensureHistoryBanks(opts = {}) {
+        const { force = false } = opts;
         if (!effectiveHistoryRibbon(get().prefs)) return;
+        if (force) set({ historyBanksError: null });
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
         if (!core) {
@@ -604,7 +612,12 @@ export const useStore = create<AppState>()(
 
         const compactAsset = manifest.files.history_banks;
         if (compactAsset) {
-          if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === compactAsset.sha256) {
+          if (
+            !force &&
+            cached &&
+            cached.run_date === core.run_date &&
+            meta?.historyBanksSha === compactAsset.sha256
+          ) {
             set({ historyBanks: cached, historyBanksError: null });
             return;
           }
@@ -625,7 +638,7 @@ export const useStore = create<AppState>()(
           }
         }
 
-        if (cached && cached.run_date === core.run_date && cached.run_dates.length > 1) {
+        if (!force && cached && cached.run_date === core.run_date && cached.run_dates.length > 1) {
           set({ historyBanks: cached, historyBanksError: null });
           return;
         }
@@ -658,7 +671,12 @@ export const useStore = create<AppState>()(
           return;
         }
 
-        if (cached && cached.run_date === core.run_date && meta?.historyBanksSha === asset.sha256) {
+        if (
+          !force &&
+          cached &&
+          cached.run_date === core.run_date &&
+          meta?.historyBanksSha === asset.sha256
+        ) {
           set({ historyBanks: cached, historyBanksError: null });
           return;
         }
@@ -701,7 +719,13 @@ export const useStore = create<AppState>()(
           set({ bankInsightsError: null });
           return;
         }
+<<<<<<< HEAD
         const cached = force ? null : normalizeBankInsightsPayload(await cache.readBankInsights());
+=======
+        const cached = force
+          ? null
+          : normalizeBankInsightsPayload(await cache.readBankInsights());
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
         if (!force && fresh(cached)) {
           set({ bankInsights: cached, bankInsightsError: null });
           return;
@@ -729,10 +753,28 @@ export const useStore = create<AppState>()(
         }
       },
 
+<<<<<<< HEAD
       async retryBankInsights() {
         if (!effectiveBankInsights(get().prefs)) return;
         set({ bankInsightsError: null });
         if (!get().manifest?.files.bank_history) {
+=======
+      async retryHistoryBanks() {
+        if (!effectiveHistoryRibbon(get().prefs)) return;
+        set({ historyBanksError: null });
+        const { manifest } = get();
+        if (!manifest?.files.history_banks) {
+          await get().refresh({ manual: true, force: true });
+        }
+        await get().ensureHistoryBanks({ force: true });
+      },
+
+      async retryBankInsights() {
+        if (!effectiveBankInsights(get().prefs)) return;
+        set({ bankInsightsError: null });
+        const { manifest } = get();
+        if (!manifest?.files.bank_history) {
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
           await get().refresh({ manual: true, force: true });
         }
         await get().ensureBankInsights({ force: true });

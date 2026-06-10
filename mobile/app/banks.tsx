@@ -67,6 +67,9 @@ function BankRow({ group }: { group: ProviderGroup }) {
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
+      onPressOut={() => {
+        longPressed.current = false;
+      }}
       accessibilityHint="Long press for haptic confirmation before opening lender profile"
       style={({ pressed }) => ({
         flexDirection: 'row',

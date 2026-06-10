@@ -239,6 +239,7 @@ export function IconButton({
   color,
   size = 22,
   accessibilityLabel,
+  disabled,
   style,
   ...rest
 }: PressableProps & {
@@ -246,15 +247,18 @@ export function IconButton({
   onPress?: () => void;
   color?: keyof Palette;
   size?: number;
+  disabled?: boolean;
   style?: ViewStyle;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       onPress={() => {
+        if (disabled) return;
         hapticSelection();
         onPress?.();
       }}
+      disabled={disabled}
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
@@ -267,7 +271,7 @@ export function IconButton({
           justifyContent: 'center',
           borderRadius: theme.radius.sm,
           overflow: 'hidden',
-          ...pressedOpacity(pressed, 0.6),
+          ...(disabled ? { opacity: 0.45 } : pressedOpacity(pressed, 0.6)),
         },
         style,
       ]}

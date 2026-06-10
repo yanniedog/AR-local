@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import {
   ScrollView,
   type ScrollViewProps,
@@ -73,17 +73,18 @@ export function Screen({
 }
 
 /** Scrollable screen body; sets both scroll surface and overscroll background. */
-export function ScreenScrollView({
-  style,
-  contentContainerStyle,
-  children,
-  showDataHealthBanner = true,
-  ...rest
-}: ScrollViewProps & { showDataHealthBanner?: boolean }) {
+export const ScreenScrollView = forwardRef<
+  ScrollView,
+  ScrollViewProps & { showDataHealthBanner?: boolean }
+>(function ScreenScrollView(
+  { style, contentContainerStyle, children, showDataHealthBanner = true, ...rest },
+  ref,
+) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
+      ref={ref}
       style={[{ flex: 1, backgroundColor: theme.colors.bg }, style]}
       contentContainerStyle={[screenScrollContentStyle(theme, insets.bottom), contentContainerStyle]}
       {...rest}
@@ -92,4 +93,4 @@ export function ScreenScrollView({
       {children}
     </ScrollView>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { useScrollToTop } from '@react-navigation/native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Pressable, View } from 'react-native';
@@ -31,6 +32,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlashListRef<Item>>(null);
+  useScrollToTop(listRef);
   const sectionData = useStore((s) => s.core?.sections[section]);
   const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);

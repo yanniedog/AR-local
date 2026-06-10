@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo } from 'react';
-import { View } from 'react-native';
+import { useScrollToTop } from '@react-navigation/native';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { ScrollView, View } from 'react-native';
 
 import { EmptyState } from '../../src/components/feedback';
 import { ProductCard } from '../../src/components/ProductCard';
@@ -18,6 +19,8 @@ export default function Watchlist() {
   const favorites = useStore((s) => s.favorites);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const { snack, showUndo, undo } = useUndoSnackbar();
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   const items = useMemo(() => {
     if (!core) return [] as { row: RateRow; section: SectionKey }[];
@@ -58,7 +61,7 @@ export default function Watchlist() {
 
   return (
     <Screen>
-      <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 32 }}>
+      <ScreenScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: snack ? 96 : 32 }}>
         <AppText variant="small" color="textMuted" style={{ marginBottom: 12 }}>
           {items.length} saved {items.length === 1 ? 'product' : 'products'}
         </AppText>

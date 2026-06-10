@@ -459,6 +459,7 @@ describe('optional feature prefs', () => {
     expect(store.getState().bankInsightsError).toMatch(/unavailable/i);
   });
 
+<<<<<<< HEAD
   it('ensureBankInsights force bypasses fresh cache and re-downloads', async () => {
     const insights = {
       schema_version: 1,
@@ -467,13 +468,27 @@ describe('optional feature prefs', () => {
       banks: {},
       events: [],
     };
+=======
+  it('ensureBankInsights force bypasses in-memory cache and re-downloads', async () => {
+    mockDownloadBankInsights.mockClear();
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     store.setState({
       prefs: proPrefs,
       source: 'remote',
       manifest: remoteManifest,
       core: remoteCore,
+<<<<<<< HEAD
       bankInsights: insights,
       bankInsightsError: 'stale error',
+=======
+      bankInsights: {
+        schema_version: 1,
+        run_date: remoteCore.run_date,
+        run_dates: [remoteCore.run_date],
+        banks: {},
+        events: [],
+      },
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     });
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
@@ -482,6 +497,7 @@ describe('optional feature prefs', () => {
       coreSha: remoteManifest.files.core.sha256,
       bankInsightsSha: remoteManifest.files.bank_history!.sha256,
     });
+<<<<<<< HEAD
     mockDownloadBankInsights.mockResolvedValue({
       text: JSON.stringify(insights),
       bankInsights: insights,
@@ -508,6 +524,44 @@ describe('optional feature prefs', () => {
     });
     mockFetchManifest.mockResolvedValue(remoteManifest);
     mockDownloadCore.mockResolvedValue({ text: JSON.stringify(remoteCore), core: remoteCore });
+=======
+    const insights = {
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: [remoteCore.run_date],
+      banks: {
+        AlphaBank: { Mortgage: { median: [0.06], best: [0.055], count: [4] } },
+      },
+      events: [
+        {
+          date: remoteCore.run_date,
+          provider: 'AlphaBank',
+          section: 'Mortgage',
+          dir: 'cut',
+          moved: 2,
+          total: 4,
+          avg_bps: -10,
+        },
+      ],
+    };
+    mockDownloadBankInsights.mockResolvedValue({ text: JSON.stringify(insights), bankInsights: insights });
+
+    await store.getState().ensureBankInsights({ force: true });
+
+    expect(mockDownloadBankInsights).toHaveBeenCalledTimes(1);
+    expect(store.getState().bankInsights?.events).toHaveLength(1);
+  });
+
+  it('retryBankInsights clears error and forces re-download', async () => {
+    mockDownloadBankInsights.mockClear();
+    store.setState({
+      prefs: proPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+      bankInsightsError: 'network failed',
+    });
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     mockReadMeta.mockResolvedValue({
       manifest: remoteManifest,
       source: 'remote',
@@ -519,6 +573,7 @@ describe('optional feature prefs', () => {
       schema_version: 1,
       run_date: remoteCore.run_date,
       run_dates: [remoteCore.run_date],
+<<<<<<< HEAD
       banks: {
         AlphaBank: { Mortgage: { median: [0.06], best: [0.055], count: [4] } },
       },
@@ -534,6 +589,16 @@ describe('optional feature prefs', () => {
     expect(mockFetchManifest).toHaveBeenCalled();
     expect(mockDownloadBankInsights).toHaveBeenCalled();
     expect(store.getState().bankInsights?.banks.AlphaBank).toBeDefined();
+=======
+      banks: {},
+      events: [],
+    };
+    mockDownloadBankInsights.mockResolvedValue({ text: JSON.stringify(insights), bankInsights: insights });
+
+    await store.getState().retryBankInsights();
+
+    expect(mockDownloadBankInsights).toHaveBeenCalledTimes(1);
+>>>>>>> 7c964f9ae (fix(mobile): restore dead button handlers and tab scroll-to-top)
     expect(store.getState().bankInsightsError).toBeNull();
   });
 });
