@@ -8,6 +8,7 @@ import { BankAvatar } from '../src/components/BankAvatar';
 import { Chip } from '../src/components/ui';
 import { AppText, Button, Card, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
+import { DEFAULT_INTERESTS, toggleInterest } from '../src/data/interests';
 import { formatRate } from '../src/data/format';
 import { resolveSectionRibbonStats } from '../src/data/ribbonStats';
 import { bestRow } from '../src/data/selectors';
@@ -98,7 +99,7 @@ export default function Onboarding() {
   const core = useStore((s) => s.core);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const [step, setStep] = useState<OnboardingStep>(1);
-  const [interests, setInterests] = useState<SectionKey[]>(['Mortgage', 'Savings', 'TD']);
+  const [interests, setInterests] = useState<SectionKey[]>([...DEFAULT_INTERESTS]);
   const [notify, setNotify] = useState(false);
 
   const section = primaryInterest(interests);
@@ -117,14 +118,7 @@ export default function Onboarding() {
     return { best, heroRate, stats, rba, runDate: core.run_date };
   }, [core, section, meta.lowerIsBetter]);
 
-  const toggle = (key: SectionKey) =>
-    setInterests((prev) => {
-      if (prev.includes(key)) {
-        const next = prev.filter((k) => k !== key);
-        return next.length ? next : prev;
-      }
-      return [...prev, key];
-    });
+  const toggle = (key: SectionKey) => setInterests((prev) => toggleInterest(prev, key));
 
   const start = async () => {
     if (notify) {

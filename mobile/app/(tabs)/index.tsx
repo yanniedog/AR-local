@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { RefreshControl, View } from 'react-native';
 
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
@@ -18,17 +18,12 @@ import { formatRunDate, relativeDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
+import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
-
-const SECTION_SEG = [
-  { value: 'Mortgage' as SectionKey, label: 'Loans' },
-  { value: 'Savings' as SectionKey, label: 'Savings' },
-  { value: 'TD' as SectionKey, label: 'Deposits' },
-];
 
 export default function Home() {
   const theme = useTheme();
@@ -37,14 +32,21 @@ export default function Home() {
   const refresh = useStore((s) => s.refresh);
   const source = useStore((s) => s.source);
   const offline = useStore((s) => s.offline);
-  const defaultSection = useStore((s) => s.prefs.defaultSection);
+  const interests = useStore((s) => s.prefs.interests);
+  const section = useStore((s) => s.activeSection);
+  const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
   const showHistoryRibbon = useStore((s) => s.prefs.showHistoryRibbon);
   const historyBanks = useStore((s) => s.historyBanks);
   const historyBanksError = useStore((s) => s.historyBanksError);
   const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
   const setPref = useStore((s) => s.setPref);
-  const [section, setSection] = useState<SectionKey>(defaultSection);
+  const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
+
+  useEffect(() => {
+    const resolved = resolveInterestSection(interests, section);
+    if (resolved !== section) setActiveSection(resolved);
+  }, [interests, section, setActiveSection]);
 
   useEffect(() => {
     if (showHistoryRibbon) void ensureHistoryBanks();
@@ -100,7 +102,9 @@ export default function Home() {
         providerCount={stats.providers}
       />
 
-      <SegmentedControl options={SECTION_SEG} value={section} onChange={setSection} />
+      {sectionOptions.length > 1 ? (
+        <SegmentedControl options={sectionOptions} value={section} onChange={setActiveSection} />
+      ) : null}
       <CompactToggle
         label="Include non-standard accounts"
         value={includeNonStandard}
