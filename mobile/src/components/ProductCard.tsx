@@ -139,8 +139,7 @@ export function ProductCard({
 
         <View style={{ alignItems: 'flex-end', minWidth: 76 }}>
           <AppText
-            variant="h3"
-            weight="800"
+            variant="rate"
             style={{ color: lowerIsBetter ? theme.colors.success : theme.colors.primary }}
           >
             {formatRate(row.rate)}

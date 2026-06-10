@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
+import { formatRate, formatRateDigits } from '../data/format';
 import type { RbaEntry } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { AppText } from './ui';
@@ -43,10 +44,10 @@ export function RbaChart({ data, height = 160 }: { data: RbaEntry[]; height?: nu
           <Line x1={padL} y1={y(maxR)} x2={width - padR} y2={y(maxR)} stroke={theme.colors.border} strokeWidth={1} />
           <Line x1={padL} y1={y(minR)} x2={width - padR} y2={y(minR)} stroke={theme.colors.border} strokeWidth={1} />
           <SvgText x={width - padR + 4} y={y(maxR) + 4} fontSize={10} fill={theme.colors.textFaint}>
-            {maxR.toFixed(2)}
+            {formatRateDigits(maxR)}
           </SvgText>
           <SvgText x={width - padR + 4} y={y(minR) + 4} fontSize={10} fill={theme.colors.textFaint}>
-            {minR.toFixed(2)}
+            {formatRateDigits(minR)}
           </SvgText>
           <Path d={d} stroke={theme.colors.primary} strokeWidth={2.5} fill="none" />
           <Circle cx={x(data.length - 1)} cy={y(last.rate)} r={4} fill={theme.colors.primary} />
@@ -58,7 +59,7 @@ export function RbaChart({ data, height = 160 }: { data: RbaEntry[]; height?: nu
             fill={theme.colors.text}
             textAnchor="end"
           >
-            {last.rate.toFixed(2)}%
+            {formatRate(last.rate)}
           </SvgText>
         </Svg>
       ) : null}

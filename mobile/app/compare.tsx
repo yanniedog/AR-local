@@ -213,11 +213,7 @@ export default function Compare() {
                       RATE_ROW_H,
                       <View style={styles.rateCell}>
                         {isBest ? <Badge label="Best" tone={bestTone} /> : null}
-                        <AppText
-                          variant="h3"
-                          weight="800"
-                          style={{ color: entryRateColor, fontVariant: ['tabular-nums'] }}
-                        >
+                        <AppText variant="rate" style={{ color: entryRateColor }}>
                           {formatRate(e.row.rate)}
                         </AppText>
                       </View>,

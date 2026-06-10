@@ -9,11 +9,25 @@ export function toFraction(rate: string | number | null | undefined): number | n
   return n > 1 ? n / 100 : n;
 }
 
-/** Format a fraction (0.0634) as a percentage string ("6.34%"). */
+function ratePercentFormatter(digits: number): Intl.NumberFormat {
+  return new Intl.NumberFormat('en-AU', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+/** Format a fraction (0.0634) or percent (6.34) as an en-AU percentage string ("6.34%"). */
 export function formatRate(rate: string | number | null | undefined, digits = 2): string {
   const f = toFraction(rate);
   if (f === null) return '—';
-  return `${(f * 100).toFixed(digits)}%`;
+  return `${ratePercentFormatter(digits).format(f * 100)}%`;
+}
+
+/** Percent digits only (no suffix) — chart axis labels. */
+export function formatRateDigits(rate: string | number | null | undefined, digits = 2): string {
+  const f = toFraction(rate);
+  if (f === null) return '—';
+  return ratePercentFormatter(digits).format(f * 100);
 }
 
 export function ratePercentValue(rate: string | number | null | undefined): number | null {
