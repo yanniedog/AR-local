@@ -23,3 +23,7 @@ def test_non_pi_mobile_and_docs_changes_do_not_require_pi_deploy():
 
 def test_empty_change_list_does_not_require_pi_deploy():
     assert not pi_deploy_verify.paths_touch_pi_deploy([])
+
+
+def test_pi_runtime_health_changes_require_pi_deploy():
+    assert pi_deploy_verify.paths_touch_pi_deploy(["pi_runtime_health.py"])

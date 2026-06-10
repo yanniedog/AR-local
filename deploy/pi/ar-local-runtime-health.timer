@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic AR-local runtime health probes and self-heal
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+Persistent=true
+Unit=ar-local-runtime-health.service
+
+[Install]
+WantedBy=timers.target

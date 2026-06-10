@@ -6,9 +6,9 @@ export const DEFAULT_INTERESTS: SectionKey[] = ['Mortgage', 'Savings', 'TD'];
 
 /** Short labels for section segmented controls (Home, Browse). */
 export const SECTION_SEG_LABELS: Record<SectionKey, string> = {
-  Mortgage: 'Loans',
+  Mortgage: 'Mortgage',
   Savings: 'Savings',
-  TD: 'Deposits',
+  TD: 'Term Deps',
 };
 
 const VALID = new Set<SectionKey>(SECTION_ORDER);

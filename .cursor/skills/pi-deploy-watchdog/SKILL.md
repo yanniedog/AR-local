@@ -28,8 +28,10 @@ You keep the **Raspberry Pi runtime aligned with GitHub `main`** and healthy —
 | `npm run pi:deploy` | Pull `main` on Pi repos, restart units, verify |
 | `npm run pi:deploy:dry-run` | Print planned SSH steps |
 | `npm run pi:needs-deploy -- --ref <base>` | Exit **0** if diff touches Pi deploy paths (orchestrator gate) |
+| `npm run pi:health:check` | On-Pi: loopback HTTP probes `:80` + `:8808`, optional tailscale checks |
+| `npm run pi:health:heal` | On-Pi: probes + restart dashboard/nginx/tailscaled when fail streaks exceed thresholds |
 
-**CLI:** `python pi_deploy_verify.py --help`
+**CLI:** `python pi_deploy_verify.py --help`, `python pi_runtime_health.py --help`
 
 **Environment:** `AR_PI_SSH_HOST` (default `ar-local-pi5`), `AR_PI_BASE_URL` (Tailscale IP from roadmap), `AR_PI_VERIFY_LOCAL=1` on Pi for systemd timer.
 
@@ -49,7 +51,11 @@ You keep the **Raspberry Pi runtime aligned with GitHub `main`** and healthy —
    - Every **15 minutes**: loopback verify, then `--deploy` on drift (`AR_PI_VERIFY_LOCAL=1`)
    - Install: `deploy/pi/install-pi-systemd.sh` (see `docs/UNIVERSAL_ROADMAP.md`)
 
-3. **Orchestrator post-merge** — after merge touching Pi paths:
+3. **Pi runtime health timer** — `deploy/pi/ar-local-runtime-health.timer` + `pi_runtime_health.py --heal`
+   - Every **~2 minutes**: dual loopback `/api/latest` on `:80` and `:8808`; consecutive-failure restart of dashboard + nginx; tailscaled restart on tailnet/journal wedge (cooldown)
+   - Check only: `npm run pi:health:check`
+
+4. **Orchestrator post-merge** — after merge touching Pi paths:
    ```sh
    npm run pi:needs-deploy -- --ref origin/main~1
    # exit 0 →

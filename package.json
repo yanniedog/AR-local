@@ -18,6 +18,8 @@
     "pi:deploy": "python pi_deploy_verify.py --deploy",
     "pi:deploy:dry-run": "python pi_deploy_verify.py --deploy --dry-run",
     "pi:needs-deploy": "python pi_deploy_verify.py --needs-pi",
+    "pi:health:check": "python pi_runtime_health.py --check --check-tailscale",
+    "pi:health:heal": "python pi_runtime_health.py --heal",
     "git:graph-hygiene": "git fetch origin --prune",
     "chief:scan": "node scripts/chief-scan.mjs",
     "agent:auditor": "node scripts/agent-auditor-scan.mjs",
