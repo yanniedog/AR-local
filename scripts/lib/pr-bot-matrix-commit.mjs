@@ -1,10 +1,11 @@
 /**
  * Git paths and helpers for committing generated PR bot matrix artifacts to main.
  */
-import { DEFAULT_MATRIX_DIR, MATRIX_HTML_FILE, MATRIX_JSON_FILE } from './pr-bot-matrix-writer.mjs';
+import { DEFAULT_MATRIX_DIR, MATRIX_HTML_FILE, MATRIX_JSON_FILE, MATRIX_MD_FILE } from './pr-bot-matrix-writer.mjs';
 
 /** Relative paths committed by pr-bot-spreadsheet (reports-only). */
 export const MATRIX_COMMIT_REL_PATHS = [
+  `${DEFAULT_MATRIX_DIR}/${MATRIX_MD_FILE}`,
   `${DEFAULT_MATRIX_DIR}/${MATRIX_HTML_FILE}`,
   `${DEFAULT_MATRIX_DIR}/${MATRIX_JSON_FILE}`,
 ];

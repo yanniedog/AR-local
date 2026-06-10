@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { CELL_COLORS, CELL_LABELS, CELL_STATUS } from './pr-bot-cell-status.mjs';
 import { BOT_KEY_LABELS, SPREADSHEET_BOT_KEYS } from './pr-bot-roster.mjs';
+import { buildMatrixMarkdown, buildMatrixPrBody } from './pr-bot-matrix-markdown.mjs';
 
 export const DEFAULT_MATRIX_DIR = 'reports';
 export const MATRIX_HTML_FILE = 'pr-bot-matrix.html';

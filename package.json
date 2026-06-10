@@ -23,12 +23,15 @@
     "pi:needs-deploy": "python pi_deploy_verify.py --needs-pi",
     "pi:health:check": "python pi_runtime_health.py --check --check-tailscale",
     "pi:health:heal": "python pi_runtime_health.py --heal",
-    "git:graph-hygiene": "git fetch origin --prune",
+    "git:graph-hygiene": "node scripts/git-hygiene.mjs --apply --checkout-main",
+    "git:hygiene": "node scripts/git-hygiene.mjs",
+    "git:hygiene:apply": "node scripts/git-hygiene.mjs --apply --clear-stashes --checkout-main",
     "chief:scan": "node scripts/chief-scan.mjs",
     "agent:auditor": "node scripts/agent-auditor-scan.mjs",
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
     "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
     "pr:merge": "node scripts/pr-merge.mjs",
-    "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs"
+    "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs",
+    "pr:bot-matrix:verify": "node scripts/verify-pr-bot-matrix-writer.mjs"
   }
 }
