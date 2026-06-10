@@ -134,7 +134,8 @@ interface AppState {
   ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
   ensureSearchIndex: () => Promise<void>;
   ensureHistoryBanks: () => Promise<void>;
-  ensureBankInsights: () => Promise<void>;
+  ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
+  retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
   toggleFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
@@ -678,7 +679,8 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async ensureBankInsights() {
+      async ensureBankInsights(opts = {}) {
+        const { force = false } = opts;
         if (!effectiveBankInsights(get().prefs)) return;
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
@@ -691,15 +693,16 @@ export const useStore = create<AppState>()(
           set({ bankInsightsError: 'bank history unavailable' });
           return;
         }
+        if (force) set({ bankInsightsError: null });
         const meta = await cache.readMeta();
         const fresh = (p: BankInsightsPayload | null | undefined) =>
           !!p && p.run_date === core.run_date && meta?.bankInsightsSha === asset.sha256;
-        if (fresh(bankInsights)) {
+        if (!force && fresh(bankInsights)) {
           set({ bankInsightsError: null });
           return;
         }
-        const cached = normalizeBankInsightsPayload(await cache.readBankInsights());
-        if (fresh(cached)) {
+        const cached = force ? null : normalizeBankInsightsPayload(await cache.readBankInsights());
+        if (!force && fresh(cached)) {
           set({ bankInsights: cached, bankInsightsError: null });
           return;
         }
@@ -721,9 +724,19 @@ export const useStore = create<AppState>()(
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
           debugLog.warn('store', `ensureBankInsights failed: ${msg}`);
-          // A stale cached payload still powers insights offline; surface the error.
-          set({ bankInsights: cached ?? bankInsights ?? null, bankInsightsError: msg });
+          const fallback = force ? bankInsights : cached ?? bankInsights ?? null;
+          set({ bankInsights: fallback, bankInsightsError: msg });
         }
+      },
+
+      async retryBankInsights() {
+        if (!effectiveBankInsights(get().prefs)) return;
+        set({ bankInsightsError: null });
+        const { manifest } = get();
+        if (!manifest?.files.bank_history) {
+          await get().refresh({ manual: true, force: true });
+        }
+        await get().ensureBankInsights({ force: true });
       },
 
       getDetail(productKey: string) {
