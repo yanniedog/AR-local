@@ -111,9 +111,14 @@ def _history_point(rows, section, normalized_rate_value):
 def _section_day(rows, section, normalized_rate_value):
     """Per-provider normalized values + per-product best rate for one day's section rows."""
     keys = [str(row.get("product_key") or row.get("product_id") or "") for row in rows]
-    percent_style = {
-        key for key, row in zip(keys, rows) if key and float(row.get("rate") or 0) > 1
-    }
+    percent_style = set()
+    for key, row in zip(keys, rows):
+        if key:
+            try:
+                if float(row.get("rate") or 0) > 1:
+                    percent_style.add(key)
+            except (TypeError, ValueError):
+                pass
     lower_is_best = section == "Mortgage"
     providers: Dict[str, Dict[str, Any]] = {}
     for key, row in zip(keys, rows):
