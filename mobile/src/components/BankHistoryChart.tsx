@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, View, type GestureResponderEvent } from 'react-native';
+import { Platform, View, type GestureResponderEvent, type PointerEvent } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -266,6 +266,10 @@ export function BankHistoryChart({
     setHoverDate(null);
   };
 
+  const onPointerMoveScrub = (e: PointerEvent) => {
+    setHoverFromPlotX(e.nativeEvent.offsetX);
+  };
+
   const chartSummary = bankHistoryChartA11ySummary({
     section,
     window,
@@ -438,8 +442,7 @@ export function BankHistoryChart({
             onTouchEnd={onTouchEndScrub}
             {...(Platform.OS === 'web'
               ? {
-                  onPointerMove: (e: { nativeEvent: { locationX: number } }) =>
-                    setHoverFromPlotX(e.nativeEvent.locationX),
+                  onPointerMove: onPointerMoveScrub,
                   onPointerLeave: () => setHoverDate(null),
                 }
               : {})}
