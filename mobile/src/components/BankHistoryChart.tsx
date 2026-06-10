@@ -270,6 +270,24 @@ export function BankHistoryChart({
     setHoverFromPlotX(e.nativeEvent.offsetX);
   };
 
+  const onPointerDownScrub = (e: PointerEvent) => {
+    const idx = sliceIndexFromPlotX(e.nativeEvent.offsetX, innerW, plotDates.length);
+    const date = plotDates[idx];
+    if (date) handleSlicePress(date);
+  };
+
+  const onAccessibilityScrub = (e: { nativeEvent: { actionName: string } }) => {
+    if (e.nativeEvent.actionName === 'increment') {
+      const nextIdx = Math.min(plotDates.length - 1, activeIndex + 1);
+      const date = plotDates[nextIdx];
+      if (date) handleSlicePress(date);
+    } else if (e.nativeEvent.actionName === 'decrement') {
+      const prevIdx = Math.max(0, activeIndex - 1);
+      const date = plotDates[prevIdx];
+      if (date) handleSlicePress(date);
+    }
+  };
+
   const chartSummary = bankHistoryChartA11ySummary({
     section,
     window,
@@ -444,12 +462,18 @@ export function BankHistoryChart({
               ? {
                   onPointerMove: onPointerMoveScrub,
                   onPointerLeave: () => setHoverDate(null),
+                  onPointerDown: onPointerDownScrub,
                 }
               : {})}
             accessible
             accessibilityRole="adjustable"
             accessibilityLabel="Scrub history ribbon by date"
             accessibilityHint="Drag horizontally to preview a date; tap to pin"
+            accessibilityActions={[
+              { name: 'increment', label: 'Next date' },
+              { name: 'decrement', label: 'Previous date' },
+            ]}
+            onAccessibilityAction={onAccessibilityScrub}
             style={{
               position: 'absolute',
               left: padL,
