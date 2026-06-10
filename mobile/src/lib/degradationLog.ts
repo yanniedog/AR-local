@@ -22,7 +22,9 @@ function formatFields(fields: Record<string, string | number | boolean | null | 
   const parts: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || value === null || value === '') continue;
-    parts.push(`${key}=${String(value)}`);
+    const strValue = String(value);
+    const safeValue = strValue.includes(' ') ? `"${strValue.replace(/"/g, '\\"')}"` : strValue;
+    parts.push(`${key}=${safeValue}`);
   }
   return parts.join(' ');
 }
@@ -43,7 +45,16 @@ export function logFetchHttpError(url: string, status: number, context?: string)
 }
 
 export function logSwallowedError(context: string, err: unknown): void {
-  const msg = err instanceof Error ? err.message : String(err);
+  let msg = String(err);
+  if (err instanceof Error) {
+    msg = err.message;
+  } else if (err && typeof err === 'object') {
+    if ('message' in err && typeof (err as { message?: unknown }).message === 'string') {
+      msg = (err as { message: string }).message;
+    } else if ('error' in err && typeof (err as { error?: unknown }).error === 'string') {
+      msg = (err as { error: string }).error;
+    }
+  }
   logDegradation('warn', 'swallowed', { ctx: context, error: msg });
 }
 
@@ -105,31 +116,71 @@ export async function runStoreRetry(
   action: string, fn: () => Promise<void>, ok: () => boolean, failDetail?: () => string | null,
 ): Promise<void> {
   logRetry(action, 'start');
-  await fn();
+  try {
+    await fn();
+  } catch (err) {
+    logSwallowedError(action, err);
+    logRetry(action, 'failure', failDetail?.() ?? undefined);
+    return;
+  }
   if (ok()) logRetry(action, 'success');
   else logRetry(action, 'failure', failDetail?.() ?? undefined);
 }
 
-let pendingDrill: { section: SectionKey; path: string[]; at: number } | null = null;
+const DRILL_OUTCOME_TIMEOUT_MS = 2000;
 
-export function markDrillAttempt(section: SectionKey, path: string[]): void {
-  pendingDrill = { section, path, at: Date.now() };
+type PendingDrill = {
+  section: SectionKey;
+  path: string[];
+  timer: ReturnType<typeof setTimeout>;
+};
+
+let pendingDrill: PendingDrill | null = null;
+let lastObservedPath: { section: SectionKey; path: string[] } | null = null;
+
+function clearPendingDrill(): void {
+  if (pendingDrill) clearTimeout(pendingDrill.timer);
+  pendingDrill = null;
 }
 
+/**
+ * Record a drill navigation attempt. If no matching browse render confirms the
+ * drill within the timeout, the tap was dead — log it with whatever path the
+ * browse screen last rendered so expected-vs-actual is visible in the log.
+ */
+export function markDrillAttempt(section: SectionKey, path: string[]): void {
+  clearPendingDrill();
+  const timer = setTimeout(() => {
+    if (!pendingDrill || pendingDrill.timer !== timer) return;
+    const stale = pendingDrill;
+    pendingDrill = null;
+    logNavDeadDrill({
+      section: stale.section,
+      expectedPath: stale.path,
+      actualPath: lastObservedPath?.section === stale.section ? lastObservedPath.path : [],
+    });
+  }, DRILL_OUTCOME_TIMEOUT_MS);
+  pendingDrill = { section, path, timer };
+}
+
+/**
+ * Called from the browse screen whenever its (section, path) settles. A render
+ * matching the pending attempt confirms the drill and cancels the dead-drill
+ * timer. Non-matching renders are interim states (the section flips before the
+ * path param lands) — only the timeout declares a drill dead.
+ */
 export function checkDrillOutcome(section: SectionKey, actualPath: string[]): void {
-  if (!pendingDrill) return;
+  lastObservedPath = { section, path: actualPath };
+  if (!pendingDrill || pendingDrill.section !== section) return;
   const attempt = pendingDrill;
-  pendingDrill = null;
-  if (Date.now() - attempt.at > 2000) return;
-  const sameSection = attempt.section === section;
   const pathsEqual = attempt.path.length === actualPath.length && attempt.path.every((seg, i) => seg === actualPath[i]);
-  if (sameSection && pathsEqual && attempt.path.length > 0) {
-    logNavDeadDrill({ section, expectedPath: attempt.path, actualPath });
-  } else if (sameSection && !pathsEqual && attempt.path.length > actualPath.length) {
-    logNavParamDrop({ screen: 'browse', param: 'path', expected: attempt.path.join('.'), actual: actualPath.join('.') });
+  if (pathsEqual) {
+    clearPendingDrill();
+    logDegradation('debug', 'nav.drillConfirmed', { section, path: actualPath.join('.') || '(root)' });
   }
 }
 
 export function resetDegradationStateForTests(): void {
-  pendingDrill = null;
+  clearPendingDrill();
+  lastObservedPath = null;
 }

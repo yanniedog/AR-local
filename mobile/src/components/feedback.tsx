@@ -275,7 +275,17 @@ export function RefreshOutcomeSnackbar() {
 
   const onAction = () => {
     clearRefreshOutcome();
-    if (model.action === 'retry') { logRetry('refresh', 'start'); void refresh({ manual: true, force: true }).then((changed) => { const outcome = useStore.getState().refreshOutcome; if (outcome === 'failure') logRetry('refresh', 'failure', useStore.getState().error ?? 'refresh failed'); else logRetry('refresh', 'success', changed ? 'data_changed' : 'up_to_date'); }); }
+    if (model.action === 'retry') {
+      logRetry('refresh', 'start');
+      void refresh({ manual: true, force: true }).then((changed) => {
+        const refreshOutcome = useStore.getState().refreshOutcome;
+        if (refreshOutcome === 'failure') {
+          logRetry('refresh', 'failure', useStore.getState().error ?? 'refresh failed');
+        } else {
+          logRetry('refresh', 'success', changed ? 'data_changed' : 'up_to_date');
+        }
+      });
+    }
     if (model.action === 'settings') router.push('/settings');
   };
 

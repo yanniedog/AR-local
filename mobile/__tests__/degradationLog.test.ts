@@ -31,10 +31,20 @@ describe('degradationLog', () => {
     expect(debugLog.getText()).toContain(`degrade: store.refreshSkipped reason=already_refreshing`);
   });
 
-  it('detects dead drill when path unchanged after attempt', () => {
+  it('confirms drill when path matches after attempt', () => {
     markDrillAttempt('Mortgage', ['fixed', 'owner']);
     checkDrillOutcome('Mortgage', ['fixed', 'owner']);
+    expect(debugLog.getText()).toContain('nav.drillConfirmed');
+    expect(debugLog.getText()).not.toContain('nav.deadDrill');
+  });
+
+  it('detects dead drill after timeout when path never deepens', () => {
+    jest.useFakeTimers();
+    markDrillAttempt('Mortgage', ['fixed', 'owner']);
+    checkDrillOutcome('Mortgage', ['fixed']);
+    jest.advanceTimersByTime(2000);
     expect(debugLog.getText()).toContain('nav.deadDrill');
+    jest.useRealTimers();
   });
 
   it('logNavDeadDrill formats paths', () => {

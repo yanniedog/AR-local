@@ -71,7 +71,7 @@ export interface Prefs {
   enableDeepSearch: boolean;
   /** Section ribbon time-series chart in Charts & trends (off by default). */
   showHistoryRibbon: boolean;
-  /** Rate Intelligence Pro â€” local stub until store IAP is wired. */
+  /** Rate Intelligence Pro — local stub until store IAP is wired. */
   rateIntelligencePro: boolean;
   onboarded: boolean;
   interests: SectionKey[];
@@ -254,7 +254,7 @@ export const useStore = create<AppState>()(
               ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
             });
           } else {
-            debugLog.info('store', 'cache miss â€” seeding bundled sample');
+            debugLog.info('store', 'cache miss — seeding bundled sample');
             await installSampleSeed();
             set({
               core: sampleCore,
@@ -284,8 +284,11 @@ export const useStore = create<AppState>()(
           return;
         }
         await get().refresh({ force: true, manual: true });
-        if (get().status === 'ready') logRetry('retryDataLoad', 'success');
-        else logRetry('retryDataLoad', 'failure', get().error ?? undefined);
+        if (get().refreshOutcome === 'failure') {
+          logRetry('retryDataLoad', 'failure', get().error ?? 'refresh failed');
+        } else {
+          logRetry('retryDataLoad', 'success');
+        }
       },
 
       async loadSampleFallback() {
@@ -348,7 +351,7 @@ export const useStore = create<AppState>()(
         const onProgress = (snapshot: PayloadProgressSnapshot) => set({ payloadProgress: snapshot });
         try {
           const remote = await fetchManifest(undefined, onProgress);
-          // Do NOT install the remote manifest yet â€” if the core download fails we'd
+          // Do NOT install the remote manifest yet — if the core download fails we'd
           // be left with a new manifest paired with the old core, poisoning the
           // metadata-only freshness check. Install it only once its core is in hand.
           set({ offline: false, lastCheckedAt: new Date().toISOString() });
@@ -361,7 +364,7 @@ export const useStore = create<AppState>()(
             meta.coreSha === remote.files.core.sha256;
           if (upToDate) {
             debugLog.debug('store', `refresh up-to-date run_date=${remote.run_date}`);
-            // Core already matches on disk â€” adopt manifest and sync in-memory source
+            // Core already matches on disk — adopt manifest and sync in-memory source
             // so the sample-connect banner dismisses after a successful refresh.
             const bundle = await cache.readBundle();
             set({
@@ -371,7 +374,7 @@ export const useStore = create<AppState>()(
               ...(bundle ? { core: bundle.core } : {}),
             });
             // Details may have been republished for the same run_date (e.g. corrected
-            // fees) â€” ensureDetails re-checks the details sha.
+            // fees) — ensureDetails re-checks the details sha.
             await warmDetails();
             warmOptionalAssets();
             set({ refreshOutcome: 'success' });
@@ -422,7 +425,7 @@ export const useStore = create<AppState>()(
             details: detailsUnchanged ? get().details : null,
           });
 
-          // Local notifications on meaningful change â€” only when the baseline was a
+          // Local notifications on meaningful change — only when the baseline was a
           // previously-installed remote dataset, never the bundled sample (otherwise
           // the first live refresh would alert on sample-vs-real differences).
           // Warm details before diffing so detail-filtered search subscriptions see products.
@@ -504,7 +507,7 @@ export const useStore = create<AppState>()(
             if (!datasetUnchanged()) return;
             await cache.writeDetails(text);
             // Re-check after the awaited write: a newer refresh may have installed its
-            // core/meta while writeDetails was suspended â€” don't clobber it.
+            // core/meta while writeDetails was suspended — don't clobber it.
             if (!datasetUnchanged()) return;
             // Persist the manifest these details belong to (not the stale on-disk
             // meta), so an offline cold launch treats the cached details as fresh.
@@ -522,7 +525,7 @@ export const useStore = create<AppState>()(
             return;
           }
           // Only fall back to the bundled sample when we are *still* on sample data
-          // (re-read source â€” a refresh may have switched us to remote mid-flight).
+          // (re-read source — a refresh may have switched us to remote mid-flight).
           if (get().source === 'sample') set({ details: sampleDetails as DetailsPayload });
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
@@ -536,7 +539,7 @@ export const useStore = create<AppState>()(
           set({ detailsLoading: false });
           // If a concurrent refresh moved the dataset past what this invocation
           // captured (a new run OR a same-run core/details correction), our result was
-          // discarded â€” schedule a load for the now-current dataset. Bounded: it only
+          // discarded — schedule a load for the now-current dataset. Bounded: it only
           // re-runs while the manifest keeps changing, and the top-of-function freshness
           // check no-ops once details are current.
           const cur = get();
@@ -935,7 +938,7 @@ export const useStore = create<AppState>()(
 );
 
 // OS-scheduled background refresh. Defined here (not in notifications.ts) so it can
-// rehydrate persisted prefs/favorites and call refresh() directly â€” important when
+// rehydrate persisted prefs/favorites and call refresh() directly — important when
 // the app is launched headless (terminated) and the UI never mounted.
 try {
   if (typeof TaskManager.isTaskDefined === 'function' && !TaskManager.isTaskDefined(BACKGROUND_TASK)) {
@@ -946,7 +949,7 @@ try {
         } catch {
           // proceed with defaults if rehydrate fails
         }
-        // persist excludes core/manifest â€” load them from disk so the diff has a
+        // persist excludes core/manifest — load them from disk so the diff has a
         // baseline and rate-change notifications fire on terminated-app runs.
         await useStore.getState().ensureCoreLoaded();
         const state = useStore.getState();
@@ -964,5 +967,5 @@ try {
     });
   }
 } catch {
-  // TaskManager unavailable (e.g. web / test env) â€” background refresh is optional.
+  // TaskManager unavailable (e.g. web / test env) — background refresh is optional.
 }
