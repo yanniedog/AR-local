@@ -28,7 +28,8 @@ function escapeMarkdownCell(text) {
 
 function truncateText(text, maxLen = 55) {
   const s = String(text ?? '');
-  return s.length <= maxLen ? s : `${s.slice(0, maxLen - 1)}…`;
+  const chars = [...s];
+  return chars.length <= maxLen ? s : chars.slice(0, maxLen - 1).join('') + '…';
 }
 
 export function formatCellMarkdown(cell) {
