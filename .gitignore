@@ -38,6 +38,7 @@ mobile/android/
 !mobile/assets/adaptive-icon.png
 !mobile/assets/splash.png
 !mobile/assets/favicon.png
+!mobile/assets/banks/*.png
 
 # Local scratch: ad-hoc probe/debug scripts and PR-thread helpers (not source)
 .pi-*

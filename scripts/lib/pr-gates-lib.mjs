@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 import { isReportsOnlyPr } from './pr-reports-only.mjs';
+import { fetchPrMergeMeta, gateAutoMergeEnabled, gateBranchFreshMeta } from './pr-branch-sync.mjs';
+import { gateExemptReason } from './pr-gate-exempt.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -264,11 +266,12 @@ export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxB
 }
 
 export function gateWaitForBots(prNumber, githubBotGate) {
-  if (isReportsOnlyPr(prNumber)) {
+  const exempt = gateExemptReason(prNumber);
+  if (exempt) {
     return {
       id: 'wait-for-bots',
       pass: true,
-      detail: 'Skipped (reports/** only — matrix publish PR)',
+      detail: `Skipped (${exempt} — gate-exempt chore PR)`,
       skipped: true,
     };
   }
@@ -303,11 +306,12 @@ export function gateWaitForBots(prNumber, githubBotGate) {
 }
 
 export function gateBotFeedback(prNumber) {
-  if (isReportsOnlyPr(prNumber)) {
+  const exempt = gateExemptReason(prNumber);
+  if (exempt) {
     return {
       id: 'pr-bot-feedback-check',
       pass: true,
-      detail: 'Skipped (reports/** only — matrix publish PR)',
+      detail: `Skipped (${exempt} — gate-exempt chore PR)`,
       skipped: true,
     };
   }
@@ -402,6 +406,16 @@ export function evaluateGates(prNumber, options = {}) {
     };
   }
 
+  let branchFresh = { id: 'branch-fresh', pass: true, skipped: true };
+  let autoMergeGate = { id: 'auto-merge', pass: true, skipped: true };
+  try {
+    const meta = fetchPrMergeMeta(prNumber);
+    branchFresh = gateBranchFreshMeta(meta);
+    autoMergeGate = gateAutoMergeEnabled(meta);
+  } catch (e) {
+    branchFresh = { id: 'branch-fresh', pass: false, detail: e.message };
+  }
+
   const ci = gateCiRequired(prNumber);
   const ghBot = gateGithubBotChecks(prNumber);
   const wait = gateWaitForBots(prNumber, ghBot);
@@ -415,6 +429,8 @@ export function evaluateGates(prNumber, options = {}) {
 
   const gates = [
     { id: 'gh-auth', pass: true, detail: 'gh available' },
+    branchFresh,
+    autoMergeGate,
     ci,
     ghBot,
     wait,

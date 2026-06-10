@@ -15,7 +15,8 @@
  */
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import { evaluateGates } from './lib/pr-gates-lib.mjs';
-import { hasGh, ghJson, repoSlug } from './lib/gh-pr-review-threads.mjs';
+import { progressPullRequest } from './lib/pr-branch-sync.mjs';
+import { hasGh, ghJson } from './lib/gh-pr-review-threads.mjs';
 
 const DEFAULT_IDLE_MIN = 5;
 const MAX_IDLE_MIN = 120;
@@ -58,33 +59,8 @@ function parseArgs(argv) {
 }
 
 function listOpenPrs() {
-  const { owner, name } = repoSlug();
-  const rows = [];
-  for (let page = 1; page <= 50; page += 1) {
-    const batch = ghJson([
-      'api',
-      `repos/${owner}/${name}/pulls`,
-      '-f',
-      'state=open',
-      '-f',
-      `per_page=${OPEN_PR_PAGE_SIZE}`,
-      '-f',
-      `page=${String(page)}`,
-    ]);
-    if (!Array.isArray(batch) || !batch.length) break;
-    for (const pr of batch) {
-      rows.push({
-        number: pr.number,
-        title: pr.title,
-        headRefName: pr.head?.ref || '',
-        createdAt: pr.created_at,
-        mergeable: pr.mergeable,
-        mergeStateStatus: pr.merge_state_status,
-      });
-    }
-    if (batch.length < OPEN_PR_PAGE_SIZE) break;
-  }
-  return rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const rows = ghJson(['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,createdAt,mergeable,mergeStateStatus', '--limit', String(OPEN_PR_PAGE_SIZE)]);
+  return (Array.isArray(rows) ? rows : []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 }
 
 function conflictHint(pr) {
@@ -142,6 +118,7 @@ async function runCycle(args) {
     if (hint && !args.quiet) {
       console.error(`  PR #${pr.number} (${pr.headRefName}): ${hint}`);
     }
+    try { progressPullRequest(pr.number); } catch (e) { if (!args.quiet) console.error(`  PR #${pr.number}: ${e.message}`); }
     const gateResult = auditPr(pr.number, { quiet: args.quiet, json: args.json });
     results.push({
       number: pr.number,
