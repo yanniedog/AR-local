@@ -23,6 +23,7 @@ import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifi
 import { findSearchSubscription } from '../src/data/subscriptions';
 import { useStore } from '../src/data/store';
 import { breadcrumb, rowsForSearchScope } from '../src/data/taxonomy';
+import { hapticSelection } from '../src/lib/haptics';
 import { openCompare, openProduct } from '../src/lib/nav';
 import type { SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -160,6 +161,7 @@ export default function Search() {
             icon={selectMode ? 'git-compare' : 'git-compare-outline'}
             active={selectMode}
             onPress={() => {
+              hapticSelection();
               setSelectMode((v) => !v);
               setSelected([]);
             }}

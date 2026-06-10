@@ -1,5 +1,13 @@
 // Mock native-only Expo modules so unit tests (pure logic) can import data modules
 // without a native runtime. The app uses the real modules on device.
+jest.mock('expo-haptics', () => ({
+  selectionAsync: jest.fn(async () => {}),
+  impactAsync: jest.fn(async () => {}),
+  notificationAsync: jest.fn(async () => {}),
+  ImpactFeedbackStyle: { Light: 'light' },
+  NotificationFeedbackType: { Success: 'success' },
+}));
+
 jest.mock('expo-task-manager', () => ({
   defineTask: jest.fn(),
   isTaskDefined: jest.fn(() => false),

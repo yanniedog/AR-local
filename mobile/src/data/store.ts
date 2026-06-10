@@ -46,6 +46,7 @@ import { sampleCore, sampleDetails, sampleManifest } from './sample';
 export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
+import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
 
 export interface Prefs {
   themeMode: ThemeMode;
@@ -422,6 +423,7 @@ export const useStore = create<AppState>()(
           return false;
         } finally {
           set({ refreshing: false, payloadProgress: null });
+          if (manual) hapticRefreshComplete();
         }
       },
 
@@ -601,6 +603,7 @@ export const useStore = create<AppState>()(
             ? favorites.filter((k) => k !== key)
             : [...favorites, key],
         });
+        hapticSelection();
       },
 
       isFavorite(key: string) {

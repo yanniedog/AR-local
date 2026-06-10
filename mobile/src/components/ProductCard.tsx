@@ -14,7 +14,7 @@ import { useStore } from '../data/store';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BankAvatar } from './BankAvatar';
-import { AppText, Row } from './ui';
+import { androidRipple, AppText, Row } from './ui';
 
 function chips(row: RateRow, section: SectionKey): string[] {
   const out: string[] = [];
@@ -77,11 +77,14 @@ export function ProductCard({
     >
       <Pressable
         onPress={onPress}
+        android_ripple={androidRipple(theme.colors.primaryMuted)}
         style={({ pressed }) => ({
           flex: 1,
           flexDirection: 'row',
           alignItems: 'center',
           gap: 12,
+          borderRadius: theme.radius.md,
+          overflow: 'hidden',
           opacity: pressed ? 0.85 : 1,
         })}
       >
@@ -157,7 +160,13 @@ export function ProductCard({
           onPress={() => toggleFavorite(row.product_key)}
           hitSlop={10}
           accessibilityLabel={favorite ? 'Remove from watchlist' : 'Add to watchlist'}
-          style={{ paddingLeft: 6, paddingVertical: 6 }}
+          android_ripple={androidRipple(theme.colors.primaryMuted, true)}
+          style={{
+            paddingLeft: 6,
+            paddingVertical: 6,
+            borderRadius: theme.radius.sm,
+            overflow: 'hidden',
+          }}
         >
           <Ionicons
             name={favorite ? 'star' : 'star-outline'}

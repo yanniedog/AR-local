@@ -192,6 +192,7 @@ export function FilterSheet({
             <Button
               title="Apply"
               style={{ flex: 2 }}
+              hapticOnPress
               onPress={() => {
                 onApply(draft);
                 onClose();

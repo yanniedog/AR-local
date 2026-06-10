@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   type PressableProps,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { hapticLightImpact, hapticSelection } from '../lib/haptics';
 import type { Palette } from '../theme/colors';
 import type { FontVariant } from '../theme/theme';
 import { useTheme } from '../theme/ThemeProvider';
@@ -26,6 +28,14 @@ const VARIANT_WEIGHT: Partial<Record<FontVariant, '700' | '800'>> = {
 
 function maxFontSizeMultiplierFor(variant: FontVariant): number {
   return variant === 'tiny' || variant === 'small' || variant === 'rate' ? 1.2 : 1.35;
+}
+
+export function androidRipple(color: string, borderless = false) {
+  return Platform.OS === 'android' ? { color, borderless } : undefined;
+}
+
+function pressedOpacity(pressed: boolean, amount = 0.7) {
+  return Platform.OS !== 'android' && pressed ? { opacity: amount } : null;
 }
 
 export function AppText({
@@ -109,6 +119,7 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      android_ripple={androidRipple(theme.colors.primaryMuted)}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -119,7 +130,8 @@ export function Chip({
         borderWidth: 1,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
         backgroundColor: selected ? theme.colors.primaryMuted : theme.colors.chip,
-        opacity: pressed ? 0.7 : 1,
+        overflow: 'hidden',
+        ...pressedOpacity(pressed, 0.7),
       })}
     >
       {icon ? (
@@ -150,6 +162,7 @@ export function Button({
   loading,
   disabled,
   style,
+  hapticOnPress,
 }: {
   title: string;
   onPress?: () => void;
@@ -158,6 +171,8 @@ export function Button({
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
+  /** Light impact on press (e.g. filter Apply). */
+  hapticOnPress?: boolean;
 }) {
   const theme = useTheme();
   const bg =
@@ -167,10 +182,16 @@ export function Button({
         ? theme.colors.chip
         : 'transparent';
   const fg = variant === 'primary' ? theme.colors.onPrimary : theme.colors.text;
+  const rippleColor =
+    variant === 'primary' ? theme.colors.onPrimary : theme.colors.primaryMuted;
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        if (hapticOnPress) hapticLightImpact();
+        onPress?.();
+      }}
       disabled={disabled || loading}
+      android_ripple={androidRipple(rippleColor, variant === 'ghost')}
       style={({ pressed }) => [
         {
           flexDirection: 'row',
@@ -183,7 +204,8 @@ export function Button({
           backgroundColor: bg,
           borderWidth: variant === 'ghost' ? 1 : 0,
           borderColor: theme.colors.border,
-          opacity: pressed || disabled ? 0.6 : 1,
+          overflow: 'hidden',
+          ...(disabled ? { opacity: 0.6 } : pressedOpacity(pressed, 0.85)),
         },
         style,
       ]}
@@ -218,10 +240,17 @@ export function IconButton({
   const theme = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        hapticSelection();
+        onPress?.();
+      }}
       hitSlop={10}
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [{ padding: 6, opacity: pressed ? 0.6 : 1 }, style]}
+      android_ripple={androidRipple(theme.colors.primaryMuted, true)}
+      style={({ pressed }) => [
+        { padding: 6, borderRadius: theme.radius.sm, overflow: 'hidden', ...pressedOpacity(pressed, 0.6) },
+        style,
+      ]}
       {...rest}
     >
       <Ionicons name={icon} size={size} color={theme.colors[color ?? 'text']} />
