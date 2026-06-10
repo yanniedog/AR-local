@@ -124,7 +124,9 @@ export function rbaRateAsOf(rba: RbaEntry[], dateYmd: string): number | null {
 export function rbaStepForDates(dates: string[], rba: RbaEntry[]): (number | null)[] {
   return dates.map((date) => {
     const rate = rbaRateAsOf(rba, date);
-    return rate == null ? null : rate / 100;
+    if (rate == null || !Number.isFinite(rate)) return null;
+    const fraction = rate / 100;
+    return Number.isFinite(fraction) ? fraction : null;
   });
 }
 

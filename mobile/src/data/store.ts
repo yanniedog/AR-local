@@ -493,9 +493,14 @@ export const useStore = create<AppState>()(
 
       async ensureHistoryBanks() {
         if (!get().prefs.showHistoryRibbon) return;
+        debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
-        if (!core) return;
+        if (!core) {
+          debugLog.debug('store', 'ensureHistoryBanks skipped (no core)');
+          return;
+        }
         if (!manifest?.files.history_banks) {
+          debugLog.debug('store', 'ensureHistoryBanks skipped (manifest has no history_banks)');
           set({ historyBanks: null, historyBanksError: null });
           return;
         }
@@ -516,6 +521,12 @@ export const useStore = create<AppState>()(
         }
         try {
           const { text, historyBanks: fresh } = await downloadHistoryBanks(asset.url, asset.sha256);
+          const validated = normalizeHistoryBanksPayload(fresh);
+          if (!validated) {
+            debugLog.error('store', 'ensureHistoryBanks rejected payload after download (validation failed)');
+            set({ historyBanks: null, historyBanksError: 'history_banks payload failed validation' });
+            return;
+          }
           await cache.writeHistoryBanks(text);
           await cache.updateMeta({
             manifest,
@@ -524,10 +535,11 @@ export const useStore = create<AppState>()(
             coreSha: manifest.files.core.sha256,
             historyBanksSha: asset.sha256,
           });
-          set({ historyBanks: fresh, historyBanksError: null });
+          set({ historyBanks: validated, historyBanksError: null });
+          debugLog.info('store', `ensureHistoryBanks ok run_date=${validated.run_date}`);
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
-          debugLog.warn('store', `ensureHistoryBanks failed: ${msg}`);
+          debugLog.error('store', `ensureHistoryBanks failed: ${msg}`);
           set({ historyBanks: null, historyBanksError: msg });
         }
       },

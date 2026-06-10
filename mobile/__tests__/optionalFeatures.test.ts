@@ -51,6 +51,7 @@ jest.mock('../src/data/payload', () => ({
 
 // eslint-disable-next-line import/first -- store import must follow jest mocks
 import { useStore as store } from '../src/data/store';
+import { debugLog } from '../src/lib/debugLog';
 
 const remoteManifest: Manifest = {
   ...sampleManifest,
@@ -205,6 +206,46 @@ describe('optional feature prefs', () => {
 
     expect(mockDownloadHistoryBanks).toHaveBeenCalled();
     expect(store.getState().historyBanks).not.toBeNull();
+  });
+
+  it('ensureHistoryBanks logs start and validation failure to debugLog', async () => {
+    const infoSpy = jest.spyOn(debugLog, 'info').mockImplementation(() => {});
+    const errorSpy = jest.spyOn(debugLog, 'error').mockImplementation(() => {});
+    store.setState({
+      prefs: { ...DEFAULT_PREFS, showHistoryRibbon: true },
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockReadMeta.mockResolvedValue({
+      manifest: remoteManifest,
+      source: 'remote',
+      savedAt: '2026-06-09T00:00:00Z',
+      coreSha: remoteManifest.files.core.sha256,
+      detailsSha: null,
+      historyBanksSha: null,
+    });
+    mockDownloadHistoryBanks.mockResolvedValue({
+      text: '{"schema_version":1,"run_date":"2026-05-19","run_dates":[],"sections":{}}',
+      historyBanks: {
+        schema_version: 1,
+        run_date: remoteCore.run_date,
+        run_dates: [],
+        sections: {},
+      },
+    });
+
+    await store.getState().ensureHistoryBanks();
+
+    expect(infoSpy).toHaveBeenCalledWith('store', 'ensureHistoryBanks start');
+    expect(errorSpy).toHaveBeenCalledWith(
+      'store',
+      'ensureHistoryBanks rejected payload after download (validation failed)',
+    );
+    expect(store.getState().historyBanksError).toMatch(/validation/i);
+
+    infoSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it('ensureHistoryBanks records error when download validation fails', async () => {

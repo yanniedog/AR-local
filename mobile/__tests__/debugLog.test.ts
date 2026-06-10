@@ -10,8 +10,10 @@ import {
   debugLog,
   formatEntry,
   formatLogUploadBody,
+  installGlobalErrorHandlers,
   parseLogLine,
   redactSecrets,
+  resetGlobalErrorHandlersForTests,
   uploadLogsToPasteRs,
 } from '../src/lib/debugLog';
 import {
@@ -244,5 +246,28 @@ describe('debugLog integration', () => {
 
     expect(crashlyticsApi.log).toHaveBeenCalledWith('[WARN] test: hello EXPO_TOKEN=[REDACTED]');
     expect(crashlyticsApi.log).not.toHaveBeenCalledWith(expect.stringContaining('secret'));
+  });
+
+  it('installGlobalErrorHandlers forwards fatal errors to debugLog', () => {
+    debugLog.clear();
+    resetGlobalErrorHandlersForTests();
+    const g = global as typeof global & {
+      ErrorUtils?: {
+        getGlobalHandler?: () => (error: unknown, isFatal?: boolean) => void;
+        setGlobalHandler?: (handler: (error: unknown, isFatal?: boolean) => void) => void;
+      };
+    };
+    const previous = jest.fn();
+    g.ErrorUtils = {
+      getGlobalHandler: () => previous,
+      setGlobalHandler: (handler) => {
+        handler(new Error('ribbon blew up'), true);
+      },
+    };
+
+    installGlobalErrorHandlers();
+
+    expect(debugLog.getText()).toContain('[ERROR] global: fatal Error: ribbon blew up');
+    expect(previous).toHaveBeenCalled();
   });
 });
