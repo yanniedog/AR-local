@@ -59,7 +59,7 @@ export default function Browse() {
         </Row>
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView key={`${section}-${drillPath.join('.')} `} section={section} path={drillPath} />
+        <HierarchyView section={section} path={drillPath} />
       </View>
     </Screen>
   );
