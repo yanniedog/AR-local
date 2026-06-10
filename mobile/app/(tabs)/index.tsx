@@ -108,7 +108,7 @@ export default function Home() {
       />
 
       <SectionCrossfade section={section}>
-      <Card style={{ borderColor: ${sectionAccent}44 }}>
+      <Card style={{ borderColor: `${sectionAccent}44` }}>
         <SpringOnNewData dataKey={heroDataKey}>
           <Row
             style={{
