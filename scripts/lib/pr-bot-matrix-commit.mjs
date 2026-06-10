@@ -27,8 +27,9 @@ export function isMatrixCommitOnly(paths) {
   if (!Array.isArray(paths) || paths.length === 0) return false;
   const normalized = paths.map((p) => String(p || '').replace(/\\/g, '/'));
   if (normalized.length !== MATRIX_COMMIT_REL_PATHS.length) return false;
-  const expected = new Set(MATRIX_COMMIT_REL_PATHS);
-  return normalized.every((p) => expected.has(p));
+  const sorted = [...normalized].sort();
+  const expected = [...MATRIX_COMMIT_REL_PATHS].sort();
+  return sorted.every((p, i) => p === expected[i]);
 }
 
 /** Shown when protected main rejects workflow push (no ruleset bypass). */
