@@ -29,8 +29,8 @@ function parseArgs(argv) {
   return out;
 }
 
-function run(cmd, args, { allowFail = false } = {}) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+function run(cmd, args, { allowFail = false, timeout = 60000 } = {}) {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout });
   if (r.error) throw new Error(r.error.message);
   if (r.status !== 0 && !allowFail) {
     const msg = (r.stderr || r.stdout || '').trim();
