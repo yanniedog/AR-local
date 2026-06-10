@@ -2,8 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, Switch, TextInput, View } from 'react-native';
 
+import { hapticSelection } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeProvider';
-import { AppText } from './ui';
+import { androidRipple, AppText } from './ui';
 
 export interface SegOption<T extends string> {
   value: T;
@@ -34,13 +35,18 @@ export function SegmentedControl<T extends string>({
         return (
           <Pressable
             key={opt.value}
-            onPress={() => onChange(opt.value)}
+            onPress={() => {
+              if (opt.value !== value) hapticSelection();
+              onChange(opt.value);
+            }}
+            android_ripple={androidRipple(theme.colors.primaryMuted)}
             style={{
               flex: 1,
               paddingVertical: 9,
               borderRadius: theme.radius.sm,
               backgroundColor: active ? theme.colors.card : 'transparent',
               alignItems: 'center',
+              overflow: 'hidden',
               shadowColor: active ? theme.colors.shadow : 'transparent',
               shadowOpacity: active ? 1 : 0,
               shadowRadius: 4,
@@ -96,7 +102,12 @@ export function SearchBar({
         returnKeyType="search"
       />
       {value.length > 0 ? (
-        <Pressable onPress={() => onChangeText('')} hitSlop={8}>
+        <Pressable
+          onPress={() => onChangeText('')}
+          hitSlop={8}
+          android_ripple={androidRipple(theme.colors.primaryMuted, true)}
+          style={{ borderRadius: theme.radius.sm, overflow: 'hidden' }}
+        >
           <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
         </Pressable>
       ) : null}
