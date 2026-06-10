@@ -2,26 +2,31 @@ import type { ColorSchemeName } from 'react-native';
 
 import { DARK, LIGHT, type Palette } from './colors';
 
+export type FontVariant =
+  | 'h1'
+  | 'h2'
+  | 'h3'
+  | 'body'
+  | 'small'
+  | 'tiny'
+  | 'rate'
+  | 'rateHero';
+
 export interface Theme {
   dark: boolean;
   colors: Palette;
   spacing: (n: number) => number;
   radius: { sm: number; md: number; lg: number; xl: number; pill: number };
-  font: {
-    h1: number;
-    h2: number;
-    h3: number;
-    body: number;
-    small: number;
-    tiny: number;
-  };
+  font: Record<FontVariant, number>;
+  lineHeight: Record<FontVariant, number>;
 }
 
 const base = {
   spacing: (n: number) => n * 4,
   // Dashboard shell radii: panels/cards 12px, stat chips 8px, hero title scale ~1.35rem.
   radius: { sm: 8, md: 12, lg: 12, xl: 16, pill: 999 },
-  font: { h1: 28, h2: 22, h3: 16, body: 15, small: 13, tiny: 11 },
+  font: { h1: 28, h2: 22, h3: 16, body: 15, small: 13, tiny: 11, rate: 20, rateHero: 28 },
+  lineHeight: { h1: 34, h2: 28, h3: 22, body: 22, small: 18, tiny: 16, rate: 24, rateHero: 34 },
 };
 
 export const darkTheme: Theme = { dark: true, colors: DARK, ...base };
