@@ -84,6 +84,8 @@ export default function Compare() {
   const bestVal =
     sameSection && valid.length ? (lowerIsBetter ? Math.min(...valid) : Math.max(...valid)) : null;
   const bestTone = lowerIsBetter ? 'success' : 'primary';
+  const bestHighlightBg =
+    bestTone === 'success' ? `${theme.colors.success}33` : theme.colors.primaryMuted;
 
   const rateColorFor = (section: SectionKey) =>
     SECTIONS[section].lowerIsBetter ? theme.colors.success : theme.colors.primary;
@@ -179,7 +181,7 @@ export default function Compare() {
                 const f = fractions[idx];
                 const isBest = bestVal !== null && f === bestVal;
                 const entryRateColor = rateColorFor(e.section);
-                const entryHighlightBg = isBest ? theme.colors.primaryMuted : theme.colors.card;
+                const entryHighlightBg = isBest ? bestHighlightBg : theme.colors.card;
                 return (
                   <View
                     key={`${e.row.product_key}#${e.row.rate_index ?? idx}`}
