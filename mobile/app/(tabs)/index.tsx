@@ -18,7 +18,7 @@ import { bestRow } from '../../src/data/selectors';
 import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { effectiveHistoryRibbon } from '../../src/lib/proAccess';
-import { openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
+import { openBank, openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import type { SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -96,6 +96,7 @@ export default function Home() {
         productCount={stats.products}
         lenderCount={lenderCount}
         providerCount={stats.providers}
+        onLendersPress={() => router.push('/banks')}
       />
 
       {sectionOptions.length > 1 ? (
@@ -148,7 +149,13 @@ export default function Home() {
           </Row>
         </SpringOnNewData>
         {best ? (
-          <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+          <Pressable
+            onLongPress={() => openBank(best.provider)}
+            delayLongPress={450}
+            accessibilityHint="Long press to open lender profile"
+          >
+            <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+          </Pressable>
         ) : null}
       </Card>
 
