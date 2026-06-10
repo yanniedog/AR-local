@@ -80,9 +80,16 @@ export function Card({ style, children, ...rest }: ViewProps) {
         {
           backgroundColor: theme.colors.card,
           borderRadius: theme.radius.lg,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.colors.border,
           padding: theme.spacing(4),
+          ...(Platform.OS === 'android' ? { elevation: 1 } : null),
+          ...(Platform.OS === 'ios'
+            ? {
+                shadowColor: theme.colors.shadow,
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: theme.dark ? 0.28 : 0.08,
+                shadowRadius: 2,
+              }
+            : null),
         },
         style,
       ]}
