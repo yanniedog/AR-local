@@ -1,0 +1,31 @@
+{
+  "version": "1.0.8",
+  "date": "2026-06-10",
+  "summaryBullets": [
+    "feat(mobile): bank intelligence built on the historical rate series (#275)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "feat(mobile): bank intelligence built on the historical rate series (#275)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.8"
+        },
+        {
+          "text": "Since tag: app-v1.0.7"
+        }
+      ]
+    }
+  ]
+}
