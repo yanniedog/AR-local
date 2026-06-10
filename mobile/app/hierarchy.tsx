@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { CompactToggle, SegmentedControl } from '../src/components/controls';
+import { SegmentedControl } from '../src/components/controls';
 import { Screen } from '../src/components/Screen';
 import { TaxonomyTreeView } from '../src/components/TaxonomyTreeView';
 import { Row } from '../src/components/ui';
@@ -24,8 +24,6 @@ export default function HierarchyScreen() {
   const core = useStore((s) => s.core);
   const params = useLocalSearchParams<{ section?: string; path?: string }>();
   const defaultSection = useStore((s) => s.prefs.defaultSection);
-  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
-  const setPref = useStore((s) => s.setPref);
   const routed = params.section ? sectionFromSlug(params.section) : undefined;
   const initialPath = (params.path ?? '').split('.').filter(Boolean);
   const [section, setSection] = useState<SectionKey>(routed ?? defaultSection);
@@ -60,13 +58,6 @@ export default function HierarchyScreen() {
             <Ionicons name="search" size={20} color={theme.colors.text} />
           </Pressable>
         </Row>
-        <View style={{ marginTop: 10 }}>
-          <CompactToggle
-            label="Include non-standard accounts"
-            value={includeNonStandard}
-            onChange={(value) => setPref('includeNonStandard', value)}
-          />
-        </View>
       </View>
       <View style={{ flex: 1 }}>
         <TaxonomyTreeView key={`${section}-${params.path ?? ''}`} section={section} initialPath={initialPath} />

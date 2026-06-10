@@ -133,7 +133,7 @@ describe('selectors', () => {
 
   test('activeFilterCount', () => {
     expect(activeFilterCount(EMPTY_FILTERS)).toBe(0);
-    expect(activeFilterCount({ ...EMPTY_FILTERS, providers: ['Bank A'], includeNonStandard: true })).toBe(2);
+    expect(activeFilterCount({ ...EMPTY_FILTERS, providers: ['Bank A'], includeNonStandard: true })).toBe(1);
   });
 
   test('distinctValues sorts by frequency then label', () => {

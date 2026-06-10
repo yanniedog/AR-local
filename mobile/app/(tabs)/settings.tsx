@@ -194,6 +194,14 @@ export default function Settings() {
 
       <Section title="Optional data">
         <ToggleRow
+          icon="layers-outline"
+          label="Include non-standard accounts"
+          sub="Business, trust, FX, and other non-retail products"
+          value={prefs.includeNonStandard}
+          onChange={(v) => setPref('includeNonStandard', v)}
+        />
+        <Divider style={{ marginVertical: 12 }} />
+        <ToggleRow
           icon="search-outline"
           label="Deep product search"
           sub={
