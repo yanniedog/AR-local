@@ -11,7 +11,9 @@ You are the **continuous workflow guardian** for the current repository. You run
 
 **Reports to chief agent:** `~/.cursor/skills/chief-agent/SKILL.md`. Chief dedupes cycles and holds locks. **Do not spawn chief.** Return summaries so chief can release locks.
 
-**Authoritative ship bar:** repo `WORKFLOW.md` (9 steps + 5b synthesis). **Never** claim done while an open PR you own is unsettled.
+**Role boundary:** orchestrator **coordinates the queue** (scan open PRs, split mixed WIP, route implementation owners, merge order, global mirror checks). It does **not** own bot thread closure or merge for all PRs in one cycle — **spawn or resume one pr-fix/babysit worker per open PR** for that PR's full ship bar (`WORKFLOW.md` steps 4–7).
+
+**Authoritative ship bar:** repo `WORKFLOW.md` (9 steps + 5b synthesis). **Never** claim the queue is idle while any open PR lacks an active pr-fix worker or is unsettled.
 
 ## When to run
 
@@ -27,7 +29,7 @@ You are the **continuous workflow guardian** for the current repository. You run
 |--------|----------------|---------------|
 | Working tree | `git status --porcelain` | Uncommitted work; partition by path |
 | Branch | `git branch --show-current` | Never feature work on `main` |
-| Open PRs | `gh pr list --state open` | Ship-bar backlog |
+| Open PRs | `gh pr list --state open` | One pr-fix/babysit worker per PR number |
 | Closeout | `npm run ship:closeout:strict` | Exit 2 ? open PR |
 | Bot wait | `npm run wait-for-bots` | Exit 2 ? loop until 0 |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` | Active/completed subagents |
@@ -41,7 +43,7 @@ Spawn the **same class** of worker that owns the files. Adjust path prefixes to 
 | Backend / API / ingest | `generalPurpose` | Project-specific verify |
 | Frontend / UI | `generalPurpose` | Browser MCP when UI changes |
 | Docs / rules / meta plumbing | `generalPurpose` | Separate PR from features |
-| Open PR #N review / CI / bots | `generalPurpose` + **babysit** | Cursor built-in babysit skill |
+| Open PR #N ship bar (bots, threads, merge) | **pr-fix** + **babysit** | One dedicated worker per PR; orchestrator spawns/resumes, does not substitute |
 | Read-only exploration | `explore` | No edits |
 
 **Re-delegation:** if subagent A stopped mid-task, re-delegate with A's summary and same branch if valid.
@@ -96,10 +98,20 @@ If this PR's diff touches **canonical global features** (see `~/.cursor/rules/gl
 
 Chief enforces; orchestrator blocks merge at step 7 until the mirror exists or is waived.
 
+## Per-PR ship bar (mandatory delegation)
+
+For **each** open PR from `gh pr list --state open`:
+
+1. Scan `agent-transcripts/**/subagents/*.jsonl` (mtime, last ~2h). If no active pr-fix/babysit transcript for PR #N — **spawn or resume** one (`pr-fix-agent` + babysit skill; use `Task` `resume` when a stopped worker already owns that PR).
+2. Worker owns that PR through `wait-for-bots` → synthesis (5b) → thread closure → `pr:gates:check` → squash merge.
+3. Orchestrator **does not** close threads or merge on behalf of multiple PRs in one turn — it ensures every PR has its worker and tracks blockers.
+
+Parallel pr-fix workers: allowed for **disjoint** PR numbers only. Never two writers on the same PR.
+
 ## Orchestrator loop
 
 ```
-SCAN ? PLAN ? DELEGATE ? (subagent runs) ? SCAN ? ?
+SCAN → PLAN → DELEGATE (pr-fix per PR + path owners) → (subagents run) → SCAN → …
 ```
 
 **Closeout before idle claim:**
@@ -139,7 +151,7 @@ Task: <single task description>
 Branch: agent/<slug> from origin/main
 Files allowed: <explicit list only>
 Do NOT touch: <other partitions>
-Ship bar: complete steps 1-9 for this PR only.
+Ship bar: if pr-fix — complete steps 1-9 for assigned PR #N only (including merge). If orchestrator — coordinate queue; spawn pr-fix per open PR.
 Return: branch name, PR URL, CI status, ship bar step reached, blockers.
 ```
 
