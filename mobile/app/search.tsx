@@ -256,8 +256,10 @@ export default function Search() {
         filters={effectiveFilters}
         detailsProducts={details?.products}
         onApply={(next) => {
-          setPref('includeNonStandard', next.includeNonStandard);
-          setFilters(next);
+          setFilters({
+            ...next,
+            includeNonStandard: includeNonStandard,
+          });
         }}
       />
       <ProPaywall

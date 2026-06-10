@@ -121,18 +121,6 @@ export function FilterSheet({
         </Row>
         <Divider />
         <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 12 }}>
-          <View>
-            <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
-              Show
-            </AppText>
-            <Chip
-              label="Include non-standard accounts"
-              icon="options-outline"
-              selected={draft.includeNonStandard}
-              onPress={() => setDraft((d) => ({ ...d, includeNonStandard: !d.includeNonStandard }))}
-            />
-          </View>
-
           {groups.map((g) => {
             const options = distinctValues(rows, g.field).slice(0, 24);
             if (!options.length) return null;
@@ -239,6 +227,5 @@ function resetFilters() {
     interestPayments: [],
     accountFeatures: [],
     eligibilityCriteria: [],
-    includeNonStandard: false,
   };
 }
