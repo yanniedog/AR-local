@@ -460,7 +460,7 @@ ANRs in the same report) and opens a GitHub issue for each new Crashlytics issue
 
 | Secret | Status (2026-06-10) | Required | Purpose |
 |---|---|---|---|
-| `GOOGLE_SERVICES_JSON` | **Set** | Yes | Resolve Firebase project + Android app id |
+| `GOOGLE_SERVICES_JSON` | **Set** | Yes | Resolve Firebase project + Android app ID |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | **Not set — operator must add** | Yes | Crashlytics API auth (service account key JSON) |
 | `GITHUB_TOKEN` | Built-in per workflow run | Yes | Create issues (same repo; `issues: write`) |
 

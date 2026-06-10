@@ -285,7 +285,7 @@ function buildIssueBody(issue, metrics, stackTrace, projectId, appId) {
   return lines.join('\n');
 }
 
-function eventCount(metrics, minEvents) {
+function eventCount(metrics) {
   const raw = metrics.eventsCount ?? metrics.events_count ?? '0';
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
@@ -387,7 +387,7 @@ async function main() {
       continue;
     }
 
-    if (eventCount(metrics, opts.minEvents) < opts.minEvents) {
+    if (eventCount(metrics) < opts.minEvents) {
       skipped += 1;
       continue;
     }
