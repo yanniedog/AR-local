@@ -4,21 +4,35 @@
  */
 const API_BASE = 'https://firebasecrashlytics.googleapis.com/v1alpha';
 
+/** @typedef {Record<string, string | string[]>} FlattenedMessageQuery */
+
 /**
  * Flatten a protobuf message object into dot-separated query keys.
  * Google REST transcoding rejects JSON blobs for message-typed query params.
  *
  * @param {string} prefix
  * @param {unknown} value
- * @param {Record<string, string>} [out]
- * @returns {Record<string, string>}
+ * @param {FlattenedMessageQuery} [out]
+ * @returns {FlattenedMessageQuery}
  */
-export function flattenMessageQueryParams(prefix, value, out = {}) {
+export function flattenMessageQueryParams(
+  prefix,
+  value,
+  out = /** @type {FlattenedMessageQuery} */ ({}),
+) {
   if (value === undefined || value === null) return out;
   if (Array.isArray(value)) {
-    const primitives = value
-      .filter((item) => item !== undefined && item !== null && typeof item !== 'object')
-      .map(String);
+    /** @type {string[]} */
+    const primitives = [];
+    for (const item of value) {
+      if (item === undefined || item === null) continue;
+      if (typeof item === 'object') {
+        throw new Error(
+          `flattenMessageQueryParams: nested message arrays are not supported (${prefix})`,
+        );
+      }
+      primitives.push(String(item));
+    }
     if (primitives.length === 1) out[prefix] = primitives[0];
     else if (primitives.length > 1) out[prefix] = primitives;
     return out;
