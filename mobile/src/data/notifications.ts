@@ -371,7 +371,7 @@ export async function notify(messages: NotifyMessage[]): Promise<void> {
   for (const msg of messages.slice(0, 3)) {
     const data = notificationDataFromMessage(msg);
     await Notifications.scheduleNotificationAsync({
-      content: { title: msg.title, body: msg.body, data },
+      content: { title: msg.title, body: msg.body, data: data as Record<string, unknown> },
       trigger: null, // immediate
     });
   }
