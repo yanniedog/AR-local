@@ -7,7 +7,7 @@ import { dataSourceLabel } from '../lib/nextIngest';
 import type { PayloadSource } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BrandLockup } from './BrandLockup';
-import { AppText, Row } from './ui';
+import { AppText, Card, Row } from './ui';
 
 export function HomeHero({
   runDateLabel,
@@ -27,7 +27,6 @@ export function HomeHero({
   providerCount: number;
 }) {
   const theme = useTheme();
-  const countdown = useNextIngestCountdown();
   const sourceLabel = dataSourceLabel(source);
   const statusIcon = offline ? 'cloud-offline-outline' : source === 'remote' ? 'cloud-done' : 'albums-outline';
   const statusColor = offline ? theme.colors.warning : theme.colors.success;
@@ -40,26 +39,26 @@ export function HomeHero({
         borderWidth: 1,
         borderColor: theme.colors.border,
         padding: 12,
-        marginBottom: 14,
+        marginBottom: 12,
         overflow: 'hidden',
       }}
     >
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
-          <BrandLockup markSize={32} style={{ marginBottom: 8 }} />
+          <BrandLockup markSize={28} style={{ marginBottom: 6 }} />
           <AppText
             variant="tiny"
             color="textMuted"
             weight="700"
-            style={{ letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 4 }}
+            style={{ letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 2 }}
           >
             Daily rates
           </AppText>
-          <AppText variant="h1" style={{ lineHeight: 32 }}>
+          <AppText variant="h2" weight="800" style={{ lineHeight: 28 }}>
             Home loan rates, tracked.
           </AppText>
-          <AppText variant="small" color="textMuted" style={{ marginTop: 4 }}>
-            Data set {runDateLabel} · {runAgeLabel}
+          <AppText variant="tiny" color="textMuted" style={{ marginTop: 3 }}>
+            {runDateLabel} · {runAgeLabel}
           </AppText>
         </View>
         <View
@@ -82,38 +81,37 @@ export function HomeHero({
         </View>
       </Row>
 
-      <View
-        style={{
-          backgroundColor: theme.colors.card,
-          borderRadius: theme.radius.sm,
-          borderWidth: 1,
-          borderColor: theme.colors.border,
-          padding: 12,
-          marginBottom: 10,
-        }}
-      >
-        <Row gap={8} style={{ alignItems: 'flex-start' }}>
-          <Ionicons name="time-outline" size={18} color={theme.colors.primary} style={{ marginTop: 1 }} />
-          <View style={{ flex: 1 }}>
-            <AppText variant="tiny" color="textMuted" weight="600" style={{ letterSpacing: 0.6 }}>
-              NEXT DATA REFRESH
-            </AppText>
-            <AppText variant="h2" weight="800" style={{ color: theme.colors.primary, marginTop: 2 }}>
-              {countdown.countdownLabel}
-            </AppText>
-            <AppText variant="tiny" color="textFaint" style={{ marginTop: 4 }}>
-              Target {countdown.nextDueLocalLabel} · scheduled daily refresh
-            </AppText>
-          </View>
-        </Row>
-      </View>
-
-      <Row gap={8}>
+      <Row gap={8} style={{ marginTop: 10 }}>
         <StatPill label="Products" value={String(productCount)} />
         <StatPill label="Lenders" value={String(lenderCount)} />
         <StatPill label="In section" value={String(providerCount)} />
       </Row>
     </View>
+  );
+}
+
+/** Below-fold refresh timing — kept out of the compact hero for progressive disclosure. */
+export function HomeRefreshCountdown() {
+  const theme = useTheme();
+  const countdown = useNextIngestCountdown();
+
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <Row gap={8} style={{ alignItems: 'flex-start' }}>
+        <Ionicons name="time-outline" size={18} color={theme.colors.primary} style={{ marginTop: 1 }} />
+        <View style={{ flex: 1 }}>
+          <AppText variant="tiny" color="textMuted" weight="600" style={{ letterSpacing: 0.6 }}>
+            NEXT DATA REFRESH
+          </AppText>
+          <AppText variant="h3" weight="800" style={{ color: theme.colors.primary, marginTop: 2 }}>
+            {countdown.countdownLabel}
+          </AppText>
+          <AppText variant="tiny" color="textFaint" style={{ marginTop: 4 }}>
+            Target {countdown.nextDueLocalLabel} · scheduled daily refresh
+          </AppText>
+        </View>
+      </Row>
+    </Card>
   );
 }
 
@@ -127,12 +125,12 @@ function StatPill({ label, value }: { label: string; value: string }) {
         borderRadius: theme.radius.sm,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        paddingVertical: 10,
-        paddingHorizontal: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 6,
         alignItems: 'center',
       }}
     >
-      <AppText variant="h3" weight="800">
+      <AppText variant="body" weight="800">
         {value}
       </AppText>
       <AppText variant="tiny" color="textMuted" weight="700" style={{ marginTop: 2, letterSpacing: 0.4 }}>
