@@ -9,7 +9,7 @@ import {
   hasGh,
   repoSlug,
 } from './lib/gh-pr-review-threads.mjs';
-import { isReportsOnlyPr } from './lib/pr-reports-only.mjs';
+import { gateExemptReason } from './lib/pr-gate-exempt.mjs';
 
 function sh(cmd) {
   try {
@@ -140,12 +140,9 @@ function main() {
     }
   }
 
-  if (isReportsOnlyPr(prNumber)) {
-    if (!args.quiet) {
-      console.log(
-        `pr-bot-feedback-check: skip PR #${prNumber} (reports/** only — matrix publish PR)`,
-      );
-    }
+  const exempt = gateExemptReason(prNumber);
+  if (exempt) {
+    if (!args.quiet) console.log(`pr-bot-feedback-check: skip PR #${prNumber} (${exempt} — gate-exempt chore PR)`);
     process.exit(0);
   }
 
