@@ -1,7 +1,7 @@
 {
   "repo": "yanniedog/AR-local",
   "prCount": 50,
-  "generatedAt": "2026-06-10T12:21:47.532Z",
+  "generatedAt": "2026-06-10T12:50:08.302Z",
   "bots": [
     {
       "key": "gemini",
@@ -35,6 +35,82 @@
     "red": "quota/limit only"
   },
   "rows": [
+    {
+      "number": 282,
+      "title": "Pi runtime health watchdog with tailscale self-heal",
+      "mergedAt": "2026-06-10T12:49:06Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/282",
+      "cells": {
+        "gemini": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "codex": {
+          "status": "green",
+          "label": "OK",
+          "reason": "feedback addressed or no actionable threads"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
+    {
+      "number": 281,
+      "title": "chore: update PR bot feedback matrix",
+      "mergedAt": "2026-06-10T12:35:06Z",
+      "url": "https://github.com/yanniedog/AR-local/pull/281",
+      "cells": {
+        "gemini": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "codex": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "sourcery": {
+          "status": "red",
+          "label": "Limit",
+          "reason": "quota/limit notice only"
+        },
+        "copilot": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "coderabbit": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        },
+        "greptile": {
+          "status": "grey",
+          "label": "—",
+          "reason": "no bot activity"
+        }
+      }
+    },
     {
       "number": 280,
       "title": "Rename mobile section segment labels (Mortgage, Term Deps)",
@@ -1826,82 +1902,6 @@
       "title": "feat(mobile): premium ribbon neutral track and end ticks (rec #15)",
       "mergedAt": "2026-06-10T02:15:39Z",
       "url": "https://github.com/yanniedog/AR-local/pull/232",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 231,
-      "title": "fix(crashlytics): flatten ReportFilters for REST query encoding",
-      "mergedAt": "2026-06-10T01:48:10Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/231",
-      "cells": {
-        "gemini": {
-          "status": "red",
-          "label": "Limit",
-          "reason": "quota/limit notice only"
-        },
-        "codex": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "sourcery": {
-          "status": "green",
-          "label": "OK",
-          "reason": "feedback addressed or no actionable threads"
-        },
-        "copilot": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "coderabbit": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        },
-        "greptile": {
-          "status": "grey",
-          "label": "—",
-          "reason": "no bot activity"
-        }
-      }
-    },
-    {
-      "number": 230,
-      "title": "fix(ci): Crashlytics workflow invalid secrets in if:",
-      "mergedAt": "2026-06-10T01:36:27Z",
-      "url": "https://github.com/yanniedog/AR-local/pull/230",
       "cells": {
         "gemini": {
           "status": "red",
