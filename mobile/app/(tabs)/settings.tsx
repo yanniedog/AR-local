@@ -43,7 +43,6 @@ import {
   subscribeAuth,
   type AuthUser,
 } from '../../src/lib/auth';
-import { syncContentKeys } from '../../src/lib/keyService';
 import { adoptConfigKey } from '../../src/lib/keyVault';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
@@ -710,7 +709,7 @@ function AccountSecuritySection({
     try {
       await signInWithGoogle();
       await adoptConfigKey();
-      await syncContentKeys();
+      // Content-key sync rides the root-layout auth listener; no direct call here.
     } catch (err) {
       Alert.alert('Sign-in failed', String((err as Error)?.message ?? err));
     } finally {

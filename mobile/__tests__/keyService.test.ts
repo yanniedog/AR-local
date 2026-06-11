@@ -2,7 +2,7 @@ import { getAuth } from '@react-native-firebase/auth';
 import * as SecureStore from 'expo-secure-store';
 
 import { fetchContentKeys, isKeyServiceConfigured, syncContentKeys } from '../src/lib/keyService';
-import { clearKeyCacheForTests, resolvePayloadKeyHex } from '../src/lib/keyVault';
+import { clearKeyCacheForTests, resolvePayloadKeyHex, storePayloadKeyHex } from '../src/lib/keyVault';
 
 const KEY_HEX = 'ab'.repeat(32);
 const URL = 'https://example.com/issueContentKeys';
@@ -62,6 +62,19 @@ describe('keyService', () => {
     });
     expect(await syncContentKeys(URL)).toBe(false);
     expect(await resolvePayloadKeyHex()).toBe('');
+  });
+
+  it('skips the network entirely when the vault already holds a key', async () => {
+    const fetchMock = mockFetchOnce(200, {});
+    await storePayloadKeyHex('cd'.repeat(32));
+    expect(await syncContentKeys(URL)).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    // force bypasses the guard (rotation path).
+    mockFetchOnce(200, {
+      result: { tier: 'full', keys: [{ scope: 'full', alg: 'aes-256-gcm', key_id: 'k', key_hex: KEY_HEX }] },
+    });
+    expect(await syncContentKeys(URL, { force: true })).toBe(true);
+    expect(await resolvePayloadKeyHex()).toBe(KEY_HEX);
   });
 
   it('requires a signed-in user', async () => {

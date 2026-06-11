@@ -1,6 +1,6 @@
 import { KEY_SERVICE_URL } from '../config';
 import { debugLog } from './debugLog';
-import { storePayloadKeyHex } from './keyVault';
+import { resolvePayloadKeyHex, storePayloadKeyHex } from './keyVault';
 
 /**
  * Client for the issueContentKeys callable (Phase D of
@@ -59,9 +59,17 @@ export async function fetchContentKeys(url: string = KEY_SERVICE_URL): Promise<I
  * Fetch and persist the best usable key into the secure vault. Returns true
  * when a key was stored. Failures only log — payload decryption falls back to
  * the previously stored or bundled key.
+ *
+ * Skips the network call when the vault already holds a key (unless `force`),
+ * so routine app starts don't burn the service's per-user daily issue limit;
+ * key rotation will force-refresh on decrypt failure (Phase E).
  */
-export async function syncContentKeys(url: string = KEY_SERVICE_URL): Promise<boolean> {
+export async function syncContentKeys(
+  url: string = KEY_SERVICE_URL,
+  { force = false }: { force?: boolean } = {},
+): Promise<boolean> {
   if (!url) return false;
+  if (!force && (await resolvePayloadKeyHex())) return false;
   try {
     const issued = await fetchContentKeys(url);
     const usable = issued.keys.find((k) => k.alg === 'aes-256-gcm' && /^[0-9a-f]{64}$/.test(k.key_hex));
