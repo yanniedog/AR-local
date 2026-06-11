@@ -5,7 +5,6 @@ import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
-import { ApkShareSection } from '../../src/components/ApkShareSection';
 import { SegmentedControl } from '../../src/components/controls';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { Screen, ScreenScrollView } from '../../src/components/Screen';
@@ -370,8 +369,6 @@ export default function Settings() {
       </Section>
 
       <AppUpdateSection />
-
-      <ApkShareSection />
 
       <Section title="About">
         <InfoRow
