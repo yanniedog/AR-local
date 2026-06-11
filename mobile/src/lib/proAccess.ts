@@ -71,7 +71,7 @@ export function proGateCopy(intent: ProGateIntent): { title: string; body: strin
     case 'bank_insights':
       return {
         title: RATE_INTELLIGENCE_PRO,
-        body: 'Only Australian Rates tracks every bank, every day. See who cut, who hiked, and who passes RBA changes on.',
+        body: 'Only Australian Rates tracks every bank, every day. See who moved rates which way, and who passes RBA changes on.',
         bullets: [
           'Daily rate-move feed across every tracked lender',
           'Biggest movers leaderboards',

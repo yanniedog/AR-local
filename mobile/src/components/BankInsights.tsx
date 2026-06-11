@@ -12,6 +12,14 @@ import {
   type BankRateEvent,
 } from '../data/bankInsights';
 import { formatRate, formatRunDate } from '../data/format';
+import {
+  DEPOSIT_SECTIONS,
+  LOAN_SECTIONS,
+  isLoanSection,
+  moveTone,
+  moveVerb,
+  type MoveTone,
+} from '../lib/moveSemantics';
 import { openBank } from '../lib/nav';
 import type { RbaEntry, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
@@ -23,22 +31,29 @@ function bpsLabel(bps: number): string {
   return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded)} bps`;
 }
 
-/** Up = pressure on borrowers (danger), down = relief (success); matches RBA list. */
-function MoveArrow({ bps, size = 14 }: { bps: number; size?: number }) {
+/** Arrow shows the actual direction; colour reflects what it means for the section's customer. */
+function MoveArrow({ section, bps, size = 14 }: { section: SectionKey; bps: number; size?: number }) {
   const theme = useTheme();
   if (bps === 0) return null;
-  const up = bps > 0;
   return (
     <Ionicons
-      name={up ? 'arrow-up' : 'arrow-down'}
+      name={bps > 0 ? 'arrow-up' : 'arrow-down'}
       size={size}
-      color={up ? theme.colors.danger : theme.colors.success}
+      color={moveTone(section, bps) === 'danger' ? theme.colors.danger : theme.colors.success}
     />
   );
 }
 
+function toneColor(tone: MoveTone, theme: ReturnType<typeof useTheme>): string {
+  return tone === 'danger'
+    ? theme.colors.danger
+    : tone === 'success'
+      ? theme.colors.success
+      : theme.colors.textMuted;
+}
+
 function eventA11yLabel(event: BankRateEvent): string {
-  const verb = event.dir === 'cut' ? 'cut' : event.dir === 'hike' ? 'raised' : 'repriced';
+  const verb = moveVerb(event.section, event.dir);
   return `${event.provider} ${verb} ${SECTIONS[event.section].title} rates by ${bpsLabel(
     event.avg_bps,
   )} across ${event.moved} of ${event.total} products on ${formatRunDate(event.date)}`;
@@ -46,7 +61,7 @@ function eventA11yLabel(event: BankRateEvent): string {
 
 export function BankMoveRow({ event, showDate = true }: { event: BankRateEvent; showDate?: boolean }) {
   const theme = useTheme();
-  const verb = event.dir === 'cut' ? 'cut' : event.dir === 'hike' ? 'hiked' : 'repriced';
+  const verb = moveVerb(event.section, event.dir);
   return (
     <Pressable
       onPress={() => openBank(event.provider)}
@@ -65,11 +80,11 @@ export function BankMoveRow({ event, showDate = true }: { event: BankRateEvent; 
           </AppText>
         </View>
         <Row gap={4}>
-          <MoveArrow bps={event.avg_bps} />
+          <MoveArrow section={event.section} bps={event.avg_bps} />
           <AppText
             variant="small"
             weight="800"
-            style={{ color: event.avg_bps > 0 ? theme.colors.danger : event.avg_bps < 0 ? theme.colors.success : theme.colors.textMuted }}
+            style={{ color: toneColor(moveTone(event.section, event.avg_bps), theme) }}
           >
             {bpsLabel(event.avg_bps)}
           </AppText>
@@ -79,9 +94,11 @@ export function BankMoveRow({ event, showDate = true }: { event: BankRateEvent; 
   );
 }
 
-/** Headline pulse strip: "4 banks moved rates this week · 6 cuts · 1 hike". */
+/** Headline pulse strip: "4 banks moved this week · 6 loan cuts · 2 savings/TD increases". */
 export function MarketPulseStrip({ payload }: { payload: BankInsightsPayload | null }) {
   const pulse = useMemo(() => marketPulse(payload, 7), [payload]);
+  const loanPulse = useMemo(() => marketPulse(payload, 7, LOAN_SECTIONS), [payload]);
+  const depositPulse = useMemo(() => marketPulse(payload, 7, DEPOSIT_SECTIONS), [payload]);
   if (!pulse) return null;
   const quiet = pulse.banksMoved === 0;
   return (
@@ -94,8 +111,24 @@ export function MarketPulseStrip({ payload }: { payload: BankInsightsPayload | n
         }
         tone={quiet ? 'muted' : 'primary'}
       />
-      {pulse.cuts ? <Badge label={`${pulse.cuts} cut${pulse.cuts === 1 ? '' : 's'}`} tone="success" /> : null}
-      {pulse.hikes ? <Badge label={`${pulse.hikes} hike${pulse.hikes === 1 ? '' : 's'}`} tone="danger" /> : null}
+      {loanPulse?.cuts ? (
+        <Badge label={`${loanPulse.cuts} loan ${loanPulse.cuts === 1 ? 'cut' : 'cuts'}`} tone="success" />
+      ) : null}
+      {loanPulse?.hikes ? (
+        <Badge label={`${loanPulse.hikes} loan ${loanPulse.hikes === 1 ? 'hike' : 'hikes'}`} tone="danger" />
+      ) : null}
+      {depositPulse?.hikes ? (
+        <Badge
+          label={`${depositPulse.hikes} savings/TD ${depositPulse.hikes === 1 ? 'increase' : 'increases'}`}
+          tone="success"
+        />
+      ) : null}
+      {depositPulse?.cuts ? (
+        <Badge
+          label={`${depositPulse.cuts} savings/TD ${depositPulse.cuts === 1 ? 'decrease' : 'decreases'}`}
+          tone="danger"
+        />
+      ) : null}
     </Row>
   );
 }
@@ -163,11 +196,22 @@ export function MoversLeaderboard({
       </AppText>
     );
   }
-  const cutters = moved.filter((m) => m.netBps < 0).slice(0, perSide);
-  const hikers = moved
+  const loan = isLoanSection(section);
+  const downs = moved.filter((m) => m.netBps < 0).slice(0, perSide);
+  const ups = moved
     .filter((m) => m.netBps > 0)
     .slice(-perSide)
     .reverse();
+  // Good news first: cuts for loans, increases for savings/TD.
+  const groups = loan
+    ? [
+        { heading: 'BIGGEST CUTS', rows: downs },
+        { heading: 'BIGGEST HIKES', rows: ups },
+      ]
+    : [
+        { heading: 'BIGGEST INCREASES', rows: ups },
+        { heading: 'BIGGEST DECREASES', rows: downs },
+      ];
   const renderRow = (provider: string, netBps: number, current: number) => (
     <Pressable
       key={provider}
@@ -186,7 +230,7 @@ export function MoversLeaderboard({
         <AppText
           variant="small"
           weight="800"
-          style={{ color: netBps > 0 ? theme.colors.danger : theme.colors.success, minWidth: 64, textAlign: 'right' }}
+          style={{ color: toneColor(moveTone(section, netBps), theme), minWidth: 64, textAlign: 'right' }}
         >
           {bpsLabel(netBps)}
         </AppText>
@@ -195,27 +239,21 @@ export function MoversLeaderboard({
   );
   return (
     <View>
-      {cutters.length ? (
-        <>
-          <AppText variant="tiny" weight="700" color="textFaint" style={{ marginBottom: 2 }}>
-            BIGGEST CUTS · {windowDays}D
-          </AppText>
-          {cutters.map((m) => renderRow(m.provider, m.netBps, m.current))}
-        </>
-      ) : null}
-      {hikers.length ? (
-        <>
-          <AppText
-            variant="tiny"
-            weight="700"
-            color="textFaint"
-            style={{ marginBottom: 2, marginTop: cutters.length ? 8 : 0 }}
-          >
-            BIGGEST HIKES · {windowDays}D
-          </AppText>
-          {hikers.map((m) => renderRow(m.provider, m.netBps, m.current))}
-        </>
-      ) : null}
+      {groups.map((group, gi) =>
+        group.rows.length ? (
+          <React.Fragment key={group.heading}>
+            <AppText
+              variant="tiny"
+              weight="700"
+              color="textFaint"
+              style={{ marginBottom: 2, marginTop: gi > 0 && groups[0].rows.length ? 8 : 0 }}
+            >
+              {group.heading} · {windowDays}D
+            </AppText>
+            {group.rows.map((m) => renderRow(m.provider, m.netBps, m.current))}
+          </React.Fragment>
+        ) : null,
+      )}
     </View>
   );
 }
@@ -309,8 +347,8 @@ export function InsightsLockedCard({ onUnlock }: { onUnlock: () => void }) {
       </Row>
       <AppText variant="small" color="textMuted">
         Everyone shows today's rates. Only Australian Rates tracks every bank, every day — see who
-        cut, who hiked, who drags their feet after RBA decisions, and how each lender's rates moved
-        over time.
+        moved rates which way, who drags their feet after RBA decisions, and how each lender's
+        rates moved over time.
       </AppText>
       <Button title="Unlock bank intelligence" icon="sparkles" onPress={onUnlock} />
     </View>

@@ -356,6 +356,7 @@ export interface MarketPulse {
 export function marketPulse(
   payload: BankInsightsPayload | null | undefined,
   sinceDays = 7,
+  sections?: readonly SectionKey[],
 ): MarketPulse | null {
   if (!payload?.run_dates?.length) return null;
   const anchor = parseYmd(payload.run_dates[payload.run_dates.length - 1]);
@@ -366,6 +367,7 @@ export function marketPulse(
   let hikes = 0;
   let sinceDate = payload.run_dates[payload.run_dates.length - 1];
   for (const event of payload.events) {
+    if (sections && !sections.includes(event.section)) continue;
     const ts = parseYmd(event.date);
     if (ts == null || ts < cutoffTs) continue;
     movers.add(event.provider);
