@@ -1,0 +1,39 @@
+{
+  "version": "1.0.13",
+  "date": "2026-06-11",
+  "summaryBullets": [
+    "feat(mobile): section-aware move semantics, update banner, ribbon rewind, per-tier ribbons (#315)",
+    "chore(mobile): auto-release bump to v1.0.12 (after 1ab052c) (#314)",
+    "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "feat(mobile): section-aware move semantics, update banner, ribbon rewind, per-tier ribbons (#315)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.12 (after 1ab052c) (#314)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.13"
+        },
+        {
+          "text": "Since tag: app-v1.0.10"
+        }
+      ]
+    }
+  ]
+}
