@@ -19,8 +19,8 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
   const theme = useTheme();
   const brand = useStore((s) => s.core?.brands?.[provider]);
   const sources = useMemo(
-    () => resolveBankLogoSources(provider, brand?.logo),
-    [provider, brand?.logo],
+    () => resolveBankLogoSources(provider, brand?.logo, brand?.logo_uri),
+    [provider, brand?.logo, brand?.logo_uri],
   );
   const [prevSources, setPrevSources] = useState(sources);
   const [sourceIdx, setSourceIdx] = useState(0);

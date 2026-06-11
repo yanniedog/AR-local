@@ -1,7 +1,10 @@
 import { BUNDLED_BANK_LOGOS } from './bankLogoAssets';
 
-/** Mirrors dashboard `ar-bank-brand.js` icon paths and aliases. */
-const CDN_BANK_BASE = 'https://australianrates.com/assets/banks/';
+/**
+ * Canonical pack vendored in this repo (dashboard/assets/banks) — served via
+ * GitHub raw so it survives the australianrates.com shutdown.
+ */
+const CDN_BANK_BASE = 'https://raw.githubusercontent.com/yanniedog/AR-local/main/dashboard/assets/banks/';
 
 type BrandEntry = {
   short: string;
@@ -231,8 +234,16 @@ function pushIconFile(out: Array<string | number>, seen: Set<string>, iconFile: 
   pushUnique(out, seen, `${CDN_BANK_BASE}${iconFile}`);
 }
 
-/** Ordered logo sources: payload embed, bundled pack, then CDN twin. */
-export function resolveBankLogoSources(provider: string, embeddedLogo?: string): Array<string | number> {
+/**
+ * Ordered logo sources: payload embed, bundled pack + its GitHub-raw twin,
+ * then the CDR Register logoUri. Unknown brands no longer get guessed CDN
+ * URLs (the old `<slug>.png` guesses 404'd for every non-pack lender).
+ */
+export function resolveBankLogoSources(
+  provider: string,
+  embeddedLogo?: string,
+  registerLogoUri?: string,
+): Array<string | number> {
   const out: Array<string | number> = [];
   const seen = new Set<string>();
   const embedded = String(embeddedLogo ?? '').trim();
@@ -242,15 +253,13 @@ export function resolveBankLogoSources(provider: string, embeddedLogo?: string):
   const icon = key ? BRAND_MAP[key]?.icon : undefined;
   if (icon) {
     pushIconFile(out, seen, icon);
-    return out;
+  } else {
+    const bundled = BUNDLED_BANK_LOGOS[slugify(lookupProvider(provider))];
+    if (bundled != null) pushUnique(out, seen, bundled);
   }
 
-  const slug = slugify(lookupProvider(provider));
-  if (slug) {
-    const bundled = BUNDLED_BANK_LOGOS[slug];
-    if (bundled != null) pushUnique(out, seen, bundled);
-    pushUnique(out, seen, `${CDN_BANK_BASE}${slug}.png`);
-  }
+  const registerUri = String(registerLogoUri ?? '').trim();
+  if (registerUri) pushUnique(out, seen, registerUri);
   return out;
 }
 

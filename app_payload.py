@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
+import cdr_brand_logos
 import payload_crypto
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -285,9 +286,9 @@ def load_brand_shortcodes(rba_dir: Path) -> Dict[str, str]:
 
 
 def find_bank_logo_dir(dashboard_dir: Path) -> Optional[Path]:
-    """Find the canonical AustralianRates ``site/assets/banks`` pack."""
+    """Find the canonical logo pack (vendored in-repo; legacy site checkouts as fallback)."""
     configured = os.environ.get("AR_LOCAL_SITE_ROOT") or os.environ.get("AR_SITE_ROOT")
-    candidates = []
+    candidates = [dashboard_dir / "assets" / "banks"]
     if configured:
         root = Path(configured).expanduser()
         candidates.extend((root / "assets" / "banks", root / "site" / "assets" / "banks"))
@@ -350,16 +351,22 @@ def build_brands(
     providers: Iterable[str],
     shortcodes: Dict[str, str],
     logos: Optional[Dict[str, str]] = None,
+    register_logos: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, str]]:
     brands: Dict[str, Dict[str, str]] = {}
     logos = logos or {}
+    register_logos = register_logos or {}
     for provider in sorted({p for p in providers if p}):
         short = _get_brand_lookup(shortcodes, provider) or _derive_short(provider)
+        embedded = _get_brand_lookup(logos, provider)
         brands[provider] = compact(
             {
                 "short": short,
                 "color": _brand_color(provider),
-                "logo": _get_brand_lookup(logos, provider),
+                "logo": embedded,
+                # Register URI only when there is no embedded logo: the app
+                # prefers embedded/bundled art, so shipping both wastes bytes.
+                "logo_uri": None if embedded else cdr_brand_logos.logo_uri_for(provider, register_logos),
             }
         )
     return brands
@@ -530,11 +537,14 @@ def build_payload(
     # NB: no wall-clock field inside core/details. They are content-hashed (sha256
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
+    register_logos = cdr_brand_logos.fetch_register_logos(
+        cache_path=exports_dir / "cdr-brand-logos.json"
+    )
     core = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
-        "brands": build_brands(providers_seen, shortcodes, logos),
+        "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
         "rba": load_rba_series(dashboard_dir),
     }
     details = {
