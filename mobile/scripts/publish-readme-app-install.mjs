@@ -33,6 +33,11 @@ const manifestPath =
 const dryRun = process.argv.includes('--dry-run');
 const ghToken = process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim();
 
+function spawnErrorLabel(cmd, args, res) {
+  const detail = res.error?.message || (res.stderr || res.stdout || '').trim() || 'unknown error';
+  return `${cmd} ${args.join(' ')} failed${res.error ? ' to execute' : ''}: ${detail}`;
+}
+
 function gh(args) {
   const env = ghToken ? { ...process.env, GH_TOKEN: ghToken } : process.env;
   const res = spawnSync('gh', args, {
@@ -41,8 +46,11 @@ function gh(args) {
     env,
     timeout: SPAWN_TIMEOUT_MS,
   });
+  if (res.error) {
+    throw new Error(spawnErrorLabel('gh', args, res));
+  }
   if (res.status !== 0) {
-    throw new Error(`gh ${args.join(' ')} failed: ${(res.stderr || res.stdout || '').trim()}`);
+    throw new Error(spawnErrorLabel('gh', args, res));
   }
   return (res.stdout || '').trim();
 }
@@ -53,8 +61,11 @@ function git(args, { allowFail = false } = {}) {
     cwd: repoRoot,
     timeout: SPAWN_TIMEOUT_MS,
   });
+  if (res.error && !allowFail) {
+    throw new Error(spawnErrorLabel('git', args, res));
+  }
   if (res.status !== 0 && !allowFail) {
-    throw new Error(`git ${args.join(' ')} failed: ${(res.stderr || res.stdout || '').trim()}`);
+    throw new Error(spawnErrorLabel('git', args, res));
   }
   return res;
 }
@@ -89,6 +100,7 @@ function publishViaPullRequest(version, buildNumber, message) {
     return { mode: 'pr-existing', prNumber: pr.number };
   }
 
+  git(['fetch', 'origin', branchName], { allowFail: true });
   git(['checkout', '-B', branchName]);
   git(['push', '-u', 'origin', branchName, '--force-with-lease']);
 
