@@ -198,9 +198,9 @@ export function MoversLeaderboard({
   }
   const loan = isLoanSection(section);
   const downs = moved.filter((m) => m.netBps < 0).slice(0, perSide);
-  const ups = moved
-    .filter((m) => m.netBps > 0)
-    .slice(-perSide)
+  const positiveMoves = moved.filter((m) => m.netBps > 0);
+  const ups = positiveMoves
+    .slice(Math.max(0, positiveMoves.length - perSide))
     .reverse();
   // Good news first: cuts for loans, increases for savings/TD.
   const groups = loan
