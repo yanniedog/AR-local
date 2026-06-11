@@ -30,12 +30,6 @@ function parseArgs(argv) {
   return out;
 }
 
-function ghJson(args) {
-  const r = spawnSync('gh', args, { encoding: 'utf8', cwd: repoRoot, timeout: 120_000 });
-  if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').trim() || `gh exit ${r.status}`);
-  return r.stdout.trim() ? JSON.parse(r.stdout) : null;
-}
-
 function printPolicy() {
   console.log(`
 === Bot review policy (repo code — NOT in GitHub ruleset) ===
@@ -138,6 +132,11 @@ function verifyPrExemption(prNumber) {
       timeout: 60_000,
     },
   );
+  if (r.status !== 0 || r.error) {
+    throw new Error(
+      `Failed to verify PR exemption: ${(r.stderr || r.error?.message || '').trim() || `exit ${r.status}`}`,
+    );
+  }
   const reason = (r.stdout || '').trim();
   if (reason) {
     console.log(`PR #${prNumber}: gate-exempt (${reason}) — bot review NOT required for merge`);

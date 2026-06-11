@@ -14,11 +14,7 @@ const authorType = process.env.PR_AUTHOR_TYPE || '';
 
 let reason = gateExemptReasonFromPrMeta({ title, authorLogin, authorType });
 if (!reason && pr) {
-  try {
-    reason = gateExemptReason(pr);
-  } catch {
-    reason = null;
-  }
+  reason = gateExemptReason(pr);
 }
 
 process.stdout.write(reason || '');

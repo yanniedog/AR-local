@@ -49,7 +49,7 @@ export function isAutoReleaseOnlyPr(prNumber) {
   const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title,files']);
   const title = String(view?.title || '').trim();
   if (!isAutoReleaseBumpTitle(title)) return false;
-  const paths = (view.files || []).map((f) => f.path);
+  const paths = (Array.isArray(view?.files) ? view.files : []).map((f) => f.path);
   // Title matches — exempt when GitHub has not listed files yet (pull_request opened race).
   if (paths.length === 0) return true;
   return isAutoReleaseCommitOnly(paths);

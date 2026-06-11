@@ -37,7 +37,7 @@ export function isMatrixCommitTitle(title) {
 export function isReportsOnlyPr(prNumber) {
   const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title,files']);
   const title = String(view?.title || '').trim();
-  const paths = (view.files || []).map((f) => f.path);
+  const paths = (Array.isArray(view?.files) ? view.files : []).map((f) => f.path);
   if (isMatrixCommitTitle(title) && paths.length === 0) return true;
   return isReportsOnlyFileList(paths);
 }

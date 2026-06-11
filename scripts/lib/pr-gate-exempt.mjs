@@ -97,7 +97,7 @@ export function gateExemptReason(prNumber) {
   const metaReason = gateExemptReasonFromPrMeta({ title: view?.title, author: view?.author });
   if (metaReason) return metaReason;
 
-  const paths = (view.files || []).map((f) => f.path);
+  const paths = (Array.isArray(view?.files) ? view.files : []).map((f) => f.path);
   if (paths.length === 0) return null;
   if (isReportsOnlyFileList(paths)) return 'reports';
   if (isAutoReleaseCommitOnly(paths) && isAutoReleaseBumpTitle(view?.title)) {
