@@ -68,7 +68,7 @@ standing up new infrastructure; the Pi stays non-public.
 
 | Phase | Scope | Notes |
 | --- | --- | --- |
-| A | Pi: AES-256-GCM encrypt assets, windowed history split, manifest key ids | needs Pi deploy + key file install |
+| A | Pi: AES-256-GCM encrypt assets, manifest key ids (`payload_crypto.py`; gated by `AR_LOCAL_PAYLOAD_ENC`, OFF until Phase B ships; key via `deploy/pi/install-payload-enc-key.sh`; windowed history split moves to Phase B) | **implemented, flag off** |
 | B | App: decrypt pipeline in payload fetch/cache; interim static dev key | interim = obfuscation only; documented |
 | C | Firebase Auth (Google) + biometric unlock + SecureStore key custody | new deps: expo-local-authentication |
 | D | `issueContentKeys` Function + custom-claims tiers (all users full) | flips off the interim static key |

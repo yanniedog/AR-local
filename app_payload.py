@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
+import payload_crypto
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -467,20 +468,33 @@ def _gzip_bytes(obj: Any) -> bytes:
     return gzip.compress(raw, compresslevel=9, mtime=0)
 
 
-def _asset(out_dir: Path, kind: str, run_date: str, gz: bytes, release_base: str) -> Dict[str, Any]:
-    # Content-addressed name (kind-<run_date>-<sha12>.json.gz): a new/corrected payload
-    # gets a NEW filename, so uploading it never overwrites an asset the previously
-    # published manifest still references. Old manifests stay internally consistent
-    # until the new manifest.json is published last.
-    sha = hashlib.sha256(gz).hexdigest()
-    name = f"{kind}-{run_date}-{sha[:12]}.json.gz"
-    (out_dir / name).write_bytes(gz)
-    return {
+def _asset(
+    out_dir: Path,
+    kind: str,
+    run_date: str,
+    gz: bytes,
+    release_base: str,
+    enc_key: Optional[bytes] = None,
+) -> Dict[str, Any]:
+    # Content-addressed name (kind-<run_date>-<sha12>.json.gz[.enc]): a new/corrected
+    # payload gets a NEW filename, so uploading it never overwrites an asset the
+    # previously published manifest still references. Old manifests stay internally
+    # consistent until the new manifest.json is published last. Encryption uses a
+    # plaintext-derived nonce, so encrypted bytes are equally rebuild-stable.
+    data = payload_crypto.encrypt_asset(gz, enc_key) if enc_key else gz
+    sha = hashlib.sha256(data).hexdigest()
+    suffix = ".json.gz.enc" if enc_key else ".json.gz"
+    name = f"{kind}-{run_date}-{sha[:12]}{suffix}"
+    (out_dir / name).write_bytes(data)
+    entry: Dict[str, Any] = {
         "name": name,
-        "bytes": len(gz),
+        "bytes": len(data),
         "sha256": sha,
         "url": f"{release_base}/{name}",
     }
+    if enc_key:
+        entry["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
+    return entry
 
 
 def build_payload(
@@ -555,6 +569,9 @@ def build_payload(
         search_index=search_index,
         history_banks=history_banks,
         bank_history=bank_history,
+        # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
+        # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
+        enc_key=payload_crypto.resolve_key_from_env(),
     )
 
 
@@ -570,25 +587,26 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
+    enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     files: Dict[str, Any] = {
-        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
-        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
+        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base, enc_key),
+        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base, enc_key),
     }
     if is_rolling_tag(tag) and search_index and search_index.get("products"):
         files["search_index"] = _asset(
-            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base
+            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base, enc_key
         )
     if is_rolling_tag(tag) and history_banks and history_banks.get("sections"):
         files["history_banks"] = _asset(
-            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
+            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base, enc_key
         )
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
-            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base
+            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -601,6 +619,8 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
+    if enc_key:
+        manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -868,7 +888,7 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     data: List[Tuple[str, str]] = []
     for line in listed.stdout.splitlines():
         name, _, created = line.partition("\t")
-        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-")) and name.endswith(".json.gz"):
+        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-")) and name.endswith((".json.gz", ".json.gz.enc")):
             data.append((name, created))
     data.sort(key=lambda x: x[1], reverse=True)  # newest first
     deleted = 0
