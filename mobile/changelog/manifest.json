@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-11T05:49:18.003Z",
+  "generated_at": "2026-06-11T05:58:47.729Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -173,6 +173,18 @@
         "chore(mobile): auto-release bump to v1.0.15 (after c746adf) (#320)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.17"
+    },
+    {
+      "version": "1.0.18",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "feat(mobile): Google sign-in, biometric app lock, secure key custody (Phase C) (#325)",
+        "chore(mobile): auto-release bump to v1.0.17 (after 0851da2) (#324)",
+        "feat(mobile): decrypt support for encrypted payload assets (Phase B) (#323)",
+        "chore(mobile): auto-release bump to v1.0.16 (after f81d7f8) (#322)",
+        "chore(mobile): auto-release bump to v1.0.15 (after c746adf) (#320)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.18"
     }
   ]
 }
