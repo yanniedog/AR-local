@@ -57,9 +57,15 @@ export function apkDownloadUrl(repo, tag) {
   return `https://github.com/${repo}/releases/download/${tag}/${APK_ASSET}`;
 }
 
-/** @param {string} repo @param {string} tag */
-export function qrReleaseUrl(repo, tag) {
-  return `https://github.com/${repo}/releases/download/${tag}/${QR_ASSET}`;
+/**
+ * @param {string} repo
+ * @param {string} tag
+ * @param {{ bust?: string }} [opts] optional cache-bust query (e.g. build number) for README embeds
+ */
+export function qrReleaseUrl(repo, tag, opts = {}) {
+  const base = `https://github.com/${repo}/releases/download/${tag}/${QR_ASSET}`;
+  const bust = String(opts.bust ?? '').trim();
+  return bust ? `${base}?v=${encodeURIComponent(bust)}` : base;
 }
 
 /** @param {string} repo @param {string} tag */
