@@ -76,6 +76,8 @@ export interface Prefs {
   onboarded: boolean;
   interests: SectionKey[];
   rateMoveThresholdBps: number;
+  /** APK build_number whose update banner the user dismissed (null = none). */
+  dismissedUpdateBuild: string | null;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -91,6 +93,7 @@ export const DEFAULT_PREFS: Prefs = {
   onboarded: false,
   interests: [...DEFAULT_INTERESTS],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
+  dismissedUpdateBuild: null,
 };
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';

@@ -13,6 +13,7 @@ import {
   RbaPassThroughCard,
 } from '../../src/components/BankInsights';
 import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
+import { MarketSnapshotList } from '../../src/components/MarketSnapshot';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { RbaChart } from '../../src/components/charts';
 import { Ribbon } from '../../src/components/Ribbon';
@@ -57,6 +58,12 @@ export default function Trends() {
   useScrollToTop(scrollRef);
   const [retryingInsights, setRetryingInsights] = useState(false);
   const [retryingHistory, setRetryingHistory] = useState(false);
+  // Scrubbed/pinned ribbon date — rewinds the lender list below the chart.
+  const [rewindDate, setRewindDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRewindDate(null);
+  }, [activeSection]);
 
   const handleRetryInsights = async () => {
     setRetryingInsights(true);
@@ -270,8 +277,24 @@ export default function Trends() {
                   rba={core.rba}
                   section={activeSection}
                   height={210}
+                  onDateSelect={setRewindDate}
                 />
               </ChartErrorBoundary>
+            ) : null}
+            {rewindDate ? (
+              <View style={{ marginTop: 12 }}>
+                <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>
+                  <AppText variant="small" weight="700">
+                    Market on {formatRunDate(rewindDate)}
+                  </AppText>
+                  <Button title="Back to today" variant="ghost" onPress={() => setRewindDate(null)} />
+                </Row>
+                <MarketSnapshotList
+                  payload={bankInsights}
+                  section={activeSection}
+                  date={rewindDate}
+                />
+              </View>
             ) : null}
             {historyBanksError ? (
               <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>

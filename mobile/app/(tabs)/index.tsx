@@ -82,7 +82,7 @@ export default function Home() {
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const trendsDetail = pulse?.banksMoved
-    ? `${pulse.banksMoved} bank${pulse.banksMoved === 1 ? '' : 's'} moved rates this week — see who cut and who hiked`
+    ? `${pulse.banksMoved} bank${pulse.banksMoved === 1 ? '' : 's'} moved rates this week — see who moved which way`
     : showBankInsights
       ? 'Bank moves feed, RBA pass-through, market history'
       : showHistoryRibbon
@@ -257,6 +257,7 @@ export default function Home() {
           section={section}
           accent={sectionAccent}
           showAccent
+          ribbonStats={node.stats}
           onPress={() => { const nextPath = [node.seg]; logCategoryRowPress({ section, label: node.label, pathBefore: [], pathAfter: nextPath, source: 'home' }); openNode(section, nextPath); }}
         />
       ))}
