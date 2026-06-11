@@ -78,6 +78,8 @@ export interface Prefs {
   rateMoveThresholdBps: number;
   /** APK build_number whose update banner the user dismissed (null = none). */
   dismissedUpdateBuild: string | null;
+  /** Require fingerprint/Face ID (with device-credential fallback) on app start. */
+  appLockEnabled: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -94,6 +96,7 @@ export const DEFAULT_PREFS: Prefs = {
   interests: [...DEFAULT_INTERESTS],
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
   dismissedUpdateBuild: null,
+  appLockEnabled: false,
 };
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';

@@ -35,6 +35,15 @@ import {
   ensureInstallPermission,
   openInstallPermissionSettings,
 } from '../../src/lib/installPermission';
+import { authenticateBiometric, biometricsAvailable } from '../../src/lib/appLock';
+import {
+  isSignInConfigured,
+  signInWithGoogle,
+  signOutUser,
+  subscribeAuth,
+  type AuthUser,
+} from '../../src/lib/auth';
+import { adoptConfigKey } from '../../src/lib/keyVault';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
@@ -135,6 +144,11 @@ export default function Settings() {
           </AppText>
         )}
       </Section>
+
+      <AccountSecuritySection
+        appLockEnabled={prefs.appLockEnabled}
+        onAppLockChange={(v) => setPref('appLockEnabled', v)}
+      />
 
       <Section title="Appearance">
         <Label text="Theme" />
@@ -674,5 +688,87 @@ function InfoRow({ label, value }: { label: string; value: string }) {
         {value}
       </AppText>
     </Row>
+  );
+}
+
+/** Google sign-in + biometric app lock (Phase C of docs/SECURITY_CDR_PIPELINE.md). */
+function AccountSecuritySection({
+  appLockEnabled,
+  onAppLockChange,
+}: {
+  appLockEnabled: boolean;
+  onAppLockChange: (v: boolean) => void;
+}) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => subscribeAuth(setUser), []);
+
+  const handleSignIn = async () => {
+    setBusy(true);
+    try {
+      await signInWithGoogle();
+      await adoptConfigKey();
+    } catch (err) {
+      Alert.alert('Sign-in failed', String((err as Error)?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setBusy(true);
+    try {
+      await signOutUser();
+    } catch (err) {
+      Alert.alert('Sign-out failed', String((err as Error)?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAppLockChange = async (next: boolean) => {
+    if (next && !(await biometricsAvailable())) {
+      Alert.alert(
+        'No screen lock set up',
+        'Add a fingerprint, face unlock, or device PIN in your system settings first.',
+      );
+      return;
+    }
+    // Confirm with the OS prompt before changing either direction, so a passerby
+    // can't quietly disable the lock.
+    if (await authenticateBiometric(next ? 'Confirm to enable app lock' : 'Confirm to disable app lock')) {
+      onAppLockChange(next);
+    }
+  };
+
+  return (
+    <Section title="Account & security">
+      {user ? (
+        <>
+          <InfoRow label="Signed in as" value={user.email ?? user.displayName ?? user.uid} />
+          <Button title="Sign out" variant="ghost" onPress={handleSignOut} loading={busy} disabled={busy} />
+        </>
+      ) : isSignInConfigured() ? (
+        <>
+          <AppText variant="tiny" color="textFaint" style={{ marginBottom: 8, lineHeight: 16 }}>
+            Sign in to keep your rate history access when tiered plans launch.
+          </AppText>
+          <Button title="Sign in with Google" icon="logo-google" onPress={handleSignIn} loading={busy} disabled={busy} />
+        </>
+      ) : (
+        <AppText variant="tiny" color="textFaint" style={{ lineHeight: 16 }}>
+          Account sign-in is not enabled for this build yet.
+        </AppText>
+      )}
+      <Divider style={{ marginVertical: 8 }} />
+      <ToggleRow
+        icon="finger-print"
+        label="App lock"
+        sub="Require fingerprint / face unlock on app start"
+        value={appLockEnabled}
+        onChange={(v) => void handleAppLockChange(v)}
+      />
+    </Section>
   );
 }
