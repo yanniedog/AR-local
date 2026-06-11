@@ -31,7 +31,8 @@ describe('bankBrand', () => {
         sources.some(
           (src) =>
             typeof src === 'number' ||
-            (typeof src === 'string' && src.includes('australianrates.com/assets/banks/')),
+            (typeof src === 'string' &&
+              src.includes('raw.githubusercontent.com/yanniedog/AR-local/main/dashboard/assets/banks/')),
         ),
       ).toBe(true);
     }
@@ -75,5 +76,16 @@ describe('bankBrand', () => {
 
   it('falls back to monogram short labels when no brand entry exists', () => {
     expect(resolveBrandShort('Some New Bank')).toBe('SNB');
+  });
+
+  it('uses the CDR Register logoUri for brands outside the pack', () => {
+    const uri = 'https://mystate.com.au/wp-content/uploads/MyState_Logo_s.png';
+    expect(resolveBankLogoSources('MyState Bank', undefined, uri)).toEqual([uri]);
+    // Pack lenders keep bundled art first; the register URI rides last.
+    const anz = resolveBankLogoSources('ANZ', undefined, uri);
+    expect(anz[anz.length - 1]).toBe(uri);
+    expect(anz.length).toBeGreaterThan(1);
+    // No more guessed CDN URLs for unknown brands — monogram is the fallback.
+    expect(resolveBankLogoSources('Totally Unknown Bank')).toEqual([]);
   });
 });

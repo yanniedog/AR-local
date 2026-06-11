@@ -54,6 +54,7 @@ import { sampleCore, sampleDetails, sampleManifest } from './sample';
 export { shouldWarmDetails } from './optionalPrefs';
 import type { ThemeMode } from '../theme/theme';
 import { debugLog } from '../lib/debugLog';
+import { useRegisterLogosStore } from '../lib/registerLogos';
 import { logDegradation, logEnsureSkipped, logRetry, logStoreRefreshSkipped } from '../lib/degradationLog';
 import { hapticRefreshComplete, hapticSelection } from '../lib/haptics';
 import { effectiveBankInsights, effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
@@ -278,6 +279,7 @@ export const useStore = create<AppState>()(
           return;
         }
 
+        void useRegisterLogosStore.getState().ensure();
         void get().refresh({});
       },
 
