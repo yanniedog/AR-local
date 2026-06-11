@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-11T02:26:53.147Z",
+  "generated_at": "2026-06-11T02:45:20.740Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -132,6 +132,18 @@
         "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.13"
+    },
+    {
+      "version": "1.0.14",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "fix(ci): skip bot gates for chore and bot-authored PRs (#317)",
+        "chore(mobile): auto-release bump to v1.0.13 (after c1f0e31) (#316)",
+        "feat(mobile): section-aware move semantics, update banner, ribbon rewind, per-tier ribbons (#315)",
+        "chore(mobile): auto-release bump to v1.0.12 (after 1ab052c) (#314)",
+        "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.14"
     }
   ]
 }
