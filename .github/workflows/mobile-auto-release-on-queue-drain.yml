@@ -31,9 +31,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
-      - name: Queue drained → patch bump to main (APK via mobile-android-apk)
+      - name: Queue drained â†’ patch bump to main (APK via mobile-android-apk)
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

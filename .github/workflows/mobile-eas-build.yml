@@ -1,17 +1,17 @@
 # Cloud EAS builds for the Expo mobile app (development / preview / production).
-# Manual trigger only — does not gate PR merges.
+# Manual trigger only â€” does not gate PR merges.
 #
-# Secrets (Settings → Secrets and variables → Actions):
-#   EXPO_TOKEN — robot access token for yannieyannies-team (expo.dev → Access tokens)
-#   GOOGLE_SERVICES_JSON — optional full google-services.json for real Crashlytics (else placeholder)
-#   GOOGLE_SERVICE_INFO_PLIST — optional GoogleService-Info.plist for iOS Crashlytics
-#   EXPO_PUBLIC_CLARITY_PROJECT_ID — optional Clarity project id (passed to EAS build env)
-# EAS project env (expo.dev → project → Environment variables) — alternative to GH secrets:
-#   GOOGLE_SERVICES_JSON — file-type env (path injected at build; see ensure-firebase-config.mjs)
-#   EXPO_PUBLIC_CLARITY_PROJECT_ID — Microsoft Clarity project id (preview/production builds)
+# Secrets (Settings â†’ Secrets and variables â†’ Actions):
+#   EXPO_TOKEN â€” robot access token for yannieyannies-team (expo.dev â†’ Access tokens)
+#   GOOGLE_SERVICES_JSON â€” optional full google-services.json for real Crashlytics (else placeholder)
+#   GOOGLE_SERVICE_INFO_PLIST â€” optional GoogleService-Info.plist for iOS Crashlytics
+#   EXPO_PUBLIC_CLARITY_PROJECT_ID â€” optional Clarity project id (passed to EAS build env)
+# EAS project env (expo.dev â†’ project â†’ Environment variables) â€” alternative to GH secrets:
+#   GOOGLE_SERVICES_JSON â€” file-type env (path injected at build; see ensure-firebase-config.mjs)
+#   EXPO_PUBLIC_CLARITY_PROJECT_ID â€” Microsoft Clarity project id (preview/production builds)
 #
 # Profiles: mobile/eas.json (development = dev client; preview = internal APK; production = store)
-# Project: @yannieyannies-team/ar-local-rates (app.json → expo.extra.eas.projectId)
+# Project: @yannieyannies-team/ar-local-rates (app.json â†’ expo.extra.eas.projectId)
 #
 # Firebase files are gitignored and are NOT uploaded to EAS (see EAS build log). Cloud builds
 # materialize google-services.json from GOOGLE_SERVICES_JSON_B64 / file-type GOOGLE_SERVICES_JSON
@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   eas-build:
-    name: eas build (${{ inputs.profile }} · ${{ inputs.platform }})
+    name: eas build (${{ inputs.profile }} Â· ${{ inputs.platform }})
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,7 +60,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
@@ -69,7 +69,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings → Secrets → Actions."
+            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings â†’ Secrets â†’ Actions."
             exit 1
           fi
 
@@ -199,4 +199,4 @@ jobs:
       - name: Build queued
         run: |
           echo "Track the build at https://expo.dev/accounts/yannieyannies-team/projects/ar-local-rates/builds"
-          echo "Tip: EXPO_TOKEN=… eas build:view <id> --json   (build:view has no --non-interactive flag)"
+          echo "Tip: EXPO_TOKEN=â€¦ eas build:view <id> --json   (build:view has no --non-interactive flag)"

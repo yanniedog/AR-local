@@ -1,15 +1,15 @@
 # Free unlimited Android preview APK builds on GitHub Actions (no EAS cloud quota).
 # Produces a signed release APK and publishes to:
 #   Rolling:   app-apk-latest  (manifest app-apk-latest.json for in-app self-update)
-#   Versioned: app-v{semver}   e.g. app-v1.0.0 — title "Australian Rates app — {version} (Android)"
+#   Versioned: app-v{semver}   e.g. app-v1.0.0 â€” title "Australian Rates app â€” {version} (Android)"
 # Both releases ship app-preview.apk, app-preview-qr.png, and install.html.
 #
-# Secrets (Settings → Secrets and variables → Actions):
-#   GOOGLE_SERVICES_JSON — optional; materialized via ensure-firebase-config.mjs
-#   GOOGLE_SERVICE_INFO_PLIST — optional
-#   EXPO_TOKEN — optional; used to download EAS Android keystore when ANDROID_KEYSTORE_B64 unset
-#   ANDROID_KEYSTORE_B64 — optional override; base64 .jks/.keystore
-#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD — with B64 override
+# Secrets (Settings â†’ Secrets and variables â†’ Actions):
+#   GOOGLE_SERVICES_JSON â€” optional; materialized via ensure-firebase-config.mjs
+#   GOOGLE_SERVICE_INFO_PLIST â€” optional
+#   EXPO_TOKEN â€” optional; used to download EAS Android keystore when ANDROID_KEYSTORE_B64 unset
+#   ANDROID_KEYSTORE_B64 â€” optional override; base64 .jks/.keystore
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD â€” with B64 override
 #
 # Signing: prefers ANDROID_KEYSTORE_* secrets; else fetches default keystore from EAS credentials.
 
@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
@@ -139,7 +139,7 @@ jobs:
             --manifest build/apk-publish/app-apk-latest.json
           cd "$GITHUB_WORKSPACE"
           if git diff --quiet README.md; then
-            echo "README.md unchanged � skip commit"
+            echo "README.md unchanged — skip commit"
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

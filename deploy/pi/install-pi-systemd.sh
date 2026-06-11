@@ -9,7 +9,14 @@ run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
 run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
 
 sudo apt-get update
-sudo apt-get install -y git python3 nodejs npm gh rsync avahi-daemon nginx
+sudo apt-get install -y git python3 gh rsync avahi-daemon nginx curl
+
+# Node.js 24 via NodeSource (distro nodejs is too old; NodeSource bundles npm)
+node_version=$(node -v 2>/dev/null | cut -d. -f1 | tr -dc '0-9')
+if [ -z "$node_version" ] || [ "$node_version" -lt 24 ]; then
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+fi
 
 sudo mkdir -p "$portable_root"
 sudo chown "$run_user:$run_group" "$portable_root"

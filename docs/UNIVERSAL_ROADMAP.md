@@ -265,7 +265,10 @@ Expected package baseline on a greenfield Pi:
 
 ```sh
 sudo apt update
-sudo apt install -y git python3 nodejs npm gh avahi-daemon
+sudo apt install -y git python3 gh avahi-daemon curl
+# Node.js 24 via NodeSource (distro nodejs is too old; NodeSource bundles npm)
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
 ```
 
 Only use sudo for OS package, mount, ownership, and systemd work. The application itself must run as `User=pi`.

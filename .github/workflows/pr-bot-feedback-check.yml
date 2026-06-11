@@ -2,11 +2,11 @@ name: pr-bot-feedback-check
 
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# — no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
+# â€” no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
 # per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
-# GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch — those run
+# GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
 # against the default branch, so their check records against main, not the PR
 # head, and would leave a failed required check stale (Codex P1 PR #148).
 # NOTE: GitHub emits no event when a thread is *resolved*, so a resolve-only round
@@ -32,7 +32,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # MUST be false for a required check — cancelling an in-flight run leaves a
+  # MUST be false for a required check â€” cancelling an in-flight run leaves a
   # "cancelled" check-run that branch protection reads as the latest required
   # status, blocking the PR even when a later run succeeds (the "BLOCKED but
   # all-green" trap). With false the newest event runs to completion, so the
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
       - name: Skip thread gate for gate-exempt chore PRs
         id: gate_exempt
         env:
@@ -65,7 +65,7 @@ jobs:
           fi
           if node -e "import('./scripts/lib/pr-gate-exempt.mjs').then(m=>{const r=m.gateExemptReason($PR);process.exit(r?0:1)})"; then
             echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is gate-exempt — thread closure not required"
+            echo "PR #$PR is gate-exempt â€” thread closure not required"
           else
             echo "gate_exempt=false" >> "$GITHUB_OUTPUT"
           fi
@@ -85,7 +85,7 @@ jobs:
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
-            echo "::warning::GitHub API rate limit — re-run after quota resets"
+            echo "::warning::GitHub API rate limit â€” re-run after quota resets"
             exit 1
           fi
           exit "$code"

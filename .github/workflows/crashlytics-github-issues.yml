@@ -1,5 +1,5 @@
 # Poll Firebase Crashlytics and open GitHub issues for new Crashlytics issue IDs.
-# Dedupes via <!-- crashlytics-issue-id: … --> marker in issue bodies.
+# Dedupes via <!-- crashlytics-issue-id: â€¦ --> marker in issue bodies.
 
 name: crashlytics-github-issues
 
@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Sync Crashlytics issues to GitHub
         env:
@@ -63,7 +63,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ] && [ -n "${{ inputs.mock_report }}" ]; then
             args+=(--mock-report "${{ inputs.mock_report }}")
           elif [ "${{ github.event_name }}" != "pull_request" ] && [ -z "${FIREBASE_USER_OAUTH_JSON:-}" ]; then
-            echo "::warning::FIREBASE_USER_OAUTH_JSON not set — live Crashlytics report sync is disabled; running mock dry-run"
+            echo "::warning::FIREBASE_USER_OAUTH_JSON not set â€” live Crashlytics report sync is disabled; running mock dry-run"
             args+=(--dry-run --mock-report scripts/fixtures/crashlytics-topIssues-mock.json)
           fi
           node --test scripts/lib/*.test.mjs
