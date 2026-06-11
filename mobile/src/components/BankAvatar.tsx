@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 
 import { resolveBankLogoSources, resolveBrandShort } from '../data/bankBrand';
 import { useStore } from '../data/store';
+import { logoUriFor, useRegisterLogosStore } from '../lib/registerLogos';
 import { useTheme } from '../theme/ThemeProvider';
 
 function contrastText(hex: string): string {
@@ -18,9 +19,17 @@ function contrastText(hex: string): string {
 export function BankAvatar({ provider, size = 42 }: { provider: string; size?: number }) {
   const theme = useTheme();
   const brand = useStore((s) => s.core?.brands?.[provider]);
+  const registerLogos = useRegisterLogosStore((s) => s.logos);
+  const ensureRegisterLogos = useRegisterLogosStore((s) => s.ensure);
+
+  useEffect(() => {
+    void ensureRegisterLogos();
+  }, [ensureRegisterLogos]);
+
+  const registerUri = brand?.logo_uri ?? logoUriFor(provider, registerLogos);
   const sources = useMemo(
-    () => resolveBankLogoSources(provider, brand?.logo),
-    [provider, brand?.logo],
+    () => resolveBankLogoSources(provider, brand?.logo, registerUri),
+    [provider, brand?.logo, registerUri],
   );
   const [prevSources, setPrevSources] = useState(sources);
   const [sourceIdx, setSourceIdx] = useState(0);

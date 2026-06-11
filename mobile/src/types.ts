@@ -66,6 +66,8 @@ export interface Brand {
   color: string;
   /** Offline-capable canonical logo embedded by the release payload. */
   logo?: string;
+  /** CDR Register logoUri (regulator-maintained) for brands without embedded art. */
+  logo_uri?: string;
 }
 
 export interface RbaEntry {

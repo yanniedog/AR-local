@@ -69,3 +69,6 @@ _run_pi_*
 
 # projectmem persistent memory — local per-machine (CLAUDE.md is committed; memory is not)
 /.projectmem/
+
+# Vendored canonical bank-logo pack (served via raw.githubusercontent)
+!dashboard/assets/banks/*.png
