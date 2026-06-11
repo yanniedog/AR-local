@@ -2,7 +2,7 @@
 # Manual trigger only. Store credentials must be configured in EAS (eas credentials).
 #
 # Secrets:
-#   EXPO_TOKEN — same robot token as mobile-eas-build.yml
+#   EXPO_TOKEN â€” same robot token as mobile-eas-build.yml
 #
 # Prerequisite: a successful production build for the target platform(s).
 
@@ -21,7 +21,7 @@ on:
           - ios
           - all
       profile:
-        description: EAS submit profile (mobile/eas.json → submit)
+        description: EAS submit profile (mobile/eas.json â†’ submit)
         required: true
         default: production
         type: choice
@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   eas-submit:
-    name: eas submit (${{ inputs.profile }} · ${{ inputs.platform }})
+    name: eas submit (${{ inputs.profile }} Â· ${{ inputs.platform }})
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,7 +47,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
@@ -56,7 +56,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings → Secrets → Actions."
+            echo "::error::EXPO_TOKEN is not set. Add the ar-local-eas robot token under Settings â†’ Secrets â†’ Actions."
             exit 1
           fi
 

@@ -23,7 +23,7 @@ on:
 
 jobs:
   mobile:
-    name: mobile (typecheck · lint · test · export)
+    name: mobile (typecheck Â· lint Â· test Â· export)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,12 +32,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
-      - name: Mobile CI (doctor · typecheck · lint · test · export)
+      - name: Mobile CI (doctor Â· typecheck Â· lint Â· test Â· export)
         run: npm run ci
 
   payload:

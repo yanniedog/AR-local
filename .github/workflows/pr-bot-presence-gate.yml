@@ -2,7 +2,7 @@ name: pr-bot-presence-gate
 
 # Single-shot bot presence check. Re-fires on PR lifecycle + bot review/comment events,
 # so a miss while bots are still in flight self-heals when they post (no GraphQL polling from
-# Actions — installation quota). Local --watch (npm run wait-for-bots) remains the pre-merge gate.
+# Actions â€” installation quota). Local --watch (npm run wait-for-bots) remains the pre-merge gate.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -28,7 +28,7 @@ concurrency:
   # the latest required status, blocking the PR even when a later run succeeds
   # (the "BLOCKED but all-green" trap that forced empty re-trigger commits on
   # every PR). With false, the newest event still runs to completion, so the
-  # latest required check-run is always success/failure — never a stale cancel.
+  # latest required check-run is always success/failure â€” never a stale cancel.
   group: bot-presence-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
       - name: Skip bot wait for gate-exempt chore PRs
         id: gate_exempt
         env:
@@ -61,7 +61,7 @@ jobs:
           esac
           if node -e "import('./scripts/lib/pr-gate-exempt.mjs').then(m=>{const r=m.gateExemptReason($PR);process.exit(r?0:1)})"; then
             echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is gate-exempt — bot wait not required"
+            echo "PR #$PR is gate-exempt â€” bot wait not required"
           else
             echo "gate_exempt=false" >> "$GITHUB_OUTPUT"
           fi
@@ -89,7 +89,7 @@ jobs:
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
-            echo "::warning::Bot wait not ready yet (exit 2) — run npm run wait-for-bots locally until exit 0, then re-run this workflow"
+            echo "::warning::Bot wait not ready yet (exit 2) â€” run npm run wait-for-bots locally until exit 0, then re-run this workflow"
             exit 1
           fi
           exit "$code"
