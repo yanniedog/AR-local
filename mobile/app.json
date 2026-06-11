@@ -109,6 +109,7 @@
       "apkManifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json",
       "payloadDecKeyHex": "",
       "googleWebClientId": "",
+      "keyServiceUrl": "",
       "router": {
         "origin": false,
         "scheme": "arrates",

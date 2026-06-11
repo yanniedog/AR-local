@@ -71,7 +71,7 @@ standing up new infrastructure; the Pi stays non-public.
 | A | Pi: AES-256-GCM encrypt assets, manifest key ids (`payload_crypto.py`; gated by `AR_LOCAL_PAYLOAD_ENC`, OFF until Phase B ships; key via `deploy/pi/install-payload-enc-key.sh`; windowed history split moves to Phase B) | **implemented, flag off** |
 | B | App: decrypt pipeline in payload fetch (`mobile/src/lib/payloadCrypto.ts`, auto-detects `ARE1` assets in `downloadInflate`); interim key via `app.json` extra `payloadDecKeyHex` (unset by default) | **implemented, dormant**; interim = obfuscation only; windowed history split deferred to Phase D where tiering needs it |
 | C | Firebase Auth Google sign-in (`mobile/src/lib/auth.ts`, enabled by `extra.googleWebClientId` — owner must enable the Google provider in the Firebase console and paste the Web client ID); biometric app lock (`appLock.ts` + `AppLockGate`, pref `appLockEnabled`); SecureStore key custody (`keyVault.ts`, AFTER_FIRST_UNLOCK so background refresh keeps working) | **implemented**; sign-in dormant until `googleWebClientId` is set |
-| D | `issueContentKeys` Function + custom-claims tiers (all users full) | flips off the interim static key |
+| D | `issueContentKeys` callable (`firebase/functions/`, secret `PAYLOAD_KEY_FULL`, per-uid 20/day rate limit, custom-claims tiers with `ENFORCE_TIERS=false`) + app client (`mobile/src/lib/keyService.ts` → SecureStore vault), synced on app start/sign-in; deploy runbook `firebase/README.md` | **implemented**; dormant until owner deploys the function and sets `extra.keyServiceUrl` |
 | E | Hardening: rotation, rate limits, Play Integrity, scraper telemetry | post-payments |
 
 ## Open items

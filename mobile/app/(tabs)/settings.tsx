@@ -5,6 +5,7 @@ import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
+import { ApkShareSection } from '../../src/components/ApkShareSection';
 import { SegmentedControl } from '../../src/components/controls';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { Screen, ScreenScrollView } from '../../src/components/Screen';
@@ -43,6 +44,7 @@ import {
   subscribeAuth,
   type AuthUser,
 } from '../../src/lib/auth';
+import { syncContentKeys } from '../../src/lib/keyService';
 import { adoptConfigKey } from '../../src/lib/keyVault';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
@@ -368,6 +370,8 @@ export default function Settings() {
       </Section>
 
       <AppUpdateSection />
+
+      <ApkShareSection />
 
       <Section title="About">
         <InfoRow
@@ -709,6 +713,7 @@ function AccountSecuritySection({
     try {
       await signInWithGoogle();
       await adoptConfigKey();
+      await syncContentKeys();
     } catch (err) {
       Alert.alert('Sign-in failed', String((err as Error)?.message ?? err));
     } finally {

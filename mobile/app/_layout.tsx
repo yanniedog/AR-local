@@ -30,6 +30,8 @@ import { AppText } from '../src/components/ui';
 import { routeFromNotificationResponse } from '../src/data/notifications';
 import { useStore } from '../src/data/store';
 import { androidStackScreenOptions } from '../src/lib/androidChrome';
+import { subscribeAuth } from '../src/lib/auth';
+import { syncContentKeys } from '../src/lib/keyService';
 import { debugLog, installGlobalErrorHandlers } from '../src/lib/debugLog';
 import { logSwallowedError } from '../src/lib/degradationLog';
 import { setDiagnosticsEnabled } from '../src/lib/observability';
@@ -207,6 +209,12 @@ function RootNavigator() {
       void bootstrap();
     });
   }, [bootstrap]);
+
+  // Refresh tier-issued content keys on app start / sign-in (Phase D; no-op
+  // until the key service URL is configured).
+  useEffect(() => subscribeAuth((user) => {
+    if (user) void syncContentKeys();
+  }), []);
 
   useEffect(() => {
     if (!appReady) return;
