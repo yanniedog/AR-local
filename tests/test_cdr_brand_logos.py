@@ -81,7 +81,7 @@ def test_fetch_uses_cache_and_survives_failure(tmp_path: Path) -> None:
     import os
 
     os.utime(cache, (stale, stale))
-    assert cdr_brand_logos.fetch_register_logos(cache, fetcher=broken) == {}
+    assert cdr_brand_logos.fetch_register_logos(cache, fetcher=broken) == first
 
 
 def test_build_brands_attaches_register_uri_only_without_embedded_logo() -> None:

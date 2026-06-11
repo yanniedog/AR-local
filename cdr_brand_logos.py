@@ -74,6 +74,16 @@ def parse_register_payload(raw: bytes) -> Dict[str, str]:
     return out
 
 
+def _read_cache_file(cache_path: Path) -> Dict[str, str]:
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        if isinstance(cached, dict) and cached:
+            return {str(k): str(v) for k, v in cached.items()}
+    except Exception:
+        pass
+    return {}
+
+
 def fetch_register_logos(
     cache_path: Optional[Path] = None,
     *,
@@ -81,20 +91,18 @@ def fetch_register_logos(
     fetcher: Callable[[int], bytes] = _default_fetch,
 ) -> Dict[str, str]:
     """Cached, non-fatal register fetch. Returns {} on any failure."""
+    stale: Dict[str, str] = {}
     if cache_path is not None and cache_path.is_file():
         age = time.time() - cache_path.stat().st_mtime
-        if age < CACHE_MAX_AGE_SEC:
-            try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if isinstance(cached, dict) and cached:
-                    return {str(k): str(v) for k, v in cached.items()}
-            except Exception:
-                pass
+        cached = _read_cache_file(cache_path)
+        if cached and age < CACHE_MAX_AGE_SEC:
+            return cached
+        stale = cached
     try:
         logos = parse_register_payload(fetcher(timeout))
     except Exception as exc:  # noqa: BLE001 - logos are best-effort
         print(f"[cdr_brand_logos] register fetch failed: {exc!r}")
-        return {}
+        return stale
     if logos and cache_path is not None:
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
