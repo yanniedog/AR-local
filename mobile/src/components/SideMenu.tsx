@@ -6,6 +6,7 @@ import Animated, { FadeIn, SlideInLeft } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getInstalledAppInfo } from '../lib/appUpdate';
+import { useStore } from '../data/store';
 import { useTheme } from '../theme/ThemeProvider';
 import { BrandLockup } from './BrandLockup';
 import { AppText, Divider } from './ui';
@@ -54,6 +55,15 @@ export const MENU_SECTIONS: SideMenuSection[] = [
 export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const diagnosticsEnabled = useStore((s) => s.prefs.diagnosticsEnabled);
+
+  const sections = diagnosticsEnabled
+    ? MENU_SECTIONS
+    : MENU_SECTIONS.map((section) =>
+        section.title === 'App'
+          ? { ...section, items: section.items.filter((item) => item.route !== '/debug-log') }
+          : section,
+      );
 
   const go = (route: Href) => {
     onClose();
@@ -80,7 +90,7 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
           </View>
           <Divider />
           <ScrollView contentContainerStyle={{ paddingVertical: 6 }}>
-            {MENU_SECTIONS.map((section, si) => (
+            {sections.map((section, si) => (
               <View key={section.title}>
                 {si > 0 ? <Divider style={{ marginVertical: 6 }} /> : null}
                 <AppText
