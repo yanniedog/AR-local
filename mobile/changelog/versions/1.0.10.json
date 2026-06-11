@@ -1,0 +1,71 @@
+{
+  "version": "1.0.10",
+  "date": "2026-06-11",
+  "summaryBullets": [
+    "chore: migrate toolchain to Node.js 24 everywhere (#309)",
+    "chore(mobile): auto-release bump to v1.0.9 (after 7f72b16) (#308)",
+    "fix(mobile): reset history ribbon scrub state on touch cancel (#307)",
+    "mobile: comprehensive degradation logging (#305)",
+    "fix(mobile): remove merge conflict markers from optionalFeatures tests (#306)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "chore: migrate toolchain to Node.js 24 everywhere (#309)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.9 (after 7f72b16) (#308)"
+        },
+        {
+          "text": "fix(mobile): reset history ribbon scrub state on touch cancel (#307)"
+        },
+        {
+          "text": "mobile: comprehensive degradation logging (#305)"
+        },
+        {
+          "text": "fix(mobile): remove merge conflict markers from optionalFeatures tests (#306)"
+        },
+        {
+          "text": "fix(mobile): dead button handlers and tab scroll-to-top (#304)"
+        },
+        {
+          "text": "fix(mobile): bank intelligence Retry forces real reload (#302)"
+        },
+        {
+          "text": "fix(mobile): bank logos via bundled brand pack + CDN fallback (#300)"
+        },
+        {
+          "text": "feat(mobile): history ribbon touch scrub and crosshair (#296)"
+        },
+        {
+          "text": "fix(mobile): Term Deposits segment label (#297)"
+        },
+        {
+          "text": "ci(mobile): push auto-release bumps directly to main (#295)"
+        },
+        {
+          "text": "fix(mobile): remount HierarchyView on Browse drill path changes (#286)"
+        },
+        {
+          "text": "Default squash auto-merge for all PRs (#283)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.10"
+        },
+        {
+          "text": "Since tag: app-v1.0.8"
+        }
+      ]
+    }
+  ]
+}

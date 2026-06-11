@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-10T23:35:21.957Z",
+  "generated_at": "2026-06-11T00:52:32.423Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -90,6 +90,18 @@
         "fix(mobile): bank intelligence Retry forces real reload (#302)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.9"
+    },
+    {
+      "version": "1.0.10",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "chore: migrate toolchain to Node.js 24 everywhere (#309)",
+        "chore(mobile): auto-release bump to v1.0.9 (after 7f72b16) (#308)",
+        "fix(mobile): reset history ribbon scrub state on touch cancel (#307)",
+        "mobile: comprehensive degradation logging (#305)",
+        "fix(mobile): remove merge conflict markers from optionalFeatures tests (#306)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.10"
     }
   ]
 }
