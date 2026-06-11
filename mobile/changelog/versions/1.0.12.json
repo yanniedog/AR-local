@@ -1,0 +1,31 @@
+{
+  "version": "1.0.12",
+  "date": "2026-06-11",
+  "summaryBullets": [
+    "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.12"
+        },
+        {
+          "text": "Since tag: app-v1.0.10"
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-11T01:09:00.652Z",
+  "generated_at": "2026-06-11T02:03:03.331Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -114,6 +114,14 @@
         "fix(mobile): reset history ribbon scrub state on touch cancel (#307)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.11"
+    },
+    {
+      "version": "1.0.12",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "chore(mobile): auto-release bump to v1.0.11 (after bd27d00) (#312)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.12"
     }
   ]
 }
