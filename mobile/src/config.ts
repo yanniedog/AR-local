@@ -7,6 +7,7 @@ type Extra = {
   datesIndexUrl?: string;
   apkReleaseTag?: string;
   apkManifestUrl?: string;
+  payloadDecKeyHex?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
@@ -45,6 +46,15 @@ export const APK_MANIFEST_URL =
 
 /** Schema version this build understands. Older payloads still load best-effort. */
 export const SUPPORTED_SCHEMA = 1;
+
+/**
+ * AES-256-GCM key (64 hex chars) for encrypted payload assets — Phase B of
+ * docs/SECURITY_CDR_PIPELINE.md. Interim static key (obfuscation, not security);
+ * Phase D replaces this with auth-gated key issuance. Empty = decryption
+ * unavailable; the Pi must keep AR_LOCAL_PAYLOAD_ENC off until this is set in a
+ * shipped build. Override via app.json extra.payloadDecKeyHex.
+ */
+export const PAYLOAD_DEC_KEY_HEX: string = extra.payloadDecKeyHex ?? '';
 
 /** Local-notification defaults. */
 export const RATE_MOVE_BPS_THRESHOLD = 5; // notify when a category best rate moves >= 5bps

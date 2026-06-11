@@ -2,6 +2,8 @@ import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';
 import { gunzipSync, strFromU8 } from 'fflate';
 
+import { decryptAsset, isEncryptedAsset } from '../lib/payloadCrypto';
+
 import { MANIFEST_URL, SUPPORTED_SCHEMA } from '../config';
 import { debugLog } from '../lib/debugLog';
 import { logFetchHttpError } from '../lib/degradationLog';
@@ -191,7 +193,12 @@ export async function downloadInflate(
     totalBytes: byteLen,
     startedAt: inflateStarted,
   });
-  const bytes = new Uint8Array(buf);
+  let bytes: Uint8Array = new Uint8Array(buf);
+  // Encrypted assets (ARE1 magic) are decrypted to the gzip layer first; the
+  // sha256 above was computed over the ciphertext, matching the manifest.
+  if (isEncryptedAsset(bytes)) {
+    bytes = decryptAsset(bytes);
+  }
   // GitHub release assets are served raw; the bytes are our gzip. If a proxy
   // already decoded gzip transport, the bytes are plain JSON — handle both.
   const looksGzipped = bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;

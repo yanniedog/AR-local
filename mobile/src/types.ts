@@ -103,11 +103,18 @@ export interface DetailsPayload {
   products: Record<string, ProductDetail>;
 }
 
+/** Present when the asset is AES-256-GCM encrypted (docs/SECURITY_CDR_PIPELINE.md). */
+export interface ManifestEnc {
+  alg: string;
+  key_id: string;
+}
+
 export interface ManifestFile {
   name: string;
   bytes: number;
   sha256: string;
   url: string;
+  enc?: ManifestEnc;
 }
 
 export interface Manifest {
@@ -127,6 +134,7 @@ export interface Manifest {
     /** Per-bank daily series + rate-move events (bank intelligence asset). */
     bank_history?: ManifestFile;
   };
+  enc?: ManifestEnc;
 }
 
 export type PayloadSource = 'sample' | 'cache' | 'remote';
