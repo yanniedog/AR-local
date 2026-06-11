@@ -257,7 +257,9 @@ export function BankHistoryChart({
   const onTouchEndScrub = (e: GestureResponderEvent) => {
     const t = e.nativeEvent.changedTouches[0];
     const mode = touchModeRef.current;
-    if (t && mode === null) {
+    // Tap pins a slice; releasing a horizontal scrub pins where it ended,
+    // so scrubbing also rewinds anything driven by onDateSelect.
+    if (t && (mode === null || mode === 'h')) {
       const idx = sliceIndexFromPlotX(t.locationX, innerW, plotDates.length);
       const date = plotDates[idx];
       if (date) handleSlicePress(date);

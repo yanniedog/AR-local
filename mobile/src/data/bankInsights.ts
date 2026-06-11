@@ -344,6 +344,86 @@ export function rbaPassThrough(
   return { decision, rows };
 }
 
+export interface BankSnapshotRow {
+  provider: string;
+  /** Best advertised rate as of the snapshot date (last known value carried forward). */
+  best: number | null;
+  median: number | null;
+  /** Best-rate change at its most recent move on/before the date, in bps. */
+  changeBps: number | null;
+  /** run_date of that most recent move (null when no prior data or no change). */
+  changedOn: string | null;
+}
+
+/** Per-bank market state as of `date` — powers the ribbon-scrub rewind list. */
+export function bankSnapshotAt(
+  payload: BankInsightsPayload | null | undefined,
+  section: SectionKey,
+  date: string,
+  lowerIsBetter: boolean,
+): BankSnapshotRow[] {
+  if (!payload?.run_dates?.length) return [];
+  let idx = -1;
+  for (let i = payload.run_dates.length - 1; i >= 0; i -= 1) {
+    if (payload.run_dates[i] <= date) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return [];
+
+  const lastKnown = (
+    series: (number | null)[],
+  ): { value: number | null; index: number } => {
+    for (let i = idx; i >= 0; i -= 1) {
+      const v = series[i];
+      if (v != null) return { value: v, index: i };
+    }
+    return { value: null, index: -1 };
+  };
+
+  const rows: BankSnapshotRow[] = [];
+  for (const [provider, sections] of Object.entries(payload.banks)) {
+    const series = sections[section];
+    if (!series) continue;
+    const best = lastKnown(series.best);
+    const median = lastKnown(series.median);
+    if (best.value == null && median.value == null) continue;
+    // Most recent move on/before the date: walk back over equal values to the
+    // first run where the current value appeared, then diff against the prior one.
+    let changeBps: number | null = null;
+    let changedOn: string | null = null;
+    if (best.value != null) {
+      let firstHeldIdx = best.index;
+      for (let i = best.index - 1; i >= 0; i -= 1) {
+        const v = series.best[i];
+        if (v == null) continue;
+        if (v !== best.value) {
+          changeBps = Math.round((best.value - v) * 1000) / 10;
+          changedOn = payload.run_dates[firstHeldIdx];
+          break;
+        }
+        firstHeldIdx = i;
+      }
+    }
+    rows.push({
+      provider,
+      best: best.value,
+      median: median.value,
+      changeBps,
+      changedOn,
+    });
+  }
+  rows.sort((a, b) => {
+    const av = a.best ?? a.median;
+    const bv = b.best ?? b.median;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return lowerIsBetter ? av - bv : bv - av;
+  });
+  return rows;
+}
+
 export interface MarketPulse {
   /** Distinct providers that moved rates in the window. */
   banksMoved: number;

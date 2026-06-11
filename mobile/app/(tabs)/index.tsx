@@ -257,6 +257,7 @@ export default function Home() {
           section={section}
           accent={sectionAccent}
           showAccent
+          ribbonStats={node.stats}
           onPress={() => { const nextPath = [node.seg]; logCategoryRowPress({ section, label: node.label, pathBefore: [], pathAfter: nextPath, source: 'home' }); openNode(section, nextPath); }}
         />
       ))}
