@@ -25,8 +25,8 @@ When the last open PR squashes to **`main`**, **`mobile-auto-release-on-queue-dr
 auto-bumps **`expo.version`** (direct push to **`main`**, gate-exempt PR fallback) and triggers a new APK build.
 
 See **`docs/MOBILE_APP.md`** (payload contract), **`docs/HANDOFF.md`** (ops + verify), and
-**`mobile/scripts/update-readme-app-install.mjs`** (refresh the install table from
-**`app-apk-latest.json`**).
+**`mobile/scripts/publish-readme-app-install.mjs`** (refresh the install table from
+**`app-apk-latest.json`** after each APK publish; PR fallback when `main` is protected).
 
 <!-- app-android-install:start -->
 ### Android preview install

@@ -34,39 +34,51 @@ const readmePath = resolve(
 const START = '<!-- app-android-install:start -->';
 const END = '<!-- app-android-install:end -->';
 
-function resolveVersionAndBuild() {
+/** @typedef {{ version: string, buildNumber: string, manifestPath?: string }} ReleaseMeta */
+
+/**
+ * @param {string} [manifestPath]
+ * @returns {ReleaseMeta}
+ */
+export function resolveVersionAndBuild(manifestPath) {
   let version = readAppJsonVersion(mobileRoot);
   let buildNumber = readAppJsonBuildNumber(mobileRoot);
-  const manifestArgIdx = process.argv.indexOf('--manifest');
-  if (manifestArgIdx >= 0) {
-    const rawPath = process.argv[manifestArgIdx + 1];
-    if (rawPath) {
-      const manifestPath = resolve(rawPath);
-      if (existsSync(manifestPath)) {
-        try {
-          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-          if (manifest.version) version = String(manifest.version);
-          if (manifest.build_number != null) buildNumber = String(manifest.build_number);
-        } catch (err) {
-          console.error(`Error reading or parsing manifest at ${manifestPath}:`, err);
-        }
-      }
+  const resolvedManifest = manifestPath?.trim();
+  if (resolvedManifest && existsSync(resolvedManifest)) {
+    try {
+      const manifest = JSON.parse(readFileSync(resolvedManifest, 'utf8'));
+      if (manifest.version) version = String(manifest.version);
+      if (manifest.build_number != null) buildNumber = String(manifest.build_number);
+    } catch (err) {
+      console.error(`Error reading or parsing manifest at ${resolvedManifest}:`, err);
     }
   }
-  return { version, buildNumber };
+  return { version, buildNumber, manifestPath: resolvedManifest };
 }
 
-function buildSection() {
-  const { version, buildNumber } = resolveVersionAndBuild();
-  const qrUrl = qrReleaseUrl(repo, ROLLING_TAG);
-  const apkUrl = apkDownloadUrl(repo, ROLLING_TAG);
-  const installUrl = installReleaseUrl(repo, ROLLING_TAG);
-  const releasesUrl = `https://github.com/${repo}/releases?q=app-v&expanded=true`;
+function manifestPathFromArgv() {
+  const manifestArgIdx = process.argv.indexOf('--manifest');
+  if (manifestArgIdx < 0) return undefined;
+  const rawPath = process.argv[manifestArgIdx + 1];
+  return rawPath ? resolve(rawPath) : undefined;
+}
+
+/**
+ * @param {{ repo?: string, manifestPath?: string }} [opts]
+ * @returns {string}
+ */
+export function buildReadmeInstallSection(opts = {}) {
+  const ghRepo = opts.repo?.trim() || repo;
+  const { version, buildNumber } = resolveVersionAndBuild(opts.manifestPath);
+  const qrUrl = qrReleaseUrl(ghRepo, ROLLING_TAG, { bust: buildNumber });
+  const apkUrl = apkDownloadUrl(ghRepo, ROLLING_TAG);
+  const installUrl = installReleaseUrl(ghRepo, ROLLING_TAG);
+  const releasesUrl = `https://github.com/${ghRepo}/releases?q=app-v&expanded=true`;
 
   return `${START}
 ### Android preview install
 
-Scan with **Android Chrome** to install the latest preview APK. The QR image URL is stable (\`${ROLLING_TAG}/app-preview-qr.png\`) and updates on each successful build.
+Scan with **Android Chrome** to install the latest preview APK. Asset path is stable (\`${ROLLING_TAG}/app-preview-qr.png\`); the README embed adds \`?v=<build>\` so the image refreshes after each APK publish.
 
 | | |
 |---|---|
@@ -80,9 +92,18 @@ In-app self-update uses the rolling manifest \`app-apk-latest.json\` on tag \`${
 ${END}`;
 }
 
-function main() {
-  const readme = readFileSync(readmePath, 'utf8');
-  const section = buildSection();
+/**
+ * @param {{ readmePath?: string, repo?: string, manifestPath?: string }} [opts]
+ * @returns {{ changed: boolean, version: string, buildNumber: string }}
+ */
+export function updateReadmeInstallSection(opts = {}) {
+  const targetReadme = resolve(opts.readmePath || readmePath);
+  const readme = readFileSync(targetReadme, 'utf8');
+  const meta = resolveVersionAndBuild(opts.manifestPath);
+  const section = buildReadmeInstallSection({
+    repo: opts.repo || repo,
+    manifestPath: opts.manifestPath,
+  });
 
   const hasStart = readme.includes(START);
   const hasEnd = readme.includes(END);
@@ -108,10 +129,18 @@ function main() {
 
   if (next === readme) {
     console.log('update-readme-app-install: README unchanged');
-    return;
+    return { changed: false, version: meta.version, buildNumber: meta.buildNumber };
   }
-  writeFileSync(readmePath, next, 'utf8');
-  console.log(`update-readme-app-install: updated ${readmePath}`);
+  writeFileSync(targetReadme, next, 'utf8');
+  console.log(`update-readme-app-install: updated ${targetReadme}`);
+  return { changed: true, version: meta.version, buildNumber: meta.buildNumber };
 }
 
-main();
+function main() {
+  updateReadmeInstallSection({ manifestPath: manifestPathFromArgv() });
+}
+
+const invoked = process.argv[1]?.replace(/\\/g, '/').endsWith('update-readme-app-install.mjs');
+if (invoked) {
+  main();
+}
