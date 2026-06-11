@@ -132,6 +132,47 @@ jest.mock('@react-native-firebase/app', () => ({
   default: {},
 }));
 
+jest.mock('@react-native-firebase/auth', () => {
+  const authInstance = { currentUser: null };
+  return {
+    __esModule: true,
+    getAuth: jest.fn(() => authInstance),
+    onAuthStateChanged: jest.fn(() => jest.fn()),
+    signInWithCredential: jest.fn(async () => ({ user: null })),
+    signOut: jest.fn(async () => {}),
+    GoogleAuthProvider: { credential: jest.fn((t) => ({ token: t })) },
+  };
+});
+
+jest.mock('@react-native-google-signin/google-signin', () => ({
+  GoogleSignin: {
+    configure: jest.fn(),
+    hasPlayServices: jest.fn(async () => true),
+    signIn: jest.fn(async () => ({ type: 'success', data: { idToken: 'test-id-token' } })),
+    signOut: jest.fn(async () => {}),
+  },
+}));
+
+jest.mock('expo-local-authentication', () => ({
+  hasHardwareAsync: jest.fn(async () => true),
+  isEnrolledAsync: jest.fn(async () => true),
+  authenticateAsync: jest.fn(async () => ({ success: true })),
+}));
+
+jest.mock('expo-secure-store', () => {
+  const store = new Map();
+  return {
+    AFTER_FIRST_UNLOCK: 'afterFirstUnlock',
+    getItemAsync: jest.fn(async (k) => store.get(k) ?? null),
+    setItemAsync: jest.fn(async (k, v) => {
+      store.set(k, v);
+    }),
+    deleteItemAsync: jest.fn(async (k) => {
+      store.delete(k);
+    }),
+  };
+});
+
 jest.mock('@microsoft/react-native-clarity', () => ({
   initialize: jest.fn(),
   pause: jest.fn(async () => true),

@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppLockGate } from '../src/components/AppLockGate';
 import { ArMarkLogo } from '../src/components/ArMarkLogo';
 import { SplashMorphProvider, type SplashMorphTarget } from '../src/components/BrandLockup';
 import { DataUnavailableScreen } from '../src/components/DataUnavailableScreen';
@@ -320,7 +321,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <RootNavigator />
+          <AppLockGate>
+            <RootNavigator />
+          </AppLockGate>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

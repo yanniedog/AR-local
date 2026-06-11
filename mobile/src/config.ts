@@ -8,6 +8,7 @@ type Extra = {
   apkReleaseTag?: string;
   apkManifestUrl?: string;
   payloadDecKeyHex?: string;
+  googleWebClientId?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
@@ -55,6 +56,13 @@ export const SUPPORTED_SCHEMA = 1;
  * shipped build. Override via app.json extra.payloadDecKeyHex.
  */
 export const PAYLOAD_DEC_KEY_HEX: string = extra.payloadDecKeyHex ?? '';
+
+/**
+ * Web client ID from the Firebase console (Authentication → Google provider)
+ * enabling Google sign-in. Empty = the Account section shows sign-in as not
+ * configured for this build.
+ */
+export const GOOGLE_WEB_CLIENT_ID: string = extra.googleWebClientId ?? '';
 
 /** Local-notification defaults. */
 export const RATE_MOVE_BPS_THRESHOLD = 5; // notify when a category best rate moves >= 5bps

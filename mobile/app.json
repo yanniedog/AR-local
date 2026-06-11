@@ -88,7 +88,15 @@
             ]
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Unlock Australian Rates with Face ID."
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true
@@ -99,6 +107,8 @@
       "manifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json",
       "apkReleaseTag": "app-apk-latest",
       "apkManifestUrl": "https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-apk-latest.json",
+      "payloadDecKeyHex": "",
+      "googleWebClientId": "",
       "router": {
         "origin": false,
         "scheme": "arrates",
