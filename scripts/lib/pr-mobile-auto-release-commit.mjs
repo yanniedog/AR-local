@@ -2,7 +2,6 @@
  * Git paths and helpers for mobile auto-release version bumps (direct push + gate exempt).
  */
 import { ghJson } from './gh-pr-review-threads.mjs';
-import { fetchPrChangedPaths } from './pr-reports-only.mjs';
 
 export const AUTO_RELEASE_BUMP_PREFIX = 'chore(mobile): auto-release bump to v';
 
@@ -35,15 +34,25 @@ export function isAutoReleaseCommitOnly(paths) {
 }
 
 /**
+ * @param {string} title
+ * @returns {boolean}
+ */
+export function isAutoReleaseBumpTitle(title) {
+  return String(title || '').trim().startsWith(AUTO_RELEASE_BUMP_PREFIX);
+}
+
+/**
  * @param {number|string} prNumber
  * @returns {boolean}
  */
 export function isAutoReleaseOnlyPr(prNumber) {
-  const paths = fetchPrChangedPaths(prNumber);
-  if (!isAutoReleaseCommitOnly(paths)) return false;
-  const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title']);
+  const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title,files']);
   const title = String(view?.title || '').trim();
-  return title.startsWith(AUTO_RELEASE_BUMP_PREFIX);
+  if (!isAutoReleaseBumpTitle(title)) return false;
+  const paths = (view.files || []).map((f) => f.path);
+  // Title matches — exempt when GitHub has not listed files yet (pull_request opened race).
+  if (paths.length === 0) return true;
+  return isAutoReleaseCommitOnly(paths);
 }
 
 /** Shown when protected main rejects workflow push (no ruleset bypass). */

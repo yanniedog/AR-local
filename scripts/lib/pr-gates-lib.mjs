@@ -271,7 +271,7 @@ export function gateWaitForBots(prNumber, githubBotGate) {
     return {
       id: 'wait-for-bots',
       pass: true,
-      detail: `Skipped (${exempt} — gate-exempt chore PR)`,
+      detail: `Skipped (${exempt} — human bot review not required)`,
       skipped: true,
     };
   }
@@ -311,7 +311,7 @@ export function gateBotFeedback(prNumber) {
     return {
       id: 'pr-bot-feedback-check',
       pass: true,
-      detail: `Skipped (${exempt} — gate-exempt chore PR)`,
+      detail: `Skipped (${exempt} — human bot review not required)`,
       skipped: true,
     };
   }

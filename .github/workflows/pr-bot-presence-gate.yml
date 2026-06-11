@@ -48,10 +48,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Skip bot wait for gate-exempt chore PRs
+      - name: Skip bot wait for non-human / chore PRs
         id: gate_exempt
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: |
           case "${{ github.event_name }}" in
             workflow_dispatch) PR="${{ inputs.pr_number }}" ;;
@@ -59,12 +62,19 @@ jobs:
             pull_request_review) PR="${{ github.event.pull_request.number }}" ;;
             *)                 PR="${{ github.event.pull_request.number }}" ;;
           esac
-          if node -e "import('./scripts/lib/pr-gate-exempt.mjs').then(m=>{const r=m.gateExemptReason($PR);process.exit(r?0:1)})"; then
+          export PR
+          EXEMPT=$(node scripts/pr-gate-exempt-reason.mjs || true)
+          if [ -n "$EXEMPT" ]; then
             echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is gate-exempt â€” bot wait not required"
+            echo "gate_exempt_reason=$EXEMPT" >> "$GITHUB_OUTPUT"
+            echo "PR #$PR is gate-exempt ($EXEMPT) — bot review not required"
           else
             echo "gate_exempt=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Gate exempt — pass (no bot wait)
+        if: steps.gate_exempt.outputs.gate_exempt == 'true'
+        run: |
+          echo "bot-presence-gate: skipped (${{ steps.gate_exempt.outputs.gate_exempt_reason }} — human bot review not required)"
       - name: Required bot wait gate (single shot)
         if: steps.gate_exempt.outputs.gate_exempt != 'true'
         env:

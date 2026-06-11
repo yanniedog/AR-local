@@ -6,6 +6,9 @@ import { ghJson } from './gh-pr-review-threads.mjs';
 
 export const REPORTS_ONLY_PREFIX = 'reports/';
 
+/** Title for direct/matrix commits to main (gate-exempt when files match reports/). */
+export const MATRIX_COMMIT_TITLE = 'chore: update PR bot feedback matrix';
+
 export function isReportsOnlyPath(filePath) {
   return String(filePath || '').startsWith(REPORTS_ONLY_PREFIX);
 }
@@ -23,6 +26,18 @@ export function fetchPrChangedPaths(prNumber) {
   return (view.files || []).map((f) => f.path);
 }
 
+/**
+ * @param {string} title
+ * @returns {boolean}
+ */
+export function isMatrixCommitTitle(title) {
+  return String(title || '').trim() === MATRIX_COMMIT_TITLE;
+}
+
 export function isReportsOnlyPr(prNumber) {
-  return isReportsOnlyFileList(fetchPrChangedPaths(prNumber));
+  const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title,files']);
+  const title = String(view?.title || '').trim();
+  const paths = (view.files || []).map((f) => f.path);
+  if (isMatrixCommitTitle(title) && paths.length === 0) return true;
+  return isReportsOnlyFileList(paths);
 }

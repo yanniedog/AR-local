@@ -1,0 +1,15 @@
+# Bot review target: human-initiated feat/fix/agent PRs (e.g. yanniedog).
+# Chore + github-actions[bot] PRs skip bot gates in CI (scripts/lib/pr-gate-exempt.mjs).
+# Ignore automated paths so Gemini does not spend quota on version bumps / matrix sync.
+have_fun: false
+code_review:
+  comment_severity_threshold: HIGH
+  pull_request_opened:
+    help: false
+    summary: false
+    code_review: true
+    include_drafts: false
+ignore_patterns:
+  - "mobile/app.json"
+  - "mobile/changelog/**"
+  - "reports/**"

@@ -1,6 +1,15 @@
 # Import GitHub ruleset for `main` (bot gates + Actions bypass)
 
-One-time operator setup so workflow jobs can push directly to `main` (PR bot matrix sync, mobile auto-release) while keeping bot merge gates for human PRs.
+One-time operator setup so workflow jobs can push directly to `main` (PR bot matrix sync, mobile auto-release) while keeping bot merge gates for **human** PRs only.
+
+**Operator script (prints policy + import steps + local verify):**
+
+```sh
+npm run github:bot-gates:operator
+npm run github:bot-gates:operator -- --verify-pr 310
+```
+
+**Bot skip policy** (chore + `github-actions[bot]` PRs) lives in repo code (`scripts/lib/pr-gate-exempt.mjs`), not in the ruleset JSON. The ruleset always lists the two gate checks; workflows skip them when exempt.
 
 **Artifact:** [`.github/rulesets/main-bot-gates.json`](../.github/rulesets/main-bot-gates.json)
 

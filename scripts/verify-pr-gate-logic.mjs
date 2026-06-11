@@ -10,9 +10,23 @@
  *  - Low-signal bot threads never block. Unresolved human threads block.
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
-import { isReportsOnlyFileList, isReportsOnlyPath } from './lib/pr-reports-only.mjs';
-import { isAutoReleaseCommitOnly, isAutoReleaseCommitPath } from './lib/pr-mobile-auto-release-commit.mjs';
-import { isGateExemptFileList } from './lib/pr-gate-exempt.mjs';
+import {
+  isMatrixCommitTitle,
+  isReportsOnlyFileList,
+  isReportsOnlyPath,
+} from './lib/pr-reports-only.mjs';
+import {
+  isAutoReleaseBumpTitle,
+  isAutoReleaseCommitOnly,
+  isAutoReleaseCommitPath,
+} from './lib/pr-mobile-auto-release-commit.mjs';
+import {
+  gateExemptReasonFromPrMeta,
+  gateExemptReasonFromTitle,
+  isBotPrAuthor,
+  isChorePrTitle,
+  isGateExemptFileList,
+} from './lib/pr-gate-exempt.mjs';
 
 const BOT = { login: 'gemini-code-assist[bot]', __typename: 'Bot' };
 const HUMAN = { login: 'yanniedog', __typename: 'User' };
@@ -112,9 +126,58 @@ for (const [name, files, want] of [
   if (fn(files) !== want) failures.push(`${name}: ${fn.name} !== ${want}`);
 }
 
+for (const [title, want] of [
+  ['chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)', true],
+  ['chore(mobile): auto-release bump to v1.0.8 (after b481ace)', true],
+  ['feat(mobile): new screen', false],
+]) {
+  if (isAutoReleaseBumpTitle(title) !== want) {
+    failures.push(`isAutoReleaseBumpTitle(${title}) !== ${want}`);
+  }
+}
+for (const [title, want] of [
+  ['chore: update PR bot feedback matrix', true],
+  ['chore: ignore local worktrees', true],
+  ['feat(mobile): new screen', false],
+  ['fix(dashboard): ING code', false],
+]) {
+  if (isChorePrTitle(title) !== want) failures.push(`isChorePrTitle(${title}) !== ${want}`);
+}
+if (!isMatrixCommitTitle('chore: update PR bot feedback matrix')) {
+  failures.push('isMatrixCommitTitle(matrix title) !== true');
+}
+if (gateExemptReasonFromTitle('chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)') !== 'mobile-auto-release') {
+  failures.push('gateExemptReasonFromTitle(auto-release) !== mobile-auto-release');
+}
+if (gateExemptReasonFromTitle('chore: update PR bot feedback matrix') !== 'reports') {
+  failures.push('gateExemptReasonFromTitle(matrix) !== reports');
+}
+
+for (const [author, want] of [
+  [{ login: 'github-actions[bot]', type: 'Bot' }, true],
+  [{ login: 'dependabot[bot]', __typename: 'Bot' }, true],
+  [{ login: 'yanniedog', type: 'User' }, false],
+  ['sourcery-ai[bot]', true],
+]) {
+  if (isBotPrAuthor(author) !== want) failures.push(`isBotPrAuthor(${JSON.stringify(author)}) !== ${want}`);
+}
+
+for (const [meta, want] of [
+  [{ title: 'feat: dashboard fix', authorLogin: 'yanniedog', authorType: 'User' }, null],
+  [{ title: 'chore: tidy scripts', authorLogin: 'yanniedog', authorType: 'User' }, 'chore'],
+  [{ title: 'feat: from actions', authorLogin: 'github-actions[bot]', authorType: 'Bot' }, 'bot-authored'],
+  [{ title: 'chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)', authorLogin: 'github-actions[bot]', authorType: 'Bot' }, 'bot-authored'],
+  [{ title: 'agent/foo-bar', authorLogin: 'yanniedog', authorType: 'User' }, null],
+]) {
+  const got = gateExemptReasonFromPrMeta(meta);
+  if (got !== want) failures.push(`gateExemptReasonFromPrMeta(${JSON.stringify(meta)}) got ${got}, want ${want}`);
+}
+
 if (failures.length) {
   console.error('FAIL verify-pr-gate-logic:');
   for (const f of failures) console.error('  -', f);
   process.exit(1);
 }
-console.log(`PASS verify-pr-gate-logic: ${cases.length} live + ${auditCases.length} audit cases + closure-phrasing checks`);
+console.log(
+  `PASS verify-pr-gate-logic: ${cases.length} live + ${auditCases.length} audit + title-exempt checks`,
+);
