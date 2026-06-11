@@ -12,7 +12,8 @@ sudo apt-get update
 sudo apt-get install -y git python3 gh rsync avahi-daemon nginx curl
 
 # Node.js 24 via NodeSource (distro nodejs is too old; NodeSource bundles npm)
-if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d. -f1 | tr -d v)" -lt 24 ]; then
+node_version=$(node -v 2>/dev/null | cut -d. -f1 | tr -dc '0-9')
+if [ -z "$node_version" ] || [ "$node_version" -lt 24 ]; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
