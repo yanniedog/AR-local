@@ -12,14 +12,27 @@ runs/*.*
 
 node_modules/
 
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+
 # Local git worktrees (agent parallel checkouts)
 .worktrees/
+_wt-*/
+*-wt/
+*-pr/
+tmp/
 
 # Agent auditor session artifacts (local only)
 .git/auditor/
 
 # Bot wait gate anchor state (local; override with AR_BOT_WAIT_STATE_DIR)
 .ar-bot-wait/
+
+# Agent session artifacts (local only)
+.ar-mobile-audit/
+.ar-pr-watch/
 
 *.log
 .tmp*.*

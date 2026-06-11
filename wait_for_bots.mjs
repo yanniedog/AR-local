@@ -493,7 +493,7 @@ async function main() {
 
   const exempt = gateExemptReason(prNumber);
   if (exempt) {
-    console.log(`>>> Bot wait skipped for PR #${prNumber} (${exempt} — gate-exempt chore PR).`);
+    console.log(`>>> Bot wait skipped for PR #${prNumber} (${exempt} — human bot review not required).`);
     process.exit(0);
   }
   let state = readState(prNumber) || {};

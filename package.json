@@ -32,6 +32,7 @@
     "git:graph-hygiene": "git fetch origin --prune",
     "chief:scan": "node scripts/chief-scan.mjs",
     "agent:auditor": "node scripts/agent-auditor-scan.mjs",
+    "github:bot-gates:operator": "node scripts/github-bot-gates-operator.mjs",
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
     "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
     "pr:merge": "node scripts/pr-merge.mjs",

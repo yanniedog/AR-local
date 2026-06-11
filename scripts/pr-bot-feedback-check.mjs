@@ -142,7 +142,7 @@ function main() {
 
   const exempt = gateExemptReason(prNumber);
   if (exempt) {
-    if (!args.quiet) console.log(`pr-bot-feedback-check: skip PR #${prNumber} (${exempt} — gate-exempt chore PR)`);
+    if (!args.quiet) console.log(`pr-bot-feedback-check: skip PR #${prNumber} (${exempt} — human bot review not required)`);
     process.exit(0);
   }
 
