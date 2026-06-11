@@ -10,6 +10,7 @@ done per token. Concretely:
 - Batch independent tool calls in one block.
 - No redundant exploration, no narrating options you won't pursue.
 - Keep output terse but complete.
+
 This is a standing user instruction; do not make the user repeat it.
 
 <!-- >>> projectmem bridge >>> -->
