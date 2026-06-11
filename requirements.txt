@@ -1,3 +1,6 @@
 # Standalone ingest/export/dashboard uses Python 3.10+ stdlib only.
 # XLSX files are written directly as Office Open XML ZIP packages.
 tzdata>=2024.1
+# Optional: app payload asset encryption (AR_LOCAL_PAYLOAD_ENC=1) needs the
+# 'cryptography' package. Raspberry Pi OS ships it system-wide
+# (python3-cryptography); it is imported lazily, so plaintext builds don't need it.
