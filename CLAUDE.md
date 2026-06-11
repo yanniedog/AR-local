@@ -1,5 +1,18 @@
 # CLAUDE.md
 
+## Token efficiency (MANDATORY — all agents)
+
+Be efficient and optimal with token usage. Get maximum high-value work
+done per token. Concretely:
+
+- Use projectmem / memory instead of re-scanning sources.
+- Read only the file ranges you need; never re-read to "verify".
+- Batch independent tool calls in one block.
+- No redundant exploration, no narrating options you won't pursue.
+- Keep output terse but complete.
+
+This is a standing user instruction; do not make the user repeat it.
+
 <!-- >>> projectmem bridge >>> -->
 ## projectmem (MANDATORY)
 
