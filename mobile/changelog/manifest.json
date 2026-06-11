@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-11T05:58:47.729Z",
+  "generated_at": "2026-06-11T19:50:02.019Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -185,6 +185,15 @@
         "chore(mobile): auto-release bump to v1.0.15 (after c746adf) (#320)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.18"
+    },
+    {
+      "version": "1.0.19",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "feat: issueContentKeys key service + app client (Phase D) (#327)",
+        "fix(logos): CDR Register logoUri coverage + vendor pack off dying CDN (#328)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.19"
     }
   ]
 }
