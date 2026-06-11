@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-11T00:52:32.423Z",
+  "generated_at": "2026-06-11T01:09:00.652Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -102,6 +102,18 @@
         "fix(mobile): remove merge conflict markers from optionalFeatures tests (#306)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.10"
+    },
+    {
+      "version": "1.0.11",
+      "date": "2026-06-11",
+      "summaryBullets": [
+        "fix(mobile): convert JPEG-disguised bank logos to real PNG for AAPT2 (#311)",
+        "chore(mobile): auto-release bump to v1.0.10 (after 329ddbf) (#310)",
+        "chore: migrate toolchain to Node.js 24 everywhere (#309)",
+        "chore(mobile): auto-release bump to v1.0.9 (after 7f72b16) (#308)",
+        "fix(mobile): reset history ribbon scrub state on touch cancel (#307)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.11"
     }
   ]
 }
