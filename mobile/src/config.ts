@@ -9,6 +9,7 @@ type Extra = {
   apkManifestUrl?: string;
   payloadDecKeyHex?: string;
   googleWebClientId?: string;
+  keyServiceUrl?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
@@ -63,6 +64,12 @@ export const PAYLOAD_DEC_KEY_HEX: string = extra.payloadDecKeyHex ?? '';
  * configured for this build.
  */
 export const GOOGLE_WEB_CLIENT_ID: string = extra.googleWebClientId ?? '';
+
+/**
+ * issueContentKeys callable URL (Phase D key service, firebase/README.md).
+ * Empty = keys come from SecureStore/bundled config only.
+ */
+export const KEY_SERVICE_URL: string = extra.keyServiceUrl ?? '';
 
 /** Local-notification defaults. */
 export const RATE_MOVE_BPS_THRESHOLD = 5; // notify when a category best rate moves >= 5bps

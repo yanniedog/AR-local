@@ -709,6 +709,7 @@ function AccountSecuritySection({
     try {
       await signInWithGoogle();
       await adoptConfigKey();
+      // Content-key sync rides the root-layout auth listener; no direct call here.
     } catch (err) {
       Alert.alert('Sign-in failed', String((err as Error)?.message ?? err));
     } finally {
