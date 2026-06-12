@@ -21,6 +21,8 @@ export interface Filters {
   rateTypes: string[];
   lvrTiers: string[];
   repaymentTypes: string[];
+  /** Owner-occupier vs investment (CDR loan_purpose codes). */
+  loanPurposes: string[];
   depositKinds: string[];
   interestPayments: string[];
   /** CDR featureType codes from details.features (AND when multiple selected). */
@@ -36,6 +38,7 @@ export const EMPTY_FILTERS: Filters = {
   rateTypes: [],
   lvrTiers: [],
   repaymentTypes: [],
+  loanPurposes: [],
   depositKinds: [],
   interestPayments: [],
   accountFeatures: [],
@@ -49,6 +52,7 @@ export function activeFilterCount(f: Filters): number {
     f.rateTypes.length +
     f.lvrTiers.length +
     f.repaymentTypes.length +
+    f.loanPurposes.length +
     f.depositKinds.length +
     f.interestPayments.length +
     f.accountFeatures.length +
@@ -96,8 +100,9 @@ export function sortRows(rows: RateRow[], sortKey: SortKey, section: SectionKey)
   return copy;
 }
 
-function inList(value: string | undefined, list: string[]): boolean {
-  return list.length === 0 || (value !== undefined && list.includes(value));
+function inList(value: string | undefined, list: string[] | undefined): boolean {
+  // Persisted filter snapshots predating a dimension restore without it.
+  return !list || list.length === 0 || (value !== undefined && list.includes(value));
 }
 
 export function filterRows(
@@ -123,6 +128,7 @@ export function filterRows(
     if (!inList(row.rate_type, filters.rateTypes)) return false;
     if (!inList(row.lvr_tier, filters.lvrTiers)) return false;
     if (!inList(row.ribbon_repayment_type ?? row.repayment_type, filters.repaymentTypes)) return false;
+    if (!inList(row.loan_purpose ?? row.security_purpose, filters.loanPurposes)) return false;
     if (!inList(row.ribbon_deposit_kind, filters.depositKinds)) return false;
     if (!inList(row.interest_payment, filters.interestPayments)) return false;
     if (

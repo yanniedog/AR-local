@@ -20,6 +20,7 @@ export function CategoryRow({
   accent,
   showAccent = false,
   ribbonStats,
+  ribbonDomain,
 }: {
   label: string;
   productCount: number;
@@ -30,6 +31,8 @@ export function CategoryRow({
   accent?: string;
   showAccent?: boolean;
   ribbonStats?: RateStats;
+  /** Shared scale across sibling rows so ranges are directly comparable. */
+  ribbonDomain?: { min: number; max: number } | null;
 }) {
   const theme = useTheme();
   const meta = SECTIONS[section];
@@ -73,7 +76,7 @@ export function CategoryRow({
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
         </Row>
       </Row>
-      {ribbonStats ? <Ribbon stats={ribbonStats} section={section} compact /> : null}
+      {ribbonStats ? <Ribbon stats={ribbonStats} section={section} compact domain={ribbonDomain} /> : null}
     </Pressable>
   );
 }

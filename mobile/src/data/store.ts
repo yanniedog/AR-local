@@ -40,6 +40,7 @@ import {
 import type { HistoryBanksPayload } from './historyPayload';
 import { normalizeHistoryBanksPayload } from './historyPayload';
 import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
+import { EMPTY_PROFILE, normalizeProfileFilters, type ProfileFilters } from './profile';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
   downloadBankInsights,
@@ -81,6 +82,8 @@ export interface Prefs {
   dismissedUpdateBuild: string | null;
   /** Require fingerprint/Face ID (with device-credential fallback) on app start. */
   appLockEnabled: boolean;
+  /** Saved product profile — default filters applied across the app. */
+  profileFilters: ProfileFilters;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -98,6 +101,7 @@ export const DEFAULT_PREFS: Prefs = {
   rateMoveThresholdBps: RATE_MOVE_BPS_THRESHOLD,
   dismissedUpdateBuild: null,
   appLockEnabled: false,
+  profileFilters: { ...EMPTY_PROFILE },
 };
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';
@@ -945,6 +949,7 @@ export const useStore = create<AppState>()(
           ...DEFAULT_PREFS,
           ...p?.prefs,
           interests: normalizeInterests(p?.prefs?.interests ?? DEFAULT_INTERESTS),
+          profileFilters: normalizeProfileFilters(p?.prefs?.profileFilters),
         };
         const persistedActiveSection = p?.activeSection;
         const isValidActiveSection =

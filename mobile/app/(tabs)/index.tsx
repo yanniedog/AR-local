@@ -1,7 +1,7 @@
 import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
@@ -10,10 +10,12 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate, toFraction } from '../../src/data/format';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
+import { profileFilterRows, profileSectionCount } from '../../src/data/profile';
 import { bestRow } from '../../src/data/selectors';
+import { ShareQrModal } from '../../src/components/ShareQrModal';
 import { rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
 import { APK_RELEASE_TAG, REPO } from '../../src/config';
@@ -31,7 +33,9 @@ export default function Home() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const profileFilters = useStore((s) => s.prefs.profileFilters);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     const resolved = resolveInterestSection(interests, section);
@@ -49,29 +53,33 @@ export default function Home() {
     () => resolveSectionRibbonStats(sectionData, hierRows, includeNonStandard),
     [sectionData, hierRows, includeNonStandard],
   );
+  // The hero "best" honours the saved product profile (e.g. OO, P&I, your LVR).
+  const profileCount = profileSectionCount(profileFilters, section);
   const best = useMemo(
-    () => bestRow(hierRows, section, includeNonStandard),
-    [hierRows, section, includeNonStandard],
+    () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard),
+    [hierRows, profileFilters, section, includeNonStandard],
   );
 
   const meta = SECTIONS[section];
-  const shareToday = useCallback(() => {
-    if (!core) return;
+  const shareMessage = useMemo(() => {
+    if (!core) return null;
     const headline = meta.lowerIsBetter ? stats.min : stats.max;
-    if (headline == null) return; // nothing worth sharing until rates are loaded
-    const lines = [
+    if (headline == null) return null; // nothing worth sharing until rates are loaded
+    return [
       `Best ${meta.title.toLowerCase()} rate today: ${formatRate(headline)} (${formatRunDate(core.run_date)})`,
       `Tracked daily across ${Object.keys(core.brands ?? {}).length} Australian lenders.`,
       `Get the AustralianRates app: https://github.com/${REPO}/releases/tag/${APK_RELEASE_TAG}`,
-    ];
-    void Share.share({ message: lines.join('\n') });
+    ].join('\n');
   }, [core, meta, stats]);
+  const shareToday = useCallback(() => setShareOpen(true), []);
 
   if (!core) return null;
   const rba = core.rba?.at(-1);
   const sectionAccent = meta.accentColor;
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
-  const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
+  // With a profile active the hero must show the best profile-matched rate,
+  // not the unfiltered market extreme it would otherwise mislabel.
+  const heroRate = profileCount > 0 ? (best ? toFraction(best.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
@@ -116,6 +124,7 @@ export default function Home() {
               </AppText>
               <AppText variant="small" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
                 {meta.lowerIsBetter ? 'Lowest' : 'Top'} rate today
+                {profileCount > 0 ? ' · matches your profile' : ''}
               </AppText>
               <AppText variant="rateHero" style={{ color: rateInk, marginTop: theme.spacing(1) }}>
                 {formatRate(heroRate)}
@@ -162,6 +171,8 @@ export default function Home() {
           icon="trending-up"
           onPress={() => openRibbonProducts(section, 'rate')}
         />
+        <Chip label="Calculator" icon="calculator-outline" onPress={() => router.push('/calculator')} />
+        <Chip label="My profile" icon="person-circle-outline" onPress={() => router.push('/profile')} />
         {section === 'Mortgage' ? (
           <Chip
             label="Comparison"
@@ -181,6 +192,7 @@ export default function Home() {
           <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
         </SpringOnNewData>
       </Card>
+      <ShareQrModal visible={shareOpen} onClose={() => setShareOpen(false)} shareMessage={shareMessage} />
     </ScreenScrollView>
   );
 }

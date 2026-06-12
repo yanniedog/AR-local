@@ -60,6 +60,7 @@ export function normalizeFilterSnapshot(filters: FilterSnapshot): FilterSnapshot
     rateTypes: sort(filters?.rateTypes),
     lvrTiers: sort(filters?.lvrTiers),
     repaymentTypes: sort(filters?.repaymentTypes),
+    loanPurposes: sort(filters?.loanPurposes),
     depositKinds: sort(filters?.depositKinds),
     interestPayments: sort(filters?.interestPayments),
     accountFeatures: sort(filters?.accountFeatures),

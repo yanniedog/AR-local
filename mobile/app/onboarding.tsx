@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BankAvatar } from '../src/components/BankAvatar';
+import { ProfileEditor } from '../src/components/ProfileEditor';
 import { Chip } from '../src/components/ui';
 import { AppText, Button, Card, Row } from '../src/components/ui';
 import { SECTIONS, SECTION_ORDER } from '../src/constants';
 import { DEFAULT_INTERESTS, toggleInterest } from '../src/data/interests';
+import { EMPTY_PROFILE, type ProfileFilters } from '../src/data/profile';
 import { formatRate } from '../src/data/format';
 import { resolveSectionRibbonStats } from '../src/data/ribbonStats';
 import { bestRow } from '../src/data/selectors';
@@ -18,7 +20,7 @@ import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifi
 import type { RateRow, SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
-type OnboardingStep = 1 | 2;
+type OnboardingStep = 1 | 2 | 3;
 
 function primaryInterest(interests: SectionKey[]): SectionKey {
   return interests[0] ?? 'Mortgage';
@@ -98,8 +100,10 @@ export default function Onboarding() {
   const insets = useSafeAreaInsets();
   const core = useStore((s) => s.core);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
+  const setPref = useStore((s) => s.setPref);
   const [step, setStep] = useState<OnboardingStep>(1);
   const [interests, setInterests] = useState<SectionKey[]>([...DEFAULT_INTERESTS]);
+  const [profile, setProfile] = useState<ProfileFilters>({ ...EMPTY_PROFILE });
   const [notify, setNotify] = useState(false);
 
   const section = primaryInterest(interests);
@@ -121,6 +125,7 @@ export default function Onboarding() {
   const toggle = (key: SectionKey) => setInterests((prev) => toggleInterest(prev, key));
 
   const start = async () => {
+    setPref('profileFilters', profile);
     if (notify) {
       const ok = await ensurePermissions();
       if (ok) void registerBackgroundRefresh();
@@ -148,10 +153,10 @@ export default function Onboarding() {
     >
       <Row style={{ justifyContent: 'space-between', marginBottom: 20 }}>
         <AppText variant="tiny" color="textFaint" weight="700">
-          {step} / 2
+          {step} / 3
         </AppText>
-        {step === 2 ? (
-          <Pressable onPress={() => setStep(1)} hitSlop={8}>
+        {step > 1 ? (
+          <Pressable onPress={() => setStep((step - 1) as OnboardingStep)} hitSlop={8}>
             <AppText variant="small" color="primary" weight="600">
               Back
             </AppText>
@@ -224,6 +229,24 @@ export default function Onboarding() {
             title="Continue"
             icon="arrow-forward"
             onPress={() => setStep(2)}
+            style={{ marginBottom: insets.bottom + 20 }}
+          />
+        </>
+      ) : step === 2 ? (
+        <>
+          <AppText variant="h1">Make it yours</AppText>
+          <AppText variant="body" color="textMuted" style={{ marginTop: 8, lineHeight: 22 }}>
+            Lock in the product attributes that match you — like owner-occupied, principal &
+            interest, your LVR. They apply everywhere so you never re-select them. Skip any
+            group to see everything; change it anytime from your profile.
+          </AppText>
+          <ScrollView style={{ flex: 1, marginTop: 20 }} contentContainerStyle={{ paddingBottom: 12 }}>
+            <ProfileEditor sections={interests} value={profile} onChange={setProfile} />
+          </ScrollView>
+          <Button
+            title="Continue"
+            icon="arrow-forward"
+            onPress={() => setStep(3)}
             style={{ marginBottom: insets.bottom + 20 }}
           />
         </>

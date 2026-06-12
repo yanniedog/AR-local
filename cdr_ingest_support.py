@@ -36,6 +36,12 @@ REGISTER_URL_BANKING_REGISTER = (
 REGISTER_FETCH_VERSIONS = [2, 1, 6, 5, 4, 3]
 CDR_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
 
+# WAFs in front of ~40 mutual-bank PRD endpoints reject urllib's default
+# "Python-urllib/x.y" agent with HTML 403 pages (those banks then ingest zero
+# products). Any honest non-default token passes — verified 2026-06-13 against
+# P&N Bank, Teachers Mutual, Beyond Bank, UBank and Rabobank.
+DEFAULT_USER_AGENT = "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)"
+
 DATASET_CATEGORY_ALIASES: Dict[str, List[str]] = {
     "home_loans": [
         "RESIDENTIAL_MORTGAGES",
@@ -375,7 +381,9 @@ def http_request(
     *,
     timeout: float,
 ) -> Tuple[int, str]:
-    req = urllib.request.Request(url, headers=headers, method="GET")
+    req = urllib.request.Request(
+        url, headers={"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}, method="GET"
+    )
     ctx = ssl.create_default_context()
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:

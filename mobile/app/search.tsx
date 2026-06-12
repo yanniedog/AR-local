@@ -23,6 +23,7 @@ import {
   type SortKey,
 } from '../src/data/selectors';
 import { ensurePermissions, registerBackgroundRefresh } from '../src/data/notifications';
+import { profileToFilters } from '../src/data/profile';
 import { findSearchSubscription } from '../src/data/subscriptions';
 import { useStore } from '../src/data/store';
 import { useProPaywall } from '../src/hooks/useProPaywall';
@@ -75,7 +76,11 @@ export default function Search() {
 
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>(() => normalizeSortKey(sortRaw));
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // Seed from the saved product profile so users don't re-select the same
+  // attributes on every screen; still fully overridable here.
+  const [filters, setFilters] = useState<Filters>(() =>
+    profileToFilters(useStore.getState().prefs.profileFilters, section, EMPTY_FILTERS),
+  );
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -119,6 +124,7 @@ export default function Search() {
         rateTypes: effectiveFilters.rateTypes,
         lvrTiers: effectiveFilters.lvrTiers,
         repaymentTypes: effectiveFilters.repaymentTypes,
+        loanPurposes: effectiveFilters.loanPurposes,
         depositKinds: effectiveFilters.depositKinds,
         interestPayments: effectiveFilters.interestPayments,
         accountFeatures: effectiveFilters.accountFeatures,

@@ -45,7 +45,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [section, pathKey]);
 
-  const { stats, children, items } = useMemo(() => {
+  const { stats, children, items, siblingDomain } = useMemo(() => {
     const all = rows ?? [];
     const nodeRows = visibleAccountRows(rowsUnder(all, section, path), includeNonStandard);
     const kids = childrenOf(all, section, path, includeNonStandard);
@@ -62,7 +62,15 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
         .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
         .map((row) => ({ kind: 'product', row }) as Item);
     }
-    return { stats, children: kids, items: data };
+    // Shared rate scale across sibling categories so their ranges compare 1:1.
+    let dMin: number | null = null;
+    let dMax: number | null = null;
+    for (const k of kids) {
+      if (k.stats.min !== null) dMin = dMin === null ? k.stats.min : Math.min(dMin, k.stats.min);
+      if (k.stats.max !== null) dMax = dMax === null ? k.stats.max : Math.max(dMax, k.stats.max);
+    }
+    const siblingDomain = dMin !== null && dMax !== null && dMax > dMin ? { min: dMin, max: dMax } : null;
+    return { stats, children: kids, items: data, siblingDomain };
   }, [rows, sectionData, section, path, includeNonStandard]);
 
   if (!rows) return null;
@@ -88,9 +96,11 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
       )}
       <SectionCrossfade section={section}>
         <View>
-          <Card>
-            <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
-          </Card>
+          {isLeaf ? (
+            <Card>
+              <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
+            </Card>
+          ) : null}
           <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing(1) / 2 }}>
             <AppText variant="small" weight="700" color="textMuted">
               {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
@@ -131,6 +141,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
             rate={meta.lowerIsBetter ? item.node.stats.min : item.node.stats.max}
             section={section}
             ribbonStats={item.node.stats}
+            ribbonDomain={siblingDomain}
             onPress={() => { const nextPath = [...path, item.node.seg]; logCategoryRowPress({ section, label: item.node.label, pathBefore: path, pathAfter: nextPath, source: 'hierarchy' }); openBrowseDrill(section, nextPath); }}
           />
         ) : (
