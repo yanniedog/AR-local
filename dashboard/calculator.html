@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mortgage, Savings &amp; Term Deposit Benefit Calculator | AustralianRates</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/branding/ar-mark.svg">
+  <script>try { if (!localStorage.getItem('ar-theme')) localStorage.setItem('ar-theme', 'dark'); } catch (_e) {}</script>
+  <script src="/site/theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/site/foundation.css">
+  <link rel="stylesheet" href="/site/public-shell.css">
+  <link rel="stylesheet" href="/site/public-results.css">
+  <link rel="stylesheet" href="/site/public-analysis.css">
+  <link rel="stylesheet" href="/site/responsive.css">
+  <link rel="stylesheet" href="/site/public-polish.css">
+  <link rel="stylesheet" href="/site/public-modern.css">
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="ar-public ar-section-home-loans ar-local-cdr" data-ar-section="calculator">
+  <a href="#main-content" class="skip-link">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <h1 class="site-brand"><a href="/"><img src="/assets/branding/ar-mark.svg" alt="" class="site-brand-inline-logo">AustralianRates</a></h1>
+      <nav class="site-header-segment" aria-label="Banking sections">
+        <a class="site-header-segment-link" href="/" data-section="Mortgage">Mortgage</a>
+        <a class="site-header-segment-link" href="/savings/" data-section="Savings">Savings</a>
+        <a class="site-header-segment-link" href="/term-deposits/" data-section="TD">Term Deposits</a>
+        <a class="site-header-segment-link" href="/economic-data/" data-section="EconomicData">Economic Data</a>
+        <a class="site-header-segment-link is-active" href="/calculator/" data-section="Calculator" aria-current="page">Calculator</a>
+      </nav>
+      <div class="site-header-actions">
+        <button class="site-action-btn site-action-theme" type="button" data-theme-toggle data-theme-label="Theme" aria-label="Theme">Theme</button>
+      </div>
+    </div>
+  </header>
+  <div class="bg-layer" aria-hidden="true"></div>
+  <main class="shell shell-public" id="main-content" tabindex="-1">
+    <section class="panel market-intro" aria-label="Page introduction">
+      <div class="market-intro-head">
+        <div class="market-intro-copy">
+          <p class="eyebrow">Benefit calculator</p>
+          <h1 class="market-intro-title">What would switching actually save you?</h1>
+        </div>
+      </div>
+      <div class="market-intro-body">
+        <p class="hint">Enter your current (or a proposed) product below. We model it month by month — fees and offset included — then compare against every lender's live CDR rate and forecast the difference in dollars. Rates run: <strong id="calc-run-date">…</strong></p>
+      </div>
+    </section>
+
+    <section class="panel calc-panel" aria-label="Benefit calculator">
+      <div class="calc-tabs" role="tablist" aria-label="Product type">
+        <button type="button" class="chip-btn secondary chart-preset is-active" data-calc-tab="Mortgage">Home loan</button>
+        <button type="button" class="chip-btn secondary chart-preset" data-calc-tab="Savings">Savings</button>
+        <button type="button" class="chip-btn secondary chart-preset" data-calc-tab="TD">Term deposit</button>
+        <span id="calc-status" class="hint calc-status" aria-live="polite">Loading…</span>
+      </div>
+
+      <div id="calc-forms">
+        <form data-calc-form="Mortgage" class="calc-form" autocomplete="off">
+          <label>Loan balance ($)<input id="m-balance" type="number" min="0" step="1000" value="600000"></label>
+          <label>Your interest rate (% p.a.)<input id="m-rate" type="number" min="0" max="20" step="0.01" value="6.10"></label>
+          <label>Years remaining<input id="m-term" type="number" min="1" max="40" step="1" value="25"></label>
+          <label>Repayment frequency
+            <select id="m-freq">
+              <option value="monthly">Monthly</option>
+              <option value="fortnightly">Fortnightly (accelerated)</option>
+              <option value="weekly">Weekly (accelerated)</option>
+            </select>
+          </label>
+          <label>Offset account balance ($)<input id="m-offset" type="number" min="0" step="1000" value="0"></label>
+          <label>Extra repayment ($/month)<input id="m-extra" type="number" min="0" step="50" value="0"></label>
+          <label>Your monthly fee ($)<input id="m-fee-month" type="number" min="0" step="1" value="0"></label>
+          <label>Your annual fee ($)<input id="m-fee-annual" type="number" min="0" step="10" value="0"></label>
+          <label>Assumed annual fee on new loan ($)<input id="m-new-fee-annual" type="number" min="0" step="10" value="0"></label>
+          <label>One-off switching cost ($)<input id="m-switch-cost" type="number" min="0" step="50" value="800"></label>
+          <label>Rate structure
+            <select id="m-structure">
+              <option value="">Any</option>
+              <option value="variable">Variable</option>
+              <option value="fixed">Fixed</option>
+            </select>
+          </label>
+          <label>Loan purpose<select id="m-purpose"><option value="">Any</option></select></label>
+          <label>Repayment type<select id="m-repay"><option value="">Any</option></select></label>
+        </form>
+
+        <form data-calc-form="Savings" class="calc-form" hidden autocomplete="off">
+          <label>Current balance ($)<input id="s-balance" type="number" min="0" step="500" value="25000"></label>
+          <label>Your interest rate (% p.a.)<input id="s-rate" type="number" min="0" max="20" step="0.01" value="4.00"></label>
+          <label>Monthly deposit ($)<input id="s-deposit" type="number" min="0" step="50" value="500"></label>
+          <label>Monthly account fee ($)<input id="s-fee" type="number" min="0" step="1" value="0"></label>
+          <label>Forecast horizon (years)<input id="s-years" type="number" min="1" max="30" step="1" value="5"></label>
+        </form>
+
+        <form data-calc-form="TD" class="calc-form" hidden autocomplete="off">
+          <label>Principal ($)<input id="t-principal" type="number" min="0" step="1000" value="50000"></label>
+          <label>Your interest rate (% p.a.)<input id="t-rate" type="number" min="0" max="20" step="0.01" value="4.40"></label>
+          <label>Term<select id="t-term"><option value="12">12 months</option></select></label>
+        </form>
+      </div>
+
+      <div id="calc-summary" class="calc-cards" aria-live="polite"></div>
+
+      <div class="calc-charts">
+        <div id="calc-chart-projection" class="calc-chart" aria-label="Forecast chart"></div>
+        <div id="calc-chart-benefit" class="calc-chart" aria-label="Benefit by lender chart"></div>
+      </div>
+
+      <div class="local-table-wrap calc-table-wrap">
+        <table id="calc-table" class="calc-table"></table>
+      </div>
+      <p id="calc-table-hint" class="hint"></p>
+      <p class="hint">General information only, not financial advice. Live rates come from each bank's public CDR feed; product fees, bonus-rate conditions and offset availability for other lenders are not in the feed — confirm with the lender before switching.</p>
+    </section>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <nav class="site-footer-nav" aria-label="Sections">
+        <a href="/" data-section="Mortgage">Mortgage</a>
+        <a href="/savings/" data-section="Savings">Savings</a>
+        <a href="/term-deposits/" data-section="TD">Term Deposits</a>
+        <a href="/economic-data/" data-section="EconomicData">Economic Data</a>
+        <a href="/calculator/" data-section="Calculator">Calculator</a>
+      </nav>
+      <nav class="site-footer-nav" aria-label="Site">
+        <a href="https://australianrates.com/about/" rel="noopener noreferrer" target="_blank">About</a>
+        <a href="https://australianrates.com/privacy/" rel="noopener noreferrer" target="_blank">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="https://australianrates.com/contact/" rel="noopener noreferrer" target="_blank">Contact</a>
+      </nav>
+    </div>
+    <div class="site-footer-inner">
+      <span class="site-footer-meta"><span class="site-footer-dot" aria-hidden="true"></span>General information only. Always confirm rates and product terms directly with the lender.</span>
+    </div>
+  </footer>
+  <script src="/site/vendor/echarts/echarts.min.js"></script>
+  <script src="/assets/utils.js"></script>
+  <script src="/assets/calculator.js"></script>
+</body>
+</html>

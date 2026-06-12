@@ -952,6 +952,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             "app.js",
             "ar-bank-brand.js",
             "ar-ribbon-canonical-tiers.js",
+            "calculator.html",
+            "calculator.js",
             "chart.js",
             "hierarchy.js",
             "cdr-ribbon-map.js",
@@ -1052,6 +1054,8 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         def route(self, path: str, query: Dict[str, list[str]]) -> Tuple[bytes, str, bytes | None]:
             if path in ("/terms", "/terms/"):
                 return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "terms.html", "text/html; charset=utf-8")
+            if path in ("/calculator", "/calculator/"):
+                return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "calculator.html", "text/html; charset=utf-8")
             if is_dashboard_banking_section_path(path):
                 return self._serve_file(dashboard_cache, DASHBOARD_ROOT / "index.html", "text/html; charset=utf-8")
             if path == "/assets/app.css":
@@ -1060,6 +1064,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/app.js",
                 "/assets/ar-bank-brand.js",
                 "/assets/ar-ribbon-canonical-tiers.js",
+                "/assets/calculator.js",
                 "/assets/chart.js",
                 "/assets/hierarchy.js",
                 "/assets/cdr-ribbon-map.js",
