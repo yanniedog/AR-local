@@ -1,7 +1,7 @@
 import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 
 import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
@@ -16,6 +16,7 @@ import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
 import { rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
+import { APK_RELEASE_TAG, REPO } from '../../src/config';
 import { openBank, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -53,8 +54,20 @@ export default function Home() {
     [hierRows, section, includeNonStandard],
   );
 
-  if (!core) return null;
   const meta = SECTIONS[section];
+  const shareToday = useCallback(() => {
+    if (!core) return;
+    const headline = meta.lowerIsBetter ? stats.min : stats.max;
+    if (headline == null) return; // nothing worth sharing until rates are loaded
+    const lines = [
+      `Best ${meta.title.toLowerCase()} rate today: ${formatRate(headline)} (${formatRunDate(core.run_date)})`,
+      `Tracked daily across ${Object.keys(core.brands ?? {}).length} Australian lenders.`,
+      `Get the AustralianRates app: https://github.com/${REPO}/releases/tag/${APK_RELEASE_TAG}`,
+    ];
+    void Share.share({ message: lines.join('\n') });
+  }, [core, meta, stats]);
+
+  if (!core) return null;
   const rba = core.rba?.at(-1);
   const sectionAccent = meta.accentColor;
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
@@ -80,6 +93,7 @@ export default function Home() {
         lenderCount={lenderCount}
         providerCount={stats.providers}
         onLendersPress={() => router.push('/banks')}
+        onShare={shareToday}
       />
 
       {sectionOptions.length > 1 ? (

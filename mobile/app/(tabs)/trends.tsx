@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { BankHistoryChart } from '../../src/components/BankHistoryChart';
 import {
   BankMovesFeed,
   InsightsLockedCard,
@@ -12,7 +11,7 @@ import {
   MoversLeaderboard,
   RbaPassThroughCard,
 } from '../../src/components/BankInsights';
-import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
+import { HistoryExplorer } from '../../src/components/viz/HistoryExplorer';
 import { MarketSnapshotList } from '../../src/components/MarketSnapshot';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { RbaChart } from '../../src/components/charts';
@@ -252,9 +251,9 @@ export default function Trends() {
       <Card style={{ marginBottom: 16 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
           <View>
-            <AppText variant="h3">History ribbon</AppText>
+            <AppText variant="h3">History explorer</AppText>
             <AppText variant="tiny" color="textFaint">
-              Min / mean / max
+              One history, six lenses
             </AppText>
           </View>
           <Chip label="PRO" selected={showHistoryRibbon} />
@@ -268,19 +267,18 @@ export default function Trends() {
                 onChange={setActiveSection}
               />
             ) : null}
-            {historyModel ? (
-              <ChartErrorBoundary name="BankHistoryChart">
-                <BankHistoryChart
-                  dates={historyModel.dates}
-                  points={historyModel.points}
-                  allDates={historyModel.allDates}
-                  rba={core.rba}
-                  section={activeSection}
-                  height={210}
-                  onDateSelect={setRewindDate}
-                />
-              </ChartErrorBoundary>
-            ) : null}
+            <View style={{ marginTop: sectionOptions.length > 1 ? 8 : 0 }}>
+              <HistoryExplorer
+                section={activeSection}
+                historyModel={historyModel}
+                insights={bankInsights}
+                insightsAvailable={showBankInsights}
+                rba={core.rba}
+                brands={core.brands}
+                selectedDate={rewindDate}
+                onDateSelect={setRewindDate}
+              />
+            </View>
             {rewindDate ? (
               <View style={{ marginTop: 12 }}>
                 <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}>

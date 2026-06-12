@@ -127,7 +127,7 @@ export default function Settings() {
           <>
             <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, lineHeight: 16 }}>
               1 rate alert included. Pro unlocks unlimited alerts, deep search, bank intelligence
-              (rate-move feed, RBA pass-through, per-bank history), and the history ribbon.
+              (rate-move feed, RBA pass-through, per-bank history), and the history explorer.
             </AppText>
             <Button
               title="Upgrade to Pro"
@@ -145,12 +145,7 @@ export default function Settings() {
         )}
       </Section>
 
-      <AccountSecuritySection
-        appLockEnabled={prefs.appLockEnabled}
-        onAppLockChange={(v) => setPref('appLockEnabled', v)}
-      />
-
-      <Section title="Appearance">
+      <Section title="Personalise">
         <Label text="Theme" />
         <SegmentedControl<ThemeMode>
           options={[
@@ -161,9 +156,7 @@ export default function Settings() {
           value={prefs.themeMode}
           onChange={(v) => setPref('themeMode', v)}
         />
-      </Section>
-
-      <Section title="Your interests">
+        <Divider style={{ marginVertical: 12 }} />
         <Label text="Sections shown on Home, Browse, and Trends" />
         {orderedInterestSections(prefs.interests).map((key, idx, ordered) => (
           <InterestOrderRow
@@ -193,9 +186,7 @@ export default function Settings() {
             </Row>
           </>
         ) : null}
-      </Section>
-
-      <Section title="Defaults">
+        <Divider style={{ marginVertical: 12 }} />
         <Label text="Default category" />
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {orderedInterestSections(prefs.interests).map((key) => (
@@ -209,7 +200,7 @@ export default function Settings() {
         </Row>
       </Section>
 
-      <Section title="Optional data">
+      <Section title="Features">
         <ToggleRow
           icon="layers-outline"
           label="Include non-standard accounts"
@@ -232,14 +223,18 @@ export default function Settings() {
         <Divider style={{ marginVertical: 12 }} />
         <ToggleRow
           icon="analytics-outline"
-          label="History ribbon chart"
-          sub={hasProAccess(prefs) ? 'Charts & trends - compact history' : 'Pro'}
+          label="History explorer"
+          sub={
+            hasProAccess(prefs)
+              ? 'Ribbon, calendar, race, edge, pulse & RBA lenses in Trends'
+              : 'Pro'
+          }
           value={effectiveHistoryRibbon(prefs)}
           onChange={onToggleHistoryRibbon}
         />
         {effectiveHistoryRibbon(prefs) ? (
           <Button
-            title="View history ribbon"
+            title="Open history explorer"
             icon="stats-chart"
             variant="secondary"
             style={{ marginTop: 10 }}
@@ -248,7 +243,7 @@ export default function Settings() {
         ) : null}
       </Section>
 
-      <Section title="Notifications">
+      <Section title="Alerts">
         <ToggleRow
           icon="notifications-outline"
           label="Rate-change alerts"
@@ -291,7 +286,7 @@ export default function Settings() {
         ) : null}
       </Section>
 
-      <Section title="Data">
+      <Section title="Data & storage">
         <ToggleRow
           icon="wifi-outline"
           label="Refresh on Wi-Fi only"
@@ -327,7 +322,12 @@ export default function Settings() {
         </Row>
       </Section>
 
-      <Section title="Diagnostics">
+      <Section title="Privacy & security">
+        <AccountSecurityRows
+          appLockEnabled={prefs.appLockEnabled}
+          onAppLockChange={(v) => setPref('appLockEnabled', v)}
+        />
+        <Divider style={{ marginVertical: 12 }} />
         <ToggleRow
           icon="pulse-outline"
           label="Diagnostics & crash reporting"
@@ -691,8 +691,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Google sign-in + biometric app lock (Phase C of docs/SECURITY_CDR_PIPELINE.md). */
-function AccountSecuritySection({
+/** Google sign-in + biometric app lock rows (Phase C of docs/SECURITY_CDR_PIPELINE.md). */
+function AccountSecurityRows({
   appLockEnabled,
   onAppLockChange,
 }: {
@@ -744,7 +744,7 @@ function AccountSecuritySection({
   };
 
   return (
-    <Section title="Account & security">
+    <>
       {user ? (
         <>
           <InfoRow label="Signed in as" value={user.email ?? user.displayName ?? user.uid} />
@@ -770,6 +770,6 @@ function AccountSecuritySection({
         value={appLockEnabled}
         onChange={(v) => void handleAppLockChange(v)}
       />
-    </Section>
+    </>
   );
 }
