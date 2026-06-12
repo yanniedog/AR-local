@@ -22,9 +22,17 @@ REGISTER_URL = "https://api.cdr.gov.au/cdr-register/v1/banking/data-holders/bran
 CACHE_MAX_AGE_SEC = 7 * 24 * 3600
 FETCH_TIMEOUT_SEC = 30
 
-# RN <Image> can't render SVG (and .ashx handlers are unpredictable) — only
-# pass through formats the app renders natively.
-_RENDERABLE_RE = re.compile(r"\.(png|jpe?g|gif|webp)(\?[^#]*)?$", re.IGNORECASE)
+# RN <Image> can't render SVG (and .ashx handlers are unpredictable). Raster
+# URIs ship as ``logo_uri``; SVG URIs travel in a separate ``logo_svg_uri``
+# field that raster-only app builds ignore and newer builds render via
+# react-native-svg.
+_RASTER_RE = re.compile(r"\.(png|jpe?g|gif|webp)(\?[^#]*)?$", re.IGNORECASE)
+_SVG_RE = re.compile(r"\.svg(\?[^#]*)?$", re.IGNORECASE)
+
+
+def is_svg_uri(uri: str) -> bool:
+    """True for register logo URIs the app must render via react-native-svg."""
+    return bool(_SVG_RE.search(uri))
 
 # Legal suffixes and generic banking words carry no brand identity; keeping
 # them lets e.g. "ING BANK (Australia) Ltd" mis-match "Bank Australia".
@@ -60,7 +68,7 @@ def _default_fetch(timeout: int) -> bytes:
 
 
 def parse_register_payload(raw: bytes) -> Dict[str, str]:
-    """``normalized brandName -> logoUri`` for renderable logo formats."""
+    """``normalized brandName -> logoUri`` for raster and SVG logo formats."""
     data = json.loads(raw.decode("utf-8"))
     out: Dict[str, str] = {}
     for entry in data.get("data") or []:
@@ -68,7 +76,7 @@ def parse_register_payload(raw: bytes) -> Dict[str, str]:
         uri = str(entry.get("logoUri") or "").strip()
         if not name or not uri.lower().startswith("https://"):
             continue
-        if not _RENDERABLE_RE.search(uri):
+        if not (_RASTER_RE.search(uri) or _SVG_RE.search(uri)):
             continue
         out[_normalize(name)] = uri
     return out
