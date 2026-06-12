@@ -10,7 +10,7 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate, toFraction } from '../../src/data/format';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { profileFilterRows, profileSectionCount } from '../../src/data/profile';
@@ -77,7 +77,9 @@ export default function Home() {
   const rba = core.rba?.at(-1);
   const sectionAccent = meta.accentColor;
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
-  const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
+  // With a profile active the hero must show the best profile-matched rate,
+  // not the unfiltered market extreme it would otherwise mislabel.
+  const heroRate = profileCount > 0 ? (best ? toFraction(best.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;

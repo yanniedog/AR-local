@@ -79,7 +79,7 @@ export default function Search() {
   // Seed from the saved product profile so users don't re-select the same
   // attributes on every screen; still fully overridable here.
   const [filters, setFilters] = useState<Filters>(() =>
-    profileToFilters(useStore.getState().prefs.profileFilters, EMPTY_FILTERS),
+    profileToFilters(useStore.getState().prefs.profileFilters, section, EMPTY_FILTERS),
   );
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);

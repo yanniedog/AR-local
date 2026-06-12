@@ -49,17 +49,23 @@ export function profileSelectionCount(p: ProfileFilters): number {
   );
 }
 
-/** Seed screen filters from the saved profile; the user can still override per screen. */
-export function profileToFilters(p: ProfileFilters, base: Filters): Filters {
-  return {
-    ...base,
-    loanPurposes: [...p.loanPurposes],
-    rateTypes: [...p.rateTypes],
-    repaymentTypes: [...p.repaymentTypes],
-    lvrTiers: [...p.lvrTiers],
-    depositKinds: [...p.depositKinds],
-    interestPayments: [...p.interestPayments],
-  };
+/**
+ * Seed screen filters from the saved profile — only the dimensions that apply
+ * to `section` (a saved Mortgage rate type must not constrain a Savings
+ * search); the user can still override per screen.
+ */
+export function profileToFilters(p: ProfileFilters, section: SectionKey, base: Filters): Filters {
+  if (section === 'Mortgage') {
+    return {
+      ...base,
+      loanPurposes: [...p.loanPurposes],
+      rateTypes: [...p.rateTypes],
+      repaymentTypes: [...p.repaymentTypes],
+      lvrTiers: [...p.lvrTiers],
+    };
+  }
+  if (section === 'TD') return { ...base, interestPayments: [...p.interestPayments] };
+  return { ...base, depositKinds: [...p.depositKinds] };
 }
 
 /** Profile dimensions that apply to a section (drives editors and row matching). */
