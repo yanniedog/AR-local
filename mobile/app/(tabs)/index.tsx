@@ -58,6 +58,7 @@ export default function Home() {
   const shareToday = useCallback(() => {
     if (!core) return;
     const headline = meta.lowerIsBetter ? stats.min : stats.max;
+    if (headline == null) return; // nothing worth sharing until rates are loaded
     const lines = [
       `Best ${meta.title.toLowerCase()} rate today: ${formatRate(headline)} (${formatRunDate(core.run_date)})`,
       `Tracked daily across ${Object.keys(core.brands ?? {}).length} Australian lenders.`,

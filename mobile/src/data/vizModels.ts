@@ -70,14 +70,19 @@ export function rateHeatmapModel(
   }
 
   let maxAbsBps = 0;
-  for (const delta of deltaByDate.values()) {
-    if (delta != null) maxAbsBps = Math.max(maxAbsBps, Math.abs(delta));
-  }
 
   const lastTs = parseYmd(observed[observed.length - 1])!;
   // Snap the grid to whole weeks ending on the last observed date's week.
   const gridEnd = lastTs + (6 - weekdayIndex(lastTs)) * DAY_MS;
   const gridStart = gridEnd - (weeksBack * 7 - 1) * DAY_MS;
+
+  // Scale intensity against the displayed weeks only, so an old spike outside
+  // the grid can't wash out every visible move.
+  for (const [date, delta] of deltaByDate) {
+    if (delta == null) continue;
+    const ts = parseYmd(date);
+    if (ts != null && ts >= gridStart) maxAbsBps = Math.max(maxAbsBps, Math.abs(delta));
+  }
 
   const weeks: (HeatCell | null)[][] = [];
   const monthLabels: { weekIndex: number; label: string }[] = [];
@@ -299,6 +304,8 @@ export interface ActivityDay {
   cutBps: number;
   hikes: number;
   cuts: number;
+  /** Mixed repricings that net to zero average — activity without direction. */
+  mixed: number;
 }
 
 export interface MarketActivityModel {
@@ -318,24 +325,26 @@ export function marketActivityModel(
   const dates = historyDatesInWindow(payload.run_dates, window);
   if (!dates.length) return null;
   const byDate = new Map<string, ActivityDay>(
-    dates.map((date) => [date, { date, hikeBps: 0, cutBps: 0, hikes: 0, cuts: 0 }]),
+    dates.map((date) => [date, { date, hikeBps: 0, cutBps: 0, hikes: 0, cuts: 0, mixed: 0 }]),
   );
   let totalMoves = 0;
   for (const event of payload.events) {
     if (section && event.section !== section) continue;
     const day = byDate.get(event.date);
-    if (!day || event.avg_bps === 0) continue;
+    if (!day) continue;
     totalMoves += 1;
     if (event.avg_bps > 0) {
       day.hikeBps += event.avg_bps;
       day.hikes += 1;
-    } else {
+    } else if (event.avg_bps < 0) {
       day.cutBps += Math.abs(event.avg_bps);
       day.cuts += 1;
+    } else {
+      // Equal-and-opposite repricing nets to zero average but is still activity.
+      day.mixed += 1;
     }
   }
   const days = dates.map((date) => byDate.get(date)!);
   const maxBps = days.reduce((acc, d) => Math.max(acc, d.hikeBps, d.cutBps), 0);
-  if (maxBps === 0) return { days, maxBps: 0, totalMoves: 0 };
   return { days, maxBps, totalMoves };
 }

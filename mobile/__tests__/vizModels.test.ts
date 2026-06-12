@@ -64,6 +64,21 @@ describe('rateHeatmapModel', () => {
   test('returns null with fewer than two observations', () => {
     expect(rateHeatmapModel(['2026-06-01'], [point('2026-06-01', 0.05, 0.07, 0.06)])).toBeNull();
   });
+
+  test('scales intensity against displayed weeks only, ignoring older spikes', () => {
+    const dates = ['2026-03-01', '2026-03-02', '2026-06-02', '2026-06-03'];
+    const pts = [
+      point('2026-03-01', 0.05, 0.09, 0.06),
+      point('2026-03-02', 0.05, 0.09, 0.08), // +200 bps, far outside a 2-week grid
+      point('2026-06-02', 0.05, 0.09, 0.0805), // +5 bps, in grid
+      point('2026-06-03', 0.05, 0.09, 0.08), // -5 bps, in grid
+    ];
+    const model = rateHeatmapModel(dates, pts, 2);
+    const cells = model!.weeks.flat().filter((c) => c?.hasData);
+    const byDate = Object.fromEntries(cells.map((c) => [c!.date, c!]));
+    expect(model!.maxAbsBps).toBeCloseTo(5);
+    expect(byDate['2026-06-03'].intensity).toBe(1);
+  });
 });
 
 describe('lenderRaceModel', () => {
@@ -136,6 +151,19 @@ describe('marketActivityModel', () => {
   test('reports a quiet market when no events land in the window', () => {
     const model = marketActivityModel({ ...insights, events: [] }, 'Mortgage', 'All');
     expect(model!.totalMoves).toBe(0);
+    expect(model!.maxBps).toBe(0);
+  });
+
+  test('counts zero-average mixed repricings as activity', () => {
+    const mixedOnly = {
+      ...insights,
+      events: [
+        { date: '2026-06-02', provider: 'AlphaBank', section: 'Mortgage', dir: 'mixed', moved: 4, total: 10, avg_bps: 0 } as const,
+      ],
+    };
+    const model = marketActivityModel(mixedOnly, 'Mortgage', 'All');
+    expect(model!.totalMoves).toBe(1);
+    expect(model!.days[1].mixed).toBe(1);
     expect(model!.maxBps).toBe(0);
   });
 });

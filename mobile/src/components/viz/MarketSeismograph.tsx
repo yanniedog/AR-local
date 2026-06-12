@@ -123,6 +123,16 @@ export function MarketSeismograph({
                       fill={withAlpha(downInk, 0.85)}
                     />
                   ) : null}
+                  {d.hikeBps === 0 && d.cutBps === 0 && d.mixed > 0 ? (
+                    <Rect
+                      x={x - barW / 2}
+                      y={midY - 2}
+                      width={barW}
+                      height={4}
+                      rx={1}
+                      fill={withAlpha(theme.colors.textMuted, 0.7)}
+                    />
+                  ) : null}
                 </React.Fragment>
               );
             })}
