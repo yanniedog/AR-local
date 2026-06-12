@@ -1357,3 +1357,45 @@ body.ar-public.ar-section-economic-data .economic-forward-stats article > span:h
   text-transform: none;
 }
 
+
+/* --- Benefit calculator (/calculator/) ------------------------------------ */
+.calc-panel { display: flex; flex-direction: column; gap: 16px; }
+.calc-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.calc-status { margin-left: auto; }
+.calc-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px 14px;
+}
+.calc-form label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; color: var(--ar-text-muted, #94a3b8);
+}
+.calc-form input, .calc-form select {
+  background: var(--ar-surface-2, #0f172a);
+  color: var(--ar-text, #e2e8f0);
+  border: 1px solid var(--ar-line, rgba(148, 163, 184, 0.25));
+  border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; min-width: 0;
+}
+.calc-form input:focus, .calc-form select:focus { outline: 2px solid var(--ar-accent, #3b82f6); outline-offset: 1px; }
+.calc-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.calc-card {
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--ar-line, rgba(148, 163, 184, 0.2));
+  border-radius: 10px; padding: 10px 12px;
+  background: var(--ar-surface-2, rgba(15, 23, 42, 0.55));
+}
+.calc-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ar-text-muted, #94a3b8); }
+.calc-card-value { font-size: 18px; }
+.calc-card-hint { font-size: 11px; color: var(--ar-text-muted, #94a3b8); }
+.calc-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.calc-chart { height: 320px; min-width: 0; }
+@media (max-width: 900px) { .calc-charts { grid-template-columns: 1fr; } }
+.calc-table-wrap { max-height: 420px; overflow: auto; }
+.calc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.calc-table th, .calc-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ar-line, rgba(148, 163, 184, 0.15)); }
+.calc-table th { position: sticky; top: 0; background: var(--ar-surface, #0b1220); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ar-text-muted, #94a3b8); }
+.calc-table td.calc-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calc-row { cursor: pointer; }
+.calc-row:hover { background: rgba(59, 130, 246, 0.08); }
+.calc-row.is-selected { background: rgba(59, 130, 246, 0.16); }
