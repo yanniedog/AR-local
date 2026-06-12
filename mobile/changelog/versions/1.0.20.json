@@ -1,0 +1,43 @@
+{
+  "version": "1.0.20",
+  "date": "2026-06-12",
+  "summaryBullets": [
+    "fix: lowercase hex key normalization (post-merge review follow-up) (#331)",
+    "chore(mobile): auto-release bump to v1.0.19 (after fc703f7) (#330)",
+    "feat: issueContentKeys key service + app client (Phase D) (#327)",
+    "fix(logos): CDR Register logoUri coverage + vendor pack off dying CDN (#328)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "fix: lowercase hex key normalization (post-merge review follow-up) (#331)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.19 (after fc703f7) (#330)"
+        },
+        {
+          "text": "feat: issueContentKeys key service + app client (Phase D) (#327)"
+        },
+        {
+          "text": "fix(logos): CDR Register logoUri coverage + vendor pack off dying CDN (#328)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.20"
+        },
+        {
+          "text": "Since tag: app-v1.0.18"
+        }
+      ]
+    }
+  ]
+}
