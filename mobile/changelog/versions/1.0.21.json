@@ -1,0 +1,39 @@
+{
+  "version": "1.0.21",
+  "date": "2026-06-12",
+  "summaryBullets": [
+    "refactor(mobile): single-path navigation - remove duplicate nav layers (#334)",
+    "feat(logos): SVG bank logos via logo_svg_uri + SvgUri rendering (#333)",
+    "chore(mobile): auto-release bump to v1.0.20 (after e9266a2) (#332)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "refactor(mobile): single-path navigation - remove duplicate nav layers (#334)"
+        },
+        {
+          "text": "feat(logos): SVG bank logos via logo_svg_uri + SvgUri rendering (#333)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.20 (after e9266a2) (#332)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.21"
+        },
+        {
+          "text": "Since tag: app-v1.0.19"
+        }
+      ]
+    }
+  ]
+}
