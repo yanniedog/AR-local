@@ -1,0 +1,31 @@
+{
+  "version": "1.0.24",
+  "date": "2026-06-12",
+  "summaryBullets": [
+    "Mobile UX batch: profile filters, calculator, share QR, browse/trends fixes + ingest UA fix (#344)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "Mobile UX batch: profile filters, calculator, share QR, browse/trends fixes + ingest UA fix (#344)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.24"
+        },
+        {
+          "text": "Since tag: app-v1.0.23"
+        }
+      ]
+    }
+  ]
+}
