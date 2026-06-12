@@ -72,7 +72,11 @@ export async function syncContentKeys(
   if (!force && (await resolvePayloadKeyHex())) return false;
   try {
     const issued = await fetchContentKeys(url);
-    const usable = issued.keys.find((k) => k.alg === 'aes-256-gcm' && /^[0-9a-f]{64}$/.test(k.key_hex));
+    // Hex keys are normalized to lowercase so a copy-pasted uppercase secret
+    // still validates and matches the Pi/app key-id derivation.
+    const usable = (issued?.keys ?? [])
+      .map((k) => ({ ...k, key_hex: String(k?.key_hex ?? '').trim().toLowerCase() }))
+      .find((k) => k?.alg === 'aes-256-gcm' && /^[0-9a-f]{64}$/.test(k?.key_hex));
     if (!usable) {
       debugLog.warn('keyService', `no usable key in response (tier=${issued.tier})`);
       return false;

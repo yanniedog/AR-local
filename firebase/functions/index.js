@@ -40,7 +40,7 @@ export const issueContentKeys = onCall(
       throw new HttpsError('resource-exhausted', 'Daily key-issuance limit reached');
     }
 
-    const keyHex = String(PAYLOAD_KEY_FULL.value() ?? '').trim();
+    const keyHex = String(PAYLOAD_KEY_FULL.value() ?? '').trim().toLowerCase();
     if (!isValidKeyHex(keyHex)) {
       throw new HttpsError('failed-precondition', 'Content key is not configured');
     }
