@@ -2,14 +2,14 @@
   "version": "1.0.23",
   "date": "2026-06-12",
   "summaryBullets": [
-    "chore(mobile): auto-release bump to v1.0.22 (after 3496045) (#339)"
+    "chore(mobile): auto-release bump to v1.0.23 (after 3832da0) (#342)"
   ],
   "sections": [
     {
       "title": "Changes",
       "bullets": [
         {
-          "text": "chore(mobile): auto-release bump to v1.0.22 (after 3496045) (#339)"
+          "text": "chore(mobile): auto-release bump to v1.0.23 (after 3832da0) (#342)"
         }
       ]
     },
