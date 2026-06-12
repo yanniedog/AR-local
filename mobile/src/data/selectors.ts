@@ -100,8 +100,9 @@ export function sortRows(rows: RateRow[], sortKey: SortKey, section: SectionKey)
   return copy;
 }
 
-function inList(value: string | undefined, list: string[]): boolean {
-  return list.length === 0 || (value !== undefined && list.includes(value));
+function inList(value: string | undefined, list: string[] | undefined): boolean {
+  // Persisted filter snapshots predating a dimension restore without it.
+  return !list || list.length === 0 || (value !== undefined && list.includes(value));
 }
 
 export function filterRows(

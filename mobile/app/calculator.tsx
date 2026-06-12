@@ -58,8 +58,11 @@ export default function Calculator() {
 
   const balance = Number(balanceText.replace(/[^0-9.]/g, '')) || (isLoan ? 500000 : 50000);
   const currentRate = (() => {
-    const v = toFraction(rateText.trim());
-    return v ?? median ?? null;
+    // Field is labelled "(%)" — always treat input as a percent ("0.5" = 0.5%,
+    // never toFraction's ≤1-means-fraction heuristic).
+    const pct = Number(rateText.trim().replace(/%$/, ''));
+    if (isFinite(pct) && pct > 0) return pct / 100;
+    return median ?? null;
   })();
   const years = Math.min(40, Math.max(1, Number(yearsText) || 25));
   const months = Math.round(years * 12);
