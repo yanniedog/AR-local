@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-12T10:54:44.605Z",
+  "generated_at": "2026-06-12T21:33:13.565Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -233,6 +233,14 @@
         "chore(mobile): auto-release bump to v1.0.23 (after 3832da0) (#342)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.23"
+    },
+    {
+      "version": "1.0.24",
+      "date": "2026-06-12",
+      "summaryBullets": [
+        "Mobile UX batch: profile filters, calculator, share QR, browse/trends fixes + ingest UA fix (#344)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.24"
     }
   ]
 }
