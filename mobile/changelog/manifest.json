@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-12T05:00:03.413Z",
+  "generated_at": "2026-06-12T06:54:17.888Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -215,6 +215,16 @@
         "chore(mobile): auto-release bump to v1.0.20 (after e9266a2) (#332)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.21"
+    },
+    {
+      "version": "1.0.22",
+      "date": "2026-06-12",
+      "summaryBullets": [
+        "feat(mobile): history explorer viz gallery, settings IA, brand polish (#338)",
+        "chore(mobile): auto-release bump to v1.0.21 (after a4fcbc6) (#336)",
+        "refactor(mobile): single-path navigation - remove duplicate nav layers (#334)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.22"
     }
   ]
 }

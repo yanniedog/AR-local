@@ -1,0 +1,39 @@
+{
+  "version": "1.0.22",
+  "date": "2026-06-12",
+  "summaryBullets": [
+    "feat(mobile): history explorer viz gallery, settings IA, brand polish (#338)",
+    "chore(mobile): auto-release bump to v1.0.21 (after a4fcbc6) (#336)",
+    "refactor(mobile): single-path navigation - remove duplicate nav layers (#334)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "feat(mobile): history explorer viz gallery, settings IA, brand polish (#338)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.21 (after a4fcbc6) (#336)"
+        },
+        {
+          "text": "refactor(mobile): single-path navigation - remove duplicate nav layers (#334)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.22"
+        },
+        {
+          "text": "Since tag: app-v1.0.20"
+        }
+      ]
+    }
+  ]
+}
