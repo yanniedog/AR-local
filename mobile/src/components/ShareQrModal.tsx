@@ -32,7 +32,7 @@ export function ShareQrModal({
     let alive = true;
     fetchApkManifest(APK_MANIFEST_URL)
       .then((m) => {
-        if (alive) setApkUrl(m.download_url);
+        if (alive && m?.download_url) setApkUrl(m.download_url);
       })
       .catch((err) => logSwallowedError('shareQr.apkManifest', err));
     return () => {

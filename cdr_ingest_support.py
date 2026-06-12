@@ -382,7 +382,7 @@ def http_request(
     timeout: float,
 ) -> Tuple[int, str]:
     req = urllib.request.Request(
-        url, headers={"User-Agent": DEFAULT_USER_AGENT, **headers}, method="GET"
+        url, headers={"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}, method="GET"
     )
     ctx = ssl.create_default_context()
     try:

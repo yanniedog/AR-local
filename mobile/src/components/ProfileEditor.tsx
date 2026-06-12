@@ -28,7 +28,7 @@ export function ProfileEditor({
       PROFILE_GROUPS.filter((g) => sections.includes(g.section))
         .map((g) => ({
           ...g,
-          options: distinctValues(core?.sections[g.section]?.rates ?? [], g.field).slice(0, 12),
+          options: distinctValues(core?.sections?.[g.section]?.rates ?? [], g.field).slice(0, 12),
         }))
         .filter((g) => g.options.length > 0),
     [core, sections],

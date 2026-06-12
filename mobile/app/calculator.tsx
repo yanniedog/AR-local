@@ -48,7 +48,7 @@ export default function Calculator() {
 
   // Profile-matched comparable rows for the section (e.g. OO + P&I + your LVR).
   const rows = useMemo(() => {
-    const all = core?.sections[section]?.rates ?? [];
+    const all = core?.sections?.[section]?.rates ?? [];
     return profileFilterRows(rowsUnder(all, section, []), profileFilters, section).filter(
       (r) => includeNonStandard || r.account_class !== 'non_standard',
     );
