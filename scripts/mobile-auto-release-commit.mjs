@@ -46,11 +46,9 @@ export function pushHeadToMain({
 
   // Stash any unstaged changes (e.g. app.json versionCode bump) so that
   // git pull --rebase doesn't abort with "cannot pull with rebase: You have
-  // unstaged changes". The stash is restored after push (or on failure).
-  const stashOut = run('git', ['stash', '--include-untracked'], { allowFail: true });
-  const didStash =
-    stashOut.status === 0 &&
-    !(stashOut.stdout || '').trim().startsWith('No local changes to save');
+  // unstaged changes". The stash is unconditionally restored in the finally
+  // block; a "No stash entries found" result is silently ignored.
+  run('git', ['stash', '--include-untracked'], { allowFail: true });
 
   let result = { ok: false, protected: false, error: 'push exhausted retries' };
   try {
@@ -93,7 +91,13 @@ export function pushHeadToMain({
       }
     }
   } finally {
-    if (didStash) run('git', ['stash', 'pop'], { allowFail: true });
+    const popResult = run('git', ['stash', 'pop'], { allowFail: true });
+    if (popResult.status !== 0) {
+      const msg = (popResult.stderr || popResult.stdout || '').trim();
+      if (msg && !msg.toLowerCase().includes('no stash entries')) {
+        console.warn(`mobile-auto-release-commit: stash pop warning: ${msg}`);
+      }
+    }
   }
 
   return result;
