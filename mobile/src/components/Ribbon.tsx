@@ -48,11 +48,14 @@ export function Ribbon({
   section,
   rbaRate,
   compact,
+  domain,
 }: {
   stats: RateStats;
   section: SectionKey;
   rbaRate?: number | null;
   compact?: boolean;
+  /** Shared min/max scale so sibling ribbons are directly comparable. */
+  domain?: { min: number; max: number } | null;
 }) {
   const theme = useTheme();
   const { width: screenW } = useWindowDimensions();
@@ -72,12 +75,24 @@ export function Ribbon({
   const meanLineLen = h + 6;
   const rbaLineLen = h + 10;
 
+  // Scale against the shared domain when provided (placeholders keep hook
+  // order stable when stats are empty — the early return below handles that).
+  const minV = min ?? 0;
+  const maxV = max ?? 1;
+  const hasDomain = domain != null && domain.max > domain.min;
+  const dMin = hasDomain ? Math.min(domain.min, minV) : minV;
+  const dMax = hasDomain ? Math.max(domain.max, maxV) : maxV;
+  const dSpan = dMax - dMin || 1;
+  const x = (v: number) => pad + ((v - dMin) / dSpan) * barW;
+  const fillX = x(minV);
+  const fillW = Math.max(tickW, x(maxV) - fillX);
+
   const barAnimatedProps = useAnimatedProps(() => ({
-    width: Math.max(1, barW * drawProgress.value),
+    width: Math.max(1, fillW * drawProgress.value),
   }));
 
   const rightTickAnimatedProps = useAnimatedProps(() => ({
-    x: pad + Math.max(tickW, barW * drawProgress.value) - tickW,
+    x: fillX + Math.max(tickW, fillW * drawProgress.value) - tickW,
   }));
 
   const meanAnimatedProps = useAnimatedProps(() => ({
@@ -95,9 +110,6 @@ export function Ribbon({
       </AppText>
     );
   }
-
-  const span = max - min || 1;
-  const x = (v: number) => pad + ((v - min) / span) * barW;
 
   const goodColor = theme.colors.success;
   const badColor = theme.colors.danger;
@@ -123,23 +135,16 @@ export function Ribbon({
               <Stop offset="1" stopColor={fillBase} stopOpacity={0.12} />
             </LinearGradient>
           </Defs>
+          <Rect x={pad} y={barY} width={barW} height={barH} rx={barH / 2} fill={theme.colors.surfaceAlt} />
           <AnimatedRect
             animatedProps={barAnimatedProps}
-            x={pad}
-            y={barY}
-            height={barH}
-            rx={barH / 2}
-            fill={theme.colors.surfaceAlt}
-          />
-          <AnimatedRect
-            animatedProps={barAnimatedProps}
-            x={pad}
+            x={fillX}
             y={barY}
             height={barH}
             rx={barH / 2}
             fill={`url(#${fillGradId})`}
           />
-          <Rect x={pad} y={barY} width={tickW} height={barH} rx={1} fill={leftColor} />
+          <Rect x={fillX} y={barY} width={tickW} height={barH} rx={1} fill={leftColor} />
           <AnimatedRect
             animatedProps={rightTickAnimatedProps}
             y={barY}

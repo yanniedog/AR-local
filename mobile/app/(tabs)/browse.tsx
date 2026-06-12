@@ -9,6 +9,7 @@ import { SegmentedControl } from '../../src/components/controls';
 import { Row } from '../../src/components/ui';
 import { sectionFromSlug } from '../../src/constants';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
+import { profileSectionCount } from '../../src/data/profile';
 import { useStore } from '../../src/data/store';
 import { checkDrillOutcome, logNavParamDrop } from '../../src/lib/degradationLog';
 import { openSearch, parseBrowsePath } from '../../src/lib/nav';
@@ -23,6 +24,8 @@ export default function Browse() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
+  const profileFilters = useStore((s) => s.prefs.profileFilters);
+  const profileCount = profileSectionCount(profileFilters, section);
 
   useEffect(() => {
     const resolved = resolveInterestSection(interests, section);
@@ -51,6 +54,13 @@ export default function Browse() {
               <SegmentedControl options={sectionOptions} value={section} onChange={setActiveSection} />
             ) : null}
           </View>
+          <ToolbarIconButton
+            icon="person-circle-outline"
+            badge={profileCount || undefined}
+            onPress={() => router.push('/profile')}
+            accessibilityLabel="Your product profile"
+            accessibilityHint="Set default filters applied across the app"
+          />
           <ToolbarIconButton
             icon="business-outline"
             onPress={() => router.push('/banks')}

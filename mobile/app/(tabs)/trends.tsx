@@ -149,9 +149,19 @@ export default function Trends() {
               <Chip label="PRO" selected />
             </Row>
             <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
-              Detected daily from every lender's advertised rates
+              Detected daily from every lender's advertised {SECTIONS[activeSection].title.toLowerCase()} rates
             </AppText>
-            <BankMovesFeed payload={bankInsights} error={bankInsightsError} limit={8} />
+            {sectionOptions.length > 1 ? (
+              <View style={{ marginBottom: 8 }}>
+                <SegmentedControl options={sectionOptions} value={activeSection} onChange={setActiveSection} />
+              </View>
+            ) : null}
+            <BankMovesFeed
+              payload={bankInsights}
+              error={bankInsightsError}
+              sections={[activeSection]}
+              limit={8}
+            />
             {bankInsightsError && !bankInsights ? (
               <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
                 <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
@@ -172,16 +182,7 @@ export default function Trends() {
               <AppText variant="h3" style={{ marginBottom: 10 }}>
                 Movers
               </AppText>
-              {sectionOptions.length > 1 ? (
-                <SegmentedControl
-                  options={sectionOptions}
-                  value={activeSection}
-                  onChange={setActiveSection}
-                />
-              ) : null}
-              <View style={{ marginTop: 8 }}>
-                <MoversLeaderboard payload={bankInsights} section={activeSection} />
-              </View>
+              <MoversLeaderboard payload={bankInsights} section={activeSection} />
             </Card>
           ) : null}
         </>

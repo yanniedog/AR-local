@@ -146,6 +146,15 @@ export default function Settings() {
       </Section>
 
       <Section title="Personalise">
+        <Button
+          title="Your product profile"
+          icon="person-circle-outline"
+          variant="secondary"
+          onPress={() => router.push('/profile' as Href)}
+        />
+        <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, marginBottom: 12, lineHeight: 16 }}>
+          Default filters (purpose, rate type, LVR…) applied across the app.
+        </AppText>
         <Label text="Theme" />
         <SegmentedControl<ThemeMode>
           options={[
