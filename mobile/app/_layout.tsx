@@ -293,7 +293,6 @@ function RootNavigator() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="node" options={{ title: 'Browse' }} />
-          <Stack.Screen name="hierarchy" options={{ title: 'Browse tree' }} />
           <Stack.Screen name="search" options={{ title: 'Search' }} />
           <Stack.Screen name="product/[key]" options={{ title: 'Product', headerBackTitle: 'Back' }} />
           <Stack.Screen name="bank/[provider]" options={{ title: 'Lender' }} />

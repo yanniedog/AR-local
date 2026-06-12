@@ -11,7 +11,7 @@ import { sectionFromSlug } from '../../src/constants';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { useStore } from '../../src/data/store';
 import { checkDrillOutcome, logNavParamDrop } from '../../src/lib/degradationLog';
-import { openHierarchy, openSearch, parseBrowsePath } from '../../src/lib/nav';
+import { openSearch, parseBrowsePath } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function Browse() {
@@ -51,11 +51,6 @@ export default function Browse() {
               <SegmentedControl options={sectionOptions} value={section} onChange={setActiveSection} />
             ) : null}
           </View>
-          <ToolbarIconButton
-            icon="git-network-outline"
-            onPress={() => openHierarchy(section, drillPath)}
-            accessibilityLabel="Browse taxonomy tree"
-          />
           <ToolbarIconButton
             icon="business-outline"
             onPress={() => router.push('/banks')}
