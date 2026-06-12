@@ -207,6 +207,7 @@
     const prev = keep ? el.value : '';
     while (el.options.length > 1) el.remove(1); // keep the "Any"/first option
     values.forEach((v) => {
+      if (el.options[0] && el.options[0].value === v) return;
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = (labels && labels(v)) || v;
