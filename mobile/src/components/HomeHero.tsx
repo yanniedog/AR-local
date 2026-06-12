@@ -44,6 +44,7 @@ export function HomeHero({
   providerCount,
   dataKey,
   onLendersPress,
+  onShare,
 }: {
   runDateLabel: string;
   runAgeLabel: string;
@@ -55,6 +56,8 @@ export function HomeHero({
   /** Changes when a new payload is installed — drives spring motion. */
   dataKey: string;
   onLendersPress?: () => void;
+  /** Shares today's headline rates (system share sheet). */
+  onShare?: () => void;
 }) {
   const theme = useTheme();
   const sourceLabel = dataSourceLabel(source);
@@ -93,10 +96,10 @@ export function HomeHero({
             weight="700"
             style={{ letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 2 }}
           >
-            Daily rates
+            Rate intelligence
           </AppText>
           <AppText variant="h2" weight="800" style={{ lineHeight: 28 }}>
-            Home loan rates, tracked.
+            Every lender. Every rate. Daily.
           </AppText>
           <Animated.View style={dateStyle}>
             <AppText variant="tiny" color="textMuted" style={{ marginTop: 3 }}>
@@ -104,23 +107,47 @@ export function HomeHero({
             </AppText>
           </Animated.View>
         </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            backgroundColor: theme.colors.chip,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: theme.radius.sm,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
-          }}
-        >
-          <Ionicons name={statusIcon} size={14} color={statusColor} />
-          <AppText variant="tiny" weight="700" color="chipText">
-            {offline ? 'Offline' : sourceLabel}
-          </AppText>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: theme.colors.chip,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: theme.radius.sm,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons name={statusIcon} size={14} color={statusColor} />
+            <AppText variant="tiny" weight="700" color="chipText">
+              {offline ? 'Offline' : sourceLabel}
+            </AppText>
+          </View>
+          {onShare ? (
+            <Pressable
+              onPress={onShare}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Share today's rates"
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: theme.radius.sm,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Ionicons name="share-social-outline" size={14} color={theme.colors.primary} />
+              <AppText variant="tiny" weight="700" color="primary">
+                Share
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
       </Row>
 
