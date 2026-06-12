@@ -31,12 +31,12 @@ See **`docs/MOBILE_APP.md`** (payload contract), **`docs/HANDOFF.md`** (ops + ve
 <!-- app-android-install:start -->
 ### Android preview install
 
-Scan with **Android Chrome** to install the latest preview APK. The QR image URL is stable (`app-apk-latest/app-preview-qr.png`) and updates on each successful build.
+Scan with **Android Chrome** to install the latest preview APK. Asset path is stable (`app-apk-latest/app-preview-qr.png`); the README embed adds `?v=<build>` so the image refreshes after each APK publish.
 
 | | |
 |---|---|
-| Version | **1.0.1** (build 26) |
-| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png) |
+| Version | **1.0.20** (build 105) |
+| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=105) |
 | APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
 | Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
 | Version history | [app-v* releases](https://github.com/yanniedog/AR-local/releases?q=app-v&expanded=true) |
