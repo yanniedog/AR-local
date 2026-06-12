@@ -78,7 +78,9 @@
     return sim.series[i].cost;
   }
 
-  /** Monthly-compounding savings projection with deposits and account fees. */
+  /** Monthly-compounding savings projection with deposits and account fees.
+   * `capMax` models a balance-capped rate: interest accrues only on the
+   * portion up to the cap (the above-cap rate is not in the CDR feed). */
   function simulateSavings(opts) {
     const r = opts.ratePct / 100 / 12;
     let bal = opts.balance;
@@ -87,7 +89,8 @@
     const series = [{ m: 0, bal }];
     const months = Math.round(opts.years * 12);
     for (let m = 1; m <= months; m++) {
-      const interest = bal > 0 ? bal * r : 0;
+      const eligible = opts.capMax != null ? Math.min(bal, opts.capMax) : bal;
+      const interest = eligible > 0 ? eligible * r : 0;
       earned += interest;
       fees += opts.monthlyFee || 0;
       bal += interest + (opts.monthlyDeposit || 0) - (opts.monthlyFee || 0);
@@ -119,8 +122,13 @@
     const freq = $('m-freq').value;
     // Accelerated fortnightly/weekly = 26 half-payments (13 monthly payments / year).
     const freqFactor = freq === 'monthly' ? 1 : 13 / 12;
+    const principal = numInput('m-balance', 0);
+    const propertyValue = numInput('m-property', 0);
     return {
-      principal: numInput('m-balance', 0),
+      principal,
+      // Restricted-LVR rates are filtered against this; no property value entered
+      // assumes the standard 80% tier.
+      lvrPct: propertyValue > 0 ? (principal / propertyValue) * 100 : 80,
       ratePct: numInput('m-rate', 0),
       termYears: numInput('m-term', 25),
       offset: numInput('m-offset', 0),
@@ -171,6 +179,12 @@
     return true;
   }
 
+  /** Upper LVR bound (%) from an lvr_tier slug like 'lvr_70-80%'; null when unrestricted/unknown. */
+  function lvrTierMax(row) {
+    const m = /(\d+(?:\.\d+)?)%$/.exec(String(row.lvr_tier || ''));
+    return m ? Number(m[1]) : null;
+  }
+
   /** Fixed-rate period in months (ribbon_fixed_term is whole years), 0 if variable/unknown. */
   function fixedTermMonths(row) {
     if (String(row.ribbon_rate_structure || '') !== 'fixed') return 0;
@@ -202,6 +216,9 @@
       if (String(row.ribbon_repayment_type || '') === 'interest_only') return false;
       // Fixed rates with no stated fixed term can't be projected honestly.
       if (String(row.ribbon_rate_structure || '') === 'fixed' && !fixedTermMonths(row)) return false;
+      // Rates restricted to a lower LVR tier than the borrower's are ineligible.
+      const tierMax = lvrTierMax(row);
+      if (tierMax !== null && tierMax < f.lvrPct) return false;
       if (f.structure && String(row.ribbon_rate_structure || '') !== f.structure) return false;
       if (f.purpose && String(row.loan_purpose || '') && String(row.loan_purpose) !== f.purpose) return false;
       if (f.repay && String(row.ribbon_repayment_type || '') && String(row.ribbon_repayment_type) !== f.repay) return false;
@@ -497,11 +514,16 @@
     if (current.fees > 0) card(summary, 'Fees paid', money(current.fees), '');
 
     const candidates = savingsCandidates(rows, f.balance).map((c) => {
-      const sim = simulateSavings({ ...f, ratePct: c.ratePct, monthlyFee: 0 });
+      const capRaw = String(c.row.balance_max == null ? '' : c.row.balance_max);
+      const capMax = capRaw !== '' && Number.isFinite(Number(capRaw)) ? Number(capRaw) : null;
+      const sim = simulateSavings({ ...f, ratePct: c.ratePct, monthlyFee: 0, capMax });
       return {
         provider: c.row.provider,
         product: String(c.row.product_name || ''),
-        detail: String(c.row.ribbon_deposit_kind || c.row.rate_type || ''),
+        detail: [
+          String(c.row.ribbon_deposit_kind || c.row.rate_type || ''),
+          capMax != null ? 'rate up to ' + money(capMax) : '',
+        ].filter(Boolean).join(' · '),
         ratePct: c.ratePct,
         sim,
         benefit: sim.final - current.final,
@@ -530,7 +552,7 @@
         ],
       })),
     );
-    $('calc-table-hint').textContent += ' Bonus rates usually require monthly conditions; CDR feeds do not include account fees for other banks.';
+    $('calc-table-hint').textContent += ' Bonus rates usually require monthly conditions; CDR feeds do not include account fees for other banks. Where a rate has a balance cap, interest is modelled only up to the cap.';
   }
 
   function renderTd(rows) {
