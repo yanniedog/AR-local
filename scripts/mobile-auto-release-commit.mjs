@@ -44,42 +44,59 @@ export function pushHeadToMain({
     return { ok: true, dryRun: true };
   }
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    if (attempt > 1) {
-      console.error(`mobile-auto-release-commit: retry ${attempt}/${maxAttempts} after rebase`);
-    }
-    const pull = run('git', ['pull', '--rebase', 'origin', branch], { allowFail: true });
-    if (pull.status !== 0) {
-      const errText = (pull.stderr || pull.stdout || '').trim();
-      console.error(`mobile-auto-release-commit: pull failed: ${errText}`);
-      run('git', ['rebase', '--abort'], { allowFail: true });
-      if (attempt === maxAttempts) {
-        return { ok: false, protected: false, error: errText };
+  // Stash any unstaged changes (e.g. app.json versionCode bump) so that
+  // git pull --rebase doesn't abort with "cannot pull with rebase: You have
+  // unstaged changes". The stash is restored after push (or on failure).
+  const stashOut = run('git', ['stash', '--include-untracked'], { allowFail: true });
+  const didStash =
+    stashOut.status === 0 &&
+    !(stashOut.stdout || '').trim().startsWith('No local changes to save');
+
+  let result = { ok: false, protected: false, error: 'push exhausted retries' };
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (attempt > 1) {
+        console.error(`mobile-auto-release-commit: retry ${attempt}/${maxAttempts} after rebase`);
       }
-      continue;
-    }
+      const pull = run('git', ['pull', '--rebase', 'origin', branch], { allowFail: true });
+      if (pull.status !== 0) {
+        const errText = (pull.stderr || pull.stdout || '').trim();
+        console.error(`mobile-auto-release-commit: pull failed: ${errText}`);
+        run('git', ['rebase', '--abort'], { allowFail: true });
+        if (attempt === maxAttempts) {
+          result = { ok: false, protected: false, error: errText };
+          return result;
+        }
+        continue;
+      }
 
-    const push = run('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
-    if (push.status === 0) {
-      console.log(`mobile-auto-release-commit: pushed auto-release to origin/${branch}`);
-      return { ok: true };
-    }
+      const push = run('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
+      if (push.status === 0) {
+        console.log(`mobile-auto-release-commit: pushed auto-release to origin/${branch}`);
+        result = { ok: true };
+        return result;
+      }
 
-    const errText = (push.stderr || push.stdout || '').trim();
-    if (isProtectedMainRejection(errText)) {
-      console.error('::error::mobile-auto-release-commit: protected main rejected push');
-      console.error(AUTO_RELEASE_PUSH_BYPASS_HINT);
-      return { ok: false, protected: true, error: errText };
-    }
+      const errText = (push.stderr || push.stdout || '').trim();
+      if (isProtectedMainRejection(errText)) {
+        console.error('::error::mobile-auto-release-commit: protected main rejected push');
+        console.error(AUTO_RELEASE_PUSH_BYPASS_HINT);
+        result = { ok: false, protected: true, error: errText };
+        return result;
+      }
 
-    if (attempt === maxAttempts) {
-      console.error(`mobile-auto-release-commit: push failed after ${maxAttempts} attempt(s)`);
-      if (errText) console.error(errText);
-      return { ok: false, protected: false, error: errText };
+      if (attempt === maxAttempts) {
+        console.error(`mobile-auto-release-commit: push failed after ${maxAttempts} attempt(s)`);
+        if (errText) console.error(errText);
+        result = { ok: false, protected: false, error: errText };
+        return result;
+      }
     }
+  } finally {
+    if (didStash) run('git', ['stash', 'pop'], { allowFail: true });
   }
 
-  return { ok: false, protected: false, error: 'push exhausted retries' };
+  return result;
 }
 
 function main() {
