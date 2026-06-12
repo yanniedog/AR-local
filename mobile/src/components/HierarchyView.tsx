@@ -16,7 +16,7 @@ import {
 } from '../data/taxonomy';
 import { useStore } from '../data/store';
 import { logCategoryRowPress } from '../lib/degradationLog';
-import { openNode, openProduct, openProductsList } from '../lib/nav';
+import { openBrowseDrill, openProduct, openProductsList } from '../lib/nav';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { SectionCrossfade } from './controls';
@@ -114,7 +114,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
             rate={meta.lowerIsBetter ? item.node.stats.min : item.node.stats.max}
             section={section}
             ribbonStats={item.node.stats}
-            onPress={() => { const nextPath = [...path, item.node.seg]; logCategoryRowPress({ section, label: item.node.label, pathBefore: path, pathAfter: nextPath, source: 'hierarchy' }); openNode(section, nextPath); }}
+            onPress={() => { const nextPath = [...path, item.node.seg]; logCategoryRowPress({ section, label: item.node.label, pathBefore: path, pathAfter: nextPath, source: 'hierarchy' }); openBrowseDrill(section, nextPath); }}
           />
         ) : (
           <ProductCard

@@ -43,15 +43,6 @@ export const openBrowseDrill = (section: SectionKey, path: string[] = []) => {
 
 export const openBrowse = (section: SectionKey) => openBrowseDrill(section, []);
 
-export const openHierarchy = (section: SectionKey, path: string[] = []) =>
-  router.push({
-    pathname: '/hierarchy',
-    params: browseDrillParams(section, path),
-  } as unknown as Href);
-
-/** @deprecated Use openBrowseDrill — drills inside Browse tab instead of stacking /node. */
-export const openNode = (section: SectionKey, path: string[]) => openBrowseDrill(section, path);
-
 export const openSearch = (section: SectionKey, sort?: SortKey) =>
   router.push({ pathname: '/search', params: { section, ...(sort ? { sort } : {}) } });
 

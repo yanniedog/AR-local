@@ -1,33 +1,23 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useScrollToTop } from '@react-navigation/native';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
-import { CategoryRow } from '../../src/components/CategoryRow';
 import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
-import { AppText, Card, Chip, IconButton, Row } from '../../src/components/ui';
+import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
-import { marketPulse } from '../../src/data/bankInsights';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { bestRow } from '../../src/data/selectors';
-import { childrenOf, rowsUnder } from '../../src/data/taxonomy';
+import { rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
-import { effectiveBankInsights, effectiveHistoryRibbon } from '../../src/lib/proAccess';
-import { logCategoryRowPress } from '../../src/lib/degradationLog';
-import { openBank, openNode, openProduct, openRibbonProducts } from '../../src/lib/nav';
-import type { SectionKey } from '../../src/types';
+import { openBank, openProduct, openRibbonProducts } from '../../src/lib/nav';
 import { useTheme } from '../../src/theme/ThemeProvider';
-
-function openTrendsTab() {
-  router.push('/(tabs)/trends');
-}
 
 export default function Home() {
   const theme = useTheme();
@@ -40,14 +30,7 @@ export default function Home() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
-  const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
-  const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
-  const bankInsights = useStore((s) => s.bankInsights);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
-  const pulse = useMemo(
-    () => (showBankInsights ? marketPulse(bankInsights, 7) : null),
-    [bankInsights, showBankInsights],
-  );
 
   useEffect(() => {
     const resolved = resolveInterestSection(interests, section);
@@ -65,10 +48,6 @@ export default function Home() {
     () => resolveSectionRibbonStats(sectionData, hierRows, includeNonStandard),
     [sectionData, hierRows, includeNonStandard],
   );
-  const categories = useMemo(
-    () => childrenOf(hierRows, section, [], includeNonStandard),
-    [hierRows, section, includeNonStandard],
-  );
   const best = useMemo(
     () => bestRow(hierRows, section, includeNonStandard),
     [hierRows, section, includeNonStandard],
@@ -81,13 +60,6 @@ export default function Home() {
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
   const lenderCount = Object.keys(core.brands ?? {}).length;
-  const trendsDetail = pulse?.banksMoved
-    ? `${pulse.banksMoved} bank${pulse.banksMoved === 1 ? '' : 's'} moved rates this week — see who moved which way`
-    : showBankInsights
-      ? 'Bank moves feed, RBA pass-through, market history'
-      : showHistoryRibbon
-        ? `${meta.title} history ribbon, RBA cash rate, market snapshot`
-        : 'Bank moves, RBA pass-through & rate history — Pro';
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
 
@@ -98,15 +70,6 @@ export default function Home() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
       }
     >
-      <Row style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
-        <IconButton
-          icon="refresh"
-          onPress={onRefresh}
-          disabled={refreshing}
-          accessibilityLabel="Refresh"
-        />
-      </Row>
-
       <HomeHero
         dataKey={core.run_date}
         runDateLabel={formatRunDate(core.run_date)}
@@ -192,46 +155,7 @@ export default function Home() {
             onPress={() => openRibbonProducts(section, 'comparison')}
           />
         ) : null}
-        <Chip label="Bank A-Z" icon="business" onPress={() => openRibbonProducts(section, 'bank')} />
       </Row>
-
-      <AppText variant="small" weight="700" color="textMuted">
-        MORE
-      </AppText>
-
-      <Pressable
-        onPress={openTrendsTab}
-        accessibilityRole="button"
-        accessibilityLabel={`Open ${meta.title} charts and trends`}
-        style={({ pressed }) => ({ marginBottom: theme.spacing(3), opacity: pressed ? 0.85 : 1 })}
-      >
-        <Card>
-          <Row style={{ alignItems: 'center' }}>
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: theme.radius.sm,
-                backgroundColor: theme.colors.chip,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: theme.spacing(3),
-              }}
-            >
-              <Ionicons name="stats-chart" size={20} color={sectionAccent} />
-            </View>
-            <View style={{ flex: 1, paddingRight: theme.spacing(2) }}>
-              <AppText variant="body" weight="700">
-                {showBankInsights ? 'Bank intelligence & trends' : 'Charts & trends'}
-              </AppText>
-              <AppText variant="tiny" color="textMuted" style={{ marginTop: theme.spacing(1) / 2 }}>
-                {trendsDetail}
-              </AppText>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
-          </Row>
-        </Card>
-      </Pressable>
 
       <HomeRefreshCountdown />
 
@@ -243,24 +167,6 @@ export default function Home() {
           <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba?.rate ?? null : null} />
         </SpringOnNewData>
       </Card>
-
-      <AppText variant="small" weight="700" color="textMuted">
-        BROWSE BY CATEGORY
-      </AppText>
-      {categories.map((node) => (
-        <CategoryRow
-          key={node.seg}
-          label={node.label}
-          productCount={node.stats.products}
-          providerCount={node.stats.providers}
-          rate={meta.lowerIsBetter ? node.stats.min : node.stats.max}
-          section={section}
-          accent={sectionAccent}
-          showAccent
-          ribbonStats={node.stats}
-          onPress={() => { const nextPath = [node.seg]; logCategoryRowPress({ section, label: node.label, pathBefore: [], pathAfter: nextPath, source: 'home' }); openNode(section, nextPath); }}
-        />
-      ))}
     </ScreenScrollView>
   );
 }
