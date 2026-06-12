@@ -22,7 +22,7 @@
   const state = {
     section: 'Mortgage',
     runDate: '',
-    rows: { Mortgage: null, Savings: null, TD: null }, // null = not fetched
+    rows: { Mortgage: null, Savings: null, TD: null }, // null = not fetched; promise while loading
     selected: { Mortgage: '', Savings: '', TD: '' },   // provider key of chart comparison row
     charts: { projection: null, benefit: null },
     candidatesCache: [],
@@ -43,9 +43,10 @@
    * Month-by-month loan simulation. Interest accrues on (balance - offset);
    * account fees are tracked as cost but not capitalised. `paymentMonthly`
    * already includes any accelerated-frequency uplift and extra repayments.
+   * `revert` ({ month, ratePct, paymentMonthly }) models a fixed-rate period
+   * expiring: after `month`, the revert rate and repayment apply.
    */
   function simulateLoan(opts) {
-    const r = opts.ratePct / 100 / 12;
     let bal = opts.principal;
     let totalInterest = 0;
     let totalFees = opts.upfrontCost || 0;
@@ -53,10 +54,12 @@
     const series = [{ m: 0, bal, cost: totalFees }];
     while (bal > 0.005 && m < SIM_CAP_MONTHS) {
       m++;
+      const reverted = opts.revert && m > opts.revert.month;
+      const r = (reverted ? opts.revert.ratePct : opts.ratePct) / 100 / 12;
       const interest = r * Math.max(0, bal - (opts.offset || 0));
       totalInterest += interest;
       totalFees += (opts.monthlyFee || 0) + (m % 12 === 0 ? (opts.annualFee || 0) : 0);
-      bal = Math.max(0, bal + interest - opts.paymentMonthly);
+      bal = Math.max(0, bal + interest - (reverted ? opts.revert.paymentMonthly : opts.paymentMonthly));
       series.push({ m, bal, cost: totalInterest + totalFees });
     }
     return {
@@ -159,6 +162,22 @@
     return Number.isFinite(ratePct) && ratePct > 0.01 && ratePct < 20;
   }
 
+  /** balance_min/balance_max are numeric strings or '' (no bound). */
+  function withinBalanceRange(row, amount) {
+    const rawMin = String(row.balance_min == null ? '' : row.balance_min);
+    const rawMax = String(row.balance_max == null ? '' : row.balance_max);
+    if (rawMin !== '' && Number.isFinite(Number(rawMin)) && amount < Number(rawMin)) return false;
+    if (rawMax !== '' && Number.isFinite(Number(rawMax)) && amount > Number(rawMax)) return false;
+    return true;
+  }
+
+  /** Fixed-rate period in months (ribbon_fixed_term is whole years), 0 if variable/unknown. */
+  function fixedTermMonths(row) {
+    if (String(row.ribbon_rate_structure || '') !== 'fixed') return 0;
+    const years = Number(row.ribbon_fixed_term);
+    return Number.isFinite(years) && years > 0 ? Math.round(years * 12) : 0;
+  }
+
   /** Best rate per provider after the section's filters. */
   function bestPerProvider(rows, lowerIsBetter, accept) {
     const best = new Map();
@@ -178,6 +197,11 @@
   function mortgageCandidates(rows, f) {
     return bestPerProvider(rows, true, (row) => {
       if (row.rate_type === 'DISCOUNT') return false;
+      // The engine amortises principal-and-interest only; an interest-only rate
+      // applied to P&I behaviour would misstate repayments and savings.
+      if (String(row.ribbon_repayment_type || '') === 'interest_only') return false;
+      // Fixed rates with no stated fixed term can't be projected honestly.
+      if (String(row.ribbon_rate_structure || '') === 'fixed' && !fixedTermMonths(row)) return false;
       if (f.structure && String(row.ribbon_rate_structure || '') !== f.structure) return false;
       if (f.purpose && String(row.loan_purpose || '') && String(row.loan_purpose) !== f.purpose) return false;
       if (f.repay && String(row.ribbon_repayment_type || '') && String(row.ribbon_repayment_type) !== f.repay) return false;
@@ -185,12 +209,12 @@
     });
   }
 
-  function savingsCandidates(rows) {
-    return bestPerProvider(rows, false, null);
+  function savingsCandidates(rows, balance) {
+    return bestPerProvider(rows, false, (row) => withinBalanceRange(row, balance));
   }
 
-  function tdCandidates(rows, months) {
-    return bestPerProvider(rows, false, (row) => Number(row.term_months) === months);
+  function tdCandidates(rows, months, principal) {
+    return bestPerProvider(rows, false, (row) => Number(row.term_months) === months && withinBalanceRange(row, principal));
   }
 
   /** Distinct non-empty values of a field, for data-driven filter dropdowns. */
@@ -377,7 +401,8 @@
     const f = loanInputs();
     const enumLabel = (v) => v.toLowerCase().replace(/_/g, ' ');
     fillSelect($('m-purpose'), distinctValues(rows, 'loan_purpose'), true, enumLabel);
-    fillSelect($('m-repay'), distinctValues(rows, 'ribbon_repayment_type'), true, enumLabel);
+    // interest_only excluded: the comparison engine models P&I amortisation only.
+    fillSelect($('m-repay'), distinctValues(rows, 'ribbon_repayment_type').filter((v) => v !== 'interest_only'), true, enumLabel);
 
     const summary = $('calc-summary');
     clear(summary);
@@ -404,16 +429,23 @@
 
     // Candidates: each alternative keeps the user's repayment behaviour, offset
     // and extra repayments; switching cost + assumed new annual fee included.
+    // Fixed rates apply for their fixed term only, then revert to the user's
+    // current rate and repayment (the actual revert rate isn't in the CDR feed).
     const candidates = mortgageCandidates(rows, f).map((c) => {
+      const fixedMonths = fixedTermMonths(c.row);
       const sim = simulateLoan({
         principal: f.principal, ratePct: c.ratePct, offset: f.offset,
         monthlyFee: 0, annualFee: f.newAnnualFee, upfrontCost: f.switchCost,
         paymentMonthly: amortisedPayment(f.principal, c.ratePct / 100 / 12, Math.round(f.termYears * 12)) * f.freqFactor + f.extraMonthly,
+        revert: fixedMonths ? { month: fixedMonths, ratePct: f.ratePct, paymentMonthly } : null,
       });
       return {
         provider: c.row.provider,
         product: String(c.row.product_name || ''),
-        detail: [c.row.ribbon_rate_structure, c.row.ribbon_fixed_term, c.row.lvr_tier].filter(Boolean).join(' · '),
+        detail: [
+          fixedMonths ? c.row.ribbon_fixed_term + 'yr fixed, then your current rate' : c.row.ribbon_rate_structure,
+          c.row.lvr_tier,
+        ].filter(Boolean).join(' · '),
         ratePct: c.ratePct,
         sim,
         benefit: current.totalCost - sim.totalCost,
@@ -464,7 +496,7 @@
     card(summary, 'Interest earned', money(current.earned), '');
     if (current.fees > 0) card(summary, 'Fees paid', money(current.fees), '');
 
-    const candidates = savingsCandidates(rows).map((c) => {
+    const candidates = savingsCandidates(rows, f.balance).map((c) => {
       const sim = simulateSavings({ ...f, ratePct: c.ratePct, monthlyFee: 0 });
       return {
         provider: c.row.provider,
@@ -523,7 +555,7 @@
     card(summary, 'Interest at maturity', money2(current.interest), f.months + ' months @ ' + f.ratePct.toFixed(2) + '% (simple interest)');
     card(summary, 'Balance at maturity', money2(current.final), '');
 
-    const candidates = tdCandidates(rows, f.months).map((c) => {
+    const candidates = tdCandidates(rows, f.months, f.principal).map((c) => {
       const sim = simulateTd({ ...f, ratePct: c.ratePct });
       return {
         provider: c.row.provider,
@@ -569,17 +601,25 @@
     return response.json();
   }
 
+  // Caches the in-flight promise so rapid input changes / tab switches share one
+  // fetch instead of firing concurrent requests; reset on failure to allow retry.
   async function sectionRows(section) {
-    if (state.rows[section]) return state.rows[section];
-    if (!state.runDate) {
-      const latest = await getJson('/api/latest');
-      state.runDate = String(latest.run_date || '');
-      $('calc-run-date').textContent = state.runDate || 'unavailable';
+    if (!state.rows[section]) {
+      state.rows[section] = (async () => {
+        if (!state.runDate) {
+          const latest = await getJson('/api/latest');
+          state.runDate = String(latest.run_date || '');
+          $('calc-run-date').textContent = state.runDate || 'unavailable';
+        }
+        const payload = await getJson(`/api/banks/section?date=${encodeURIComponent(state.runDate)}&section=${encodeURIComponent(section)}`);
+        const rows = Array.isArray(payload.rates) ? payload.rates : [];
+        rows.forEach((row) => { row.dataset = section; }); // normalizeRows keys its percent heuristics off dataset
+        return normalizeRows(rows);
+      })().catch((err) => {
+        state.rows[section] = null;
+        throw err;
+      });
     }
-    const payload = await getJson(`/api/banks/section?date=${encodeURIComponent(state.runDate)}&section=${encodeURIComponent(section)}`);
-    const rows = Array.isArray(payload.rates) ? payload.rates : [];
-    rows.forEach((row) => { row.dataset = section; }); // normalizeRows keys its percent heuristics off dataset
-    state.rows[section] = normalizeRows(rows);
     return state.rows[section];
   }
 
