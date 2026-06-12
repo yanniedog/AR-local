@@ -20,14 +20,15 @@ def _raw(entries):
     return json.dumps({"data": entries}).encode("utf-8")
 
 
-def test_parse_filters_unrenderable_and_insecure() -> None:
+def test_parse_keeps_raster_and_svg_filters_unrenderable_and_insecure() -> None:
     parsed = cdr_brand_logos.parse_register_payload(
         _raw(
             [
                 {"brandName": "MyState Bank", "logoUri": "https://x/logo.png"},
                 {"brandName": "SVG Bank", "logoUri": "https://x/logo.svg"},
+                {"brandName": "SVG Query Bank", "logoUri": "https://x/logo.svg?h=90"},
                 {"brandName": "Ashx Bank", "logoUri": "https://x/logo.ashx?h=90"},
-                {"brandName": "Http Bank", "logoUri": "http://x/logo.png"},
+                {"brandName": "Http Bank", "logoUri": "http://x/logo.svg"},
                 {"brandName": "Query Bank", "logoUri": "https://x/logo.png?format=1500w"},
                 {"brandName": "", "logoUri": "https://x/logo.png"},
             ]
@@ -35,8 +36,17 @@ def test_parse_filters_unrenderable_and_insecure() -> None:
     )
     assert parsed == {
         "mystate bank": "https://x/logo.png",
+        "svg bank": "https://x/logo.svg",
+        "svg query bank": "https://x/logo.svg?h=90",
         "query bank": "https://x/logo.png?format=1500w",
     }
+
+
+def test_is_svg_uri() -> None:
+    assert cdr_brand_logos.is_svg_uri("https://x/logo.svg")
+    assert cdr_brand_logos.is_svg_uri("https://x/logo.SVG?h=90")
+    assert not cdr_brand_logos.is_svg_uri("https://x/logo.png")
+    assert not cdr_brand_logos.is_svg_uri("https://x/svg-handler.ashx")
 
 
 def test_exact_match_beats_token_subset() -> None:
@@ -94,3 +104,16 @@ def test_build_brands_attaches_register_uri_only_without_embedded_logo() -> None
     assert brands["MyState Bank"]["logo_uri"] == "https://mystate.example/logo.png"
     assert "logo_uri" not in brands["ING"]
     assert brands["ING"]["logo"] == "data:image/png;base64,abc"
+
+
+def test_build_brands_routes_svg_register_uri_to_logo_svg_uri() -> None:
+    register = dict(REGISTER, **{"svg only bank": "https://svg.example/logo.svg"})
+    brands = build_brands(
+        ["SVG Only Bank", "MyState Bank"],
+        shortcodes={},
+        register_logos=register,
+    )
+    assert brands["SVG Only Bank"]["logo_svg_uri"] == "https://svg.example/logo.svg"
+    assert "logo_uri" not in brands["SVG Only Bank"]
+    assert brands["MyState Bank"]["logo_uri"] == "https://mystate.example/logo.png"
+    assert "logo_svg_uri" not in brands["MyState Bank"]

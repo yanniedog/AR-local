@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
+  isSvgUri,
   logoUriFor,
   parseRegisterPayload,
   useRegisterLogosStore,
@@ -12,15 +13,27 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 describe('registerLogos', () => {
-  it('parses renderable logoUri entries from register JSON', () => {
+  it('parses raster and SVG logoUri entries from register JSON', () => {
     const logos = parseRegisterPayload({
       data: [
         { brandName: 'MyState Bank', logoUri: 'https://mystate.com.au/logo.png' },
         { brandName: 'SVG Only', logoUri: 'https://example.com/logo.svg' },
+        { brandName: 'Ashx', logoUri: 'https://example.com/logo.ashx?h=90' },
         { brandName: 'Bad', logoUri: 'http://insecure.com/x.png' },
       ],
     });
-    expect(logos).toEqual({ 'mystate bank': 'https://mystate.com.au/logo.png' });
+    expect(logos).toEqual({
+      'mystate bank': 'https://mystate.com.au/logo.png',
+      'svg only': 'https://example.com/logo.svg',
+    });
+  });
+
+  it('classifies SVG sources needing react-native-svg', () => {
+    expect(isSvgUri('https://example.com/logo.svg')).toBe(true);
+    expect(isSvgUri('https://example.com/logo.SVG?h=90')).toBe(true);
+    expect(isSvgUri('https://example.com/logo.png')).toBe(false);
+    expect(isSvgUri(42)).toBe(false);
+    expect(isSvgUri(undefined)).toBe(false);
   });
 
   it('matches provider names with suffix stripping', () => {
@@ -43,7 +56,7 @@ describe('registerLogos', () => {
       savedAt: Date.now() - 8 * 24 * 3600 * 1000,
       logos: { 'mystate bank': 'https://mystate.com.au/logo.png' },
     };
-    await AsyncStorage.setItem('ar.registerLogos.v1', JSON.stringify(stale));
+    await AsyncStorage.setItem('ar.registerLogos.v2', JSON.stringify(stale));
 
     const originalFetch = global.fetch;
     global.fetch = jest.fn().mockRejectedValue(new Error('register down'));

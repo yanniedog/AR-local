@@ -4,10 +4,18 @@ import { create } from 'zustand';
 import { debugLog } from './debugLog';
 
 const REGISTER_URL = 'https://api.cdr.gov.au/cdr-register/v1/banking/data-holders/brands/summary';
-const CACHE_KEY = 'ar.registerLogos.v1';
+// v2: SVG logoUris are now kept, so a fresh raster-only v1 cache must not
+// suppress them for up to 7 days.
+const CACHE_KEY = 'ar.registerLogos.v2';
 const CACHE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
-const RENDERABLE_RE = /\.(png|jpe?g|gif|webp)(\?[^#]*)?$/i;
+const RASTER_RE = /\.(png|jpe?g|gif|webp)(\?[^#]*)?$/i;
+const SVG_RE = /\.svg(\?[^#]*)?$/i;
+
+/** True for logo sources that need react-native-svg rather than RN <Image>. */
+export function isSvgUri(value: string | number | null | undefined): boolean {
+  return typeof value === 'string' && SVG_RE.test(value);
+}
 
 const SUFFIX_TOKENS = new Set([
   'ltd',
@@ -37,7 +45,7 @@ function tokens(name: string): Set<string> {
   );
 }
 
-/** Parse CDR Register brand summary into normalized brandName -> logoUri. */
+/** Parse CDR Register brand summary into normalized brandName -> logoUri (raster or SVG). */
 export function parseRegisterPayload(raw: unknown): Record<string, string> {
   const data = raw as { data?: { brandName?: string; logoUri?: string }[] };
   const out: Record<string, string> = {};
@@ -45,7 +53,7 @@ export function parseRegisterPayload(raw: unknown): Record<string, string> {
     const name = String(entry.brandName ?? '').trim();
     const uri = String(entry.logoUri ?? '').trim();
     if (!name || !uri.toLowerCase().startsWith('https://')) continue;
-    if (!RENDERABLE_RE.test(uri)) continue;
+    if (!RASTER_RE.test(uri) && !SVG_RE.test(uri)) continue;
     out[normalize(name)] = uri;
   }
   return out;

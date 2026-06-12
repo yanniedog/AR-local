@@ -68,6 +68,8 @@ export interface Brand {
   logo?: string;
   /** CDR Register logoUri (regulator-maintained) for brands without embedded art. */
   logo_uri?: string;
+  /** Register logoUri in SVG form — rendered via react-native-svg, not <Image>. */
+  logo_svg_uri?: string;
 }
 
 export interface RbaEntry {
