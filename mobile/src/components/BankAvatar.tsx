@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Text, View } from 'react-native';
+import { SvgUri } from 'react-native-svg';
 
 import { resolveBankLogoSources, resolveBrandShort } from '../data/bankBrand';
 import { useStore } from '../data/store';
-import { logoUriFor, useRegisterLogosStore } from '../lib/registerLogos';
+import { isSvgUri, logoUriFor, useRegisterLogosStore } from '../lib/registerLogos';
 import { useTheme } from '../theme/ThemeProvider';
 
 function contrastText(hex: string): string {
@@ -26,7 +27,7 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
     void ensureRegisterLogos();
   }, [ensureRegisterLogos]);
 
-  const registerUri = brand?.logo_uri ?? logoUriFor(provider, registerLogos);
+  const registerUri = brand?.logo_uri ?? brand?.logo_svg_uri ?? logoUriFor(provider, registerLogos);
   const sources = useMemo(
     () => resolveBankLogoSources(provider, brand?.logo, registerUri),
     [provider, brand?.logo, registerUri],
@@ -47,6 +48,10 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
   const activeSource = sources[sourceIdx];
 
   if (activeSource != null && !exhausted) {
+    const advanceSource = () => {
+      if (sourceIdx + 1 < sources.length) setSourceIdx((idx) => idx + 1);
+      else setExhausted(true);
+    };
     return (
       <View
         style={{
@@ -58,16 +63,22 @@ export function BankAvatar({ provider, size = 42 }: { provider: string; size?: n
         accessible
         accessibilityLabel={provider}
       >
-        <Image
-          accessible={false}
-          source={typeof activeSource === 'number' ? activeSource : { uri: activeSource }}
-          resizeMode="contain"
-          style={{ width: size * 0.88, height: size * 0.88 }}
-          onError={() => {
-            if (sourceIdx + 1 < sources.length) setSourceIdx((idx) => idx + 1);
-            else setExhausted(true);
-          }}
-        />
+        {isSvgUri(activeSource) ? (
+          <SvgUri
+            uri={activeSource as string}
+            width={size * 0.88}
+            height={size * 0.88}
+            onError={advanceSource}
+          />
+        ) : (
+          <Image
+            accessible={false}
+            source={typeof activeSource === 'number' ? activeSource : { uri: activeSource }}
+            resizeMode="contain"
+            style={{ width: size * 0.88, height: size * 0.88 }}
+            onError={advanceSource}
+          />
+        )}
       </View>
     );
   }

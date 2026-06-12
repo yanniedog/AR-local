@@ -359,14 +359,19 @@ def build_brands(
     for provider in sorted({p for p in providers if p}):
         short = _get_brand_lookup(shortcodes, provider) or _derive_short(provider)
         embedded = _get_brand_lookup(logos, provider)
+        # Register URI only when there is no embedded logo: the app prefers
+        # embedded/bundled art, so shipping both wastes bytes. SVG URIs ride a
+        # separate field — RN <Image> can't render SVG, so raster-only builds
+        # ignore it while newer builds render it via react-native-svg.
+        register_uri = None if embedded else cdr_brand_logos.logo_uri_for(provider, register_logos)
+        register_is_svg = register_uri is not None and cdr_brand_logos.is_svg_uri(register_uri)
         brands[provider] = compact(
             {
                 "short": short,
                 "color": _brand_color(provider),
                 "logo": embedded,
-                # Register URI only when there is no embedded logo: the app
-                # prefers embedded/bundled art, so shipping both wastes bytes.
-                "logo_uri": None if embedded else cdr_brand_logos.logo_uri_for(provider, register_logos),
+                "logo_uri": None if register_is_svg else register_uri,
+                "logo_svg_uri": register_uri if register_is_svg else None,
             }
         )
     return brands
@@ -537,8 +542,10 @@ def build_payload(
     # NB: no wall-clock field inside core/details. They are content-hashed (sha256
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
+    # v2: cache name bumped when SVG logoUris started being kept, so a fresh
+    # raster-only cache can't suppress SVG entries for up to 7 days.
     register_logos = cdr_brand_logos.fetch_register_logos(
-        cache_path=exports_dir / "cdr-brand-logos.json"
+        cache_path=exports_dir / "cdr-brand-logos-v2.json"
     )
     core = {
         "schema_version": SCHEMA_VERSION,
