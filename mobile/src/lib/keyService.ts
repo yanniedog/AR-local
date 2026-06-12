@@ -74,9 +74,9 @@ export async function syncContentKeys(
     const issued = await fetchContentKeys(url);
     // Hex keys are normalized to lowercase so a copy-pasted uppercase secret
     // still validates and matches the Pi/app key-id derivation.
-    const usable = issued.keys
-      .map((k) => ({ ...k, key_hex: String(k.key_hex ?? '').trim().toLowerCase() }))
-      .find((k) => k.alg === 'aes-256-gcm' && /^[0-9a-f]{64}$/.test(k.key_hex));
+    const usable = (issued?.keys ?? [])
+      .map((k) => ({ ...k, key_hex: String(k?.key_hex ?? '').trim().toLowerCase() }))
+      .find((k) => k?.alg === 'aes-256-gcm' && /^[0-9a-f]{64}$/.test(k?.key_hex));
     if (!usable) {
       debugLog.warn('keyService', `no usable key in response (tier=${issued.tier})`);
       return false;
