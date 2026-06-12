@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useScrollToTop } from '@react-navigation/native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -16,7 +17,7 @@ import {
 } from '../data/taxonomy';
 import { useStore } from '../data/store';
 import { logCategoryRowPress } from '../lib/degradationLog';
-import { openNode, openProduct, openProductsList } from '../lib/nav';
+import { openBrowseDrill, openProduct, openProductsList } from '../lib/nav';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { SectionCrossfade } from './controls';
@@ -70,25 +71,41 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const meta = SECTIONS[section];
 
   const header = (
-    <SectionCrossfade section={section}>
-      <View>
-        <Card>
-          <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
-        </Card>
-        <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing(1) / 2 }}>
-          <AppText variant="small" weight="700" color="textMuted">
-            {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
-          </AppText>
-          {!isLeaf ? (
-            <Pressable onPress={() => openProductsList(section, path)} hitSlop={theme.spacing(2)}>
-              <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
-                All {stats.products} products →
-              </AppText>
-            </Pressable>
-          ) : null}
-        </Row>
-      </View>
-    </SectionCrossfade>
+    <View>
+      {path.length > 0 && (
+        <Pressable
+          onPress={() => openBrowseDrill(section, path.slice(0, -1))}
+          hitSlop={theme.spacing(2)}
+          style={{ paddingHorizontal: theme.spacing(1) / 2, paddingBottom: theme.spacing(1) }}
+        >
+          <Row gap={4} style={{ alignItems: 'center' }}>
+            <Ionicons name="chevron-back" size={16} color={theme.colors.primary} />
+            <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
+              Back
+            </AppText>
+          </Row>
+        </Pressable>
+      )}
+      <SectionCrossfade section={section}>
+        <View>
+          <Card>
+            <Ribbon stats={stats} section={section} rbaRate={section === 'Mortgage' ? rba : null} />
+          </Card>
+          <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing(1) / 2 }}>
+            <AppText variant="small" weight="700" color="textMuted">
+              {isLeaf ? `${stats.products} ${stats.products === 1 ? 'PRODUCT' : 'PRODUCTS'}` : 'CATEGORIES'}
+            </AppText>
+            {!isLeaf ? (
+              <Pressable onPress={() => openProductsList(section, path)} hitSlop={theme.spacing(2)}>
+                <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
+                  All {stats.products} products →
+                </AppText>
+              </Pressable>
+            ) : null}
+          </Row>
+        </View>
+      </SectionCrossfade>
+    </View>
   );
 
   return (
@@ -114,7 +131,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
             rate={meta.lowerIsBetter ? item.node.stats.min : item.node.stats.max}
             section={section}
             ribbonStats={item.node.stats}
-            onPress={() => { const nextPath = [...path, item.node.seg]; logCategoryRowPress({ section, label: item.node.label, pathBefore: path, pathAfter: nextPath, source: 'hierarchy' }); openNode(section, nextPath); }}
+            onPress={() => { const nextPath = [...path, item.node.seg]; logCategoryRowPress({ section, label: item.node.label, pathBefore: path, pathAfter: nextPath, source: 'hierarchy' }); openBrowseDrill(section, nextPath); }}
           />
         ) : (
           <ProductCard
