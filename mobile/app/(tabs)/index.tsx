@@ -15,6 +15,7 @@ import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/in
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { profileFilterRows, profileSectionCount } from '../../src/data/profile';
 import { bestRow } from '../../src/data/selectors';
+import { conditionalNote } from '../../src/lib/rateQualifier';
 import { ShareQrModal } from '../../src/components/ShareQrModal';
 import { rowsUnder } from '../../src/data/taxonomy';
 import { useStore } from '../../src/data/store';
@@ -80,6 +81,7 @@ export default function Home() {
   // With a profile active the hero must show the best profile-matched rate,
   // not the unfiltered market extreme it would otherwise mislabel.
   const heroRate = profileCount > 0 ? (best ? toFraction(best.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
+  const bestNote = conditionalNote(best, section);
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
@@ -129,6 +131,15 @@ export default function Home() {
               <AppText variant="rateHero" style={{ color: rateInk, marginTop: theme.spacing(1) }}>
                 {formatRate(heroRate)}
               </AppText>
+              {bestNote ? (
+                <AppText
+                  variant="tiny"
+                  weight="700"
+                  style={{ color: theme.colors.warning, marginTop: theme.spacing(1) }}
+                >
+                  {bestNote}
+                </AppText>
+              ) : null}
             </View>
             {section === 'Mortgage' && rba ? (
               <View
