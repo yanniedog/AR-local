@@ -241,10 +241,13 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
   const theme = useTheme();
   const q = rateQualifier(row, section);
   const bits: string[] = [];
-  // The conditional badge already conveys bonus/intro (and, for intro, the term),
-  // so don't repeat rate_type (BONUS/INTRODUCTORY) — or the intro term — here.
-  // Mirrors ProductCard, which suppresses the neutral conditional chip likewise.
-  if (row.rate_type && !q.conditional) bits.push(humanizeEnum(row.rate_type));
+  // The badge already conveys generic bonus/intro, so drop only the rate_type
+  // values it duplicates (BONUS / INTRODUCTORY). Keep more specific ones like
+  // BUNDLE_BONUS that add information the badge doesn't (e.g. needs a linked
+  // account). The intro term is likewise carried by the badge (suppressed below).
+  const rt = row.rate_type?.toUpperCase();
+  const rtRedundant = q.conditional && (rt === 'BONUS' || rt === 'INTRODUCTORY' || rt === 'INTRO');
+  if (row.rate_type && !rtRedundant) bits.push(humanizeEnum(row.rate_type));
   const term = formatTerm(row);
   if (term && q.kind !== 'intro') bits.push(term);
   if (section === 'Mortgage') {
