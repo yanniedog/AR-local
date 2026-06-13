@@ -14,6 +14,8 @@ import type { BankInsightsPayload } from './bankInsights';
 
 import type { HistoryBanksPayload } from './historyPayload';
 
+import type { ProductHistoryPayload } from './productHistory';
+
 
 
 const DIR = `${FileSystem.documentDirectory}payload/`;
@@ -29,6 +31,8 @@ const SEARCH_INDEX = `${DIR}search-index.json`;
 const HISTORY_BANKS = `${DIR}history-banks.json`;
 
 const BANK_INSIGHTS = `${DIR}bank-history.json`;
+
+const PRODUCT_HISTORY = `${DIR}product-history.json`;
 
 
 
@@ -251,6 +255,26 @@ export const cache = {
   async clearBankInsights(): Promise<void> {
 
     await FileSystem.deleteAsync(BANK_INSIGHTS, { idempotent: true });
+
+  },
+
+  async readProductHistory(): Promise<ProductHistoryPayload | null> {
+
+    return readJson<ProductHistoryPayload>(PRODUCT_HISTORY);
+
+  },
+
+  async writeProductHistory(json: string): Promise<void> {
+
+    await ensureDir();
+
+    await FileSystem.writeAsStringAsync(PRODUCT_HISTORY, json);
+
+  },
+
+  async clearProductHistory(): Promise<void> {
+
+    await FileSystem.deleteAsync(PRODUCT_HISTORY, { idempotent: true });
 
   },
 

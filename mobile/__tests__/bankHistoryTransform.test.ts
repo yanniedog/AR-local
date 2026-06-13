@@ -1,5 +1,6 @@
 import {
   alignPointsToTimeline,
+  chartYDomain,
   historyDatesInWindow,
   normalizeTimelineDates,
   rbaChangesInWindow,
@@ -89,5 +90,14 @@ describe('bankHistoryTransform', () => {
     const marks = rbaChangesInWindow(dates, rba);
     expect(marks.map((m) => m.snap)).toEqual(['2026-03-01', '2026-05-01']);
     expect(marks[0].bp).toBe(25);
+  });
+
+  it('chartYDomain includes median points and extra (highlight) values', () => {
+    const points = [{ date: '2026-01-01', min: null, max: null, mean: 0.06, median: 0.1, count: 1 }];
+    const domain = chartYDomain(points, [], [0.02]);
+    // Without median the top would track mean (~0.063); without the extra highlight
+    // value the bottom would track mean (~0.057). Both must widen the domain.
+    expect(domain.max).toBeGreaterThan(0.1); // median (0.10) considered
+    expect(domain.min).toBeLessThan(0.03); // extra highlight value (0.02) considered
   });
 });

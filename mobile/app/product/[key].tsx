@@ -4,6 +4,8 @@ import React, { useEffect } from 'react';
 import { Alert, Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
+import { BankHistoryChart } from '../../src/components/BankHistoryChart';
+import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { DetailLoadingLines, EmptyState } from '../../src/components/feedback';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { ScreenScrollView } from '../../src/components/Screen';
@@ -19,12 +21,14 @@ import {
 } from '../../src/data/format';
 import { sortRows } from '../../src/data/selectors';
 import { findByKey } from '../../src/data/selectors';
+import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
+import { hasProductSeries, productSeriesRecord } from '../../src/data/productHistory';
 import { ensurePermissions, registerBackgroundRefresh } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openBank } from '../../src/lib/nav';
 import { logSwallowedError } from '../../src/lib/degradationLog';
-import { canAddAlertSubscription } from '../../src/lib/proAccess';
+import { canAddAlertSubscription, effectiveHistoryRibbon } from '../../src/lib/proAccess';
 import type { DetailItem, RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -47,11 +51,24 @@ export default function ProductDetail() {
   const subscribeProduct = useStore((s) => s.subscribeProduct);
   const unsubscribeProduct = useStore((s) => s.unsubscribeProduct);
   const subscriptions = useStore((s) => s.subscriptions);
+  const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const historyEnabled = useStore((s) => effectiveHistoryRibbon(s.prefs));
+  const historyBanks = useStore((s) => s.historyBanks);
+  const productHistory = useStore((s) => s.productHistory);
+  const productHistoryError = useStore((s) => s.productHistoryError);
+  const ensureHistoryBanks = useStore((s) => s.ensureHistoryBanks);
+  const ensureProductHistory = useStore((s) => s.ensureProductHistory);
   const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
 
   useEffect(() => {
     void ensureDetails({ forProductView: true });
   }, [ensureDetails]);
+
+  useEffect(() => {
+    if (!historyEnabled) return;
+    void ensureHistoryBanks();
+    void ensureProductHistory();
+  }, [historyEnabled, ensureHistoryBanks, ensureProductHistory]);
 
   const found = core ? findByKey(core.sections, productKey) : null;
 
@@ -72,6 +89,14 @@ export default function ProductDetail() {
   const meta = SECTIONS[section];
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const rateRows = sortRows(siblings, 'rate', section);
+
+  // Section context (min/max/mean/median over time) + this product's own rate line.
+  const sectionInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
+  const historyModel = historyEnabled
+    ? selectBankHistoryChartModel({ core, historyBanks, includeNonStandard }, section, 'All')
+    : null;
+  const productSeries = { values: productSeriesRecord(productHistory, productKey), label: row.product_name };
+  const productHasSeries = hasProductSeries(productHistory, productKey);
 
   const onShare = () =>
     Share.share({
@@ -168,6 +193,65 @@ export default function ProductDetail() {
             {detail.description}
           </AppText>
         ) : null}
+
+        <ProductSpecs row={row} section={section} />
+
+        <SectionTitle text="Rate history" icon="trending-up-outline" />
+        <Card style={{ marginBottom: 16 }}>
+          {historyEnabled ? (
+            historyModel ? (
+              <>
+                <AppText variant="tiny" color="textFaint" style={{ marginBottom: 8 }}>
+                  {row.product_name} vs all {meta.title.toLowerCase()} rates
+                </AppText>
+                <ChartErrorBoundary name="ProductHistoryChart">
+                  <BankHistoryChart
+                    dates={historyModel.dates}
+                    points={historyModel.points}
+                    allDates={historyModel.allDates}
+                    rba={core?.rba}
+                    section={section}
+                    height={210}
+                    highlightSeries={productSeries}
+                  />
+                </ChartErrorBoundary>
+                <HistoryLegend productColor={theme.colors.text} sectionColor={sectionInk} />
+                {productHistoryError && !productHasSeries ? (
+                  <Row style={{ justifyContent: 'space-between', marginTop: 8 }}>
+                    <AppText variant="tiny" color="danger" style={{ flex: 1 }}>
+                      Couldn&apos;t load this product&apos;s history.
+                    </AppText>
+                    <Button
+                      title="Retry"
+                      variant="ghost"
+                      onPress={() => void ensureProductHistory({ force: true })}
+                    />
+                  </Row>
+                ) : !productHasSeries ? (
+                  <AppText variant="tiny" color="textFaint" style={{ marginTop: 6 }}>
+                    Gathering this product&apos;s daily history…
+                  </AppText>
+                ) : null}
+              </>
+            ) : (
+              <AppText variant="small" color="textMuted">
+                Rate history appears once more daily snapshots are collected.
+              </AppText>
+            )
+          ) : (
+            <>
+              <AppText variant="small" color="textMuted" style={{ marginBottom: 10, lineHeight: 20 }}>
+                See how {row.product_name}&apos;s rate moved over time against the market&apos;s mean and median.
+              </AppText>
+              <Button
+                title="Unlock rate history"
+                icon="sparkles"
+                variant="secondary"
+                onPress={() => requestPro('history_ribbon')}
+              />
+            </>
+          )}
+        </Card>
 
         {/* All rate rows for this product */}
         <SectionTitle text={`Rates (${rateRows.length})`} />
@@ -294,6 +378,86 @@ function SectionTitle({ text, icon }: { text: string; icon?: keyof typeof Ionico
       {icon ? <Ionicons name={icon} size={15} color={theme.colors.textMuted} /> : null}
       <AppText variant="small" weight="700" color="textMuted">
         {text.toUpperCase()}
+      </AppText>
+    </Row>
+  );
+}
+
+/** Tabulated specifications for the headline rate row. */
+function ProductSpecs({ row, section }: { row: RateRow; section: SectionKey }) {
+  const specs: { label: string; value: string }[] = [];
+  const add = (label: string, value?: string | null) => {
+    const v = value == null ? '' : String(value).trim();
+    if (v) specs.push({ label, value: v });
+  };
+
+  add('Rate type', humanizeEnum(row.rate_type));
+  if (section === 'Mortgage') {
+    add('Structure', humanizeEnum(row.ribbon_rate_structure));
+    add('Repayment', humanizeEnum(row.ribbon_repayment_type ?? row.repayment_type));
+    add('Loan purpose', humanizeEnum(row.loan_purpose ?? row.security_purpose));
+    add('LVR tier', humanizeEnum(row.lvr_tier));
+  } else {
+    add('Deposit type', humanizeEnum(row.ribbon_deposit_kind));
+    add('Balance range', formatBalanceRange(row.balance_min, row.balance_max));
+    add('Interest paid', humanizeEnum(row.interest_payment));
+  }
+  add('Term', formatTerm(row));
+  add('Comparison rate', row.comparison_rate ? formatRate(row.comparison_rate) : null);
+  add('Account type', humanizeEnum(row.account_type));
+  add('Features', humanizeEnum(row.feature_set));
+  add('Category', humanizeEnum(row.category));
+  add('Account class', isNonStandard(row) ? 'Non-standard' : 'Standard');
+  add('Product ID', row.product_id);
+  add('Data updated', row.last_updated ? relativeDate(row.last_updated) : null);
+
+  if (!specs.length) return null;
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <SectionTitle text="Specifications" icon="list-outline" />
+      <Card>
+        {specs.map((s, i) => (
+          <View key={s.label}>
+            {i > 0 ? <Divider style={{ marginVertical: 10 }} /> : null}
+            <Row style={{ justifyContent: 'space-between', gap: 12 }}>
+              <AppText variant="small" color="textMuted">
+                {s.label}
+              </AppText>
+              <AppText variant="small" weight="600" style={{ flex: 1, textAlign: 'right' }}>
+                {s.value}
+              </AppText>
+            </Row>
+          </View>
+        ))}
+      </Card>
+    </View>
+  );
+}
+
+function HistoryLegend({ productColor, sectionColor }: { productColor: string; sectionColor: string }) {
+  return (
+    <Row gap={16} style={{ marginTop: 10, flexWrap: 'wrap' }}>
+      <LegendItem color={productColor} label="This product" />
+      <LegendItem color={sectionColor} label="Median" dashed />
+      <LegendItem color={sectionColor} label="Mean" />
+    </Row>
+  );
+}
+
+function LegendItem({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <Row gap={6}>
+      <View
+        style={{
+          width: 16,
+          height: 0,
+          borderTopWidth: 2.4,
+          borderColor: color,
+          borderStyle: dashed ? 'dashed' : 'solid',
+        }}
+      />
+      <AppText variant="tiny" color="textMuted">
+        {label}
       </AppText>
     </Row>
   );

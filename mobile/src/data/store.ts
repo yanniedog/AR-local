@@ -39,6 +39,8 @@ import {
 } from './historyDaily';
 import type { HistoryBanksPayload } from './historyPayload';
 import { normalizeHistoryBanksPayload } from './historyPayload';
+import type { ProductHistoryPayload } from './productHistory';
+import { normalizeProductHistoryPayload, syncProductHistoryFromDailyPayloads } from './productHistory';
 import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
 import { EMPTY_PROFILE, normalizeProfileFilters, type ProfileFilters } from './profile';
 import { shouldWarmDetails } from './optionalPrefs';
@@ -120,6 +122,9 @@ interface AppState {
   /** Per-bank history + rate-move events (Pro bank intelligence). */
   bankInsights: BankInsightsPayload | null;
   bankInsightsError: string | null;
+  /** Per-product representative rate over time (derived on-device from dated cores). */
+  productHistory: ProductHistoryPayload | null;
+  productHistoryError: string | null;
   detailsLoading: boolean;
   error: string | null;
   offline: boolean;
@@ -147,6 +152,7 @@ interface AppState {
   ensureSearchIndex: () => Promise<void>;
   ensureHistoryBanks: (opts?: { force?: boolean }) => Promise<void>;
   ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
+  ensureProductHistory: (opts?: { force?: boolean }) => Promise<void>;
   retryHistoryBanks: () => Promise<void>;
   retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
@@ -223,6 +229,8 @@ export const useStore = create<AppState>()(
       historyBanksError: null,
       bankInsights: null,
       bankInsightsError: null,
+      productHistory: null,
+      productHistoryError: null,
       detailsLoading: false,
       error: null,
       offline: false,
@@ -322,6 +330,8 @@ export const useStore = create<AppState>()(
             historyBanksError: null,
             bankInsights: null,
             bankInsightsError: null,
+            productHistory: null,
+            productHistoryError: null,
           });
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
@@ -791,6 +801,42 @@ export const useStore = create<AppState>()(
         await get().ensureBankInsights({ force: true });
       },
 
+      async ensureProductHistory(opts = {}) {
+        const { force = false } = opts;
+        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
+        if (force) set({ productHistoryError: null });
+        const { core, source, productHistory } = get();
+        if (!core) return;
+        if (source !== 'remote') {
+          set({ productHistory: null, productHistoryError: null });
+          return;
+        }
+        const cached = productHistory ?? normalizeProductHistoryPayload(await cache.readProductHistory());
+        // Same run_date ⇒ the cached per-product series is current; skip the dated-core pass.
+        if (!force && cached && cached.run_date === core.run_date && cached.run_dates.length >= 1) {
+          set({ productHistory: cached, productHistoryError: null });
+          return;
+        }
+        try {
+          const synced = await syncProductHistoryFromDailyPayloads({
+            targetRunDate: core.run_date,
+            currentCore: core,
+            existing: cached,
+          });
+          await cache.writeProductHistory(JSON.stringify(synced));
+          set({ productHistory: synced, productHistoryError: null });
+          debugLog.info(
+            'store',
+            `ensureProductHistory ok run_date=${synced.run_date} slices=${synced.run_dates.length} products=${Object.keys(synced.products).length}`,
+          );
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureProductHistory failed: ${msg}`);
+          logDegradation('warn', 'store.ensureFailed', { fn: 'ensureProductHistory', error: msg });
+          set({ productHistory: cached ?? null, productHistoryError: msg });
+        }
+      },
+
       getDetail(productKey: string) {
         return get().details?.products?.[productKey] ?? null;
       },
@@ -921,6 +967,8 @@ export const useStore = create<AppState>()(
           historyBanksError: null,
           bankInsights: null,
           bankInsightsError: null,
+          productHistory: null,
+          productHistoryError: null,
           manifest: null,
           status: 'idle',
           source: 'sample',

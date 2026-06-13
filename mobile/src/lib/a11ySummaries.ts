@@ -60,13 +60,21 @@ export function bankHistoryChartA11ySummary(opts: {
   activeDate: string;
   activePoint?: BankHistoryPoint;
   showRba: boolean;
+  /** Emphasized series value at the selected date (e.g. the product's own rate). */
+  highlight?: { label: string; value: number | null };
 }): string {
-  const { section, window, activeDate, activePoint, showRba } = opts;
+  const { section, window, activeDate, activePoint, showRba, highlight } = opts;
   const title = SECTIONS[section].title;
   const parts = [`${title} history chart`, `${window} window`, `selected ${activeDate}`];
+  if (highlight && highlight.value != null) {
+    parts.push(`${highlight.label} ${pct(highlight.value)}`);
+  }
   if (activePoint) {
     if (activePoint.min != null && activePoint.max != null) {
       parts.push(`range ${pct(activePoint.min)} to ${pct(activePoint.max)}`);
+    }
+    if (activePoint.median != null) {
+      parts.push(`median ${pct(activePoint.median)}`);
     }
     if (activePoint.mean != null) {
       parts.push(`mean ${pct(activePoint.mean)}`);

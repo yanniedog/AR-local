@@ -206,6 +206,7 @@ function snapRbaChangeToTimeline(changeDate: string, dates: string[]): string {
 export function chartYDomain(
   points: BankHistoryPoint[],
   rbaSteps: (number | null)[],
+  extra: (number | null)[] = [],
 ): { min: number; max: number } {
   let min: number | null = null;
   let max: number | null = null;
@@ -218,8 +219,10 @@ export function chartYDomain(
     consider(p.min);
     consider(p.max);
     consider(p.mean);
+    consider(p.median);
   }
   for (const r of rbaSteps) consider(r);
+  for (const v of extra) consider(v);
   const baseMin = min ?? 0;
   const baseMax = max ?? 0.001;
   return {
