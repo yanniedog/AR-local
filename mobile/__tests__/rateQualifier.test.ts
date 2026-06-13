@@ -51,15 +51,40 @@ describe('rateQualifier', () => {
     expect(q.conditional).toBe(false);
   });
 
-  it('falls back to the taxonomy path when the flat field is missing', () => {
+  it('falls back to the taxonomy path for BONUS when the flat field is missing', () => {
     const q = rateQualifier(row({ taxonomy_path: 'SAVINGS.SAVINGS_ACCT.BONUS.TIERED' }), 'Savings');
     expect(q.kind).toBe('bonus');
     expect(q.conditional).toBe(true);
   });
 
-  it('conditionalNote returns text only for conditional rates', () => {
+  it('falls back to the taxonomy path for INTRO when the flat field is missing', () => {
+    const q = rateQualifier(row({ taxonomy_path: 'SAVINGS.SAVINGS_ACCT.INTRO.FLAT' }), 'Savings');
+    expect(q.kind).toBe('intro');
+    expect(q.conditional).toBe(true);
+  });
+
+  it('matches the longer INTRODUCTORY taxonomy token too', () => {
+    const q = rateQualifier(row({ taxonomy_path: 'SAVINGS.SAVINGS_ACCT.INTRODUCTORY.TIERED' }), 'Savings');
+    expect(q.kind).toBe('intro');
+    expect(q.conditional).toBe(true);
+  });
+
+  it('falls back to the taxonomy path for BASE (unconditional, no intro fields)', () => {
+    const q = rateQualifier(row({ taxonomy_path: 'SAVINGS.SAVINGS_ACCT.BASE.FLAT' }), 'Savings');
+    expect(q.kind).toBe('base');
+    expect(q.conditional).toBe(false);
+    expect(q.introMonths).toBeNull();
+    expect(q.shortLabel).toBe('');
+  });
+
+  it('conditionalNote returns text only for conditional rates, across sections', () => {
+    // Savings
     expect(conditionalNote(row({ ribbon_deposit_kind: 'base' }), 'Savings')).toBe('');
     expect(conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings')).toMatch(/Bonus/);
+    // TD bonus is conditional via ribbon_rate_structure
+    expect(conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'TD')).toMatch(/Bonus/);
+    // Mortgages never flag, even with a conditional-looking structure
+    expect(conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'Mortgage')).toBe('');
     expect(conditionalNote(null, 'Savings')).toBe('');
   });
 });

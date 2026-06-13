@@ -12,13 +12,13 @@ import {
 } from '../data/format';
 import { useStore } from '../data/store';
 import { rateValueLabel } from '../lib/a11ySummaries';
-import { rateQualifier } from '../lib/rateQualifier';
+import { rateQualifier, type RateQualifier } from '../lib/rateQualifier';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BankAvatar } from './BankAvatar';
 import { androidRipple, AppText, Row } from './ui';
 
-function chips(row: RateRow, section: SectionKey): string[] {
+function chips(row: RateRow, section: SectionKey, qualifier: RateQualifier): string[] {
   const out: string[] = [];
   if (section === 'Mortgage') {
     if (row.ribbon_rate_structure) out.push(humanizeEnum(row.ribbon_rate_structure));
@@ -34,9 +34,9 @@ function chips(row: RateRow, section: SectionKey): string[] {
     if (bal) out.push(bal);
   } else {
     // Bonus / introductory deposit kinds are surfaced as a distinct warning
-    // badge (see ProductCard), so don't also repeat them as a neutral chip.
-    const kind = row.ribbon_deposit_kind?.toLowerCase();
-    if (row.ribbon_deposit_kind && kind !== 'bonus' && kind !== 'introductory') {
+    // badge below, so don't also repeat them as a neutral chip. Reuse the
+    // central classifier so the chip and the badge can never disagree.
+    if (row.ribbon_deposit_kind && !qualifier.conditional) {
       out.push(humanizeEnum(row.ribbon_deposit_kind));
     }
     const bal = formatBalanceRange(row.balance_min, row.balance_max);
@@ -61,9 +61,9 @@ export function ProductCard({
   const theme = useTheme();
   const favorite = useStore((s) => s.favorites.includes(row.product_key));
   const toggleFavorite = useStore((s) => s.toggleFavorite);
-  const tags = chips(row, section);
   const nonStandard = isNonStandard(row);
   const qualifier = rateQualifier(row, section);
+  const tags = chips(row, section, qualifier);
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   const rateLabel = rateValueLabel(section);
   const rateText = formatRate(row.rate);

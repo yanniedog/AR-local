@@ -28,14 +28,15 @@ export interface RateQualifier {
   note: string;
 }
 
-const NONE: RateQualifier = {
+// Frozen so the shared no-op result can never be mutated by a caller.
+const NONE: RateQualifier = Object.freeze({
   kind: 'none',
   conditional: false,
   introMonths: null,
   shortLabel: '',
   label: '',
   note: '',
-};
+});
 
 function classifyKind(row: RateRow, section: SectionKey): RateConditionality {
   // Savings carry it on ribbon_deposit_kind (base | bonus | introductory);
@@ -53,7 +54,8 @@ function classifyKind(row: RateRow, section: SectionKey): RateConditionality {
   // (e.g. SAVINGS.SAVINGS_ACCT.BONUS.TIERED).
   const path = (row.taxonomy_path ?? '').toUpperCase();
   if (path.includes('.BONUS.')) return 'bonus';
-  if (path.includes('.INTRO.')) return 'intro';
+  // Match both '.INTRO.' and '.INTRODUCTORY.' tokens.
+  if (path.includes('.INTRO')) return 'intro';
   if (path.includes('.BASE.')) return 'base';
   return 'none';
 }
