@@ -23,6 +23,7 @@ import { ensurePermissions, registerBackgroundRefresh } from '../../src/data/not
 import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openBank } from '../../src/lib/nav';
+import { rateQualifier } from '../../src/lib/rateQualifier';
 import { logSwallowedError } from '../../src/lib/degradationLog';
 import { canAddAlertSubscription } from '../../src/lib/proAccess';
 import type { DetailItem, RateRow, SectionKey } from '../../src/types';
@@ -72,6 +73,7 @@ export default function ProductDetail() {
   const meta = SECTIONS[section];
   const accent = meta.lowerIsBetter ? theme.colors.success : theme.colors.primary;
   const rateRows = sortRows(siblings, 'rate', section);
+  const qualifier = rateQualifier(row, section);
 
   const onShare = () =>
     Share.share({
@@ -161,6 +163,31 @@ export default function ProductDetail() {
               </AppText>
             </View>
           ) : null}
+          {qualifier.conditional ? (
+            <>
+              <View
+                style={{
+                  marginTop: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: theme.radius.sm,
+                  borderWidth: 1,
+                  borderColor: theme.colors.warning,
+                }}
+              >
+                <AppText variant="tiny" weight="700" style={{ color: theme.colors.warning }}>
+                  {qualifier.label}
+                </AppText>
+              </View>
+              <AppText
+                variant="small"
+                color="textMuted"
+                style={{ marginTop: 8, textAlign: 'center', lineHeight: 18 }}
+              >
+                {qualifier.note}
+              </AppText>
+            </>
+          ) : null}
         </Card>
 
         {detail?.description ? (
@@ -211,6 +238,8 @@ export default function ProductDetail() {
 }
 
 function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionKey; accent: string }) {
+  const theme = useTheme();
+  const q = rateQualifier(row, section);
   const bits: string[] = [];
   if (row.rate_type) bits.push(humanizeEnum(row.rate_type));
   const term = formatTerm(row);
@@ -225,9 +254,26 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
   }
   return (
     <Row style={{ justifyContent: 'space-between', gap: 12 }}>
-      <AppText variant="small" color="textMuted" style={{ flex: 1 }}>
-        {bits.join(' · ') || 'Standard'}
-      </AppText>
+      <Row style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+        {q.conditional ? (
+          <View
+            style={{
+              paddingHorizontal: 6,
+              paddingVertical: 1,
+              borderRadius: theme.radius.sm,
+              borderWidth: 1,
+              borderColor: theme.colors.warning,
+            }}
+          >
+            <AppText variant="tiny" weight="700" style={{ color: theme.colors.warning }}>
+              {q.shortLabel}
+            </AppText>
+          </View>
+        ) : null}
+        <AppText variant="small" color="textMuted" style={{ flexShrink: 1 }}>
+          {bits.join(' · ') || 'Standard'}
+        </AppText>
+      </Row>
       <Row gap={8}>
         <AppText variant="body" weight="800" style={{ color: accent }}>
           {formatRate(row.rate)}
