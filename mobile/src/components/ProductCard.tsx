@@ -12,6 +12,7 @@ import {
 } from '../data/format';
 import { useStore } from '../data/store';
 import { rateValueLabel } from '../lib/a11ySummaries';
+import { rateQualifier } from '../lib/rateQualifier';
 import type { RateRow, SectionKey } from '../types';
 import { useTheme } from '../theme/ThemeProvider';
 import { BankAvatar } from './BankAvatar';
@@ -32,7 +33,12 @@ function chips(row: RateRow, section: SectionKey): string[] {
     const bal = formatBalanceRange(row.balance_min, row.balance_max);
     if (bal) out.push(bal);
   } else {
-    if (row.ribbon_deposit_kind) out.push(humanizeEnum(row.ribbon_deposit_kind));
+    // Bonus / introductory deposit kinds are surfaced as a distinct warning
+    // badge (see ProductCard), so don't also repeat them as a neutral chip.
+    const kind = row.ribbon_deposit_kind?.toLowerCase();
+    if (row.ribbon_deposit_kind && kind !== 'bonus' && kind !== 'introductory') {
+      out.push(humanizeEnum(row.ribbon_deposit_kind));
+    }
     const bal = formatBalanceRange(row.balance_min, row.balance_max);
     if (bal) out.push(bal);
   }
@@ -57,12 +63,13 @@ export function ProductCard({
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const tags = chips(row, section);
   const nonStandard = isNonStandard(row);
+  const qualifier = rateQualifier(row, section);
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   const rateLabel = rateValueLabel(section);
   const rateText = formatRate(row.rate);
   const cardA11yLabel = `${row.product_name}, ${row.provider}, ${rateLabel} ${rateText}${
     row.comparison_rate ? `, comparison ${formatRate(row.comparison_rate)}` : ''
-  }`;
+  }${qualifier.conditional ? `, ${qualifier.label}, conditions apply` : ''}`;
 
   return (
     // Card container is a plain View; the nav target and the favorite star are
@@ -113,7 +120,7 @@ export function ProductCard({
         <AppText variant="small" color="textMuted" numberOfLines={1}>
           {row.provider}
         </AppText>
-        {tags.length ? (
+        {tags.length || qualifier.conditional || nonStandard ? (
           <Row gap={6} style={{ flexWrap: 'wrap', marginTop: 6 }}>
             {tags.map((t, i) => (
               <View
@@ -130,6 +137,21 @@ export function ProductCard({
                 </AppText>
               </View>
             ))}
+            {qualifier.conditional ? (
+              <View
+                style={{
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: theme.radius.sm,
+                  borderWidth: 1,
+                  borderColor: theme.colors.warning,
+                }}
+              >
+                <AppText variant="tiny" style={{ color: theme.colors.warning }} weight="700">
+                  {qualifier.shortLabel}
+                </AppText>
+              </View>
+            ) : null}
             {nonStandard ? (
               <View
                 style={{
