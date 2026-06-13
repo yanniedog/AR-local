@@ -37,6 +37,8 @@ describe('rateQualifier', () => {
     expect(q.introMonths).toBe(6);
     expect(q.shortLabel).toBe('Intro 6mo');
     expect(q.note).toMatch(/6 months/);
+    // The reversion term must also survive in the label (used by the a11y string).
+    expect(q.label).toMatch(/6 months/);
   });
 
   it('flags a bonus term deposit via ribbon_rate_structure', () => {
@@ -81,9 +83,11 @@ describe('rateQualifier', () => {
     // Savings
     expect(conditionalNote(row({ ribbon_deposit_kind: 'base' }), 'Savings')).toBe('');
     expect(conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings')).toMatch(/Bonus/);
-    // Savings bonus uses the monthly-conditions wording...
-    expect(conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings')).toMatch(/monthly/i);
-    // ...but a TD bonus must NOT claim monthly conditions (auto-rollover/eligibility).
+    // Bonus wording is generic — it must not assert monthly conditions for
+    // savings or TD, since neither is provable from the flat row.
+    const savNote = conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings');
+    expect(savNote).toMatch(/Bonus/);
+    expect(savNote).not.toMatch(/monthly/i);
     const tdNote = conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'TD');
     expect(tdNote).toMatch(/Bonus/);
     expect(tdNote).not.toMatch(/monthly/i);

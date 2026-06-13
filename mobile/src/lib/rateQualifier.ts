@@ -65,21 +65,18 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
   if (kind === 'base') return { ...NONE, kind: 'base' };
   if (kind === 'none') return NONE;
   if (kind === 'bonus') {
-    // Savings bonuses are the familiar "meet monthly conditions or drop to the
-    // base rate" structure. Term-deposit bonuses are not necessarily monthly and
-    // may not revert to a base rate (e.g. auto-rollover or eligibility bonuses),
-    // so keep the TD wording generic rather than claiming monthly conditions.
-    const note =
-      section === 'Savings'
-        ? 'Bonus rate — paid only when the monthly account conditions are met; the lower base rate applies otherwise.'
-        : 'Bonus rate — applies only when specific conditions are met (e.g. auto-rollover or eligibility).';
+    // Bonus conditions vary widely and are not provable from the flat row:
+    // savings bonuses can hinge on eligibility (new/selected customer, age) or
+    // activating a feature — not only a monthly deposit — and term-deposit
+    // bonuses can be auto-rollover or eligibility based. Keep the wording generic
+    // rather than asserting monthly conditions or a guaranteed base-rate revert.
     return {
       kind: 'bonus',
       conditional: true,
       introMonths: null,
       shortLabel: 'Bonus',
       label: 'Bonus rate',
-      note,
+      note: 'Bonus rate — paid only when the bonus conditions are met; the ongoing rate may be lower.',
     };
   }
   // intro
@@ -89,7 +86,9 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
     conditional: true,
     introMonths: months,
     shortLabel: months ? `Intro ${months}mo` : 'Intro',
-    label: 'Introductory rate',
+    // Keep the reversion term in the label so the a11y string (which replaces
+    // the card's visible descendants) still exposes it to screen readers.
+    label: months ? `Introductory rate (${months} month${months === 1 ? '' : 's'})` : 'Introductory rate',
     note: months
       ? `Introductory rate — applies for ${months} month${months === 1 ? '' : 's'}, then reverts to the ongoing rate.`
       : 'Introductory rate — applies for a limited period, then reverts to the ongoing rate.',
