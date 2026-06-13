@@ -255,6 +255,10 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
     const bal = formatBalanceRange(row.balance_min, row.balance_max);
     if (bal) bits.push(bal);
   }
+  // Don't fall back to "Standard" for a conditional row that has no other
+  // metadata — it contradicts the badge (e.g. "Bonus · Standard"). Show the
+  // badge alone in that case.
+  const descriptor = bits.join(' · ') || (q.conditional ? '' : 'Standard');
   return (
     <Row style={{ justifyContent: 'space-between', gap: 12 }}>
       <Row style={{ flex: 1, alignItems: 'center', gap: 6 }}>
@@ -274,9 +278,11 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
             </AppText>
           </View>
         ) : null}
-        <AppText variant="small" color="textMuted" numberOfLines={1} style={{ flexShrink: 1 }}>
-          {bits.join(' · ') || 'Standard'}
-        </AppText>
+        {descriptor ? (
+          <AppText variant="small" color="textMuted" numberOfLines={1} style={{ flexShrink: 1 }}>
+            {descriptor}
+          </AppText>
+        ) : null}
       </Row>
       <Row gap={8}>
         <AppText variant="body" weight="800" style={{ color: accent }}>
