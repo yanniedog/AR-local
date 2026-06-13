@@ -241,9 +241,12 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
   const theme = useTheme();
   const q = rateQualifier(row, section);
   const bits: string[] = [];
-  if (row.rate_type) bits.push(humanizeEnum(row.rate_type));
+  // The conditional badge already conveys bonus/intro (and, for intro, the term),
+  // so don't repeat rate_type (BONUS/INTRODUCTORY) — or the intro term — here.
+  // Mirrors ProductCard, which suppresses the neutral conditional chip likewise.
+  if (row.rate_type && !q.conditional) bits.push(humanizeEnum(row.rate_type));
   const term = formatTerm(row);
-  if (term) bits.push(term);
+  if (term && q.kind !== 'intro') bits.push(term);
   if (section === 'Mortgage') {
     if (row.ribbon_repayment_type ?? row.repayment_type)
       bits.push(humanizeEnum(row.ribbon_repayment_type ?? row.repayment_type));
@@ -258,6 +261,7 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
         {q.conditional ? (
           <View
             style={{
+              flexShrink: 0,
               paddingHorizontal: 6,
               paddingVertical: 1,
               borderRadius: theme.radius.sm,
@@ -265,12 +269,12 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
               borderColor: theme.colors.warning,
             }}
           >
-            <AppText variant="tiny" weight="700" style={{ color: theme.colors.warning }}>
+            <AppText variant="tiny" weight="700" numberOfLines={1} style={{ color: theme.colors.warning }}>
               {q.shortLabel}
             </AppText>
           </View>
         ) : null}
-        <AppText variant="small" color="textMuted" style={{ flexShrink: 1 }}>
+        <AppText variant="small" color="textMuted" numberOfLines={1} style={{ flexShrink: 1 }}>
           {bits.join(' · ') || 'Standard'}
         </AppText>
       </Row>
