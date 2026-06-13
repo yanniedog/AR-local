@@ -65,13 +65,21 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
   if (kind === 'base') return { ...NONE, kind: 'base' };
   if (kind === 'none') return NONE;
   if (kind === 'bonus') {
+    // Savings bonuses are the familiar "meet monthly conditions or drop to the
+    // base rate" structure. Term-deposit bonuses are not necessarily monthly and
+    // may not revert to a base rate (e.g. auto-rollover or eligibility bonuses),
+    // so keep the TD wording generic rather than claiming monthly conditions.
+    const note =
+      section === 'Savings'
+        ? 'Bonus rate — paid only when the monthly account conditions are met; the lower base rate applies otherwise.'
+        : 'Bonus rate — applies only when specific conditions are met (e.g. auto-rollover or eligibility).';
     return {
       kind: 'bonus',
       conditional: true,
       introMonths: null,
       shortLabel: 'Bonus',
       label: 'Bonus rate',
-      note: 'Bonus rate — paid only when the monthly account conditions are met; the lower base rate applies otherwise.',
+      note,
     };
   }
   // intro

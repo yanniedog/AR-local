@@ -81,8 +81,12 @@ describe('rateQualifier', () => {
     // Savings
     expect(conditionalNote(row({ ribbon_deposit_kind: 'base' }), 'Savings')).toBe('');
     expect(conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings')).toMatch(/Bonus/);
-    // TD bonus is conditional via ribbon_rate_structure
-    expect(conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'TD')).toMatch(/Bonus/);
+    // Savings bonus uses the monthly-conditions wording...
+    expect(conditionalNote(row({ ribbon_deposit_kind: 'bonus' }), 'Savings')).toMatch(/monthly/i);
+    // ...but a TD bonus must NOT claim monthly conditions (auto-rollover/eligibility).
+    const tdNote = conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'TD');
+    expect(tdNote).toMatch(/Bonus/);
+    expect(tdNote).not.toMatch(/monthly/i);
     // Mortgages never flag, even with a conditional-looking structure
     expect(conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'Mortgage')).toBe('');
     expect(conditionalNote(null, 'Savings')).toBe('');
