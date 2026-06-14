@@ -163,6 +163,19 @@ def _stats(values: List[float]) -> Dict[str, Optional[float]]:
     }
 
 
+# Comparison rate (fees folded in) is the default metric for every ranking and
+# aggregation; deposits carry none, so this falls back to the headline rate.
+def _effective_rate(row: Dict[str, Any]) -> Any:
+    comparison = row.get("comparison_rate")
+    try:
+        value = float(comparison)
+    except (TypeError, ValueError):
+        value = None
+    if value is not None and value > 0:
+        return comparison
+    return row.get("rate")
+
+
 def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]:
     keys = [
         str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
@@ -171,7 +184,7 @@ def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]
     percent_style: set[str] = set()
     for key, row in zip(keys, rows):
         try:
-            raw = float(row.get("rate"))
+            raw = float(_effective_rate(row))
         except (TypeError, ValueError):
             continue
         if key and raw > 1:
@@ -181,7 +194,7 @@ def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]
     rates: List[float] = []
     products: set[str] = set()
     for key, row in zip(keys, rows):
-        rate = _normalized_rate_value(row.get("rate"), section, key in percent_style)
+        rate = _normalized_rate_value(_effective_rate(row), section, key in percent_style)
         if rate is None:
             continue
         provider = str(row.get("provider") or "Unknown")

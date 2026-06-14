@@ -9,6 +9,27 @@ export function toFraction(rate: string | number | null | undefined): number | n
   return n > 1 ? n / 100 : n;
 }
 
+/**
+ * The metric every ranking/aggregation should use: the comparison rate (which
+ * folds in fees and is the honest cost of a loan) when the row publishes a valid
+ * one, else the headline rate. Deposits carry no comparison rate, so this is a
+ * no-op for them. Keeping this in one place is what makes "comparison rate is the
+ * default metric for all calculations" true everywhere rather than per-call.
+ */
+export function effectiveRate(
+  row: { rate: string | number; comparison_rate?: string | number } | null | undefined,
+): string | number | undefined {
+  if (!row) return undefined;
+  return toFraction(row.comparison_rate) !== null ? row.comparison_rate : row.rate;
+}
+
+/** {@link effectiveRate} parsed to a fraction (null when neither rate is usable). */
+export function effectiveFraction(
+  row: { rate: string | number; comparison_rate?: string | number } | null | undefined,
+): number | null {
+  return toFraction(effectiveRate(row));
+}
+
 function ratePercentFormatter(digits: number): Intl.NumberFormat {
   return new Intl.NumberFormat('en-AU', {
     minimumFractionDigits: digits,

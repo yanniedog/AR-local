@@ -7,7 +7,14 @@ import {
 } from './detailSearch';
 import { productHasAllEligibilityCriteria } from './eligibility';
 import { productHasAllFeatures } from './features';
-import { isNonStandard, sortByDisplayLabel, toFraction, visibleAccountRows } from './format';
+import {
+  effectiveFraction,
+  effectiveRate,
+  isNonStandard,
+  sortByDisplayLabel,
+  toFraction,
+  visibleAccountRows,
+} from './format';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -70,7 +77,7 @@ export function bestRow(
   let best: RateRow | null = null;
   let bestVal: number | null = null;
   for (const row of visibleAccountRows(rows, includeNonStandard)) {
-    const v = toFraction(row.rate);
+    const v = effectiveFraction(row);
     if (v === null) continue;
     if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {
       bestVal = v;
@@ -87,8 +94,12 @@ export function sortRows(rows: RateRow[], sortKey: SortKey, section: SectionKey)
     if (sortKey === 'bank') {
       return a.provider.localeCompare(b.provider) || a.product_name.localeCompare(b.product_name);
     }
-    const field = sortKey === 'comparison' ? a.comparison_rate ?? a.rate : a.rate;
-    const fieldB = sortKey === 'comparison' ? b.comparison_rate ?? b.rate : b.rate;
+    // Default ("rate") ranks by the effective metric — comparison rate when the
+    // row publishes one, headline rate otherwise — so the list order matches the
+    // best-rate claims. The explicit "comparison" key is now equivalent for loans
+    // and kept only for backward-compatible deep links.
+    const field = sortKey === 'comparison' ? a.comparison_rate ?? a.rate : effectiveRate(a);
+    const fieldB = sortKey === 'comparison' ? b.comparison_rate ?? b.rate : effectiveRate(b);
     const va = toFraction(field);
     const vb = toFraction(fieldB);
     if (va === null && vb === null) return 0;
@@ -193,25 +204,37 @@ export interface ProviderGroup {
 export function groupByProvider(
   sections: Record<SectionKey, { rates: RateRow[] }>,
 ): ProviderGroup[] {
-  const map = new Map<string, ProviderGroup>();
-  (Object.keys(sections) as SectionKey[]).forEach((section) => {
+  // Bucket rows per provider AND per section in a single pass. The previous
+  // implementation re-scanned every section's full row array (Array.includes)
+  // for every provider, which is O(providers × rows) — the Banks A–Z screen's
+  // main lag source. This is O(rows).
+  interface Acc extends ProviderGroup {
+    bySection: Partial<Record<SectionKey, RateRow[]>>;
+  }
+  const map = new Map<string, Acc>();
+  const keys = Object.keys(sections) as SectionKey[];
+  for (const section of keys) {
     for (const row of sections[section].rates) {
       let group = map.get(row.provider);
       if (!group) {
-        group = { provider: row.provider, rows: [], bestBySection: {} };
+        group = { provider: row.provider, rows: [], bestBySection: {}, bySection: {} };
         map.set(row.provider, group);
       }
       group.rows.push(row);
+      (group.bySection[section] ??= []).push(row);
     }
-  });
-  (Object.keys(sections) as SectionKey[]).forEach((section) => {
-    for (const group of map.values()) {
-      const inSection = group.rows.filter((r) => sections[section].rates.includes(r));
+  }
+  const out: ProviderGroup[] = [];
+  for (const { bySection, ...group } of map.values()) {
+    for (const section of keys) {
+      const inSection = bySection[section];
+      if (!inSection?.length) continue;
       const best = bestRow(inSection, section);
       if (best) group.bestBySection[section] = best;
     }
-  });
-  return Array.from(map.values()).sort((a, b) => a.provider.localeCompare(b.provider));
+    out.push(group);
+  }
+  return out.sort((a, b) => a.provider.localeCompare(b.provider));
 }
 
 /** Find a single rate row by product_key across all sections. */
