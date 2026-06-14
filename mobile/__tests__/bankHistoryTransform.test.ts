@@ -90,6 +90,8 @@ describe('bankHistoryTransform', () => {
     const marks = rbaChangesInWindow(dates, rba);
     expect(marks.map((m) => m.snap)).toEqual(['2026-03-01', '2026-05-01']);
     expect(marks[0].bp).toBe(25);
+    expect(rbaChangesInWindow(['2026-06-01', '2026-06-15'], rba)).toHaveLength(1);
+    expect(rbaChangesInWindow(['2026-06-01', '2026-06-15'], rba, false)).toEqual([]);
   });
 
   it('chartYDomain includes median points and extra (highlight) values', () => {

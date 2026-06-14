@@ -38,7 +38,7 @@ export function MarketSeismograph({
   const [width, setWidth] = useState(0);
   const model = useMemo(() => marketActivityModel(payload, section, window), [payload, section, window]);
   const rbaMarks = useMemo(
-    () => (rba?.length && model ? rbaChangesInWindow(model.days.map((d) => d.date), rba) : []),
+    () => (rba?.length && model ? rbaChangesInWindow(model.days.map((d) => d.date), rba, false) : []),
     [rba, model],
   );
   if (!model) {

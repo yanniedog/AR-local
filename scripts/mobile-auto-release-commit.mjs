@@ -39,16 +39,20 @@ export function pushHeadToMain({
   branch = process.env.AUTO_RELEASE_COMMIT_BRANCH || 'main',
   maxAttempts = Number(process.env.AUTO_RELEASE_PUSH_RETRIES || 3),
   dryRun = false,
+  runCommand = run,
 } = {}) {
   if (dryRun) {
     return { ok: true, dryRun: true };
   }
 
-  // Stash any unstaged changes (e.g. app.json versionCode bump) so that
-  // git pull --rebase doesn't abort with "cannot pull with rebase: You have
-  // unstaged changes". The stash is unconditionally restored in the finally
-  // block; a "No stash entries found" result is silently ignored.
-  run('git', ['stash', '--include-untracked'], { allowFail: true });
+  // Record the exact stash commit created by this invocation. A clean tree
+  // creates no stash, and must never pop an older unrelated entry.
+  const stashBefore = runCommand('git', ['rev-parse', '--verify', 'refs/stash'], { allowFail: true });
+  const beforeHash = stashBefore.status === 0 ? String(stashBefore.stdout || '').trim() : '';
+  runCommand('git', ['stash', 'push', '--include-untracked', '-m', 'mobile-auto-release-commit'], { allowFail: true });
+  const stashAfter = runCommand('git', ['rev-parse', '--verify', 'refs/stash'], { allowFail: true });
+  const afterHash = stashAfter.status === 0 ? String(stashAfter.stdout || '').trim() : '';
+  const invocationStash = afterHash && afterHash !== beforeHash ? afterHash : '';
 
   let result = { ok: false, protected: false, error: 'push exhausted retries' };
   try {
@@ -56,11 +60,11 @@ export function pushHeadToMain({
       if (attempt > 1) {
         console.error(`mobile-auto-release-commit: retry ${attempt}/${maxAttempts} after rebase`);
       }
-      const pull = run('git', ['pull', '--rebase', 'origin', branch], { allowFail: true });
+      const pull = runCommand('git', ['pull', '--rebase', 'origin', branch], { allowFail: true });
       if (pull.status !== 0) {
         const errText = (pull.stderr || pull.stdout || '').trim();
         console.error(`mobile-auto-release-commit: pull failed: ${errText}`);
-        run('git', ['rebase', '--abort'], { allowFail: true });
+        runCommand('git', ['rebase', '--abort'], { allowFail: true });
         if (attempt === maxAttempts) {
           result = { ok: false, protected: false, error: errText };
           return result;
@@ -68,7 +72,7 @@ export function pushHeadToMain({
         continue;
       }
 
-      const push = run('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
+      const push = runCommand('git', ['push', 'origin', `HEAD:${branch}`], { allowFail: true });
       if (push.status === 0) {
         console.log(`mobile-auto-release-commit: pushed auto-release to origin/${branch}`);
         result = { ok: true };
@@ -91,11 +95,24 @@ export function pushHeadToMain({
       }
     }
   } finally {
-    const popResult = run('git', ['stash', 'pop'], { allowFail: true });
-    if (popResult.status !== 0) {
-      const msg = (popResult.stderr || popResult.stdout || '').trim();
-      if (msg && !msg.toLowerCase().includes('no stash entries')) {
-        console.warn(`mobile-auto-release-commit: stash pop warning: ${msg}`);
+    if (invocationStash) {
+      const applyResult = runCommand('git', ['stash', 'apply', invocationStash], { allowFail: true });
+      if (applyResult.status !== 0) {
+        const msg = (applyResult.stderr || applyResult.stdout || '').trim();
+        if (msg) console.warn(`mobile-auto-release-commit: stash apply warning: ${msg}`);
+      } else {
+        const list = runCommand('git', ['stash', 'list', '--format=%H%x09%gd'], { allowFail: true });
+        const match = String(list.stdout || '')
+          .split(/\r?\n/)
+          .map((line) => line.split('\t'))
+          .find(([hash]) => hash === invocationStash);
+        if (match?.[1]) {
+          const dropResult = runCommand('git', ['stash', 'drop', match[1]], { allowFail: true });
+          if (dropResult.status !== 0) {
+            const msg = (dropResult.stderr || dropResult.stdout || '').trim();
+            if (msg) console.warn(`mobile-auto-release-commit: stash drop warning: ${msg}`);
+          }
+        }
       }
     }
   }

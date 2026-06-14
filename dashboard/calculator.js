@@ -11,6 +11,7 @@
 
   const $ = (id) => document.getElementById(id);
   const { normalizeRows } = window.LocalCdrUtils;
+  const { isProjectionSafeMortgageRate, isProjectionSafeSavingsRate } = window.AR.calculatorEligibility;
 
   const AUD0 = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
   const AUD2 = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -210,7 +211,7 @@
 
   function mortgageCandidates(rows, f) {
     return bestPerProvider(rows, true, (row) => {
-      if (row.rate_type === 'DISCOUNT') return false;
+      if (!isProjectionSafeMortgageRate(row)) return false;
       // The engine amortises principal-and-interest only; an interest-only rate
       // applied to P&I behaviour would misstate repayments and savings.
       if (String(row.ribbon_repayment_type || '') === 'interest_only') return false;
@@ -227,7 +228,9 @@
   }
 
   function savingsCandidates(rows, balance) {
-    return bestPerProvider(rows, false, (row) => withinBalanceRange(row, balance));
+    return bestPerProvider(rows, false, (row) => {
+      return isProjectionSafeSavingsRate(row) && withinBalanceRange(row, balance);
+    });
   }
 
   function tdCandidates(rows, months, principal) {

@@ -60,6 +60,10 @@ export default function Home() {
     () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard),
     [hierRows, profileFilters, section, includeNonStandard],
   );
+  const fallbackBest = useMemo(
+    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard),
+    [sectionRows, profileFilters, section, includeNonStandard],
+  );
 
   const meta = SECTIONS[section];
   const shareMessage = useMemo(() => {
@@ -81,7 +85,7 @@ export default function Home() {
   // With a profile active the hero must show the best profile-matched rate,
   // not the unfiltered market extreme it would otherwise mislabel.
   const heroRate = profileCount > 0 ? (best ? toFraction(best.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
-  const bestNote = conditionalNote(best, section);
+  const bestNote = conditionalNote(best ?? fallbackBest, section);
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
