@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-14T06:22:52.827Z",
+  "generated_at": "2026-06-14T15:58:32.823Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -267,6 +267,15 @@
         "chore(mobile): auto-release bump to v1.0.26 (after 7e682f8) (#357)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.27"
+    },
+    {
+      "version": "1.0.28",
+      "date": "2026-06-14",
+      "summaryBullets": [
+        "feat: ongoing base-rate disclosure, comparison-rate metric, Pi-offloaded responsiveness (#362)",
+        "chore(mobile): auto-release bump to v1.0.27 (after d7e40f1) (#360)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.28"
     }
   ]
 }
