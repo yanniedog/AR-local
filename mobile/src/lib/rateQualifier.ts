@@ -1,4 +1,4 @@
-import { isoDurationMonths } from '../data/format';
+import { formatRate, isoDurationMonths, toFraction } from '../data/format';
 import type { RateRow, SectionKey } from '../types';
 
 /**
@@ -20,6 +20,11 @@ export interface RateQualifier {
   conditional: boolean;
   /** Length of an introductory window in months, when known. */
   introMonths: number | null;
+  /**
+   * The published ongoing (base) rate the headline reverts to, formatted (e.g.
+   * "1.00%"), or null when the bank does not publish a separate base tier.
+   */
+  ongoingRate: string | null;
   /** Compact badge label, e.g. "Bonus" or "Intro 6mo". */
   shortLabel: string;
   /** Full badge / screen-reader label, e.g. "Bonus rate". */
@@ -33,6 +38,7 @@ const NONE: RateQualifier = Object.freeze({
   kind: 'none',
   conditional: false,
   introMonths: null,
+  ongoingRate: null,
   shortLabel: '',
   label: '',
   note: '',
@@ -64,19 +70,32 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
   const kind = classifyKind(row, section);
   if (kind === 'base') return { ...NONE, kind: 'base' };
   if (kind === 'none') return NONE;
+
+  // The Pi joins the product's published unconditional base tier onto bonus/intro
+  // rows as `ongoing_rate`; surface it so the disclosure says what the customer
+  // actually earns once the bonus/intro ends, not just "may be lower". When the
+  // bank publishes no separate base tier we say so rather than guess (the same
+  // honesty that motivates the whole module).
+  const ongoingRate = formatRate(toFraction(row.ongoing_rate ?? null));
+  const hasOngoing = ongoingRate !== '—';
+  const ongoingTail = hasOngoing ? ongoingRate : 'an ongoing rate the bank has not published';
+
   if (kind === 'bonus') {
     // Bonus conditions vary widely and are not provable from the flat row:
     // savings bonuses can hinge on eligibility (new/selected customer, age) or
     // activating a feature — not only a monthly deposit — and term-deposit
-    // bonuses can be auto-rollover or eligibility based. Keep the wording generic
-    // rather than asserting monthly conditions or a guaranteed base-rate revert.
+    // bonuses can be auto-rollover or eligibility based. Keep the *conditions*
+    // wording generic, but name the ongoing rate when the bank publishes it.
     return {
       kind: 'bonus',
       conditional: true,
       introMonths: null,
+      ongoingRate: hasOngoing ? ongoingRate : null,
       shortLabel: 'Bonus',
       label: 'Bonus rate',
-      note: 'Bonus rate — paid only when the bonus conditions are met; the ongoing rate may be lower.',
+      note: hasOngoing
+        ? `Bonus rate — paid only when the bonus conditions are met; the ongoing rate is ${ongoingRate}.`
+        : 'Bonus rate — paid only when the bonus conditions are met; the ongoing rate is lower (the bank does not publish a separate base rate).',
     };
   }
   // intro
@@ -85,13 +104,16 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
     kind: 'intro',
     conditional: true,
     introMonths: months,
+    ongoingRate: hasOngoing ? ongoingRate : null,
     shortLabel: months ? `Intro ${months}mo` : 'Intro',
-    // Keep the reversion term in the label so the a11y string (which replaces
-    // the card's visible descendants) still exposes it to screen readers.
-    label: months ? `Introductory rate (${months} month${months === 1 ? '' : 's'})` : 'Introductory rate',
+    // Keep the reversion term AND target in the label so the a11y string (which
+    // replaces the card's visible descendants) still exposes both to screen readers.
+    label: months
+      ? `Introductory rate (${months} month${months === 1 ? '' : 's'}${hasOngoing ? `, then ${ongoingRate}` : ''})`
+      : `Introductory rate${hasOngoing ? ` (then ${ongoingRate})` : ''}`,
     note: months
-      ? `Introductory rate — applies for ${months} month${months === 1 ? '' : 's'}, then reverts to the ongoing rate.`
-      : 'Introductory rate — applies for a limited period, then reverts to the ongoing rate.',
+      ? `Introductory rate — applies for ${months} month${months === 1 ? '' : 's'}, then reverts to ${ongoingTail}.`
+      : `Introductory rate — applies for a limited period, then reverts to ${ongoingTail}.`,
   };
 }
 
@@ -100,4 +122,24 @@ export function conditionalNote(row: RateRow | null | undefined, section: Sectio
   if (!row) return '';
   const q = rateQualifier(row, section);
   return q.conditional ? q.note : '';
+}
+
+/**
+ * Compact one-sentence ongoing-rate caveat for notification bodies, naming the
+ * rate the headline reverts to (and the intro term, when known). '' when the
+ * rate is unconditional.
+ */
+export function ongoingRateCaveat(row: RateRow | null | undefined, section: SectionKey): string {
+  if (!row) return '';
+  const q = rateQualifier(row, section);
+  if (!q.conditional) return '';
+  if (q.kind === 'intro') {
+    const term = q.introMonths ? ` after ${q.introMonths} month${q.introMonths === 1 ? '' : 's'}` : ' after the intro period';
+    return q.ongoingRate
+      ? `Reverts to ${q.ongoingRate}${term}.`
+      : `Reverts to a lower ongoing rate${term} (not published).`;
+  }
+  return q.ongoingRate
+    ? `Ongoing rate ${q.ongoingRate} when bonus conditions aren't met.`
+    : "Ongoing rate is lower when bonus conditions aren't met (not published).";
 }

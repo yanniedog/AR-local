@@ -5,6 +5,7 @@ import type { Href } from 'expo-router';
 import { SECTIONS, SECTION_ORDER } from '../constants';
 import { debugLog } from '../lib/debugLog';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
+import { ongoingRateCaveat } from '../lib/rateQualifier';
 import { bpsBetween, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
 import {
@@ -290,15 +291,19 @@ export function computeChanges(
   // Per-category best-rate moves.
   for (const section of SECTION_ORDER) {
     const before = bestFraction(oldCore, section);
-    const after = bestFraction(newCore, section);
+    const afterRow = bestRow(newCore.sections[section]?.rates ?? [], section);
+    const after = afterRow ? toFraction(afterRow.rate) : null;
     if (before === null || after === null) continue;
     const bps = Math.abs(bpsBetween(after, before) ?? 0);
     if (bps < thresholdBps) continue;
     const meta = SECTIONS[section];
     const improved = meta.lowerIsBetter ? after < before : after > before;
+    // When the new best is a bonus/intro headline, say what it reverts to so the
+    // alert can't overstate the rate a typical customer keeps.
+    const caveat = ongoingRateCaveat(afterRow, section);
     messages.push({
       title: `${meta.title}: best rate ${improved ? 'improved' : 'changed'}`,
-      body: `Now ${formatRate(after)} (was ${formatRate(before)}).`,
+      body: `Now ${formatRate(after)} (was ${formatRate(before)}).${caveat ? ` ${caveat}` : ''}`,
       search: { section },
     });
   }
@@ -328,9 +333,13 @@ export function computeChanges(
       }
     }
     if (biggest) {
+      const section = SECTION_ORDER.find((s) =>
+        (newCore.sections[s]?.rates ?? []).some((r) => r === biggest!.row),
+      );
+      const caveat = section ? ongoingRateCaveat(biggest.row, section) : '';
       messages.push({
         title: `${biggest.row.provider} rate changed`,
-        body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.`,
+        body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.${caveat ? ` ${caveat}` : ''}`,
         productKey: key,
         rateIndex: biggest.row.rate_index ?? null,
       });
