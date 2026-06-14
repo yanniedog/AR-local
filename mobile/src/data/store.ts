@@ -812,18 +812,15 @@ export const useStore = create<AppState>()(
           return;
         }
         const cached = productHistory ?? normalizeProductHistoryPayload(await cache.readProductHistory());
-        // Date alone is insufficient: same-day corrected cores must rebuild this cache.
         const coreSha = manifest?.files.core.sha256 ?? '';
-        if (
-          !force &&
-          cached &&
-          cached.run_date === core.run_date &&
-          cached.core_sha === coreSha &&
-          cached.run_dates.length >= 1
-        ) {
-          set({ productHistory: cached, productHistoryError: null });
-          return;
-        }
+        const revisionIsCurrent = () => {
+          const current = get();
+          return (
+            current.source === 'remote' &&
+            current.core?.run_date === core.run_date &&
+            (current.manifest?.files.core.sha256 ?? '') === coreSha
+          );
+        };
         try {
           const synced = await syncProductHistoryFromDailyPayloads({
             targetRunDate: core.run_date,
@@ -831,6 +828,10 @@ export const useStore = create<AppState>()(
             coreSha,
             existing: cached,
           });
+          if (!revisionIsCurrent()) {
+            debugLog.info('store', `ensureProductHistory superseded run_date=${synced.run_date}`);
+            return;
+          }
           await cache.writeProductHistory(JSON.stringify(synced));
           set({ productHistory: synced, productHistoryError: null });
           debugLog.info(
@@ -841,6 +842,7 @@ export const useStore = create<AppState>()(
           const msg = String((err as Error)?.message ?? err);
           debugLog.warn('store', `ensureProductHistory failed: ${msg}`);
           logDegradation('warn', 'store.ensureFailed', { fn: 'ensureProductHistory', error: msg });
+          if (!revisionIsCurrent()) return;
           set({ productHistory: cached ?? null, productHistoryError: msg });
         }
       },

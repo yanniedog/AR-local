@@ -16,6 +16,9 @@ const mockReadHistoryBanks = jest.fn();
 const mockReadBankInsights = jest.fn();
 const mockClearHistoryBanks = jest.fn(async () => {});
 const mockSyncHistoryFromDailyPayloads = jest.fn();
+const mockReadProductHistory = jest.fn();
+const mockWriteProductHistory = jest.fn();
+const mockSyncProductHistoryFromDailyPayloads = jest.fn();
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest mock factory
@@ -42,6 +45,9 @@ jest.mock('../src/data/cache', () => ({
     readBankInsights: (...args: unknown[]) => mockReadBankInsights(...args),
     writeBankInsights: jest.fn(async () => {}),
     clearBankInsights: jest.fn(async () => {}),
+    readProductHistory: (...args: unknown[]) => mockReadProductHistory(...args),
+    writeProductHistory: (...args: unknown[]) => mockWriteProductHistory(...args),
+    clearProductHistory: jest.fn(async () => {}),
     updateMeta: jest.fn(async () => {}),
     clear: jest.fn(async () => {}),
   },
@@ -61,6 +67,15 @@ jest.mock('../src/data/historyDaily', () => {
   return {
     ...actual,
     syncHistoryFromDailyPayloads: (...args: unknown[]) => mockSyncHistoryFromDailyPayloads(...args),
+  };
+});
+
+jest.mock('../src/data/productHistory', () => {
+  const actual = jest.requireActual('../src/data/productHistory') as object;
+  return {
+    ...actual,
+    syncProductHistoryFromDailyPayloads: (...args: unknown[]) =>
+      mockSyncProductHistoryFromDailyPayloads(...args),
   };
 });
 
@@ -111,6 +126,8 @@ function resetStore() {
     historyBanksError: null,
     bankInsights: null,
     bankInsightsError: null,
+    productHistory: null,
+    productHistoryError: null,
     detailsLoading: false,
     error: null,
     offline: false,
@@ -129,6 +146,8 @@ describe('optional feature prefs', () => {
     resetStore();
     mockFetchManifest.mockResolvedValue(remoteManifest);
     mockWriteBundle.mockResolvedValue(undefined);
+    mockReadProductHistory.mockResolvedValue(null);
+    mockWriteProductHistory.mockResolvedValue(undefined);
   });
 
   it('defaults deep search and history ribbon off', () => {
@@ -366,6 +385,67 @@ describe('optional feature prefs', () => {
     expect(store.getState().prefs.showHistoryRibbon).toBe(true);
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
     expect(mockSyncHistoryFromDailyPayloads).not.toHaveBeenCalled();
+  });
+
+  it('ensureProductHistory rechecks for newly indexed dates even when the core revision is unchanged', async () => {
+    const cached = {
+      schema_version: 2,
+      run_date: remoteCore.run_date,
+      core_sha: remoteManifest.files.core.sha256,
+      run_dates: [remoteCore.run_date],
+      products: { product: [0.05] },
+    };
+    store.setState({
+      prefs: historyRibbonPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+      productHistory: cached,
+    });
+    mockSyncProductHistoryFromDailyPayloads.mockResolvedValue(cached);
+
+    await store.getState().ensureProductHistory();
+
+    expect(mockSyncProductHistoryFromDailyPayloads).toHaveBeenCalledTimes(1);
+  });
+
+  it('ensureProductHistory does not install a result from a superseded core revision', async () => {
+    let finishOldSync!: (value: unknown) => void;
+    const oldSync = new Promise((resolve) => {
+      finishOldSync = resolve;
+    });
+    const oldHistory = {
+      schema_version: 2,
+      run_date: remoteCore.run_date,
+      core_sha: remoteManifest.files.core.sha256,
+      run_dates: [remoteCore.run_date],
+      products: { old: [0.05] },
+    };
+    store.setState({
+      prefs: historyRibbonPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+      productHistory: null,
+    });
+    mockSyncProductHistoryFromDailyPayloads.mockReturnValueOnce(oldSync);
+
+    const pending = store.getState().ensureProductHistory();
+    store.setState({
+      manifest: {
+        ...remoteManifest,
+        files: {
+          ...remoteManifest.files,
+          core: { ...remoteManifest.files.core, sha256: 'new-core-sha' },
+        },
+      },
+      productHistory: null,
+    });
+    finishOldSync(oldHistory);
+    await pending;
+
+    expect(mockWriteProductHistory).not.toHaveBeenCalled();
+    expect(store.getState().productHistory).toBeNull();
   });
 
   it('ensureHistoryBanks no-ops when history ribbon pref is off', async () => {
