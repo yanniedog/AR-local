@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
 import { SECTIONS } from '../constants';
 import { formatRate } from '../data/format';
@@ -72,7 +72,7 @@ export function Ribbon({
   const pad = 2;
   const tickW = 4;
   const barW = Math.max(1, layoutW - 2 * pad);
-  const meanLineLen = h + 6;
+  const markerLen = h + 6;
   const rbaLineLen = h + 10;
 
   // Scale against the shared domain when provided (placeholders keep hook
@@ -95,8 +95,13 @@ export function Ribbon({
     x: fillX + Math.max(tickW, fillW * drawProgress.value) - tickW,
   }));
 
-  const meanAnimatedProps = useAnimatedProps(() => ({
-    strokeDashoffset: meanLineLen * (1 - drawProgress.value),
+  // Median draws in via a single-dash reveal; mean fades in as a lighter dashed line.
+  const markerAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: markerLen * (1 - drawProgress.value),
+  }));
+
+  const meanOpacityProps = useAnimatedProps(() => ({
+    opacity: drawProgress.value * 0.55,
   }));
 
   const rbaAnimatedProps = useAnimatedProps(() => ({
@@ -153,20 +158,32 @@ export function Ribbon({
             rx={1}
             fill={rightColor}
           />
-          {mean !== null ? (
+          {/* Mean: lighter dashed line, full ribbons only (compact hides the Mean stat too). */}
+          {!compact && mean !== null ? (
             <AnimatedLine
-              animatedProps={meanAnimatedProps}
+              animatedProps={meanOpacityProps}
               x1={x(mean)}
               y1={barY - 3}
               x2={x(mean)}
               y2={barY + barH + 3}
               stroke={theme.colors.text}
-              strokeWidth={1.5}
-              strokeDasharray={`${meanLineLen}`}
+              strokeWidth={1.4}
+              strokeDasharray="3 2"
             />
           ) : null}
+          {/* Median: emphasized solid line — the headline central-tendency marker. */}
           {median !== null ? (
-            <Circle cx={x(median)} cy={barY + barH / 2} r={barH / 2 + 1} fill={theme.colors.surface} stroke={theme.colors.text} strokeWidth={2} />
+            <AnimatedLine
+              animatedProps={markerAnimatedProps}
+              x1={x(median)}
+              y1={barY - 3}
+              x2={x(median)}
+              y2={barY + barH + 3}
+              stroke={theme.colors.text}
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeDasharray={`${markerLen}`}
+            />
           ) : null}
           {rbaIn ? (
             <>

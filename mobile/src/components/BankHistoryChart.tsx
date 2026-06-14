@@ -20,7 +20,7 @@ import {
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
 import { bankHistoryChartA11ySummary } from '../lib/a11ySummaries';
-import { buildBandPath } from '../lib/chartSvgPaths';
+import { buildBandPath, buildLinePath } from '../lib/chartSvgPaths';
 import { debugLog } from '../lib/debugLog';
 import { withAlpha } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
@@ -57,6 +57,13 @@ function finiteCoord(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+export interface HighlightSeries {
+  /** Value per timeline date (YMD). Missing/nullish dates render as gaps in the line. */
+  values: Record<string, number | null>;
+  label: string;
+  color?: string;
+}
+
 export interface BankHistoryChartProps {
   dates: string[];
   points: BankHistoryPoint[];
@@ -66,26 +73,8 @@ export interface BankHistoryChartProps {
   height?: number;
   /** Full retained timeline before window slice (defaults to `dates`). */
   allDates?: string[];
-}
-
-function linePath(
-  values: (number | null)[],
-  xAt: (i: number) => number,
-  yAt: (v: number) => number,
-): string | null {
-  let d = '';
-  let started = false;
-  for (let i = 0; i < values.length; i += 1) {
-    const v = values[i];
-    if (!isFiniteNumber(v)) continue;
-    const x = finiteCoord(xAt(i));
-    const y = finiteCoord(yAt(v));
-    if (x == null || y == null) continue;
-    const seg = `${started ? 'L' : 'M'} ${x} ${y}`;
-    d += started ? ` ${seg}` : seg;
-    started = true;
-  }
-  return d || null;
+  /** Optional emphasized line (e.g. one product's rate) drawn over the section context. */
+  highlightSeries?: HighlightSeries | null;
 }
 
 function stepPath(
@@ -115,7 +104,7 @@ function stepPath(
   return d || null;
 }
 
-/** Time-slice ribbon chart: stacked min/max band, mean line, optional RBA overlay. */
+/** Time-slice ribbon chart: min/max band, mean + median lines, optional RBA + highlight series. */
 export function BankHistoryChart({
   dates,
   points,
@@ -124,6 +113,7 @@ export function BankHistoryChart({
   onDateSelect,
   height = 180,
   allDates,
+  highlightSeries,
 }: BankHistoryChartProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
@@ -168,9 +158,14 @@ export function BankHistoryChart({
     [showRba, rba, plotDates],
   );
 
+  const highlightValues = useMemo(
+    () => (highlightSeries ? plotDates.map((d) => highlightSeries.values[d] ?? null) : null),
+    [highlightSeries, plotDates],
+  );
+
   const yDomain = useMemo(
-    () => chartYDomain(plotPoints, rbaSteps),
-    [plotPoints, rbaSteps],
+    () => chartYDomain(plotPoints, rbaSteps, highlightValues ?? []),
+    [plotPoints, rbaSteps, highlightValues],
   );
 
   if (!plotDates.length || !plotPoints.length) return null;
@@ -199,11 +194,14 @@ export function BankHistoryChart({
   const mins = plotPoints.map((p) => p.min);
   const maxs = plotPoints.map((p) => p.max);
   const means = plotPoints.map((p) => p.mean);
+  const medians = plotPoints.map((p) => p.median);
   const band = buildBandPath(plotDates, mins, maxs, xAt, yAt);
-  const meanLine = linePath(means, xAt, yAt);
-  const minLine = linePath(mins, xAt, yAt);
-  const maxLine = linePath(maxs, xAt, yAt);
+  const meanLine = buildLinePath(means, xAt, yAt);
+  const medianLine = buildLinePath(medians, xAt, yAt);
+  const minLine = buildLinePath(mins, xAt, yAt);
+  const maxLine = buildLinePath(maxs, xAt, yAt);
   const rbaLine = showRba ? stepPath(rbaSteps, xAt, yAt) : null;
+  const highlightLine = highlightValues ? buildLinePath(highlightValues, xAt, yAt, true) : null;
 
   const rateInk = SECTIONS[section].lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const ribbonColor = rateInk;
@@ -211,6 +209,7 @@ export function BankHistoryChart({
   const rbaInk = theme.colors.rba;
   const rbaBand = withAlpha(rbaInk, 0.42);
   const crosshairColor = withAlpha(theme.colors.primary, theme.dark ? 0.6 : 0.55);
+  const highlightColor = highlightSeries?.color ?? theme.colors.text;
 
   const labelEvery = axisLabelInterval(plotDates.length);
   const pinnedDate =
@@ -219,6 +218,10 @@ export function BankHistoryChart({
     hoverDate && plotDates.includes(hoverDate) ? hoverDate : pinnedDate;
   const activeIndex = Math.max(0, plotDates.indexOf(activeDate));
   const activePoint = plotPoints.find((p) => p.date === activeDate);
+  const activeHighlight =
+    highlightValues && isFiniteNumber(highlightValues[activeIndex])
+      ? highlightValues[activeIndex]
+      : null;
 
   const handleSlicePress = (date: string) => {
     setSelectedDate(date);
@@ -304,6 +307,10 @@ export function BankHistoryChart({
     activeDate,
     activePoint,
     showRba,
+    highlight:
+      highlightSeries && activeHighlight != null
+        ? { label: highlightSeries.label, value: activeHighlight }
+        : undefined,
   });
 
   return (
@@ -412,6 +419,17 @@ export function BankHistoryChart({
                 strokeDasharray={strokeLength}
               />
             ) : null}
+            {medianLine ? (
+              <AnimatedPath
+                animatedProps={bandDrawProps}
+                d={medianLine}
+                stroke={ribbonColor}
+                strokeWidth={1.6}
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray="5 4"
+              />
+            ) : null}
             {rbaLine ? (
               <AnimatedPath
                 animatedProps={lineDrawProps}
@@ -421,6 +439,18 @@ export function BankHistoryChart({
                 fill="none"
                 strokeDasharray={strokeLength}
                 opacity={0.85}
+              />
+            ) : null}
+            {highlightLine ? (
+              <AnimatedPath
+                animatedProps={lineDrawProps}
+                d={highlightLine}
+                stroke={highlightColor}
+                strokeWidth={2.6}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={strokeLength}
               />
             ) : null}
 
@@ -459,6 +489,9 @@ export function BankHistoryChart({
 
             {activePoint?.mean != null && isFiniteNumber(activePoint.mean) ? (
               <CrossMarker cx={xAt(activeIndex)} cy={yAt(activePoint.mean)} color={ribbonColor} />
+            ) : null}
+            {activeHighlight != null ? (
+              <CrossMarker cx={xAt(activeIndex)} cy={yAt(activeHighlight)} color={highlightColor} />
             ) : null}
           </Svg>
         ) : null}
@@ -502,9 +535,12 @@ export function BankHistoryChart({
             {activeDate}
           </AppText>
           <AppText variant="tiny" weight="700">
-            {activePoint.min != null && activePoint.max != null
-              ? `${pct(activePoint.min)} – ${pct(activePoint.max)}`
-              : '—'}
+            {activeHighlight != null
+              ? pct(activeHighlight)
+              : activePoint.min != null && activePoint.max != null
+                ? `${pct(activePoint.min)} – ${pct(activePoint.max)}`
+                : '—'}
+            {activePoint.median != null ? ` · med ${pct(activePoint.median)}` : ''}
             {activePoint.mean != null ? ` · μ ${pct(activePoint.mean)}` : ''}
           </AppText>
         </Row>

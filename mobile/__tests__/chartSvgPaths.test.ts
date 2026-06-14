@@ -1,4 +1,17 @@
-import { buildBandPath } from '../src/lib/chartSvgPaths';
+import { buildBandPath, buildLinePath } from '../src/lib/chartSvgPaths';
+
+describe('buildLinePath', () => {
+  const xAt = (i: number) => i * 10;
+  const yAt = (v: number) => v * 100;
+
+  test('restarts after gaps when requested', () => {
+    expect(buildLinePath([0.01, null, 0.03], xAt, yAt, true)).toBe('M 0 1 M 20 3');
+  });
+
+  test('keeps context lines continuous by default', () => {
+    expect(buildLinePath([0.01, null, 0.03], xAt, yAt)).toBe('M 0 1 L 20 3');
+  });
+});
 
 const BARE_LINE_CMD = /\bL\s+L\b/;
 

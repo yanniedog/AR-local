@@ -17,7 +17,7 @@ import { SwitcherEdgeChart } from './SwitcherEdgeChart';
 export type HistoryViewMode = 'ribbon' | 'calendar' | 'race' | 'edge' | 'pulse' | 'rba';
 
 const MODE_META: Record<HistoryViewMode, { label: string; icon: keyof typeof Ionicons.glyphMap; blurb: string }> = {
-  ribbon: { label: 'Ribbon', icon: 'analytics-outline', blurb: 'Min / mean / max range over time' },
+  ribbon: { label: 'Ribbon', icon: 'analytics-outline', blurb: 'Min / median / mean / max range over time' },
   calendar: { label: 'Calendar', icon: 'calendar-outline', blurb: 'Every day, coloured by which way rates moved' },
   race: { label: 'Race', icon: 'podium-outline', blurb: "Today's leaders, traced back through the rankings" },
   edge: { label: 'Edge', icon: 'flash-outline', blurb: 'What switching beats the typical rate by' },

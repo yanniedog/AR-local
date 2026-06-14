@@ -111,7 +111,7 @@ export function mergeHistoryFromCores(
   });
 }
 
-async function fetchDatesIndexJson(url: string = DATES_INDEX_URL): Promise<DatesIndex> {
+export async function fetchDatesIndexJson(url: string = DATES_INDEX_URL): Promise<DatesIndex> {
   const sep = url.includes('?') ? '&' : '?';
   const res = await fetch(`${url}${sep}_=${Date.now()}`);
   if (!res.ok) throw new Error(`dates-index HTTP ${res.status}`);
@@ -120,7 +120,7 @@ async function fetchDatesIndexJson(url: string = DATES_INDEX_URL): Promise<Dates
   return parsed;
 }
 
-async function downloadDatedCore(runDate: string): Promise<CorePayload> {
+export async function downloadDatedCore(runDate: string): Promise<CorePayload> {
   const manifest = await fetchManifest(datedManifestUrl(runDate));
   const { core } = await downloadCore(
     manifest.files.core.url,
@@ -130,7 +130,7 @@ async function downloadDatedCore(runDate: string): Promise<CorePayload> {
   return core;
 }
 
-async function mapWithConcurrency<T, R>(
+export async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<R>,
