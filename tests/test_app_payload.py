@@ -635,3 +635,59 @@ def test_publish_noop_without_token(tmp_path, monkeypatch):
     # Force the "no gh available" path -> publish is a clean no-op returning False.
     monkeypatch.setattr(app_payload, "_gh_available", lambda: None)
     assert app_payload.publish_payload(tmp_path) is False
+
+
+# --- ongoing/base-rate join (rate-honesty disclosure) ----------------------- #
+def test_attach_ongoing_rate_savings_matches_balance_tier():
+    section = [
+        {"product_key": "P", "rate": "0.05", "ribbon_deposit_kind": "bonus",
+         "balance_min": "0", "balance_max": "250000"},
+        {"product_key": "P", "rate": "0.01", "ribbon_deposit_kind": "base",
+         "balance_min": "0", "balance_max": "250000"},
+    ]
+    comp = [dict(r) for r in section]
+    app_payload.attach_ongoing_rates(section, comp, "Savings")
+    assert comp[0]["ongoing_rate"] == "0.01"
+    assert "ongoing_rate" not in comp[1]  # the base row itself is unannotated
+
+
+def test_attach_ongoing_rate_td_requires_same_term():
+    # A 12-month bonus whose product only publishes a 6-month base must NOT
+    # borrow that base — it is not this offer's reversion rate.
+    section = [
+        {"product_key": "T", "rate": "0.052", "ribbon_rate_structure": "bonus", "term_months": 12},
+        {"product_key": "T", "rate": "0.028", "ribbon_rate_structure": "base", "term_months": 6},
+    ]
+    comp = [dict(r) for r in section]
+    app_payload.attach_ongoing_rates(section, comp, "TD")
+    assert "ongoing_rate" not in comp[0]
+
+
+def test_attach_ongoing_rate_tolerates_unparseable_balance_max():
+    section = [
+        {"product_key": "S", "rate": "0.05", "ribbon_deposit_kind": "bonus",
+         "balance_min": "0", "balance_max": "unlimited"},
+        {"product_key": "S", "rate": "0.01", "ribbon_deposit_kind": "base",
+         "balance_min": "50000", "balance_max": "N/A"},
+    ]
+    comp = [dict(r) for r in section]
+    app_payload.attach_ongoing_rates(section, comp, "Savings")  # must not raise
+    assert comp[0]["ongoing_rate"] == "0.01"
+
+
+def test_attach_ongoing_rate_leaves_mortgages_untouched():
+    section = [{"product_key": "M", "rate": "0.06", "ribbon_rate_structure": "variable"}]
+    comp = [dict(r) for r in section]
+    app_payload.attach_ongoing_rates(section, comp, "Mortgage")
+    assert "ongoing_rate" not in comp[0]
+
+
+def test_aggregate_ribbon_prefers_comparison_rate():
+    rows = [
+        {"product_key": "A", "provider": "X", "rate": "0.05", "comparison_rate": "0.055"},
+        {"product_key": "B", "provider": "Y", "rate": "0.06", "comparison_rate": "0.061"},
+    ]
+    ribbon = app_payload.aggregate_ribbon(rows, "Mortgage")
+    # Range is computed on the comparison rates, not the headline rates.
+    assert round(ribbon["range"]["min"], 4) == 0.055
+    assert round(ribbon["range"]["max"], 4) == 0.061

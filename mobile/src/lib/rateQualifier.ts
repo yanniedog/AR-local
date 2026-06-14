@@ -1,5 +1,18 @@
-import { formatRate, isoDurationMonths, toFraction } from '../data/format';
+import { formatRate, isoDurationMonths } from '../data/format';
 import type { RateRow, SectionKey } from '../types';
+
+/**
+ * Format a published ongoing rate, preserving a legitimate 0% (some bonus/intro
+ * accounts pay 0% ongoing). `toFraction` rejects values <= 0 as missing, which
+ * would falsely tell the user the bank publishes no base rate. Returns null only
+ * when the field is genuinely absent.
+ */
+function formatOngoingRate(raw: string | number | null | undefined): string | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n === 0 ? '0.00%' : formatRate(raw);
+}
 
 /**
  * Conditionality class of a row's headline rate.
@@ -76,8 +89,8 @@ export function rateQualifier(row: RateRow, section: SectionKey): RateQualifier 
   // actually earns once the bonus/intro ends, not just "may be lower". When the
   // bank publishes no separate base tier we say so rather than guess (the same
   // honesty that motivates the whole module).
-  const ongoingRate = formatRate(toFraction(row.ongoing_rate ?? null));
-  const hasOngoing = ongoingRate !== '—';
+  const ongoingRate = formatOngoingRate(row.ongoing_rate);
+  const hasOngoing = ongoingRate !== null;
   const ongoingTail = hasOngoing ? ongoingRate : 'an ongoing rate the bank has not published';
 
   if (kind === 'bonus') {

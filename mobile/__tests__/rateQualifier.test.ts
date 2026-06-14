@@ -127,5 +127,20 @@ describe('rateQualifier', () => {
     expect(
       ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', term: 'P6M', ongoing_rate: '0.02' }), 'Savings'),
     ).toBe('Reverts to 2.00% after 6 months.');
+    // Intro with a known target but no term.
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', ongoing_rate: '0.02' }), 'Savings')).toBe(
+      'Reverts to 2.00% after the intro period.',
+    );
+    // Intro with no published ongoing rate.
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', term: 'P3M' }), 'Savings')).toBe(
+      'Reverts to a lower ongoing rate after 3 months (not published).',
+    );
+  });
+
+  it('treats a published 0% ongoing rate as published, not missing', () => {
+    const q = rateQualifier(row({ ribbon_deposit_kind: 'bonus', rate: '0.05', ongoing_rate: '0' }), 'Savings');
+    expect(q.ongoingRate).toBe('0.00%');
+    expect(q.note).toMatch(/ongoing rate is 0\.00%/);
+    expect(q.note).not.toMatch(/not publish/);
   });
 });

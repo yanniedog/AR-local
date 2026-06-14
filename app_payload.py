@@ -565,9 +565,11 @@ def _select_base_sibling(
     if section == "TD":
         term = _ongoing_num(target.get("term_months"))
         if term is not None:
-            same_term = [c for c in pool if _ongoing_num(c.get("term_months")) == term]
-            if same_term:
-                pool = same_term
+            pool = [c for c in pool if _ongoing_num(c.get("term_months")) == term]
+            # Never disclose a different term's base rate as this offer's ongoing
+            # rate (a 6-month base is not the reversion rate of a 12-month TD).
+            if not pool:
+                return None
     if len(pool) == 1:
         return pool[0]
     bmin = _ongoing_num(target.get("balance_min"))
@@ -576,14 +578,15 @@ def _select_base_sibling(
         if exact:
             return exact[0]
         bmax = _ongoing_num(target.get("balance_max"))
-        lo = bmin
         hi = bmax if bmax is not None else math.inf
-        overlapping = [
-            c
-            for c in pool
-            if (_ongoing_num(c.get("balance_min")) or 0.0) <= hi
-            and lo <= (_ongoing_num(c.get("balance_max")) if c.get("balance_max") not in (None, "") else math.inf)
-        ]
+        overlapping = []
+        for c in pool:
+            c_min = _ongoing_num(c.get("balance_min")) or 0.0
+            c_max_raw = _ongoing_num(c.get("balance_max"))
+            c_max = c_max_raw if c_max_raw is not None else math.inf
+            # Parse balance_max once so an unparseable string can't raise TypeError.
+            if c_min <= hi and bmin <= c_max:
+                overlapping.append(c)
         if overlapping:
             return overlapping[0]
     return pool[0]
