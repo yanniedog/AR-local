@@ -116,10 +116,12 @@ describe('normalizeProductHistoryPayload', () => {
     const out = normalizeProductHistoryPayload({
       schema_version: 1,
       run_date: '2026-06-10',
+      core_sha: 'sha-current',
       run_dates: ['2026-05-13', '2026-06-10'],
       products: { 'P|1': [0.06, 0], 'Z|0': ['x', null] },
     });
     expect(out?.run_dates).toEqual(['2026-05-13', '2026-06-10']);
+    expect(out?.core_sha).toBe('sha-current');
     expect(out?.products['P|1']).toEqual([0.06, null]); // 0 → null
     expect(out?.products['Z|0']).toBeUndefined(); // no finite values → dropped
   });

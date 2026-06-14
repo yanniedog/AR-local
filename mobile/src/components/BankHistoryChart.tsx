@@ -20,7 +20,7 @@ import {
 } from '../data/bankHistoryTransform';
 import { SECTIONS } from '../constants';
 import { bankHistoryChartA11ySummary } from '../lib/a11ySummaries';
-import { buildBandPath } from '../lib/chartSvgPaths';
+import { buildBandPath, buildLinePath } from '../lib/chartSvgPaths';
 import { debugLog } from '../lib/debugLog';
 import { withAlpha } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
@@ -75,26 +75,6 @@ export interface BankHistoryChartProps {
   allDates?: string[];
   /** Optional emphasized line (e.g. one product's rate) drawn over the section context. */
   highlightSeries?: HighlightSeries | null;
-}
-
-function linePath(
-  values: (number | null)[],
-  xAt: (i: number) => number,
-  yAt: (v: number) => number,
-): string | null {
-  let d = '';
-  let started = false;
-  for (let i = 0; i < values.length; i += 1) {
-    const v = values[i];
-    if (!isFiniteNumber(v)) continue;
-    const x = finiteCoord(xAt(i));
-    const y = finiteCoord(yAt(v));
-    if (x == null || y == null) continue;
-    const seg = `${started ? 'L' : 'M'} ${x} ${y}`;
-    d += started ? ` ${seg}` : seg;
-    started = true;
-  }
-  return d || null;
 }
 
 function stepPath(
@@ -216,12 +196,12 @@ export function BankHistoryChart({
   const means = plotPoints.map((p) => p.mean);
   const medians = plotPoints.map((p) => p.median);
   const band = buildBandPath(plotDates, mins, maxs, xAt, yAt);
-  const meanLine = linePath(means, xAt, yAt);
-  const medianLine = linePath(medians, xAt, yAt);
-  const minLine = linePath(mins, xAt, yAt);
-  const maxLine = linePath(maxs, xAt, yAt);
+  const meanLine = buildLinePath(means, xAt, yAt);
+  const medianLine = buildLinePath(medians, xAt, yAt);
+  const minLine = buildLinePath(mins, xAt, yAt);
+  const maxLine = buildLinePath(maxs, xAt, yAt);
   const rbaLine = showRba ? stepPath(rbaSteps, xAt, yAt) : null;
-  const highlightLine = highlightValues ? linePath(highlightValues, xAt, yAt) : null;
+  const highlightLine = highlightValues ? buildLinePath(highlightValues, xAt, yAt, true) : null;
 
   const rateInk = SECTIONS[section].lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const ribbonColor = rateInk;

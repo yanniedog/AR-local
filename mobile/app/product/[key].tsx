@@ -41,6 +41,7 @@ export default function ProductDetail() {
   const productKey = key ?? '';
   const rateIndex = ri != null && ri !== '' ? Number(ri) : null;
   const core = useStore((s) => s.core);
+  const coreSha = useStore((s) => s.manifest?.files.core.sha256);
   const ensureDetails = useStore((s) => s.ensureDetails);
   const detail = useStore((s) => s.details?.products[productKey] ?? null);
   const detailsLoading = useStore((s) => s.detailsLoading);
@@ -69,7 +70,7 @@ export default function ProductDetail() {
     if (!historyEnabled) return;
     void ensureHistoryBanks();
     void ensureProductHistory();
-  }, [historyEnabled, ensureHistoryBanks, ensureProductHistory]);
+  }, [core?.run_date, coreSha, historyEnabled, ensureHistoryBanks, ensureProductHistory, productKey]);
 
   const found = core ? findByKey(core.sections, productKey) : null;
 
@@ -274,7 +275,9 @@ export default function ProductDetail() {
                 title="Unlock rate history"
                 icon="sparkles"
                 variant="secondary"
-                onPress={() => requestPro('history_ribbon')}
+                onPress={() => {
+                  if (requestPro('history_ribbon')) setPref('showHistoryRibbon', true);
+                }}
               />
             </>
           )}
@@ -316,7 +319,14 @@ export default function ProductDetail() {
           </AppText>
         ) : null}
       </ScreenScrollView>
-      <ProPaywall visible={paywallVisible} intent={paywallIntent} onClose={closePaywall} />
+      <ProPaywall
+        visible={paywallVisible}
+        intent={paywallIntent}
+        onClose={closePaywall}
+        onUpgraded={() => {
+          if (paywallIntent === 'history_ribbon') setPref('showHistoryRibbon', true);
+        }}
+      />
     </>
   );
 }

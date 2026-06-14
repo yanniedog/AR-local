@@ -805,15 +805,22 @@ export const useStore = create<AppState>()(
         const { force = false } = opts;
         if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
         if (force) set({ productHistoryError: null });
-        const { core, source, productHistory } = get();
+        const { core, manifest, source, productHistory } = get();
         if (!core) return;
         if (source !== 'remote') {
           set({ productHistory: null, productHistoryError: null });
           return;
         }
         const cached = productHistory ?? normalizeProductHistoryPayload(await cache.readProductHistory());
-        // Same run_date ⇒ the cached per-product series is current; skip the dated-core pass.
-        if (!force && cached && cached.run_date === core.run_date && cached.run_dates.length >= 1) {
+        // Date alone is insufficient: same-day corrected cores must rebuild this cache.
+        const coreSha = manifest?.files.core.sha256 ?? '';
+        if (
+          !force &&
+          cached &&
+          cached.run_date === core.run_date &&
+          cached.core_sha === coreSha &&
+          cached.run_dates.length >= 1
+        ) {
           set({ productHistory: cached, productHistoryError: null });
           return;
         }
@@ -821,6 +828,7 @@ export const useStore = create<AppState>()(
           const synced = await syncProductHistoryFromDailyPayloads({
             targetRunDate: core.run_date,
             currentCore: core,
+            coreSha,
             existing: cached,
           });
           await cache.writeProductHistory(JSON.stringify(synced));

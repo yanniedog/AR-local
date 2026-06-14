@@ -8,7 +8,6 @@ import {
   downloadDatedCore,
   fetchDatesIndexJson,
   historyDatesUpTo,
-  mapWithConcurrency,
 } from './historyDaily';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -22,8 +21,20 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 export interface ProductHistoryPayload {
   schema_version: number;
   run_date: string;
+  /** SHA of the rolling core used for the current catalog and latest rates. */
+  core_sha?: string;
   run_dates: string[];
   products: Record<string, (number | null)[]>;
+}
+
+function productKeysForCore(core: CorePayload): Set<string> {
+  const keys = new Set<string>();
+  for (const section of SECTION_KEYS) {
+    for (const row of core.sections?.[section]?.rates ?? []) {
+      if (row.product_key) keys.add(row.product_key);
+    }
+  }
+  return keys;
 }
 
 /** Best (section-aware) rate per product_key for one core; current-catalog keys only. */
@@ -53,21 +64,31 @@ export function buildProductHistoryFromCores(
   orderedDates: string[],
   latestRunDate: string,
   existing?: ProductHistoryPayload | null,
+  coreSha = '',
 ): ProductHistoryPayload {
   const run_dates = normalizeTimelineDates(orderedDates);
   const target = String(latestRunDate || '').slice(0, 10);
   const latestCore = coresByDate.get(target) ?? coresByDate.get(run_dates.at(-1) ?? '');
 
   // Current catalog = the keys a product page can actually open today.
-  const keys = new Set<string>();
-  if (latestCore) {
-    for (const section of SECTION_KEYS) {
-      for (const row of latestCore.sections?.[section]?.rates ?? []) {
-        if (row.product_key) keys.add(row.product_key);
-      }
-    }
+  const keys = latestCore ? productKeysForCore(latestCore) : new Set<string>();
+  const bestByDate = new Map<string, Map<string, number>>();
+  for (const date of run_dates) {
+    const core = coresByDate.get(date);
+    if (core) bestByDate.set(date, bestRatesForCore(core, keys));
   }
+  return buildProductHistoryFromRates(bestByDate, keys, run_dates, target, existing, coreSha);
+}
 
+function buildProductHistoryFromRates(
+  bestByDate: Map<string, Map<string, number>>,
+  keys: Set<string>,
+  orderedDates: string[],
+  target: string,
+  existing?: ProductHistoryPayload | null,
+  coreSha = '',
+): ProductHistoryPayload {
+  const run_dates = normalizeTimelineDates(orderedDates);
   // Reuse already-computed rates for days we didn't re-download.
   const existingByKey = new Map<string, Map<string, number | null>>();
   if (existing) {
@@ -78,16 +99,10 @@ export function buildProductHistoryFromCores(
     }
   }
 
-  const coreBestByDate = new Map<string, Map<string, number>>();
-  for (const date of run_dates) {
-    const core = coresByDate.get(date);
-    if (core) coreBestByDate.set(date, bestRatesForCore(core, keys));
-  }
-
   const products: Record<string, (number | null)[]> = {};
   for (const key of keys) {
     const series = run_dates.map((d) => {
-      const fromCore = coreBestByDate.get(d)?.get(key);
+      const fromCore = bestByDate.get(d)?.get(key);
       if (fromCore != null) return fromCore;
       const fromExisting = existingByKey.get(key)?.get(d);
       return fromExisting != null ? fromExisting : null;
@@ -95,7 +110,13 @@ export function buildProductHistoryFromCores(
     if (series.some((v) => v != null)) products[key] = series;
   }
 
-  return { schema_version: 1, run_date: target, run_dates, products };
+  return {
+    schema_version: 2,
+    run_date: target,
+    ...(coreSha ? { core_sha: coreSha } : {}),
+    run_dates,
+    products,
+  };
 }
 
 /** A product's series aligned to an arbitrary `dates` axis (e.g. the chart's sliced dates). */
@@ -159,6 +180,7 @@ export function normalizeProductHistoryPayload(raw: unknown): ProductHistoryPayl
   return {
     schema_version: typeof obj.schema_version === 'number' ? obj.schema_version : 1,
     run_date,
+    ...(typeof obj.core_sha === 'string' && obj.core_sha ? { core_sha: obj.core_sha } : {}),
     run_dates,
     products,
   };
@@ -167,6 +189,7 @@ export function normalizeProductHistoryPayload(raw: unknown): ProductHistoryPayl
 export interface SyncProductHistoryOpts {
   targetRunDate: string;
   currentCore: CorePayload;
+  coreSha?: string;
   existing?: ProductHistoryPayload | null;
   maxConcurrent?: number;
 }
@@ -181,15 +204,37 @@ export async function syncProductHistoryFromDailyPayloads(
   const targetRunDate = String(opts.targetRunDate || '').slice(0, 10);
   if (!targetRunDate) throw new Error('syncProductHistoryFromDailyPayloads: missing targetRunDate');
 
-  const index = await fetchDatesIndexJson();
-  const wantedDates = historyDatesUpTo(index, targetRunDate);
-  if (!wantedDates.length) throw new Error('dates-index has no history dates');
+  let indexedDates: string[] = [];
+  try {
+    indexedDates = historyDatesUpTo(await fetchDatesIndexJson(), targetRunDate);
+  } catch (err) {
+    debugLog.warn(
+      'productHistory',
+      `dates index failed; using cached/current dates: ${String((err as Error)?.message ?? err)}`,
+    );
+  }
+  const wantedDates = normalizeTimelineDates([
+    ...indexedDates,
+    ...(opts.existing?.run_dates ?? []),
+    targetRunDate,
+  ]);
 
-  const coresByDate = new Map<string, CorePayload>();
-  coresByDate.set(targetRunDate, opts.currentCore);
-
-  const have = new Set(opts.existing?.run_dates ?? []);
-  const toFetch = wantedDates.filter((d) => d !== targetRunDate && !have.has(d));
+  const keys = productKeysForCore(opts.currentCore);
+  const existingKeys = new Set(Object.keys(opts.existing?.products ?? {}));
+  const catalogMatches =
+    keys.size === existingKeys.size && [...keys].every((key) => existingKeys.has(key));
+  const reusableDates = new Set<string>();
+  if (catalogMatches && opts.existing) {
+    opts.existing.run_dates.forEach((date, i) => {
+      if ([...keys].some((key) => opts.existing?.products[key]?.[i] != null)) {
+        reusableDates.add(date);
+      }
+    });
+  }
+  const toFetch = wantedDates.filter((d) => d !== targetRunDate && !reusableDates.has(d));
+  const bestByDate = new Map<string, Map<string, number>>([
+    [targetRunDate, bestRatesForCore(opts.currentCore, keys)],
+  ]);
 
   debugLog.info(
     'productHistory',
@@ -197,23 +242,38 @@ export async function syncProductHistoryFromDailyPayloads(
   );
 
   if (toFetch.length) {
-    const downloaded = await mapWithConcurrency(toFetch, opts.maxConcurrent ?? 3, async (runDate) => {
-      try {
-        return { runDate, core: await downloadDatedCore(runDate) };
-      } catch (err) {
-        debugLog.warn(
-          'productHistory',
-          `dated core failed run_date=${runDate}: ${String((err as Error)?.message ?? err)}`,
-        );
-        return { runDate, core: null as CorePayload | null };
+    let next = 0;
+    const workers = Array.from(
+      { length: Math.min(opts.maxConcurrent ?? 3, toFetch.length) },
+      async () => {
+        while (next < toFetch.length) {
+          const runDate = toFetch[next];
+          next += 1;
+          try {
+            const core = await downloadDatedCore(runDate);
+            bestByDate.set(runDate, bestRatesForCore(core, keys));
+          } catch (err) {
+            debugLog.warn(
+              'productHistory',
+              `dated core failed run_date=${runDate}: ${String((err as Error)?.message ?? err)}`,
+            );
+          }
+        }
       }
-    });
-    for (const { runDate, core } of downloaded) {
-      if (core) coresByDate.set(runDate, core);
-    }
+    );
+    await Promise.all(workers);
   }
 
-  const built = buildProductHistoryFromCores(coresByDate, wantedDates, targetRunDate, opts.existing);
+  const availableDates = wantedDates.filter((d) => bestByDate.has(d) || reusableDates.has(d));
+  const reusableExisting = catalogMatches ? opts.existing : null;
+  const built = buildProductHistoryFromRates(
+    bestByDate,
+    keys,
+    availableDates,
+    targetRunDate,
+    reusableExisting,
+    opts.coreSha,
+  );
   if (!Object.keys(built.products).length) {
     throw new Error('product history sync produced no series');
   }
