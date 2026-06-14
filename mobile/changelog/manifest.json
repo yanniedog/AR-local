@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-14T05:37:26.867Z",
+  "generated_at": "2026-06-14T06:22:52.827Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -258,6 +258,15 @@
         "fix: close merged PR bot feedback gaps (#355)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.26"
+    },
+    {
+      "version": "1.0.27",
+      "date": "2026-06-14",
+      "summaryBullets": [
+        "fix(mobile): keep v1.0.26 notes release-specific (#358)",
+        "chore(mobile): auto-release bump to v1.0.26 (after 7e682f8) (#357)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.27"
     }
   ]
 }
