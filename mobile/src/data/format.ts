@@ -107,7 +107,7 @@ export function formatBalanceRange(
 }
 
 /** Parse an ISO-8601 duration like "P3Y", "P36M", "P1Y6M" to a month count. */
-function isoDurationMonths(term: string | undefined): number | null {
+export function isoDurationMonths(term: string | undefined): number | null {
   if (typeof term !== 'string') return null;
   const m = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?$/.exec(term.trim());
   if (!m || (!m[1] && !m[2])) return null;
