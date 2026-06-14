@@ -3,7 +3,7 @@
  * A headline savings/TD rate can be a *conditional* bonus or introductory rate
  * rather than the ongoing rate a typical customer earns. The ribbon tree already
  * separates BASE/BONUS/INTRO branches, but the single hero figure conflates them,
- * so this classifies the leader row and supplies the caveat text.
+ * so this supplies the caveat text for the leading rate.
  *
  * Extracted from app.js to respect the module-size ceiling (AGENTS.md).
  */
@@ -31,33 +31,39 @@
     return '';
   }
 
-  // The actual best current row (min for loans, max for deposits) so the caveat
-  // matches the displayed hero figure.
-  function leaderRow(rows, descending) {
-    var best = null;
+  // Caveat for the hero "best rate". Considers EVERY row tied at the leading rate
+  // (the section API has no ORDER BY, so picking one row would make the disclosure
+  // depend on incidental DB order):
+  //  - if any tied leader is unconditional, the headline rate is achievable without
+  //    conditions, so show no caveat;
+  //  - otherwise every tied leader is conditional — say 'introductory' only when all
+  //    of them are intro, else 'bonus'. Deterministic regardless of row order.
+  function heroNote(rows, descending) {
+    var EPS = 1e-9;
+    var list = rows || [];
     var bestVal = null;
-    (rows || []).forEach(function (row) {
+    list.forEach(function (row) {
       var v = Number(row.rate);
       if (!Number.isFinite(v) || v <= 0) return;
-      if (bestVal == null || (descending ? v > bestVal : v < bestVal)) {
-        bestVal = v;
-        best = row;
-      }
+      if (bestVal == null || (descending ? v > bestVal : v < bestVal)) bestVal = v;
     });
-    return best;
-  }
-
-  // Caveat text for a conditional leader row, or '' when it is unconditional.
-  function describe(row) {
-    var kind = conditionalRateKind(row);
-    if (kind === 'bonus') return 'bonus rate — conditions apply';
-    if (kind === 'intro') return 'introductory rate — reverts';
-    return '';
+    if (bestVal == null) return '';
+    var kinds = [];
+    for (var i = 0; i < list.length; i++) {
+      var v = Number(list[i].rate);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      if (Math.abs(v - bestVal) > EPS) continue;
+      var kind = conditionalRateKind(list[i]);
+      if (kind === '') return ''; // achievable unconditionally → no catch
+      kinds.push(kind);
+    }
+    if (!kinds.length) return '';
+    var allIntro = kinds.every(function (k) { return k === 'intro'; });
+    return allIntro ? 'introductory rate — reverts' : 'bonus rate — conditions apply';
   }
 
   window.LocalCdrRateHonesty = {
     conditionalRateKind: conditionalRateKind,
-    leaderRow: leaderRow,
-    describe: describe,
+    heroNote: heroNote,
   };
 })();

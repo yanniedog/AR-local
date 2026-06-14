@@ -1032,13 +1032,11 @@
     });
   }
 
-  // Hero "best rate" conditional caveat. Classification + leader lookup live in
-  // rate-honesty.js (window.LocalCdrRateHonesty) to keep this module focused.
-  function setHeroLeaderNote(row) {
+  // Hero "best rate" conditional caveat. Classification lives in rate-honesty.js
+  // (window.LocalCdrRateHonesty) to keep this module focused.
+  function setHeroLeaderNote(text) {
     const el = $('hero-leader-note');
     if (!el) return;
-    const honesty = window.LocalCdrRateHonesty;
-    const text = honesty ? honesty.describe(row) : '';
     if (text) {
       el.textContent = text;
       el.hidden = false;
@@ -1055,8 +1053,7 @@
     const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
     const honesty = window.LocalCdrRateHonesty;
-    const lead = leader == null || !honesty ? null : honesty.leaderRow(rows, preferredDescending(state.section));
-    setHeroLeaderNote(lead);
+    setHeroLeaderNote(leader == null || !honesty ? '' : honesty.heroNote(rows, preferredDescending(state.section)));
   }
 
   function renderFlatTable(rows) {
