@@ -1,0 +1,35 @@
+{
+  "version": "1.0.25",
+  "date": "2026-06-14",
+  "summaryBullets": [
+    "feat(mobile): per-product rate history + median lines on all ribbons (#347)",
+    "feat(mobile): surface conditional bonus/intro rates on the product detail screen (#349)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "feat(mobile): per-product rate history + median lines on all ribbons (#347)"
+        },
+        {
+          "text": "feat(mobile): surface conditional bonus/intro rates on the product detail screen (#349)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.25"
+        },
+        {
+          "text": "Since tag: app-v1.0.24"
+        }
+      ]
+    }
+  ]
+}
