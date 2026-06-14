@@ -31,6 +31,7 @@ import base64
 import gzip
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -162,6 +163,19 @@ def _stats(values: List[float]) -> Dict[str, Optional[float]]:
     }
 
 
+# Comparison rate (fees folded in) is the default metric for every ranking and
+# aggregation; deposits carry none, so this falls back to the headline rate.
+def _effective_rate(row: Dict[str, Any]) -> Any:
+    comparison = row.get("comparison_rate")
+    try:
+        value = float(comparison)
+    except (TypeError, ValueError):
+        value = None
+    if value is not None and value > 0:
+        return comparison
+    return row.get("rate")
+
+
 def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]:
     keys = [
         str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
@@ -170,7 +184,7 @@ def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]
     percent_style: set[str] = set()
     for key, row in zip(keys, rows):
         try:
-            raw = float(row.get("rate"))
+            raw = float(_effective_rate(row))
         except (TypeError, ValueError):
             continue
         if key and raw > 1:
@@ -180,7 +194,7 @@ def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]
     rates: List[float] = []
     products: set[str] = set()
     for key, row in zip(keys, rows):
-        rate = _normalized_rate_value(row.get("rate"), section, key in percent_style)
+        rate = _normalized_rate_value(_effective_rate(row), section, key in percent_style)
         if rate is None:
             continue
         provider = str(row.get("provider") or "Unknown")
@@ -509,6 +523,101 @@ def _asset(
     return entry
 
 
+# --------------------------------------------------------------------------- #
+# Ongoing/base-rate join (rate-honesty: what a bonus/intro headline reverts to)
+# --------------------------------------------------------------------------- #
+# A savings/TD product publishes its conditional headline (bonus / introductory)
+# and its unconditional ongoing tier as SEPARATE rows of the same product_key.
+# The app shows "Bonus 5.00%" but a typical customer earns the ongoing tier once
+# the conditions lapse, so we attach that published base tier's rate as
+# ``ongoing_rate``. We copy the bank's own base-tier figure verbatim — never
+# arithmetic on the bonus — so the disclosure can't itself become misleading.
+def _ongoing_num(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_conditional_kind(row: Dict[str, Any], section: str) -> str:
+    if section == "Savings":
+        kind = str(row.get("ribbon_deposit_kind") or "").lower().strip()
+    elif section == "TD":
+        kind = str(row.get("ribbon_rate_structure") or "").lower().strip()
+    else:
+        return ""
+    if kind == "bonus":
+        return "bonus"
+    if kind in ("introductory", "intro"):
+        return "intro"
+    return ""
+
+
+def _row_is_base(row: Dict[str, Any], section: str) -> bool:
+    field = "ribbon_deposit_kind" if section == "Savings" else "ribbon_rate_structure"
+    return str(row.get(field) or "").lower().strip() == "base"
+
+
+def _select_base_sibling(
+    target: Dict[str, Any], candidates: List[Dict[str, Any]], section: str
+) -> Optional[Dict[str, Any]]:
+    pool = candidates
+    if section == "TD":
+        term = _ongoing_num(target.get("term_months"))
+        if term is not None:
+            pool = [c for c in pool if _ongoing_num(c.get("term_months")) == term]
+            # Never disclose a different term's base rate as this offer's ongoing
+            # rate (a 6-month base is not the reversion rate of a 12-month TD).
+            if not pool:
+                return None
+    if len(pool) == 1:
+        return pool[0]
+    bmin = _ongoing_num(target.get("balance_min"))
+    if bmin is not None:
+        exact = [c for c in pool if _ongoing_num(c.get("balance_min")) == bmin]
+        if exact:
+            return exact[0]
+        bmax = _ongoing_num(target.get("balance_max"))
+        hi = bmax if bmax is not None else math.inf
+        overlapping = []
+        for c in pool:
+            c_min = _ongoing_num(c.get("balance_min")) or 0.0
+            c_max_raw = _ongoing_num(c.get("balance_max"))
+            c_max = c_max_raw if c_max_raw is not None else math.inf
+            # Parse balance_max once so an unparseable string can't raise TypeError.
+            if c_min <= hi and bmin <= c_max:
+                overlapping.append(c)
+        if overlapping:
+            return overlapping[0]
+    return pool[0]
+
+
+def attach_ongoing_rates(
+    section_rows: List[Dict[str, Any]],
+    compact_rows: List[Dict[str, Any]],
+    section: str,
+) -> None:
+    """Set ``ongoing_rate`` on each bonus/intro row (in-place on ``compact_rows``)."""
+    if section not in ("Savings", "TD"):
+        return
+    bases: Dict[str, List[Dict[str, Any]]] = {}
+    for row in section_rows:
+        if _row_is_base(row, section):
+            bases.setdefault(str(row.get("product_key") or ""), []).append(row)
+    if not bases:
+        return
+    for raw, comp in zip(section_rows, compact_rows):
+        if not _row_conditional_kind(raw, section):
+            continue
+        candidates = bases.get(str(raw.get("product_key") or ""))
+        if not candidates:
+            continue
+        base = _select_base_sibling(raw, candidates, section)
+        ongoing = base.get("rate") if base else None
+        if ongoing not in (None, ""):
+            comp["ongoing_rate"] = ongoing
+
+
 def build_payload(
     exports_dir: Path,
     out_dir: Path,
@@ -532,8 +641,10 @@ def build_payload(
         section_rows = [r for r in rates if r.get("dataset") == section and section_filter(section, r)]
         for r in section_rows:
             providers_seen.add(str(r.get("provider") or ""))
+        compact_rows = [compact({k: r.get(k) for k in CORE_RATE_FIELDS}) for r in section_rows]
+        attach_ongoing_rates(section_rows, compact_rows, section)
         sections[section] = {
-            "rates": [compact({k: r.get(k) for k in CORE_RATE_FIELDS}) for r in section_rows],
+            "rates": compact_rows,
             "ribbon": aggregate_ribbon(section_rows, section),
         }
 

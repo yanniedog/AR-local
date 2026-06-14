@@ -10,7 +10,7 @@ import { EmptyState } from '../src/components/feedback';
 import { Screen } from '../src/components/Screen';
 import { AppText, Row } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
-import { formatRate } from '../src/data/format';
+import { effectiveRate, formatRate } from '../src/data/format';
 import { groupByProvider, type ProviderGroup } from '../src/data/selectors';
 import { useStore } from '../src/data/store';
 import { openBank } from '../src/lib/nav';
@@ -96,7 +96,7 @@ function BankRow({ group }: { group: ProviderGroup }) {
             if (!best) return null;
             return (
               <AppText key={s} variant="tiny" color="textMuted">
-                {SECTIONS[s].title}: <AppText variant="tiny" weight="700">{formatRate(best.rate)}</AppText>
+                {SECTIONS[s].title}: <AppText variant="tiny" weight="700">{formatRate(effectiveRate(best))}</AppText>
               </AppText>
             );
           })}

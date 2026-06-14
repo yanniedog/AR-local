@@ -1,4 +1,4 @@
-import { conditionalNote, rateQualifier } from '../src/lib/rateQualifier';
+import { conditionalNote, ongoingRateCaveat, rateQualifier } from '../src/lib/rateQualifier';
 import type { RateRow } from '../src/types';
 
 function row(partial: Partial<RateRow>): RateRow {
@@ -94,5 +94,53 @@ describe('rateQualifier', () => {
     // Mortgages never flag, even with a conditional-looking structure
     expect(conditionalNote(row({ ribbon_rate_structure: 'bonus' }), 'Mortgage')).toBe('');
     expect(conditionalNote(null, 'Savings')).toBe('');
+  });
+
+  it('names the published ongoing rate a bonus reverts to', () => {
+    const q = rateQualifier(row({ ribbon_deposit_kind: 'bonus', rate: '0.05', ongoing_rate: '0.01' }), 'Savings');
+    expect(q.ongoingRate).toBe('1.00%');
+    expect(q.note).toMatch(/ongoing rate is 1\.00%/);
+  });
+
+  it('names the reversion target and term for an intro rate', () => {
+    const q = rateQualifier(
+      row({ ribbon_deposit_kind: 'introductory', term: 'P4M', rate: '0.05', ongoing_rate: '0.015' }),
+      'Savings',
+    );
+    expect(q.ongoingRate).toBe('1.50%');
+    expect(q.note).toMatch(/applies for 4 months, then reverts to 1\.50%/);
+    // The a11y label must carry both the term and the reversion target.
+    expect(q.label).toMatch(/4 months, then 1\.50%/);
+  });
+
+  it('says the ongoing rate is unpublished when no base tier exists', () => {
+    const q = rateQualifier(row({ ribbon_deposit_kind: 'bonus', rate: '0.05' }), 'Savings');
+    expect(q.ongoingRate).toBeNull();
+    expect(q.note).toMatch(/does not publish a separate base rate/);
+  });
+
+  it('ongoingRateCaveat is a compact reversion sentence (or empty)', () => {
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'base' }), 'Savings')).toBe('');
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'bonus', ongoing_rate: '0.01' }), 'Savings')).toBe(
+      "Ongoing rate 1.00% when bonus conditions aren't met.",
+    );
+    expect(
+      ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', term: 'P6M', ongoing_rate: '0.02' }), 'Savings'),
+    ).toBe('Reverts to 2.00% after 6 months.');
+    // Intro with a known target but no term.
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', ongoing_rate: '0.02' }), 'Savings')).toBe(
+      'Reverts to 2.00% after the intro period.',
+    );
+    // Intro with no published ongoing rate.
+    expect(ongoingRateCaveat(row({ ribbon_deposit_kind: 'introductory', term: 'P3M' }), 'Savings')).toBe(
+      'Reverts to a lower ongoing rate after 3 months (not published).',
+    );
+  });
+
+  it('treats a published 0% ongoing rate as published, not missing', () => {
+    const q = rateQualifier(row({ ribbon_deposit_kind: 'bonus', rate: '0.05', ongoing_rate: '0' }), 'Savings');
+    expect(q.ongoingRate).toBe('0.00%');
+    expect(q.note).toMatch(/ongoing rate is 0\.00%/);
+    expect(q.note).not.toMatch(/not publish/);
   });
 });

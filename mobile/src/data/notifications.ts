@@ -5,7 +5,8 @@ import type { Href } from 'expo-router';
 import { SECTIONS, SECTION_ORDER } from '../constants';
 import { debugLog } from '../lib/debugLog';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
-import { bpsBetween, formatRate, toFraction } from './format';
+import { ongoingRateCaveat } from '../lib/rateQualifier';
+import { bpsBetween, effectiveFraction, formatRate, toFraction } from './format';
 import { bestRow } from './selectors';
 import {
   computeSubscriptionChanges,
@@ -133,7 +134,9 @@ export function hrefFromNotificationData(
 function bestFraction(core: CorePayload, section: SectionKey): number | null {
   const rows = core.sections[section]?.rates ?? [];
   const best = bestRow(rows, section);
-  return best ? toFraction(best.rate) : null;
+  // Measure the move with the same metric bestRow ranks by (comparison rate for
+  // loans), so the threshold and body text can't disagree with the winner.
+  return best ? effectiveFraction(best) : null;
 }
 
 /** All rate rows for a product, keyed by rate_index, so changes can be matched
@@ -290,15 +293,19 @@ export function computeChanges(
   // Per-category best-rate moves.
   for (const section of SECTION_ORDER) {
     const before = bestFraction(oldCore, section);
-    const after = bestFraction(newCore, section);
+    const afterRow = bestRow(newCore.sections[section]?.rates ?? [], section);
+    const after = afterRow ? effectiveFraction(afterRow) : null;
     if (before === null || after === null) continue;
     const bps = Math.abs(bpsBetween(after, before) ?? 0);
     if (bps < thresholdBps) continue;
     const meta = SECTIONS[section];
     const improved = meta.lowerIsBetter ? after < before : after > before;
+    // When the new best is a bonus/intro headline, say what it reverts to so the
+    // alert can't overstate the rate a typical customer keeps.
+    const caveat = ongoingRateCaveat(afterRow, section);
     messages.push({
       title: `${meta.title}: best rate ${improved ? 'improved' : 'changed'}`,
-      body: `Now ${formatRate(after)} (was ${formatRate(before)}).`,
+      body: `Now ${formatRate(after)} (was ${formatRate(before)}).${caveat ? ` ${caveat}` : ''}`,
       search: { section },
     });
   }
@@ -328,9 +335,13 @@ export function computeChanges(
       }
     }
     if (biggest) {
+      const section = SECTION_ORDER.find((s) =>
+        (newCore.sections[s]?.rates ?? []).some((r) => r === biggest!.row),
+      );
+      const caveat = section ? ongoingRateCaveat(biggest.row, section) : '';
       messages.push({
         title: `${biggest.row.provider} rate changed`,
-        body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.`,
+        body: `${biggest.row.product_name}: ${formatRate(biggest.from)} → ${formatRate(biggest.to)}.${caveat ? ` ${caveat}` : ''}`,
         productKey: key,
         rateIndex: biggest.row.rate_index ?? null,
       });

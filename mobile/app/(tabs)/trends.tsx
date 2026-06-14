@@ -20,7 +20,7 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { SegmentedControl } from '../../src/components/controls';
 import { AppText, Button, Card, Chip, Divider, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRate, formatRunDate } from '../../src/data/format';
+import { effectiveRate, formatRate, formatRunDate } from '../../src/data/format';
 import { selectBankHistoryChartModel } from '../../src/data/historySelectors';
 import { orderedInterestSections, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
@@ -330,7 +330,7 @@ export default function Trends() {
         if (stats.min === null) return null;
         const best = bestRow(data.rates, key);
         const bestLabel = rateValueLabel(key, 'best');
-        const bestRate = best ? formatRate(best.rate) : '—';
+        const bestRate = best ? formatRate(effectiveRate(best)) : '—';
         return (
           <Pressable
             key={key}

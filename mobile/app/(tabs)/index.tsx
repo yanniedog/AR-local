@@ -10,7 +10,7 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { formatRate, formatRunDate, relativeDate, toFraction } from '../../src/data/format';
+import { effectiveFraction, formatRate, formatRunDate, relativeDate, toFraction } from '../../src/data/format';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { profileFilterRows, profileSectionCount } from '../../src/data/profile';
@@ -85,7 +85,7 @@ export default function Home() {
   const activeBest = best ?? fallbackBest;
   // With a profile active the hero must show the best profile-matched rate,
   // not the unfiltered market extreme it would otherwise mislabel.
-  const heroRate = profileCount > 0 ? (activeBest ? toFraction(activeBest.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
+  const heroRate = profileCount > 0 ? (activeBest ? effectiveFraction(activeBest) : null) : meta.lowerIsBetter ? stats.min : stats.max;
   const bestNote = conditionalNote(activeBest, section);
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;

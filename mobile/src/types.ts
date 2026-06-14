@@ -11,6 +11,13 @@ export interface RateRow {
   category?: string;
   /** Normalized fraction as a string, e.g. "0.0634" == 6.34%. */
   rate: string;
+  /**
+   * For a bonus/intro headline, the product's published unconditional ongoing
+   * (base) tier rate — what the customer earns once the bonus conditions lapse
+   * or the intro window ends. Pi-joined from the sibling base tier; absent when
+   * the bank does not publish a separate base tier.
+   */
+  ongoing_rate?: string;
   comparison_rate?: string;
   rate_type?: string;
   repayment_type?: string;
