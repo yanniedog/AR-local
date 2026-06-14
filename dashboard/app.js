@@ -1032,12 +1032,28 @@
     });
   }
 
+  // Hero "best rate" conditional caveat. Classification lives in rate-honesty.js
+  // (window.LocalCdrRateHonesty) to keep this module focused.
+  function setHeroLeaderNote(text) {
+    const el = $('hero-leader-note');
+    if (!el) return;
+    if (text) {
+      el.textContent = text;
+      el.hidden = false;
+    } else {
+      el.textContent = '';
+      el.hidden = true;
+    }
+  }
+
   function updateHero(rows, items) {
     $('hero-run').textContent = state.manifest.run_date;
     $('hero-rows').textContent = num(rows.length);
     const range = items && items.kind === 'bank-history' ? items.currentRange : currentRateRange(rows);
     const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
+    const honesty = window.LocalCdrRateHonesty;
+    setHeroLeaderNote(leader == null || !honesty ? '' : honesty.heroNote(rows, preferredDescending(state.section)));
   }
 
   function renderFlatTable(rows) {
@@ -1145,6 +1161,7 @@
     const range = items && items.currentRange ? items.currentRange : { min: null, max: null };
     const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
+    setHeroLeaderNote(null);
     window.LocalCdrChart.draw($('chart'), items, 'banks');
     state._chartFocusPainted = focusActiveProvider();
     setHistoryWindowUi(items);

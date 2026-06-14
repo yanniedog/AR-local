@@ -1399,3 +1399,16 @@ body.ar-public.ar-section-economic-data .economic-forward-stats article > span:h
 .calc-row { cursor: pointer; }
 .calc-row:hover { background: rgba(59, 130, 246, 0.08); }
 .calc-row.is-selected { background: rgba(59, 130, 246, 0.16); }
+
+/* Hero "best rate" conditional caveat (bonus/intro). Amber, theme-aware. */
+.market-intro-live-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: #b45309;
+}
+.market-intro-live-note[hidden] { display: none; }
+:root[data-theme="dark"] .market-intro-live-note { color: #fbbf24; }
