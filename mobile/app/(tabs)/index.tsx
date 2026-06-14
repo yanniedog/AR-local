@@ -60,6 +60,10 @@ export default function Home() {
     () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard),
     [hierRows, profileFilters, section, includeNonStandard],
   );
+  const fallbackBest = useMemo(
+    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard),
+    [sectionRows, profileFilters, section, includeNonStandard],
+  );
 
   const meta = SECTIONS[section];
   const shareMessage = useMemo(() => {
@@ -78,10 +82,11 @@ export default function Home() {
   const rba = core.rba?.at(-1);
   const sectionAccent = meta.accentColor;
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
+  const activeBest = best ?? fallbackBest;
   // With a profile active the hero must show the best profile-matched rate,
   // not the unfiltered market extreme it would otherwise mislabel.
-  const heroRate = profileCount > 0 ? (best ? toFraction(best.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
-  const bestNote = conditionalNote(best, section);
+  const heroRate = profileCount > 0 ? (activeBest ? toFraction(activeBest.rate) : null) : meta.lowerIsBetter ? stats.min : stats.max;
+  const bestNote = conditionalNote(activeBest, section);
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;
   const ribbonDataKey = `${core.run_date}:${section}:ribbon`;
@@ -117,7 +122,7 @@ export default function Home() {
             style={{
               justifyContent: 'space-between',
               alignItems: 'flex-start',
-              marginBottom: best ? theme.spacing(3) : 0,
+              marginBottom: activeBest ? theme.spacing(3) : 0,
             }}
           >
             <View style={{ flex: 1, paddingRight: theme.spacing(3) }}>
@@ -161,13 +166,17 @@ export default function Home() {
             ) : null}
           </Row>
         </SpringOnNewData>
-        {best ? (
+        {activeBest ? (
           <Pressable
-            onLongPress={() => openBank(best.provider)}
+            onLongPress={() => openBank(activeBest.provider)}
             delayLongPress={450}
             accessibilityHint="Long press to open lender profile"
           >
-            <ProductCard row={best} section={section} onPress={() => openProduct(best.product_key, best.rate_index)} />
+            <ProductCard
+              row={activeBest}
+              section={section}
+              onPress={() => openProduct(activeBest.product_key, activeBest.rate_index)}
+            />
           </Pressable>
         ) : null}
       </Card>

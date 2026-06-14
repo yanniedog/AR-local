@@ -215,6 +215,8 @@ async function installSampleSeed(): Promise<void> {
   await cache.writeBundle(seedMeta, JSON.stringify(sampleCore));
 }
 
+let productHistorySyncRequest = 0;
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -813,9 +815,11 @@ export const useStore = create<AppState>()(
         }
         const cached = productHistory ?? normalizeProductHistoryPayload(await cache.readProductHistory());
         const coreSha = manifest?.files.core.sha256 ?? '';
+        const requestId = ++productHistorySyncRequest;
         const revisionIsCurrent = () => {
           const current = get();
           return (
+            requestId === productHistorySyncRequest &&
             current.source === 'remote' &&
             current.core?.run_date === core.run_date &&
             (current.manifest?.files.core.sha256 ?? '') === coreSha

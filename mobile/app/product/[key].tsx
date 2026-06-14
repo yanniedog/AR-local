@@ -376,7 +376,7 @@ function RateRowLine({ row, section, accent }: { row: RateRow; section: SectionK
           </View>
         ) : null}
         {descriptor ? (
-          <AppText variant="small" color="textMuted" numberOfLines={1} style={{ flexShrink: 1 }}>
+          <AppText variant="small" color="textMuted" style={{ flex: 1, flexShrink: 1 }}>
             {descriptor}
           </AppText>
         ) : null}

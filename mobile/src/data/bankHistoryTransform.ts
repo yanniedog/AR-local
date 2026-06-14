@@ -147,7 +147,11 @@ export interface RbaChangeMark {
   bp: number;
 }
 
-export function rbaChangesInWindow(dates: string[], rba: RbaEntry[]): RbaChangeMark[] {
+export function rbaChangesInWindow(
+  dates: string[],
+  rba: RbaEntry[],
+  includePriorFallback = true,
+): RbaChangeMark[] {
   if (!dates.length || !rba.length) return [];
   const first = dates[0];
   const last = dates[dates.length - 1];
@@ -172,7 +176,7 @@ export function rbaChangesInWindow(dates: string[], rba: RbaEntry[]): RbaChangeM
     });
   }
 
-  if (!changes.length) {
+  if (includePriorFallback && !changes.length) {
     for (let i = rba.length - 1; i >= 1; i -= 1) {
       const prior = rba[i - 1].rate;
       const rate = rba[i].rate;
