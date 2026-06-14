@@ -1070,6 +1070,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 "/assets/cdr-ribbon-map.js",
                 "/assets/cdr-taxonomy-tree.js",
                 "/assets/local-brand.js",
+                "/assets/rate-honesty.js",
                 "/assets/rba-cash-rate.js",
                 "/assets/utils.js",
             ):
