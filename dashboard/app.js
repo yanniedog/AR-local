@@ -1032,48 +1032,15 @@
     });
   }
 
-  // Classify a row's headline rate as a conditional bonus/intro rate. The ribbon
-  // tree already separates BASE/BONUS/INTRO branches via taxonomy_path, so prefer
-  // that; fall back to the ribbon facets. Mortgage paths carry no BONUS/INTRO
-  // token, so mortgages are never flagged.
-  function conditionalRateKind(row) {
-    if (!row) return '';
-    const path = String(row.taxonomy_path || '').toUpperCase();
-    if (path.indexOf('.BONUS.') >= 0) return 'bonus';
-    if (path.indexOf('.INTRO') >= 0) return 'intro';
-    const dk = String(row.ribbon_deposit_kind || '').toLowerCase();
-    if (dk === 'bonus') return 'bonus';
-    if (dk === 'introductory' || dk === 'intro') return 'intro';
-    if (String(row.ribbon_rate_structure || '').toLowerCase() === 'bonus') return 'bonus';
-    return '';
-  }
-
-  function leaderRow(rows, section) {
-    const desc = preferredDescending(section);
-    let best = null;
-    let bestVal = null;
-    rows.forEach((row) => {
-      const v = Number(row.rate);
-      if (!Number.isFinite(v) || v <= 0) return;
-      if (bestVal == null || (desc ? v > bestVal : v < bestVal)) {
-        bestVal = v;
-        best = row;
-      }
-    });
-    return best;
-  }
-
-  // Flag the headline "best rate" when it is a conditional bonus/intro rate, so it
-  // isn't read as an unconditional ongoing rate.
+  // Hero "best rate" conditional caveat. Classification + leader lookup live in
+  // rate-honesty.js (window.LocalCdrRateHonesty) to keep this module focused.
   function setHeroLeaderNote(row) {
     const el = $('hero-leader-note');
     if (!el) return;
-    const kind = conditionalRateKind(row);
-    if (kind === 'bonus') {
-      el.textContent = 'bonus rate — conditions apply';
-      el.hidden = false;
-    } else if (kind === 'intro') {
-      el.textContent = 'introductory rate — reverts';
+    const honesty = window.LocalCdrRateHonesty;
+    const text = honesty ? honesty.describe(row) : '';
+    if (text) {
+      el.textContent = text;
       el.hidden = false;
     } else {
       el.textContent = '';
@@ -1087,7 +1054,9 @@
     const range = items && items.kind === 'bank-history' ? items.currentRange : currentRateRange(rows);
     const leader = preferredDescending(state.section) ? range.max : range.min;
     $('hero-leader').textContent = leader == null ? '-' : pct(leader);
-    setHeroLeaderNote(leader == null ? null : leaderRow(rows, state.section));
+    const honesty = window.LocalCdrRateHonesty;
+    const lead = leader == null || !honesty ? null : honesty.leaderRow(rows, preferredDescending(state.section));
+    setHeroLeaderNote(lead);
   }
 
   function renderFlatTable(rows) {
