@@ -2,10 +2,7 @@
   "version": "1.0.26",
   "date": "2026-06-14",
   "summaryBullets": [
-    "fix: close merged PR bot feedback gaps (#355)",
-    "chore(mobile): auto-release bump to v1.0.25 (after 5789241) (#354)",
-    "feat(mobile): per-product rate history + median lines on all ribbons (#347)",
-    "feat(mobile): surface conditional bonus/intro rates on the product detail screen (#349)"
+    "fix: close merged PR bot feedback gaps (#355)"
   ],
   "sections": [
     {
@@ -13,15 +10,6 @@
       "bullets": [
         {
           "text": "fix: close merged PR bot feedback gaps (#355)"
-        },
-        {
-          "text": "chore(mobile): auto-release bump to v1.0.25 (after 5789241) (#354)"
-        },
-        {
-          "text": "feat(mobile): per-product rate history + median lines on all ribbons (#347)"
-        },
-        {
-          "text": "feat(mobile): surface conditional bonus/intro rates on the product detail screen (#349)"
         }
       ]
     },
@@ -35,7 +23,7 @@
           "text": "Version tag: app-v1.0.26"
         },
         {
-          "text": "Since tag: app-v1.0.24"
+          "text": "Since tag: app-v1.0.25"
         }
       ]
     }
