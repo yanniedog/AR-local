@@ -102,15 +102,20 @@ export function pushHeadToMain({
         if (msg) console.warn(`mobile-auto-release-commit: stash apply warning: ${msg}`);
       } else {
         const list = runCommand('git', ['stash', 'list', '--format=%H%x09%gd'], { allowFail: true });
-        const match = String(list.stdout || '')
-          .split(/\r?\n/)
-          .map((line) => line.split('\t'))
-          .find(([hash]) => hash === invocationStash);
-        if (match?.[1]) {
-          const dropResult = runCommand('git', ['stash', 'drop', match[1]], { allowFail: true });
-          if (dropResult.status !== 0) {
-            const msg = (dropResult.stderr || dropResult.stdout || '').trim();
-            if (msg) console.warn(`mobile-auto-release-commit: stash drop warning: ${msg}`);
+        if (list.status !== 0) {
+          const msg = (list.stderr || list.stdout || '').trim();
+          console.warn(`mobile-auto-release-commit: stash list warning: ${msg || `exit ${list.status}`}`);
+        } else {
+          const match = String(list.stdout || '')
+            .split(/\r?\n/)
+            .map((line) => line.split('\t'))
+            .find(([hash]) => hash === invocationStash);
+          if (match?.[1]) {
+            const dropResult = runCommand('git', ['stash', 'drop', match[1]], { allowFail: true });
+            if (dropResult.status !== 0) {
+              const msg = (dropResult.stderr || dropResult.stdout || '').trim();
+              if (msg) console.warn(`mobile-auto-release-commit: stash drop warning: ${msg}`);
+            }
           }
         }
       }

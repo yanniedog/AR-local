@@ -48,3 +48,26 @@ test('restores and drops only the stash commit created by this invocation', () =
   assert.ok(calls.some(([, args]) => args.join(' ') === 'stash apply new-stash'));
   assert.ok(calls.some(([, args]) => args.join(' ') === 'stash drop stash@{1}'));
 });
+
+test('warns and retains the restored invocation stash when stash listing fails', () => {
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  const responses = [
+    result(1),
+    result(0, 'Saved working directory\n'),
+    result(0, 'new-stash\n'),
+    result(),
+    result(),
+    result(),
+    result(1, '', 'bad stash state'),
+  ];
+  const runCommand = () => responses.shift() ?? result();
+
+  try {
+    assert.deepEqual(pushHeadToMain({ runCommand }), { ok: true });
+  } finally {
+    console.warn = warn;
+  }
+  assert.ok(warnings.some((message) => message.includes('stash list warning: bad stash state')));
+});

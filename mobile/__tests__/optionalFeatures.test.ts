@@ -448,6 +448,50 @@ describe('optional feature prefs', () => {
     expect(store.getState().productHistory).toBeNull();
   });
 
+  it('ensureProductHistory does not let an older same-revision sync overwrite a newer result', async () => {
+    let finishOldSync!: (value: unknown) => void;
+    let finishNewSync!: (value: unknown) => void;
+    const oldSync = new Promise((resolve) => {
+      finishOldSync = resolve;
+    });
+    const newSync = new Promise((resolve) => {
+      finishNewSync = resolve;
+    });
+    const oldHistory = {
+      schema_version: 2,
+      run_date: remoteCore.run_date,
+      core_sha: remoteManifest.files.core.sha256,
+      run_dates: [remoteCore.run_date],
+      products: { old: [0.05] },
+    };
+    const newHistory = {
+      ...oldHistory,
+      run_dates: ['2026-05-13', remoteCore.run_date],
+      products: { new: [0.051, 0.05] },
+    };
+    store.setState({
+      prefs: historyRibbonPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+      productHistory: null,
+    });
+    mockSyncProductHistoryFromDailyPayloads
+      .mockReturnValueOnce(oldSync)
+      .mockReturnValueOnce(newSync);
+
+    const older = store.getState().ensureProductHistory();
+    const newer = store.getState().ensureProductHistory();
+    finishNewSync(newHistory);
+    await newer;
+    finishOldSync(oldHistory);
+    await older;
+
+    expect(store.getState().productHistory).toEqual(newHistory);
+    expect(mockWriteProductHistory).toHaveBeenCalledTimes(1);
+    expect(mockWriteProductHistory).toHaveBeenCalledWith(JSON.stringify(newHistory));
+  });
+
   it('ensureHistoryBanks no-ops when history ribbon pref is off', async () => {
     await store.getState().ensureHistoryBanks();
     expect(mockDownloadHistoryBanks).not.toHaveBeenCalled();
