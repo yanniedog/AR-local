@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-12T21:33:13.565Z",
+  "generated_at": "2026-06-14T03:47:16.477Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -241,6 +241,15 @@
         "Mobile UX batch: profile filters, calculator, share QR, browse/trends fixes + ingest UA fix (#344)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.24"
+    },
+    {
+      "version": "1.0.25",
+      "date": "2026-06-14",
+      "summaryBullets": [
+        "feat(mobile): per-product rate history + median lines on all ribbons (#347)",
+        "feat(mobile): surface conditional bonus/intro rates on the product detail screen (#349)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.25"
     }
   ]
 }
