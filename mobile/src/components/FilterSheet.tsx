@@ -60,6 +60,16 @@ export function FilterSheet({
   }, [visible, filters]);
 
   const groups = groupsFor(section);
+  // Facet option lists depend only on the (scoped) rows, never on the draft
+  // selection — memoize them so toggling a chip doesn't re-scan every row for
+  // every filter group (the open-sheet lag).
+  const groupOptions = useMemo(
+    () =>
+      groups
+        .map((g) => ({ g, options: distinctValues(rows, g.field).slice(0, 24) }))
+        .filter(({ options }) => options.length > 0),
+    [rows, section], // eslint-disable-line react-hooks/exhaustive-deps -- groups is derived from section
+  );
   const providers = useMemo(() => distinctProviders(rows), [rows]);
   const accountFeatures = useMemo(
     () => distinctAccountFeatures(rows, detailsProducts).slice(0, 24),
@@ -113,9 +123,7 @@ export function FilterSheet({
           </Row>
           <Divider />
           <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 12 }}>
-            {groups.map((g) => {
-              const options = distinctValues(rows, g.field).slice(0, 24);
-              if (!options.length) return null;
+            {groupOptions.map(({ g, options }) => {
               return (
                 <View key={g.key}>
                   <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
