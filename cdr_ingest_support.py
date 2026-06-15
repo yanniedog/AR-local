@@ -364,6 +364,7 @@ class FetchResult:
     status: int
     url: str
     text: str
+    attempts: int = 1
 
     @cached_property
     def data(self) -> Any:
@@ -407,21 +408,37 @@ def fetch_with_retries(
     max_retries: int,
     sleep_ms: int,
     retry_on: Callable[[int], bool],
+    deadline: Optional[float] = None,
 ) -> FetchResult:
     attempt = 0
     last_status = 0
     last_text = ""
-    while attempt <= max_retries:
+    # Check the shared deadline before every request, so a logical fetch never
+    # issues an upstream call (nor sleeps) past its wall-clock budget.
+    while attempt <= max_retries and (deadline is None or time.monotonic() < deadline):
+        # Cap each request's own timeout to the time left on the shared deadline,
+        # so a single slow request can't block past the logical-fetch budget.
+        req_timeout = timeout
+        if deadline is not None:
+            req_timeout = min(timeout, max(0.0, deadline - time.monotonic()))
+            if req_timeout <= 0:
+                break
         attempt += 1
-        status, text = http_request(url, headers, timeout=timeout)
+        status, text = http_request(url, headers, timeout=req_timeout)
         last_status, last_text = status, text
         if status < 400 or not retry_on(status):
-            return FetchResult(ok=status < 400, status=status, url=url, text=text)
-        # backoff + jitter
+            return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
+        if attempt > max_retries:
+            break
+        # backoff + jitter, capped so a sleep never overshoots the deadline.
         base = min(2 ** (attempt - 1), 32)
-        jitter = random.uniform(0, 0.25 * base)
-        time.sleep(base + jitter + sleep_ms / 1000.0)
-    return FetchResult(ok=False, status=last_status, url=url, text=last_text)
+        delay = base + random.uniform(0, 0.25 * base) + sleep_ms / 1000.0
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - time.monotonic()))
+            if delay <= 0:
+                break
+        time.sleep(delay)
+    return FetchResult(ok=False, status=last_status, url=url, text=last_text, attempts=attempt)
 
 
 def retryable_status(status: int) -> bool:
@@ -453,9 +470,33 @@ def fetch_cdr_json(
     timeout: float,
     max_retries: int,
     sleep_ms: int,
+    max_total_attempts: Optional[int] = None,
+    max_total_seconds: Optional[float] = None,
 ) -> FetchResult:
-    queue = list(versions or CDR_VERSION_ORDER)
+    order = list(versions or CDR_VERSION_ORDER)
+    # ONE shared budget for the whole logical fetch. The old code gave every
+    # version its own full retry budget and then walked them all a second time, so
+    # a persistent outage produced len(versions) * (max_retries + 1) upstream hits
+    # (6 * 7 = 42). The budget still lets the preferred version absorb transient
+    # 5xx AND lets the walk negotiate down through other versions (406, or a holder
+    # that 422/500s on one version but serves another) - it just caps the total.
+    if max_total_attempts is None:
+        max_total_attempts = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2)
+    # A caller may pass 0 to mean "make no request" (e.g. an exhausted quota); a
+    # negative value is clamped to 0. None means "use the default budget" above.
+    remaining = max(0, max_total_attempts)
+    deadline = (
+        time.monotonic() + max_total_seconds if max_total_seconds is not None else None
+    )
+
+    # Requested order first, then any remaining known versions as a fallback
+    # (preserving the old two-pass coverage), then 406-advertised ones.
+    queue: List[int] = list(order)
+    for fb in CDR_VERSION_ORDER:
+        if fb not in queue:
+            queue.append(fb)
     tried: Set[int] = set()
+    total_attempts = 0
 
     def hdr(v: int) -> Dict[str, str]:
         return {
@@ -465,48 +506,53 @@ def fetch_cdr_json(
         }
 
     last: Optional[FetchResult] = None
-    while queue:
+    while queue and remaining > 0 and (deadline is None or time.monotonic() < deadline):
         v = queue.pop(0)
         if v in tried:
             continue
         tried.add(v)
+        # Reserve one attempt for each version we still intend to try, so a
+        # retryable 5xx on the preferred version can't consume the whole budget
+        # and starve a lower version the holder actually serves (a holder-specific
+        # case this change explicitly preserves).
+        pending = sum(1 for x in queue if x not in tried)
+        reserve = min(pending, remaining - 1)
+        per_version_retries = min(max_retries, max(0, remaining - reserve - 1))
         res = fetch_with_retries(
             url,
             hdr(v),
             timeout=timeout,
-            max_retries=max_retries,
+            max_retries=per_version_retries,
             sleep_ms=sleep_ms,
             retry_on=retryable_status,
+            deadline=deadline,
         )
+        remaining -= res.attempts
+        total_attempts += res.attempts
         last = res
         data = res.data
         if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text)
+            return FetchResult(ok=True, status=res.status, url=url, text=res.text, attempts=total_attempts)
 
         if res.status == 406:
-            advertised = parse_supported_versions(res.text)
-            for x in advertised:
-                if x not in tried:
+            for x in parse_supported_versions(res.text):
+                if x not in tried and x not in queue:
                     queue.append(x)
 
-    for fb in CDR_VERSION_ORDER:
-        if fb in tried:
-            continue
-        res = fetch_with_retries(
-            url,
-            hdr(fb),
-            timeout=timeout,
-            max_retries=max_retries,
-            sleep_ms=sleep_ms,
-            retry_on=retryable_status,
-        )
-        last = res
-        data = res.data
-        if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text)
+        # Pace version switches on a retryable failure so the shared-budget walk
+        # doesn't burst against a rate-limited / failing holder. Kept small (and
+        # capped by the deadline) so it never reintroduces the old multi-minute
+        # stalls; finer per-holder backoff/Retry-After is the follow-up's job.
+        if retryable_status(res.status) and queue and remaining > 0:
+            pace = max(sleep_ms / 1000.0, 0.25)
+            if deadline is not None:
+                pace = min(pace, max(0.0, deadline - time.monotonic()))
+            if pace > 0:
+                time.sleep(pace)
 
-    assert last is not None
-    return FetchResult(ok=False, status=last.status, url=url, text=last.text)
+    if last is None:
+        return FetchResult(ok=False, status=0, url=url, text="", attempts=total_attempts)
+    return FetchResult(ok=False, status=last.status, url=url, text=last.text, attempts=total_attempts)
 
 
 # -----------------------------------------------------------------------------
