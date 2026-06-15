@@ -413,20 +413,24 @@ def fetch_with_retries(
     attempt = 0
     last_status = 0
     last_text = ""
-    while attempt <= max_retries:
+    # Check the shared deadline before every request, so a logical fetch never
+    # issues an upstream call (nor sleeps) past its wall-clock budget.
+    while attempt <= max_retries and (deadline is None or time.monotonic() < deadline):
         attempt += 1
         status, text = http_request(url, headers, timeout=timeout)
         last_status, last_text = status, text
         if status < 400 or not retry_on(status):
             return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
-        # Stop before another attempt once the per-call budget is spent or the
-        # shared logical-fetch deadline has passed (don't sleep after the last try).
-        if attempt > max_retries or (deadline is not None and time.monotonic() >= deadline):
+        if attempt > max_retries:
             break
-        # backoff + jitter
+        # backoff + jitter, capped so a sleep never overshoots the deadline.
         base = min(2 ** (attempt - 1), 32)
-        jitter = random.uniform(0, 0.25 * base)
-        time.sleep(base + jitter + sleep_ms / 1000.0)
+        delay = base + random.uniform(0, 0.25 * base) + sleep_ms / 1000.0
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - time.monotonic()))
+            if delay <= 0:
+                break
+        time.sleep(delay)
     return FetchResult(ok=False, status=last_status, url=url, text=last_text, attempts=attempt)
 
 
@@ -483,6 +487,7 @@ def fetch_cdr_json(
         if fb not in queue:
             queue.append(fb)
     tried: Set[int] = set()
+    total_attempts = 0
 
     def hdr(v: int) -> Dict[str, str]:
         return {
@@ -497,20 +502,28 @@ def fetch_cdr_json(
         if v in tried:
             continue
         tried.add(v)
+        # Reserve one attempt for each version we still intend to try, so a
+        # retryable 5xx on the preferred version can't consume the whole budget
+        # and starve a lower version the holder actually serves (a holder-specific
+        # case this change explicitly preserves).
+        pending = sum(1 for x in queue if x not in tried)
+        reserve = min(pending, remaining - 1)
+        per_version_retries = min(max_retries, max(0, remaining - reserve - 1))
         res = fetch_with_retries(
             url,
             hdr(v),
             timeout=timeout,
-            max_retries=min(max_retries, remaining - 1),
+            max_retries=per_version_retries,
             sleep_ms=sleep_ms,
             retry_on=retryable_status,
             deadline=deadline,
         )
         remaining -= res.attempts
+        total_attempts += res.attempts
         last = res
         data = res.data
         if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text, attempts=res.attempts)
+            return FetchResult(ok=True, status=res.status, url=url, text=res.text, attempts=total_attempts)
 
         if res.status == 406:
             for x in parse_supported_versions(res.text):
@@ -518,8 +531,8 @@ def fetch_cdr_json(
                     queue.append(x)
 
     if last is None:
-        return FetchResult(ok=False, status=0, url=url, text="", attempts=0)
-    return FetchResult(ok=False, status=last.status, url=url, text=last.text, attempts=last.attempts)
+        return FetchResult(ok=False, status=0, url=url, text="", attempts=total_attempts)
+    return FetchResult(ok=False, status=last.status, url=url, text=last.text, attempts=total_attempts)
 
 
 # -----------------------------------------------------------------------------
