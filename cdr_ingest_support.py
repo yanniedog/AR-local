@@ -416,8 +416,15 @@ def fetch_with_retries(
     # Check the shared deadline before every request, so a logical fetch never
     # issues an upstream call (nor sleeps) past its wall-clock budget.
     while attempt <= max_retries and (deadline is None or time.monotonic() < deadline):
+        # Cap each request's own timeout to the time left on the shared deadline,
+        # so a single slow request can't block past the logical-fetch budget.
+        req_timeout = timeout
+        if deadline is not None:
+            req_timeout = min(timeout, max(0.0, deadline - time.monotonic()))
+            if req_timeout <= 0:
+                break
         attempt += 1
-        status, text = http_request(url, headers, timeout=timeout)
+        status, text = http_request(url, headers, timeout=req_timeout)
         last_status, last_text = status, text
         if status < 400 or not retry_on(status):
             return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)

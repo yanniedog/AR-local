@@ -86,11 +86,30 @@ def test_reserve_lets_a_later_version_succeed_within_budget(monkeypatch):
 def test_deadline_terminates_early(monkeypatch):
     # Once the wall-clock deadline passes, no further upstream requests are made.
     calls = _count_calls(monkeypatch, 503)
-    ticks = iter([0.0, 0.0, 0.0])  # deadline calc + first checks, then exhausted
-    monkeypatch.setattr(cis.time, "monotonic", lambda: next(ticks, 100.0))
+    # Clock crosses the deadline right after the first request, so the walk stops
+    # far short of the 8-attempt budget instead of walking every version.
+    monkeypatch.setattr(cis.time, "monotonic", lambda: 0.0 if calls["n"] < 1 else 100.0)
     res = cis.fetch_cdr_json(
         "http://x", timeout=1, max_retries=6, sleep_ms=0, max_total_seconds=10
     )
     assert res.ok is False
-    # Deadline trips well before the 8-attempt budget would.
-    assert calls["n"] < len(cis.CDR_VERSION_ORDER)
+    assert calls["n"] <= 2
+
+
+def test_request_timeout_capped_to_remaining_deadline(monkeypatch):
+    # The per-request timeout is clamped to the time left on the shared deadline.
+    seen = {"timeout": None}
+
+    def fake_http(url, headers, *, timeout):
+        seen["timeout"] = timeout
+        return 503, ""
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    monkeypatch.setattr(cis.time, "sleep", lambda *_a, **_k: None)
+    # Deadline 3s away but per-request timeout is 90s: the request must use <= ~3s.
+    clock = iter([0.0, 0.0, 0.0])
+    monkeypatch.setattr(cis.time, "monotonic", lambda: next(clock, 0.0))
+    cis.fetch_cdr_json(
+        "http://x", timeout=90, max_retries=0, sleep_ms=0, max_total_seconds=3
+    )
+    assert seen["timeout"] is not None and seen["timeout"] <= 3.0
