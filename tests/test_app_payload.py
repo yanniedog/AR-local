@@ -691,3 +691,26 @@ def test_aggregate_ribbon_prefers_comparison_rate():
     # Range is computed on the comparison rates, not the headline rates.
     assert round(ribbon["range"]["min"], 4) == 0.055
     assert round(ribbon["range"]["max"], 4) == 0.061
+
+
+def test_ribbon_kernel_is_shared_with_dashboard_server():
+    # Single source of truth: the dashboard server imports the same callable, so
+    # web and mobile can never diverge on the ribbon rate metric. Guard against a
+    # future re-inlining of either copy.
+    import cdr_ribbon_normalize
+
+    assert app_payload.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
+
+
+def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
+    # The dashboard server projects comparison_rate as '' on legacy DBs that lack
+    # the column, and deposits carry no comparison rate at all. Both must fall back
+    # to the headline rate, never drop the product from the ribbon.
+    rows = [
+        {"product_key": "A", "provider": "X", "rate": "4.5", "comparison_rate": ""},
+        {"product_key": "B", "provider": "Y", "rate": "5.0", "comparison_rate": None},
+    ]
+    ribbon = app_payload.aggregate_ribbon(rows, "Savings")
+    assert ribbon["counts"]["rates"] == 2
+    assert round(ribbon["range"]["min"], 4) == 0.045
+    assert round(ribbon["range"]["max"], 4) == 0.05
