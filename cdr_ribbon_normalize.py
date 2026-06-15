@@ -31,6 +31,101 @@ _FIXED_TERM_ISO = re.compile(r"\bp(\d+)y\b", re.IGNORECASE)
 _BUNDLE_VARIABLE = re.compile(r"^bundle[_-]?discount[_-]?variable\b", re.IGNORECASE)
 
 
+# --------------------------------------------------------------------------- #
+# Ribbon aggregate - the SINGLE source of truth shared by the dashboard server
+# (cdr_dashboard_server.bank_ribbon_payload) and the mobile payload builder
+# (app_payload.build_payload). Both must rank/aggregate on the same rate metric,
+# so the implementation lives here and is imported by both. Do not re-inline it.
+# --------------------------------------------------------------------------- #
+def normalized_rate_value(raw: Any, dataset: str, percent_style: bool) -> Optional[float]:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not value or value <= 0:
+        return None
+    if percent_style:
+        return value / 100.0
+    if dataset == "Mortgage" and 0.3 < value <= 1:
+        return value / 10.0
+    return value / 100.0 if value > 1 else value
+
+
+def ribbon_stats(values: List[float]) -> Dict[str, Optional[float]]:
+    if not values:
+        return {"min": None, "max": None, "mean": None, "median": None}
+    ordered = sorted(values)
+    n = len(ordered)
+    mid = n // 2
+    median = ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return {
+        "min": ordered[0],
+        "max": ordered[-1],
+        "mean": sum(ordered) / n,
+        "median": median,
+    }
+
+
+# Comparison rate (fees folded in) is the default metric for every ranking and
+# aggregation; deposits carry none, so this falls back to the headline rate.
+def effective_rate(row: Mapping[str, Any]) -> Any:
+    comparison = row.get("comparison_rate")
+    try:
+        value = float(comparison)
+    except (TypeError, ValueError):
+        value = None
+    if value is not None and value > 0:
+        return comparison
+    return row.get("rate")
+
+
+def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, Any]:
+    keys = [
+        str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
+        for row in rows
+    ]
+    percent_style: set[str] = set()
+    for key, row in zip(keys, rows):
+        try:
+            raw = float(effective_rate(row))
+        except (TypeError, ValueError):
+            continue
+        if key and raw > 1:
+            percent_style.add(key)
+
+    providers: Dict[str, Dict[str, Any]] = {}
+    rates: List[float] = []
+    products: set[str] = set()
+    for key, row in zip(keys, rows):
+        rate = normalized_rate_value(effective_rate(row), section, key in percent_style)
+        if rate is None:
+            continue
+        provider = str(row.get("provider") or "Unknown")
+        products.add(key)
+        rates.append(rate)
+        bucket = providers.setdefault(provider, {"rates": [], "products": set()})
+        bucket["rates"].append(rate)
+        bucket["products"].add(key)
+
+    return {
+        "counts": {
+            "rates": len(rates),
+            "products": len(products),
+            "providers": len(providers),
+        },
+        "range": ribbon_stats(rates),
+        "providers": [
+            {
+                "provider": provider,
+                "rates": len(bucket["rates"]),
+                "products": len(bucket["products"]),
+                **ribbon_stats(bucket["rates"]),
+            }
+            for provider, bucket in sorted(providers.items())
+        ],
+    }
+
+
 def _lower_join(*parts: Any) -> str:
     """Lowercase phrase from joined non-empty trimmed string parts.
 
