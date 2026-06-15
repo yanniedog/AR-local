@@ -46,6 +46,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import app_payload_mobile
 import cdr_brand_logos
 import payload_crypto
+from cdr_ribbon_normalize import (
+    aggregate_ribbon,
+    normalized_rate_value as _normalized_rate_value,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -132,95 +136,10 @@ def section_filter(dataset: str, row: Dict[str, Any]) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# Ribbon aggregate (faithful port of aggregate_ribbon_rows in the dashboard server)
+# Ribbon aggregate: the single implementation now lives in cdr_ribbon_normalize
+# (aggregate_ribbon / normalized_rate_value, imported above) so this payload
+# builder and the dashboard server can never diverge on the rate metric again.
 # --------------------------------------------------------------------------- #
-def _normalized_rate_value(raw: Any, dataset: str, percent_style: bool) -> Optional[float]:
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return None
-    if not value or value <= 0:
-        return None
-    if percent_style:
-        return value / 100.0
-    if dataset == "Mortgage" and 0.3 < value <= 1:
-        return value / 10.0
-    return value / 100.0 if value > 1 else value
-
-
-def _stats(values: List[float]) -> Dict[str, Optional[float]]:
-    if not values:
-        return {"min": None, "max": None, "mean": None, "median": None}
-    ordered = sorted(values)
-    n = len(ordered)
-    mid = n // 2
-    median = ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
-    return {
-        "min": ordered[0],
-        "max": ordered[-1],
-        "mean": sum(ordered) / n,
-        "median": median,
-    }
-
-
-# Comparison rate (fees folded in) is the default metric for every ranking and
-# aggregation; deposits carry none, so this falls back to the headline rate.
-def _effective_rate(row: Dict[str, Any]) -> Any:
-    comparison = row.get("comparison_rate")
-    try:
-        value = float(comparison)
-    except (TypeError, ValueError):
-        value = None
-    if value is not None and value > 0:
-        return comparison
-    return row.get("rate")
-
-
-def aggregate_ribbon(rows: List[Dict[str, Any]], section: str) -> Dict[str, Any]:
-    keys = [
-        str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
-        for row in rows
-    ]
-    percent_style: set[str] = set()
-    for key, row in zip(keys, rows):
-        try:
-            raw = float(_effective_rate(row))
-        except (TypeError, ValueError):
-            continue
-        if key and raw > 1:
-            percent_style.add(key)
-
-    providers: Dict[str, Dict[str, Any]] = {}
-    rates: List[float] = []
-    products: set[str] = set()
-    for key, row in zip(keys, rows):
-        rate = _normalized_rate_value(_effective_rate(row), section, key in percent_style)
-        if rate is None:
-            continue
-        provider = str(row.get("provider") or "Unknown")
-        products.add(key)
-        rates.append(rate)
-        bucket = providers.setdefault(provider, {"rates": [], "products": set()})
-        bucket["rates"].append(rate)
-        bucket["products"].add(key)
-
-    return {
-        "counts": {
-            "rates": len(rates),
-            "products": len(products),
-            "providers": len(providers),
-        },
-        "range": _stats(rates),
-        "providers": [
-            {
-                "provider": provider,
-                "rates": len(bucket["rates"]),
-                "products": len(bucket["products"]),
-                **_stats(bucket["rates"]),
-            }
-            for provider, bucket in sorted(providers.items())
-        ],
-    }
 
 
 # --------------------------------------------------------------------------- #
