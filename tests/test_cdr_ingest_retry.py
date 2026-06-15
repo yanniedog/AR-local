@@ -113,3 +113,15 @@ def test_request_timeout_capped_to_remaining_deadline(monkeypatch):
         "http://x", timeout=90, max_retries=0, sleep_ms=0, max_total_seconds=3
     )
     assert seen["timeout"] is not None and seen["timeout"] <= 3.0
+
+
+def test_zero_total_attempts_makes_no_request(monkeypatch):
+    # An explicit budget of 0 means "make no upstream request" (e.g. exhausted
+    # quota), rather than being silently coerced up to one attempt.
+    calls = _count_calls(monkeypatch, 503)
+    res = cis.fetch_cdr_json(
+        "http://x", timeout=1, max_retries=6, sleep_ms=0, max_total_attempts=0
+    )
+    assert res.ok is False
+    assert calls["n"] == 0
+    assert res.attempts == 0

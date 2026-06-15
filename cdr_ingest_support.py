@@ -482,7 +482,9 @@ def fetch_cdr_json(
     # that 422/500s on one version but serves another) - it just caps the total.
     if max_total_attempts is None:
         max_total_attempts = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2)
-    remaining = max(1, max_total_attempts)
+    # A caller may pass 0 to mean "make no request" (e.g. an exhausted quota); a
+    # negative value is clamped to 0. None means "use the default budget" above.
+    remaining = max(0, max_total_attempts)
     deadline = (
         time.monotonic() + max_total_seconds if max_total_seconds is not None else None
     )
@@ -536,6 +538,17 @@ def fetch_cdr_json(
             for x in parse_supported_versions(res.text):
                 if x not in tried and x not in queue:
                     queue.append(x)
+
+        # Pace version switches on a retryable failure so the shared-budget walk
+        # doesn't burst against a rate-limited / failing holder. Kept small (and
+        # capped by the deadline) so it never reintroduces the old multi-minute
+        # stalls; finer per-holder backoff/Retry-After is the follow-up's job.
+        if retryable_status(res.status) and queue and remaining > 0:
+            pace = max(sleep_ms / 1000.0, 0.25)
+            if deadline is not None:
+                pace = min(pace, max(0.0, deadline - time.monotonic()))
+            if pace > 0:
+                time.sleep(pace)
 
     if last is None:
         return FetchResult(ok=False, status=0, url=url, text="", attempts=total_attempts)
