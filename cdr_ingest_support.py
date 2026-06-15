@@ -364,6 +364,7 @@ class FetchResult:
     status: int
     url: str
     text: str
+    attempts: int = 1
 
     @cached_property
     def data(self) -> Any:
@@ -407,6 +408,7 @@ def fetch_with_retries(
     max_retries: int,
     sleep_ms: int,
     retry_on: Callable[[int], bool],
+    deadline: Optional[float] = None,
 ) -> FetchResult:
     attempt = 0
     last_status = 0
@@ -416,12 +418,16 @@ def fetch_with_retries(
         status, text = http_request(url, headers, timeout=timeout)
         last_status, last_text = status, text
         if status < 400 or not retry_on(status):
-            return FetchResult(ok=status < 400, status=status, url=url, text=text)
+            return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
+        # Stop before another attempt once the per-call budget is spent or the
+        # shared logical-fetch deadline has passed (don't sleep after the last try).
+        if attempt > max_retries or (deadline is not None and time.monotonic() >= deadline):
+            break
         # backoff + jitter
         base = min(2 ** (attempt - 1), 32)
         jitter = random.uniform(0, 0.25 * base)
         time.sleep(base + jitter + sleep_ms / 1000.0)
-    return FetchResult(ok=False, status=last_status, url=url, text=last_text)
+    return FetchResult(ok=False, status=last_status, url=url, text=last_text, attempts=attempt)
 
 
 def retryable_status(status: int) -> bool:
@@ -453,8 +459,29 @@ def fetch_cdr_json(
     timeout: float,
     max_retries: int,
     sleep_ms: int,
+    max_total_attempts: Optional[int] = None,
+    max_total_seconds: Optional[float] = None,
 ) -> FetchResult:
-    queue = list(versions or CDR_VERSION_ORDER)
+    order = list(versions or CDR_VERSION_ORDER)
+    # ONE shared budget for the whole logical fetch. The old code gave every
+    # version its own full retry budget and then walked them all a second time, so
+    # a persistent outage produced len(versions) * (max_retries + 1) upstream hits
+    # (6 * 7 = 42). The budget still lets the preferred version absorb transient
+    # 5xx AND lets the walk negotiate down through other versions (406, or a holder
+    # that 422/500s on one version but serves another) - it just caps the total.
+    if max_total_attempts is None:
+        max_total_attempts = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2)
+    remaining = max(1, max_total_attempts)
+    deadline = (
+        time.monotonic() + max_total_seconds if max_total_seconds is not None else None
+    )
+
+    # Requested order first, then any remaining known versions as a fallback
+    # (preserving the old two-pass coverage), then 406-advertised ones.
+    queue: List[int] = list(order)
+    for fb in CDR_VERSION_ORDER:
+        if fb not in queue:
+            queue.append(fb)
     tried: Set[int] = set()
 
     def hdr(v: int) -> Dict[str, str]:
@@ -465,7 +492,7 @@ def fetch_cdr_json(
         }
 
     last: Optional[FetchResult] = None
-    while queue:
+    while queue and remaining > 0 and (deadline is None or time.monotonic() < deadline):
         v = queue.pop(0)
         if v in tried:
             continue
@@ -474,39 +501,25 @@ def fetch_cdr_json(
             url,
             hdr(v),
             timeout=timeout,
-            max_retries=max_retries,
+            max_retries=min(max_retries, remaining - 1),
             sleep_ms=sleep_ms,
             retry_on=retryable_status,
+            deadline=deadline,
         )
+        remaining -= res.attempts
         last = res
         data = res.data
         if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text)
+            return FetchResult(ok=True, status=res.status, url=url, text=res.text, attempts=res.attempts)
 
         if res.status == 406:
-            advertised = parse_supported_versions(res.text)
-            for x in advertised:
-                if x not in tried:
+            for x in parse_supported_versions(res.text):
+                if x not in tried and x not in queue:
                     queue.append(x)
 
-    for fb in CDR_VERSION_ORDER:
-        if fb in tried:
-            continue
-        res = fetch_with_retries(
-            url,
-            hdr(fb),
-            timeout=timeout,
-            max_retries=max_retries,
-            sleep_ms=sleep_ms,
-            retry_on=retryable_status,
-        )
-        last = res
-        data = res.data
-        if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text)
-
-    assert last is not None
-    return FetchResult(ok=False, status=last.status, url=url, text=last.text)
+    if last is None:
+        return FetchResult(ok=False, status=0, url=url, text="", attempts=0)
+    return FetchResult(ok=False, status=last.status, url=url, text=last.text, attempts=last.attempts)
 
 
 # -----------------------------------------------------------------------------
