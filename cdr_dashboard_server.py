@@ -32,6 +32,7 @@ from cdr_economic_local import (
 )
 from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
+    aggregate_ribbon,
     extract_fixed_rate_term_years,
     normalize_rate_structure_group,
     normalize_td_rate_structure_group,
@@ -706,82 +707,16 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             return " AND rate_family = ? AND COALESCE(rate_type, '') != ?", ["lending", "DISCOUNT"]
         return " AND rate_family = ?", ["deposit"]
 
-    def normalized_rate_value(raw: object, dataset: str, percent_style: bool) -> float | None:
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return None
-        if not value or value <= 0:
-            return None
-        if percent_style:
-            return value / 100.0
-        if dataset == "Mortgage" and 0.3 < value <= 1:
-            return value / 10.0
-        return value / 100.0 if value > 1 else value
-
-    def aggregate_ribbon_rows(rows: list[sqlite3.Row], section: str) -> dict[str, object]:
-        product_keys = [
-            str(row["product_key"] or row["product_id"] or row["product_name"] or "")
-            for row in rows
-        ]
-        percent_style_products: set[str] = set()
-        for key, row in zip(product_keys, rows):
-            try:
-                raw_value = float(row["rate"])
-            except (TypeError, ValueError):
-                continue
-            if key and raw_value > 1:
-                percent_style_products.add(key)
-        providers: dict[str, dict[str, object]] = {}
-        rates: list[float] = []
-        products: set[str] = set()
-        for key, row in zip(product_keys, rows):
-            rate = normalized_rate_value(row["rate"], section, key in percent_style_products)
-            if rate is None:
-                continue
-            provider = str(row["provider"] or "Unknown")
-            products.add(key)
-            rates.append(rate)
-            bucket = providers.setdefault(provider, {"rates": [], "products": set()})
-            bucket["rates"].append(rate)
-            bucket["products"].add(key)
-
-        def stats(values: list[float]) -> dict[str, float | None]:
-            if not values:
-                return {"min": None, "max": None, "mean": None, "median": None}
-            ordered = sorted(values)
-            n = len(ordered)
-            mid = n // 2
-            median = ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
-            return {
-                "min": ordered[0],
-                "max": ordered[-1],
-                "mean": sum(ordered) / n,
-                "median": median,
-            }
-
-        return {
-            "counts": {
-                "rates": len(rates),
-                "products": len(products),
-                "providers": len(providers),
-            },
-            "range": stats(rates),
-            "providers": [
-                {
-                    "provider": provider,
-                    "rates": len(bucket["rates"]),
-                    "products": len(bucket["products"]),
-                    **stats(bucket["rates"]),
-                }
-                for provider, bucket in sorted(providers.items())
-            ],
-        }
+    # Ribbon aggregation uses the shared cdr_ribbon_normalize.aggregate_ribbon
+    # kernel (imported at module top) - one source of truth with the payload
+    # builder, so the web dashboard and the mobile app can never diverge on the
+    # rate metric (comparison vs headline) again.
 
     def bank_ribbon_payload(run_date: str, section: str, include_non_standard: bool = False) -> Tuple[bytes, bytes | None]:
         db_path = bank_db_for_date(run_date)
         with connect_readonly(db_path) as con:
             con.row_factory = sqlite3.Row
+            cols = bank_rate_columns(con)
             filter_sql, filter_params = bank_section_rate_filter(section)
             where = (
                 "run_date = ? AND dataset = ? AND rate IS NOT NULL AND rate != ''"
@@ -793,14 +728,18 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             # the chart bootstrap and the headline lowest/highest rate match the
             # toggle's default (off) instead of surfacing a hidden product's rate.
             # Older DBs without the column treat everything as standard.
-            if not include_non_standard and "account_class" in bank_rate_columns(con):
+            if not include_non_standard and "account_class" in cols:
                 where += " AND COALESCE(account_class, '') != 'non_standard'"
+            # comparison_rate (fees folded in) is the ribbon metric, matching the
+            # payload builder. Legacy DBs without the column fall back to the
+            # headline rate via the empty-string projection.
+            comparison_select = "comparison_rate" if "comparison_rate" in cols else "'' AS comparison_rate"
             rows = con.execute(
-                "SELECT provider, product_key, product_id, product_name, rate "
-                f"FROM bank_rates WHERE {where}",
+                "SELECT provider, product_key, product_id, product_name, rate, "
+                f"{comparison_select} FROM bank_rates WHERE {where}",
                 params,
             ).fetchall()
-        aggregate = aggregate_ribbon_rows(rows, section)
+        aggregate = aggregate_ribbon([dict(row) for row in rows], section)
         payload = {
             "run_date": run_date,
             "section": section,

@@ -691,3 +691,34 @@ def test_aggregate_ribbon_prefers_comparison_rate():
     # Range is computed on the comparison rates, not the headline rates.
     assert round(ribbon["range"]["min"], 4) == 0.055
     assert round(ribbon["range"]["max"], 4) == 0.061
+
+
+def test_ribbon_kernel_is_shared_with_dashboard_server():
+    # Single source of truth: both the payload builder and the dashboard server
+    # must use the same callable, so web and mobile can never diverge on the ribbon
+    # rate metric. Guard against a future re-inlining of either copy.
+    import cdr_ribbon_normalize
+    import cdr_dashboard_server
+
+    assert app_payload.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
+    # The dashboard server binds the same kernel at import; if it ever re-inlined
+    # its own ribbon aggregate, this assertion (the bug this PR fixes) would fail.
+    assert cdr_dashboard_server.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
+
+
+def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
+    # The dashboard server projects comparison_rate as '' on legacy DBs that lack
+    # the column, and deposits carry no comparison rate at all. Non-positive and
+    # non-parsable comparison rates must also fall back to the headline rate, never
+    # dropping the product from the ribbon.
+    rows = [
+        {"product_key": "A", "provider": "X", "rate": "4.5", "comparison_rate": ""},
+        {"product_key": "B", "provider": "Y", "rate": "5.0", "comparison_rate": None},
+        {"product_key": "C", "provider": "Z", "rate": "4.0", "comparison_rate": "0"},
+        {"product_key": "D", "provider": "W", "rate": "4.2", "comparison_rate": "-1"},
+        {"product_key": "E", "provider": "V", "rate": "4.8", "comparison_rate": "foo"},
+    ]
+    ribbon = app_payload.aggregate_ribbon(rows, "Savings")
+    assert ribbon["counts"]["rates"] == 5  # none dropped
+    assert round(ribbon["range"]["min"], 4) == 0.04  # C: 4.0 headline (comparison "0")
+    assert round(ribbon["range"]["max"], 4) == 0.05  # B: 5.0 headline (comparison None)
