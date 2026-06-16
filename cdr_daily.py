@@ -24,6 +24,7 @@ from ar_local_pi_runtime import (
     manifest_banks_rate_count,
     prepare_empty_dir,
 )
+import cdr_ledger_integrity
 from cdr_outputs import build_outputs
 from cdr_ingest_sanity import write_sanity_report
 
@@ -141,6 +142,27 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
+def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
+    """Best-effort: emit/refresh the day's ledger integrity manifest.
+
+    Non-fatal and primary-only (a revision doesn't change the hashed _exports);
+    skipped for a custom --exports layout, since the manifest assumes the default
+    <runs>/<date>/_exports paths. Catches broadly on purpose: this runs after the
+    completion marker is written, so it must never turn a successful ingest into a
+    failure.
+    """
+    if exports is not None:
+        return
+    try:
+        cdr_ledger_integrity.append_day_manifest(persistent_runs_root, state_dir, date)
+    except Exception as exc:  # never let integrity bookkeeping fail the ingest
+        print(
+            f"ledger-integrity: failed to write manifest for {date}: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def run_once(args: argparse.Namespace) -> int:
     """Return 0 when skipped, 1 on success, 2 when banking export is empty."""
     script_dir = Path(__file__).resolve().parent
@@ -154,6 +176,12 @@ def run_once(args: argparse.Namespace) -> int:
     if marker.exists() and not args.force:
         if marker_is_trustworthy(marker, export_root, date):
             print(f"Already completed local CDR daily run for {date}: {marker}")
+            # Self-heal a finalized day whose integrity manifest never landed
+            # (e.g. a prior best-effort write failed): the trusted-marker path is
+            # otherwise the only return point, so emit it here if missing (Codex
+            # P2). Cheap no-op when the manifest already exists.
+            if args.exports is None and not cdr_ledger_integrity.manifest_path(state_dir, date).is_file():
+                _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -246,6 +274,9 @@ def run_once(args: argparse.Namespace) -> int:
         revision_marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     else:
         marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Emit this day's ledger integrity manifest (hash-chain link to the prior
+        # day) so the partition is tamper-evident from finalization.
+        _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 1
 
