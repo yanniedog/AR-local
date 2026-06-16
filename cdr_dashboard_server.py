@@ -349,6 +349,16 @@ def canonicalize_section_row(item: dict[str, object], section: str) -> None:
     canonicalize_rate_structure_fields(item, section)
 
 
+def history_index_key(row: dict[str, object]) -> str:
+    """Current-catalogue identity for a history row.
+
+    Mirrors ``dashboard/utils.js historyIndexKey`` exactly (same field list, same
+    ``\\u0001`` separator) so the server can restrict compact history to identities
+    present on the anchor date — matching the dashboard's filteredHistoryRows.
+    """
+    return "".join(str(row.get(field) or "") for field in HISTORY_IDENTITY_FIELDS)
+
+
 def fill_history_gaps(
     rows: list[dict[str, object]],
     run_dates: list[str],
@@ -923,8 +933,19 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             filled_rows = [
                 r for r in filled_rows if str(r.get("account_class") or "") != "non_standard"
             ]
+        # Restrict to the current catalogue (identities present on the anchor/latest
+        # retained date), mirroring the dashboard's filteredHistoryRows so a product
+        # discontinued before the anchor cannot skew the historical aggregate.
+        anchor = run_dates[-1] if run_dates else ""
+        anchor_keys = {
+            history_index_key(r)
+            for r in filled_rows
+            if str(r.get("run_date") or "") == anchor
+        }
         rows_by_date: dict[str, list[dict[str, object]]] = {}
         for row in filled_rows:
+            if anchor_keys and history_index_key(row) not in anchor_keys:
+                continue
             day = str(row.get("run_date") or "")
             if day:
                 rows_by_date.setdefault(day, []).append(row)

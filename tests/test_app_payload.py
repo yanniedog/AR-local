@@ -752,3 +752,17 @@ def test_compact_history_reshapes_per_day_aggregates():
     assert round(provider_x["by_date"][d2]["median"], 4) == 0.055
     # Compact: a handful of points/providers, never the raw per-product rows.
     assert "rates" not in out
+
+
+def test_history_index_key_matches_dashboard_contract():
+    import cdr_dashboard_server as srv
+
+    row = {"provider": "X", "product_key": "P1", "rate": "5.0", "lvr_tier": "70_80"}
+    key = srv.history_index_key(row)
+    # Joined with the same  separator the dashboard's historyIndexKey uses.
+    assert "" in key
+    # Rate is intentionally excluded from identity, so two samples of the same
+    # product at different rates share a key (a product's history is one series).
+    assert srv.history_index_key({**row, "rate": "9.9"}) == key
+    # A different product key is a different identity (current-catalogue filtering).
+    assert srv.history_index_key({**row, "product_key": "P2"}) != key
