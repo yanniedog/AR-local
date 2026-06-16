@@ -76,8 +76,12 @@ def _export_root_has_content(root: Path) -> bool:
 
 
 def revision_root_for(primary_root: Path, when: datetime) -> Path:
-    """Append-only revision target beside a finalized day's primary _exports."""
-    stamp = when.strftime("%Y%m%dT%H%M%S")
+    """Append-only revision target beside a finalized day's primary _exports.
+
+    The stamp carries microseconds so two forced ingests in the same second get
+    distinct revision dirs instead of colliding (Sourcery).
+    """
+    stamp = when.strftime("%Y%m%dT%H%M%S_%f")
     return primary_root.parent / "_revisions" / stamp / primary_root.name
 
 
@@ -191,8 +195,13 @@ def run_once(args: argparse.Namespace) -> int:
             shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
-        run_ingest(script_dir, persistent_runs_root, date, extra_args)
-        result = build_outputs(persistent_runs_root / date, target_export_root, args.db)
+        # A revision must not mutate the original day's raw run files either, so
+        # isolate the revision's raw ingest under the revision dir (Gemini). The
+        # Pi path is RAM-staged (raw files never persist), so this guards the
+        # --no-ram-stage / dev path.
+        run_root = target_export_root.parent if is_revision else persistent_runs_root
+        run_ingest(script_dir, run_root, date, extra_args)
+        result = build_outputs(run_root / date, target_export_root, args.db)
         result["ram_staged"] = False
 
     if banks_result_rate_count(result) <= 0:

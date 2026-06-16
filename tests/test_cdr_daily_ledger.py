@@ -20,16 +20,20 @@ def _finalize(root):
     return root
 
 
-def test_today_writes_primary(tmp_path):
+@pytest.mark.parametrize("force", [False, True])
+def test_today_writes_primary(tmp_path, force):
+    # date >= today is always the primary, regardless of --force, so a same-day
+    # re-ingest refreshes today rather than spawning a revision.
     primary = tmp_path / TODAY / "_exports"
-    target, is_revision = cdr_daily.resolve_ledger_target(primary, TODAY, TODAY, force=False)
+    target, is_revision = cdr_daily.resolve_ledger_target(primary, TODAY, TODAY, force=force)
     assert target == primary
     assert is_revision is False
 
 
-def test_future_date_writes_primary(tmp_path):
+@pytest.mark.parametrize("force", [False, True])
+def test_future_date_writes_primary(tmp_path, force):
     primary = tmp_path / "2026-12-31" / "_exports"
-    target, is_revision = cdr_daily.resolve_ledger_target(primary, "2026-12-31", TODAY, force=False)
+    target, is_revision = cdr_daily.resolve_ledger_target(primary, "2026-12-31", TODAY, force=force)
     assert target == primary and is_revision is False
 
 
@@ -49,7 +53,7 @@ def test_finalized_past_day_force_appends_revision(tmp_path):
     )
     assert is_revision is True
     # Revision is a sibling under _revisions/<stamp>/_exports, never the primary.
-    assert target == primary.parent / "_revisions" / "20260616T093000" / "_exports"
+    assert target == primary.parent / "_revisions" / "20260616T093000_000000" / "_exports"
     assert target != primary
     assert (primary / "local-cdr.sqlite").read_bytes() == b"finalized"
 
@@ -74,5 +78,31 @@ def test_empty_past_export_dir_counts_as_gap(tmp_path):
 
 def test_revision_root_for_structure(tmp_path):
     primary = tmp_path / "2026-05-13" / "_exports"
-    rev = cdr_daily.revision_root_for(primary, datetime(2026, 6, 16, 1, 2, 3))
-    assert rev == primary.parent / "_revisions" / "20260616T010203" / "_exports"
+    rev = cdr_daily.revision_root_for(primary, datetime(2026, 6, 16, 1, 2, 3, 456789))
+    assert rev == primary.parent / "_revisions" / "20260616T010203_456789" / "_exports"
+
+
+def test_revision_stamp_is_unique_within_a_second(tmp_path):
+    # Sub-second precision keeps two forced ingests in the same second distinct.
+    primary = tmp_path / "2026-05-13" / "_exports"
+    a = cdr_daily.revision_root_for(primary, datetime(2026, 6, 16, 1, 2, 3, 1))
+    b = cdr_daily.revision_root_for(primary, datetime(2026, 6, 16, 1, 2, 3, 2))
+    assert a != b
+
+
+def test_run_once_missing_past_day_never_writes(tmp_path, monkeypatch):
+    """Integration guard: run_once must preserve a gap day — exit 2, write nothing."""
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    for force in (False, True):
+        argv = ["--date", "2026-05-14", "--runs", str(runs), "--state", str(state), "--no-ram-stage"]
+        if force:
+            argv.append("--force")
+        args = cdr_daily.parse_args(argv)
+        # Refusal happens before any ingest/subprocess, so no live fetch occurs.
+        assert cdr_daily.run_once(args) == 2
+    # The gap day got no export bytes and no completion/revision markers.
+    assert not (runs / "2026-05-14").exists()
+    assert list(state.glob("2026-05-14*.json")) == []
