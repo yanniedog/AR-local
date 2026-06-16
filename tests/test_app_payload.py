@@ -754,6 +754,38 @@ def test_compact_history_reshapes_per_day_aggregates():
     assert "rates" not in out
 
 
+def test_compact_history_field_contract_matches_dashboard_client():
+    # dashboard/app.js compactChartItems() reads these exact fields off the
+    # compact payload to build the chart model; lock them so a server-side reshape
+    # change can't silently break the client (which has no JS test harness).
+    import cdr_ribbon_normalize as crn
+
+    d1, d2 = "2026-06-10", "2026-06-11"
+    aggs = {
+        d1: crn.aggregate_ribbon(
+            [
+                {"product_key": "A", "provider": "X", "rate": "5.0", "comparison_rate": "5.1"},
+                {"product_key": "B", "provider": "Y", "rate": "4.0"},
+            ],
+            "Mortgage",
+        ),
+        d2: crn.aggregate_ribbon(
+            [{"product_key": "A", "provider": "X", "rate": "5.5", "comparison_rate": "5.6"}],
+            "Mortgage",
+        ),
+    }
+    out = crn.compact_history([d1, d2], aggs)
+    assert set(out) >= {"run_dates", "points", "providers"}
+    point_fields = {"date", "min", "max", "mean", "median", "count"}
+    for point in out["points"]:
+        assert set(point) == point_fields
+    stat_fields = {"min", "max", "mean", "median", "count"}
+    for provider in out["providers"]:
+        assert set(provider) == {"provider", "by_date"}
+        for stats in provider["by_date"].values():
+            assert set(stats) == stat_fields
+
+
 def test_history_index_key_matches_dashboard_contract():
     import cdr_dashboard_server as srv
 
