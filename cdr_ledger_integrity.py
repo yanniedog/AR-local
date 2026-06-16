@@ -184,14 +184,14 @@ def build_chain(
 _MANIFEST_SUFFIX = ".integrity.json"
 
 
-def latest_manifest_sha_before(state_dir: Path, epoch: str, date: str) -> Optional[str]:
-    """chain_sha of the most recent existing manifest strictly before ``date``.
+def _latest_manifest_before(state_dir: Path, epoch: str, date: str) -> tuple[Optional[str], Optional[str]]:
+    """``(date, chain_sha)`` of the most recent existing manifest strictly before ``date``.
 
-    Uses a single directory listing (not a per-day stat loop from the epoch) so the
-    daily ingest stays O(#manifests) however far back the epoch is (Gemini).
+    Single directory listing (not a per-day stat loop from the epoch) so the daily
+    ingest's head lookup stays O(#manifests) however far back the epoch is (Gemini).
     """
     if not state_dir.is_dir():
-        return None
+        return None, None
     days = sorted(
         day
         for path in state_dir.glob(f"*{_MANIFEST_SUFFIX}")
@@ -202,8 +202,13 @@ def latest_manifest_sha_before(state_dir: Path, epoch: str, date: str) -> Option
             record = json.loads(manifest_path(state_dir, day).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        return chain_sha(record)
-    return None
+        return day, chain_sha(record)
+    return None, None
+
+
+def latest_manifest_sha_before(state_dir: Path, epoch: str, date: str) -> Optional[str]:
+    """chain_sha of the most recent existing manifest strictly before ``date``."""
+    return _latest_manifest_before(state_dir, epoch, date)[1]
 
 
 def append_day_manifest(
@@ -213,15 +218,30 @@ def append_day_manifest(
     epoch: str = LEDGER_EPOCH,
     known_gaps: Iterable[str] = KNOWN_GAPS,
 ) -> dict:
-    """Generate/refresh one day's integrity manifest, linked to the prior head.
+    """Generate/refresh ``date``'s integrity manifest, keeping the chain contiguous.
 
     Cheap incremental alternative to a full ``build_chain`` for the daily ingest:
-    it only hashes ``date``'s partition and links it to the latest existing
-    manifest before it. Returns the written record.
+    finds the prior chain head via one directory listing, then **backfills any
+    finalized day between that head and ``date`` whose manifest is missing** before
+    linking ``date``. Backfilling matters because otherwise a day whose best-effort
+    manifest write failed becomes a permanent hole, and healing it later would
+    orphan its successor's ``prev_sha`` (BROKEN_CHAIN until a full rebuild) — Codex.
+    The backfill range is normally empty (consecutive days) so the common case
+    still only hashes ``date``. Returns ``date``'s record.
     """
     state_dir.mkdir(parents=True, exist_ok=True)
-    prev_sha = latest_manifest_sha_before(state_dir, epoch, date)
-    record = compute_record(runs_root, date, prev_sha, set(known_gaps))
+    gaps = set(known_gaps)
+    prev_date, prev_sha = _latest_manifest_before(state_dir, epoch, date)
+    # By construction no manifests exist strictly between prev_date and date, so any
+    # finalized day in that span is a hole to backfill (in order) before `date`.
+    for day in iter_ledger_dates(prev_date or epoch, date):
+        if day == date or (prev_date is not None and day <= prev_date):
+            continue
+        if day in gaps or _export_root_has_content(export_root_for(runs_root, day)):
+            filler = compute_record(runs_root, day, prev_sha, gaps)
+            _write_json_atomic(manifest_path(state_dir, day), filler)
+            prev_sha = chain_sha(filler)
+    record = compute_record(runs_root, date, prev_sha, gaps)
     _write_json_atomic(manifest_path(state_dir, date), record)
     return record
 

@@ -167,14 +167,28 @@ def test_append_day_manifest_matches_build_chain(tmp_path):
     assert incremental_head == built_head
 
 
-def test_append_day_manifest_links_to_prior_head(tmp_path):
+def test_append_day_manifest_backfills_gap(tmp_path):
     runs, state = seed_ledger(tmp_path)
     li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
-    # 2026-05-14 is a gap with no manifest yet, so 2026-05-15's prior head is 13's.
-    prev = li.latest_manifest_sha_before(state, EPOCH, "2026-05-15")
-    assert prev == li.chain_sha(json.loads(li.manifest_path(state, "2026-05-13").read_text()))
+    # Appending 15 backfills the 2026-05-14 gap so the chain stays contiguous;
+    # 15 links to the gap, not over it.
     rec = li.append_day_manifest(runs, state, "2026-05-15", EPOCH, GAPS)
-    assert rec["prev_sha"] == prev
+    assert li.manifest_path(state, "2026-05-14").is_file()
+    gap_sha = li.chain_sha(json.loads(li.manifest_path(state, "2026-05-14").read_text()))
+    assert rec["prev_sha"] == gap_sha
+
+
+def test_append_day_manifest_backfills_missing_finalized_day(tmp_path):
+    # Codex P2: 2026-05-14 (gap) and 2026-05-15 (finalized) have no manifest when
+    # 2026-05-16 is appended (e.g. their best-effort writes failed). Appending 16
+    # must backfill them so the chain is contiguous and verify stays clean — no
+    # BROKEN_CHAIN that only a full rebuild could heal.
+    runs, state = seed_ledger(tmp_path)
+    li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    li.append_day_manifest(runs, state, "2026-05-16", EPOCH, GAPS)
+    assert li.manifest_path(state, "2026-05-14").is_file()
+    assert li.manifest_path(state, "2026-05-15").is_file()
+    assert li.verify_chain(runs, state, EPOCH, "2026-05-16", GAPS)["ok"] is True
 
 
 def test_append_day_manifest_first_day_prev_sha_none(tmp_path):
