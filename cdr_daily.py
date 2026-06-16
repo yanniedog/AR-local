@@ -67,6 +67,57 @@ def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
     return export_manifest_is_valid(manifest)
 
 
+class LedgerImmutabilityError(RuntimeError):
+    """Raised when an ingest would mutate or fabricate append-only ledger history."""
+
+
+def _export_root_has_content(root: Path) -> bool:
+    return root.is_dir() and any(root.iterdir())
+
+
+def revision_root_for(primary_root: Path, when: datetime) -> Path:
+    """Append-only revision target beside a finalized day's primary _exports."""
+    stamp = when.strftime("%Y%m%dT%H%M%S")
+    return primary_root.parent / "_revisions" / stamp / primary_root.name
+
+
+def resolve_ledger_target(
+    primary_root: Path,
+    date: str,
+    today: str,
+    force: bool,
+    now: Optional[datetime] = None,
+) -> tuple[Path, bool]:
+    """Enforce append-only history; return ``(target_root, is_revision)``.
+
+    Today's partition is still being assembled, so it writes its primary
+    ``_exports`` as before. PAST days are immutable, append-only ledger data:
+
+    - An already-finalized partition is NEVER overwritten. ``--force`` appends a
+      timestamped revision beside it, preserving the original bytes (corrections
+      are appended, never destructive).
+    - A MISSING past day is NEVER created by the live ingest: live CDR endpoints
+      return only current data, so writing it under a historical date would
+      fabricate the ledger (e.g. the 2026-05-14 gap must remain a gap).
+
+    Dates are ``YYYY-MM-DD`` so lexical comparison is chronological.
+    """
+    if date >= today:
+        return primary_root, False
+    if _export_root_has_content(primary_root):
+        if not force:
+            raise LedgerImmutabilityError(
+                f"Refusing to overwrite finalized ledger day {date} at {primary_root}; "
+                f"re-run with --force to append a revision instead of mutating it."
+            )
+        return revision_root_for(primary_root, now or datetime.now()), True
+    raise LedgerImmutabilityError(
+        f"Refusing to ingest past date {date}: live CDR endpoints return only "
+        f"current data, so writing it under a historical date would fabricate the "
+        f"ledger (the {date} gap must remain a gap). Past days are append-only."
+    )
+
+
 def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> None:
     cmd = [
         sys.executable,
@@ -105,6 +156,23 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # Append-only ledger guard: decide where this ingest may write before touching
+    # any persistent bytes. Today writes its primary _exports; past days are
+    # immutable (force => revision; missing gap => refuse).
+    try:
+        target_export_root, is_revision = resolve_ledger_target(
+            export_root, date, local_date(), args.force
+        )
+    except LedgerImmutabilityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if is_revision:
+        print(
+            f"Ledger append-only: {date} is already finalized; appending a revision at "
+            f"{target_export_root} (original _exports preserved).",
+            file=sys.stderr,
+        )
+
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
     use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
     if use_ram_stage:
@@ -115,9 +183,8 @@ def run_once(args: argparse.Namespace) -> int:
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(staged_runs / date, staged_exports, args.db)
-        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
-        copytree_atomic(staged_exports, export_root)
-        result["out_dir"] = str(export_root)
+        copytree_atomic(staged_exports, target_export_root)
+        result["out_dir"] = str(target_export_root)
         result["ram_staged"] = True
         result["ram_root"] = str(ram_root)
         if args.clean_ram_stage:
@@ -125,8 +192,7 @@ def run_once(args: argparse.Namespace) -> int:
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
         run_ingest(script_dir, persistent_runs_root, date, extra_args)
-        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
-        result = build_outputs(persistent_runs_root / date, export_root, args.db)
+        result = build_outputs(persistent_runs_root / date, target_export_root, args.db)
         result["ram_staged"] = False
 
     if banks_result_rate_count(result) <= 0:
@@ -141,7 +207,7 @@ def run_once(args: argparse.Namespace) -> int:
     # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
     # CommBank repricing-window incident that motivated this guard.
     try:
-        report_path = write_sanity_report(export_root, date, persistent_runs_root)
+        report_path = write_sanity_report(target_export_root, date, persistent_runs_root)
     except Exception as exc:  # never let the guard fail the ingest
         print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
     else:
@@ -164,7 +230,13 @@ def run_once(args: argparse.Namespace) -> int:
                         file=sys.stderr,
                     )
 
-    marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    if is_revision:
+        # Preserve the primary day marker; record the revision under its own marker
+        # so the day's original finalization stays authoritative and auditable.
+        revision_marker = state_dir / f"{date}.revision.{target_export_root.parent.name}.json"
+        revision_marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    else:
+        marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 1
 
