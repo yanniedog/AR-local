@@ -5,12 +5,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
+import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from ar_local_pi_runtime import data_root
+
+# Two-factor break-glass: this utility rmtree/unlink/DROP-TABLEs inside finalized
+# daily partition dirs (retired-sector artifacts), so --apply must never fire by
+# accident. Per the Permanent CDR Ledger Invariant, destructive operations over
+# the ledger sit behind an audited break-glass step.
+BREAK_GLASS_ENV = "AR_LEDGER_BREAK_GLASS"
+AUDIT_LOG_NAME = "_ledger_breakglass_audit.log"
 
 REPO_ROOT = Path(__file__).resolve().parent
 REMOVED = "en" + "ergy"
@@ -142,11 +152,56 @@ def cleanup_run(run_dir: Path, *, apply: bool, actions: list[str]) -> None:
     migrate_db(exports / "local-cdr.sqlite", apply=apply, actions=actions)
 
 
-def main() -> int:
+def breakglass_authorized(apply: bool, break_glass: bool, env_value: Optional[str]) -> tuple[bool, str]:
+    """Authorize a destructive --apply run; returns ``(authorized, reason)``.
+
+    A dry-run writes nothing and is always allowed. --apply requires BOTH the
+    ``--break-glass`` flag AND ``AR_LEDGER_BREAK_GLASS=1`` so that neither a stray
+    ``--apply`` in a script nor a lingering env var alone can mutate finalized
+    partitions.
+    """
+    if not apply:
+        return True, "dry-run"
+    if not break_glass:
+        return False, "refusing --apply without --break-glass (this mutates finalized ledger partitions)"
+    if str(env_value) != "1":
+        return False, f"refusing --apply: set {BREAK_GLASS_ENV}=1 to confirm break-glass"
+    return True, "break-glass authorized"
+
+
+def write_audit_log(data_root_path: Path, actions: list[str]) -> Path:
+    """Append an audit record of an applied destructive run (one JSON line)."""
+    log_path = data_root_path / AUDIT_LOG_NAME
+    entry = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "tool": "cleanup_removed_cdr_sector",
+        "user": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
+        "data_root": str(data_root_path),
+        "action_count": len(actions),
+        "actions": actions,
+    }
+    data_root_path.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return log_path
+
+
+def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Remove retired non-banking CDR artifacts from AR-local data.")
     parser.add_argument("--data-root", type=Path, default=data_root(REPO_ROOT))
     parser.add_argument("--apply", action="store_true", help="Apply changes. Without this, only reports actions.")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--break-glass",
+        action="store_true",
+        help=f"Required with --apply (plus {BREAK_GLASS_ENV}=1): confirm destructive changes to finalized partitions.",
+    )
+    args = parser.parse_args(argv)
+
+    authorized, reason = breakglass_authorized(args.apply, args.break_glass, os.environ.get(BREAK_GLASS_ENV))
+    if args.apply and not authorized:
+        print(f"cleanup_removed_cdr_sector: {reason}", file=sys.stderr)
+        return 2
+    apply = args.apply and authorized
 
     root = args.data_root.expanduser().resolve()
     configured = data_root(REPO_ROOT).resolve()
@@ -154,10 +209,13 @@ def main() -> int:
         print(f"cleanup_removed_cdr_sector: explicit data root {root}")
     actions: list[str] = []
     for run_dir in iter_run_dirs((root / "runs") if root.name != "runs" else root):
-        cleanup_run(run_dir, apply=args.apply, actions=actions)
+        cleanup_run(run_dir, apply=apply, actions=actions)
     for action in actions:
         print(action)
-    print(f"cleanup_removed_cdr_sector: {'applied' if args.apply else 'dry-run'} {len(actions)} actions")
+    if apply and actions:
+        log_path = write_audit_log(root, actions)
+        print(f"cleanup_removed_cdr_sector: break-glass audit appended to {log_path}")
+    print(f"cleanup_removed_cdr_sector: {'applied' if apply else 'dry-run'} {len(actions)} actions")
     return 0
 
 
