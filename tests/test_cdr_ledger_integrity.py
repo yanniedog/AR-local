@@ -7,6 +7,8 @@ chain link, fabricated gap) is detected.
 
 import json
 
+import pytest
+
 import cdr_ledger_integrity as li
 
 EPOCH = "2026-05-13"
@@ -95,6 +97,54 @@ def test_detects_fabricated_gap(tmp_path):
     issues = {(f["date"], f["issue"]) for f in report["findings"]}
     assert ("2026-05-14", "GAP_FABRICATED") in issues
     assert report["ok"] is False
+
+
+def test_detects_unreadable_manifest(tmp_path):
+    runs, state = seed_ledger(tmp_path)
+    li.build_chain(runs, state, EPOCH, TODAY, GAPS)
+    li.manifest_path(state, "2026-05-15").write_text("{not-json", encoding="utf-8")
+    report = li.verify_chain(runs, state, EPOCH, TODAY, GAPS)
+    assert {"date": "2026-05-15", "issue": "UNREADABLE", "detail": "manifest"} in report["findings"]
+
+
+def test_detects_unreadable_partition(tmp_path, monkeypatch):
+    runs, state = seed_ledger(tmp_path)
+    li.build_chain(runs, state, EPOCH, TODAY, GAPS)
+
+    def boom(_root):
+        raise OSError("cannot read partition")
+
+    monkeypatch.setattr(li, "hash_export_root", boom)
+    report = li.verify_chain(runs, state, EPOCH, TODAY, GAPS)
+    assert {"date": "2026-05-15", "issue": "UNREADABLE", "detail": "partition"} in report["findings"]
+
+
+def test_detects_interior_missing_day(tmp_path):
+    # 2026-05-15 has neither content nor a manifest and is not a known gap, but a
+    # later day (2026-05-16) is finalized, so the hole is a genuine interior gap.
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    make_partition(runs, "2026-05-13")
+    make_partition(runs, "2026-05-16")  # 14 is a known gap; 15 is the missing hole
+    li.build_chain(runs, state, EPOCH, TODAY, GAPS)
+    report = li.verify_chain(runs, state, EPOCH, TODAY, GAPS)
+    issues = {(f["date"], f["issue"]) for f in report["findings"]}
+    assert ("2026-05-15", "MISSING_DAY") in issues
+    assert report["ok"] is False
+
+
+def test_trailing_unfinalized_day_is_not_flagged(tmp_path):
+    # An in-progress day after the latest finalized one must NOT fail verify.
+    runs, state = seed_ledger(tmp_path)  # finalized through 2026-05-16
+    li.build_chain(runs, state, EPOCH, TODAY, GAPS)
+    report = li.verify_chain(runs, state, EPOCH, "2026-05-17", GAPS)
+    assert report["ok"] is True, report["findings"]
+
+
+def test_inverted_range_raises(tmp_path):
+    runs, state = seed_ledger(tmp_path)
+    with pytest.raises(ValueError, match="inverted"):
+        li.build_chain(runs, state, "2026-05-16", "2026-05-13", GAPS)
 
 
 def test_rebuild_is_idempotent(tmp_path):

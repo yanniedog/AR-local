@@ -47,6 +47,14 @@ def local_date() -> str:
     return datetime.now().strftime(_DATE_FMT)
 
 
+def _validate_range(epoch: str, today: str) -> None:
+    """Reject an inverted range early so it can't masquerade as an empty chain."""
+    start = datetime.strptime(epoch, _DATE_FMT).date()
+    end = datetime.strptime(today, _DATE_FMT).date()
+    if end < start:
+        raise ValueError(f"ledger range inverted: today ({today}) is before epoch ({epoch})")
+
+
 def iter_ledger_dates(epoch: str, today: str) -> Iterable[str]:
     """Yield every YYYY-MM-DD from ``epoch`` to ``today`` inclusive."""
     start = datetime.strptime(epoch, _DATE_FMT).date()
@@ -55,6 +63,13 @@ def iter_ledger_dates(epoch: str, today: str) -> Iterable[str]:
     while day <= end:
         yield day.strftime(_DATE_FMT)
         day += timedelta(days=1)
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """Write JSON via a temp file + rename so an interrupt can't leave half a file."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
 
 
 def export_root_for(runs_root: Path, date: str) -> Path:
@@ -108,10 +123,14 @@ def chain_sha(record: dict) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
-def compute_record(runs_root: Path, date: str, prev_sha: Optional[str], known_gaps: Iterable[str]) -> dict:
-    """Build the integrity record for one ledger date (gap or finalized)."""
+def compute_record(runs_root: Path, date: str, prev_sha: Optional[str], known_gaps: set[str]) -> dict:
+    """Build the integrity record for one ledger date (gap or finalized).
+
+    ``known_gaps`` is a set materialized once by the caller (cheap membership in
+    the per-date loop).
+    """
     export_root = export_root_for(runs_root, date)
-    if date in set(known_gaps):
+    if date in known_gaps:
         return {
             "date": date,
             "gap": True,
@@ -143,6 +162,7 @@ def build_chain(
     finalized) so the chain only links real, present days. Returns a summary.
     """
     today = today or local_date()
+    _validate_range(epoch, today)
     state_dir.mkdir(parents=True, exist_ok=True)
     gaps = set(known_gaps)
     prev_sha: Optional[str] = None
@@ -153,9 +173,7 @@ def build_chain(
             skipped.append(date)
             continue
         record = compute_record(runs_root, date, prev_sha, gaps)
-        manifest_path(state_dir, date).write_text(
-            json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        _write_json_atomic(manifest_path(state_dir, date), record)
         prev_sha = chain_sha(record)
         (gap_days if is_gap else written).append(date)
     return {"written": written, "gaps": gap_days, "skipped": skipped, "head_sha": prev_sha}
@@ -175,11 +193,25 @@ def verify_chain(
       UNREADABLE, GAP_FABRICATED (content present at a known gap), MISSING_DAY.
     """
     today = today or local_date()
+    _validate_range(epoch, today)
     gaps = set(known_gaps)
     findings: list[dict] = []
     prev_sha: Optional[str] = None
     checked = 0
-    for date in iter_ledger_dates(epoch, today):
+    # Verify only through the latest FINALIZED day (has content, a manifest, or is
+    # a known gap). Trailing days after it are not yet ingested (e.g. today before
+    # the daily run) and must not be flagged MISSING_DAY (Gemini). Interior missing
+    # days within the finalized span are still genuine gaps and are flagged.
+    dates = list(iter_ledger_dates(epoch, today))
+    latest = -1
+    for i, date in enumerate(dates):
+        if (
+            date in gaps
+            or _export_root_has_content(export_root_for(runs_root, date))
+            or manifest_path(state_dir, date).is_file()
+        ):
+            latest = i
+    for date in dates[: latest + 1]:
         is_gap = date in gaps
         export_root = export_root_for(runs_root, date)
         has_content = _export_root_has_content(export_root)
@@ -232,6 +264,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--epoch", default=LEDGER_EPOCH)
     parser.add_argument("--today", default=None, help="Override end date YYYY-MM-DD")
     args = parser.parse_args(argv)
+    if args.today is not None:
+        try:
+            datetime.strptime(args.today, _DATE_FMT)
+        except ValueError:
+            parser.error(f"invalid --today {args.today!r}; expected YYYY-MM-DD")
     runs_root, state_dir = _resolve_roots(args)
     if args.command == "build":
         summary = build_chain(runs_root, state_dir, args.epoch, args.today)
