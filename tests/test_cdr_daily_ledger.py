@@ -106,3 +106,34 @@ def test_run_once_missing_past_day_never_writes(tmp_path, monkeypatch):
     # The gap day got no export bytes and no completion/revision markers.
     assert not (runs / "2026-05-14").exists()
     assert list(state.glob("2026-05-14*.json")) == []
+
+
+def test_run_once_self_heals_missing_integrity_manifest(tmp_path, monkeypatch):
+    """A finalized day whose integrity manifest never landed gets it on the next run.
+
+    Guards the Codex P2 case: once the completion marker is trusted, run_once returns
+    early, so that path must also (re)emit a missing manifest.
+    """
+    import json
+
+    import cdr_ledger_integrity as li
+
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    state.mkdir(parents=True)
+    export_root = runs / TODAY / "_exports"
+    (export_root / "dashboard-cache").mkdir(parents=True)
+    finalized = {"run_date": TODAY, "banks_counts": {"rates": 5}}
+    (export_root / "dashboard-cache" / "latest.json").write_text(json.dumps(finalized), encoding="utf-8")
+    (export_root / "local-cdr.sqlite").write_bytes(b"db")
+    # Trustworthy completion marker, but the integrity manifest is missing.
+    cdr_daily.marker_path(state, TODAY).write_text(json.dumps(finalized), encoding="utf-8")
+    assert not li.manifest_path(state, TODAY).is_file()
+
+    rc = cdr_daily.run_once(
+        cdr_daily.parse_args(["--date", TODAY, "--runs", str(runs), "--state", str(state), "--no-ram-stage"])
+    )
+    assert rc == 0  # already finalized -> skipped
+    assert li.manifest_path(state, TODAY).is_file()  # ...but the manifest self-healed

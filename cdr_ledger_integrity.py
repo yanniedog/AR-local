@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -41,6 +42,7 @@ LEDGER_EPOCH = "2026-05-13"
 KNOWN_GAPS = ("2026-05-14",)
 
 _DATE_FMT = "%Y-%m-%d"
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def local_date() -> str:
@@ -179,21 +181,29 @@ def build_chain(
     return {"written": written, "gaps": gap_days, "skipped": skipped, "head_sha": prev_sha}
 
 
+_MANIFEST_SUFFIX = ".integrity.json"
+
+
 def latest_manifest_sha_before(state_dir: Path, epoch: str, date: str) -> Optional[str]:
-    """chain_sha of the most recent existing manifest strictly before ``date``."""
-    prev_sha: Optional[str] = None
-    for day in iter_ledger_dates(epoch, date):
-        if day >= date:
-            break
-        path = manifest_path(state_dir, day)
-        if not path.is_file():
-            continue
+    """chain_sha of the most recent existing manifest strictly before ``date``.
+
+    Uses a single directory listing (not a per-day stat loop from the epoch) so the
+    daily ingest stays O(#manifests) however far back the epoch is (Gemini).
+    """
+    if not state_dir.is_dir():
+        return None
+    days = sorted(
+        day
+        for path in state_dir.glob(f"*{_MANIFEST_SUFFIX}")
+        if _DATE_RE.match(day := path.name[: -len(_MANIFEST_SUFFIX)]) and epoch <= day < date
+    )
+    for day in reversed(days):
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
+            record = json.loads(manifest_path(state_dir, day).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        prev_sha = chain_sha(record)
-    return prev_sha
+        return chain_sha(record)
+    return None
 
 
 def append_day_manifest(

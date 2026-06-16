@@ -175,3 +175,10 @@ def test_append_day_manifest_links_to_prior_head(tmp_path):
     assert prev == li.chain_sha(json.loads(li.manifest_path(state, "2026-05-13").read_text()))
     rec = li.append_day_manifest(runs, state, "2026-05-15", EPOCH, GAPS)
     assert rec["prev_sha"] == prev
+
+
+def test_append_day_manifest_first_day_prev_sha_none(tmp_path):
+    runs, state = seed_ledger(tmp_path)
+    rec = li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    assert rec["prev_sha"] is None  # no prior manifest exists
+    assert li.manifest_path(state, "2026-05-13").is_file()
