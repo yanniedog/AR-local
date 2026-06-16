@@ -50,6 +50,9 @@
     bankHistory: null,
     bankHistorySection: '',
     bankHistoryIndex: null,
+    // Compact per-day history aggregate, cached per (section, includeNonStandard)
+    // variant — same keyed-map pattern as bankRibbons so toggling keeps both.
+    bankHistoryCompacts: {},
     retainedRunDatesSorted: [],
     descending: false,
     includeNonStandard: false,
@@ -207,8 +210,8 @@
     // The compact history payload carries the authoritative full retained date
     // set for the section; prefer it over the current-only seed's single date so
     // the window UI and drilldown timeline both see every run_date.
-    const compact = state.bankHistoryCompact;
-    const raw = (compact && compact.section === state.section && Array.isArray(compact.run_dates))
+    const compact = currentCompactHistory();
+    const raw = (compact && Array.isArray(compact.run_dates))
       ? compact.run_dates
       : (state.bankHistory && state.bankHistory.run_dates);
     if (!Array.isArray(raw)) {
@@ -304,20 +307,31 @@
   // includeNonStandard); window selection stays client-side over run_dates.
   // Per-product granularity is intentionally omitted, so hierarchy drilldown
   // falls back to the raw rows via ensureRawHistoryLoaded.
+  // Normalize + store a compact payload under its own (section, includeNonStandard)
+  // key. Single writer for both the initial/section fetch and the realtime refresh
+  // so the shape stays in one place.
+  function setBankHistoryCompact(section, includeNonStandard, payload) {
+    state.bankHistoryCompacts[ribbonCacheKey(section, includeNonStandard)] = {
+      section,
+      includeNonStandard,
+      run_dates: sortedValidRunDates(Array.isArray(payload.run_dates) ? payload.run_dates : []),
+      points: Array.isArray(payload.points) ? payload.points : [],
+      providers: Array.isArray(payload.providers) ? payload.providers : [],
+    };
+  }
+
+  function currentCompactHistory() {
+    return state.bankHistoryCompacts[ribbonCacheKey(state.section, state.includeNonStandard)] || null;
+  }
+
   async function loadCompactHistory(section, includeNonStandard) {
-    const cached = state.bankHistoryCompact;
-    if (cached && cached.section === section && cached.includeNonStandard === includeNonStandard) return;
+    if (state.bankHistoryCompacts[ribbonCacheKey(section, includeNonStandard)]) return;
     const encoded = encodeURIComponent(section);
     const nsFlag = includeNonStandard ? '&include_non_standard=1' : '';
     const data = await getJson(`/api/banks/history/section/compact?date=${state.manifest.run_date}&section=${encoded}${nsFlag}`);
-    if (state.section !== section || state.includeNonStandard !== includeNonStandard) return;
-    state.bankHistoryCompact = {
-      section,
-      includeNonStandard,
-      run_dates: sortedValidRunDates(Array.isArray(data.run_dates) ? data.run_dates : []),
-      points: Array.isArray(data.points) ? data.points : [],
-      providers: Array.isArray(data.providers) ? data.providers : [],
-    };
+    // Cache by the request's own variant (not live state) so a mid-flight toggle
+    // can't discard the fetched payload — toggling back reuses it (Sourcery).
+    setBankHistoryCompact(section, includeNonStandard, data);
     refreshRetainedRunDatesCache();
   }
 
@@ -535,8 +549,8 @@
   // the compact payload for the current section/toggle variant hasn't arrived yet
   // (callers fall back to the raw/current-only path).
   function compactChartItems(rows) {
-    const compact = state.bankHistoryCompact;
-    if (!compact || compact.section !== state.section || compact.includeNonStandard !== state.includeNonStandard) return null;
+    const compact = currentCompactHistory();
+    if (!compact) return null;
     const allDates = compact.run_dates;
     const dates = historyDatesInWindow(allDates);
     const pointByDate = {};
@@ -677,7 +691,14 @@
   function rateRowsForChartAnchor(baseRows) {
     const anchor = chartAnchorDate();
     const manifest = String((state.manifest && state.manifest.run_date) || '');
-    if (!anchor || !state.bankHistoryIndex || anchor === manifest) return baseRows;
+    if (!anchor || anchor === manifest) return baseRows;
+    // Previewing a past date needs the raw per-product history for that date. Under
+    // the compact default path it isn't loaded, so fetch it on demand (same lazy
+    // pattern as drilldown, Codex P2): until it arrives the current-only index has
+    // no rows for ``anchor`` and the loop yields an empty slice, then the load
+    // triggers a redraw that fills the preview.
+    ensureRawHistoryLoaded();
+    if (!state.bankHistoryIndex) return baseRows;
     const out = [];
     (baseRows || []).forEach((row) => {
       const key = historyIndexKey(row);
@@ -1014,19 +1035,12 @@
       }
       state.manifest = latest;
       state.manifestSignature = nextSignature;
-      // New ingest: refresh the compact series for the captured toggle variant,
-      // and re-seed the current-only raw history from the new section rows. An
-      // active drilldown lazily re-fetches raw rows on the next redraw via
+      // New ingest: refresh the compact series for the captured toggle variant
+      // (cached by ribIncludeNs, so a mid-flight toggle still reuses it), and
+      // re-seed the current-only raw history from the new section rows. An active
+      // drilldown lazily re-fetches raw rows on the next redraw via
       // ensureRawHistoryLoaded (the re-seed marks raw history as not-loaded).
-      if (state.includeNonStandard === ribIncludeNs) {
-        state.bankHistoryCompact = {
-          section: sectionName,
-          includeNonStandard: ribIncludeNs,
-          run_dates: sortedValidRunDates(Array.isArray(compactPayload.run_dates) ? compactPayload.run_dates : []),
-          points: Array.isArray(compactPayload.points) ? compactPayload.points : [],
-          providers: Array.isArray(compactPayload.providers) ? compactPayload.providers : [],
-        };
-      }
+      setBankHistoryCompact(sectionName, ribIncludeNs, compactPayload);
       seedCurrentHistory(sectionName, sectionRows());
       // No snapshot/restore here (Gemini + Codex PR #131): UI fields
       // (descending, hoverProvider, chartPinnedDate, etc.) are
