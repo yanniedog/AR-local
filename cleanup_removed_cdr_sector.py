@@ -169,12 +169,20 @@ def breakglass_authorized(apply: bool, break_glass: bool, env_value: Optional[st
     return True, "break-glass authorized"
 
 
-def write_audit_log(data_root_path: Path, actions: list[str]) -> Path:
-    """Append an audit record of an applied destructive run (one JSON line)."""
+def write_audit_log(data_root_path: Path, actions: list[str], *, phase: str, success: bool = True) -> Path:
+    """Append an audit record (one JSON line) for a destructive run.
+
+    ``phase`` is ``"planned"`` (preflight, written before any mutation) or
+    ``"applied"`` (the outcome). ``success`` flags whether the applied pass
+    completed without raising. The timestamp is timezone-aware (local offset) so
+    entries are unambiguous across hosts.
+    """
     log_path = data_root_path / AUDIT_LOG_NAME
     entry = {
-        "ts": datetime.now().isoformat(timespec="seconds"),
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
         "tool": "cleanup_removed_cdr_sector",
+        "phase": phase,
+        "success": success,
         "user": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
         "data_root": str(data_root_path),
         "action_count": len(actions),
@@ -207,14 +215,41 @@ def main(argv: Optional[list[str]] = None) -> int:
     configured = data_root(REPO_ROOT).resolve()
     if root != configured:
         print(f"cleanup_removed_cdr_sector: explicit data root {root}")
+    runs_dir = (root / "runs") if root.name != "runs" else root
+
+    if apply:
+        # Preflight (Codex P1 / Gemini): enumerate the planned destructive actions
+        # via a dry-run pass and record intent to the audit log BEFORE mutating
+        # anything. This also proves the audit sink is writable; if it isn't, abort
+        # before any destruction rather than mutate partitions with no audit trail.
+        planned: list[str] = []
+        for run_dir in iter_run_dirs(runs_dir):
+            cleanup_run(run_dir, apply=False, actions=planned)
+        if planned:
+            try:
+                write_audit_log(root, planned, phase="planned")
+            except OSError as exc:
+                print(
+                    f"cleanup_removed_cdr_sector: cannot write break-glass audit log ({exc}); "
+                    f"aborting before any changes.",
+                    file=sys.stderr,
+                )
+                return 3
+
     actions: list[str] = []
-    for run_dir in iter_run_dirs((root / "runs") if root.name != "runs" else root):
-        cleanup_run(run_dir, apply=apply, actions=actions)
-    for action in actions:
-        print(action)
-    if apply and actions:
-        log_path = write_audit_log(root, actions)
-        print(f"cleanup_removed_cdr_sector: break-glass audit appended to {log_path}")
+    success = False
+    try:
+        for run_dir in iter_run_dirs(runs_dir):
+            cleanup_run(run_dir, apply=apply, actions=actions)
+        success = True
+    finally:
+        # Always print and audit what was attempted, even if cleanup raised midway
+        # (Gemini): destructive actions may have already executed.
+        for action in actions:
+            print(action)
+        if apply and actions:
+            log_path = write_audit_log(root, actions, phase="applied", success=success)
+            print(f"cleanup_removed_cdr_sector: break-glass audit appended to {log_path}")
     print(f"cleanup_removed_cdr_sector: {'applied' if apply else 'dry-run'} {len(actions)} actions")
     return 0
 
