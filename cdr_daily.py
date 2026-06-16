@@ -24,6 +24,7 @@ from ar_local_pi_runtime import (
     manifest_banks_rate_count,
     prepare_empty_dir,
 )
+import cdr_ledger_integrity
 from cdr_outputs import build_outputs
 from cdr_ingest_sanity import write_sanity_report
 
@@ -246,6 +247,17 @@ def run_once(args: argparse.Namespace) -> int:
         revision_marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     else:
         marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Emit this day's ledger integrity manifest (hash-chain link to the prior
+        # day) so the partition is tamper-evident from finalization. Non-fatal and
+        # primary-only: revisions don't change the primary _exports the manifest
+        # hashes. Skipped for a custom --exports layout (manifest assumes the
+        # default <runs>/<date>/_exports paths).
+        if args.exports is None:
+            try:
+                cdr_ledger_integrity.append_day_manifest(persistent_runs_root, state_dir, date)
+            except Exception as exc:  # never let integrity bookkeeping fail the ingest
+                print(f"ledger-integrity: failed to write manifest for {date}: "
+                      f"{type(exc).__name__}: {exc}", file=sys.stderr)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 1
 

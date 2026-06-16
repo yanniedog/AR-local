@@ -153,3 +153,25 @@ def test_rebuild_is_idempotent(tmp_path):
     second = li.build_chain(runs, state, EPOCH, TODAY, GAPS)["head_sha"]
     assert first == second
     assert li.verify_chain(runs, state, EPOCH, TODAY, GAPS)["ok"] is True
+
+
+def test_append_day_manifest_matches_build_chain(tmp_path):
+    # Appending each present day incrementally (the daily-ingest path) must yield
+    # the same verified chain as a full build_chain.
+    runs, state = seed_ledger(tmp_path)
+    for date in ("2026-05-13", "2026-05-14", "2026-05-15", "2026-05-16"):
+        li.append_day_manifest(runs, state, date, EPOCH, GAPS)
+    assert li.verify_chain(runs, state, EPOCH, TODAY, GAPS)["ok"] is True
+    incremental_head = li.chain_sha(json.loads(li.manifest_path(state, "2026-05-16").read_text()))
+    built_head = li.build_chain(runs, tmp_path / "state2", EPOCH, TODAY, GAPS)["head_sha"]
+    assert incremental_head == built_head
+
+
+def test_append_day_manifest_links_to_prior_head(tmp_path):
+    runs, state = seed_ledger(tmp_path)
+    li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    # 2026-05-14 is a gap with no manifest yet, so 2026-05-15's prior head is 13's.
+    prev = li.latest_manifest_sha_before(state, EPOCH, "2026-05-15")
+    assert prev == li.chain_sha(json.loads(li.manifest_path(state, "2026-05-13").read_text()))
+    rec = li.append_day_manifest(runs, state, "2026-05-15", EPOCH, GAPS)
+    assert rec["prev_sha"] == prev

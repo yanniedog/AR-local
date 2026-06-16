@@ -179,6 +179,43 @@ def build_chain(
     return {"written": written, "gaps": gap_days, "skipped": skipped, "head_sha": prev_sha}
 
 
+def latest_manifest_sha_before(state_dir: Path, epoch: str, date: str) -> Optional[str]:
+    """chain_sha of the most recent existing manifest strictly before ``date``."""
+    prev_sha: Optional[str] = None
+    for day in iter_ledger_dates(epoch, date):
+        if day >= date:
+            break
+        path = manifest_path(state_dir, day)
+        if not path.is_file():
+            continue
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        prev_sha = chain_sha(record)
+    return prev_sha
+
+
+def append_day_manifest(
+    runs_root: Path,
+    state_dir: Path,
+    date: str,
+    epoch: str = LEDGER_EPOCH,
+    known_gaps: Iterable[str] = KNOWN_GAPS,
+) -> dict:
+    """Generate/refresh one day's integrity manifest, linked to the prior head.
+
+    Cheap incremental alternative to a full ``build_chain`` for the daily ingest:
+    it only hashes ``date``'s partition and links it to the latest existing
+    manifest before it. Returns the written record.
+    """
+    state_dir.mkdir(parents=True, exist_ok=True)
+    prev_sha = latest_manifest_sha_before(state_dir, epoch, date)
+    record = compute_record(runs_root, date, prev_sha, set(known_gaps))
+    _write_json_atomic(manifest_path(state_dir, date), record)
+    return record
+
+
 def verify_chain(
     runs_root: Path,
     state_dir: Path,
