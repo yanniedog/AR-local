@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-16T15:13:01.665Z",
+  "generated_at": "2026-06-16T16:35:18.557Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -319,6 +319,17 @@
         "chore(mobile): auto-release bump to v1.0.30 (after be1ac6c) (#370)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.33"
+    },
+    {
+      "version": "1.0.34",
+      "date": "2026-06-16",
+      "summaryBullets": [
+        "chore(mobile): auto-release bump to v1.0.33 (after f812480) (#376)",
+        "chore(mobile): auto-release bump to v1.0.32 (after a7c7e39) (#374)",
+        "chore(mobile): auto-release bump to v1.0.31 (after 8231be8) (#372)",
+        "chore(mobile): auto-release bump to v1.0.30 (after be1ac6c) (#370)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.34"
     }
   ]
 }
