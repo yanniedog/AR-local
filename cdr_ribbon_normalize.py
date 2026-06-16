@@ -126,6 +126,52 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
     }
 
 
+def compact_history(
+    run_dates: List[str],
+    aggregates: Mapping[str, Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Reshape per-day ``aggregate_ribbon`` outputs into a compact history series.
+
+    ``aggregates`` maps each run_date to ``aggregate_ribbon(rows, section)`` for
+    that day. Returns overall per-day points plus per-provider daily series,
+    aligned to ``run_dates`` (days without data carry nulls). This compact shape
+    replaces shipping raw per-product history rows to the client, while staying on
+    the same comparison-rate metric the live ribbon uses.
+    """
+    ordered = list(run_dates)
+    points: List[Dict[str, Any]] = []
+    prov_series: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for date in ordered:
+        agg = aggregates.get(date)
+        if not agg:
+            points.append({"date": date, "min": None, "max": None, "mean": None, "median": None, "count": 0})
+            continue
+        rng = agg.get("range") or {}
+        counts = agg.get("counts") or {}
+        points.append({
+            "date": date,
+            "min": rng.get("min"),
+            "max": rng.get("max"),
+            "mean": rng.get("mean"),
+            "median": rng.get("median"),
+            "count": counts.get("rates", 0),
+        })
+        for prov in agg.get("providers") or []:
+            name = prov.get("provider") or "Unknown"
+            prov_series.setdefault(name, {})[date] = {
+                "min": prov.get("min"),
+                "max": prov.get("max"),
+                "mean": prov.get("mean"),
+                "median": prov.get("median"),
+                "count": prov.get("rates", 0),
+            }
+    providers = [
+        {"provider": name, "by_date": series}
+        for name, series in sorted(prov_series.items())
+    ]
+    return {"run_dates": ordered, "points": points, "providers": providers}
+
+
 def _lower_join(*parts: Any) -> str:
     """Lowercase phrase from joined non-empty trimmed string parts.
 

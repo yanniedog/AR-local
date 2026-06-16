@@ -33,6 +33,7 @@ from cdr_economic_local import (
 from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
     aggregate_ribbon,
+    compact_history,
     extract_fixed_rate_term_years,
     normalize_rate_structure_group,
     normalize_td_rate_structure_group,
@@ -884,6 +885,69 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             history_cache[cache_key] = entry
         return entry
 
+    def bank_history_compact_payload(
+        max_run_date: str, section: str, include_non_standard: bool = False
+    ) -> Tuple[bytes, bytes | None]:
+        """Compact per-day, per-provider history aggregate for one section.
+
+        Replaces shipping raw per-product history rows: each day is aggregated
+        server-side with the shared ribbon kernel (comparison-rate metric), so the
+        client receives a small overall + per-provider series instead of ~180k
+        rows. Standard-only by default; ``include_non_standard`` serves the toggle's
+        other variant. Window selection stays client-side over these compact points.
+        """
+        dbs = bank_history_db_paths(max_run_date)
+        signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
+        cache_key = (f"compact:{int(include_non_standard)}:{max_run_date}", section, signature)
+        with history_cache_lock:
+            cached = history_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        filter_sql, filter_params = bank_section_rate_filter(section)
+        rows_by_date: dict[str, list[dict[str, object]]] = {}
+        for db_path in dbs:
+            try:
+                with connect_readonly(db_path) as con:
+                    con.row_factory = sqlite3.Row
+                    cols = bank_rate_columns(con)
+                    where = "dataset = ? AND rate IS NOT NULL AND rate != ''" + filter_sql
+                    params: list[object] = [section, *filter_params]
+                    if max_run_date:
+                        where += " AND run_date <= ?"
+                        params.append(max_run_date)
+                    if not include_non_standard and "account_class" in cols:
+                        where += " AND COALESCE(account_class, '') != 'non_standard'"
+                    comparison_select = (
+                        "comparison_rate" if "comparison_rate" in cols else "'' AS comparison_rate"
+                    )
+                    # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+                    cur = con.execute(
+                        "SELECT run_date, provider, product_key, product_id, product_name, rate, "
+                        f"{comparison_select} FROM bank_rates WHERE {where}",
+                        params,
+                    )
+                    for row in cur:
+                        day = str(row["run_date"] or "")
+                        if day:
+                            rows_by_date.setdefault(day, []).append(dict(row))
+            except sqlite3.Error as exc:
+                print(f"Skipping unreadable history DB {db_path}: {exc}")
+        run_dates = sorted(rows_by_date)
+        aggregates = {day: aggregate_ribbon(rows_by_date[day], section) for day in run_dates}
+        payload = {
+            "run_date": max_run_date,
+            "section": section,
+            "include_non_standard": include_non_standard,
+            **compact_history(run_dates, aggregates),
+        }
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        entry = (body, maybe_gzip(body, "application/json"))
+        with history_cache_lock:
+            if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
+                history_cache.pop(next(iter(history_cache)))
+            history_cache[cache_key] = entry
+        return entry
+
     def warm_common_files() -> None:
         for rel in (
             "index.html",
@@ -1098,6 +1162,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 section = parse_bank_section_param(query.get("section", [""])[0])
                 body, gz = bank_history_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
+            if path == "/api/banks/history/section/compact":
+                raw_date = str(query.get("date", [""])[0] or "").strip()
+                date = parse_run_date_param(raw_date) if raw_date else ""
+                section = parse_bank_section_param(query.get("section", [""])[0])
+                include_ns = ((query.get("include_non_standard") or [""])[0] or "").strip() in ("1", "true", "yes")
+                body, gz = bank_history_compact_payload(date, section, include_ns)
                 return body, "application/json; charset=utf-8", gz
             if is_economic_data_page_path(path):
                 target = resolve_site_public_file(site_root, path)
