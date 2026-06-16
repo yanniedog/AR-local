@@ -191,6 +191,30 @@ def test_append_day_manifest_backfills_missing_finalized_day(tmp_path):
     assert li.verify_chain(runs, state, EPOCH, "2026-05-16", GAPS)["ok"] is True
 
 
+def test_append_does_not_baseline_unfinalized_partition(tmp_path):
+    # Codex P1: a day with raw _exports content but a zero-rate (invalid) export
+    # manifest is a failed/partial ingest, not a finalized day, and must NOT be
+    # baselined as a clean ledger entry.
+    runs, state = seed_ledger(tmp_path)
+    li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    partial = runs / "2026-05-15" / "_exports" / "dashboard-cache" / "latest.json"
+    partial.write_text(json.dumps({"run_date": "2026-05-15", "banks_counts": {"rates": 0}}), encoding="utf-8")
+    li.append_day_manifest(runs, state, "2026-05-16", EPOCH, GAPS)
+    assert not li.manifest_path(state, "2026-05-15").is_file()  # partial day not baselined
+
+
+def test_append_refuses_to_overwrite_unreadable_manifest(tmp_path):
+    # Codex P2: a corrupt prior manifest must not be silently rewritten, which would
+    # erase the UNREADABLE evidence verify reports.
+    runs, state = seed_ledger(tmp_path)
+    li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    li.append_day_manifest(runs, state, "2026-05-15", EPOCH, GAPS)
+    li.manifest_path(state, "2026-05-15").write_text("{corrupt", encoding="utf-8")
+    with pytest.raises(li.LedgerIntegrityError):
+        li.append_day_manifest(runs, state, "2026-05-16", EPOCH, GAPS)
+    assert li.manifest_path(state, "2026-05-15").read_text() == "{corrupt"  # preserved
+
+
 def test_append_day_manifest_first_day_prev_sha_none(tmp_path):
     runs, state = seed_ledger(tmp_path)
     rec = li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)

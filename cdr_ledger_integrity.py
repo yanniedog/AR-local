@@ -33,9 +33,14 @@ from typing import Iterable, Optional
 from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
+    export_manifest_is_valid,
     load_exports_manifest,
     manifest_banks_rate_count,
 )
+
+
+class LedgerIntegrityError(RuntimeError):
+    """Raised when an append would erase tamper-evidence (e.g. an unreadable manifest)."""
 
 # Ledger epoch and the explicit, must-never-be-fabricated gaps.
 LEDGER_EPOCH = "2026-05-13"
@@ -84,6 +89,22 @@ def manifest_path(state_dir: Path, date: str) -> Path:
 
 def _export_root_has_content(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
+
+
+def _is_finalized_day(runs_root: Path, date: str, gaps: set) -> bool:
+    """Whether ``date`` is a real ledger day eligible for an integrity manifest.
+
+    A known gap qualifies. Otherwise the day must have a VALID export manifest
+    (banking rates exported) — raw ``_exports`` content alone is not enough, since
+    the RAM-staged ingest copies a partial export tree into place before the
+    zero-rate guard / completion marker, so a failed day can leave bytes behind
+    (Codex). Gating on the export manifest stops a partial day being baselined as a
+    clean ledger entry.
+    """
+    if date in gaps:
+        return True
+    manifest = load_exports_manifest(export_root_for(runs_root, date))
+    return manifest is not None and export_manifest_is_valid(manifest)
 
 
 def hash_file(path: Path) -> str:
@@ -171,7 +192,7 @@ def build_chain(
     written, skipped, gap_days = [], [], []
     for date in iter_ledger_dates(epoch, today):
         is_gap = date in gaps
-        if not is_gap and not _export_root_has_content(export_root_for(runs_root, date)):
+        if not _is_finalized_day(runs_root, date, gaps):
             skipped.append(date)
             continue
         record = compute_record(runs_root, date, prev_sha, gaps)
@@ -200,8 +221,14 @@ def _latest_manifest_before(state_dir: Path, epoch: str, date: str) -> tuple[Opt
     for day in reversed(days):
         try:
             record = json.loads(manifest_path(state_dir, day).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
+        except (OSError, json.JSONDecodeError) as exc:
+            # Don't skip + later overwrite a corrupt head manifest: that would erase
+            # the UNREADABLE evidence verify_chain should report (Codex). Refuse so
+            # the corrupt manifest is preserved and surfaced.
+            raise LedgerIntegrityError(
+                f"unreadable integrity manifest for {day}; refusing to append over it "
+                f"(run `cdr_ledger_integrity verify`): {exc}"
+            ) from exc
         return day, chain_sha(record)
     return None, None
 
@@ -237,7 +264,7 @@ def append_day_manifest(
     for day in iter_ledger_dates(prev_date or epoch, date):
         if day == date or (prev_date is not None and day <= prev_date):
             continue
-        if day in gaps or _export_root_has_content(export_root_for(runs_root, day)):
+        if _is_finalized_day(runs_root, day, gaps):
             filler = compute_record(runs_root, day, prev_sha, gaps)
             _write_json_atomic(manifest_path(state_dir, day), filler)
             prev_sha = chain_sha(filler)
@@ -272,23 +299,19 @@ def verify_chain(
     dates = list(iter_ledger_dates(epoch, today))
     latest = -1
     for i, date in enumerate(dates):
-        if (
-            date in gaps
-            or _export_root_has_content(export_root_for(runs_root, date))
-            or manifest_path(state_dir, date).is_file()
-        ):
+        if _is_finalized_day(runs_root, date, gaps) or manifest_path(state_dir, date).is_file():
             latest = i
     for date in dates[: latest + 1]:
         is_gap = date in gaps
         export_root = export_root_for(runs_root, date)
+        # "finalized" = real ledger day (valid export manifest or gap); raw content
+        # is tracked separately only to flag a fabricated gap.
+        finalized = _is_finalized_day(runs_root, date, gaps)
         has_content = _export_root_has_content(export_root)
         path = manifest_path(state_dir, date)
         if not path.is_file():
-            # A day with content but no manifest, or a known gap without a record.
-            if has_content or is_gap:
-                findings.append({"date": date, "issue": "MISSING_MANIFEST"})
-            else:
-                findings.append({"date": date, "issue": "MISSING_DAY"})
+            # A finalized day must have a manifest; otherwise it's a genuine gap.
+            findings.append({"date": date, "issue": "MISSING_MANIFEST" if finalized else "MISSING_DAY"})
             continue
         try:
             stored = json.loads(path.read_text(encoding="utf-8"))
@@ -301,16 +324,17 @@ def verify_chain(
         if is_gap:
             if has_content:
                 findings.append({"date": date, "issue": "GAP_FABRICATED"})
+        elif not finalized:
+            # A manifest exists but the partition it described is gone/invalid.
+            findings.append({"date": date, "issue": "MISSING_DAY"})
         else:
             try:
-                current_files = hash_export_root(export_root) if has_content else []
+                current_files = hash_export_root(export_root)
             except OSError:
                 findings.append({"date": date, "issue": "UNREADABLE", "detail": "partition"})
                 prev_sha = chain_sha(stored)
                 continue
-            if not has_content:
-                findings.append({"date": date, "issue": "MISSING_DAY"})
-            elif current_files != (stored.get("files") or []):
+            if current_files != (stored.get("files") or []):
                 findings.append({"date": date, "issue": "CHANGED"})
         prev_sha = chain_sha(stored)
     return {"ok": not findings, "findings": findings, "checked": checked}
