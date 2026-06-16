@@ -91,20 +91,39 @@ def _export_root_has_content(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
 
 
-def _is_finalized_day(runs_root: Path, date: str, gaps: set) -> bool:
+def _completion_marker_ok(state_dir: Path, date: str) -> bool:
+    """Whether ``date`` has a trusted completion marker (mirrors cdr_daily)."""
+    # Filename mirrors cdr_daily.marker_path; checked here (not imported) to avoid a
+    # circular import, since cdr_daily imports this module.
+    try:
+        recorded = json.loads((state_dir / f"{date}.done.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(recorded, dict) and manifest_banks_rate_count(recorded) > 0
+
+
+def _is_finalized_day(runs_root: Path, state_dir: Path, date: str, gaps: set) -> bool:
     """Whether ``date`` is a real ledger day eligible for an integrity manifest.
 
-    A known gap qualifies. Otherwise the day must have a VALID export manifest
-    (banking rates exported) — raw ``_exports`` content alone is not enough, since
-    the RAM-staged ingest copies a partial export tree into place before the
-    zero-rate guard / completion marker, so a failed day can leave bytes behind
-    (Codex). Gating on the export manifest stops a partial day being baselined as a
-    clean ledger entry.
+    A known gap qualifies. Otherwise the day must be genuinely finalized — the same
+    bar cdr_daily.marker_is_trustworthy uses: a trusted completion marker
+    (``<date>.done.json`` with banking rates) AND a valid export manifest whose
+    run_date matches. Raw ``_exports`` content is not enough, nor is the export
+    manifest alone: the RAM-staged ingest copies the export tree into place before
+    the zero-rate guard / marker write, so a crashed run can leave a markerless or
+    partial day behind (Codex). Gating on both stops an uncompleted day being
+    baselined as a clean ledger entry.
     """
     if date in gaps:
         return True
+    if not _completion_marker_ok(state_dir, date):
+        return False
     manifest = load_exports_manifest(export_root_for(runs_root, date))
-    return manifest is not None and export_manifest_is_valid(manifest)
+    return (
+        manifest is not None
+        and str(manifest.get("run_date") or "") == date
+        and export_manifest_is_valid(manifest)
+    )
 
 
 def hash_file(path: Path) -> str:
@@ -192,7 +211,7 @@ def build_chain(
     written, skipped, gap_days = [], [], []
     for date in iter_ledger_dates(epoch, today):
         is_gap = date in gaps
-        if not _is_finalized_day(runs_root, date, gaps):
+        if not _is_finalized_day(runs_root, state_dir, date, gaps):
             skipped.append(date)
             continue
         record = compute_record(runs_root, date, prev_sha, gaps)
@@ -264,7 +283,7 @@ def append_day_manifest(
     for day in iter_ledger_dates(prev_date or epoch, date):
         if day == date or (prev_date is not None and day <= prev_date):
             continue
-        if _is_finalized_day(runs_root, day, gaps):
+        if _is_finalized_day(runs_root, state_dir, day, gaps):
             filler = compute_record(runs_root, day, prev_sha, gaps)
             _write_json_atomic(manifest_path(state_dir, day), filler)
             prev_sha = chain_sha(filler)
@@ -299,14 +318,14 @@ def verify_chain(
     dates = list(iter_ledger_dates(epoch, today))
     latest = -1
     for i, date in enumerate(dates):
-        if _is_finalized_day(runs_root, date, gaps) or manifest_path(state_dir, date).is_file():
+        if _is_finalized_day(runs_root, state_dir, date, gaps) or manifest_path(state_dir, date).is_file():
             latest = i
     for date in dates[: latest + 1]:
         is_gap = date in gaps
         export_root = export_root_for(runs_root, date)
         # "finalized" = real ledger day (valid export manifest or gap); raw content
         # is tracked separately only to flag a fabricated gap.
-        finalized = _is_finalized_day(runs_root, date, gaps)
+        finalized = _is_finalized_day(runs_root, state_dir, date, gaps)
         has_content = _export_root_has_content(export_root)
         path = manifest_path(state_dir, date)
         if not path.is_file():

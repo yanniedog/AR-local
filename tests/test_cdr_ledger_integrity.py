@@ -28,11 +28,24 @@ def make_partition(runs_root, date, rates=5, sqlite_bytes=b"db-bytes"):
     return export_root
 
 
+def write_marker(state_dir, date, rates=5):
+    # Mirrors cdr_daily.marker_path: a finalized day has a trusted <date>.done.json.
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / f"{date}.done.json").write_text(
+        json.dumps({"run_date": date, "banks_counts": {"rates": rates}}), encoding="utf-8"
+    )
+
+
+def finalize_day(runs_root, state_dir, date, rates=5):
+    make_partition(runs_root, date, rates=rates)
+    write_marker(state_dir, date, rates=rates)
+
+
 def seed_ledger(tmp_path):
     runs = tmp_path / "runs"
     state = tmp_path / "state"
     for date in ("2026-05-13", "2026-05-15", "2026-05-16"):
-        make_partition(runs, date)
+        finalize_day(runs, state, date)
     # 2026-05-14 is a known gap: deliberately no partition.
     return runs, state
 
@@ -124,8 +137,8 @@ def test_detects_interior_missing_day(tmp_path):
     # later day (2026-05-16) is finalized, so the hole is a genuine interior gap.
     runs = tmp_path / "runs"
     state = tmp_path / "state"
-    make_partition(runs, "2026-05-13")
-    make_partition(runs, "2026-05-16")  # 14 is a known gap; 15 is the missing hole
+    finalize_day(runs, state, "2026-05-13")
+    finalize_day(runs, state, "2026-05-16")  # 14 is a known gap; 15 is the missing hole
     li.build_chain(runs, state, EPOCH, TODAY, GAPS)
     report = li.verify_chain(runs, state, EPOCH, TODAY, GAPS)
     issues = {(f["date"], f["issue"]) for f in report["findings"]}
@@ -163,7 +176,8 @@ def test_append_day_manifest_matches_build_chain(tmp_path):
         li.append_day_manifest(runs, state, date, EPOCH, GAPS)
     assert li.verify_chain(runs, state, EPOCH, TODAY, GAPS)["ok"] is True
     incremental_head = li.chain_sha(json.loads(li.manifest_path(state, "2026-05-16").read_text()))
-    built_head = li.build_chain(runs, tmp_path / "state2", EPOCH, TODAY, GAPS)["head_sha"]
+    # A full rebuild over the same finalized days reproduces the same chain head.
+    built_head = li.build_chain(runs, state, EPOCH, TODAY, GAPS)["head_sha"]
     assert incremental_head == built_head
 
 
@@ -201,6 +215,17 @@ def test_append_does_not_baseline_unfinalized_partition(tmp_path):
     partial.write_text(json.dumps({"run_date": "2026-05-15", "banks_counts": {"rates": 0}}), encoding="utf-8")
     li.append_day_manifest(runs, state, "2026-05-16", EPOCH, GAPS)
     assert not li.manifest_path(state, "2026-05-15").is_file()  # partial day not baselined
+
+
+def test_append_does_not_baseline_markerless_day(tmp_path):
+    # Codex: a day with a valid export manifest but NO completion marker (crash
+    # after copying exports, before .done.json) is not finalized and must not be
+    # baselined or linked into the chain.
+    runs, state = seed_ledger(tmp_path)
+    li.append_day_manifest(runs, state, "2026-05-13", EPOCH, GAPS)
+    (state / "2026-05-15.done.json").unlink()  # drop 15's completion marker
+    li.append_day_manifest(runs, state, "2026-05-16", EPOCH, GAPS)
+    assert not li.manifest_path(state, "2026-05-15").is_file()
 
 
 def test_append_refuses_to_overwrite_unreadable_manifest(tmp_path):
