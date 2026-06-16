@@ -133,10 +133,11 @@ def compact_history(
     """Reshape per-day ``aggregate_ribbon`` outputs into a compact history series.
 
     ``aggregates`` maps each run_date to ``aggregate_ribbon(rows, section)`` for
-    that day. Returns overall per-day points plus per-provider daily series,
-    aligned to ``run_dates`` (days without data carry nulls). This compact shape
-    replaces shipping raw per-product history rows to the client, while staying on
-    the same comparison-rate metric the live ribbon uses.
+    that day. ``points`` is dense — one entry per ``run_dates`` day, with nulls on
+    days that have no data. ``providers[*].by_date`` is a SPARSE date->stats map
+    (only the days a provider published), so callers index it by date, not by
+    position. This compact shape replaces shipping raw per-product history rows to
+    the client, while staying on the same comparison-rate metric the live ribbon uses.
     """
     ordered = list(run_dates)
     points: List[Dict[str, Any]] = []

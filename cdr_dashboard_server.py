@@ -127,6 +127,9 @@ BANK_HISTORY_COLUMNS = (
     # synth rows copy it via dict(template) in fill_history_gaps, so the value still
     # rides through on gap-fill days.
     "account_class",
+    # comparison_rate lets the compact history aggregate on the same fees-folded-in
+    # metric as the live ribbon; deposits omit it and fall back to the headline rate.
+    "comparison_rate",
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
@@ -897,43 +900,35 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
         other variant. Window selection stays client-side over these compact points.
         """
         dbs = bank_history_db_paths(max_run_date)
-        signature = tuple((str(path), path.stat().st_mtime, path.stat().st_size) for path in dbs)
+        signature = tuple(
+            (str(path), (st := path.stat()).st_mtime, st.st_size) for path in dbs
+        )
         cache_key = (f"compact:{int(include_non_standard)}:{max_run_date}", section, signature)
         with history_cache_lock:
             cached = history_cache.get(cache_key)
             if cached is not None:
                 return cached
-        filter_sql, filter_params = bank_section_rate_filter(section)
-        rows_by_date: dict[str, list[dict[str, object]]] = {}
+        # Reuse the raw read + gap-fill so the compact aggregate is identity-faithful
+        # to /api/banks/history/section (carry-forward over transient ingest gaps),
+        # then aggregate each day with the shared comparison-rate kernel.
+        rows: list[dict[str, object]] = []
         for db_path in dbs:
             try:
-                with connect_readonly(db_path) as con:
-                    con.row_factory = sqlite3.Row
-                    cols = bank_rate_columns(con)
-                    where = "dataset = ? AND rate IS NOT NULL AND rate != ''" + filter_sql
-                    params: list[object] = [section, *filter_params]
-                    if max_run_date:
-                        where += " AND run_date <= ?"
-                        params.append(max_run_date)
-                    if not include_non_standard and "account_class" in cols:
-                        where += " AND COALESCE(account_class, '') != 'non_standard'"
-                    comparison_select = (
-                        "comparison_rate" if "comparison_rate" in cols else "'' AS comparison_rate"
-                    )
-                    # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-                    cur = con.execute(
-                        "SELECT run_date, provider, product_key, product_id, product_name, rate, "
-                        f"{comparison_select} FROM bank_rates WHERE {where}",
-                        params,
-                    )
-                    for row in cur:
-                        day = str(row["run_date"] or "")
-                        if day:
-                            rows_by_date.setdefault(day, []).append(dict(row))
+                rows.extend(read_bank_history_db(db_path, max_run_date, section))
             except sqlite3.Error as exc:
                 print(f"Skipping unreadable history DB {db_path}: {exc}")
-        run_dates = sorted(rows_by_date)
-        aggregates = {day: aggregate_ribbon(rows_by_date[day], section) for day in run_dates}
+        run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        filled_rows, _carry = fill_history_gaps(rows, run_dates)
+        if not include_non_standard:
+            filled_rows = [
+                r for r in filled_rows if str(r.get("account_class") or "") != "non_standard"
+            ]
+        rows_by_date: dict[str, list[dict[str, object]]] = {}
+        for row in filled_rows:
+            day = str(row.get("run_date") or "")
+            if day:
+                rows_by_date.setdefault(day, []).append(row)
+        aggregates = {day: aggregate_ribbon(rows_by_date.get(day, []), section) for day in run_dates}
         payload = {
             "run_date": max_run_date,
             "section": section,
@@ -1167,7 +1162,7 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 raw_date = str(query.get("date", [""])[0] or "").strip()
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 section = parse_bank_section_param(query.get("section", [""])[0])
-                include_ns = ((query.get("include_non_standard") or [""])[0] or "").strip() in ("1", "true", "yes")
+                include_ns = ((query.get("include_non_standard") or [""])[0] or "").strip().lower() in ("1", "true", "yes")
                 body, gz = bank_history_compact_payload(date, section, include_ns)
                 return body, "application/json; charset=utf-8", gz
             if is_economic_data_page_path(path):
