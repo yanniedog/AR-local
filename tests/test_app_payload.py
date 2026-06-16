@@ -722,3 +722,47 @@ def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     assert ribbon["counts"]["rates"] == 5  # none dropped
     assert round(ribbon["range"]["min"], 4) == 0.04  # C: 4.0 headline (comparison "0")
     assert round(ribbon["range"]["max"], 4) == 0.05  # B: 5.0 headline (comparison None)
+
+
+def test_compact_history_reshapes_per_day_aggregates():
+    import cdr_ribbon_normalize as crn
+
+    d1, d2 = "2026-06-10", "2026-06-11"
+    aggs = {
+        d1: crn.aggregate_ribbon(
+            [
+                {"product_key": "A", "provider": "X", "rate": "5.0"},
+                {"product_key": "B", "provider": "Y", "rate": "4.0"},
+            ],
+            "Savings",
+        ),
+        d2: crn.aggregate_ribbon(
+            [{"product_key": "A", "provider": "X", "rate": "5.5"}],
+            "Savings",
+        ),
+    }
+    # A gap day (d3) with no aggregate must carry nulls, keeping the series aligned.
+    out = crn.compact_history([d1, d2, "2026-06-12"], aggs)
+    assert out["run_dates"] == [d1, d2, "2026-06-12"]
+    assert [p["date"] for p in out["points"]] == [d1, d2, "2026-06-12"]
+    assert round(out["points"][0]["max"], 4) == 0.05  # d1 overall max = 5.0%
+    assert out["points"][2]["min"] is None and out["points"][2]["count"] == 0  # gap day
+    provider_x = next(p for p in out["providers"] if p["provider"] == "X")
+    assert set(provider_x["by_date"]) == {d1, d2}  # X present both days, not the gap
+    assert round(provider_x["by_date"][d2]["median"], 4) == 0.055
+    # Compact: a handful of points/providers, never the raw per-product rows.
+    assert "rates" not in out
+
+
+def test_history_index_key_matches_dashboard_contract():
+    import cdr_dashboard_server as srv
+
+    row = {"provider": "X", "product_key": "P1", "rate": "5.0", "lvr_tier": "70_80"}
+    key = srv.history_index_key(row)
+    # Joined with the same  separator the dashboard's historyIndexKey uses.
+    assert "" in key
+    # Rate is intentionally excluded from identity, so two samples of the same
+    # product at different rates share a key (a product's history is one series).
+    assert srv.history_index_key({**row, "rate": "9.9"}) == key
+    # A different product key is a different identity (current-catalogue filtering).
+    assert srv.history_index_key({**row, "product_key": "P2"}) != key

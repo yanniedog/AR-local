@@ -33,6 +33,7 @@ from cdr_economic_local import (
 from cdr_economic_proxy import ProxyUpstreamError, proxy_upstream_get
 from cdr_ribbon_normalize import (
     aggregate_ribbon,
+    compact_history,
     extract_fixed_rate_term_years,
     normalize_rate_structure_group,
     normalize_td_rate_structure_group,
@@ -126,6 +127,9 @@ BANK_HISTORY_COLUMNS = (
     # synth rows copy it via dict(template) in fill_history_gaps, so the value still
     # rides through on gap-fill days.
     "account_class",
+    # comparison_rate lets the compact history aggregate on the same fees-folded-in
+    # metric as the live ribbon; deposits omit it and fall back to the headline rate.
+    "comparison_rate",
 )
 VALID_BANK_SECTIONS = frozenset(("Mortgage", "Savings", "TD"))
 
@@ -343,6 +347,16 @@ def canonicalize_history_row(item: dict[str, object]) -> None:
 
 def canonicalize_section_row(item: dict[str, object], section: str) -> None:
     canonicalize_rate_structure_fields(item, section)
+
+
+def history_index_key(row: dict[str, object]) -> str:
+    """Current-catalogue identity for a history row.
+
+    Mirrors ``dashboard/utils.js historyIndexKey`` exactly (same field list, same
+    ``\\u0001`` separator) so the server can restrict compact history to identities
+    present on the anchor date — matching the dashboard's filteredHistoryRows.
+    """
+    return "".join(str(row.get(field) or "") for field in HISTORY_IDENTITY_FIELDS)
 
 
 def fill_history_gaps(
@@ -884,6 +898,72 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
             history_cache[cache_key] = entry
         return entry
 
+    def bank_history_compact_payload(
+        max_run_date: str, section: str, include_non_standard: bool = False
+    ) -> Tuple[bytes, bytes | None]:
+        """Compact per-day, per-provider history aggregate for one section.
+
+        Replaces shipping raw per-product history rows: each day is aggregated
+        server-side with the shared ribbon kernel (comparison-rate metric), so the
+        client receives a small overall + per-provider series instead of ~180k
+        rows. Standard-only by default; ``include_non_standard`` serves the toggle's
+        other variant. Window selection stays client-side over these compact points.
+        """
+        dbs = bank_history_db_paths(max_run_date)
+        signature = tuple(
+            (str(path), (st := path.stat()).st_mtime, st.st_size) for path in dbs
+        )
+        cache_key = (f"compact:{int(include_non_standard)}:{max_run_date}", section, signature)
+        with history_cache_lock:
+            cached = history_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        # Reuse the raw read + gap-fill so the compact aggregate is identity-faithful
+        # to /api/banks/history/section (carry-forward over transient ingest gaps),
+        # then aggregate each day with the shared comparison-rate kernel.
+        rows: list[dict[str, object]] = []
+        for db_path in dbs:
+            try:
+                rows.extend(read_bank_history_db(db_path, max_run_date, section))
+            except sqlite3.Error as exc:
+                print(f"Skipping unreadable history DB {db_path}: {exc}")
+        run_dates = sorted({str(row.get("run_date") or "") for row in rows if row.get("run_date")})
+        filled_rows, _carry = fill_history_gaps(rows, run_dates)
+        if not include_non_standard:
+            filled_rows = [
+                r for r in filled_rows if str(r.get("account_class") or "") != "non_standard"
+            ]
+        # Restrict to the current catalogue (identities present on the anchor/latest
+        # retained date), mirroring the dashboard's filteredHistoryRows so a product
+        # discontinued before the anchor cannot skew the historical aggregate.
+        anchor = run_dates[-1] if run_dates else ""
+        anchor_keys = {
+            history_index_key(r)
+            for r in filled_rows
+            if str(r.get("run_date") or "") == anchor
+        }
+        rows_by_date: dict[str, list[dict[str, object]]] = {}
+        for row in filled_rows:
+            if anchor_keys and history_index_key(row) not in anchor_keys:
+                continue
+            day = str(row.get("run_date") or "")
+            if day:
+                rows_by_date.setdefault(day, []).append(row)
+        aggregates = {day: aggregate_ribbon(rows_by_date.get(day, []), section) for day in run_dates}
+        payload = {
+            "run_date": max_run_date,
+            "section": section,
+            "include_non_standard": include_non_standard,
+            **compact_history(run_dates, aggregates),
+        }
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        entry = (body, maybe_gzip(body, "application/json"))
+        with history_cache_lock:
+            if len(history_cache) >= MAX_HISTORY_CACHE_ENTRIES:
+                history_cache.pop(next(iter(history_cache)))
+            history_cache[cache_key] = entry
+        return entry
+
     def warm_common_files() -> None:
         for rel in (
             "index.html",
@@ -1098,6 +1178,13 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 date = parse_run_date_param(raw_date) if raw_date else ""
                 section = parse_bank_section_param(query.get("section", [""])[0])
                 body, gz = bank_history_payload(date, section)
+                return body, "application/json; charset=utf-8", gz
+            if path == "/api/banks/history/section/compact":
+                raw_date = str(query.get("date", [""])[0] or "").strip()
+                date = parse_run_date_param(raw_date) if raw_date else ""
+                section = parse_bank_section_param(query.get("section", [""])[0])
+                include_ns = ((query.get("include_non_standard") or [""])[0] or "").strip().lower() in ("1", "true", "yes")
+                body, gz = bank_history_compact_payload(date, section, include_ns)
                 return body, "application/json; charset=utf-8", gz
             if is_economic_data_page_path(path):
                 target = resolve_site_public_file(site_root, path)
