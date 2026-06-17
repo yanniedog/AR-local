@@ -555,6 +555,35 @@ def test_build_and_publish_dual_computes_payload_once(tmp_path, monkeypatch):
     assert dated_manifest["files"]["core"]["sha256"] == latest_manifest["files"]["core"]["sha256"]
 
 
+@pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
+def test_build_and_publish_dual_dated_only_skips_rolling(tmp_path, monkeypatch):
+    import shutil
+
+    exports = tmp_path / "exports"
+    shutil.copytree(SAMPLE_EXPORTS, exports)
+
+    calls = {"n": 0}
+    real_compute = app_payload._compute_payload
+
+    def counting_compute(*args, **kwargs):
+        calls["n"] += 1
+        return real_compute(*args, **kwargs)
+
+    monkeypatch.setattr(app_payload, "_compute_payload", counting_compute)
+    monkeypatch.setattr(app_payload, "publish_payload", lambda *a, **k: True)
+
+    manifest, pub_dated, pub_latest = app_payload.build_and_publish_dual(
+        exports, out_dir=tmp_path / "dated", update_latest=False
+    )
+
+    # Still computes exactly once; no rolling release is built or published.
+    assert calls["n"] == 1
+    assert pub_dated is True and pub_latest is False
+    assert not (exports / "app-payload-latest").exists()
+    dated_manifest = json.loads((tmp_path / "dated" / "manifest.json").read_text())
+    assert app_payload.dated_tag(manifest["run_date"]) in dated_manifest["files"]["core"]["url"]
+
+
 def test_package_payload_same_data_packages_both_tags(tmp_path):
     # CI-runnable (no sample/network): proves the compute-once contract — one
     # precomputed payload packages into both the dated and rolling releases with
@@ -569,10 +598,15 @@ def test_package_payload_same_data_packages_both_tags(tmp_path):
         "history_banks": None,
         "bank_history": None,
     }
+    import copy
+
+    original = copy.deepcopy(data)
     dated_tag = app_payload.dated_tag(run_date)
     dated = app_payload._package_payload(data, tmp_path / "dated", tag=dated_tag)
     latest = app_payload._package_payload(data, tmp_path / "latest", tag=app_payload.DEFAULT_TAG)
 
+    # Packaging must not mutate the shared precomputed data (reused across tags).
+    assert data == original
     assert dated["files"]["core"]["sha256"] == latest["files"]["core"]["sha256"]
     assert dated_tag in dated["files"]["core"]["url"]
     assert app_payload.DEFAULT_TAG in latest["files"]["core"]["url"]
