@@ -43,6 +43,78 @@ function gh(args) {
   return (res.stdout || '').trim();
 }
 
+function ghTry(args) {
+  const env = ghToken ? { ...process.env, GH_TOKEN: ghToken } : process.env;
+  const res = spawnSync('gh', args, { encoding: 'utf8', cwd: repoRoot, env, timeout: SPAWN_TIMEOUT_MS });
+  // A spawn failure (gh missing, timeout) is NOT "command returned non-zero" — it
+  // means we couldn't determine anything, so surface it rather than mis-read it as
+  // a clean negative (Gemini).
+  if (res.error) {
+    throw new Error(`gh ${args.join(' ')} failed to execute: ${res.error.message}`);
+  }
+  return { ok: res.status === 0, stdout: (res.stdout || '').trim(), stderr: (res.stderr || '').trim() };
+}
+
+function apkReleaseExists(version) {
+  return ghTry(['release', 'view', `app-v${version}`, '--repo', repo]).ok;
+}
+
+// A mobile-android-apk run is already queued/in-progress. mobile-android-apk uses
+// cancel-in-progress: false, so without this a second drain run (e.g. the
+// simultaneous-merge path this script polls for) would queue a duplicate full
+// build for the same version before app-v<version> exists (Codex).
+function apkBuildInFlight() {
+  const out = ghTry([
+    'run', 'list', '--workflow', 'mobile-android-apk.yml',
+    '--json', 'status', '-L', '20', '--repo', repo,
+  ]).stdout;
+  let rows = [];
+  try {
+    rows = JSON.parse(out || '[]');
+  } catch {
+    return false;
+  }
+  return Array.isArray(rows) && rows.some((r) => r.status === 'queued' || r.status === 'in_progress');
+}
+
+// The version-bump push/merge is authored by GITHUB_TOKEN, and GitHub does not
+// trigger workflows from GITHUB_TOKEN-driven push events — so mobile-android-apk's
+// push trigger never fires for auto-releases. Dispatch it explicitly instead (a
+// workflow_dispatch is exempt from that recursion guard). Requires actions:write.
+// Failure propagates: a silent dispatch failure would leave the new version on
+// main with no APK and no failing check (Codex / Sourcery).
+function dispatchApkBuild(version) {
+  if (dryRun) {
+    console.log(`mobile-auto-release-on-drain: dry-run — would dispatch mobile-android-apk for v${version}`);
+    return;
+  }
+  gh(['workflow', 'run', 'mobile-android-apk.yml', '--ref', 'main', '--repo', repo]);
+  console.log(`mobile-auto-release-on-drain: dispatched mobile-android-apk for v${version} on main`);
+}
+
+// Build an APK for main's CURRENT version when one isn't published yet. Callers
+// must only invoke this once main HEAD already carries the version to ship; the
+// app-v<version> + in-flight guards keep it idempotent across the many runs this
+// workflow makes (once per merged PR).
+export function ensureApkForMainHead({
+  readVersion = readCurrentVersion,
+  releaseExists = apkReleaseExists,
+  buildInFlight = apkBuildInFlight,
+  dispatch = dispatchApkBuild,
+} = {}) {
+  const version = readVersion();
+  if (releaseExists(version)) {
+    console.log(`mobile-auto-release-on-drain: app-v${version} already published — no APK dispatch`);
+    return false;
+  }
+  if (buildInFlight()) {
+    console.log('mobile-auto-release-on-drain: mobile-android-apk already queued/in-progress — no APK dispatch');
+    return false;
+  }
+  dispatch(version);
+  return true;
+}
+
 function git(args) {
   const res = spawnSync('git', args, {
     encoding: 'utf8',
@@ -173,7 +245,9 @@ function publishDirectToMain(next, message) {
 
   const push = pushHeadToMain();
   if (push.ok) {
-    console.log(`mobile-auto-release-on-drain: pushed v${next} to main; mobile-android-apk runs on push`);
+    console.log(`mobile-auto-release-on-drain: pushed v${next} to main`);
+    // GITHUB_TOKEN pushes don't trigger mobile-android-apk's push event; dispatch it.
+    ensureApkForMainHead();
     return 'direct';
   }
 
@@ -199,6 +273,9 @@ async function main() {
 
   if (alreadyAutoBumpedOnHead()) {
     console.log(`mobile-auto-release-on-drain: origin/main already at auto-release bump (${readHeadCommitSha()}) — skip`);
+    // main carries a bumped version; ensure its APK exists (covers the fallback
+    // bump-PR path, whose GITHUB_TOKEN merge can't trigger the build on push).
+    ensureApkForMainHead();
     process.exit(0);
   }
 

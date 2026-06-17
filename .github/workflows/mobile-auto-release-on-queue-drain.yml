@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write  # dispatch mobile-android-apk after a bump (GITHUB_TOKEN push won't)
 
 concurrency:
   group: mobile-auto-release-on-drain
