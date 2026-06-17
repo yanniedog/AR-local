@@ -546,6 +546,21 @@ def build_payload(
     dashboard_dir: Path = BASE_DIR / "dashboard",
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
+    data = _compute_payload(exports_dir, dashboard_dir=dashboard_dir)
+    return _package_payload(data, out_dir, repo=repo, tag=tag)
+
+
+def _compute_payload(
+    exports_dir: Path,
+    *,
+    dashboard_dir: Path = BASE_DIR / "dashboard",
+) -> Dict[str, Any]:
+    """Parse the run's exports + scan history into the (tag-independent) payload data.
+
+    This is the expensive part — parsing the multi-MB current banks.json and scanning
+    every historical snapshot. The result packages identically into both the dated
+    and rolling releases, so build_and_publish_dual computes it once rather than twice.
+    """
     latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
     run_date = str(latest.get("run_date") or "")
     if not run_date:
@@ -605,17 +620,36 @@ def build_payload(
         schema_version=SCHEMA_VERSION,
     )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
+    return {
+        "core": core,
+        "details": details,
+        "run_date": run_date,
+        "counts": counts,
+        "search_index": search_index,
+        "history_banks": history_banks,
+        "bank_history": bank_history,
+    }
+
+
+def _package_payload(
+    data: Dict[str, Any],
+    out_dir: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    tag: str = DEFAULT_TAG,
+) -> Dict[str, Any]:
+    """Gzip + write the manifest for one tag's release from precomputed payload data."""
     return _package(
-        core,
-        details,
-        run_date,
+        data["core"],
+        data["details"],
+        data["run_date"],
         out_dir,
         repo=repo,
         tag=tag,
-        counts=counts,
-        search_index=search_index,
-        history_banks=history_banks,
-        bank_history=bank_history,
+        counts=data["counts"],
+        search_index=data["search_index"],
+        history_banks=data["history_banks"],
+        bank_history=data["bank_history"],
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -1291,14 +1325,15 @@ def build_and_publish_dual(
     ``run_date`` is not older than the live rolling manifest (unless ``--force`` on
     the latest publish path — not exposed here; backfill handles end-of-run refresh).
     """
-    latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
-    run_date = str(latest.get("run_date") or "")
-    if not run_date:
-        raise ValueError("latest.json has no run_date")
+    # Compute the (tag-independent) payload data ONCE — parsing the current exports
+    # and scanning every history snapshot — then package it into both releases.
+    # Previously each release rebuilt from scratch, doubling that work every run.
+    data = _compute_payload(exports_dir)
+    run_date = data["run_date"]
 
     dated = dated_tag(run_date)
     out_dated = out_dir or (exports_dir / "app-payload")
-    manifest = build_payload(exports_dir, out_dated, repo=repo, tag=dated)
+    manifest = _package_payload(data, out_dated, repo=repo, tag=dated)
     try:
         published_dated = publish_payload(out_dated, repo=repo, tag=dated)
     except Exception as exc:  # noqa: BLE001 - rolling latest must still run
@@ -1315,7 +1350,7 @@ def build_and_publish_dual(
     published_latest = False
     if update_latest:
         out_latest = exports_dir / "app-payload-latest"
-        build_payload(exports_dir, out_latest, repo=repo, tag=DEFAULT_TAG)
+        _package_payload(data, out_latest, repo=repo, tag=DEFAULT_TAG)
         status, live = _live_manifest_status(repo, DEFAULT_TAG)
         live_run_date = str((live or {}).get("run_date") or "") if status == "present" else ""
         if live_run_date and live_run_date > run_date:
