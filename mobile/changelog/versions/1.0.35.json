@@ -1,0 +1,35 @@
+{
+  "version": "1.0.35",
+  "date": "2026-06-17",
+  "summaryBullets": [
+    "fix(mobile): auto-build APK after every auto-release (GITHUB_TOKEN push is suppressed) (#381)",
+    "chore(mobile): auto-release bump to v1.0.34 (after d1427f3) (#379)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "fix(mobile): auto-build APK after every auto-release (GITHUB_TOKEN push is suppressed) (#381)"
+        },
+        {
+          "text": "chore(mobile): auto-release bump to v1.0.34 (after d1427f3) (#379)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.35"
+        },
+        {
+          "text": "Since tag: app-v1.0.33"
+        }
+      ]
+    }
+  ]
+}
