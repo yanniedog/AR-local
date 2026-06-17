@@ -43,6 +43,51 @@ function gh(args) {
   return (res.stdout || '').trim();
 }
 
+function ghTry(args) {
+  const env = ghToken ? { ...process.env, GH_TOKEN: ghToken } : process.env;
+  const res = spawnSync('gh', args, { encoding: 'utf8', cwd: repoRoot, env, timeout: SPAWN_TIMEOUT_MS });
+  return { ok: res.status === 0, stdout: (res.stdout || '').trim(), stderr: (res.stderr || '').trim() };
+}
+
+function apkReleaseExists(version) {
+  return ghTry(['release', 'view', `app-v${version}`, '--repo', repo]).ok;
+}
+
+// The version-bump push/merge is authored by GITHUB_TOKEN, and GitHub does not
+// trigger workflows from GITHUB_TOKEN-driven push events — so mobile-android-apk's
+// push trigger never fires for auto-releases. Dispatch it explicitly instead (a
+// workflow_dispatch is exempt from that recursion guard). Requires actions:write.
+function dispatchApkBuild(version) {
+  if (dryRun) {
+    console.log(`mobile-auto-release-on-drain: dry-run — would dispatch mobile-android-apk for v${version}`);
+    return;
+  }
+  try {
+    gh(['workflow', 'run', 'mobile-android-apk.yml', '--ref', 'main', '--repo', repo]);
+    console.log(`mobile-auto-release-on-drain: dispatched mobile-android-apk for v${version} on main`);
+  } catch (err) {
+    console.warn(`mobile-auto-release-on-drain: failed to dispatch mobile-android-apk: ${err.message}`);
+  }
+}
+
+// Build an APK for main's CURRENT version when one isn't published yet. Callers
+// must only invoke this once main HEAD already carries the version to ship; the
+// app-v<version> guard keeps it idempotent across the many runs this workflow
+// makes (once per merged PR).
+export function ensureApkForMainHead({
+  readVersion = readCurrentVersion,
+  releaseExists = apkReleaseExists,
+  dispatch = dispatchApkBuild,
+} = {}) {
+  const version = readVersion();
+  if (releaseExists(version)) {
+    console.log(`mobile-auto-release-on-drain: app-v${version} already published — no APK dispatch`);
+    return false;
+  }
+  dispatch(version);
+  return true;
+}
+
 function git(args) {
   const res = spawnSync('git', args, {
     encoding: 'utf8',
@@ -173,7 +218,9 @@ function publishDirectToMain(next, message) {
 
   const push = pushHeadToMain();
   if (push.ok) {
-    console.log(`mobile-auto-release-on-drain: pushed v${next} to main; mobile-android-apk runs on push`);
+    console.log(`mobile-auto-release-on-drain: pushed v${next} to main`);
+    // GITHUB_TOKEN pushes don't trigger mobile-android-apk's push event; dispatch it.
+    ensureApkForMainHead();
     return 'direct';
   }
 
@@ -199,6 +246,9 @@ async function main() {
 
   if (alreadyAutoBumpedOnHead()) {
     console.log(`mobile-auto-release-on-drain: origin/main already at auto-release bump (${readHeadCommitSha()}) — skip`);
+    // main carries a bumped version; ensure its APK exists (covers the fallback
+    // bump-PR path, whose GITHUB_TOKEN merge can't trigger the build on push).
+    ensureApkForMainHead();
     process.exit(0);
   }
 

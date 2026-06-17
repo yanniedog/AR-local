@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { waitForQueueDrain } from './mobile-auto-release-on-drain.mjs';
+import { waitForQueueDrain, ensureApkForMainHead } from './mobile-auto-release-on-drain.mjs';
 
 test('waitForQueueDrain refreshes main after a queued PR closes', async () => {
   const openCounts = [1, 0];
@@ -33,4 +33,28 @@ test('waitForQueueDrain skips without refreshing when multiple PRs remain', asyn
 
   assert.equal(remaining, 2);
   assert.equal(syncCount, 0);
+});
+
+test('ensureApkForMainHead dispatches when the version has no published APK', () => {
+  const dispatched = [];
+  const did = ensureApkForMainHead({
+    readVersion: () => '1.0.40',
+    releaseExists: () => false,
+    dispatch: (v) => dispatched.push(v),
+  });
+  assert.equal(did, true);
+  assert.deepEqual(dispatched, ['1.0.40']);
+});
+
+test('ensureApkForMainHead is a no-op when the APK is already published', () => {
+  let dispatchedCount = 0;
+  const did = ensureApkForMainHead({
+    readVersion: () => '1.0.29',
+    releaseExists: (v) => v === '1.0.29',
+    dispatch: () => {
+      dispatchedCount += 1;
+    },
+  });
+  assert.equal(did, false);
+  assert.equal(dispatchedCount, 0);
 });
