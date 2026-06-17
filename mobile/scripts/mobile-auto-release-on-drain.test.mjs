@@ -40,6 +40,7 @@ test('ensureApkForMainHead dispatches when the version has no published APK', ()
   const did = ensureApkForMainHead({
     readVersion: () => '1.0.40',
     releaseExists: () => false,
+    buildInFlight: () => false,
     dispatch: (v) => dispatched.push(v),
   });
   assert.equal(did, true);
@@ -51,6 +52,21 @@ test('ensureApkForMainHead is a no-op when the APK is already published', () => 
   const did = ensureApkForMainHead({
     readVersion: () => '1.0.29',
     releaseExists: (v) => v === '1.0.29',
+    buildInFlight: () => false,
+    dispatch: () => {
+      dispatchedCount += 1;
+    },
+  });
+  assert.equal(did, false);
+  assert.equal(dispatchedCount, 0);
+});
+
+test('ensureApkForMainHead skips dispatch when a build is already in flight', () => {
+  let dispatchedCount = 0;
+  const did = ensureApkForMainHead({
+    readVersion: () => '1.0.41',
+    releaseExists: () => false,
+    buildInFlight: () => true,
     dispatch: () => {
       dispatchedCount += 1;
     },
