@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-16T16:35:18.557Z",
+  "generated_at": "2026-06-17T00:41:09.667Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -330,6 +330,15 @@
         "chore(mobile): auto-release bump to v1.0.30 (after be1ac6c) (#370)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.34"
+    },
+    {
+      "version": "1.0.35",
+      "date": "2026-06-17",
+      "summaryBullets": [
+        "fix(mobile): auto-build APK after every auto-release (GITHUB_TOKEN push is suppressed) (#381)",
+        "chore(mobile): auto-release bump to v1.0.34 (after d1427f3) (#379)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.35"
     }
   ]
 }
