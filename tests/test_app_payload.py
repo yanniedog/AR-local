@@ -275,6 +275,35 @@ def test_dated_tag_naming():
         app_payload.dated_tag("bad")
 
 
+def test_published_history_dates_derives_from_tags_without_per_release_fetch(monkeypatch):
+    # The dates index is built from the dated tag names alone (one tag-list call),
+    # not a manifest GET per dated release (the former N+1).
+    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
+    monkeypatch.setattr(app_payload, "_gh_authed", lambda gh: True)
+    monkeypatch.setattr(
+        app_payload,
+        "_list_payload_release_tags",
+        lambda gh, repo: [
+            "app-payload-latest",            # rolling -> ignored
+            "app-payload-2026-05-19",
+            "app-payload-2026-05-13",
+            "app-payload-2026-05-12",        # before min_date -> filtered
+            "app-payload-not-a-date",        # not a dated tag -> ignored
+        ],
+    )
+    fetches = {"n": 0}
+
+    def fail_on_fetch(*args, **kwargs):
+        fetches["n"] += 1
+        return ("present", {})
+
+    monkeypatch.setattr(app_payload, "_live_manifest_status", fail_on_fetch)
+
+    dates = app_payload._published_history_dates("yanniedog/AR-local", min_date="2026-05-13")
+    assert dates == ["2026-05-13", "2026-05-19"]
+    assert fetches["n"] == 0  # no per-release manifest GET
+
+
 def test_is_rolling_tag():
     assert app_payload.is_rolling_tag("app-payload-latest")
     assert not app_payload.is_rolling_tag("app-payload-2026-06-08")
