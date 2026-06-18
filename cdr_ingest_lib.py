@@ -43,6 +43,13 @@ def _version_list(preferred: Optional[int]) -> Optional[List[int]]:
     return [preferred] if preferred is not None else None
 
 
+# Per-holder circuit breaker: once a holder's product-detail fetches are mostly
+# failing (a real outage, not just a few bad products), stop probing the rest of
+# that holder and fail them fast — bounding the wasted work + load on a down holder.
+BREAKER_MIN_SAMPLE = 20    # require this many attempts before the breaker can trip
+BREAKER_FAIL_RATIO = 0.8   # trip when >= this fraction of attempts have failed
+
+
 # ─── Banking detail work unit ─────────────────────────────────────────────────
 
 class _BankWork(NamedTuple):
@@ -62,8 +69,12 @@ def _fetch_bank_detail(
     bank_dir_name: str,
     failure_lock: Optional[threading.Lock],
     preferred_version: Optional[int] = None,
-) -> None:
-    """Write product-detail.json for one bank product (called from thread pool)."""
+) -> bool:
+    """Write product-detail.json for one bank product (called from thread pool).
+
+    Returns True when the detail was fetched and written, False on failure, so the
+    caller's per-holder circuit breaker can track the failure rate.
+    """
     pid, leaf, prefetched = work
     detail_path = leaf / "product-detail.json"
 
@@ -80,19 +91,20 @@ def _fetch_bank_detail(
     parsed = res.data
     if res.ok and parsed is not None and not has_cdr_errors(parsed):
         detail_path.write_text(res.text, encoding="utf-8")
-    else:
-        append_failure(
-            date_root,
-            {
-                "phase": "product_detail",
-                "bank": bank_dir_name,
-                "product_id": pid,
-                "status": res.status,
-                "snippet": (res.text or "")[:500],
-            },
-            lock=failure_lock,
-        )
-        (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
+        return True
+    append_failure(
+        date_root,
+        {
+            "phase": "product_detail",
+            "bank": bank_dir_name,
+            "product_id": pid,
+            "status": res.status,
+            "snippet": (res.text or "")[:500],
+        },
+        lock=failure_lock,
+    )
+    (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
+    return False
 
 
 def classify_product_for_ingest(
@@ -276,8 +288,26 @@ def ingest_brand(
         f"({n_workers} concurrent)",
     )
 
+    # Per-holder circuit breaker shared across the detail workers.
+    breaker = {"attempts": 0, "failures": 0, "open": False}
+    breaker_lock = threading.Lock()
+
     def _do(work: _BankWork) -> None:
-        _fetch_bank_detail(
+        with breaker_lock:
+            if breaker["open"]:
+                # Holder is in an outage; record the skip and don't probe further.
+                append_failure(
+                    date_root,
+                    {
+                        "phase": "product_detail",
+                        "bank": bank_dir_name,
+                        "product_id": work.pid,
+                        "status": "circuit_open",
+                    },
+                    lock=failure_lock,
+                )
+                return
+        ok = _fetch_bank_detail(
             work,
             endpoint_url,
             timeout=timeout,
@@ -288,6 +318,21 @@ def ingest_brand(
             failure_lock=failure_lock,
             preferred_version=preferred_version,
         )
+        with breaker_lock:
+            breaker["attempts"] += 1
+            if not ok:
+                breaker["failures"] += 1
+            if (
+                not breaker["open"]
+                and breaker["attempts"] >= BREAKER_MIN_SAMPLE
+                and breaker["failures"] >= BREAKER_FAIL_RATIO * breaker["attempts"]
+            ):
+                breaker["open"] = True
+                log(
+                    f"[banks] {bank_dir_name}: circuit opened "
+                    f"({breaker['failures']}/{breaker['attempts']} detail fetches failed) "
+                    f"— skipping remaining details"
+                )
 
     if n_workers <= 1:
         for w in pending:
