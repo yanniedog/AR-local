@@ -558,6 +558,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     def do_banks() -> None:
         banks_root.mkdir(parents=True, exist_ok=True)
+        # Start each run with a clean failure log so the end-of-run status rollup
+        # reflects THIS run, not stale failures left by a prior same-day --resume
+        # rerun (append-only failures.jsonl would otherwise double-count) (Codex).
+        (banks_root / "failures.jsonl").unlink(missing_ok=True)
         seen_dirs: Set[str] = set()
         bank_work: List[Tuple[Dict[str, str], str]] = []
         for brand in snap.banking_brands:
