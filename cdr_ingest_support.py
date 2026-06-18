@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
@@ -376,12 +377,36 @@ class FetchResult:
             return None
 
 
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Parse a Retry-After header (delta-seconds or HTTP-date) to seconds-from-now.
+
+    Returns None when absent/unparseable; an already-elapsed HTTP-date clamps to 0.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
 def http_request(
     url: str,
     headers: Dict[str, str],
     *,
     timeout: float,
-) -> Tuple[int, str]:
+) -> Tuple[int, str, Optional[float]]:
+    """GET ``url``; return (status, body, retry_after_seconds). retry_after is the
+    parsed Retry-After header (None when absent), surfaced so the caller can honor
+    a server-requested backoff on 429/503."""
     req = urllib.request.Request(
         url, headers={"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}, method="GET"
     )
@@ -389,15 +414,17 @@ def http_request(
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             body = resp.read().decode("utf-8", errors="replace")
-            return resp.getcode(), body
+            return resp.getcode(), body, _parse_retry_after(resp.headers.get("Retry-After"))
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", errors="replace")
         except Exception:
             body = str(e)
-        return int(e.code), body
+        headers_obj = getattr(e, "headers", None)
+        retry_after = _parse_retry_after(headers_obj.get("Retry-After")) if headers_obj else None
+        return int(e.code), body, retry_after
     except Exception as e:
-        return 599, str(e)
+        return 599, str(e), None
 
 
 def fetch_with_retries(
@@ -424,7 +451,7 @@ def fetch_with_retries(
             if req_timeout <= 0:
                 break
         attempt += 1
-        status, text = http_request(url, headers, timeout=req_timeout)
+        status, text, retry_after = http_request(url, headers, timeout=req_timeout)
         last_status, last_text = status, text
         if status < 400 or not retry_on(status):
             return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
@@ -433,6 +460,10 @@ def fetch_with_retries(
         # backoff + jitter, capped so a sleep never overshoots the deadline.
         base = min(2 ** (attempt - 1), 32)
         delay = base + random.uniform(0, 0.25 * base) + sleep_ms / 1000.0
+        # Honor a server-provided Retry-After (429/503) when it asks for at least
+        # as long as our backoff — never wait less than the server requested.
+        if retry_after is not None:
+            delay = max(delay, retry_after)
         if deadline is not None:
             delay = min(delay, max(0.0, deadline - time.monotonic()))
             if delay <= 0:
