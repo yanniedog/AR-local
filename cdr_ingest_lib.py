@@ -34,6 +34,15 @@ from cdr_ingest_support import (
 )
 
 
+# ─── Per-holder version cache ─────────────────────────────────────────────────
+
+def _version_list(preferred: Optional[int]) -> Optional[List[int]]:
+    """Try a holder's known-good x-v first; fetch_cdr_json still falls back through
+    the rest of CDR_VERSION_ORDER if it stops working, so this is a hint not a
+    lock-in. None means "negotiate from the top" (version not yet known)."""
+    return [preferred] if preferred is not None else None
+
+
 # ─── Banking detail work unit ─────────────────────────────────────────────────
 
 class _BankWork(NamedTuple):
@@ -52,6 +61,7 @@ def _fetch_bank_detail(
     date_root: Path,
     bank_dir_name: str,
     failure_lock: Optional[threading.Lock],
+    preferred_version: Optional[int] = None,
 ) -> None:
     """Write product-detail.json for one bank product (called from thread pool)."""
     pid, leaf, prefetched = work
@@ -62,7 +72,10 @@ def _fetch_bank_detail(
     else:
         time.sleep(sleep_ms / 1000.0)
         url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
-        res = fetch_cdr_json(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
+        res = fetch_cdr_json(
+            url, versions=_version_list(preferred_version),
+            timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
+        )
 
     parsed = res.data
     if res.ok and parsed is not None and not has_cdr_errors(parsed):
@@ -90,6 +103,7 @@ def classify_product_for_ingest(
     timeout: float,
     max_retries: int,
     sleep_ms: int,
+    preferred_version: Optional[int] = None,
 ) -> Tuple[Optional[str], Optional[FetchResult]]:
     """Returns (dataset_kind or None, optional detail_fetch_if_unknown_path)."""
     ds = infer_cdr_dataset(product, allow_name_fallback=True)
@@ -106,6 +120,7 @@ def classify_product_for_ingest(
     time.sleep(sleep_ms / 1000.0)
     detail_res = fetch_cdr_json(
         detail_url,
+        versions=_version_list(preferred_version),
         timeout=timeout,
         max_retries=max_retries,
         sleep_ms=sleep_ms,
@@ -163,6 +178,11 @@ def ingest_brand(
     pages = 0
     products_seen = 0
     capped = False
+    # Per-holder version cache: once a fetch succeeds we remember the x-v that
+    # worked and try it first for this holder's remaining pages + every product
+    # detail, instead of re-negotiating from the top each time. Set serially in
+    # Phase 1, then read-only in the Phase 2 thread pool (no shared-state race).
+    preferred_version: Optional[int] = None
 
     while url and not capped:
         if url in visited:
@@ -174,7 +194,10 @@ def ingest_brand(
             break
 
         time.sleep(sleep_ms / 1000.0)
-        res = fetch_cdr_json(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
+        res = fetch_cdr_json(
+            url, versions=_version_list(preferred_version),
+            timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
+        )
         page_file = index_dir / f"page-{pages:04d}.json"
         page_file.write_text(res.text, encoding="utf-8")
 
@@ -192,6 +215,9 @@ def ingest_brand(
                 lock=failure_lock,
             )
             break
+
+        if res.version is not None:
+            preferred_version = res.version
 
         for product in extract_products(parsed):
             if max_products is not None and products_seen >= max_products:
@@ -214,6 +240,7 @@ def ingest_brand(
                 timeout=timeout,
                 max_retries=max_retries,
                 sleep_ms=sleep_ms,
+                preferred_version=preferred_version,
             )
             if ds not in DATASET_TO_FOLDER:
                 continue
@@ -259,6 +286,7 @@ def ingest_brand(
             date_root=date_root,
             bank_dir_name=bank_dir_name,
             failure_lock=failure_lock,
+            preferred_version=preferred_version,
         )
 
     if n_workers <= 1:
