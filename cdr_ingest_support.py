@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
@@ -365,6 +366,10 @@ class FetchResult:
     url: str
     text: str
     attempts: int = 1
+    # Server-requested backoff (seconds, capped) from the last retryable response,
+    # so a caller that switches strategy (e.g. version negotiation) can still honor
+    # it even when this fetch had no same-version retry budget.
+    retry_after: Optional[float] = None
 
     @cached_property
     def data(self) -> Any:
@@ -376,12 +381,44 @@ class FetchResult:
             return None
 
 
+# Cap a server-requested Retry-After: an absurd or malicious value must not be
+# able to park an ingest worker thread (and starve the pool) for a long time.
+MAX_RETRY_AFTER_SECONDS = 60.0
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Parse a Retry-After header (delta-seconds or HTTP-date) to seconds-from-now.
+
+    Returns None when absent/unparseable; an already-elapsed HTTP-date clamps to 0;
+    the result is capped at MAX_RETRY_AFTER_SECONDS so a huge value can't hang the
+    worker pool.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return min(float(value), MAX_RETRY_AFTER_SECONDS)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    secs = max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+    return min(secs, MAX_RETRY_AFTER_SECONDS)
+
+
 def http_request(
     url: str,
     headers: Dict[str, str],
     *,
     timeout: float,
-) -> Tuple[int, str]:
+) -> Tuple[int, str, Optional[float]]:
+    """GET ``url``; return (status, body, retry_after_seconds). retry_after is the
+    parsed Retry-After header (None when absent), surfaced so the caller can honor
+    a server-requested backoff on 429/503."""
     req = urllib.request.Request(
         url, headers={"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}, method="GET"
     )
@@ -389,15 +426,17 @@ def http_request(
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             body = resp.read().decode("utf-8", errors="replace")
-            return resp.getcode(), body
+            return resp.getcode(), body, _parse_retry_after(resp.headers.get("Retry-After"))
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", errors="replace")
         except Exception:
             body = str(e)
-        return int(e.code), body
+        headers_obj = getattr(e, "headers", None)
+        retry_after = _parse_retry_after(headers_obj.get("Retry-After")) if headers_obj else None
+        return int(e.code), body, retry_after
     except Exception as e:
-        return 599, str(e)
+        return 599, str(e), None
 
 
 def fetch_with_retries(
@@ -413,6 +452,7 @@ def fetch_with_retries(
     attempt = 0
     last_status = 0
     last_text = ""
+    last_retry_after: Optional[float] = None
     # Check the shared deadline before every request, so a logical fetch never
     # issues an upstream call (nor sleeps) past its wall-clock budget.
     while attempt <= max_retries and (deadline is None or time.monotonic() < deadline):
@@ -424,8 +464,9 @@ def fetch_with_retries(
             if req_timeout <= 0:
                 break
         attempt += 1
-        status, text = http_request(url, headers, timeout=req_timeout)
+        status, text, retry_after = http_request(url, headers, timeout=req_timeout)
         last_status, last_text = status, text
+        last_retry_after = retry_after
         if status < 400 or not retry_on(status):
             return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
         if attempt > max_retries:
@@ -433,12 +474,19 @@ def fetch_with_retries(
         # backoff + jitter, capped so a sleep never overshoots the deadline.
         base = min(2 ** (attempt - 1), 32)
         delay = base + random.uniform(0, 0.25 * base) + sleep_ms / 1000.0
+        # Honor a server-provided Retry-After (429/503) when it asks for at least
+        # as long as our backoff — never wait less than the server requested.
+        if retry_after is not None:
+            delay = max(delay, retry_after)
         if deadline is not None:
             delay = min(delay, max(0.0, deadline - time.monotonic()))
             if delay <= 0:
                 break
         time.sleep(delay)
-    return FetchResult(ok=False, status=last_status, url=url, text=last_text, attempts=attempt)
+    return FetchResult(
+        ok=False, status=last_status, url=url, text=last_text, attempts=attempt,
+        retry_after=last_retry_after,
+    )
 
 
 def retryable_status(status: int) -> bool:
@@ -540,11 +588,15 @@ def fetch_cdr_json(
                     queue.append(x)
 
         # Pace version switches on a retryable failure so the shared-budget walk
-        # doesn't burst against a rate-limited / failing holder. Kept small (and
-        # capped by the deadline) so it never reintroduces the old multi-minute
-        # stalls; finer per-holder backoff/Retry-After is the follow-up's job.
+        # doesn't burst against a rate-limited / failing holder. Honor the server's
+        # Retry-After here too (capped at MAX_RETRY_AFTER_SECONDS), since the
+        # per-version probe may have had no same-version retry budget to apply it
+        # (Codex): without this a 429/503 + Retry-After would be re-probed on the
+        # next x-v after only the ~0.25s pace. Still capped by the deadline.
         if retryable_status(res.status) and queue and remaining > 0:
             pace = max(sleep_ms / 1000.0, 0.25)
+            if res.retry_after:
+                pace = max(pace, res.retry_after)
             if deadline is not None:
                 pace = min(pace, max(0.0, deadline - time.monotonic()))
             if pace > 0:
