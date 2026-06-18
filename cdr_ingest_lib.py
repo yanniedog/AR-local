@@ -31,6 +31,7 @@ from cdr_ingest_support import (
     pick_text,
     safe_url,
     sanitize_path_component,
+    summarize_failures,
 )
 
 
@@ -591,6 +592,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                         log_ts(f"ERROR: banking ingest for {futs[fut]} failed: {exc}")
 
     do_banks()
+
+    # Expose an ingest-status rollup so the daily run / monitoring can tell a
+    # complete run from one where holders, products, or a tripped circuit breaker
+    # left gaps — without parsing failures.jsonl line by line.
+    status = summarize_failures(banks_root)
+    (banks_root / "ingest-status.json").write_text(
+        json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    if status["incomplete"]:
+        log(
+            f"Ingest INCOMPLETE: {status['total']} failure(s) "
+            f"by_status={status['by_status']}; see {banks_root / 'ingest-status.json'}"
+        )
+    else:
+        log("Ingest complete: no recorded failures.")
 
     log("Done.")
     return 0
