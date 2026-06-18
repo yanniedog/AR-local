@@ -50,6 +50,45 @@ BREAKER_MIN_SAMPLE = 20    # require this many attempts before the breaker can t
 BREAKER_FAIL_RATIO = 0.8   # trip when >= this fraction of attempts have failed
 
 
+class _HolderBreaker:
+    """Per-holder circuit breaker shared across a holder's fetches.
+
+    Lock-internal and I/O-free on purpose: callers do failure logging / log() OUTSIDE
+    the lock based on the returned flags, so a slow append_failure never serializes
+    the detail workers (Gemini). Rate-based so a handful of bad products doesn't trip
+    a healthy holder.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._attempts = 0
+        self._failures = 0
+        self._open = False
+
+    def is_open(self) -> bool:
+        with self._lock:
+            return self._open
+
+    def record(self, ok: bool) -> bool:
+        """Record one outcome; return True iff this call just opened the breaker."""
+        with self._lock:
+            self._attempts += 1
+            if not ok:
+                self._failures += 1
+            if (
+                not self._open
+                and self._attempts >= BREAKER_MIN_SAMPLE
+                and self._failures >= BREAKER_FAIL_RATIO * self._attempts
+            ):
+                self._open = True
+                return True
+            return False
+
+    def snapshot(self) -> Tuple[int, int]:
+        with self._lock:
+            return self._failures, self._attempts
+
+
 # ─── Banking detail work unit ─────────────────────────────────────────────────
 
 class _BankWork(NamedTuple):
@@ -116,6 +155,7 @@ def classify_product_for_ingest(
     max_retries: int,
     sleep_ms: int,
     preferred_version: Optional[int] = None,
+    breaker: "Optional[_HolderBreaker]" = None,
 ) -> Tuple[Optional[str], Optional[FetchResult]]:
     """Returns (dataset_kind or None, optional detail_fetch_if_unknown_path)."""
     ds = infer_cdr_dataset(product, allow_name_fallback=True)
@@ -128,6 +168,12 @@ def classify_product_for_ingest(
     if not pid:
         return None, None
 
+    # Share the holder breaker with these Phase-1 classification probes (Codex): a
+    # down detail endpoint trips here too, so we stop probing every ambiguous
+    # product instead of waiting until Phase 2.
+    if breaker is not None and breaker.is_open():
+        return None, None
+
     detail_url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
     time.sleep(sleep_ms / 1000.0)
     detail_res = fetch_cdr_json(
@@ -137,6 +183,8 @@ def classify_product_for_ingest(
         max_retries=max_retries,
         sleep_ms=sleep_ms,
     )
+    if breaker is not None:
+        breaker.record(detail_res.ok)
     parsed = detail_res.data
     inner = detail_inner_record(parsed)
     if inner is None:
@@ -195,6 +243,9 @@ def ingest_brand(
     # detail, instead of re-negotiating from the top each time. Set serially in
     # Phase 1, then read-only in the Phase 2 thread pool (no shared-state race).
     preferred_version: Optional[int] = None
+    # Per-holder circuit breaker, shared across Phase-1 classification probes and
+    # the Phase-2 detail workers (so a down detail endpoint trips in either phase).
+    breaker = _HolderBreaker()
 
     while url and not capped:
         if url in visited:
@@ -253,6 +304,7 @@ def ingest_brand(
                 max_retries=max_retries,
                 sleep_ms=sleep_ms,
                 preferred_version=preferred_version,
+                breaker=breaker,
             )
             if ds not in DATASET_TO_FOLDER:
                 continue
@@ -288,25 +340,21 @@ def ingest_brand(
         f"({n_workers} concurrent)",
     )
 
-    # Per-holder circuit breaker shared across the detail workers.
-    breaker = {"attempts": 0, "failures": 0, "open": False}
-    breaker_lock = threading.Lock()
-
     def _do(work: _BankWork) -> None:
-        with breaker_lock:
-            if breaker["open"]:
-                # Holder is in an outage; record the skip and don't probe further.
-                append_failure(
-                    date_root,
-                    {
-                        "phase": "product_detail",
-                        "bank": bank_dir_name,
-                        "product_id": work.pid,
-                        "status": "circuit_open",
-                    },
-                    lock=failure_lock,
-                )
-                return
+        # Lock-free fast path: if the holder is in an outage, record the skip
+        # (file I/O done OUTSIDE the breaker lock, Gemini) and stop probing.
+        if breaker.is_open():
+            append_failure(
+                date_root,
+                {
+                    "phase": "product_detail",
+                    "bank": bank_dir_name,
+                    "product_id": work.pid,
+                    "status": "circuit_open",
+                },
+                lock=failure_lock,
+            )
+            return
         ok = _fetch_bank_detail(
             work,
             endpoint_url,
@@ -318,21 +366,12 @@ def ingest_brand(
             failure_lock=failure_lock,
             preferred_version=preferred_version,
         )
-        with breaker_lock:
-            breaker["attempts"] += 1
-            if not ok:
-                breaker["failures"] += 1
-            if (
-                not breaker["open"]
-                and breaker["attempts"] >= BREAKER_MIN_SAMPLE
-                and breaker["failures"] >= BREAKER_FAIL_RATIO * breaker["attempts"]
-            ):
-                breaker["open"] = True
-                log(
-                    f"[banks] {bank_dir_name}: circuit opened "
-                    f"({breaker['failures']}/{breaker['attempts']} detail fetches failed) "
-                    f"— skipping remaining details"
-                )
+        if breaker.record(ok):  # log() runs outside the breaker lock
+            failures, attempts = breaker.snapshot()
+            log(
+                f"[banks] {bank_dir_name}: circuit opened "
+                f"({failures}/{attempts} detail fetches failed) — skipping remaining details"
+            )
 
     if n_workers <= 1:
         for w in pending:
