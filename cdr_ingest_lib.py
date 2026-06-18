@@ -391,7 +391,21 @@ def ingest_brand(
                 try:
                     fut.result()
                 except Exception as exc:
+                    # An unexpected detail-worker crash (not a normal fetch failure,
+                    # which _fetch_bank_detail already records) is otherwise only
+                    # logged; record it so the status rollup counts it (Codex).
                     log(f"[banks] {bank_dir_name}: detail error for {futures[fut]}: {exc}")
+                    append_failure(
+                        date_root,
+                        {
+                            "phase": "product_detail",
+                            "bank": bank_dir_name,
+                            "product_id": futures[fut],
+                            "status": "worker_crash",
+                            "error": str(exc)[:500],
+                        },
+                        lock=failure_lock,
+                    )
                 if done % 50 == 0:
                     log(f"[banks] {bank_dir_name}: {done}/{len(pending)} details done")
 
