@@ -714,22 +714,29 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     by_status: Dict[str, int] = {}
     total = 0
     try:
-        lines = (date_root / "failures.jsonl").read_text(encoding="utf-8").splitlines()
+        handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
-        lines = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        total += 1
-        phase = str(rec.get("phase") or "unknown")
-        status = "unknown" if rec.get("status") is None else str(rec.get("status"))
-        by_phase[phase] = by_phase.get(phase, 0) + 1
-        by_status[status] = by_status.get(status, 0) + 1
+        handle = None
+    if handle is not None:
+        with handle:
+            # Stream line-by-line so a large failures log stays memory-bounded.
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                # A valid-but-non-object JSON line (list/str/number) would crash on
+                # rec.get; skip it rather than fail the whole run at the very end.
+                if not isinstance(rec, dict):
+                    continue
+                total += 1
+                phase = str(rec.get("phase") or "unknown")
+                status = "unknown" if rec.get("status") is None else str(rec.get("status"))
+                by_phase[phase] = by_phase.get(phase, 0) + 1
+                by_status[status] = by_status.get(status, 0) + 1
     return {
         "total": total,
         "incomplete": total > 0,

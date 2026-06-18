@@ -563,21 +563,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         def run_one(item: Tuple[Dict[str, str], str]) -> None:
             brand, bdir = item
             log_ts(f"[banks] Ingesting {bdir} ({brand['endpoint_url']})")
-            ingest_brand(
-                brand,
-                date_root=banks_root,
-                resume=args.resume,
-                sleep_ms=args.sleep_ms,
-                timeout=args.timeout,
-                max_retries=args.max_retries,
-                max_pages=args.max_pages,
-                max_products=args.max_products,
-                fetch_unknown_detail=args.fetch_unknown_detail,
-                bank_dir_name=bdir,
-                detail_workers=detail_workers,
-                log=log_ts,
-                failure_lock=failure_lock,
-            )
+            try:
+                ingest_brand(
+                    brand,
+                    date_root=banks_root,
+                    resume=args.resume,
+                    sleep_ms=args.sleep_ms,
+                    timeout=args.timeout,
+                    max_retries=args.max_retries,
+                    max_pages=args.max_pages,
+                    max_products=args.max_products,
+                    fetch_unknown_detail=args.fetch_unknown_detail,
+                    bank_dir_name=bdir,
+                    detail_workers=detail_workers,
+                    log=log_ts,
+                    failure_lock=failure_lock,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # A holder worker that crashes before/while recording its own
+                # failures would otherwise be invisible to the status rollup
+                # (do_banks only logs it). Record it so the run reads as INCOMPLETE
+                # (Codex).
+                log_ts(f"ERROR: banking ingest for {bdir} failed: {exc}")
+                append_failure(
+                    banks_root,
+                    {"phase": "holder", "bank": bdir, "status": "worker_crash", "error": str(exc)[:500]},
+                    lock=failure_lock,
+                )
 
         if workers == 1:
             for item in bank_work:

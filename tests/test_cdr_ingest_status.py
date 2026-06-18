@@ -33,3 +33,23 @@ def test_summarize_failures_skips_blank_and_malformed_lines(tmp_path):
     )
     s = cis.summarize_failures(tmp_path)
     assert s["total"] == 1 and s["by_status"] == {"1": 1}
+
+
+def test_summarize_failures_buckets_missing_or_null_as_unknown(tmp_path):
+    recs = [{"bank": "x"}, {"phase": None, "status": None}]
+    (tmp_path / "failures.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8"
+    )
+    s = cis.summarize_failures(tmp_path)
+    assert s["total"] == 2
+    assert s["by_phase"] == {"unknown": 2}
+    assert s["by_status"] == {"unknown": 2}
+
+
+def test_summarize_failures_skips_non_object_json_lines(tmp_path):
+    # Valid JSON that isn't an object must be skipped, not crash rec.get(...).
+    (tmp_path / "failures.jsonl").write_text(
+        '[1, 2]\n"a string"\n42\n{"phase":"p","status":1}\n', encoding="utf-8"
+    )
+    s = cis.summarize_failures(tmp_path)
+    assert s["total"] == 1 and s["by_status"] == {"1": 1}
