@@ -702,6 +702,49 @@ def append_failure(
         _write()
 
 
+def summarize_failures(date_root: Path) -> Dict[str, Any]:
+    """Roll up ``failures.jsonl`` into an ingest-status summary.
+
+    Lets the daily run / monitoring detect an INCOMPLETE ingest (some holders or
+    products failed, or a holder's circuit breaker opened) from one small file
+    instead of parsing every failure record. Counts by ``phase`` and ``status``
+    (so e.g. ``circuit_open`` skips are visible distinctly from HTTP errors).
+    """
+    by_phase: Dict[str, int] = {}
+    by_status: Dict[str, int] = {}
+    total = 0
+    try:
+        handle = (date_root / "failures.jsonl").open(encoding="utf-8")
+    except OSError:
+        handle = None
+    if handle is not None:
+        with handle:
+            # Stream line-by-line so a large failures log stays memory-bounded.
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                # A valid-but-non-object JSON line (list/str/number) would crash on
+                # rec.get; skip it rather than fail the whole run at the very end.
+                if not isinstance(rec, dict):
+                    continue
+                total += 1
+                phase = str(rec.get("phase") or "unknown")
+                status = "unknown" if rec.get("status") is None else str(rec.get("status"))
+                by_phase[phase] = by_phase.get(phase, 0) + 1
+                by_status[status] = by_status.get(status, 0) + 1
+    return {
+        "total": total,
+        "incomplete": total > 0,
+        "by_phase": by_phase,
+        "by_status": by_status,
+    }
+
+
 # -----------------------------------------------------------------------------
 # Core ingest
 # -----------------------------------------------------------------------------

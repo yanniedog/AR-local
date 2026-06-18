@@ -53,6 +53,20 @@ def persistent_export_root(persistent_runs_root: Path, date: str, exports: Optio
     return (persistent_runs_root / date / "_exports").resolve()
 
 
+def persist_ingest_status(run_dir: Path, export_root: Path) -> None:
+    """Copy the ingest status rollup into _exports so it survives RAM staging.
+
+    The ingest writes ``<run>/banks/ingest-status.json``, but the RAM-staged Pi path
+    copies only ``_exports`` to the persistent run — so place a copy where it lasts,
+    otherwise the status (and the incomplete-run signal) is discarded with the RAM
+    stage (Codex).
+    """
+    src = run_dir / "banks" / "ingest-status.json"
+    if src.is_file():
+        export_root.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, export_root / "ingest-status.json")
+
+
 def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
     try:
         recorded = json.loads(marker.read_text(encoding="utf-8"))
@@ -215,6 +229,7 @@ def run_once(args: argparse.Namespace) -> int:
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(staged_runs / date, staged_exports, args.db)
+        persist_ingest_status(staged_runs / date, staged_exports)
         copytree_atomic(staged_exports, target_export_root)
         result["out_dir"] = str(target_export_root)
         result["ram_staged"] = True
@@ -230,6 +245,7 @@ def run_once(args: argparse.Namespace) -> int:
         run_root = target_export_root.parent if is_revision else persistent_runs_root
         run_ingest(script_dir, run_root, date, extra_args)
         result = build_outputs(run_root / date, target_export_root, args.db)
+        persist_ingest_status(run_root / date, target_export_root)
         result["ram_staged"] = False
 
     if banks_result_rate_count(result) <= 0:
