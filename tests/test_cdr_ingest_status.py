@@ -2,6 +2,7 @@
 
 import json
 
+import cdr_daily
 import cdr_ingest_lib as lib
 import cdr_ingest_support as cis
 from cdr_ingest_support import FetchResult
@@ -67,6 +68,24 @@ def test_detail_worker_crash_is_recorded(tmp_path, monkeypatch):
         bank_dir_name="holder", detail_workers=4, log=lambda *_a, **_k: None,
     )
     assert any(f.get("status") == "worker_crash" for f in failures)
+
+
+def test_persist_ingest_status_copies_into_exports(tmp_path):
+    # The rollup must land in _exports so it survives the Pi RAM-staged copy (Codex).
+    run_dir = tmp_path / "2026-06-19"
+    (run_dir / "banks").mkdir(parents=True)
+    (run_dir / "banks" / "ingest-status.json").write_text('{"total": 2}', encoding="utf-8")
+    export_root = tmp_path / "_exports"
+    cdr_daily.persist_ingest_status(run_dir, export_root)
+    assert (export_root / "ingest-status.json").read_text() == '{"total": 2}'
+
+
+def test_persist_ingest_status_noop_when_absent(tmp_path):
+    run_dir = tmp_path / "2026-06-19"
+    run_dir.mkdir()
+    export_root = tmp_path / "_exports"
+    cdr_daily.persist_ingest_status(run_dir, export_root)  # no banks/ingest-status.json
+    assert not (export_root / "ingest-status.json").exists()
 
 
 def test_summarize_failures_buckets_missing_or_null_as_unknown(tmp_path):
