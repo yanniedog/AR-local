@@ -26,18 +26,19 @@ def test_compact_history_serving_payload_within_budget():
     # far under the audit's serving budget.
     dates = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(90)]
     providers = [f"Provider {i:03d}" for i in range(50)]
-    aggregates = {}
-    for d in dates:
-        rows = []
-        for p in providers:
-            for k in range(3):
-                rows.append({
-                    "product_key": f"{p}-{k}",
-                    "provider": p,
-                    "rate": f"{4 + k * 0.1:.2f}",
-                    "comparison_rate": f"{4.1 + k * 0.1:.2f}",
-                })
-        aggregates[d] = crn.aggregate_ribbon(rows, "Mortgage")
+    rows = []
+    for p in providers:
+        for k in range(3):
+            rows.append({
+                "product_key": f"{p}-{k}",
+                "provider": p,
+                "rate": f"{4 + k * 0.1:.2f}",
+                "comparison_rate": f"{4.1 + k * 0.1:.2f}",
+            })
+    # Same catalogue each day here, so aggregate once and reuse across the window
+    # (Gemini) — compact_history only reads each day's aggregate.
+    daily = crn.aggregate_ribbon(rows, "Mortgage")
+    aggregates = {d: daily for d in dates}
 
     payload = crn.compact_history(dates, aggregates)
     blob = json.dumps(payload, separators=(",", ":")).encode("utf-8")
