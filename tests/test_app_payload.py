@@ -275,6 +275,44 @@ def test_dated_tag_naming():
         app_payload.dated_tag("bad")
 
 
+def test_published_history_dates_excludes_incomplete_releases(monkeypatch):
+    # Built from dated tags, but each is verified concurrently: a tag whose manifest
+    # is missing (incomplete release that would 404) or whose run_date mismatches is
+    # excluded. min_date filters before any fetch; non-dated tags are ignored.
+    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
+    monkeypatch.setattr(app_payload, "_gh_authed", lambda gh: True)
+    monkeypatch.setattr(
+        app_payload,
+        "_list_payload_release_tags",
+        lambda gh, repo: [
+            "app-payload-latest",            # rolling -> ignored
+            "app-payload-2026-05-19",        # present + matches
+            "app-payload-2026-05-18",        # present + matches
+            "app-payload-2026-05-17",        # tag exists but manifest missing -> excluded
+            "app-payload-2026-05-16",        # manifest run_date mismatch -> excluded
+            "app-payload-2026-05-12",        # before min_date -> filtered (no fetch)
+            "app-payload-not-a-date",        # not a dated tag -> ignored
+        ],
+    )
+    checked: set[str] = set()
+
+    def status(repo, tag):
+        checked.add(tag)
+        if tag == "app-payload-2026-05-17":
+            return ("missing", None)
+        if tag == "app-payload-2026-05-16":
+            return ("present", {"run_date": "1999-01-01"})  # mismatched
+        return ("present", {"run_date": tag[len(app_payload.DATED_TAG_PREFIX):]})
+
+    monkeypatch.setattr(app_payload, "_live_manifest_status", status)
+
+    dates = app_payload._published_history_dates("yanniedog/AR-local", min_date="2026-05-13")
+    assert dates == ["2026-05-18", "2026-05-19"]
+    # min_date-filtered and non-dated tags are never fetched.
+    assert "app-payload-2026-05-12" not in checked
+    assert "app-payload-not-a-date" not in checked
+
+
 def test_is_rolling_tag():
     assert app_payload.is_rolling_tag("app-payload-latest")
     assert not app_payload.is_rolling_tag("app-payload-2026-06-08")

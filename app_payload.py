@@ -41,6 +41,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
@@ -834,26 +835,44 @@ def _published_history_dates(
     *,
     min_date: str = HISTORY_MIN_DATE,
 ) -> List[str]:
-    """Return sorted run_dates with live dated snapshot releases on GitHub."""
+    """Return sorted run_dates with a live, COMPLETE dated snapshot release on GitHub.
+
+    A dated tag (``app-payload-<run_date>``, date format validated by is_dated_tag)
+    is included only when its manifest.json is actually present with a matching
+    run_date — this excludes an incomplete release whose tag was created but whose
+    manifest upload failed (which would otherwise advertise a date that 404s for the
+    app). The per-release manifest checks run CONCURRENTLY, so the refresh costs ~one
+    round-trip's latency instead of the former N sequential GETs (the N+1).
+    """
     gh = _gh_available()
     if not gh or not _gh_authed(gh):
         return []
-    dates: List[str] = []
     try:
         tags = _list_payload_release_tags(gh, repo)
     except RuntimeError as exc:
         print(f"[app_payload] dates-index tag list failed (non-fatal) error={exc!r}")
         return []
+    candidates: List[Tuple[str, str]] = []
     for tag in tags:
         if not is_dated_tag(tag):
             continue
         run_date = tag[len(DATED_TAG_PREFIX) :]
         if min_date and run_date < min_date:
             continue
+        candidates.append((tag, run_date))
+    if not candidates:
+        return []
+
+    def _verified_date(item: Tuple[str, str]) -> Optional[str]:
+        tag, run_date = item
         status, live = _live_manifest_status(repo, tag)
         if status == "present" and live and str(live.get("run_date") or "") == run_date:
-            dates.append(run_date)
-    return sorted(set(dates))
+            return run_date
+        return None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(candidates))) as pool:
+        verified = [d for d in pool.map(_verified_date, candidates) if d]
+    return sorted(set(verified))
 
 
 def _upload_dates_index(
