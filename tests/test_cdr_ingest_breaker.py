@@ -72,6 +72,43 @@ def test_below_threshold_failures_stay_closed(tmp_path, monkeypatch):
     assert not any(f["status"] == "circuit_open" for f in failures)
 
 
+def test_prefetched_details_survive_open_breaker(tmp_path, monkeypatch):
+    # Products 0-19 need a Phase-2 fetch (which fails, opening the breaker); products
+    # 20-39 were already prefetched OK in Phase 1. The prefetched ones must still be
+    # written even though the breaker is open by the time they're processed (Codex).
+    n = 40
+    ds_key = next(iter(lib.DATASET_TO_FOLDER))
+    good = FetchResult(ok=True, status=200, url="u", text='{"data": {"x": 1}}', version=4)
+
+    def fake_fetch(url, *, versions=None, timeout, max_retries, sleep_ms, **_kw):
+        if url == ENDPOINT:
+            return FetchResult(ok=True, status=200, url=url, text='{"data": {}}', version=4)
+        return FetchResult(ok=False, status=503, url=url, text="", version=None)
+
+    def fake_classify(product, **_k):
+        idx = int(product["productId"][1:])
+        return (ds_key, good if idx >= lib.BREAKER_MIN_SAMPLE else None)
+
+    monkeypatch.setattr(lib, "fetch_cdr_json", fake_fetch)
+    monkeypatch.setattr(
+        lib, "extract_products",
+        lambda parsed: [{"productId": f"P{i}", "name": f"A{i}"} for i in range(n)],
+    )
+    monkeypatch.setattr(lib, "next_link", lambda parsed, url: None)
+    monkeypatch.setattr(lib, "classify_product_for_ingest", fake_classify)
+
+    lib.ingest_brand(
+        {"endpoint_url": ENDPOINT},
+        date_root=tmp_path, resume=False, sleep_ms=0, timeout=1, max_retries=0,
+        max_pages=None, max_products=None, fetch_unknown_detail=True,
+        bank_dir_name="holder", detail_workers=1, log=lambda *_a, **_k: None,
+    )
+
+    # The 20 prefetched-OK products are written despite the open breaker.
+    written = list(tmp_path.rglob("product-detail.json"))
+    assert len(written) == n - lib.BREAKER_MIN_SAMPLE
+
+
 def test_breaker_trips_under_concurrency(tmp_path, monkeypatch):
     # With multiple detail workers and a down holder, the shared breaker still trips:
     # at least the min sample runs, well short of all products.

@@ -341,9 +341,12 @@ def ingest_brand(
     )
 
     def _do(work: _BankWork) -> None:
-        # Lock-free fast path: if the holder is in an outage, record the skip
-        # (file I/O done OUTSIDE the breaker lock, Gemini) and stop probing.
-        if breaker.is_open():
+        # A product whose detail was already prefetched in Phase 1 is written even
+        # when the breaker is open — don't discard an already-successful fetch
+        # (Codex). The open-circuit skip applies only to work that still needs a
+        # network fetch. File I/O stays OUTSIDE the breaker lock (Gemini).
+        needs_fetch = work.prefetched is None
+        if needs_fetch and breaker.is_open():
             append_failure(
                 date_root,
                 {
@@ -366,7 +369,9 @@ def ingest_brand(
             failure_lock=failure_lock,
             preferred_version=preferred_version,
         )
-        if breaker.record(ok):  # log() runs outside the breaker lock
+        # Only true network fetches feed the breaker; a Phase-1 prefetched result
+        # was already counted in classify_product_for_ingest.
+        if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
             failures, attempts = breaker.snapshot()
             log(
                 f"[banks] {bank_dir_name}: circuit opened "
