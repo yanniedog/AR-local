@@ -9,6 +9,7 @@ on:
       - 'mobile/**'
       - 'app_payload*.py'
       - 'cdr_*.py'
+      - 'pi_*.py'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -23,6 +24,7 @@ on:
       - 'mobile/**'
       - 'app_payload*.py'
       - 'cdr_*.py'
+      - 'pi_*.py'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -60,7 +62,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install deps
-        run: python -m pip install --quiet -r requirements.txt pytest
+        # cryptography is an optional runtime dep (lazy import) but tests exercise the
+        # payload-encryption path, so install it here to run those rather than skip.
+        run: python -m pip install --quiet -r requirements.txt cryptography pytest
       - name: Test
         # Run the whole server-side suite (payload, ribbon kernel, ledger
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
