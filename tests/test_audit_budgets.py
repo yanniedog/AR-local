@@ -40,8 +40,19 @@ def test_compact_history_serving_payload_within_budget():
     daily = crn.aggregate_ribbon(rows, "Mortgage")
     aggregates = {d: daily for d in dates}
 
-    payload = crn.compact_history(dates, aggregates)
-    blob = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    # Measure the served shape: cdr_dashboard_server.bank_history_compact_payload
+    # serves a small envelope wrapping compact_history(...). (That handler is a
+    # nested closure that reads SQLite, so it isn't unit-callable here; this guards
+    # the compact aggregate that constitutes ~all of the served bytes, and asserts
+    # the served history payload carries NO raw per-product rows.)
+    served = {
+        "run_date": dates[-1],
+        "section": "Mortgage",
+        "include_non_standard": False,
+        **crn.compact_history(dates, aggregates),
+    }
+    assert "rates" not in served and "products" not in served, "served history must stay compact"
+    blob = json.dumps(served, separators=(",", ":")).encode("utf-8")
     assert len(blob) < MAX_DECODED_BYTES, f"decoded {len(blob)} >= budget {MAX_DECODED_BYTES}"
     assert len(gzip.compress(blob)) < MAX_GZIP_BYTES, "gzip transfer over budget"
 
