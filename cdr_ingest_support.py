@@ -370,6 +370,9 @@ class FetchResult:
     # so a caller that switches strategy (e.g. version negotiation) can still honor
     # it even when this fetch had no same-version retry budget.
     retry_after: Optional[float] = None
+    # The CDR x-v version that produced a successful fetch, so a caller can cache it
+    # per holder and try it first instead of re-negotiating from the top each time.
+    version: Optional[int] = None
 
     @cached_property
     def data(self) -> Any:
@@ -580,7 +583,10 @@ def fetch_cdr_json(
         last = res
         data = res.data
         if res.ok and data is not None and not has_cdr_errors(data):
-            return FetchResult(ok=True, status=res.status, url=url, text=res.text, attempts=total_attempts)
+            return FetchResult(
+                ok=True, status=res.status, url=url, text=res.text,
+                attempts=total_attempts, version=v,
+            )
 
         if res.status == 406:
             for x in parse_supported_versions(res.text):
