@@ -37,7 +37,17 @@ from cdr_ledger_integrity import (
 
 
 def _baselined_days(state_dir: Path, epoch: str, today: str):
-    """Yield ``(date, manifest)`` for each day that has an integrity manifest."""
+    """Return ``(days, unreadable)`` over the days that have an integrity manifest.
+
+    ``days`` is a list of ``(date, manifest)``; ``unreadable`` is a list of dates
+    whose manifest file is present but truncated / malformed / unreadable. A
+    present-but-unreadable baseline must NEVER be silently dropped — both callers
+    surface it, so a corrupt baseline cannot let the backup report success while
+    omitting a ledger day. (A manifest that simply does not exist is not baselined
+    and is legitimately absent.)
+    """
+    days: List = []
+    unreadable: List[str] = []
     for date in iter_ledger_dates(epoch, today):
         path = manifest_path(state_dir, date)
         if not path.is_file():
@@ -45,8 +55,36 @@ def _baselined_days(state_dir: Path, epoch: str, today: str):
         try:
             manifest = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            unreadable.append(date)
             continue
-        yield date, manifest
+        days.append((date, manifest))
+    return days, unreadable
+
+
+def _replica_metadata_matches(dst: Path, expected_files: List[Dict[str, Any]]) -> bool:
+    """Cheap, metadata-only check that ``dst`` already holds the baselined files.
+
+    Compares file count + each file's relative path and size against the integrity
+    manifest, WITHOUT reading file contents. Replication's job is to get the bytes
+    onto the destination; full cryptographic re-hashing is the dedicated ``verify``
+    drill's job. This keeps an idempotent re-run O(metadata) instead of O(bytes)
+    over the (possibly remote) destination. Any I/O error answers "does not match"
+    so the day is recopied rather than aborting the whole run.
+    """
+    try:
+        actual = [p for p in dst.rglob("*") if p.is_file()]
+    except OSError:
+        return False
+    if len(actual) != len(expected_files):
+        return False
+    for entry in expected_files:
+        candidate = dst / entry["path"]
+        try:
+            if not candidate.is_file() or candidate.stat().st_size != entry["size"]:
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def replicate(
@@ -68,7 +106,8 @@ def replicate(
     skipped: List[str] = []
     gaps: List[str] = []
     missing_source: List[str] = []
-    for date, manifest in _baselined_days(state_dir, epoch, today):
+    days, unreadable_manifests = _baselined_days(state_dir, epoch, today)
+    for date, manifest in days:
         if manifest.get("gap"):
             gaps.append(date)  # an explicit gap day has no partition to replicate
             continue
@@ -78,12 +117,18 @@ def replicate(
             missing_source.append(date)
             continue
         dst = dest / date / "_exports"
-        if dst.is_dir() and hash_export_root(dst) == (manifest.get("files") or []):
+        if dst.is_dir() and _replica_metadata_matches(dst, manifest.get("files") or []):
             skipped.append(date)
             continue
         copytree_atomic(src, dst)
         copied.append(date)
-    return {"copied": copied, "skipped": skipped, "gaps": gaps, "missing_source": missing_source}
+    return {
+        "copied": copied,
+        "skipped": skipped,
+        "gaps": gaps,
+        "missing_source": missing_source,
+        "unreadable_manifests": unreadable_manifests,
+    }
 
 
 def verify_replica(
@@ -96,14 +141,19 @@ def verify_replica(
 ) -> Dict[str, Any]:
     """Restore drill: re-hash the replica and compare to the source integrity manifest.
 
-    Returns ``{ok, checked, findings}``; findings: MISSING_REPLICA (no copy on dest),
-    REPLICA_CHANGED (bytes differ from the baseline).
+    Returns ``{ok, checked, findings}``; findings: UNREADABLE_MANIFEST (corrupt source
+    baseline), MISSING_REPLICA (no copy on dest), REPLICA_CHANGED (bytes differ from
+    the baseline), UNREADABLE_REPLICA (the replica could not be read back).
     """
     today = today or local_date()
     dest = Path(dest)
-    findings: List[Dict[str, str]] = []
+    days, unreadable_manifests = _baselined_days(state_dir, epoch, today)
+    # A corrupt source baseline is itself a restore-drill failure.
+    findings: List[Dict[str, str]] = [
+        {"date": date, "issue": "UNREADABLE_MANIFEST"} for date in unreadable_manifests
+    ]
     checked = 0
-    for date, manifest in _baselined_days(state_dir, epoch, today):
+    for date, manifest in days:
         if manifest.get("gap"):
             continue
         dst = dest / date / "_exports"
@@ -143,8 +193,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "replicate":
         summary = replicate(runs_root, state_dir, dest, epoch=args.epoch, today=args.today)
         print(json.dumps(summary, indent=2))
-        # A baselined day whose source partition vanished is a real integrity alarm.
-        return 1 if summary["missing_source"] else 0
+        # A vanished source partition or a corrupt source baseline is a real alarm.
+        return 1 if (summary["missing_source"] or summary["unreadable_manifests"]) else 0
 
     report = verify_replica(runs_root, state_dir, dest, epoch=args.epoch, today=args.today)
     print(json.dumps(report, indent=2))

@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from pathlib import Path
 
 import cdr_ledger_integrity as li
 import cdr_ledger_replicate as rep
@@ -81,3 +82,37 @@ def test_replicate_flags_missing_source_partition(tmp_path):
     s = rep.replicate(runs, state, dest, epoch=EPOCH, today=TODAY)
     assert "2026-05-15" in s["missing_source"]
     assert "2026-05-15" not in s["copied"]
+
+
+def test_verify_reports_unreadable_replica(tmp_path, monkeypatch):
+    runs, state = _seed(tmp_path)
+    dest = tmp_path / "backup"
+    rep.replicate(runs, state, dest, epoch=EPOCH, today=TODAY)
+    target = dest / "2026-05-15" / "_exports"
+    real = rep.hash_export_root
+
+    def boom(path):
+        if Path(path) == target:
+            raise OSError("simulated unreadable replica")
+        return real(path)
+
+    monkeypatch.setattr(rep, "hash_export_root", boom)
+    v = rep.verify_replica(runs, state, dest, epoch=EPOCH, today=TODAY)
+    issues = {(f["date"], f["issue"]) for f in v["findings"]}
+    assert ("2026-05-15", "UNREADABLE_REPLICA") in issues
+    assert v["ok"] is False
+
+
+def test_unreadable_source_manifest_is_surfaced_not_skipped(tmp_path):
+    runs, state = _seed(tmp_path)
+    dest = tmp_path / "backup"
+    li.manifest_path(state, "2026-05-15").write_text("{ truncated", encoding="utf-8")
+
+    s = rep.replicate(runs, state, dest, epoch=EPOCH, today=TODAY)
+    assert "2026-05-15" in s["unreadable_manifests"]
+    assert "2026-05-15" not in s["copied"]
+
+    v = rep.verify_replica(runs, state, dest, epoch=EPOCH, today=TODAY)
+    issues = {(f["date"], f["issue"]) for f in v["findings"]}
+    assert ("2026-05-15", "UNREADABLE_MANIFEST") in issues
+    assert v["ok"] is False
