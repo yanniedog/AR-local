@@ -264,6 +264,45 @@ def countdown(now: Optional[datetime] = None) -> Optional[timedelta]:
     return (meeting.announce_utc - now) if meeting else None
 
 
+def api_payload(now: Optional[datetime] = None) -> dict:
+    """Client-facing snapshot for the dashboard/app: current cash rate, the
+    next-decision countdown, and the recorded decision calendar + forward schedule.
+
+    Pure and importable so the dashboard server route stays a thin serialise-only
+    binding — no domain logic trapped in the server closure (the audit's root cause)."""
+    now = now or datetime.now(timezone.utc)
+    meeting = next_meeting(now)
+    remaining = countdown(now)
+    next_meeting_obj = None
+    if meeting is not None and remaining is not None:
+        next_meeting_obj = {
+            "date": meeting.date.isoformat(),
+            "announce_utc": meeting.announce_utc.isoformat(),
+            "seconds_until": int(remaining.total_seconds()),
+            "days_until": remaining.days,
+        }
+    return {
+        "generated_at": now.replace(microsecond=0).isoformat(),
+        "timezone": SYDNEY_TZ,
+        "current_rate": current_rate(sydney_today(now)),
+        "next_meeting": next_meeting_obj,
+        "decisions": [
+            {
+                "date": dec.date.isoformat(),
+                "effective": dec.effective.isoformat() if dec.effective else None,
+                "rate": dec.new_rate,
+                "delta_bps": dec.delta_bps,
+                "outcome": dec.outcome,
+            }
+            for dec in decisions()
+        ],
+        "schedule": [
+            {"date": m.date.isoformat(), "announce_utc": m.announce_utc.isoformat()}
+            for m in schedule()
+        ],
+    }
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
     import json

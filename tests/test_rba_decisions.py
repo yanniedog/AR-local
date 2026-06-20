@@ -8,6 +8,7 @@ behave at known instants (including the announce->effective gap and the exact
 announcement boundary).
 """
 
+import json
 from datetime import date, datetime, timezone
 
 import pytest
@@ -136,3 +137,34 @@ def test_validate_detects_a_rate_discontinuity(monkeypatch):
 def test_validate_detects_schedule_overlap(monkeypatch):
     monkeypatch.setattr(rba, "_SCHEDULE", ["2026-05-01"])  # before the last decision
     assert any("overlap" in i for i in rba.validate())
+
+
+def test_api_payload_shape_and_values():
+    now = datetime(2026, 6, 21, 0, 0, tzinfo=timezone.utc)
+    p = rba.api_payload(now)
+    assert p["timezone"] == "Australia/Sydney"
+    assert p["current_rate"] == 4.35
+    nm = p["next_meeting"]
+    assert nm["date"] == "2026-08-11"
+    assert nm["announce_utc"] == "2026-08-11T04:30:00+00:00"
+    assert nm["days_until"] == 51
+    assert nm["seconds_until"] > 0
+    assert any(d["outcome"] == "hold" for d in p["decisions"])
+    assert p["schedule"][0]["date"] == "2026-08-11"
+    json.dumps(p)  # must be JSON-serialisable
+
+
+def test_api_payload_has_no_next_meeting_after_the_schedule():
+    p = rba.api_payload(datetime(2027, 1, 1, tzinfo=timezone.utc))
+    assert p["next_meeting"] is None
+
+
+def test_server_rba_payload_is_small_and_valid_json():
+    import cdr_dashboard_server as srv
+
+    body = srv.rba_payload()
+    assert isinstance(body, bytes)
+    assert len(body) < 16 * 1024  # tiny reference payload (audit: budgets are tests)
+    data = json.loads(body)
+    assert data["current_rate"] is not None
+    assert {"timezone", "next_meeting", "decisions", "schedule"} <= set(data)
