@@ -264,6 +264,30 @@ def countdown(now: Optional[datetime] = None) -> Optional[timedelta]:
     return (meeting.announce_utc - now) if meeting else None
 
 
+def calendar_payload() -> dict:
+    """Byte-stable RBA calendar for the daily payload asset: timezone + the recorded
+    decision calendar + the forward schedule, with NO wall-clock fields. The client
+    computes the live countdown from ``schedule``; stable bytes keep same-day rebuilds
+    content-addressable (the published asset is content-hashed)."""
+    return {
+        "timezone": SYDNEY_TZ,
+        "decisions": [
+            {
+                "date": dec.date.isoformat(),
+                "effective": dec.effective.isoformat() if dec.effective else None,
+                "rate": dec.new_rate,
+                "delta_bps": dec.delta_bps,
+                "outcome": dec.outcome,
+            }
+            for dec in decisions()
+        ],
+        "schedule": [
+            {"date": m.date.isoformat(), "announce_utc": m.announce_utc.isoformat()}
+            for m in schedule()
+        ],
+    }
+
+
 def api_payload(now: Optional[Union[date, datetime]] = None) -> dict:
     """Client-facing snapshot for the dashboard/app: current cash rate, the
     next-decision countdown, and the recorded decision calendar + forward schedule.
@@ -290,26 +314,11 @@ def api_payload(now: Optional[Union[date, datetime]] = None) -> dict:
             "seconds_until": int(remaining.total_seconds()),
             "days_until": remaining.days,
         }
-    return {
-        "generated_at": now.replace(microsecond=0).isoformat(),
-        "timezone": SYDNEY_TZ,
-        "current_rate": current_rate(sydney_today(now)),
-        "next_meeting": next_meeting_obj,
-        "decisions": [
-            {
-                "date": dec.date.isoformat(),
-                "effective": dec.effective.isoformat() if dec.effective else None,
-                "rate": dec.new_rate,
-                "delta_bps": dec.delta_bps,
-                "outcome": dec.outcome,
-            }
-            for dec in decisions()
-        ],
-        "schedule": [
-            {"date": m.date.isoformat(), "announce_utc": m.announce_utc.isoformat()}
-            for m in schedule()
-        ],
-    }
+    payload = calendar_payload()
+    payload["generated_at"] = now.replace(microsecond=0).isoformat()
+    payload["current_rate"] = current_rate(sydney_today(now))
+    payload["next_meeting"] = next_meeting_obj
+    return payload
 
 
 def main(argv: Optional[List[str]] = None) -> int:

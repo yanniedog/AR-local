@@ -360,6 +360,11 @@ def test_optional_assets_are_rolling_only(tmp_path):
             "banks": {"Bank": {"Savings": {"median": [0.04], "best": [0.05], "count": [2]}}},
             "events": [],
         },
+        "rba_calendar": {
+            "timezone": "Australia/Sydney",
+            "decisions": [],
+            "schedule": [{"date": "2026-08-11", "announce_utc": "2026-08-11T04:30:00+00:00"}],
+        },
     }
     rolling = app_payload._package(
         {"schema_version": 1},
@@ -378,7 +383,7 @@ def test_optional_assets_are_rolling_only(tmp_path):
         **kwargs,
     )
 
-    assert {"search_index", "history_banks", "bank_history"} <= rolling["files"].keys()
+    assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
 
@@ -766,6 +771,28 @@ def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
     # 49 content-addressed bank-history assets, oldest first; keep window is 48.
     rows = [
         (f"bank-history-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
+        for i in range(49)
+    ]
+    listing = "\n".join(f"{name}\t{created}" for name, created in rows)
+    deletes = []
+
+    def fake_run(args, **_kwargs):
+        if "view" in args:
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        deletes.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
+
+    assert deleted == 1
+
+
+def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
+    # 49 content-addressed rba-calendar assets, oldest first; keep window is 48.
+    rows = [
+        (f"rba-calendar-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
         for i in range(49)
     ]
     listing = "\n".join(f"{name}\t{created}" for name, created in rows)
