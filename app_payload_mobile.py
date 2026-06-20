@@ -1,6 +1,7 @@
 """Mobile payload assets: search index + pre-aggregated history."""
 from __future__ import annotations
 import re
+from datetime import date as _date  # aliased: a `for date in dates` loop below shadows the name
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -243,9 +244,16 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
                     series["count"].append(count)
     # Pass-through "bank behaviour": join the move-events (full list, not the
     # truncated asset slice) to the recorded RBA calendar. Same single pass — no
-    # extra ledger scan. Pure logic + honesty/confidence model live in bank_behaviour.
+    # extra ledger scan. The calendar is fetched once (not per section), and joins
+    # are bounded to the ledger window: a decision predating the first retained run
+    # can't have its true first response observed, so it is excluded (Codex). Pure
+    # logic + honesty/confidence model live in bank_behaviour.
+    rba_calendar = rba_decisions.decisions()
+    ledger_start = _date.fromisoformat(dates[0]) if dates else None
     behaviour = {
-        section: bank_behaviour.pass_through_summary(events, rba_decisions.decisions(), section=section)
+        section: bank_behaviour.pass_through_summary(
+            events, rba_calendar, section=section, since=ledger_start
+        )
         for section in VALID_SECTIONS
     }
     bank_history = {

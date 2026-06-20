@@ -180,20 +180,26 @@ def _history_assets_from(exports, run_date):
 def test_build_history_assets_includes_behaviour(tmp_path):
     runs = tmp_path / "runs"
 
-    def sav(provider, key, rate):
-        return {"dataset": "Savings", "provider": provider, "product_key": key,
-                "rate": rate, "rate_family": "deposit"}
+    def loan(provider, key, rate):
+        return {"dataset": "Mortgage", "provider": provider, "product_key": key,
+                "rate": rate, "rate_family": "lending", "rate_type": "VARIABLE"}
 
-    _write_history_day(runs, "2026-06-09", [sav("Alpha", "A|1", "0.0475")])
-    exports = _write_history_day(runs, "2026-06-10", [sav("Alpha", "A|1", "0.0450")])
-    _history, bank_history = _history_assets_from(exports, "2026-06-10")
+    # Ledger starts on the 2026-05-05 RBA hike day; BankX raises its (matched) rate
+    # 25 bps by 2026-05-13 -> a measurable hike pass-through of 8 days.
+    _write_history_day(runs, "2026-05-05", [loan("BankX", "X|1", "0.0600")])
+    exports = _write_history_day(runs, "2026-05-13", [loan("BankX", "X|1", "0.0625")])
+    _history, bank_history = _history_assets_from(exports, "2026-05-13")
 
     behaviour = bank_history["behaviour"]
     assert set(behaviour) == {"Mortgage", "Savings", "TD"}
-    for section, summary in behaviour.items():
-        assert summary["section"] == section
-        assert summary["window_days"] == 60
-        assert isinstance(summary["providers"], dict)
+    assert all(behaviour[s]["window_days"] == 60 for s in behaviour)
+
+    hike = behaviour["Mortgage"]["providers"]["BankX"]["hike"]
+    assert hike["n"] == 1
+    assert hike["days_median"] == 8        # 2026-05-05 -> 2026-05-13
+    assert hike["bps_median"] == 25.0
+    assert hike["ratio_median"] == 1.0
+    assert hike["confidence"] == "insufficient"  # n = 1, early ledger
 
 
 def test_build_history_assets_bank_series_and_events(tmp_path):
