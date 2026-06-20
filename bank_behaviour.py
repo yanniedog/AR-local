@@ -62,6 +62,7 @@ def pass_through_observations(
     *,
     section: str,
     window_days: int = 60,
+    since: Optional[date] = None,
 ) -> List[Dict[str, Any]]:
     """One observation per (provider, RBA hike/cut decision) where the provider made
     its first same-direction move in ``section`` within ``window_days`` after the
@@ -90,6 +91,11 @@ def pass_through_observations(
         series.sort(key=lambda m: m[0])
 
     decs = sorted(decisions, key=lambda d: d.date)
+    if since is not None:
+        # A decision predating the ledger's first run can't have its true first
+        # response observed (the bank may have moved before the ledger began), so
+        # exclude it rather than mismeasure days-to-follow.
+        decs = [dec for dec in decs if dec.date >= since]
     observations: List[Dict[str, Any]] = []
     for idx, dec in enumerate(decs):
         if getattr(dec, "outcome", None) not in FOLLOW_DIRECTIONS:
@@ -137,11 +143,14 @@ def pass_through_summary(
     *,
     section: str,
     window_days: int = 60,
+    since: Optional[date] = None,
 ) -> Dict[str, Any]:
     """Per-provider pass-through summary for ``section``: for each direction, the
     median days-to-follow, median bps passed, median pass-through ratio, sample size
     and confidence."""
-    observations = pass_through_observations(events, decisions, section=section, window_days=window_days)
+    observations = pass_through_observations(
+        events, decisions, section=section, window_days=window_days, since=since
+    )
     by_provider: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     for obs in observations:
         bucket = by_provider.setdefault(obs["provider"], {d: [] for d in FOLLOW_DIRECTIONS})

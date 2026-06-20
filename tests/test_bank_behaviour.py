@@ -149,3 +149,18 @@ def test_zero_delta_decision_yields_none_ratio():
         [ev("2026-02-05", "P", "Mortgage", "hike", 25.0)], [weird], section="Mortgage"
     )
     assert len(obs) == 1 and obs[0]["ratio"] is None
+
+
+def test_since_bounds_decisions_to_the_ledger_window():
+    events = [ev("2026-02-05", "P", "Mortgage", "hike", 25.0)]
+    # HIKE announces 2026-02-03; a since AFTER it excludes the decision (its true
+    # first response may predate the ledger window).
+    assert bb.pass_through_observations(events, [HIKE], section="Mortgage",
+                                        since=date(2026, 2, 4)) == []
+    # since on/before the decision keeps it.
+    kept = bb.pass_through_observations(events, [HIKE], section="Mortgage",
+                                        since=date(2026, 2, 3))
+    assert len(kept) == 1 and kept[0]["days"] == 2
+    # summary forwards `since` too.
+    assert bb.pass_through_summary(events, [HIKE], section="Mortgage",
+                                   since=date(2026, 2, 4))["providers"] == {}
