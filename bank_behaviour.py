@@ -23,7 +23,7 @@ established patterns — the unbackfillable ledger makes them grow over time.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -46,6 +46,8 @@ def confidence(n: int) -> str:
 
 def _event_date(event: Mapping[str, Any]) -> Optional[date]:
     raw = event.get("date")
+    if isinstance(raw, datetime):  # datetime is a date subclass; normalise to a date
+        return raw.date()
     if isinstance(raw, date):
         return raw
     try:
@@ -65,6 +67,11 @@ def pass_through_observations(
     its first same-direction move in ``section`` within ``window_days`` after the
     announcement.
 
+    Each move is attributed to at most ONE decision — the most recent decision on or
+    before the move — by capping every decision's window at the day before the next
+    decision. This prevents a single move from being counted against several RBA
+    decisions whose default windows overlap (closely spaced moves).
+
     ``days`` = announcement date -> first matching move; ``bps`` = magnitude passed
     (absolute); ``ratio`` = bps passed / |RBA delta bps|.
     """
@@ -82,23 +89,26 @@ def pass_through_observations(
     for series in moves.values():
         series.sort(key=lambda m: m[0])
 
+    decs = sorted(decisions, key=lambda d: d.date)
     observations: List[Dict[str, Any]] = []
-    for dec in decisions:
+    for idx, dec in enumerate(decs):
         if getattr(dec, "outcome", None) not in FOLLOW_DIRECTIONS:
             continue
+        window_end = dec.date + timedelta(days=window_days)
+        if idx + 1 < len(decs):  # cap at the day before the next decision (no overlap)
+            window_end = min(window_end, decs[idx + 1].date - timedelta(days=1))
         rba_bps = abs(int(getattr(dec, "delta_bps")))
         for provider, series in moves.items():
             for moved_on, move_dir, move_bps in series:
                 if move_dir != dec.outcome:
                     continue
-                days = (moved_on - dec.date).days
-                if 0 <= days <= window_days:
+                if dec.date <= moved_on <= window_end:
                     observations.append({
                         "provider": provider,
                         "section": section,
                         "direction": dec.outcome,
                         "decision_date": dec.date.isoformat(),
-                        "days": days,
+                        "days": (moved_on - dec.date).days,
                         "bps": round(move_bps, 1),
                         "ratio": round(move_bps / rba_bps, 3) if rba_bps else None,
                     })
