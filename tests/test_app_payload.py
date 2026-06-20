@@ -360,6 +360,11 @@ def test_optional_assets_are_rolling_only(tmp_path):
             "banks": {"Bank": {"Savings": {"median": [0.04], "best": [0.05], "count": [2]}}},
             "events": [],
         },
+        "rba_calendar": {
+            "timezone": "Australia/Sydney",
+            "decisions": [],
+            "schedule": [{"date": "2026-08-11", "announce_utc": "2026-08-11T04:30:00+00:00"}],
+        },
     }
     rolling = app_payload._package(
         {"schema_version": 1},
@@ -378,7 +383,7 @@ def test_optional_assets_are_rolling_only(tmp_path):
         **kwargs,
     )
 
-    assert {"search_index", "history_banks", "bank_history"} <= rolling["files"].keys()
+    assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
 

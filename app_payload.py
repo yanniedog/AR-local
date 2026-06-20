@@ -47,6 +47,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import app_payload_mobile
 import cdr_brand_logos
 import payload_crypto
+import rba_decisions
 from cdr_ribbon_normalize import (
     aggregate_ribbon,
     normalized_rate_value as _normalized_rate_value,
@@ -639,6 +640,7 @@ def _compute_payload(
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
+        "rba_calendar": rba_decisions.calendar_payload(),
     }
 
 
@@ -661,6 +663,7 @@ def _package_payload(
         search_index=data["search_index"],
         history_banks=data["history_banks"],
         bank_history=data["bank_history"],
+        rba_calendar=data.get("rba_calendar"),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -679,6 +682,7 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
+    rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
@@ -699,6 +703,10 @@ def _package(
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
+        )
+    if is_rolling_tag(tag) and rba_calendar and rba_calendar.get("schedule"):
+        files["rba_calendar"] = _asset(
+            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,

@@ -182,3 +182,13 @@ def test_server_rba_payload_is_small_and_valid_json():
     assert data["current_rate"] is not None
     assert {"generated_at", "timezone", "next_meeting", "decisions", "schedule"} <= set(data)
     assert isinstance(data["generated_at"], str)
+
+
+def test_calendar_payload_is_stable_and_has_no_wallclock():
+    a = rba.calendar_payload()
+    b = rba.calendar_payload()
+    assert a == b  # deterministic — keeps the daily content-hashed asset stable
+    assert set(a) == {"timezone", "decisions", "schedule"}  # no generated_at / countdown
+    assert a["schedule"][0]["date"] == "2026-08-11"
+    assert any(d["outcome"] == "hold" for d in a["decisions"])
+    json.dumps(a)  # must be JSON-serialisable
