@@ -180,4 +180,5 @@ def test_server_rba_payload_is_small_and_valid_json():
     assert len(body) < 16 * 1024  # tiny reference payload (audit: budgets are tests)
     data = json.loads(body)
     assert data["current_rate"] is not None
-    assert {"timezone", "next_meeting", "decisions", "schedule"} <= set(data)
+    assert {"generated_at", "timezone", "next_meeting", "decisions", "schedule"} <= set(data)
+    assert isinstance(data["generated_at"], str)
