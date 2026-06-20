@@ -1006,7 +1006,7 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     data: List[Tuple[str, str]] = []
     for line in listed.stdout.splitlines():
         name, _, created = line.partition("\t")
-        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-")) and name.endswith((".json.gz", ".json.gz.enc")):
+        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-", "rba-calendar-")) and name.endswith((".json.gz", ".json.gz.enc")):
             data.append((name, created))
     data.sort(key=lambda x: x[1], reverse=True)  # newest first
     deleted = 0

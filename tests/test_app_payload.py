@@ -787,6 +787,28 @@ def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
     deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
 
     assert deleted == 1
+
+
+def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
+    # 49 content-addressed rba-calendar assets, oldest first; keep window is 48.
+    rows = [
+        (f"rba-calendar-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
+        for i in range(49)
+    ]
+    listing = "\n".join(f"{name}\t{created}" for name, created in rows)
+    deletes = []
+
+    def fake_run(args, **_kwargs):
+        if "view" in args:
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        deletes.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
+
+    assert deleted == 1
     assert any(rows[0][0] in command for command in deletes), "oldest bank-history asset pruned"
 
 
