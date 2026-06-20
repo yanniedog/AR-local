@@ -3,19 +3,30 @@
 RateWatch countdown, the macro pressure gauge, and every bank rate-pass-through
 metric.
 
-Recorded fact, never inferred. Each decision below is sourced from the RBA
-cash-rate target table and the RBA Monetary Policy Board meeting schedule (see
-``META``). Update this file when the Board next decides; that is the whole
-maintenance burden.
+Recorded fact, never inferred. Every Monetary Policy Board meeting is recorded,
+including HELD meetings (delta_bps == 0), so downstream analytics can distinguish
+"no meeting" from "the Board met and held". Each entry is sourced from the RBA
+cash-rate target table and the RBA monetary-policy decision records (see ``META``).
+Update this file when the Board next decides; that is the whole maintenance burden.
+
+Coverage: complete meeting-by-meeting from 2025 (the Monetary Policy Board era)
+through the present, plus a single pre-2025 baseline anchor (the Nov 2023 hike to
+4.35%) so ``current_rate`` is correct across 2024. 2024's held meetings are
+intentionally omitted — no decision changed the rate, they pre-date the Monetary
+Policy Board, and they sit over a year before the CDR ledger epoch (2026-05-13),
+which is the earliest date any pass-through metric can use.
 
 Design (audit-aligned):
   - Pure data + pure functions, zero I/O — importable and unit-testable without
-    standing up the server or touching the ledger. This is deliberately NOT
-    trapped in a server closure.
-  - Self-validating: ``validate()`` asserts chronology and rate continuity
-    (new_rate == previous + delta) — the ledger integrity ethos applied to the
+    standing up the server or touching the ledger. Deliberately NOT trapped in a
+    server closure.
+  - Rates are stored as integer basis points (e.g. 435 == 4.35% p.a.), so rate
+    continuity is exact integer arithmetic with no float rounding; ``Decision``
+    exposes ``new_rate`` as a percentage float at the boundary.
+  - Self-validating: ``validate()`` asserts chronology + rate continuity
+    (rate_bps == previous + delta_bps) — the ledger-integrity ethos applied to the
     calendar, so a typo in a future edit fails a test instead of shipping a wrong
-    countdown or a wrong pass-through baseline.
+    countdown or pass-through baseline.
   - Timezone-correct WITHOUT a tzdata dependency: the Sydney UTC offset is derived
     from the Australian Eastern DST rule (AEDT +11 from the first Sunday in October
     to the first Sunday in April, else AEST +10), so the 14:30 announcement instant
@@ -23,31 +34,38 @@ Design (audit-aligned):
 
 The Board announces each outcome at 14:30 Sydney time on the second day of the
 meeting; a rate change takes effect the next business day. Decisions are keyed on
-the ANNOUNCEMENT date (``date``) — when lenders learn the outcome and the t0 for
-pass-through analysis — while ``effective`` records the RBA table's effective date.
+the ANNOUNCEMENT date (``Decision.date``) — when lenders learn the outcome and the
+t0 for pass-through analysis. ``current_rate`` instead looks up by EFFECTIVE date,
+because the prevailing target does not change until the effective date.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 
 ANNOUNCE_TIME = time(14, 30)  # 2:30pm Sydney, day 2 of the meeting
 SYDNEY_TZ = "Australia/Sydney"
 
-# --- Recorded decisions (announcement date = meeting day 2) -------------------
-# (announce_date, effective_date, new_target_rate_pct, delta_bps)
-# Sources in META. delta_bps is the change announced; new_rate is the resulting
-# target (% p.a.). A held meeting is delta_bps == 0 (the Board met, no change).
+# --- Recorded meetings (announcement date = meeting day 2) --------------------
+# (announce_date, effective_date | None, new_target_rate_bps, delta_bps)
+# rate is integer basis points (435 == 4.35%); delta_bps == 0 is a HELD meeting.
+# Sources in META.
 _DECISIONS = [
-    ("2025-02-18", "2025-02-19", 4.10, -25),
-    ("2025-05-20", "2025-05-21", 3.85, -25),
-    ("2025-08-12", "2025-08-13", 3.60, -25),
-    ("2026-02-03", "2026-02-04", 3.85, 25),
-    ("2026-03-17", "2026-03-18", 4.10, 25),
-    ("2026-05-05", "2026-05-06", 4.35, 25),
-    ("2026-06-16", None, 4.35, 0),  # met and held
+    ("2023-11-07", "2023-11-08", 435, 25),   # baseline anchor (hike to 4.35%)
+    ("2025-02-18", "2025-02-19", 410, -25),
+    ("2025-04-01", None, 410, 0),            # held
+    ("2025-05-20", "2025-05-21", 385, -25),
+    ("2025-07-08", None, 385, 0),            # held
+    ("2025-08-12", "2025-08-13", 360, -25),
+    ("2025-09-30", None, 360, 0),            # held
+    ("2025-11-04", None, 360, 0),            # held
+    ("2025-12-09", None, 360, 0),            # held
+    ("2026-02-03", "2026-02-04", 385, 25),
+    ("2026-03-17", "2026-03-18", 410, 25),
+    ("2026-05-05", "2026-05-06", 435, 25),
+    ("2026-06-16", None, 435, 0),            # held
 ]
 
 # --- Scheduled future meetings (announcement date = meeting day 2) ------------
@@ -63,6 +81,7 @@ META = {
     "announce_time": "14:30",
     "sources": [
         "https://www.rba.gov.au/statistics/cash-rate/",
+        "https://www.rba.gov.au/monetary-policy/int-rate-decisions/",
         "https://www.rba.gov.au/schedules-events/board-meeting-schedules.html",
     ],
     "updated": "2026-06-21",
@@ -72,9 +91,20 @@ META = {
 @dataclass(frozen=True)
 class Decision:
     date: date  # announcement date (meeting day 2)
-    effective: Optional[date]
-    new_rate: float
+    effective: Optional[date]  # None for a held meeting (no rate change)
+    rate_bps: int  # resulting cash-rate target in basis points (435 == 4.35%)
     delta_bps: int
+
+    @property
+    def new_rate(self) -> float:
+        """Resulting cash-rate target as a percentage (e.g. 4.35)."""
+        return self.rate_bps / 100.0
+
+    @property
+    def effective_date(self) -> date:
+        """When the target takes effect: the effective date for a change, or the
+        announcement date for a held meeting (the level is simply confirmed)."""
+        return self.effective if self.effective is not None else self.date
 
     @property
     def outcome(self) -> str:
@@ -95,14 +125,22 @@ def _d(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def _as_date(value: Union[date, datetime]) -> date:
+    """Coerce a datetime to its date. ``datetime`` is a subclass of ``date`` but
+    ordering a ``date`` against a ``datetime`` raises ``TypeError``, so callers who
+    pass a datetime would otherwise crash the comparisons below."""
+    return value.date() if isinstance(value, datetime) else value
+
+
 def _first_sunday(year: int, month: int) -> date:
     first = date(year, month, 1)
     return first + timedelta(days=(6 - first.weekday()) % 7)
 
 
-def sydney_utc_offset_hours(day: date) -> int:
+def sydney_utc_offset_hours(day: Union[date, datetime]) -> int:
     """Australian Eastern offset for ``day``: AEDT (+11) from the first Sunday in
     October to the first Sunday in April, otherwise AEST (+10)."""
+    day = _as_date(day)
     dst_start = _first_sunday(day.year, 10)
     dst_end = _first_sunday(day.year, 4)
     return 11 if (day >= dst_start or day < dst_end) else 10
@@ -114,10 +152,16 @@ def announce_instant(day: date) -> datetime:
     return (local - timedelta(hours=sydney_utc_offset_hours(day))).replace(tzinfo=timezone.utc)
 
 
+def sydney_today(now: Optional[datetime] = None) -> date:
+    """The current calendar date in Sydney (the RBA's frame of reference)."""
+    now = now or datetime.now(timezone.utc)
+    return (now + timedelta(hours=sydney_utc_offset_hours(now.date()))).date()
+
+
 def decisions() -> List[Decision]:
     return [
-        Decision(_d(ann), _d(eff) if eff else None, float(rate), int(delta))
-        for ann, eff, rate, delta in _DECISIONS
+        Decision(_d(ann), _d(eff) if eff else None, int(rate_bps), int(delta))
+        for ann, eff, rate_bps, delta in _DECISIONS
     ]
 
 
@@ -133,11 +177,10 @@ def validate() -> List[str]:
     for prev, cur in zip(decs, decs[1:]):
         if cur.date <= prev.date:
             issues.append(f"decisions out of order: {prev.date} -> {cur.date}")
-        expected = round(prev.new_rate + cur.delta_bps / 100.0, 2)
-        if round(cur.new_rate, 2) != expected:
+        if cur.rate_bps != prev.rate_bps + cur.delta_bps:
             issues.append(
                 f"rate discontinuity at {cur.date}: "
-                f"{prev.new_rate} + {cur.delta_bps}bps != {cur.new_rate}"
+                f"{prev.rate_bps} + {cur.delta_bps}bps != {cur.rate_bps}"
             )
 
     for dec in decs:
@@ -156,7 +199,9 @@ def validate() -> List[str]:
     return issues
 
 
-def last_decision_on_or_before(day: date) -> Optional[Decision]:
+def last_decision_on_or_before(day: Union[date, datetime]) -> Optional[Decision]:
+    """Latest decision whose ANNOUNCEMENT date is on or before ``day``."""
+    day = _as_date(day)
     found: Optional[Decision] = None
     for dec in decisions():
         if dec.date <= day:
@@ -166,19 +211,37 @@ def last_decision_on_or_before(day: date) -> Optional[Decision]:
     return found
 
 
-def current_rate(asof: Optional[date] = None) -> Optional[float]:
-    asof = asof or datetime.now(timezone.utc).date()
-    dec = last_decision_on_or_before(asof)
-    return dec.new_rate if dec else None
+def current_rate(asof: Optional[Union[date, datetime]] = None) -> Optional[float]:
+    """The prevailing cash-rate target (percent) as of ``asof``, by EFFECTIVE date.
+
+    Defaults to today in Sydney — the RBA's frame of reference — so the answer does
+    not flip a day early around the UTC/Sydney boundary. Returns ``None`` before the
+    baseline anchor's effective date.
+    """
+    asof = _as_date(asof) if asof is not None else sydney_today()
+    found: Optional[Decision] = None
+    for dec in decisions():
+        if dec.effective_date <= asof:
+            found = dec
+        else:
+            break
+    return found.new_rate if found else None
 
 
-def decisions_in_range(start: date, end: date) -> List[Decision]:
-    """Recorded decisions with announcement date in [start, end] — the join input
-    for bank pass-through metrics over a ledger window."""
+def decisions_in_range(start: Union[date, datetime], end: Union[date, datetime]) -> List[Decision]:
+    """Recorded decisions (incl. holds) with announcement date in [start, end] —
+    the join input for bank pass-through metrics over a ledger window."""
+    start = _as_date(start)
+    end = _as_date(end)
     return [dec for dec in decisions() if start <= dec.date <= end]
 
 
 def next_meeting(now: Optional[datetime] = None) -> Optional[Meeting]:
+    """The next scheduled meeting whose announcement is still in the future.
+
+    The boundary is exclusive: exactly at the 14:30 announcement instant the meeting
+    is no longer "upcoming" (its outcome is being announced), so the next meeting is
+    returned."""
     now = now or datetime.now(timezone.utc)
     for meeting in schedule():
         if meeting.announce_utc > now:
