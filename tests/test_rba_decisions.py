@@ -9,7 +9,7 @@ announcement boundary).
 """
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
@@ -152,11 +152,24 @@ def test_api_payload_shape_and_values():
     assert any(d["outcome"] == "hold" for d in p["decisions"])
     assert p["schedule"][0]["date"] == "2026-08-11"
     json.dumps(p)  # must be JSON-serialisable
+    # off-contract inputs must not raise (naive datetime assumed UTC; bare date -> UTC midnight)
+    assert rba.api_payload(datetime(2026, 6, 21, 0, 0))["current_rate"] == 4.35
+    assert rba.api_payload(date(2026, 6, 21))["current_rate"] == 4.35
 
 
 def test_api_payload_has_no_next_meeting_after_the_schedule():
-    p = rba.api_payload(datetime(2027, 1, 1, tzinfo=timezone.utc))
-    assert p["next_meeting"] is None
+    # Derive "after the schedule" from the schedule itself, not a brittle fixed date.
+    last_meeting = max(m.date for m in rba.schedule())
+    now = datetime.combine(last_meeting, time(0), tzinfo=timezone.utc) + timedelta(days=365)
+    assert rba.api_payload(now)["next_meeting"] is None
+
+
+def test_api_payload_generated_at_is_utc_and_truncated():
+    now = datetime(2026, 6, 21, 3, 4, 5, 123456, tzinfo=timezone.utc)
+    ga = datetime.fromisoformat(rba.api_payload(now)["generated_at"])
+    assert ga.utcoffset() == timedelta(0)
+    assert ga.microsecond == 0
+    assert ga == now.replace(microsecond=0)
 
 
 def test_server_rba_payload_is_small_and_valid_json():

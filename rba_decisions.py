@@ -264,13 +264,22 @@ def countdown(now: Optional[datetime] = None) -> Optional[timedelta]:
     return (meeting.announce_utc - now) if meeting else None
 
 
-def api_payload(now: Optional[datetime] = None) -> dict:
+def api_payload(now: Optional[Union[date, datetime]] = None) -> dict:
     """Client-facing snapshot for the dashboard/app: current cash rate, the
     next-decision countdown, and the recorded decision calendar + forward schedule.
 
     Pure and importable so the dashboard server route stays a thin serialise-only
-    binding — no domain logic trapped in the server closure (the audit's root cause)."""
-    now = now or datetime.now(timezone.utc)
+    binding — no domain logic trapped in the server closure (the audit's root cause).
+
+    ``now`` is normalised to an aware UTC instant: a naive datetime is assumed UTC,
+    and a bare date becomes that day's UTC midnight, so an off-contract input never
+    crashes the aware comparisons in next_meeting/countdown."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif not isinstance(now, datetime):
+        now = datetime.combine(now, time.min, timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     meeting = next_meeting(now)
     remaining = countdown(now)
     next_meeting_obj = None
