@@ -177,6 +177,25 @@ def _history_assets_from(exports, run_date):
     )
 
 
+def test_build_history_assets_includes_behaviour(tmp_path):
+    runs = tmp_path / "runs"
+
+    def sav(provider, key, rate):
+        return {"dataset": "Savings", "provider": provider, "product_key": key,
+                "rate": rate, "rate_family": "deposit"}
+
+    _write_history_day(runs, "2026-06-09", [sav("Alpha", "A|1", "0.0475")])
+    exports = _write_history_day(runs, "2026-06-10", [sav("Alpha", "A|1", "0.0450")])
+    _history, bank_history = _history_assets_from(exports, "2026-06-10")
+
+    behaviour = bank_history["behaviour"]
+    assert set(behaviour) == {"Mortgage", "Savings", "TD"}
+    for section, summary in behaviour.items():
+        assert summary["section"] == section
+        assert summary["window_days"] == 60
+        assert isinstance(summary["providers"], dict)
+
+
 def test_build_history_assets_bank_series_and_events(tmp_path):
     runs = tmp_path / "runs"
 

@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import bank_behaviour
+import rba_decisions
+
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 _WS = re.compile(r"\s+")
 
@@ -237,12 +241,20 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
                     series["median"].append(round(median, _SERIES_ROUND))
                     series["best"].append(round(best, _SERIES_ROUND))
                     series["count"].append(count)
+    # Pass-through "bank behaviour": join the move-events (full list, not the
+    # truncated asset slice) to the recorded RBA calendar. Same single pass — no
+    # extra ledger scan. Pure logic + honesty/confidence model live in bank_behaviour.
+    behaviour = {
+        section: bank_behaviour.pass_through_summary(events, rba_decisions.decisions(), section=section)
+        for section in VALID_SECTIONS
+    }
     bank_history = {
         "schema_version": schema_version,
         "run_date": run_date,
         "run_dates": dates,
         "banks": banks,
         "events": events[-MAX_EVENTS:],
+        "behaviour": behaviour,
     }
     return history_banks, bank_history
 
