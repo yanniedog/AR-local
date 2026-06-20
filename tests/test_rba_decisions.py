@@ -98,6 +98,14 @@ def test_current_rate_default_asof_is_sydney_today():
     assert rba.sydney_today(late) == date(2026, 6, 22)
 
 
+def test_current_rate_accepts_aware_datetime_in_sydney_terms():
+    # Codex finding: 2025-02-18T20:00Z is already 2025-02-19 in Sydney, so the Feb
+    # cut is effective and current_rate must agree with the Sydney-based default path.
+    assert rba.current_rate(datetime(2025, 2, 18, 20, 0, tzinfo=timezone.utc)) == 4.10
+    # A naive datetime has no zone to interpret, so it is taken at face value.
+    assert rba.current_rate(datetime(2025, 2, 18, 20, 0)) == 4.35
+
+
 def test_decisions_in_range_includes_holds():
     # Codex finding: a late-2025 window must surface the held meetings, not [].
     window = rba.decisions_in_range(date(2025, 9, 1), date(2025, 12, 31))

@@ -126,10 +126,16 @@ def _d(value: str) -> date:
 
 
 def _as_date(value: Union[date, datetime]) -> date:
-    """Coerce a datetime to its date. ``datetime`` is a subclass of ``date`` but
-    ordering a ``date`` against a ``datetime`` raises ``TypeError``, so callers who
-    pass a datetime would otherwise crash the comparisons below."""
-    return value.date() if isinstance(value, datetime) else value
+    """Coerce to a calendar date. An aware ``datetime`` is interpreted in the RBA's
+    Sydney frame — so an instant already "tomorrow" in Sydney resolves to the Sydney
+    date, matching the default ``current_rate`` path rather than disagreeing for the
+    hours between Sydney and UTC midnight. A naive ``datetime`` is taken at face
+    value. (``datetime`` is a subclass of ``date``, but ordering a ``date`` against a
+    ``datetime`` raises ``TypeError``, so this also prevents a crash when a datetime
+    reaches the ``date``-typed helpers below.)"""
+    if isinstance(value, datetime):
+        return sydney_today(value) if value.tzinfo is not None else value.date()
+    return value
 
 
 def _first_sunday(year: int, month: int) -> date:
@@ -153,8 +159,11 @@ def announce_instant(day: date) -> datetime:
 
 
 def sydney_today(now: Optional[datetime] = None) -> date:
-    """The current calendar date in Sydney (the RBA's frame of reference)."""
+    """The calendar date in Sydney (the RBA's frame of reference) at ``now`` —
+    defaults to the current instant. Aware datetimes are normalised to UTC first."""
     now = now or datetime.now(timezone.utc)
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc)
     return (now + timedelta(hours=sydney_utc_offset_hours(now.date()))).date()
 
 
