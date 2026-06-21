@@ -111,6 +111,12 @@ describe('currentCashRate', () => {
     expect(currentCashRate(TWO, Date.parse('2026-05-06T12:00:00Z'))).toBe(4.35); // effective
   });
 
+  it('uses the Sydney date for the as-of boundary, not UTC', () => {
+    // 2026-05-05T20:00Z is already 2026-05-06 in Sydney (AEST +10), so the 05-05
+    // hike (effective 05-06) is in effect — UTC would still read 4.1.
+    expect(currentCashRate(TWO, Date.parse('2026-05-05T20:00:00Z'))).toBe(4.35);
+  });
+
   it('is null before the first effective date and when there are no decisions', () => {
     expect(currentCashRate(TWO, Date.parse('2026-01-01T00:00:00Z'))).toBeNull();
     expect(currentCashRate(null)).toBeNull();

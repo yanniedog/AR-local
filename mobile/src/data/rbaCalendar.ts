@@ -132,21 +132,32 @@ export function rbaCountdown(
   };
 }
 
-function utcYmd(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+function firstSundayUtc(year: number, monthIndex: number): number {
+  const dow = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay(); // 0 = Sunday
+  return Date.UTC(year, monthIndex, 1 + ((7 - dow) % 7));
 }
 
-/** The prevailing cash-rate target (percent) as of `now`, by EFFECTIVE date — so on
- * an announcement day it does not jump to the new target before it takes effect (a
- * held meeting takes effect on its announcement date). Uses the UTC calendar date,
- * a minor simplification vs the Pi's Sydney frame; the live /api/rba is authoritative. */
+/** Sydney calendar date (YYYY-MM-DD) for a UTC instant — the RBA's frame of
+ * reference. AEDT (+11) from the first Sunday in October to the first Sunday in
+ * April, else AEST (+10); computed without a tzdata dependency, mirroring the Pi. */
+function sydneyYmd(ms: number): string {
+  const year = new Date(ms).getUTCFullYear();
+  const dstStart = firstSundayUtc(year, 9); // October
+  const dstEnd = firstSundayUtc(year, 3); // April
+  const offsetH = ms >= dstStart || ms < dstEnd ? 11 : 10;
+  return new Date(ms + offsetH * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** The prevailing cash-rate target (percent) as of `now`, by EFFECTIVE date in the
+ * RBA's Sydney frame — so on an announcement day it does not jump to the new target
+ * before it takes effect (a held meeting takes effect on its announcement date). */
 export function currentCashRate(
   calendar: RbaCalendar | null | undefined,
   now: number = Date.now(),
 ): number | null {
   const decisions = calendar?.decisions;
   if (!decisions?.length) return null;
-  const asof = utcYmd(now);
+  const asof = sydneyYmd(now);
   let rate: number | null = null;
   for (const decision of decisions) {
     const effective = decision.effective ?? decision.date;
