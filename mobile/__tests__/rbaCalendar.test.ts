@@ -45,6 +45,19 @@ describe('normalizeRbaCalendar', () => {
     expect(normalizeRbaCalendar(null)).toBeNull();
     expect(normalizeRbaCalendar({ schedule: [], decisions: [] })).toBeNull();
   });
+
+  it('drops decisions with a malformed date or invalid outcome and rounds delta', () => {
+    const cal = normalizeRbaCalendar({
+      schedule: [{ date: '2026-08-11', announce_utc: '2026-08-11T04:30:00+00:00' }],
+      decisions: [
+        { date: '2026-05-05', effective: '2026-05-06', rate: 4.35, delta_bps: 24.7, outcome: 'hike' },
+        { date: 'not-a-date', rate: 4.35, delta_bps: 0, outcome: 'hold' },
+        { date: '2026-03-17', rate: 4.1, delta_bps: 25, outcome: 'nope' },
+      ],
+    });
+    expect(cal!.decisions.map((d) => d.date)).toEqual(['2026-05-05']);
+    expect(cal!.decisions[0].delta_bps).toBe(25);
+  });
 });
 
 describe('nextMeeting / rbaCountdown', () => {
@@ -57,6 +70,16 @@ describe('nextMeeting / rbaCountdown', () => {
   it('rolls to the following meeting once the announcement passes', () => {
     const justAfter = Date.parse('2026-08-11T04:30:00.001Z');
     expect(nextMeeting(cal, justAfter)!.date).toBe('2026-09-29');
+  });
+
+  it('treats the exact announcement instant as no longer upcoming', () => {
+    expect(nextMeeting(cal, Date.parse('2026-08-11T04:30:00+00:00'))!.date).toBe('2026-09-29');
+  });
+
+  it('returns null for a null or structurally empty schedule', () => {
+    expect(nextMeeting(null)).toBeNull();
+    expect(nextMeeting({ timezone: 'x', decisions: [], schedule: [] })).toBeNull();
+    expect(rbaCountdown(null)).toBeNull();
   });
 
   it('is null once the schedule is exhausted', () => {
@@ -75,11 +98,30 @@ describe('nextMeeting / rbaCountdown', () => {
 });
 
 describe('currentCashRate', () => {
-  it('returns the most recent decision rate', () => {
-    expect(currentCashRate(normalizeRbaCalendar(CAL))).toBe(4.35);
+  const TWO = normalizeRbaCalendar({
+    schedule: [],
+    decisions: [
+      { date: '2026-03-17', effective: '2026-03-18', rate: 4.1, delta_bps: 25, outcome: 'hike' },
+      { date: '2026-05-05', effective: '2026-05-06', rate: 4.35, delta_bps: 25, outcome: 'hike' },
+    ],
   });
 
-  it('is null when there are no decisions', () => {
+  it('respects effective dates (no jump to the new target on announcement day)', () => {
+    expect(currentCashRate(TWO, Date.parse('2026-05-05T12:00:00Z'))).toBe(4.1); // pre-effective
+    expect(currentCashRate(TWO, Date.parse('2026-05-06T12:00:00Z'))).toBe(4.35); // effective
+  });
+
+  it('is null before the first effective date and when there are no decisions', () => {
+    expect(currentCashRate(TWO, Date.parse('2026-01-01T00:00:00Z'))).toBeNull();
     expect(currentCashRate(null)).toBeNull();
+    expect(
+      currentCashRate(
+        normalizeRbaCalendar({
+          timezone: 'Australia/Sydney',
+          decisions: [],
+          schedule: [{ date: '2026-08-11', announce_utc: '2026-08-11T04:30:00+00:00' }],
+        }),
+      ),
+    ).toBeNull();
   });
 });

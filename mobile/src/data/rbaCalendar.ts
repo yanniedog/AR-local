@@ -32,8 +32,12 @@ export interface RbaCalendar {
   schedule: RbaScheduledMeeting[];
 }
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function ymd(value: unknown): string {
-  return typeof value === 'string' ? value.slice(0, 10) : '';
+  if (typeof value !== 'string') return '';
+  const s = value.slice(0, 10);
+  return YMD_RE.test(s) ? s : '';
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -97,7 +101,8 @@ export function nextMeeting(
 ): RbaScheduledMeeting | null {
   if (!calendar?.schedule?.length) return null;
   for (const meeting of calendar.schedule) {
-    if (Date.parse(meeting.announce_utc) > now) return meeting;
+    const ts = Date.parse(meeting.announce_utc);
+    if (Number.isFinite(ts) && ts > now) return meeting;
   }
   return null;
 }
@@ -127,9 +132,25 @@ export function rbaCountdown(
   };
 }
 
-/** The prevailing cash-rate target (percent) — the most recent recorded decision. */
-export function currentCashRate(calendar: RbaCalendar | null | undefined): number | null {
+function utcYmd(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** The prevailing cash-rate target (percent) as of `now`, by EFFECTIVE date — so on
+ * an announcement day it does not jump to the new target before it takes effect (a
+ * held meeting takes effect on its announcement date). Uses the UTC calendar date,
+ * a minor simplification vs the Pi's Sydney frame; the live /api/rba is authoritative. */
+export function currentCashRate(
+  calendar: RbaCalendar | null | undefined,
+  now: number = Date.now(),
+): number | null {
   const decisions = calendar?.decisions;
   if (!decisions?.length) return null;
-  return decisions[decisions.length - 1].rate;
+  const asof = utcYmd(now);
+  let rate: number | null = null;
+  for (const decision of decisions) {
+    const effective = decision.effective ?? decision.date;
+    if (effective <= asof) rate = decision.rate;
+  }
+  return rate;
 }
