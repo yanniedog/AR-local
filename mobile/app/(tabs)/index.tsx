@@ -196,6 +196,7 @@ export default function Home() {
         />
         <Chip label="Calculator" icon="calculator-outline" onPress={() => router.push('/calculator')} />
         <Chip label="My profile" icon="person-circle-outline" onPress={() => router.push('/profile')} />
+        <Chip label="Why rates move" icon="pulse-outline" onPress={() => router.push('/rba')} />
         {section === 'Mortgage' ? (
           <Chip
             label="Comparison"

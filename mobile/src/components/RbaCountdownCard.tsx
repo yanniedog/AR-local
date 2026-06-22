@@ -3,31 +3,14 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText, Card, Divider, Row } from './ui';
-import { rbaCountdown, recentDecisions, type RbaDecisionEntry } from '../data/rbaCalendar';
+import { decisionLine, formatRbaDate, rbaCountdown, recentDecisions } from '../data/rbaCalendar';
 import { useStore } from '../data/store';
 import { useTheme } from '../theme/ThemeProvider';
-
-const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
-function formatMeetingDate(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map((part) => Number.parseInt(part, 10));
-  if (!y || !m || !d || m < 1 || m > 12) return ymd;
-  return `${d} ${MONTHS[m - 1]}`;
-}
-
-function decisionDetail(decision: RbaDecisionEntry): string {
-  if (decision.outcome === 'hold') return `Held · ${decision.rate.toFixed(2)}%`;
-  const sign = decision.outcome === 'hike' ? '+' : '−';
-  return `${sign}${Math.abs(decision.delta_bps)} bps · ${decision.rate.toFixed(2)}%`;
-}
 
 /** Calm Home card counting down to the next RBA cash-rate decision; tap to reveal
  * the most recent decisions (tiered disclosure). Renders nothing until the
  * rba-calendar asset has synced (an offline cold-start has no schedule). */
-export function RbaCountdownCard() {
+export function RbaCountdownCard({ expandable = true }: { expandable?: boolean } = {}) {
   const theme = useTheme();
   const calendar = useStore((s) => s.rbaCalendar);
   const [expanded, setExpanded] = useState(false);
@@ -36,7 +19,7 @@ export function RbaCountdownCard() {
   const days = countdown.calendarDays;
   const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   const recent = recentDecisions(calendar, 4);
-  const hasRecent = recent.length > 0;
+  const showDisclosure = expandable && recent.length > 0;
 
   const header = (
     <Row style={{ justifyContent: 'space-between' }}>
@@ -45,9 +28,9 @@ export function RbaCountdownCard() {
       </AppText>
       <Row gap={theme.spacing(2)}>
         <AppText variant="small" color="textMuted">
-          {formatMeetingDate(countdown.meeting.date)} · {when}
+          {formatRbaDate(countdown.meeting.date)} · {when}
         </AppText>
-        {hasRecent ? (
+        {showDisclosure ? (
           <Ionicons
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={16}
@@ -60,7 +43,7 @@ export function RbaCountdownCard() {
 
   return (
     <Card>
-      {hasRecent ? (
+      {showDisclosure ? (
         <Pressable
           onPress={() => setExpanded((value) => !value)}
           accessibilityRole="button"
@@ -72,7 +55,7 @@ export function RbaCountdownCard() {
       ) : (
         header
       )}
-      {expanded && hasRecent ? (
+      {expanded && showDisclosure ? (
         <View style={{ marginTop: theme.spacing(3) }}>
           <Divider />
           {recent.map((decision) => (
@@ -81,10 +64,10 @@ export function RbaCountdownCard() {
               style={{ justifyContent: 'space-between', marginTop: theme.spacing(2) }}
             >
               <AppText variant="small" color="textMuted">
-                {formatMeetingDate(decision.date)}
+                {formatRbaDate(decision.date)}
               </AppText>
               <AppText variant="small" weight="600">
-                {decisionDetail(decision)}
+                {decisionLine(decision)}
               </AppText>
             </Row>
           ))}
