@@ -4,6 +4,10 @@ import {
   rbaCountdown,
   currentCashRate,
   recentDecisions,
+  formatRbaDate,
+  decisionLine,
+  rbaTrend,
+  type RbaDecisionEntry,
 } from '../src/data/rbaCalendar';
 
 const CAL = {
@@ -166,5 +170,45 @@ describe('recentDecisions', () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('formatRbaDate / decisionLine', () => {
+  it('formats dates and decision lines', () => {
+    expect(formatRbaDate('2026-08-11')).toBe('11 Aug');
+    expect(formatRbaDate('not-a-date')).toBe('not-a-date');
+    const hike: RbaDecisionEntry = {
+      date: '2026-05-05', effective: '2026-05-06', rate: 4.35, delta_bps: 25, outcome: 'hike',
+    };
+    const hold: RbaDecisionEntry = {
+      date: '2026-06-16', effective: null, rate: 4.35, delta_bps: 0, outcome: 'hold',
+    };
+    expect(decisionLine(hike)).toBe('+25 bps · 4.35%');
+    expect(decisionLine(hold)).toBe('Held · 4.35%');
+  });
+});
+
+describe('rbaTrend', () => {
+  it('reads a tightening path from recent hikes', () => {
+    const cal = normalizeRbaCalendar({
+      schedule: [],
+      decisions: [
+        { date: '2026-02-03', effective: '2026-02-04', rate: 3.85, delta_bps: 25, outcome: 'hike' },
+        { date: '2026-03-17', effective: '2026-03-18', rate: 4.1, delta_bps: 25, outcome: 'hike' },
+        { date: '2026-05-05', effective: '2026-05-06', rate: 4.35, delta_bps: 25, outcome: 'hike' },
+        { date: '2026-06-16', effective: null, rate: 4.35, delta_bps: 0, outcome: 'hold' },
+      ],
+    });
+    const trend = rbaTrend(cal);
+    expect(trend.direction).toBe('tightening');
+    expect(trend.rate).toBe(4.35);
+    expect(trend.hikes).toBe(3);
+    expect(trend.holds).toBe(1);
+    expect(trend.summary).toContain('Tightening');
+  });
+
+  it('is unknown for a null or empty calendar', () => {
+    expect(rbaTrend(null).direction).toBe('unknown');
+    expect(rbaTrend(null).summary).toBe('');
   });
 });

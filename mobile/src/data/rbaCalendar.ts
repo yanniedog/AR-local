@@ -191,3 +191,73 @@ export function recentDecisions(
   if (!decisions?.length || limit <= 0) return []; // slice(-0) === slice(0) returns all
   return decisions.slice(-limit).reverse();
 }
+
+const RBA_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** 'YYYY-MM-DD' -> 'D Mon' (e.g. '2026-08-11' -> '11 Aug'). */
+export function formatRbaDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map((part) => Number.parseInt(part, 10));
+  if (!y || !m || !d || m < 1 || m > 12) return ymd;
+  return `${d} ${RBA_MONTHS[m - 1]}`;
+}
+
+/** One-line decision summary: 'Held · 4.35%' or '+25 bps · 4.35%'. */
+export function decisionLine(decision: RbaDecisionEntry): string {
+  if (decision.outcome === 'hold') return `Held · ${decision.rate.toFixed(2)}%`;
+  const sign = decision.outcome === 'hike' ? '+' : '−';
+  return `${sign}${Math.abs(decision.delta_bps)} bps · ${decision.rate.toFixed(2)}%`;
+}
+
+export interface RbaTrendModel {
+  /** Current cash-rate target (percent) — the most recent recorded decision. */
+  rate: number | null;
+  direction: 'tightening' | 'easing' | 'steady' | 'unknown';
+  hikes: number;
+  cuts: number;
+  holds: number;
+  /** Earliest decision date in the lookback window. */
+  sinceDate: string | null;
+  /** Plain-English read of the recent rate path (not a forecast). */
+  summary: string;
+}
+
+/** A rules-based read of the RBA's recent rate PATH (its decision history) — the
+ * macro "Why rates move" gauge. Not driver-based (inflation/jobs) yet. */
+export function rbaTrend(
+  calendar: RbaCalendar | null | undefined,
+  lookback = 8,
+): RbaTrendModel {
+  const all = calendar?.decisions ?? [];
+  if (!all.length) {
+    return { rate: null, direction: 'unknown', hikes: 0, cuts: 0, holds: 0, sinceDate: null, summary: '' };
+  }
+  const window = lookback > 0 ? all.slice(-lookback) : all.slice();
+  let hikes = 0;
+  let cuts = 0;
+  let holds = 0;
+  for (const decision of window) {
+    if (decision.outcome === 'hike') hikes += 1;
+    else if (decision.outcome === 'cut') cuts += 1;
+    else holds += 1;
+  }
+  const rate = all[all.length - 1].rate;
+  const direction: RbaTrendModel['direction'] =
+    hikes > cuts ? 'tightening' : cuts > hikes ? 'easing' : 'steady';
+  const n = window.length;
+  const hikeWord = `${hikes} hike${hikes === 1 ? '' : 's'}`;
+  const cutWord = `${cuts} cut${cuts === 1 ? '' : 's'}`;
+  let summary: string;
+  if (direction === 'tightening') {
+    summary = `Tightening — ${hikeWord} (and ${cutWord}) across the last ${n} meetings.`;
+  } else if (direction === 'easing') {
+    summary = `Easing — ${cutWord} (and ${hikeWord}) across the last ${n} meetings.`;
+  } else if (hikes === 0 && cuts === 0) {
+    summary = `On hold — no change across the last ${n} meetings.`;
+  } else {
+    summary = `Steady — ${hikeWord} and ${cutWord} net out across the last ${n} meetings.`;
+  }
+  return { rate, direction, hikes, cuts, holds, sinceDate: window[0].date, summary };
+}
