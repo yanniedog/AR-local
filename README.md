@@ -35,8 +35,8 @@ Scan with **Android Chrome** to install the latest preview APK. Asset path is st
 
 | | |
 |---|---|
-| Version | **1.0.36** (build 122) |
-| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=122) |
+| Version | **1.0.36** (build 123) |
+| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=123) |
 | APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
 | Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
 | Version history | [app-v* releases](https://github.com/yanniedog/AR-local/releases?q=app-v&expanded=true) |
