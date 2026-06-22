@@ -153,6 +153,12 @@ describe('recentDecisions', () => {
     expect(recentDecisions(cal, 5).map((d) => d.date)).toEqual(['2026-06-16', '2026-05-05']);
   });
 
+  it('caps at history length and handles undefined', () => {
+    const cal = normalizeRbaCalendar(CAL)!;
+    expect(recentDecisions(cal, 50).map((d) => d.date)).toEqual(['2026-06-16', '2026-05-05']);
+    expect(recentDecisions(undefined)).toEqual([]);
+  });
+
   it('returns [] for a non-positive limit (slice(-0) would otherwise return all)', () => {
     const cal = normalizeRbaCalendar(CAL)!;
     expect(recentDecisions(cal, 0)).toEqual([]);
@@ -186,6 +192,15 @@ describe('formatRbaDate / decisionLine', () => {
     expect(decisionLine(hike)).toBe('+25 bps · 4.35%');
     expect(decisionLine(hold)).toBe('Held · 4.35%');
   });
+
+  it('handles an invalid month and a cut (negative delta)', () => {
+    expect(formatRbaDate('2026-13-01')).toBe('2026-13-01');
+    const cut: RbaDecisionEntry = {
+      date: '2026-02-18', effective: '2026-02-19', rate: 4.1, delta_bps: -25, outcome: 'cut',
+    };
+    expect(decisionLine(cut)).toContain('25 bps · 4.10%');
+    expect(decisionLine(cut)).not.toContain('+');
+  });
 });
 
 describe('rbaTrend', () => {
@@ -210,5 +225,53 @@ describe('rbaTrend', () => {
   it('is unknown for a null or empty calendar', () => {
     expect(rbaTrend(null).direction).toBe('unknown');
     expect(rbaTrend(null).summary).toBe('');
+  });
+
+  it('reads easing, all-holds, and net-zero steady paths', () => {
+    const easing = normalizeRbaCalendar({
+      schedule: [],
+      decisions: [
+        { date: '2026-02-03', effective: '2026-02-04', rate: 4.1, delta_bps: -25, outcome: 'cut' },
+        { date: '2026-03-17', effective: '2026-03-18', rate: 3.85, delta_bps: -25, outcome: 'cut' },
+      ],
+    });
+    expect(rbaTrend(easing).direction).toBe('easing');
+    expect(rbaTrend(easing).summary).toContain('Easing');
+
+    const holds = normalizeRbaCalendar({
+      schedule: [],
+      decisions: [
+        { date: '2026-04-01', effective: null, rate: 4.1, delta_bps: 0, outcome: 'hold' },
+        { date: '2026-05-05', effective: null, rate: 4.1, delta_bps: 0, outcome: 'hold' },
+      ],
+    });
+    expect(rbaTrend(holds).direction).toBe('steady');
+    expect(rbaTrend(holds).summary).toContain('On hold');
+
+    const mixed = normalizeRbaCalendar({
+      schedule: [],
+      decisions: [
+        { date: '2026-02-03', effective: '2026-02-04', rate: 4.1, delta_bps: 25, outcome: 'hike' },
+        { date: '2026-03-17', effective: '2026-03-18', rate: 3.85, delta_bps: -25, outcome: 'cut' },
+      ],
+    });
+    expect(rbaTrend(mixed).direction).toBe('steady');
+    expect(rbaTrend(mixed).summary).toContain('net out');
+  });
+
+  it('honours the lookback window', () => {
+    const cal = normalizeRbaCalendar({
+      schedule: [],
+      decisions: [
+        { date: '2026-02-03', effective: '2026-02-04', rate: 4.1, delta_bps: -25, outcome: 'cut' },
+        { date: '2026-03-17', effective: '2026-03-18', rate: 4.35, delta_bps: 25, outcome: 'hike' },
+        { date: '2026-05-05', effective: '2026-05-06', rate: 4.6, delta_bps: 25, outcome: 'hike' },
+      ],
+    });
+    const trend = rbaTrend(cal, 2);
+    expect(trend.hikes).toBe(2);
+    expect(trend.cuts).toBe(0);
+    expect(trend.sinceDate).toBe('2026-03-17');
+    expect(trend.direction).toBe('tightening');
   });
 });
