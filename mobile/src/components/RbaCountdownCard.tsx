@@ -10,7 +10,7 @@ import { useTheme } from '../theme/ThemeProvider';
 /** Calm Home card counting down to the next RBA cash-rate decision; tap to reveal
  * the most recent decisions (tiered disclosure). Renders nothing until the
  * rba-calendar asset has synced (an offline cold-start has no schedule). */
-export function RbaCountdownCard() {
+export function RbaCountdownCard({ expandable = true }: { expandable?: boolean } = {}) {
   const theme = useTheme();
   const calendar = useStore((s) => s.rbaCalendar);
   const [expanded, setExpanded] = useState(false);
@@ -19,7 +19,7 @@ export function RbaCountdownCard() {
   const days = countdown.calendarDays;
   const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   const recent = recentDecisions(calendar, 4);
-  const hasRecent = recent.length > 0;
+  const showDisclosure = expandable && recent.length > 0;
 
   const header = (
     <Row style={{ justifyContent: 'space-between' }}>
@@ -30,7 +30,7 @@ export function RbaCountdownCard() {
         <AppText variant="small" color="textMuted">
           {formatRbaDate(countdown.meeting.date)} · {when}
         </AppText>
-        {hasRecent ? (
+        {showDisclosure ? (
           <Ionicons
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={16}
@@ -43,7 +43,7 @@ export function RbaCountdownCard() {
 
   return (
     <Card>
-      {hasRecent ? (
+      {showDisclosure ? (
         <Pressable
           onPress={() => setExpanded((value) => !value)}
           accessibilityRole="button"
@@ -55,7 +55,7 @@ export function RbaCountdownCard() {
       ) : (
         header
       )}
-      {expanded && hasRecent ? (
+      {expanded && showDisclosure ? (
         <View style={{ marginTop: theme.spacing(3) }}>
           <Divider />
           {recent.map((decision) => (

@@ -34,7 +34,7 @@ export default function WhyRatesMove() {
         </AppText>
       </Card>
 
-      <RbaCountdownCard />
+      <RbaCountdownCard expandable={false} />
 
       {decisions.length ? (
         <Card>
