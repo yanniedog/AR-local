@@ -40,6 +40,16 @@ function ymd(value: unknown): string {
   return YMD_RE.test(s) ? s : '';
 }
 
+function ymdToUtcMs(value: string): number {
+  const [y, m, d] = value.split('-').map((part) => Number.parseInt(part, 10));
+  return Date.UTC(y, m - 1, d);
+}
+
+/** Whole calendar days from `from` to `to` (both YYYY-MM-DD). */
+function ymdDiffDays(from: string, to: string): number {
+  return Math.round((ymdToUtcMs(to) - ymdToUtcMs(from)) / 86_400_000);
+}
+
 function finiteNumber(value: unknown): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
@@ -111,8 +121,12 @@ export interface RbaCountdown {
   meeting: RbaScheduledMeeting;
   /** Milliseconds until the announcement. */
   ms: number;
+  /** 24-hour blocks remaining (duration). */
   days: number;
   hours: number;
+  /** Whole Sydney calendar days from today to the announcement date — use this for
+   * "today / tomorrow / in N days" labels (a sub-24h gap across midnight is 1 day). */
+  calendarDays: number;
 }
 
 /** Live countdown to the next decision, computed on-device. Null once the
@@ -129,6 +143,7 @@ export function rbaCountdown(
     ms,
     days: Math.floor(ms / 86_400_000),
     hours: Math.floor((ms % 86_400_000) / 3_600_000),
+    calendarDays: ymdDiffDays(sydneyYmd(now), meeting.date),
   };
 }
 

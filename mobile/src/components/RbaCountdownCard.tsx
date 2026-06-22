@@ -23,8 +23,8 @@ export function RbaCountdownCard() {
   const calendar = useStore((s) => s.rbaCalendar);
   const countdown = rbaCountdown(calendar);
   if (!countdown) return null;
-  const when =
-    countdown.days <= 0 ? 'today' : countdown.days === 1 ? 'tomorrow' : `in ${countdown.days} days`;
+  const days = countdown.calendarDays;
+  const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   return (
     <Card>
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>

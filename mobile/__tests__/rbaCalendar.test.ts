@@ -92,8 +92,17 @@ describe('nextMeeting / rbaCountdown', () => {
     const cd = rbaCountdown(cal, JUN21)!;
     expect(cd.meeting.date).toBe('2026-08-11');
     expect(cd.days).toBe(51);
+    expect(cd.calendarDays).toBe(51);
     expect(cd.ms).toBeGreaterThan(0);
     expect(cd.hours).toBeGreaterThanOrEqual(0);
+  });
+
+  it('calendarDays counts calendar days, not 24h blocks (fixes today vs tomorrow)', () => {
+    // 2026-08-10T10:00Z is 2026-08-10 20:00 Sydney; the 2026-08-11 14:30 Sydney
+    // meeting is ~18.5h away -> 24h-blocks = 0, but it is calendar 'tomorrow'.
+    const cd = rbaCountdown(cal, Date.parse('2026-08-10T10:00:00Z'))!;
+    expect(cd.days).toBe(0);
+    expect(cd.calendarDays).toBe(1);
   });
 });
 

@@ -807,7 +807,7 @@ export const useStore = create<AppState>()(
         }
         const asset = manifest.files.rba_calendar;
         if (!asset) {
-          set({ rbaCalendarError: 'rba calendar unavailable' });
+          set({ rbaCalendar: null, rbaCalendarSha: null, rbaCalendarError: 'rba calendar unavailable' });
           return;
         }
         if (rbaCalendar && rbaCalendarSha === asset.sha256) return; // already current (in-memory)
