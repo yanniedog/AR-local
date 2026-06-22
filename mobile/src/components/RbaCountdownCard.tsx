@@ -36,32 +36,43 @@ export function RbaCountdownCard() {
   const days = countdown.calendarDays;
   const when = days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   const recent = recentDecisions(calendar, 4);
+  const hasRecent = recent.length > 0;
+
+  const header = (
+    <Row style={{ justifyContent: 'space-between' }}>
+      <AppText variant="tiny" weight="700" color="textFaint">
+        NEXT RBA DECISION
+      </AppText>
+      <Row gap={theme.spacing(2)}>
+        <AppText variant="small" color="textMuted">
+          {formatMeetingDate(countdown.meeting.date)} · {when}
+        </AppText>
+        {hasRecent ? (
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={theme.colors.textFaint}
+          />
+        ) : null}
+      </Row>
+    </Row>
+  );
+
   return (
     <Card>
-      <Pressable
-        onPress={() => setExpanded((value) => !value)}
-        accessibilityRole="button"
-        accessibilityHint={expanded ? 'Hide recent RBA decisions' : 'Show recent RBA decisions'}
-      >
-        <Row style={{ justifyContent: 'space-between' }}>
-          <AppText variant="tiny" weight="700" color="textFaint">
-            NEXT RBA DECISION
-          </AppText>
-          <Row gap={theme.spacing(2)}>
-            <AppText variant="small" color="textMuted">
-              {formatMeetingDate(countdown.meeting.date)} · {when}
-            </AppText>
-            {recent.length ? (
-              <Ionicons
-                name={expanded ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color={theme.colors.textFaint}
-              />
-            ) : null}
-          </Row>
-        </Row>
-      </Pressable>
-      {expanded && recent.length ? (
+      {hasRecent ? (
+        <Pressable
+          onPress={() => setExpanded((value) => !value)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityHint={expanded ? 'Hide recent RBA decisions' : 'Show recent RBA decisions'}
+        >
+          {header}
+        </Pressable>
+      ) : (
+        header
+      )}
+      {expanded && hasRecent ? (
         <View style={{ marginTop: theme.spacing(3) }}>
           <Divider />
           {recent.map((decision) => (

@@ -149,6 +149,12 @@ describe('recentDecisions', () => {
     expect(recentDecisions(cal, 5).map((d) => d.date)).toEqual(['2026-06-16', '2026-05-05']);
   });
 
+  it('returns [] for a non-positive limit (slice(-0) would otherwise return all)', () => {
+    const cal = normalizeRbaCalendar(CAL)!;
+    expect(recentDecisions(cal, 0)).toEqual([]);
+    expect(recentDecisions(cal, -2)).toEqual([]);
+  });
+
   it('returns [] for a null or decision-less calendar', () => {
     expect(recentDecisions(null)).toEqual([]);
     expect(

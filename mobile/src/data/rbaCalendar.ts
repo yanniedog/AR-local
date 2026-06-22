@@ -188,6 +188,6 @@ export function recentDecisions(
   limit = 4,
 ): RbaDecisionEntry[] {
   const decisions = calendar?.decisions;
-  if (!decisions?.length) return [];
+  if (!decisions?.length || limit <= 0) return []; // slice(-0) === slice(0) returns all
   return decisions.slice(-limit).reverse();
 }
