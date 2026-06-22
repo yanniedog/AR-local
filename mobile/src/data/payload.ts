@@ -12,6 +12,7 @@ import { versionLt } from '../lib/versionCompare';
 import type { CorePayload, DetailsPayload, Manifest } from '../types';
 import { normalizeBankInsightsPayload } from './bankInsights';
 import { normalizeHistoryBanksPayload } from './historyPayload';
+import { normalizeRbaCalendar } from './rbaCalendar';
 import {
   fileNameFromUrl,
   type PayloadProgressHandler,
@@ -300,4 +301,22 @@ export async function downloadHistoryBanks(
     throw new Error('history_banks payload failed validation');
   }
   return { text, historyBanks };
+}
+
+export interface RbaCalendarResult {
+  text: string;
+  rbaCalendar: import('./rbaCalendar').RbaCalendar;
+}
+
+export async function downloadRbaCalendar(
+  url: string,
+  expectedSha?: string,
+  opts: DownloadOpts = {},
+): Promise<RbaCalendarResult> {
+  const text = await downloadInflate(url, expectedSha, opts);
+  const rbaCalendar = normalizeRbaCalendar(JSON.parse(text) as unknown);
+  if (!rbaCalendar) {
+    throw new Error('rba_calendar payload failed validation');
+  }
+  return { text, rbaCalendar };
 }
