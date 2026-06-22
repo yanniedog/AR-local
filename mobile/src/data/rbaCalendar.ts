@@ -180,3 +180,14 @@ export function currentCashRate(
   }
   return rate;
 }
+
+/** The most recent recorded decisions, newest first — for the countdown card's
+ * tiered "recent decisions" disclosure. */
+export function recentDecisions(
+  calendar: RbaCalendar | null | undefined,
+  limit = 4,
+): RbaDecisionEntry[] {
+  const decisions = calendar?.decisions;
+  if (!decisions?.length) return [];
+  return decisions.slice(-limit).reverse();
+}
