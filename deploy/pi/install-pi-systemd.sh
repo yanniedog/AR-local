@@ -63,25 +63,33 @@ render_unit "$repo_dir/deploy/pi/ar-local-daily.service" "$tmp_dir/ar-local-dail
 render_unit "$repo_dir/deploy/pi/ar-local-daily-watchdog.service" "$tmp_dir/ar-local-daily-watchdog.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-alert.service" "$tmp_dir/ar-local-ingest-alert.service"
 render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-local-runtime-health.service"
+render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily-watchdog.service" /etc/systemd/system/ar-local-daily-watchdog.service
 sudo install -m 0644 "$tmp_dir/ar-local-ingest-alert.service" /etc/systemd/system/ar-local-ingest-alert.service
 sudo install -m 0644 "$tmp_dir/ar-local-runtime-health.service" /etc/systemd/system/ar-local-runtime-health.service
+sudo install -m 0644 "$tmp_dir/ar-local-boot-recovery.service" /etc/systemd/system/ar-local-boot-recovery.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily.timer" /etc/systemd/system/ar-local-daily.timer
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily-watchdog.timer" /etc/systemd/system/ar-local-daily-watchdog.timer
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-runtime-health.timer" /etc/systemd/system/ar-local-runtime-health.timer
 chmod +x "$repo_dir/deploy/pi/ar-local-deploy-watchdog.sh"
+chmod +x "$repo_dir/deploy/pi/ar-local-boot-recovery.sh" "$repo_dir/deploy/pi/install-power-resilience.sh"
 render_unit "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" "$tmp_dir/ar-local-deploy-watchdog.service"
 sudo install -m 0644 "$tmp_dir/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.timer" /etc/systemd/system/ar-local-deploy-watchdog.timer
 sudo systemctl daemon-reload
 sudo systemctl enable ar-local-dashboard.service
+sudo systemctl enable ar-local-boot-recovery.service
 sudo systemctl enable --now ar-local-daily.timer
 sudo systemctl enable --now ar-local-daily-watchdog.timer
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
 sudo systemctl enable --now ar-local-runtime-health.timer
+
+# Power-loss hardening: fsck auto-repair, hardware watchdog, tailscaled auto-start,
+# bounded persistent journald. cmdline.txt/config.txt edits apply on next reboot.
+sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
   sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir"
 fi
