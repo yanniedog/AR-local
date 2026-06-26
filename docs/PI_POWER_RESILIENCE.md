@@ -6,12 +6,19 @@ The AR-local CDR ingest + dashboard run on a single Raspberry Pi 5
 
 **Actual root cause of the 2026-06-27 outage:** after a power cut the Pi booted
 fine but **Wi-Fi never auto-reconnected**, so the headless box was invisible on
-both the LAN and Tailscale and the daily CDR run was missed. Two contributing
-faults: the Wi-Fi regulatory domain came up as `US` (refuses AU-only channels)
-and NetworkManager's default `autoconnect-retries` (4) gave up permanently when
-the router was slow to return after the shared outage. The default systemd
-target was also `graphical.target` (wrong for a headless server). It was **not**
-SD/disk corruption — the NVMe rootfs recovered its journal cleanly.
+both the LAN and Tailscale and the daily CDR run was missed. The cause was
+**NetworkManager's default `autoconnect-retries` (4)**: it gave up permanently
+when the access point was slow to return after the shared power outage. The
+default systemd target was also `graphical.target` (wrong for a headless
+server). It was **not** SD/disk corruption — the NVMe rootfs recovered its
+journal cleanly.
+
+> Note: the Pi's Broadcom Wi-Fi is a **self-managed** regulatory driver
+> (`iw reg get` shows `country 99: DFS-UNSET`), so the regulatory domain is
+> taken from the AP, not from `iw reg set` / the `cfg80211.ieee80211_regdom`
+> kernel arg. `Nikipedia` runs on 5 GHz ch36 (legal in US and AU), so regdom
+> was not the blocker. `do_wifi_country AU` is still set (correct for the
+> location) but is effectively cosmetic on this driver.
 
 This doc covers (1) how to find and recover the Pi after a power event, and
 (2) the hardening that now makes it self-heal and stay reachable on the next
@@ -106,8 +113,8 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Bounded reboot** | `RebootWatchdogSec=2min` | A hung shutdown is force-completed. |
 | **Persistent, capped logs** | journald `Storage=persistent`, `SystemMaxUse=200M` | Boot logs survive for diagnosis; logs can't fill the disk. |
 | **Tailscale auto-start + tailnet SSH** | `enable --now tailscaled`, `tailscale set --ssh` | Remote access returns automatically after a reboot; tailnet SSH is a key-independent recovery path. |
-| **Wi-Fi regulatory domain** | `raspi-config do_wifi_country AU` | Pi can use AU-only channels (a `US` regdom silently refuses them). |
-| **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | Re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |
+| **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | **The actual fix:** re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |
+| **Wi-Fi country (best-effort)** | `raspi-config do_wifi_country AU` | Sets AU for the location; cosmetic on this self-managed driver (regdom comes from the AP). |
 | **Headless boot** | `systemctl set-default multi-user.target` | Boots without waiting on a display/keyboard. |
 | **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | If the default gateway is unreachable, restarts NetworkManager + re-ups Wi-Fi (kicks a wedged driver). |
 

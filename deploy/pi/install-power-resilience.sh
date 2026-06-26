@@ -105,11 +105,12 @@ else
 fi
 
 # --- 6. WiFi: country + bullet-proof autoconnect on every wifi profile -------
-# Root cause of the 2026-06-27 outage: after a power cut the Pi booted but
-# WiFi never came up, so the headless box was invisible. Two fixes:
-#   * regulatory domain must be AU (a US regdom refuses AU-only channels),
-#   * autoconnect must retry forever (NM's default gives up after 4 tries, so a
-#     router that is slow to return after a shared outage is never rejoined).
+# Root cause of the 2026-06-27 outage: after a power cut the Pi booted but WiFi
+# never came up, so the headless box was invisible. The fix that matters is
+# autoconnect-retries=0 (NM's default gives up after 4 tries, so a router slow
+# to return after a shared outage is never rejoined). do_wifi_country AU is set
+# for correctness but is cosmetic on the Pi's self-managed brcmfmac driver
+# (the regulatory domain is taken from the AP, not from iw / cfg80211).
 wifi_country="${AR_LOCAL_WIFI_COUNTRY:-AU}"
 if command -v raspi-config >/dev/null 2>&1; then
   raspi-config nonint do_wifi_country "$wifi_country" 2>/dev/null \
