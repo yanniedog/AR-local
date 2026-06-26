@@ -112,8 +112,13 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | If the default gateway is unreachable, restarts NetworkManager + re-ups Wi-Fi (kicks a wedged driver). |
 
 > Wi-Fi credentials are **never** stored in this repo — the script only hardens
-> the autoconnect settings of the existing NetworkManager profile. Add/replace
-> the network with `sudo nmcli device wifi connect <SSID> password <PSK>`.
+> the autoconnect settings of existing NetworkManager profiles. Configured
+> networks (highest priority first): **`Nikipedia`** (100) → **`ASUS_2.4`** (50)
+> → **`Slow`** (10). NetworkManager prefers the highest-priority visible network
+> and `ar-local-net-watchdog.sh` fails over through them in that order. Add or
+> replace a network with:
+> `sudo nmcli connection add type wifi con-name <SSID> ssid <SSID>` then
+> `sudo nmcli connection modify <SSID> wifi-sec.key-mgmt wpa-psk wifi-sec.psk <PSK> connection.autoconnect yes connection.autoconnect-priority <N>`.
 
 Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`):
 

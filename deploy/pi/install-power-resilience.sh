@@ -157,9 +157,16 @@ logger -t ar-local-net-watchdog "no network (gw='${gw:-none}'); restarting Netwo
 systemctl restart NetworkManager 2>/dev/null || true
 sleep 8
 if command -v nmcli >/dev/null 2>&1; then
-  nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r n t; do
-    [ "$t" = "802-11-wireless" ] && nmcli connection up "$n" 2>/dev/null || true
-  done
+  # Try wifi profiles in autoconnect-priority order (highest first), stop on the
+  # first that brings up a default gateway. Gives Nikipedia -> ASUS_2.4 -> Slow
+  # failover even if NetworkManager's own autoconnect fixates on one SSID.
+  nmcli -t -f AUTOCONNECT-PRIORITY,TYPE,NAME connection show 2>/dev/null \
+    | awk -F: '$2=="802-11-wireless"{print $1":"$3}' | sort -t: -k1 -rn | cut -d: -f2- \
+    | while IFS= read -r n; do
+        nmcli connection up "$n" 2>/dev/null || continue
+        ngw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
+        [ -n "$ngw" ] && ping -c1 -W3 "$ngw" >/dev/null 2>&1 && break
+      done
 fi
 WD
 chmod +x /usr/local/sbin/ar-local-net-watchdog.sh
