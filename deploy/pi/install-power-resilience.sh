@@ -92,9 +92,98 @@ if command -v tailscaled >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/nul
   systemctl enable --now tailscaled 2>/dev/null \
     && log "tailscaled: enabled + started" \
     || log "WARN: could not enable tailscaled (check 'sudo tailscale up')"
+  # Tailnet SSH: a key-independent recovery path so a lost ~/.ssh/authorized_keys
+  # can't lock us out again. Best-effort: 'set --ssh' aborts if it would drop the
+  # current tailscale-routed session, which is fine (re-run from a LAN console).
+  if command -v tailscale >/dev/null 2>&1; then
+    tailscale set --ssh 2>/dev/null \
+      && log "tailscale: tailnet SSH enabled" \
+      || log "tailscale: enable tailnet SSH manually: sudo tailscale set --ssh"
+  fi
 else
   log "tailscale not installed; skipping (install + 'sudo tailscale up' for remote access)"
 fi
 
+# --- 6. WiFi: country + bullet-proof autoconnect on every wifi profile -------
+# Root cause of the 2026-06-27 outage: after a power cut the Pi booted but
+# WiFi never came up, so the headless box was invisible. Two fixes:
+#   * regulatory domain must be AU (a US regdom refuses AU-only channels),
+#   * autoconnect must retry forever (NM's default gives up after 4 tries, so a
+#     router that is slow to return after a shared outage is never rejoined).
+wifi_country="${AR_LOCAL_WIFI_COUNTRY:-AU}"
+if command -v raspi-config >/dev/null 2>&1; then
+  raspi-config nonint do_wifi_country "$wifi_country" 2>/dev/null \
+    && log "wifi country set to $wifi_country (raspi-config)" || true
+fi
+command -v iw >/dev/null 2>&1 && iw reg set "$wifi_country" 2>/dev/null || true
+if command -v nmcli >/dev/null 2>&1; then
+  nmcli radio wifi on 2>/dev/null || true
+  # Harden every saved wifi connection WITHOUT touching credentials (the PSK
+  # stays in the existing NetworkManager profile; never store it in this repo).
+  nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name type; do
+    [ "$type" = "802-11-wireless" ] || continue
+    nmcli connection modify "$name" \
+      connection.autoconnect yes \
+      connection.autoconnect-priority 100 \
+      connection.autoconnect-retries 0 \
+      802-11-wireless.powersave 2 \
+      ipv4.may-fail yes ipv6.may-fail yes 2>/dev/null \
+      && log "wifi '$name': autoconnect=forever, powersave=off, priority=100" \
+      || log "WARN: could not harden wifi profile '$name'"
+  done
+else
+  log "nmcli not found; cannot harden wifi autoconnect (is NetworkManager installed?)"
+fi
+
+# --- 7. Headless: boot to multi-user (no display manager waiting on a screen) -
+if [ "$(systemctl get-default 2>/dev/null)" != "multi-user.target" ]; then
+  systemctl set-default multi-user.target 2>/dev/null \
+    && log "default target -> multi-user.target (headless)" \
+    || log "WARN: could not set multi-user.target"
+else
+  log "default target already multi-user.target"
+fi
+
+# --- 8. Network self-heal watchdog: kick NM if the link wedges --------------
+# autoconnect-retries=0 makes NM retry forever, but a wedged wifi driver can
+# need a nudge. This timer pings the default gateway every 3 min and, if it is
+# unreachable, restarts NetworkManager + re-ups the wifi profiles.
+cat > /usr/local/sbin/ar-local-net-watchdog.sh <<'WD'
+#!/usr/bin/env sh
+# Re-establish networking if the default gateway is unreachable.
+gw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
+[ -n "$gw" ] && ping -c1 -W3 "$gw" >/dev/null 2>&1 && exit 0
+logger -t ar-local-net-watchdog "no network (gw='${gw:-none}'); restarting NetworkManager"
+systemctl restart NetworkManager 2>/dev/null || true
+sleep 8
+if command -v nmcli >/dev/null 2>&1; then
+  nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r n t; do
+    [ "$t" = "802-11-wireless" ] && nmcli connection up "$n" 2>/dev/null || true
+  done
+fi
+WD
+chmod +x /usr/local/sbin/ar-local-net-watchdog.sh
+cat > /etc/systemd/system/ar-local-net-watchdog.service <<'WS'
+[Unit]
+Description=AR-local network self-heal (re-establish wifi if gateway unreachable)
+After=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ar-local-net-watchdog.sh
+WS
+cat > /etc/systemd/system/ar-local-net-watchdog.timer <<'WT'
+[Unit]
+Description=Run AR-local network self-heal every 3 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=3min
+Persistent=true
+[Install]
+WantedBy=timers.target
+WT
 systemctl daemon-reload
+systemctl enable --now ar-local-net-watchdog.timer 2>/dev/null \
+  && log "net-watchdog timer enabled (every 3 min)" \
+  || log "WARN: could not enable net-watchdog timer"
+
 log "done. cmdline.txt / config.txt changes require a reboot to take effect."

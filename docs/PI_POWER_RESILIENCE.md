@@ -1,14 +1,21 @@
 # Pi power-loss resilience & recovery
 
 The AR-local CDR ingest + dashboard run on a single Raspberry Pi 5
-(`ar-local-pi5`). An **unexpected power cut** is the highest-risk event for
-this box: a cut mid-write can corrupt the SD card, and on the next boot the Pi
-may halt at an fsck prompt, come up read-only, lose its SSH host keys /
-`authorized_keys`, or simply not restart the CDR services — so packages stop
-and the Pi can look "offline".
+(`ar-local-pi5`, root on NVMe, Wi-Fi only — `eth0` normally unplugged). It is
+**headless** and reached over Wi-Fi + Tailscale.
 
-This doc covers (1) how to find and recover the Pi after such an event, and
-(2) the hardening that now makes the Pi self-heal on the next boot.
+**Actual root cause of the 2026-06-27 outage:** after a power cut the Pi booted
+fine but **Wi-Fi never auto-reconnected**, so the headless box was invisible on
+both the LAN and Tailscale and the daily CDR run was missed. Two contributing
+faults: the Wi-Fi regulatory domain came up as `US` (refuses AU-only channels)
+and NetworkManager's default `autoconnect-retries` (4) gave up permanently when
+the router was slow to return after the shared outage. The default systemd
+target was also `graphical.target` (wrong for a headless server). It was **not**
+SD/disk corruption — the NVMe rootfs recovered its journal cleanly.
+
+This doc covers (1) how to find and recover the Pi after a power event, and
+(2) the hardening that now makes it self-heal and stay reachable on the next
+boot.
 
 ---
 
@@ -98,7 +105,15 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Hardware watchdog** | `config.txt` `dtparam=watchdog=on` + `RuntimeWatchdogSec=20` | A hung kernel/boot auto-reboots. |
 | **Bounded reboot** | `RebootWatchdogSec=2min` | A hung shutdown is force-completed. |
 | **Persistent, capped logs** | journald `Storage=persistent`, `SystemMaxUse=200M` | Boot logs survive for diagnosis; logs can't fill the disk. |
-| **Tailscale auto-start** | `systemctl enable --now tailscaled` | Remote access returns automatically after a reboot. |
+| **Tailscale auto-start + tailnet SSH** | `enable --now tailscaled`, `tailscale set --ssh` | Remote access returns automatically after a reboot; tailnet SSH is a key-independent recovery path. |
+| **Wi-Fi regulatory domain** | `raspi-config do_wifi_country AU` | Pi can use AU-only channels (a `US` regdom silently refuses them). |
+| **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | Re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |
+| **Headless boot** | `systemctl set-default multi-user.target` | Boots without waiting on a display/keyboard. |
+| **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | If the default gateway is unreachable, restarts NetworkManager + re-ups Wi-Fi (kicks a wedged driver). |
+
+> Wi-Fi credentials are **never** stored in this repo — the script only hardens
+> the autoconnect settings of the existing NetworkManager profile. Add/replace
+> the network with `sudo nmcli device wifi connect <SSID> password <PSK>`.
 
 Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`):
 
