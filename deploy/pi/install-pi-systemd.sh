@@ -64,6 +64,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-daily-watchdog.service" "$tmp_dir/ar-l
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-alert.service" "$tmp_dir/ar-local-ingest-alert.service"
 render_unit "$repo_dir/deploy/pi/ar-local-runtime-health.service" "$tmp_dir/ar-local-runtime-health.service"
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
+render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
 
 sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
@@ -71,6 +72,8 @@ sudo install -m 0644 "$tmp_dir/ar-local-daily-watchdog.service" /etc/systemd/sys
 sudo install -m 0644 "$tmp_dir/ar-local-ingest-alert.service" /etc/systemd/system/ar-local-ingest-alert.service
 sudo install -m 0644 "$tmp_dir/ar-local-runtime-health.service" /etc/systemd/system/ar-local-runtime-health.service
 sudo install -m 0644 "$tmp_dir/ar-local-boot-recovery.service" /etc/systemd/system/ar-local-boot-recovery.service
+sudo install -m 0644 "$tmp_dir/ar-local-ingest-now.service" /etc/systemd/system/ar-local-ingest-now.service
+sudo install -m 0755 "$repo_dir/deploy/pi/cdr-ingest" /usr/local/bin/cdr-ingest
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily.timer" /etc/systemd/system/ar-local-daily.timer
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-daily-watchdog.timer" /etc/systemd/system/ar-local-daily-watchdog.timer
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-runtime-health.timer" /etc/systemd/system/ar-local-runtime-health.timer

@@ -132,8 +132,32 @@ if command -v nmcli >/dev/null 2>&1; then
       && log "wifi '$name': autoconnect=forever, powersave=off, priority=100" \
       || log "WARN: could not harden wifi profile '$name'"
   done
+  # Ethernet: auto-connect on cable plug-in and PREFER it over wifi when present
+  # (priority 200 > wifi 100). NetworkManager auto-creates "Wired connection 1"
+  # on first plug; harden whatever wired profiles exist, and create a default if
+  # none do so a freshly-imaged Pi still works the moment a cable is inserted.
+  have_wired=0
+  nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name type; do
+    [ "$type" = "802-3-ethernet" ] || continue
+    nmcli connection modify "$name" \
+      connection.autoconnect yes \
+      connection.autoconnect-priority 200 \
+      connection.autoconnect-retries 0 \
+      ipv4.method auto ipv4.may-fail yes ipv6.may-fail yes 2>/dev/null \
+      && log "ethernet '$name': autoconnect on plug, preferred (priority 200)" \
+      || log "WARN: could not harden ethernet profile '$name'"
+  done
+  if ! nmcli -t -f TYPE connection show 2>/dev/null | grep -q '802-3-ethernet'; then
+    eth_dev="$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="ethernet"{print $1; exit}')"
+    if [ -n "${eth_dev:-}" ]; then
+      nmcli connection add type ethernet con-name "Wired connection 1" ifname "$eth_dev" \
+        connection.autoconnect yes connection.autoconnect-priority 200 \
+        connection.autoconnect-retries 0 ipv4.method auto ipv4.may-fail yes ipv6.may-fail yes 2>/dev/null \
+        && log "ethernet: created auto-connect profile for $eth_dev" || true
+    fi
+  fi
 else
-  log "nmcli not found; cannot harden wifi autoconnect (is NetworkManager installed?)"
+  log "nmcli not found; cannot harden wifi/ethernet autoconnect (is NetworkManager installed?)"
 fi
 
 # --- 7. Headless: boot to multi-user (no display manager waiting on a screen) -

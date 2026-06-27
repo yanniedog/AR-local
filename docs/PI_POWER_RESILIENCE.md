@@ -116,6 +116,7 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | **The actual fix:** re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |
 | **Wi-Fi country (best-effort)** | `raspi-config do_wifi_country AU` | Sets AU for the location; cosmetic on this self-managed driver (regdom comes from the AP). |
 | **Headless boot** | `systemctl set-default multi-user.target` | Boots without waiting on a display/keyboard. |
+| **Ethernet auto + preferred** | NM wired `autoconnect`, `priority=200`, DHCP | Plugging in a cable "just works" and is preferred over Wi-Fi while connected; unplug falls back to Wi-Fi. |
 | **Network self-heal** | `ar-local-net-watchdog.timer` (every 3 min) | If the default gateway is unreachable, restarts NetworkManager + re-ups Wi-Fi (kicks a wedged driver). |
 
 > Wi-Fi credentials are **never** stored in this repo — the script only hardens
@@ -137,6 +138,18 @@ Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`)
   3. emails a "Pi rebooted" alert (`pi_ingest_alert.py --reason boot-recovery`).
 - Existing `ar-local-daily-watchdog.timer` (`Persistent=true`, `OnBootSec=10min`)
   remains the backstop for any still-missing run.
+
+## Manual CDR ingest
+
+To fetch fresh CDR data on demand (forced run → publish to GitHub → refresh the
+dashboard → verify), SSH to the Pi and run:
+
+```bash
+cdr-ingest
+```
+
+It follows the live log and reports success/failure; press Ctrl-C to stop
+watching (the ingest keeps running). Backed by `ar-local-ingest-now.service`.
 
 ## 3. Recommended (manual / router-side)
 
