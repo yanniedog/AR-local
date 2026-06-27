@@ -177,6 +177,31 @@ def _history_assets_from(exports, run_date):
     )
 
 
+def test_build_history_assets_includes_behaviour(tmp_path):
+    runs = tmp_path / "runs"
+
+    def loan(provider, key, rate):
+        return {"dataset": "Mortgage", "provider": provider, "product_key": key,
+                "rate": rate, "rate_family": "lending", "rate_type": "VARIABLE"}
+
+    # Ledger starts on the 2026-05-05 RBA hike day; BankX raises its (matched) rate
+    # 25 bps by 2026-05-13 -> a measurable hike pass-through of 8 days.
+    _write_history_day(runs, "2026-05-05", [loan("BankX", "X|1", "0.0600")])
+    exports = _write_history_day(runs, "2026-05-13", [loan("BankX", "X|1", "0.0625")])
+    _history, bank_history = _history_assets_from(exports, "2026-05-13")
+
+    behaviour = bank_history["behaviour"]
+    assert set(behaviour) == {"Mortgage", "Savings", "TD"}
+    assert all(behaviour[s]["window_days"] == 60 for s in behaviour)
+
+    hike = behaviour["Mortgage"]["providers"]["BankX"]["hike"]
+    assert hike["n"] == 1
+    assert hike["days_median"] == 8        # 2026-05-05 -> 2026-05-13
+    assert hike["bps_median"] == 25.0
+    assert hike["ratio_median"] == 1.0
+    assert hike["confidence"] == "insufficient"  # n = 1, early ledger
+
+
 def test_build_history_assets_bank_series_and_events(tmp_path):
     runs = tmp_path / "runs"
 
@@ -335,6 +360,11 @@ def test_optional_assets_are_rolling_only(tmp_path):
             "banks": {"Bank": {"Savings": {"median": [0.04], "best": [0.05], "count": [2]}}},
             "events": [],
         },
+        "rba_calendar": {
+            "timezone": "Australia/Sydney",
+            "decisions": [],
+            "schedule": [{"date": "2026-08-11", "announce_utc": "2026-08-11T04:30:00+00:00"}],
+        },
     }
     rolling = app_payload._package(
         {"schema_version": 1},
@@ -353,7 +383,7 @@ def test_optional_assets_are_rolling_only(tmp_path):
         **kwargs,
     )
 
-    assert {"search_index", "history_banks", "bank_history"} <= rolling["files"].keys()
+    assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
 
@@ -741,6 +771,28 @@ def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
     # 49 content-addressed bank-history assets, oldest first; keep window is 48.
     rows = [
         (f"bank-history-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
+        for i in range(49)
+    ]
+    listing = "\n".join(f"{name}\t{created}" for name, created in rows)
+    deletes = []
+
+    def fake_run(args, **_kwargs):
+        if "view" in args:
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        deletes.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
+
+    assert deleted == 1
+
+
+def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
+    # 49 content-addressed rba-calendar assets, oldest first; keep window is 48.
+    rows = [
+        (f"rba-calendar-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
         for i in range(49)
     ]
     listing = "\n".join(f"{name}\t{created}" for name, created in rows)

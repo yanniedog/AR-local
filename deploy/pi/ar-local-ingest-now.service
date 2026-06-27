@@ -1,8 +1,7 @@
 [Unit]
-Description=AR-local CDR daily ingest/export
+Description=AR-local manual CDR ingest (forced fresh run, triggered by `cdr-ingest`)
 After=network-online.target
 Wants=network-online.target
-OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
@@ -12,12 +11,7 @@ WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
-# Optional mobile-app payload publishing (AR_LOCAL_APP_PAYLOAD=1 + GH_TOKEN).
-# The leading '-' makes the file optional, so the unit is fine without it.
 EnvironmentFile=-/etc/ar-local/app-payload.env
-ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only --force
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
-# Wait for the dashboard to finish --preload (a ~130MB payload can take far
-# longer than a fixed 5s) before verifying, so a slow preload no longer marks
-# the daily run failed and fires a false OnFailure alert.
 ExecStartPost=/bin/sh -c 'for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 {{AR_LOCAL_REPO}}/verify_local.py --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%%F)"'

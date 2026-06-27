@@ -299,6 +299,7 @@ function RootNavigator() {
           <Stack.Screen name="banks" options={{ title: 'Lenders' }} />
           <Stack.Screen name="compare" options={{ title: 'Compare', presentation: 'modal' }} />
           <Stack.Screen name="calculator" options={{ title: 'Switch & save' }} />
+          <Stack.Screen name="rba" options={{ title: 'Why rates move' }} />
           <Stack.Screen name="profile" options={{ title: 'Your profile' }} />
           <Stack.Screen name="debug-log" options={{ title: 'Debug log', headerBackTitle: 'Settings' }} />
           <Stack.Screen name="terms" options={{ title: 'Terms', headerBackTitle: 'Settings' }} />

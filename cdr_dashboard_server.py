@@ -38,6 +38,7 @@ from cdr_ribbon_normalize import (
     normalize_rate_structure_group,
     normalize_td_rate_structure_group,
 )
+import rba_decisions
 from cdr_public_api_shims import (
     connect_readonly,
     latest_home_loan_rows as build_latest_home_loan_rows,
@@ -301,6 +302,13 @@ def ingest_schedule_payload() -> bytes:
         "timezone": time.tzname[0] if time.tzname else "",
     }
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def rba_payload() -> bytes:
+    """Serialise the RBA cash-rate decision snapshot (current rate, next-decision
+    countdown, recorded calendar) for /api/rba. The logic lives in the importable
+    rba_decisions module; this is a thin serialise-only binding."""
+    return json.dumps(rba_decisions.api_payload(), separators=(",", ":")).encode("utf-8")
 
 
 def bank_rate_columns(con: sqlite3.Connection) -> set[str]:
@@ -1115,6 +1123,9 @@ def make_handler(export_resolver: ExportResolver, site_root: Path, preload: bool
                 return body, "application/json; charset=utf-8", gz
             if path == "/api/ingest-schedule":
                 body = ingest_schedule_payload()
+                return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
+            if path == "/api/rba":
+                body = rba_payload()
                 return body, "application/json; charset=utf-8", maybe_gzip(body, "application/json")
             if path == "/api/banks":
                 date = parse_run_date_param(query.get("date", [""])[0])
