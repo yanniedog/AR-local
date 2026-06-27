@@ -10,7 +10,7 @@ import { visibleAccountRows } from '../data/format';
 import { resolveSectionRibbonStats } from '../data/ribbonStats';
 import { sortRows } from '../data/selectors';
 import {
-  childrenOf,
+  childrenFromScoped,
   rowsUnder,
   statsFor,
   type TaxoNode,
@@ -30,6 +30,49 @@ import { EmptyState } from './feedback';
 
 type Item = { kind: 'node'; node: TaxoNode } | { kind: 'product'; row: RateRow };
 
+/** Pure, expensive derivation of the rows/categories/stats shown for one
+ *  section+path. Scopes the rows once (`under`) and reuses that set for the
+ *  category grouping and stats instead of re-scanning every section row. */
+function computeHierarchyView(
+  all: RateRow[],
+  sectionData: Parameters<typeof resolveSectionRibbonStats>[0],
+  section: SectionKey,
+  path: string[],
+  includeNonStandard: boolean,
+) {
+  const under = rowsUnder(all, section, path);
+  const nodeRows = visibleAccountRows(under, includeNonStandard);
+  const kids = childrenFromScoped(nodeRows, section, path);
+  const stats =
+    path.length === 0
+      ? resolveSectionRibbonStats(sectionData, under, includeNonStandard)
+      : statsFor(nodeRows, true);
+  let data: Item[];
+  if (kids.length) {
+    data = kids.map((node) => ({ kind: 'node', node }) as Item);
+  } else {
+    const seen = new Set<string>();
+    data = sortRows(nodeRows, 'rate', section)
+      .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
+      .map((row) => ({ kind: 'product', row }) as Item);
+  }
+  // Shared rate scale across sibling categories so their ranges compare 1:1.
+  let dMin: number | null = null;
+  let dMax: number | null = null;
+  for (const k of kids) {
+    if (k.stats.min !== null) dMin = dMin === null ? k.stats.min : Math.min(dMin, k.stats.min);
+    if (k.stats.max !== null) dMax = dMax === null ? k.stats.max : Math.max(dMax, k.stats.max);
+  }
+  const siblingDomain = dMin !== null && dMax !== null && dMax > dMin ? { min: dMin, max: dMax } : null;
+  return { stats, children: kids, items: data, siblingDomain };
+}
+
+// Cache the derivation across section switches AND remounts, keyed by the source
+// rows array. The WeakMap auto-evicts when a new payload replaces `core`, so
+// toggling Mortgage<->Savings<->TD (or returning to a drill) is an instant cache
+// hit instead of re-scanning thousands of rows on the JS thread every time.
+const viewCache = new WeakMap<RateRow[], Map<string, ReturnType<typeof computeHierarchyView>>>();
+
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -47,31 +90,20 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
 
   const { stats, children, items, siblingDomain } = useMemo(() => {
     const all = rows ?? [];
-    const nodeRows = visibleAccountRows(rowsUnder(all, section, path), includeNonStandard);
-    const kids = childrenOf(all, section, path, includeNonStandard);
-    const stats =
-      path.length === 0
-        ? resolveSectionRibbonStats(sectionData, rowsUnder(all, section, path), includeNonStandard)
-        : statsFor(nodeRows, true);
-    let data: Item[];
-    if (kids.length) {
-      data = kids.map((node) => ({ kind: 'node', node }) as Item);
-    } else {
-      const seen = new Set<string>();
-      data = sortRows(nodeRows, 'rate', section)
-        .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
-        .map((row) => ({ kind: 'product', row }) as Item);
+    let byKey = viewCache.get(all);
+    if (!byKey) {
+      byKey = new Map();
+      viewCache.set(all, byKey);
     }
-    // Shared rate scale across sibling categories so their ranges compare 1:1.
-    let dMin: number | null = null;
-    let dMax: number | null = null;
-    for (const k of kids) {
-      if (k.stats.min !== null) dMin = dMin === null ? k.stats.min : Math.min(dMin, k.stats.min);
-      if (k.stats.max !== null) dMax = dMax === null ? k.stats.max : Math.max(dMax, k.stats.max);
+    const cacheKey = `${section}|${pathKey}|${includeNonStandard ? 1 : 0}`;
+    let cached = byKey.get(cacheKey);
+    if (!cached) {
+      cached = computeHierarchyView(all, sectionData, section, path, includeNonStandard);
+      byKey.set(cacheKey, cached);
     }
-    const siblingDomain = dMin !== null && dMax !== null && dMax > dMin ? { min: dMin, max: dMax } : null;
-    return { stats, children: kids, items: data, siblingDomain };
-  }, [rows, sectionData, section, path, includeNonStandard]);
+    return cached;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pathKey encodes path
+  }, [rows, sectionData, section, pathKey, includeNonStandard]);
 
   if (!rows) return null;
 
