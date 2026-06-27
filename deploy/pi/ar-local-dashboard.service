@@ -2,9 +2,9 @@
 Description=AR-local CDR dashboard
 After=network-online.target
 Wants=network-online.target
-# Keep retrying indefinitely: tolerate a crash burst without latching failed.
-StartLimitIntervalSec=300
-StartLimitBurst=20
+# Retry forever: disable the start-rate limit so a persistent crash never latches
+# the unit 'failed'. RestartSec=5 already paces retries so this won't hot-loop.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

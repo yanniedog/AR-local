@@ -1,7 +1,9 @@
 [Unit]
 Description=AR-local boot recovery (self-heal dashboard + ingest catch-up + reboot alert)
-After=network-online.target ar-local-dashboard.service
-Wants=network-online.target
+# time-sync.target: the Pi has no RTC, so wait for NTP to correct the clock
+# before the ingest catch-up computes "today" (else it can target the wrong date).
+After=network-online.target time-sync.target ar-local-dashboard.service
+Wants=network-online.target time-sync.target
 
 [Service]
 Type=oneshot

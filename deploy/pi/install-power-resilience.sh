@@ -121,15 +121,18 @@ if command -v nmcli >/dev/null 2>&1; then
   nmcli radio wifi on 2>/dev/null || true
   # Harden every saved wifi connection WITHOUT touching credentials (the PSK
   # stays in the existing NetworkManager profile; never store it in this repo).
+  # NOTE: do NOT set autoconnect-priority here — that would flatten the
+  # primary/backup ordering (Nikipedia=100 > ASUS_2.4=50 > Slow=10). Only set
+  # autoconnect, retries=forever and powersave-off; leave each profile's priority
+  # as configured so failover order is preserved.
   nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name type; do
     [ "$type" = "802-11-wireless" ] || continue
     nmcli connection modify "$name" \
       connection.autoconnect yes \
-      connection.autoconnect-priority 100 \
       connection.autoconnect-retries 0 \
       802-11-wireless.powersave 2 \
       ipv4.may-fail yes ipv6.may-fail yes 2>/dev/null \
-      && log "wifi '$name': autoconnect=forever, powersave=off, priority=100" \
+      && log "wifi '$name': autoconnect=forever, powersave=off (priority preserved)" \
       || log "WARN: could not harden wifi profile '$name'"
   done
   # Ethernet: auto-connect on cable plug-in and PREFER it over wifi when present

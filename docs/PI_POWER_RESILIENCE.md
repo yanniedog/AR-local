@@ -33,8 +33,9 @@ DHCP often hands the Pi a **new IP** after a reboot, which makes the old
 Tailscale/LAN address look dead. Find it by MAC:
 
 ```bash
-# From a machine on the same LAN (e.g. 10.0.0.0/24):
-for i in $(seq 1 254); do ping -n 1 -w 250 10.0.0.$i >/dev/null 2>&1 & done; wait
+# From a Linux machine on the same LAN (e.g. 10.0.0.0/24). On Windows use
+# `ping -n 1 -w 250` instead of `ping -c 1 -W 1`.
+for i in $(seq 1 254); do ping -c 1 -W 1 10.0.0.$i >/dev/null 2>&1 & done; wait
 arp -a | grep -iE 'd8-3a-dd|2c-cf-67|e4-5f-01|dc-a6-32|b8-27-eb'   # Raspberry Pi OUIs
 ```
 
@@ -70,7 +71,8 @@ findmnt / -o SOURCE,FSTYPE,OPTIONS          # is root 'ro'?
 dmesg | grep -iE 'ext4|corrupt|fsck|read-only|I/O error' | tail -20
 ls /srv/ar-local/AR-local                   # repo still present?
 ```
-- Root mounted `ro` → `sudo fsck -y /dev/mmcblk0p2` from a clean state (or
+- Root mounted `ro` → `sudo fsck -y "$(findmnt -no SOURCE /)"` from a clean
+  state — this Pi's root is **NVMe** (`/dev/nvme0n1p2`), not the SD card (or
   `sudo touch /forcefsck && sudo reboot`) then remount rw.
 - `/srv/ar-local/AR-local` missing → fresh OS; re-run the full install
   (`deploy/pi/install-pi-systemd.sh`).

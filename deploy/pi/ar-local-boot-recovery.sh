@@ -26,8 +26,10 @@ fi
 # 3. Notify that the Pi rebooted (non-fatal; needs /etc/ar-local/notify.env).
 if [ -f "$REPO_DIR/pi_ingest_alert.py" ]; then
   uptime_str="$(uptime -p 2>/dev/null || echo unknown)"
+  # --force: every reboot is worth knowing about, even several within the alert
+  # cooldown window (e.g. a power-cycle loop).
   /usr/bin/python3 "$REPO_DIR/pi_ingest_alert.py" \
-    --reason boot-recovery \
+    --reason boot-recovery --force \
     --details "Pi booted/rebooted ($uptime_str). Boot-recovery ran dashboard check + ingest catch-up." \
     || log "boot alert not sent (SMTP not configured?)"
 fi
