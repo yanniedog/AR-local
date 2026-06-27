@@ -77,8 +77,13 @@ def build_subject(reason: str, run_date: str) -> str:
 
 def build_body(reason: str, run_date: str, details: str) -> str:
     now = datetime.now(timezone.utc).isoformat()
+    lead = (
+        "AR-local Pi booted/rebooted (boot-recovery self-heal ran)."
+        if reason == "boot-recovery"
+        else "AR-local daily CDR ingest needs attention."
+    )
     lines = [
-        "AR-local daily CDR ingest needs attention.",
+        lead,
         "",
         f"Reason: {reason}",
         f"Expected run_date: {run_date}",
@@ -108,7 +113,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--reason",
         required=True,
-        choices=("systemd-failure", "missed-ingest", "watchdog-failure", "manifest-stale"),
+        choices=("systemd-failure", "missed-ingest", "watchdog-failure", "manifest-stale", "boot-recovery"),
     )
     parser.add_argument("--run-date", default="", help="YYYY-MM-DD; defaults to expected run date.")
     parser.add_argument("--details", default="", help="Extra context for the email body.")

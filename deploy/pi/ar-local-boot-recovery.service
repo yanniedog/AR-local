@@ -1,0 +1,22 @@
+[Unit]
+Description=AR-local boot recovery (self-heal dashboard + ingest catch-up + reboot alert)
+# time-sync.target: the Pi has no RTC, so wait for NTP to correct the clock
+# before the ingest catch-up computes "today" (else it can target the wrong date).
+After=network-online.target time-sync.target ar-local-dashboard.service
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONUNBUFFERED=1
+Environment=AR_LOCAL_REPO={{AR_LOCAL_REPO}}
+Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+EnvironmentFile=-/etc/ar-local/notify.env
+EnvironmentFile=-/etc/ar-local/app-payload.env
+ExecStart={{AR_LOCAL_REPO}}/deploy/pi/ar-local-boot-recovery.sh
+
+[Install]
+WantedBy=multi-user.target

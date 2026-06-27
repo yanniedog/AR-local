@@ -2,6 +2,9 @@
 Description=AR-local CDR dashboard
 After=network-online.target
 Wants=network-online.target
+# Retry forever: disable the start-rate limit so a persistent crash never latches
+# the unit 'failed'. RestartSec=5 already paces retries so this won't hot-loop.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -12,7 +15,9 @@ Environment=PYTHONUNBUFFERED=1
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/cdr_dashboard_server.py --exports latest --runs {{AR_LOCAL_DATA_ROOT}}/runs --host 0.0.0.0 --port 8808 --site-root {{AR_SITE_ROOT}} --preload
-Restart=on-failure
+# Restart=always (not on-failure): an unexpected clean exit must still bring
+# the dashboard back, so port 8808 / nginx upstream never stays dead.
+Restart=always
 RestartSec=5
 
 [Install]
