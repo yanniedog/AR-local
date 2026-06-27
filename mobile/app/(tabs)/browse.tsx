@@ -71,7 +71,10 @@ export default function Browse() {
         </Row>
       </View>
       <View style={{ flex: 1 }}>
-        <HierarchyView key={`${section}-${drillPath.join('.')}`} section={section} path={drillPath} />
+        {/* Key on the drill path only — switching SECTION updates HierarchyView in
+            place (FlashList recycles, no teardown/blank), so section changes are
+            instant. Drilling still remounts to reset list/scroll cleanly. */}
+        <HierarchyView key={drillPath.join('.') || 'root'} section={section} path={drillPath} />
       </View>
     </Screen>
   );
