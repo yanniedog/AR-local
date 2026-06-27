@@ -71,7 +71,16 @@ function computeHierarchyView(
 // rows array. The WeakMap auto-evicts when a new payload replaces `core`, so
 // toggling Mortgage<->Savings<->TD (or returning to a drill) is an instant cache
 // hit instead of re-scanning thousands of rows on the JS thread every time.
-const viewCache = new WeakMap<RateRow[], Map<string, ReturnType<typeof computeHierarchyView>>>();
+// Keyed by the per-section `sectionData` object (which owns BOTH `rates` and the
+// fields used for root ribbon stats), so a sectionData change can never serve
+// stale stats; it auto-evicts when a new payload replaces `core`.
+const viewCache = new WeakMap<object, Map<string, ReturnType<typeof computeHierarchyView>>>();
+const EMPTY_VIEW = {
+  stats: statsFor([]),
+  children: [] as TaxoNode[],
+  items: [] as Item[],
+  siblingDomain: null as { min: number; max: number } | null,
+};
 
 export function HierarchyView({ section, path }: { section: SectionKey; path: string[] }) {
   const theme = useTheme();
@@ -89,16 +98,18 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   }, [section, pathKey]);
 
   const { stats, children, items, siblingDomain } = useMemo(() => {
-    const all = rows ?? [];
-    let byKey = viewCache.get(all);
+    // No data yet (initial load / section transition): nothing to cache, and the
+    // component renders null below anyway.
+    if (!rows || !sectionData) return EMPTY_VIEW;
+    let byKey = viewCache.get(sectionData);
     if (!byKey) {
       byKey = new Map();
-      viewCache.set(all, byKey);
+      viewCache.set(sectionData, byKey);
     }
     const cacheKey = `${section}|${pathKey}|${includeNonStandard ? 1 : 0}`;
     let cached = byKey.get(cacheKey);
     if (!cached) {
-      cached = computeHierarchyView(all, sectionData, section, path, includeNonStandard);
+      cached = computeHierarchyView(rows, sectionData, section, path, includeNonStandard);
       byKey.set(cacheKey, cached);
     }
     return cached;
