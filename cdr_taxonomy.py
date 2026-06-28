@@ -341,6 +341,26 @@ _RESTRICTED_COHORT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Staff/occupation restrictions matched on the PRODUCT NAME only (e.g. Coastline
+# "Staff Housing Loan", Unity "Essential Worker Home Loan"). Deliberately NOT
+# scanned in eligibility free-text: "staff"/"employee" routinely appear there as
+# ordinary lending criteria ("must be a permanent employee"), which would
+# false-flag mainstream retail products. Staff products without a name signal are
+# still caught by the STAFF eligibilityType code below. Bare occupation words
+# (police/nurses/firefighters) are excluded because they are ADI brand names
+# ("Police Bank", "Firefighters Mutual", "Nurses & Midwives").
+_RESTRICTED_NAME_COHORT_RE = re.compile(
+    r"\bstaff\b|\bemployees?\b"
+    r"|essential[\s_-]*workers?|first[\s_-]*responders?|frontline[\s_-]*workers?",
+    re.IGNORECASE,
+)
+
+# CDR eligibilityType codes that, on their own, mean the product is not open to
+# the public. STAFF is unambiguous (staff of the institution); occupation cohorts
+# (EMPLOYMENT_STATUS) are left to the name/free-text matchers to avoid flagging
+# products that merely require "employed/PAYG income".
+_RESTRICTED_ELIGIBILITY_TYPES: frozenset[str] = frozenset({"STAFF"})
+
 # CDR eligibility can state who is excluded as well as who qualifies. A cohort token
 # after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
 # flip an otherwise standard product to non_standard.
@@ -464,12 +484,15 @@ def classify_account_standardness(
     if is_home_lending and name and _NON_STANDARD_LENDING_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     # Eligibility-restricted cohorts — by the restriction in the name OR the CDR
-    # eligibility text, never the bank brand.
-    if _RESTRICTED_COHORT_RE.search(name):
+    # eligibility text/type code, never the bank brand.
+    if _RESTRICTED_COHORT_RE.search(name) or _RESTRICTED_NAME_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     if eligibility and isinstance(eligibility, (list, tuple)):
         for item in eligibility:
             if isinstance(item, Mapping):
+                etype = str(item.get("eligibilityType") or "").strip().upper()
+                if etype in _RESTRICTED_ELIGIBILITY_TYPES:
+                    return ACCOUNT_CLASS_NON_STANDARD
                 item_text = _eligibility_item_text(item)
                 if item_text and _eligibility_restricted_cohort(item_text):
                     return ACCOUNT_CLASS_NON_STANDARD
