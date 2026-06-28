@@ -84,12 +84,14 @@ export default function Settings() {
   const updateSectionY = useRef(0);
   useEffect(() => {
     if (focus !== 'update') return;
-    // Wait for the tab transition + layout before scrolling.
+    // Wait for the tab transition + layout before scrolling, then clear the
+    // params so returning to Settings later doesn't re-scroll unexpectedly.
     const id = setTimeout(() => {
       scrollRef.current?.scrollTo({ y: Math.max(0, updateSectionY.current - 8), animated: true });
+      router.setParams({ focus: undefined, t: undefined });
     }, 350);
     return () => clearTimeout(id);
-  }, [focus, t]);
+  }, [focus, t, router]);
 
   const onToggleDeepSearch = (value: boolean) => {
     if (!value) {
@@ -480,6 +482,13 @@ function AppUpdateSection() {
       setChecking(false);
     }
   }, []);
+
+  // Prime the update check when the section mounts so the "Download update"
+  // button is ready the instant the user arrives — especially via the banner's
+  // View → jump-to-update flow (no need to tap "Check for update" first).
+  useEffect(() => {
+    void onCheck();
+  }, [onCheck]);
 
   const onDownload = useCallback(async () => {
     if (!remote) return;
