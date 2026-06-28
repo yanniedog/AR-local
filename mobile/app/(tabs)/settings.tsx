@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import { useScrollToTop } from '@react-navigation/native';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 
@@ -76,6 +76,22 @@ export default function Settings() {
   const { paywallVisible, paywallIntent, requestPro, closePaywall } = useProPaywall();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
+
+  // Deep-link from the "Update available" banner: jump straight to the update
+  // section so the user can tap Update immediately. `t` is a nonce so repeated
+  // taps re-fire the effect even though `focus` is unchanged.
+  const { focus, t } = useLocalSearchParams<{ focus?: string; t?: string }>();
+  const updateSectionY = useRef(0);
+  useEffect(() => {
+    if (focus !== 'update') return;
+    // Wait for the tab transition + layout before scrolling, then clear the
+    // params so returning to Settings later doesn't re-scroll unexpectedly.
+    const id = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, updateSectionY.current - 8), animated: true });
+      router.setParams({ focus: undefined, t: undefined });
+    }, 350);
+    return () => clearTimeout(id);
+  }, [focus, t, router]);
 
   const onToggleDeepSearch = (value: boolean) => {
     if (!value) {
@@ -376,7 +392,9 @@ export default function Settings() {
         </TouchTarget>
       </Section>
 
-      <AppUpdateSection />
+      <View onLayout={(e) => { updateSectionY.current = e.nativeEvent.layout.y; }}>
+        <AppUpdateSection />
+      </View>
 
       <Section title="About">
         <InfoRow
@@ -464,6 +482,13 @@ function AppUpdateSection() {
       setChecking(false);
     }
   }, []);
+
+  // Prime the update check when the section mounts so the "Download update"
+  // button is ready the instant the user arrives — especially via the banner's
+  // View → jump-to-update flow (no need to tap "Check for update" first).
+  useEffect(() => {
+    void onCheck();
+  }, [onCheck]);
 
   const onDownload = useCallback(async () => {
     if (!remote) return;
