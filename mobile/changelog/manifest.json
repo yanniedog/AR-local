@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-17T16:27:34.060Z",
+  "generated_at": "2026-06-18T03:58:00.170Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -347,6 +347,14 @@
         "Maintenance release 1.0.36"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.36"
+    },
+    {
+      "version": "1.0.37",
+      "date": "2026-06-18",
+      "summaryBullets": [
+        "chore(mobile): auto-release bump to v1.0.36 (after 58bced7) (#386)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.37"
     }
   ]
 }
