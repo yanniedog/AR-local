@@ -337,9 +337,29 @@ _HOME_LOAN_CATEGORIES: frozenset[str] = frozenset(
 _RESTRICTED_COHORT_RE = re.compile(
     r"\bveterans?\b|served\s+in\s+the\s+defence|defence[\s_-]*force"
     r"|armed[\s_-]*forces|military[\s_-]*service|\bdhoas\b"
-    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)",
+    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)"
+    # Staff/employee-only products (e.g. Coastline "Staff Housing Loan",
+    # People First "Staff Home Loan") are not available to the public. Safe in
+    # both name and eligibility text — the exclusion guard handles "not for staff".
+    r"|\bstaff\b|\bemployees?\b",
     re.IGNORECASE,
 )
+
+# Occupation-restricted PRODUCT-NAME phrases (e.g. Unity "Essential Worker Home
+# Loan"). Only multi-word program names that are never bank brands — bare
+# occupation words like "police"/"nurses"/"firefighters" are excluded on purpose
+# because they appear in ADI brand names ("Police Bank", "Firefighters Mutual",
+# "Nurses & Midwives") whose ordinary products must stay standard.
+_RESTRICTED_NAME_COHORT_RE = re.compile(
+    r"essential[\s_-]*workers?|first[\s_-]*responders?|frontline[\s_-]*workers?",
+    re.IGNORECASE,
+)
+
+# CDR eligibilityType codes that, on their own, mean the product is not open to
+# the public. STAFF is unambiguous (staff of the institution); occupation cohorts
+# (EMPLOYMENT_STATUS) are left to the name/free-text matchers to avoid flagging
+# products that merely require "employed/PAYG income".
+_RESTRICTED_ELIGIBILITY_TYPES: frozenset[str] = frozenset({"STAFF"})
 
 # CDR eligibility can state who is excluded as well as who qualifies. A cohort token
 # after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
@@ -464,12 +484,15 @@ def classify_account_standardness(
     if is_home_lending and name and _NON_STANDARD_LENDING_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     # Eligibility-restricted cohorts — by the restriction in the name OR the CDR
-    # eligibility text, never the bank brand.
-    if _RESTRICTED_COHORT_RE.search(name):
+    # eligibility text/type code, never the bank brand.
+    if _RESTRICTED_COHORT_RE.search(name) or _RESTRICTED_NAME_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     if eligibility and isinstance(eligibility, (list, tuple)):
         for item in eligibility:
             if isinstance(item, Mapping):
+                etype = str(item.get("eligibilityType") or "").strip().upper()
+                if etype in _RESTRICTED_ELIGIBILITY_TYPES:
+                    return ACCOUNT_CLASS_NON_STANDARD
                 item_text = _eligibility_item_text(item)
                 if item_text and _eligibility_restricted_cohort(item_text):
                     return ACCOUNT_CLASS_NON_STANDARD
