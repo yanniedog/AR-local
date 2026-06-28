@@ -42,6 +42,17 @@ describe('assessAccess', () => {
     expect(assessAccess('Business Term Deposit', elig(['BUSINESS'])).categories).toContain('business');
   });
 
+  it('does NOT flag a retail loan whose eligibility text merely excludes companies/trusts', () => {
+    // Real false-positive: Unloan / Virgin Money Lite say "not available to
+    // companies or trusts" — a negation, not a business restriction.
+    const a = assessAccess(
+      'Unloan Home Loan',
+      elig(['NATURAL_PERSON', 'MIN_AGE'], [{ info: 'Not available to company or trust borrowers' }]),
+    );
+    expect(a.categories).not.toContain('business');
+    expect(a.restricted).toBe(false);
+  });
+
   it('does not over-flag a public product whose name merely mentions a city', () => {
     const a = assessAccess('Bank of Melbourne Saver', elig(['MIN_AGE']));
     expect(a.restricted).toBe(false);

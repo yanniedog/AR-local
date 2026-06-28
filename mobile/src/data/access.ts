@@ -99,9 +99,13 @@ export function assessAccess(name: string, detail: ProductDetail | null | undefi
   if (STAFF_RE.test(text)) cats.add('staff');
   if (OCCUPATION_RE.test(text)) cats.add('occupation');
   if (MEMBERSHIP_RE.test(text)) cats.add('membership');
-  if (BUSINESS_RE.test(text)) cats.add('business');
   if (STUDENT_RE.test(text)) cats.add('student');
   if (GEO_RE.test(text)) cats.add('geographic');
+  // Business: ONLY from the structured BUSINESS code (handled above) or the
+  // product NAME. Free-text "company/trust/commercial" mentions in eligibility
+  // are almost always EXCLUSIONS ("not available to companies or trusts") and
+  // would wrongly flag popular retail products (Unloan, Virgin Money Lite).
+  if (BUSINESS_RE.test(nameText)) cats.add('business');
 
   // "Verify": the NAME implies staff/occupation/membership but no structured
   // eligibility code corroborates it (the Coastline/People-First failure mode).
