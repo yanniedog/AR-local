@@ -37,8 +37,39 @@
     { date: '2026-05-06', rate: 4.35 },
   ];
 
+  // RBA Monetary Policy Board meetings that LEFT the cash-rate target unchanged
+  // ("holds"). The ENTRIES list above only records the meetings that *changed*
+  // the rate, so without this the chart cannot distinguish "the RBA met and held"
+  // from "the RBA didn't meet". Each date is the decision announcement date.
+  // Add a new hold here whenever the Board meets and keeps the rate steady.
+  // (Meetings that changed the rate belong in ENTRIES, never here.)
+  const HOLDS = [
+    '2026-06-16',
+  ];
+
   function entries() {
     return ENTRIES.slice();
+  }
+
+  /**
+   * RBA hold decisions (rate left unchanged) within [startDate, endDate]
+   * inclusive (both YYYY-MM-DD). Each is annotated with the prevailing cash-rate
+   * target as of that meeting so consumers can render "held at X.XX%" markers.
+   */
+  function holdsWithinWindow(startDate, endDate) {
+    if (!Array.isArray(HOLDS) || !HOLDS.length) return [];
+    const lo = String(startDate || '');
+    const hi = String(endDate || '');
+    const out = [];
+    for (let i = 0; i < HOLDS.length; i += 1) {
+      const date = HOLDS[i];
+      if (lo && date < lo) continue;
+      if (hi && date > hi) continue;
+      const rate = rateAsOf(date);
+      if (rate == null) continue;
+      out.push({ date: date, rate: rate });
+    }
+    return out;
   }
 
   /**
@@ -96,6 +127,7 @@
   window.AR.rbaCashRate = {
     entries,
     changesWithinWindow,
+    holdsWithinWindow,
     latestChangeOnOrBefore,
     rateAsOf,
   };

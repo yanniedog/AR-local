@@ -68,6 +68,44 @@ export function profileToFilters(p: ProfileFilters, section: SectionKey, base: F
   return { ...base, depositKinds: [...p.depositKinds] };
 }
 
+/**
+ * Parse a raw `lvr_tier` value (e.g. "lvr_85-90%", "lvr_=60%", "lvr_unspecified")
+ * into a numeric (lo, hi] band, or null when it carries no usable range.
+ */
+export function parseLvrTier(tier: string): { lo: number; hi: number } | null {
+  const v = String(tier || '')
+    .toLowerCase()
+    .replace(/^lvr_/, '')
+    .replace(/%/g, '')
+    .trim();
+  if (!v || v.includes('unspec') || v.includes('n/a') || v === 'na') return null;
+  let m = /^=?(\d+(?:\.\d+)?)$/.exec(v); // "=60" or "60" => ≤60
+  if (m) return { lo: 0, hi: Number(m[1]) };
+  m = /^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$/.exec(v); // "85-90"
+  if (m) return { lo: Number(m[1]), hi: Number(m[2]) };
+  m = /^>?(\d+(?:\.\d+)?)\+?$/.exec(v); // ">95" or "95+"
+  if (m) return { lo: Number(m[1]), hi: Infinity };
+  return null;
+}
+
+/**
+ * Given a computed LVR percentage and the `lvr_tier` values present in the data,
+ * pick the band that contains it (smallest matching band; the top band if the LVR
+ * exceeds every band). Returns null when no tier carries a usable range.
+ */
+export function lvrTierForValue(lvr: number, tiers: string[]): string | null {
+  if (!Number.isFinite(lvr) || lvr <= 0) return null;
+  const ranges = tiers
+    .map((tier) => ({ tier, range: parseLvrTier(tier) }))
+    .filter((x): x is { tier: string; range: { lo: number; hi: number } } => x.range !== null)
+    .sort((a, b) => a.range.hi - b.range.hi || a.range.lo - b.range.lo);
+  if (!ranges.length) return null;
+  for (const { tier, range } of ranges) {
+    if (lvr > range.lo && lvr <= range.hi) return tier;
+  }
+  return ranges[ranges.length - 1].tier; // above every band → highest available
+}
+
 /** Profile dimensions that apply to a section (drives editors and row matching). */
 export const PROFILE_GROUPS: {
   section: SectionKey;

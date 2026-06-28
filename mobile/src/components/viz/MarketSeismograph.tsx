@@ -3,7 +3,12 @@ import { View, type GestureResponderEvent } from 'react-native';
 import Svg, { Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 import { SECTIONS } from '../../constants';
-import { formatAxisDateLabel, rbaChangesInWindow, sliceIndexFromPlotX } from '../../data/bankHistoryTransform';
+import {
+  formatAxisDateLabel,
+  rbaChangesInWindow,
+  rbaHoldsInWindow,
+  sliceIndexFromPlotX,
+} from '../../data/bankHistoryTransform';
 import { marketActivityModel } from '../../data/vizModels';
 import type { BankInsightsPayload } from '../../data/bankInsights';
 import { moveTone } from '../../lib/moveSemantics';
@@ -22,6 +27,7 @@ export function MarketSeismograph({
   section,
   window,
   rba,
+  rbaHolds,
   selectedDate,
   onDateSelect,
   height = 150,
@@ -30,6 +36,8 @@ export function MarketSeismograph({
   section: SectionKey;
   window: HistoryWindow;
   rba?: RbaEntry[];
+  /** RBA meeting dates the rate was held (hollow diamonds). */
+  rbaHolds?: string[];
   selectedDate?: string | null;
   onDateSelect?: (date: string) => void;
   height?: number;
@@ -40,6 +48,10 @@ export function MarketSeismograph({
   const rbaMarks = useMemo(
     () => (rba?.length && model ? rbaChangesInWindow(model.days.map((d) => d.date), rba, false) : []),
     [rba, model],
+  );
+  const rbaHoldMarks = useMemo(
+    () => (rba?.length && model ? rbaHoldsInWindow(model.days.map((d) => d.date), rbaHolds, rba) : []),
+    [rba, rbaHolds, model],
   );
   if (!model) {
     return (
@@ -148,6 +160,24 @@ export function MarketSeismograph({
                   />
                   <SvgText x={x + 8} y={padT - 2} fontSize={9} fill={theme.colors.rba} fontWeight="600">
                     RBA {mark.bp > 0 ? `+${mark.bp}` : mark.bp}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            {rbaHoldMarks.map((mark) => {
+              const idx = model.days.findIndex((d) => d.date === mark.snap);
+              if (idx < 0) return null;
+              const x = xAt(idx);
+              return (
+                <React.Fragment key={`hold-${mark.date}`}>
+                  <Polygon
+                    points={`${x},${padT - 10} ${x + 5},${padT - 4} ${x},${padT + 2} ${x - 5},${padT - 4}`}
+                    fill={theme.colors.surface}
+                    stroke={theme.colors.rba}
+                    strokeWidth={1.3}
+                  />
+                  <SvgText x={x + 8} y={padT - 2} fontSize={9} fill={theme.colors.rba} fontWeight="600">
+                    held
                   </SvgText>
                 </React.Fragment>
               );

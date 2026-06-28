@@ -198,6 +198,42 @@ export function rbaChangesInWindow(
   return changes;
 }
 
+export interface RbaHoldMark {
+  date: string;
+  snap: string;
+  rate: number;
+}
+
+/**
+ * RBA hold decisions (rate left unchanged) that fall within the plotted window,
+ * snapped to the timeline, annotated with the cash-rate target that was held.
+ */
+export function rbaHoldsInWindow(
+  dates: string[],
+  holds: string[] | undefined,
+  rba: RbaEntry[],
+): RbaHoldMark[] {
+  if (!dates.length || !holds?.length || !rba.length) return [];
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const firstTs = parseYmd(first);
+  const lastTs = parseYmd(last);
+  if (firstTs == null || lastTs == null) return [];
+
+  const out: RbaHoldMark[] = [];
+  for (const raw of holds) {
+    const date = String(raw || '').slice(0, 10);
+    const ts = parseYmd(date);
+    if (ts == null || ts < firstTs || ts > lastTs) continue;
+    const rate = rbaRateAsOf(rba, date);
+    if (rate == null || !Number.isFinite(rate)) continue;
+    out.push({ date, snap: snapRbaChangeToTimeline(date, dates), rate: rate / 100 });
+  }
+  // Deterministic chronological order regardless of input order.
+  out.sort((a, b) => a.date.localeCompare(b.date));
+  return out;
+}
+
 function snapRbaChangeToTimeline(changeDate: string, dates: string[]): string {
   const dateSet = new Set(dates);
   if (dateSet.has(changeDate)) return changeDate;

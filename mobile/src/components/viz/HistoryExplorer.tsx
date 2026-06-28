@@ -38,6 +38,7 @@ export function HistoryExplorer({
   insights,
   insightsAvailable,
   rba,
+  rbaHolds,
   brands,
   selectedDate,
   onDateSelect,
@@ -48,6 +49,8 @@ export function HistoryExplorer({
   /** Pro bank-intelligence modes are renderable (asset enabled for this user). */
   insightsAvailable: boolean;
   rba: RbaEntry[];
+  /** RBA meeting dates the rate was held (rendered as hollow diamonds). */
+  rbaHolds?: string[];
   brands?: Record<string, Brand>;
   selectedDate?: string | null;
   onDateSelect?: (date: string) => void;
@@ -105,6 +108,7 @@ export function HistoryExplorer({
                 points={historyModel.points}
                 allDates={historyModel.allDates}
                 rba={rba}
+                rbaHolds={rbaHolds}
                 section={section}
                 height={210}
                 onDateSelect={onDateSelect}
@@ -149,6 +153,7 @@ export function HistoryExplorer({
                 section={section}
                 window={window}
                 rba={section === 'Mortgage' ? rba : undefined}
+                rbaHolds={section === 'Mortgage' ? rbaHolds : undefined}
                 selectedDate={selectedDate}
                 onDateSelect={onDateSelect}
               />

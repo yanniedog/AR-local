@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { BankHistoryPoint, HistoryWindow, RbaEntry, SectionKey } from '../types';
 import {
@@ -14,6 +14,7 @@ import {
   chartYDomain,
   formatAxisDateLabel,
   rbaChangesInWindow,
+  rbaHoldsInWindow,
   rbaStepForDates,
   sliceChartTimeline,
   sliceIndexFromPlotX,
@@ -68,6 +69,8 @@ export interface BankHistoryChartProps {
   dates: string[];
   points: BankHistoryPoint[];
   rba?: RbaEntry[];
+  /** RBA meeting dates the rate was held (rendered as hollow diamonds on the step line). */
+  rbaHolds?: string[];
   section: SectionKey;
   onDateSelect?: (date: string) => void;
   height?: number;
@@ -109,6 +112,7 @@ export function BankHistoryChart({
   dates,
   points,
   rba,
+  rbaHolds,
   section,
   onDateSelect,
   height = 180,
@@ -156,6 +160,10 @@ export function BankHistoryChart({
   const rbaMarks = useMemo(
     () => (showRba && rba ? rbaChangesInWindow(plotDates, rba) : []),
     [showRba, rba, plotDates],
+  );
+  const rbaHoldMarks = useMemo(
+    () => (showRba && rba ? rbaHoldsInWindow(plotDates, rbaHolds, rba) : []),
+    [showRba, rba, rbaHolds, plotDates],
   );
 
   const highlightValues = useMemo(
@@ -441,6 +449,33 @@ export function BankHistoryChart({
                 opacity={0.85}
               />
             ) : null}
+            {rbaHoldMarks.map((mark) => {
+              const idx = plotDates.indexOf(mark.snap);
+              if (idx < 0) return null;
+              const x = xAt(idx);
+              const y = yAt(mark.rate);
+              const h = 4.5;
+              return (
+                <React.Fragment key={`hold-${mark.date}-${mark.snap}`}>
+                  <Polygon
+                    points={`${x},${y - h} ${x + h},${y} ${x},${y + h} ${x - h},${y}`}
+                    fill={theme.colors.surface}
+                    stroke={rbaInk}
+                    strokeWidth={1.4}
+                  />
+                  <SvgText
+                    x={x}
+                    y={y - h - 3}
+                    fontSize={8}
+                    fill={rbaInk}
+                    fontWeight="600"
+                    textAnchor="middle"
+                  >
+                    held
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
             {highlightLine ? (
               <AnimatedPath
                 animatedProps={lineDrawProps}

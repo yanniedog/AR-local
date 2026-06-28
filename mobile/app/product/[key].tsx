@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Alert, Share, View } from 'react-native';
+import { Alert, Linking, Pressable, Share, View } from 'react-native';
 
 import { BankAvatar } from '../../src/components/BankAvatar';
 import { BankHistoryChart } from '../../src/components/BankHistoryChart';
@@ -9,7 +9,7 @@ import { ChartErrorBoundary } from '../../src/components/ChartErrorBoundary';
 import { DetailLoadingLines, EmptyState } from '../../src/components/feedback';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { ScreenScrollView } from '../../src/components/Screen';
-import { AppText, Button, Card, Divider, IconButton, Row } from '../../src/components/ui';
+import { AppText, Badge, Button, Card, Divider, IconButton, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
 import {
   formatBalanceRange,
@@ -28,9 +28,10 @@ import { useStore } from '../../src/data/store';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import { openBank } from '../../src/lib/nav';
 import { rateQualifier } from '../../src/lib/rateQualifier';
+import { assessAccess } from '../../src/data/access';
 import { logSwallowedError } from '../../src/lib/degradationLog';
 import { canAddAlertSubscription, effectiveHistoryRibbon } from '../../src/lib/proAccess';
-import type { DetailItem, RateRow, SectionKey } from '../../src/types';
+import type { DetailItem, ProductDetail as ProductDetailData, RateRow, SectionKey } from '../../src/types';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function ProductDetail() {
@@ -216,6 +217,8 @@ export default function ProductDetail() {
           ) : null}
         </Card>
 
+        <AccessNotice name={row.product_name} detail={detail} loading={detailsLoading} />
+
         {detail?.description ? (
           <AppText variant="small" color="textMuted" style={{ marginBottom: 16, lineHeight: 20 }}>
             {detail.description}
@@ -238,6 +241,7 @@ export default function ProductDetail() {
                     points={historyModel.points}
                     allDates={historyModel.allDates}
                     rba={core?.rba}
+                    rbaHolds={core?.rba_holds}
                     section={section}
                     height={210}
                     highlightSeries={productSeries}
@@ -298,6 +302,8 @@ export default function ProductDetail() {
         <DetailGroup title="Fees" icon="cash-outline" items={detail?.fees} loading={detailsLoading} />
         <DetailGroup title="Eligibility" icon="person-outline" items={detail?.eligibility} loading={detailsLoading} />
         <DetailGroup title="Constraints" icon="lock-closed-outline" items={detail?.constraints} loading={detailsLoading} />
+
+        <OfficialLinks links={detail?.links} />
 
         <Button
           title={subscribed ? 'Rate alert on' : 'Notify on rate change'}
@@ -436,6 +442,93 @@ function DetailGroup({
           ))
         )}
       </Card>
+    </View>
+  );
+}
+
+/** "Who can get this" — surfaces public-availability / eligibility restrictions. */
+function AccessNotice({
+  name,
+  detail,
+  loading,
+}: {
+  name: string;
+  detail: ProductDetailData | null;
+  loading: boolean;
+}) {
+  const theme = useTheme();
+  // Wait for details so we don't briefly assert a name-only restriction.
+  if (loading && !detail) return null;
+  const a = assessAccess(name, detail);
+  if (!a.restricted && !a.verify) return null;
+  const tone = theme.colors.warning;
+  return (
+    <Card style={{ marginBottom: 16, borderLeftWidth: 3, borderLeftColor: tone }}>
+      <Row gap={8} style={{ alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+        <Ionicons name={a.verify ? 'alert-circle-outline' : 'people-outline'} size={16} color={tone} />
+        <AppText variant="small" weight="700">Who can get this</AppText>
+        {a.badge ? <Badge label={a.badge} tone="warning" /> : null}
+      </Row>
+      <AppText variant="small" color="textMuted" style={{ lineHeight: 20 }}>
+        {a.summary}
+      </AppText>
+      {detail?.links?.eligibility ? (
+        <Pressable
+          onPress={() => void Linking.openURL(detail.links!.eligibility!)}
+          accessibilityRole="link"
+          style={{ marginTop: 8 }}
+        >
+          <Row gap={6} style={{ alignItems: 'center' }}>
+            <Ionicons name="open-outline" size={14} color={theme.colors.primary} />
+            <AppText variant="small" weight="700" style={{ color: theme.colors.primary }}>
+              Check the lender’s eligibility criteria
+            </AppText>
+          </Row>
+        </Pressable>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Links to the lender's authoritative overview / eligibility / fees / terms pages. */
+function OfficialLinks({ links }: { links?: ProductDetailData['links'] }) {
+  const theme = useTheme();
+  if (!links) return null;
+  const all: { label: string; url?: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { label: 'Product overview', url: links.overview, icon: 'document-text-outline' },
+    { label: 'Eligibility criteria', url: links.eligibility, icon: 'person-outline' },
+    { label: 'Fees & pricing', url: links.fees, icon: 'cash-outline' },
+    { label: 'Terms & conditions', url: links.terms, icon: 'reader-outline' },
+  ];
+  const items = all.filter((i) => !!i.url);
+  if (!items.length) return null;
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <SectionTitle text="Official details" icon="link-outline" />
+      <Card>
+        {items.map((it, i) => (
+          <View key={it.label}>
+            {i > 0 ? <Divider style={{ marginVertical: 4 }} /> : null}
+            <Pressable
+              onPress={() => void Linking.openURL(it.url!)}
+              accessibilityRole="link"
+              accessibilityLabel={`${it.label} (opens lender website)`}
+              style={{ paddingVertical: 8 }}
+            >
+              <Row gap={10} style={{ alignItems: 'center' }}>
+                <Ionicons name={it.icon} size={16} color={theme.colors.primary} />
+                <AppText variant="small" weight="600" style={{ flex: 1, color: theme.colors.primary }}>
+                  {it.label}
+                </AppText>
+                <Ionicons name="open-outline" size={15} color={theme.colors.textFaint} />
+              </Row>
+            </Pressable>
+          </View>
+        ))}
+      </Card>
+      <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, marginLeft: 4 }}>
+        Authoritative, up-to-date detail straight from the lender (CDR).
+      </AppText>
     </View>
   );
 }

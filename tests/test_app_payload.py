@@ -70,6 +70,45 @@ def test_rba_series_parsed_from_dashboard_js():
     assert series == sorted(series, key=lambda e: e["date"]), "entries should be ascending by date"
 
 
+def test_rba_holds_parsed_from_dashboard_js():
+    holds = app_payload.load_rba_holds(ROOT / "dashboard")
+    assert holds, "expected RBA hold dates parsed from dashboard/rba-cash-rate.js"
+    assert all(isinstance(d, str) and len(d) == 10 for d in holds)
+    # The known 16 Jun 2026 hold (RBA met, held at 4.35%) must be present.
+    assert "2026-06-16" in holds
+    # Holds must not collide with change dates (a hold left the rate unchanged).
+    change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT / "dashboard")}
+    assert not (set(holds) & change_dates), "hold dates must not also be change dates"
+
+
+def test_rba_holds_empty_when_no_holds_block(tmp_path):
+    # A source file with no HOLDS array yields no holds (and never raises).
+    (tmp_path / "rba-cash-rate.js").write_text(
+        "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
+    )
+    assert app_payload.load_rba_holds(tmp_path) == []
+
+
+def test_detail_links_extracts_authoritative_uris():
+    record = {
+        "additionalInformation": {
+            "overviewUri": "https://x/overview",
+            "eligibilityUri": "https://x/elig",
+            "feesAndPricingUri": "https://x/fees",
+            "termsUri": "https://x/terms",
+            "bundleUri": "",
+        }
+    }
+    links = app_payload._detail_links(record)
+    assert links == {
+        "overview": "https://x/overview",
+        "eligibility": "https://x/elig",
+        "fees": "https://x/fees",
+        "terms": "https://x/terms",
+    }
+    assert app_payload._detail_links({}) == {}
+
+
 def test_build_brands_shortcodes_and_color():
     brands = app_payload.build_brands(["Some New Bank"], {"some new bank": "SNB"})
     assert brands["Some New Bank"]["short"] == "SNB"

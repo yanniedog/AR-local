@@ -275,6 +275,7 @@ export default function Trends() {
                 insights={bankInsights}
                 insightsAvailable={showBankInsights}
                 rba={core.rba}
+                rbaHolds={core.rba_holds}
                 brands={core.brands}
                 selectedDate={rewindDate}
                 onDateSelect={setRewindDate}

@@ -34,6 +34,26 @@ const BANK_INSIGHTS = `${DIR}bank-history.json`;
 
 const PRODUCT_HISTORY = `${DIR}product-history.json`;
 
+// Optional-asset content hashes live in a tiny sidecar so updating them never
+// rewrites the multi-MB core bundle (the old updateMeta path reserialized the
+// whole core for every optional-asset metadata write). Keyed by coreSha so a
+// new core run automatically invalidates stale optional hashes.
+const OPTIONAL_META = `${DIR}optional-meta.json`;
+
+
+
+export interface OptionalMeta {
+
+  coreSha: string;
+
+  searchIndexSha?: string | null;
+
+  historyBanksSha?: string | null;
+
+  bankInsightsSha?: string | null;
+
+}
+
 
 
 export interface CacheMeta {
@@ -275,6 +295,36 @@ export const cache = {
   async clearProductHistory(): Promise<void> {
 
     await FileSystem.deleteAsync(PRODUCT_HISTORY, { idempotent: true });
+
+  },
+
+  async readOptionalMeta(): Promise<OptionalMeta | null> {
+
+    return readJson<OptionalMeta>(OPTIONAL_META);
+
+  },
+
+  /**
+   * Merge optional-asset hashes into the sidecar. When the coreSha changes the
+   * file is replaced wholesale so hashes from a previous core can never be
+   * mistaken for the current one. Serialized against the write chain so
+   * concurrent prefetch writers don't clobber each other.
+   */
+  async writeOptionalMeta(patch: OptionalMeta): Promise<void> {
+
+    return serialize(async () => {
+
+      await ensureDir();
+
+      const existing = await readJson<OptionalMeta>(OPTIONAL_META);
+
+      const base = existing && existing.coreSha === patch.coreSha ? existing : { coreSha: patch.coreSha };
+
+      const merged: OptionalMeta = { ...base, ...patch };
+
+      await FileSystem.writeAsStringAsync(OPTIONAL_META, JSON.stringify(merged));
+
+    });
 
   },
 
