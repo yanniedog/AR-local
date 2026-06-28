@@ -337,21 +337,21 @@ _HOME_LOAN_CATEGORIES: frozenset[str] = frozenset(
 _RESTRICTED_COHORT_RE = re.compile(
     r"\bveterans?\b|served\s+in\s+the\s+defence|defence[\s_-]*force"
     r"|armed[\s_-]*forces|military[\s_-]*service|\bdhoas\b"
-    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)"
-    # Staff/employee-only products (e.g. Coastline "Staff Housing Loan",
-    # People First "Staff Home Loan") are not available to the public. Safe in
-    # both name and eligibility text — the exclusion guard handles "not for staff".
-    r"|\bstaff\b|\bemployees?\b",
+    r"|\bsmsf\b|self[\s_-]*managed[\s_-]*super|ato[\s_-]*regulated\s+(?:trust|fund|self)",
     re.IGNORECASE,
 )
 
-# Occupation-restricted PRODUCT-NAME phrases (e.g. Unity "Essential Worker Home
-# Loan"). Only multi-word program names that are never bank brands — bare
-# occupation words like "police"/"nurses"/"firefighters" are excluded on purpose
-# because they appear in ADI brand names ("Police Bank", "Firefighters Mutual",
-# "Nurses & Midwives") whose ordinary products must stay standard.
+# Staff/occupation restrictions matched on the PRODUCT NAME only (e.g. Coastline
+# "Staff Housing Loan", Unity "Essential Worker Home Loan"). Deliberately NOT
+# scanned in eligibility free-text: "staff"/"employee" routinely appear there as
+# ordinary lending criteria ("must be a permanent employee"), which would
+# false-flag mainstream retail products. Staff products without a name signal are
+# still caught by the STAFF eligibilityType code below. Bare occupation words
+# (police/nurses/firefighters) are excluded because they are ADI brand names
+# ("Police Bank", "Firefighters Mutual", "Nurses & Midwives").
 _RESTRICTED_NAME_COHORT_RE = re.compile(
-    r"essential[\s_-]*workers?|first[\s_-]*responders?|frontline[\s_-]*workers?",
+    r"\bstaff\b|\bemployees?\b"
+    r"|essential[\s_-]*workers?|first[\s_-]*responders?|frontline[\s_-]*workers?",
     re.IGNORECASE,
 )
 

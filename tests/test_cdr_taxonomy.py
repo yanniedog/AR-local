@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import pytest  # noqa: E402
+
 from cdr_taxonomy import classify_account_standardness as clf  # noqa: E402
 
 
@@ -15,6 +17,15 @@ def test_staff_only_product_name_is_non_standard():
     # not open to the public — must be confined to the non-standard filter.
     assert clf("Staff Housing Loan", "RESIDENTIAL_MORTGAGES", "Mortgage") == "non_standard"
     assert clf("People First and Heritage Staff Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage") == "non_standard"
+    # Staff-only deposit/transaction accounts (not just home loans) too.
+    assert clf("Staff Saver", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings") == "non_standard"
+    assert clf("Employee Everyday Account", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings") == "non_standard"
+
+
+@pytest.mark.parametrize("code", ["STAFF", "staff", " Staff ", "StAfF"])
+def test_staff_eligibility_type_code_is_robust_to_formatting(code):
+    elig = [{"eligibilityType": code}]
+    assert clf("Premium Package Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "non_standard"
 
 
 def test_staff_eligibility_type_code_is_non_standard_even_with_ordinary_name():
@@ -40,6 +51,14 @@ def test_employment_status_alone_does_not_flag():
     # the code alone (real occupation cohorts are caught via name/free-text).
     elig = [{"eligibilityType": "EMPLOYMENT_STATUS", "additionalInfo": "Applicant earns PAYG income"}]
     assert clf("Basic Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "standard"
+
+
+def test_employee_phrasing_in_eligibility_text_stays_standard():
+    # "staff"/"employee" are matched on the product NAME only — ordinary lending
+    # criteria like "must be a permanent employee" must NOT flip a retail product.
+    for info in ("Must be a permanent employee", "Applicant must be a full-time employee"):
+        elig = [{"eligibilityType": "OTHER", "additionalInfo": info}]
+        assert clf("Basic Variable Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "standard"
 
 
 def test_negated_staff_eligibility_text_stays_standard():
