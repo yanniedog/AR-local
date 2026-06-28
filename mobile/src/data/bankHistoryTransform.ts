@@ -229,6 +229,8 @@ export function rbaHoldsInWindow(
     if (rate == null || !Number.isFinite(rate)) continue;
     out.push({ date, snap: snapRbaChangeToTimeline(date, dates), rate: rate / 100 });
   }
+  // Deterministic chronological order regardless of input order.
+  out.sort((a, b) => a.date.localeCompare(b.date));
   return out;
 }
 

@@ -112,6 +112,15 @@ describe('bankHistoryTransform', () => {
     expect(rbaHoldsInWindow(dates, ['2026-06-16'], [])).toEqual([]);
   });
 
+  it('maps multiple in-window holds in chronological order, snapped to the timeline', () => {
+    const rba: RbaEntry[] = [{ date: '2026-05-01', rate: 4.5 }];
+    const dates = ['2026-05-13', '2026-06-01', '2026-06-20', '2026-07-01'];
+    // Two holds, given out of order, must come back ordered + snapped forward.
+    const marks = rbaHoldsInWindow(dates, ['2026-06-28', '2026-06-16'], rba);
+    expect(marks.map((m) => m.date)).toEqual(['2026-06-16', '2026-06-28']);
+    expect(marks.map((m) => m.snap)).toEqual(['2026-06-20', '2026-07-01']);
+  });
+
   it('chartYDomain includes median points and extra (highlight) values', () => {
     const points = [{ date: '2026-01-01', min: null, max: null, mean: 0.06, median: 0.1, count: 1 }];
     const domain = chartYDomain(points, [], [0.02]);
