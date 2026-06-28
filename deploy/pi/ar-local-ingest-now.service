@@ -1,0 +1,17 @@
+[Unit]
+Description=AR-local manual CDR ingest (forced fresh run, triggered by `cdr-ingest`)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{AR_LOCAL_USER}}
+Group={{AR_LOCAL_GROUP}}
+WorkingDirectory={{AR_LOCAL_REPO}}
+Environment=PYTHONUNBUFFERED=1
+Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
+Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
+EnvironmentFile=-/etc/ar-local/app-payload.env
+ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only --force
+ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 40); do curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:8808/api/latest && break; sleep 3; done; /usr/bin/python3 {{AR_LOCAL_REPO}}/verify_local.py --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%%F)"'

@@ -33,6 +33,7 @@ import {
 import { type SearchIndexPayload, resetDetailSearchIndexCache } from './detailSearch';
 import type { BankInsightsPayload } from './bankInsights';
 import { normalizeBankInsightsPayload } from './bankInsights';
+import type { RbaCalendar } from './rbaCalendar';
 import {
   dailyHistorySha,
   syncHistoryFromDailyPayloads,
@@ -50,6 +51,7 @@ import {
   downloadCore,
   downloadDetails,
   downloadHistoryBanks,
+  downloadRbaCalendar,
   downloadSearchIndex,
   fetchManifest,
 } from './payload';
@@ -126,6 +128,10 @@ interface AppState {
   /** Per-bank history + rate-move events (Pro bank intelligence). */
   bankInsights: BankInsightsPayload | null;
   bankInsightsError: string | null;
+  /** RBA decision calendar + forward schedule for the countdown (in-memory only). */
+  rbaCalendar: RbaCalendar | null;
+  rbaCalendarSha: string | null;
+  rbaCalendarError: string | null;
   /** Per-product representative rate over time (derived on-device from dated cores). */
   productHistory: ProductHistoryPayload | null;
   productHistoryError: string | null;
@@ -156,6 +162,7 @@ interface AppState {
   ensureSearchIndex: (opts?: { prefetch?: boolean }) => Promise<void>;
   ensureHistoryBanks: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
   ensureBankInsights: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
+  ensureRbaCalendar: () => Promise<void>;
   ensureProductHistory: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
   /** Eagerly download + cache every optional asset, bypassing pref/Pro gates (no lazy loading). */
   prefetchAllAssets: () => Promise<void>;
@@ -237,6 +244,9 @@ export const useStore = create<AppState>()(
       historyBanksError: null,
       bankInsights: null,
       bankInsightsError: null,
+      rbaCalendar: null,
+      rbaCalendarSha: null,
+      rbaCalendarError: null,
       productHistory: null,
       productHistoryError: null,
       detailsLoading: false,
@@ -349,6 +359,9 @@ export const useStore = create<AppState>()(
             historyBanksError: null,
             bankInsights: null,
             bankInsightsError: null,
+            rbaCalendar: null,
+            rbaCalendarSha: null,
+            rbaCalendarError: null,
             productHistory: null,
             productHistoryError: null,
           });
@@ -779,6 +792,34 @@ export const useStore = create<AppState>()(
         }
       },
 
+      async ensureRbaCalendar() {
+        const { core, manifest, source, rbaCalendar, rbaCalendarSha } = get();
+        if (!core || source !== 'remote' || !manifest) {
+          if (source !== 'remote' || !manifest) {
+            set({ rbaCalendar: null, rbaCalendarSha: null, rbaCalendarError: null });
+          }
+          return;
+        }
+        const asset = manifest.files.rba_calendar;
+        if (!asset) {
+          set({ rbaCalendar: null, rbaCalendarSha: null, rbaCalendarError: 'rba calendar unavailable' });
+          return;
+        }
+        if (rbaCalendar && rbaCalendarSha === asset.sha256) return; // already current (in-memory)
+        try {
+          const { rbaCalendar: downloaded } = await downloadRbaCalendar(asset.url, asset.sha256);
+          set({ rbaCalendar: downloaded, rbaCalendarSha: asset.sha256, rbaCalendarError: null });
+          debugLog.info(
+            'store',
+            `ensureRbaCalendar ok decisions=${downloaded.decisions.length} schedule=${downloaded.schedule.length}`,
+          );
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err);
+          debugLog.warn('store', `ensureRbaCalendar failed: ${msg}`);
+          set({ rbaCalendarError: msg });
+        }
+      },
+
       async retryHistoryBanks() {
         if (!effectiveHistoryRibbon(get().prefs)) return;
         set({ historyBanksError: null });
@@ -856,6 +897,7 @@ export const useStore = create<AppState>()(
           get().ensureSearchIndex({ prefetch: true }),
           get().ensureHistoryBanks({ prefetch: true }),
           get().ensureBankInsights({ prefetch: true }),
+          get().ensureRbaCalendar(),
           get().ensureProductHistory({ prefetch: true }),
         ]);
       },

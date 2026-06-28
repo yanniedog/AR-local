@@ -41,11 +41,13 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
 import cdr_brand_logos
 import payload_crypto
+import rba_decisions
 from cdr_ribbon_normalize import (
     aggregate_ribbon,
     normalized_rate_value as _normalized_rate_value,
@@ -585,6 +587,27 @@ def build_payload(
     dashboard_dir: Path = BASE_DIR / "dashboard",
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
+    # Only the rolling release ships search-index + history assets (see _package's
+    # is_rolling_tag gate), so a dated build needn't compute them at all.
+    data = _compute_payload(
+        exports_dir, dashboard_dir=dashboard_dir, include_history=is_rolling_tag(tag)
+    )
+    return _package_payload(data, out_dir, repo=repo, tag=tag)
+
+
+def _compute_payload(
+    exports_dir: Path,
+    *,
+    dashboard_dir: Path = BASE_DIR / "dashboard",
+    include_history: bool = True,
+) -> Dict[str, Any]:
+    """Parse the run's exports into the (tag-independent) payload data.
+
+    Parsing the multi-MB current banks.json is always needed (core/details). The
+    search index and history scan — the most expensive part, and rolling-only — are
+    computed only when ``include_history`` is set, so the dated build and the
+    skip-rolling backfill path don't pay for assets no release will ship.
+    """
     latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
     run_date = str(latest.get("run_date") or "")
     if not run_date:
@@ -630,32 +653,57 @@ def build_payload(
         "products": build_details(products),
     }
 
-    all_core_rows: List[Dict[str, Any]] = []
-    for section in VALID_SECTIONS:
-        all_core_rows.extend(core["sections"][section]["rates"])
-    search_index = app_payload_mobile.build_search_index(
-        all_core_rows, details["products"], run_date=run_date, schema_version=SCHEMA_VERSION
-    )
-    history_banks, bank_history = app_payload_mobile.build_history_assets(
-        exports_dir,
-        run_date=run_date,
-        load_json=_load_json,
-        section_filter=section_filter,
-        normalized_rate_value=_normalized_rate_value,
-        schema_version=SCHEMA_VERSION,
-    )
+    search_index = None
+    history_banks = None
+    bank_history = None
+    if include_history:
+        all_core_rows: List[Dict[str, Any]] = []
+        for section in VALID_SECTIONS:
+            all_core_rows.extend(core["sections"][section]["rates"])
+        search_index = app_payload_mobile.build_search_index(
+            all_core_rows, details["products"], run_date=run_date, schema_version=SCHEMA_VERSION
+        )
+        history_banks, bank_history = app_payload_mobile.build_history_assets(
+            exports_dir,
+            run_date=run_date,
+            load_json=_load_json,
+            section_filter=section_filter,
+            normalized_rate_value=_normalized_rate_value,
+            schema_version=SCHEMA_VERSION,
+        )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
+    return {
+        "core": core,
+        "details": details,
+        "run_date": run_date,
+        "counts": counts,
+        "search_index": search_index,
+        "history_banks": history_banks,
+        "bank_history": bank_history,
+        "rba_calendar": rba_decisions.calendar_payload(),
+    }
+
+
+def _package_payload(
+    data: Dict[str, Any],
+    out_dir: Path,
+    *,
+    repo: str = DEFAULT_REPO,
+    tag: str = DEFAULT_TAG,
+) -> Dict[str, Any]:
+    """Gzip + write the manifest for one tag's release from precomputed payload data."""
     return _package(
-        core,
-        details,
-        run_date,
+        data["core"],
+        data["details"],
+        data["run_date"],
         out_dir,
         repo=repo,
         tag=tag,
-        counts=counts,
-        search_index=search_index,
-        history_banks=history_banks,
-        bank_history=bank_history,
+        counts=data["counts"],
+        search_index=data["search_index"],
+        history_banks=data["history_banks"],
+        bank_history=data["bank_history"],
+        rba_calendar=data.get("rba_calendar"),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
         enc_key=payload_crypto.resolve_key_from_env(),
@@ -674,6 +722,7 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
+    rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
@@ -694,6 +743,10 @@ def _package(
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
+        )
+    if is_rolling_tag(tag) and rba_calendar and rba_calendar.get("schedule"):
+        files["rba_calendar"] = _asset(
+            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -830,26 +883,44 @@ def _published_history_dates(
     *,
     min_date: str = HISTORY_MIN_DATE,
 ) -> List[str]:
-    """Return sorted run_dates with live dated snapshot releases on GitHub."""
+    """Return sorted run_dates with a live, COMPLETE dated snapshot release on GitHub.
+
+    A dated tag (``app-payload-<run_date>``, date format validated by is_dated_tag)
+    is included only when its manifest.json is actually present with a matching
+    run_date — this excludes an incomplete release whose tag was created but whose
+    manifest upload failed (which would otherwise advertise a date that 404s for the
+    app). The per-release manifest checks run CONCURRENTLY, so the refresh costs ~one
+    round-trip's latency instead of the former N sequential GETs (the N+1).
+    """
     gh = _gh_available()
     if not gh or not _gh_authed(gh):
         return []
-    dates: List[str] = []
     try:
         tags = _list_payload_release_tags(gh, repo)
     except RuntimeError as exc:
         print(f"[app_payload] dates-index tag list failed (non-fatal) error={exc!r}")
         return []
+    candidates: List[Tuple[str, str]] = []
     for tag in tags:
         if not is_dated_tag(tag):
             continue
         run_date = tag[len(DATED_TAG_PREFIX) :]
         if min_date and run_date < min_date:
             continue
+        candidates.append((tag, run_date))
+    if not candidates:
+        return []
+
+    def _verified_date(item: Tuple[str, str]) -> Optional[str]:
+        tag, run_date = item
         status, live = _live_manifest_status(repo, tag)
         if status == "present" and live and str(live.get("run_date") or "") == run_date:
-            dates.append(run_date)
-    return sorted(set(dates))
+            return run_date
+        return None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(candidates))) as pool:
+        verified = [d for d in pool.map(_verified_date, candidates) if d]
+    return sorted(set(verified))
 
 
 def _upload_dates_index(
@@ -975,7 +1046,7 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     data: List[Tuple[str, str]] = []
     for line in listed.stdout.splitlines():
         name, _, created = line.partition("\t")
-        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-")) and name.endswith((".json.gz", ".json.gz.enc")):
+        if name.startswith(("core-", "details-", "search-index-", "history-banks-", "bank-history-", "rba-calendar-")) and name.endswith((".json.gz", ".json.gz.enc")):
             data.append((name, created))
     data.sort(key=lambda x: x[1], reverse=True)  # newest first
     deleted = 0
@@ -1331,14 +1402,30 @@ def build_and_publish_dual(
     ``run_date`` is not older than the live rolling manifest (unless ``--force`` on
     the latest publish path — not exposed here; backfill handles end-of-run refresh).
     """
+    # Decide whether the rolling latest will actually be (re)published BEFORE the
+    # expensive compute (one live-manifest check, reused below): if a newer release
+    # is already live (e.g. a backfill), the rolling build is skipped — and so is
+    # the rolling-only history/search scan.
     latest = _load_json(exports_dir / "dashboard-cache" / "latest.json")
     run_date = str(latest.get("run_date") or "")
     if not run_date:
         raise ValueError("latest.json has no run_date")
 
+    need_latest = False
+    live_run_date = ""
+    if update_latest:
+        status, live = _live_manifest_status(repo, DEFAULT_TAG)
+        live_run_date = str((live or {}).get("run_date") or "") if status == "present" else ""
+        need_latest = not (live_run_date and live_run_date > run_date)
+
+    # Compute the (tag-independent) payload data ONCE, then package both releases.
+    # History/search are rolling-only, so only compute them when the rolling latest
+    # will be built. Previously each release rebuilt from scratch every run.
+    data = _compute_payload(exports_dir, include_history=need_latest)
+
     dated = dated_tag(run_date)
     out_dated = out_dir or (exports_dir / "app-payload")
-    manifest = build_payload(exports_dir, out_dated, repo=repo, tag=dated)
+    manifest = _package_payload(data, out_dated, repo=repo, tag=dated)
     try:
         published_dated = publish_payload(out_dated, repo=repo, tag=dated)
     except Exception as exc:  # noqa: BLE001 - rolling latest must still run
@@ -1354,20 +1441,18 @@ def build_and_publish_dual(
 
     published_latest = False
     if update_latest:
-        out_latest = exports_dir / "app-payload-latest"
-        build_payload(exports_dir, out_latest, repo=repo, tag=DEFAULT_TAG)
-        status, live = _live_manifest_status(repo, DEFAULT_TAG)
-        live_run_date = str((live or {}).get("run_date") or "") if status == "present" else ""
-        if live_run_date and live_run_date > run_date:
-            print(
-                f"[app_payload] rolling latest skipped run_date={run_date} "
-                f"(live run_date={live_run_date} is newer)"
-            )
-        else:
+        if need_latest:
+            out_latest = exports_dir / "app-payload-latest"
+            _package_payload(data, out_latest, repo=repo, tag=DEFAULT_TAG)
             published_latest = publish_payload(out_latest, repo=repo, tag=DEFAULT_TAG)
             print(
                 f"[app_payload] rolling latest publish finished run_date={run_date} "
                 f"tag={DEFAULT_TAG} published={published_latest}"
+            )
+        else:
+            print(
+                f"[app_payload] rolling latest skipped run_date={run_date} "
+                f"(live run_date={live_run_date} is newer)"
             )
     return manifest, published_dated, published_latest
 

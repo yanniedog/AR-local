@@ -190,10 +190,26 @@ export function childrenOf(
   path: string[],
   includeNonStandard = false,
 ): TaxoNode[] {
+  return childrenFromScoped(
+    visibleAccountRows(rowsUnder(rows, section, path), includeNonStandard),
+    section,
+    path,
+  );
+}
+
+/** Like {@link childrenOf} but for rows already scoped to `path` and filtered for
+ *  account standardness (i.e. `visibleAccountRows(rowsUnder(...))`). Lets a caller
+ *  that already computed that set reuse it instead of re-scanning every section
+ *  row again. */
+export function childrenFromScoped(
+  scopedRows: RateRow[],
+  section: SectionKey,
+  path: string[],
+): TaxoNode[] {
   const root = ROOT[section];
   const depth = path.length + 1; // index of the "next" segment in the full path
   const buckets = new Map<string, RateRow[]>();
-  for (const r of rowsUnder(visibleAccountRows(rows, includeNonStandard), section, path)) {
+  for (const r of scopedRows) {
     const segs = pathSegs(r.taxonomy_path);
     if (segs[0] !== root) continue;
     const next = segs[depth];

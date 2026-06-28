@@ -206,6 +206,31 @@ def _history_assets_from(exports, run_date):
     )
 
 
+def test_build_history_assets_includes_behaviour(tmp_path):
+    runs = tmp_path / "runs"
+
+    def loan(provider, key, rate):
+        return {"dataset": "Mortgage", "provider": provider, "product_key": key,
+                "rate": rate, "rate_family": "lending", "rate_type": "VARIABLE"}
+
+    # Ledger starts on the 2026-05-05 RBA hike day; BankX raises its (matched) rate
+    # 25 bps by 2026-05-13 -> a measurable hike pass-through of 8 days.
+    _write_history_day(runs, "2026-05-05", [loan("BankX", "X|1", "0.0600")])
+    exports = _write_history_day(runs, "2026-05-13", [loan("BankX", "X|1", "0.0625")])
+    _history, bank_history = _history_assets_from(exports, "2026-05-13")
+
+    behaviour = bank_history["behaviour"]
+    assert set(behaviour) == {"Mortgage", "Savings", "TD"}
+    assert all(behaviour[s]["window_days"] == 60 for s in behaviour)
+
+    hike = behaviour["Mortgage"]["providers"]["BankX"]["hike"]
+    assert hike["n"] == 1
+    assert hike["days_median"] == 8        # 2026-05-05 -> 2026-05-13
+    assert hike["bps_median"] == 25.0
+    assert hike["ratio_median"] == 1.0
+    assert hike["confidence"] == "insufficient"  # n = 1, early ledger
+
+
 def test_build_history_assets_bank_series_and_events(tmp_path):
     runs = tmp_path / "runs"
 
@@ -304,6 +329,44 @@ def test_dated_tag_naming():
         app_payload.dated_tag("bad")
 
 
+def test_published_history_dates_excludes_incomplete_releases(monkeypatch):
+    # Built from dated tags, but each is verified concurrently: a tag whose manifest
+    # is missing (incomplete release that would 404) or whose run_date mismatches is
+    # excluded. min_date filters before any fetch; non-dated tags are ignored.
+    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
+    monkeypatch.setattr(app_payload, "_gh_authed", lambda gh: True)
+    monkeypatch.setattr(
+        app_payload,
+        "_list_payload_release_tags",
+        lambda gh, repo: [
+            "app-payload-latest",            # rolling -> ignored
+            "app-payload-2026-05-19",        # present + matches
+            "app-payload-2026-05-18",        # present + matches
+            "app-payload-2026-05-17",        # tag exists but manifest missing -> excluded
+            "app-payload-2026-05-16",        # manifest run_date mismatch -> excluded
+            "app-payload-2026-05-12",        # before min_date -> filtered (no fetch)
+            "app-payload-not-a-date",        # not a dated tag -> ignored
+        ],
+    )
+    checked: set[str] = set()
+
+    def status(repo, tag):
+        checked.add(tag)
+        if tag == "app-payload-2026-05-17":
+            return ("missing", None)
+        if tag == "app-payload-2026-05-16":
+            return ("present", {"run_date": "1999-01-01"})  # mismatched
+        return ("present", {"run_date": tag[len(app_payload.DATED_TAG_PREFIX):]})
+
+    monkeypatch.setattr(app_payload, "_live_manifest_status", status)
+
+    dates = app_payload._published_history_dates("yanniedog/AR-local", min_date="2026-05-13")
+    assert dates == ["2026-05-18", "2026-05-19"]
+    # min_date-filtered and non-dated tags are never fetched.
+    assert "app-payload-2026-05-12" not in checked
+    assert "app-payload-not-a-date" not in checked
+
+
 def test_is_rolling_tag():
     assert app_payload.is_rolling_tag("app-payload-latest")
     assert not app_payload.is_rolling_tag("app-payload-2026-06-08")
@@ -326,6 +389,11 @@ def test_optional_assets_are_rolling_only(tmp_path):
             "banks": {"Bank": {"Savings": {"median": [0.04], "best": [0.05], "count": [2]}}},
             "events": [],
         },
+        "rba_calendar": {
+            "timezone": "Australia/Sydney",
+            "decisions": [],
+            "schedule": [{"date": "2026-08-11", "announce_utc": "2026-08-11T04:30:00+00:00"}],
+        },
     }
     rolling = app_payload._package(
         {"schema_version": 1},
@@ -344,7 +412,7 @@ def test_optional_assets_are_rolling_only(tmp_path):
         **kwargs,
     )
 
-    assert {"search_index", "history_banks", "bank_history"} <= rolling["files"].keys()
+    assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
 
@@ -548,6 +616,99 @@ def test_build_is_deterministic(tmp_path):
     assert a["files"]["details"]["sha256"] == b["files"]["details"]["sha256"]
 
 
+@pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
+def test_build_and_publish_dual_computes_payload_once(tmp_path, monkeypatch):
+    import shutil
+
+    # Copy the sample so the rolling build (writes into <exports>/app-payload-latest)
+    # doesn't pollute the committed fixture.
+    exports = tmp_path / "exports"
+    shutil.copytree(SAMPLE_EXPORTS, exports)
+
+    calls = {"n": 0}
+    real_compute = app_payload._compute_payload
+
+    def counting_compute(*args, **kwargs):
+        calls["n"] += 1
+        return real_compute(*args, **kwargs)
+
+    monkeypatch.setattr(app_payload, "_compute_payload", counting_compute)
+    monkeypatch.setattr(app_payload, "publish_payload", lambda *a, **k: True)
+    monkeypatch.setattr(app_payload, "_live_manifest_status", lambda *a, **k: ("absent", None))
+
+    manifest, pub_dated, pub_latest = app_payload.build_and_publish_dual(
+        exports, out_dir=tmp_path / "dated"
+    )
+
+    # The expensive parse + history scan runs ONCE for both releases, not twice.
+    assert calls["n"] == 1
+    assert pub_dated is True and pub_latest is True
+
+    dated_manifest = json.loads((tmp_path / "dated" / "manifest.json").read_text())
+    latest_manifest = json.loads((exports / "app-payload-latest" / "manifest.json").read_text())
+    assert app_payload.dated_tag(manifest["run_date"]) in dated_manifest["files"]["core"]["url"]
+    assert app_payload.DEFAULT_TAG in latest_manifest["files"]["core"]["url"]
+    # Same precomputed data -> byte-identical core across both releases.
+    assert dated_manifest["files"]["core"]["sha256"] == latest_manifest["files"]["core"]["sha256"]
+
+
+@pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
+def test_build_and_publish_dual_dated_only_skips_rolling(tmp_path, monkeypatch):
+    import shutil
+
+    exports = tmp_path / "exports"
+    shutil.copytree(SAMPLE_EXPORTS, exports)
+
+    calls = {"n": 0}
+    real_compute = app_payload._compute_payload
+
+    def counting_compute(*args, **kwargs):
+        calls["n"] += 1
+        return real_compute(*args, **kwargs)
+
+    monkeypatch.setattr(app_payload, "_compute_payload", counting_compute)
+    monkeypatch.setattr(app_payload, "publish_payload", lambda *a, **k: True)
+
+    manifest, pub_dated, pub_latest = app_payload.build_and_publish_dual(
+        exports, out_dir=tmp_path / "dated", update_latest=False
+    )
+
+    # Still computes exactly once; no rolling release is built or published.
+    assert calls["n"] == 1
+    assert pub_dated is True and pub_latest is False
+    assert not (exports / "app-payload-latest").exists()
+    dated_manifest = json.loads((tmp_path / "dated" / "manifest.json").read_text())
+    assert app_payload.dated_tag(manifest["run_date"]) in dated_manifest["files"]["core"]["url"]
+
+
+def test_package_payload_same_data_packages_both_tags(tmp_path):
+    # CI-runnable (no sample/network): proves the compute-once contract — one
+    # precomputed payload packages into both the dated and rolling releases with
+    # byte-identical core, differing only by the tag in the asset URL.
+    run_date = "2026-05-19"
+    data = {
+        "core": {"schema_version": app_payload.SCHEMA_VERSION, "run_date": run_date, "sections": {}, "brands": {}, "rba": {}},
+        "details": {"schema_version": app_payload.SCHEMA_VERSION, "run_date": run_date, "products": {}},
+        "run_date": run_date,
+        "counts": {"products": 0},
+        "search_index": None,
+        "history_banks": None,
+        "bank_history": None,
+    }
+    import copy
+
+    original = copy.deepcopy(data)
+    dated_tag = app_payload.dated_tag(run_date)
+    dated = app_payload._package_payload(data, tmp_path / "dated", tag=dated_tag)
+    latest = app_payload._package_payload(data, tmp_path / "latest", tag=app_payload.DEFAULT_TAG)
+
+    # Packaging must not mutate the shared precomputed data (reused across tags).
+    assert data == original
+    assert dated["files"]["core"]["sha256"] == latest["files"]["core"]["sha256"]
+    assert dated_tag in dated["files"]["core"]["url"]
+    assert app_payload.DEFAULT_TAG in latest["files"]["core"]["url"]
+
+
 def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys):
     names = [
         "core.json.gz",
@@ -655,6 +816,28 @@ def test_prune_release_assets_covers_bank_history_prefix(monkeypatch):
     deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
 
     assert deleted == 1
+
+
+def test_prune_release_assets_covers_rba_calendar_prefix(monkeypatch):
+    # 49 content-addressed rba-calendar assets, oldest first; keep window is 48.
+    rows = [
+        (f"rba-calendar-2026-04-{i + 1:02d}-{i:012d}.json.gz", f"2026-04-{i + 1:02d}T00:00:00Z")
+        for i in range(49)
+    ]
+    listing = "\n".join(f"{name}\t{created}" for name, created in rows)
+    deletes = []
+
+    def fake_run(args, **_kwargs):
+        if "view" in args:
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        deletes.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
+
+    deleted = app_payload._prune_release_assets("gh", "owner/repo", "app-payload-latest", set())
+
+    assert deleted == 1
     assert any(rows[0][0] in command for command in deletes), "oldest bank-history asset pruned"
 
 
@@ -723,23 +906,107 @@ def test_aggregate_ribbon_prefers_comparison_rate():
 
 
 def test_ribbon_kernel_is_shared_with_dashboard_server():
-    # Single source of truth: the dashboard server imports the same callable, so
-    # web and mobile can never diverge on the ribbon rate metric. Guard against a
-    # future re-inlining of either copy.
+    # Single source of truth: both the payload builder and the dashboard server
+    # must use the same callable, so web and mobile can never diverge on the ribbon
+    # rate metric. Guard against a future re-inlining of either copy.
     import cdr_ribbon_normalize
+    import cdr_dashboard_server
 
     assert app_payload.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
+    # The dashboard server binds the same kernel at import; if it ever re-inlined
+    # its own ribbon aggregate, this assertion (the bug this PR fixes) would fail.
+    assert cdr_dashboard_server.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
 
 
 def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     # The dashboard server projects comparison_rate as '' on legacy DBs that lack
-    # the column, and deposits carry no comparison rate at all. Both must fall back
-    # to the headline rate, never drop the product from the ribbon.
+    # the column, and deposits carry no comparison rate at all. Non-positive and
+    # non-parsable comparison rates must also fall back to the headline rate, never
+    # dropping the product from the ribbon.
     rows = [
         {"product_key": "A", "provider": "X", "rate": "4.5", "comparison_rate": ""},
         {"product_key": "B", "provider": "Y", "rate": "5.0", "comparison_rate": None},
+        {"product_key": "C", "provider": "Z", "rate": "4.0", "comparison_rate": "0"},
+        {"product_key": "D", "provider": "W", "rate": "4.2", "comparison_rate": "-1"},
+        {"product_key": "E", "provider": "V", "rate": "4.8", "comparison_rate": "foo"},
     ]
     ribbon = app_payload.aggregate_ribbon(rows, "Savings")
-    assert ribbon["counts"]["rates"] == 2
-    assert round(ribbon["range"]["min"], 4) == 0.045
-    assert round(ribbon["range"]["max"], 4) == 0.05
+    assert ribbon["counts"]["rates"] == 5  # none dropped
+    assert round(ribbon["range"]["min"], 4) == 0.04  # C: 4.0 headline (comparison "0")
+    assert round(ribbon["range"]["max"], 4) == 0.05  # B: 5.0 headline (comparison None)
+
+
+def test_compact_history_reshapes_per_day_aggregates():
+    import cdr_ribbon_normalize as crn
+
+    d1, d2 = "2026-06-10", "2026-06-11"
+    aggs = {
+        d1: crn.aggregate_ribbon(
+            [
+                {"product_key": "A", "provider": "X", "rate": "5.0"},
+                {"product_key": "B", "provider": "Y", "rate": "4.0"},
+            ],
+            "Savings",
+        ),
+        d2: crn.aggregate_ribbon(
+            [{"product_key": "A", "provider": "X", "rate": "5.5"}],
+            "Savings",
+        ),
+    }
+    # A gap day (d3) with no aggregate must carry nulls, keeping the series aligned.
+    out = crn.compact_history([d1, d2, "2026-06-12"], aggs)
+    assert out["run_dates"] == [d1, d2, "2026-06-12"]
+    assert [p["date"] for p in out["points"]] == [d1, d2, "2026-06-12"]
+    assert round(out["points"][0]["max"], 4) == 0.05  # d1 overall max = 5.0%
+    assert out["points"][2]["min"] is None and out["points"][2]["count"] == 0  # gap day
+    provider_x = next(p for p in out["providers"] if p["provider"] == "X")
+    assert set(provider_x["by_date"]) == {d1, d2}  # X present both days, not the gap
+    assert round(provider_x["by_date"][d2]["median"], 4) == 0.055
+    # Compact: a handful of points/providers, never the raw per-product rows.
+    assert "rates" not in out
+
+
+def test_compact_history_field_contract_matches_dashboard_client():
+    # dashboard/app.js compactChartItems() reads these exact fields off the
+    # compact payload to build the chart model; lock them so a server-side reshape
+    # change can't silently break the client (which has no JS test harness).
+    import cdr_ribbon_normalize as crn
+
+    d1, d2 = "2026-06-10", "2026-06-11"
+    aggs = {
+        d1: crn.aggregate_ribbon(
+            [
+                {"product_key": "A", "provider": "X", "rate": "5.0", "comparison_rate": "5.1"},
+                {"product_key": "B", "provider": "Y", "rate": "4.0"},
+            ],
+            "Mortgage",
+        ),
+        d2: crn.aggregate_ribbon(
+            [{"product_key": "A", "provider": "X", "rate": "5.5", "comparison_rate": "5.6"}],
+            "Mortgage",
+        ),
+    }
+    out = crn.compact_history([d1, d2], aggs)
+    assert set(out) >= {"run_dates", "points", "providers"}
+    point_fields = {"date", "min", "max", "mean", "median", "count"}
+    for point in out["points"]:
+        assert set(point) == point_fields
+    stat_fields = {"min", "max", "mean", "median", "count"}
+    for provider in out["providers"]:
+        assert set(provider) == {"provider", "by_date"}
+        for stats in provider["by_date"].values():
+            assert set(stats) == stat_fields
+
+
+def test_history_index_key_matches_dashboard_contract():
+    import cdr_dashboard_server as srv
+
+    row = {"provider": "X", "product_key": "P1", "rate": "5.0", "lvr_tier": "70_80"}
+    key = srv.history_index_key(row)
+    # Joined with the same  separator the dashboard's historyIndexKey uses.
+    assert "" in key
+    # Rate is intentionally excluded from identity, so two samples of the same
+    # product at different rates share a key (a product's history is one series).
+    assert srv.history_index_key({**row, "rate": "9.9"}) == key
+    # A different product key is a different identity (current-catalogue filtering).
+    assert srv.history_index_key({**row, "product_key": "P2"}) != key

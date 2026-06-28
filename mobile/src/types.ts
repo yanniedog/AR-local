@@ -157,6 +157,8 @@ export interface Manifest {
     history_banks?: ManifestFile;
     /** Per-bank daily series + rate-move events (bank intelligence asset). */
     bank_history?: ManifestFile;
+    /** RBA decision calendar + forward meeting schedule (countdown asset). */
+    rba_calendar?: ManifestFile;
   };
   enc?: ManifestEnc;
 }

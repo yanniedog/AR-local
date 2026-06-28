@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { HomeHero, HomeRefreshCountdown, SpringOnNewData } from '../../src/components/HomeHero';
 import { ProductCard } from '../../src/components/ProductCard';
+import { RbaCountdownCard } from '../../src/components/RbaCountdownCard';
 import { Ribbon } from '../../src/components/Ribbon';
 import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
@@ -182,6 +183,8 @@ export default function Home() {
       </Card>
       </SectionCrossfade>
 
+      <RbaCountdownCard />
+
       <AppText variant="tiny" weight="700" color="textFaint" style={{ marginBottom: theme.spacing(2) }}>
         SHORTCUTS
       </AppText>
@@ -193,6 +196,7 @@ export default function Home() {
         />
         <Chip label="Calculator" icon="calculator-outline" onPress={() => router.push('/calculator')} />
         <Chip label="My profile" icon="person-circle-outline" onPress={() => router.push('/profile')} />
+        <Chip label="Why rates move" icon="pulse-outline" onPress={() => router.push('/rba')} />
         {section === 'Mortgage' ? (
           <Chip
             label="Comparison"

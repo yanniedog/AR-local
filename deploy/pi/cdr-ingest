@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# cdr-ingest — trigger a fresh CDR ingest on the Pi right now.
+#
+# Runs a forced ingest (ignores today's completion marker), publishes the
+# updated payload to GitHub, refreshes the dashboard, and verifies. Installed to
+# /usr/local/bin by deploy/pi/install-pi-systemd.sh.
+#
+#   cdr-ingest          # run now and follow the log until it finishes
+#
+# Press Ctrl-C to stop watching; the ingest keeps running in the background.
+set -uo pipefail
+
+echo "[cdr-ingest] Fresh CDR ingest for $(date +%F): fetch -> publish to GitHub -> dashboard. (~10-20 min)"
+sudo systemctl reset-failed ar-local-ingest-now.service 2>/dev/null || true
+if ! sudo systemctl start --no-block ar-local-ingest-now.service; then
+  echo "[cdr-ingest] failed to start ar-local-ingest-now.service" >&2
+  exit 1
+fi
+sleep 1
+
+sudo journalctl -u ar-local-ingest-now.service -f -n 5 &
+follow_pid=$!
+while systemctl is-active --quiet ar-local-ingest-now.service; do sleep 3; done
+sleep 2
+kill "$follow_pid" 2>/dev/null || true
+
+result="$(systemctl show -p Result --value ar-local-ingest-now.service 2>/dev/null)"
+echo
+if [ "$result" = "success" ]; then
+  echo "[cdr-ingest] OK — data ingested + packages published + dashboard refreshed."
+  exit 0
+fi
+echo "[cdr-ingest] FAILED (result=$result). Inspect: journalctl -u ar-local-ingest-now.service" >&2
+exit 1

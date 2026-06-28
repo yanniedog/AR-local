@@ -50,6 +50,9 @@
     bankHistory: null,
     bankHistorySection: '',
     bankHistoryIndex: null,
+    // Compact per-day history aggregate, cached per (section, includeNonStandard)
+    // variant — same keyed-map pattern as bankRibbons so toggling keeps both.
+    bankHistoryCompacts: {},
     retainedRunDatesSorted: [],
     descending: false,
     includeNonStandard: false,
@@ -204,7 +207,13 @@
   }
 
   function refreshRetainedRunDatesCache() {
-    const raw = state.bankHistory && state.bankHistory.run_dates;
+    // The compact history payload carries the authoritative full retained date
+    // set for the section; prefer it over the current-only seed's single date so
+    // the window UI and drilldown timeline both see every run_date.
+    const compact = currentCompactHistory();
+    const raw = (compact && Array.isArray(compact.run_dates))
+      ? compact.run_dates
+      : (state.bankHistory && state.bankHistory.run_dates);
     if (!Array.isArray(raw)) {
       state.retainedRunDatesSorted = [];
       return;
@@ -292,6 +301,55 @@
     refreshBankHistoryIndex();
   }
 
+  // Compact per-day history aggregate (overall + per-provider series, on the
+  // comparison-rate metric) for the default ribbon — replaces shipping ~180k raw
+  // history rows to the browser. The variant is keyed by (section,
+  // includeNonStandard); window selection stays client-side over run_dates.
+  // Per-product granularity is intentionally omitted, so hierarchy drilldown
+  // falls back to the raw rows via ensureRawHistoryLoaded.
+  // Normalize + store a compact payload under its own (section, includeNonStandard)
+  // key. Single writer for both the initial/section fetch and the realtime refresh
+  // so the shape stays in one place.
+  function setBankHistoryCompact(section, includeNonStandard, payload) {
+    state.bankHistoryCompacts[ribbonCacheKey(section, includeNonStandard)] = {
+      section,
+      includeNonStandard,
+      run_dates: sortedValidRunDates(Array.isArray(payload.run_dates) ? payload.run_dates : []),
+      points: Array.isArray(payload.points) ? payload.points : [],
+      providers: Array.isArray(payload.providers) ? payload.providers : [],
+    };
+  }
+
+  function currentCompactHistory() {
+    return state.bankHistoryCompacts[ribbonCacheKey(state.section, state.includeNonStandard)] || null;
+  }
+
+  async function loadCompactHistory(section, includeNonStandard) {
+    if (state.bankHistoryCompacts[ribbonCacheKey(section, includeNonStandard)]) return;
+    const encoded = encodeURIComponent(section);
+    const nsFlag = includeNonStandard ? '&include_non_standard=1' : '';
+    const data = await getJson(`/api/banks/history/section/compact?date=${state.manifest.run_date}&section=${encoded}${nsFlag}`);
+    // Cache by the request's own variant (not live state) so a mid-flight toggle
+    // can't discard the fetched payload — toggling back reuses it (Sourcery).
+    setBankHistoryCompact(section, includeNonStandard, data);
+    refreshRetainedRunDatesCache();
+  }
+
+  // Hierarchy drilldown re-aggregates the ribbon over a product SUBSET, which the
+  // provider-level compact payload cannot express. Fetch the raw rows on demand
+  // the first time a drilldown is active (the current-only seed counts as "not
+  // loaded"), then redraw. Guarded so concurrent redraws issue one fetch.
+  function ensureRawHistoryLoaded() {
+    if (state.bankHistory && state.bankHistorySection === state.section && !state.bankHistory.current_only) return;
+    if (state._rawHistoryLoading) return;
+    state._rawHistoryLoading = true;
+    const section = state.section;
+    loadBankHistory()
+      .then(() => { if (state.section === section) scheduleChartRedraw(); })
+      .catch((error) => { console.warn('Drilldown history payload failed', error); })
+      .finally(() => { state._rawHistoryLoading = false; });
+  }
+
   function seedCurrentHistory(section, rows) {
     const normalized = normalizeRows(rows || []);
     state.bankHistory = {
@@ -339,6 +397,17 @@
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   }
 
+  // Comparison rate (fees folded in) is the ribbon metric everywhere; deposits
+  // carry none, so fall back to the headline rate. Mirrors cdr_ribbon_normalize
+  // .effective_rate so the client drilldown aggregate matches the server's
+  // compact/ribbon aggregates. normalizeRows has already coerced both fields to
+  // fractions, so no further rate-style handling is needed here.
+  function effectiveFraction(row) {
+    const comparison = Number(row.comparison_rate);
+    if (Number.isFinite(comparison) && comparison > 0) return comparison;
+    return Number(row.rate);
+  }
+
   function buildAggregateRibbon(historyRows) {
     const byProvider = {};
     const sliceDates = new Set();
@@ -355,7 +424,7 @@
     historyRows.forEach((row) => {
       const date = normalizeRunDate(row.run_date);
       const provider = row.provider || 'Unknown';
-      const rate = Number(row.rate);
+      const rate = effectiveFraction(row);
       if (!date || !Number.isFinite(rate) || rate <= 0) return;
       sliceDates.add(date);
       if (!byProvider[provider]) byProvider[provider] = { label: provider, byDate: {} };
@@ -474,7 +543,69 @@
     state.focusedProductKeys = retained.size ? retained : null;
   }
 
+  // Build the chart model straight from the compact server aggregate (default +
+  // window view). Mirrors buildAggregateRibbon's output contract but consumes the
+  // pre-aggregated comparison-rate series instead of raw rows. Returns null when
+  // the compact payload for the current section/toggle variant hasn't arrived yet
+  // (callers fall back to the raw/current-only path).
+  function compactChartItems(rows) {
+    const compact = currentCompactHistory();
+    if (!compact) return null;
+    const allDates = compact.run_dates;
+    const dates = historyDatesInWindow(allDates);
+    const pointByDate = {};
+    compact.points.forEach((point) => { if (point && point.date) pointByDate[point.date] = point; });
+    let totalHistoryRows = 0;
+    const points = dates.map((date) => {
+      const point = pointByDate[date] || { date, min: null, max: null, mean: null, median: null, count: 0 };
+      totalHistoryRows += Number(point.count || 0);
+      return point;
+    });
+    // Hero leader range from the latest comparison-rate point keeps it consistent
+    // with the comparison-rate ribbon (and the bootstrap range), instead of
+    // flipping to the headline-rate currentRateRange once details load. Fall back
+    // to the live rows only when the most recent day has no aggregate.
+    const lastPoint = points.length ? points[points.length - 1] : null;
+    const currentRange = lastPoint && lastPoint.min != null
+      ? { min: lastPoint.min, max: lastPoint.max }
+      : currentRateRange(rows);
+    const providers = compact.providers.map((provider) => {
+      const byDate = {};
+      dates.forEach((date) => {
+        const stats = provider.by_date && provider.by_date[date];
+        if (stats) byDate[date] = stats;
+      });
+      return { label: provider.provider || 'Unknown', byDate };
+    });
+    return {
+      kind: 'bank-history',
+      section: state.section,
+      window: state.historyWindow,
+      dates,
+      points,
+      providers,
+      allDates,
+      descending: state.descending,
+      currentRange,
+      totalHistoryRows,
+      focusProvider: focusActiveProvider(),
+      chartPinnedDate: state.chartPinnedDate,
+      onHoverDateChange: onChartHoverDate,
+      onSliceClick: onChartSliceClick,
+    };
+  }
+
   function chartItems(rows) {
+    // Default + window view is served by the compact server aggregate (no raw-row
+    // transport). Hierarchy drilldown needs per-product history the compact
+    // payload omits, so it lazily loads the raw rows and re-aggregates locally.
+    const drilldown = !!(state.focusedProductKeys && state.focusedProductKeys.size);
+    if (!drilldown) {
+      const compact = compactChartItems(rows);
+      if (compact) return compact;
+    } else {
+      ensureRawHistoryLoaded();
+    }
     const historyRows = filteredHistoryRows(rows);
     const aggregate = buildAggregateRibbon(historyRows);
     return {
@@ -560,7 +691,14 @@
   function rateRowsForChartAnchor(baseRows) {
     const anchor = chartAnchorDate();
     const manifest = String((state.manifest && state.manifest.run_date) || '');
-    if (!anchor || !state.bankHistoryIndex || anchor === manifest) return baseRows;
+    if (!anchor || anchor === manifest) return baseRows;
+    // Previewing a past date needs the raw per-product history for that date. Under
+    // the compact default path it isn't loaded, so fetch it on demand (same lazy
+    // pattern as drilldown, Codex P2): until it arrives the current-only index has
+    // no rows for ``anchor`` and the loop yields an empty slice, then the load
+    // triggers a redraw that fills the preview.
+    ensureRawHistoryLoaded();
+    if (!state.bankHistoryIndex) return baseRows;
     const out = [];
     (baseRows || []).forEach((row) => {
       const key = historyIndexKey(row);
@@ -871,13 +1009,13 @@
       // Capture the toggle BEFORE awaiting so the response is cached under the key
       // matching the request, even if the user toggles mid-flight (Codex PR #149).
       const ribIncludeNs = state.includeNonStandard;
-      const [ribbon, sectionPayload, historyPayload] = await Promise.all([
+      const compactNsFlag = ribIncludeNs ? '&include_non_standard=1' : '';
+      const [ribbon, sectionPayload, compactPayload] = await Promise.all([
         getJson(`/api/banks/ribbon?date=${dateEncoded}&section=${encoded}${ribIncludeNs ? '&include_non_standard=1' : ''}`),
         getJson(`/api/banks/section?date=${dateEncoded}&section=${encoded}`),
-        getJson(`/api/banks/history/section?date=${dateEncoded}&section=${encoded}`),
+        getJson(`/api/banks/history/section/compact?date=${dateEncoded}&section=${encoded}${compactNsFlag}`),
       ]);
       hydrateSectionRows(sectionPayload.rates, sectionName, latest.run_date);
-      hydrateSectionRows(historyPayload.rates, sectionName);
       // Cache the fetched section data for ``sectionName`` regardless of
       // whether the user has navigated away (Codex P2 PR #131) -- if they
       // navigate back, those rows are fresh.
@@ -897,13 +1035,13 @@
       }
       state.manifest = latest;
       state.manifestSignature = nextSignature;
-      state.bankHistory = {
-        ...historyPayload,
-        rates: Array.isArray(historyPayload.rates) ? normalizeRows(historyPayload.rates) : [],
-        run_dates: sortedValidRunDates(Array.isArray(historyPayload.run_dates) ? historyPayload.run_dates : []),
-      };
-      state.bankHistorySection = sectionName;
-      refreshBankHistoryIndex();
+      // New ingest: refresh the compact series for the captured toggle variant
+      // (cached by ribIncludeNs, so a mid-flight toggle still reuses it), and
+      // re-seed the current-only raw history from the new section rows. An active
+      // drilldown lazily re-fetches raw rows on the next redraw via
+      // ensureRawHistoryLoaded (the re-seed marks raw history as not-loaded).
+      setBankHistoryCompact(sectionName, ribIncludeNs, compactPayload);
+      seedCurrentHistory(sectionName, sectionRows());
       // No snapshot/restore here (Gemini + Codex PR #131): UI fields
       // (descending, hoverProvider, chartPinnedDate, etc.) are
       // persistent on ``state`` and are not touched by the data
@@ -911,7 +1049,7 @@
       // after would clobber any in-flight user interaction.
       sanitizeFocusedProviders();
       sanitizeFocusedProductKeys();
-      sanitizeChartDateState(state.bankHistory.run_dates);
+      sanitizeChartDateState(retainedRunDates());
       warmProviderLogoCache();
       render();
     } catch (_err) {
@@ -1247,13 +1385,13 @@
     seedCurrentHistory(section, sectionRows());
     sanitizeFocusedProviders();
     render();
-    loadBankHistory()
+    loadCompactHistory(section, ribIncludeNs)
       .then(() => {
         if (token !== loadSectionToken || state.section !== section) return;
         render();
       })
       .catch((error) => {
-        console.warn('History payload failed', error);
+        console.warn('Compact history payload failed', error);
       });
   }
 
@@ -1348,13 +1486,21 @@
       nonStandardToggle.addEventListener('change', () => {
         state.includeNonStandard = nonStandardToggle.checked;
         // The history index is built through historyRowMatchesLiveTable, which now
-        // honours the toggle — rebuild it so non-standard series appear/disappear.
+        // honours the toggle — rebuild it so the drilldown raw path (if loaded)
+        // reflects the toggle.
         refreshBankHistoryIndex();
         // Hiding non-standard rows can strand a provider focus/hover that only
         // matched a now-hidden product; drop it so the table/hierarchy aren't
         // left empty (Codex P2).
         sanitizeFocusedProviders();
         render();
+        // The compact aggregate is a distinct per-toggle variant (server filters
+        // non-standard before aggregating), so fetch the other variant and redraw.
+        const section = state.section;
+        const includeNs = state.includeNonStandard;
+        loadCompactHistory(section, includeNs)
+          .then(() => { if (state.section === section && state.includeNonStandard === includeNs) render(); })
+          .catch((error) => { console.warn('Compact history payload failed', error); });
       });
     }
     document.querySelectorAll('[data-history-window]').forEach((button) => {

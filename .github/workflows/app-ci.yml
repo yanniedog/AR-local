@@ -7,8 +7,14 @@ on:
   pull_request:
     paths:
       - 'mobile/**'
-      - 'app_payload.py'
-      - 'tests/test_app_payload.py'
+      - 'app_payload*.py'
+      - 'cdr_*.py'
+      - 'pi_*.py'
+      - 'payload_crypto.py'
+      - 'ar_local_pi_runtime.py'
+      - 'cleanup_removed_cdr_sector.py'
+      - 'requirements.txt'
+      - 'tests/**'
       - '.github/workflows/app-ci.yml'
       - '.github/workflows/mobile-eas-build.yml'
       - '.github/workflows/mobile-eas-submit.yml'
@@ -16,7 +22,14 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
-      - 'app_payload.py'
+      - 'app_payload*.py'
+      - 'cdr_*.py'
+      - 'pi_*.py'
+      - 'payload_crypto.py'
+      - 'ar_local_pi_runtime.py'
+      - 'cleanup_removed_cdr_sector.py'
+      - 'requirements.txt'
+      - 'tests/**'
       - '.github/workflows/app-ci.yml'
       - '.github/workflows/mobile-eas-build.yml'
       - '.github/workflows/mobile-eas-submit.yml'
@@ -48,7 +61,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install pytest
-        run: python -m pip install --quiet pytest
+      - name: Install deps
+        # cryptography is an optional runtime dep (lazy import) but tests exercise the
+        # payload-encryption path, so install it here to run those rather than skip.
+        run: python -m pip install --quiet -r requirements.txt cryptography pytest
       - name: Test
-        run: python -m pytest tests/test_app_payload.py -q
+        # Run the whole server-side suite (payload, ribbon kernel, ledger
+        # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
+        # these guards actually gate, not just test_app_payload.py.
+        run: python -m pytest tests/ -q

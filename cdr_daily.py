@@ -24,6 +24,7 @@ from ar_local_pi_runtime import (
     manifest_banks_rate_count,
     prepare_empty_dir,
 )
+import cdr_ledger_integrity
 from cdr_outputs import build_outputs
 from cdr_ingest_sanity import write_sanity_report
 
@@ -52,6 +53,20 @@ def persistent_export_root(persistent_runs_root: Path, date: str, exports: Optio
     return (persistent_runs_root / date / "_exports").resolve()
 
 
+def persist_ingest_status(run_dir: Path, export_root: Path) -> None:
+    """Copy the ingest status rollup into _exports so it survives RAM staging.
+
+    The ingest writes ``<run>/banks/ingest-status.json``, but the RAM-staged Pi path
+    copies only ``_exports`` to the persistent run — so place a copy where it lasts,
+    otherwise the status (and the incomplete-run signal) is discarded with the RAM
+    stage (Codex).
+    """
+    src = run_dir / "banks" / "ingest-status.json"
+    if src.is_file():
+        export_root.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, export_root / "ingest-status.json")
+
+
 def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
     try:
         recorded = json.loads(marker.read_text(encoding="utf-8"))
@@ -65,6 +80,61 @@ def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
     if str(manifest.get("run_date") or "") != date:
         return False
     return export_manifest_is_valid(manifest)
+
+
+class LedgerImmutabilityError(RuntimeError):
+    """Raised when an ingest would mutate or fabricate append-only ledger history."""
+
+
+def _export_root_has_content(root: Path) -> bool:
+    return root.is_dir() and any(root.iterdir())
+
+
+def revision_root_for(primary_root: Path, when: datetime) -> Path:
+    """Append-only revision target beside a finalized day's primary _exports.
+
+    The stamp carries microseconds so two forced ingests in the same second get
+    distinct revision dirs instead of colliding (Sourcery).
+    """
+    stamp = when.strftime("%Y%m%dT%H%M%S_%f")
+    return primary_root.parent / "_revisions" / stamp / primary_root.name
+
+
+def resolve_ledger_target(
+    primary_root: Path,
+    date: str,
+    today: str,
+    force: bool,
+    now: Optional[datetime] = None,
+) -> tuple[Path, bool]:
+    """Enforce append-only history; return ``(target_root, is_revision)``.
+
+    Today's partition is still being assembled, so it writes its primary
+    ``_exports`` as before. PAST days are immutable, append-only ledger data:
+
+    - An already-finalized partition is NEVER overwritten. ``--force`` appends a
+      timestamped revision beside it, preserving the original bytes (corrections
+      are appended, never destructive).
+    - A MISSING past day is NEVER created by the live ingest: live CDR endpoints
+      return only current data, so writing it under a historical date would
+      fabricate the ledger (e.g. the 2026-05-14 gap must remain a gap).
+
+    Dates are ``YYYY-MM-DD`` so lexical comparison is chronological.
+    """
+    if date >= today:
+        return primary_root, False
+    if _export_root_has_content(primary_root):
+        if not force:
+            raise LedgerImmutabilityError(
+                f"Refusing to overwrite finalized ledger day {date} at {primary_root}; "
+                f"re-run with --force to append a revision instead of mutating it."
+            )
+        return revision_root_for(primary_root, now or datetime.now()), True
+    raise LedgerImmutabilityError(
+        f"Refusing to ingest past date {date}: live CDR endpoints return only "
+        f"current data, so writing it under a historical date would fabricate the "
+        f"ledger (the {date} gap must remain a gap). Past days are append-only."
+    )
 
 
 def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> None:
@@ -86,6 +156,27 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
     return []
 
 
+def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
+    """Best-effort: emit/refresh the day's ledger integrity manifest.
+
+    Non-fatal and primary-only (a revision doesn't change the hashed _exports);
+    skipped for a custom --exports layout, since the manifest assumes the default
+    <runs>/<date>/_exports paths. Catches broadly on purpose: this runs after the
+    completion marker is written, so it must never turn a successful ingest into a
+    failure.
+    """
+    if exports is not None:
+        return
+    try:
+        cdr_ledger_integrity.append_day_manifest(persistent_runs_root, state_dir, date)
+    except Exception as exc:  # never let integrity bookkeeping fail the ingest
+        print(
+            f"ledger-integrity: failed to write manifest for {date}: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def run_once(args: argparse.Namespace) -> int:
     """Return 0 when skipped, 1 on success, 2 when banking export is empty."""
     script_dir = Path(__file__).resolve().parent
@@ -99,9 +190,32 @@ def run_once(args: argparse.Namespace) -> int:
     if marker.exists() and not args.force:
         if marker_is_trustworthy(marker, export_root, date):
             print(f"Already completed local CDR daily run for {date}: {marker}")
+            # Self-heal a finalized day whose integrity manifest never landed
+            # (e.g. a prior best-effort write failed): the trusted-marker path is
+            # otherwise the only return point, so emit it here if missing (Codex
+            # P2). Cheap no-op when the manifest already exists.
+            if args.exports is None and not cdr_ledger_integrity.manifest_path(state_dir, date).is_file():
+                _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
+            file=sys.stderr,
+        )
+
+    # Append-only ledger guard: decide where this ingest may write before touching
+    # any persistent bytes. Today writes its primary _exports; past days are
+    # immutable (force => revision; missing gap => refuse).
+    try:
+        target_export_root, is_revision = resolve_ledger_target(
+            export_root, date, local_date(), args.force
+        )
+    except LedgerImmutabilityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if is_revision:
+        print(
+            f"Ledger append-only: {date} is already finalized; appending a revision at "
+            f"{target_export_root} (original _exports preserved).",
             file=sys.stderr,
         )
 
@@ -115,18 +229,23 @@ def run_once(args: argparse.Namespace) -> int:
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(staged_runs / date, staged_exports, args.db)
-        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
-        copytree_atomic(staged_exports, export_root)
-        result["out_dir"] = str(export_root)
+        persist_ingest_status(staged_runs / date, staged_exports)
+        copytree_atomic(staged_exports, target_export_root)
+        result["out_dir"] = str(target_export_root)
         result["ram_staged"] = True
         result["ram_root"] = str(ram_root)
         if args.clean_ram_stage:
             shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
             shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
     else:
-        run_ingest(script_dir, persistent_runs_root, date, extra_args)
-        export_root = persistent_export_root(persistent_runs_root, date, args.exports)
-        result = build_outputs(persistent_runs_root / date, export_root, args.db)
+        # A revision must not mutate the original day's raw run files either, so
+        # isolate the revision's raw ingest under the revision dir (Gemini). The
+        # Pi path is RAM-staged (raw files never persist), so this guards the
+        # --no-ram-stage / dev path.
+        run_root = target_export_root.parent if is_revision else persistent_runs_root
+        run_ingest(script_dir, run_root, date, extra_args)
+        result = build_outputs(run_root / date, target_export_root, args.db)
+        persist_ingest_status(run_root / date, target_export_root)
         result["ram_staged"] = False
 
     if banks_result_rate_count(result) <= 0:
@@ -141,7 +260,7 @@ def run_once(args: argparse.Namespace) -> int:
     # cdr_ingest_sanity.py module docstring for the 2026-05-20/26
     # CommBank repricing-window incident that motivated this guard.
     try:
-        report_path = write_sanity_report(export_root, date, persistent_runs_root)
+        report_path = write_sanity_report(target_export_root, date, persistent_runs_root)
     except Exception as exc:  # never let the guard fail the ingest
         print(f"sanity-check: error writing report: {type(exc).__name__}: {exc}", file=sys.stderr)
     else:
@@ -164,7 +283,16 @@ def run_once(args: argparse.Namespace) -> int:
                         file=sys.stderr,
                     )
 
-    marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    if is_revision:
+        # Preserve the primary day marker; record the revision under its own marker
+        # so the day's original finalization stays authoritative and auditable.
+        revision_marker = state_dir / f"{date}.revision.{target_export_root.parent.name}.json"
+        revision_marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    else:
+        marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Emit this day's ledger integrity manifest (hash-chain link to the prior
+        # day) so the partition is tamper-evident from finalization.
+        _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 1
 
