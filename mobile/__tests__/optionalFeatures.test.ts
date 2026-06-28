@@ -34,6 +34,10 @@ jest.mock('../src/data/cache', () => ({
   cache: {
     readBundle: (...args: unknown[]) => mockReadBundle(...args),
     readMeta: (...args: unknown[]) => mockReadMeta(...args),
+    // Optional-asset hashes live in a sidecar now; the test metas already carry
+    // coreSha + the per-asset shas, so delegate to the same mock.
+    readOptionalMeta: (...args: unknown[]) => mockReadMeta(...args),
+    writeOptionalMeta: jest.fn(async () => {}),
     writeBundle: (...args: unknown[]) => mockWriteBundle(...args),
     readDetails: jest.fn(async () => null),
     writeDetails: jest.fn(async () => {}),

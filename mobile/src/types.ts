@@ -90,6 +90,8 @@ export interface CorePayload {
   sections: Record<SectionKey, SectionData>;
   brands: Record<string, Brand>;
   rba: RbaEntry[];
+  /** RBA meeting dates that left the cash-rate target unchanged (holds). */
+  rba_holds?: string[];
 }
 
 export interface DetailItem {
@@ -99,6 +101,15 @@ export interface DetailItem {
   info?: string;
 }
 
+/** Authoritative lender document URIs (CDR additionalInformation). */
+export interface ProductLinks {
+  overview?: string;
+  eligibility?: string;
+  fees?: string;
+  terms?: string;
+  bundle?: string;
+}
+
 export interface ProductDetail {
   description?: string;
   last_updated?: string;
@@ -106,6 +117,8 @@ export interface ProductDetail {
   features?: DetailItem[];
   eligibility?: DetailItem[];
   constraints?: DetailItem[];
+  /** Links to the lender's official overview / eligibility / fees / terms pages. */
+  links?: ProductLinks;
 }
 
 export interface DetailsPayload {

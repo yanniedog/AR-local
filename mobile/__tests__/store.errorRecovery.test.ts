@@ -28,6 +28,10 @@ jest.mock('../src/data/cache', () => ({
     readSearchIndex: jest.fn(async () => null),
     readHistoryBanks: jest.fn(async () => null),
     clearHistoryBanks: jest.fn(async () => {}),
+    readBankInsights: jest.fn(async () => null),
+    readProductHistory: jest.fn(async () => null),
+    readOptionalMeta: jest.fn(async () => null),
+    writeOptionalMeta: jest.fn(async () => {}),
   },
 }));
 

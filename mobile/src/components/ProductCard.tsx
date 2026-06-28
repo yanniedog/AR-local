@@ -11,6 +11,7 @@ import {
   isNonStandard,
 } from '../data/format';
 import { useStore } from '../data/store';
+import { assessAccess } from '../data/access';
 import { rateValueLabel } from '../lib/a11ySummaries';
 import { rateQualifier, type RateQualifier } from '../lib/rateQualifier';
 import type { RateRow, SectionKey } from '../types';
@@ -61,8 +62,10 @@ export function ProductCard({
   const theme = useTheme();
   const favorite = useStore((s) => s.favorites.includes(row.product_key));
   const toggleFavorite = useStore((s) => s.toggleFavorite);
+  const detail = useStore((s) => s.details?.products[row.product_key] ?? null);
   const nonStandard = isNonStandard(row);
   const qualifier = rateQualifier(row, section);
+  const access = React.useMemo(() => assessAccess(row.product_name, detail), [row.product_name, detail]);
   const tags = chips(row, section, qualifier);
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   const rateLabel = rateValueLabel(section);
@@ -120,8 +123,23 @@ export function ProductCard({
         <AppText variant="small" color="textMuted" numberOfLines={1}>
           {row.provider}
         </AppText>
-        {tags.length || qualifier.conditional || nonStandard ? (
+        {tags.length || qualifier.conditional || nonStandard || access.badge ? (
           <Row gap={6} style={{ flexWrap: 'wrap', marginTop: 6 }}>
+            {access.badge ? (
+              <View
+                style={{
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: theme.radius.sm,
+                  borderWidth: 1,
+                  borderColor: theme.colors.warning,
+                }}
+              >
+                <AppText variant="tiny" style={{ color: theme.colors.warning }} weight="700">
+                  {access.verify ? `${access.badge}?` : access.badge}
+                </AppText>
+              </View>
+            ) : null}
             {tags.map((t, i) => (
               <View
                 key={`${t}-${i}`}

@@ -1,14 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
 import { BankAvatar } from '../src/components/BankAvatar';
+import { ProfileEditor } from '../src/components/ProfileEditor';
 import { ScreenScrollView } from '../src/components/Screen';
 import { SegmentedControl } from '../src/components/controls';
-import { AppText, Card, Row } from '../src/components/ui';
+import { AppText, Badge, Card, Row } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
-import { formatRate, toFraction } from '../src/data/format';
+import { assessAccess } from '../src/data/access';
+import { computeLvr, depositToReachLvr, num, type CalcInputs } from '../src/data/calc';
+import { formatRate, humanizeEnum, toFraction } from '../src/data/format';
 import { sectionSegmentOptions } from '../src/data/interests';
-import { profileFilterRows, profileSectionCount } from '../src/data/profile';
+import { lvrTierForValue, parseLvrTier, profileFilterRows } from '../src/data/profile';
+import { distinctValues } from '../src/data/selectors';
 import { useStore } from '../src/data/store';
 import { rowsUnder, statsFor } from '../src/data/taxonomy';
 import { openProduct } from '../src/lib/nav';
@@ -21,8 +25,7 @@ function monthlyPayment(balance: number, annualRate: number, months: number): nu
   return (r * balance) / (1 - Math.pow(1 + r, -months));
 }
 
-const formatDollars = (n: number): string =>
-  `$${Math.round(n).toLocaleString('en-AU')}`;
+const formatDollars = (n: number): string => `$${Math.round(n).toLocaleString('en-AU')}`;
 
 interface Candidate {
   row: RateRow;
@@ -34,17 +37,26 @@ interface Candidate {
 export default function Calculator() {
   const theme = useTheme();
   const core = useStore((s) => s.core);
+  const details = useStore((s) => s.details);
   const interests = useStore((s) => s.prefs.interests);
   const profileFilters = useStore((s) => s.prefs.profileFilters);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const savedCalc = useStore((s) => s.prefs.calc);
+  const setPref = useStore((s) => s.setPref);
   const activeSection = useStore((s) => s.activeSection);
   const [section, setSection] = useState<SectionKey>(activeSection);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
 
   const isLoan = SECTIONS[section].lowerIsBetter;
-  const [balanceText, setBalanceText] = useState('');
-  const [rateText, setRateText] = useState('');
-  const [yearsText, setYearsText] = useState('');
+  const isMortgage = section === 'Mortgage';
+
+  // Inputs live on the user profile so the calculator remembers the situation.
+  const [inputs, setInputs] = useState<CalcInputs>(savedCalc);
+  const upd = (patch: Partial<CalcInputs>) => setInputs((prev) => ({ ...prev, ...patch }));
+  useEffect(() => {
+    const t = setTimeout(() => setPref('calc', inputs), 400);
+    return () => clearTimeout(t);
+  }, [inputs, setPref]);
 
   // Profile-matched comparable rows for the section (e.g. OO + P&I + your LVR).
   const rows = useMemo(() => {
@@ -56,20 +68,49 @@ export default function Calculator() {
 
   const median = useMemo(() => statsFor(rows, true).median, [rows]);
 
-  const balance = Number(balanceText.replace(/[^0-9.]/g, '')) || (isLoan ? 500000 : 50000);
+  // ---- LVR (mortgage): a real calculation from several inputs ----
+  const lvrResult = useMemo(() => computeLvr(inputs), [inputs]);
+  const lvr = isMortgage ? lvrResult.lvr : null;
+  const availableLvrTiers = useMemo(
+    () => distinctValues(core?.sections?.Mortgage?.rates ?? [], 'lvr_tier'),
+    [core],
+  );
+  const lvrBand = lvr !== null ? lvrTierForValue(lvr, availableLvrTiers) : null;
+
+  // Retain the identified band on the profile so every comparison is like-for-like.
+  useEffect(() => {
+    if (!lvrBand) return;
+    const current = profileFilters.lvrTiers;
+    if (current.length === 1 && current[0] === lvrBand) return;
+    setPref('profileFilters', { ...profileFilters, lvrTiers: [lvrBand] });
+  }, [lvrBand, profileFilters, setPref]);
+
+  // Deposit needed to drop into the next lower LVR band (better rates).
+  const nextBandHint = useMemo(() => {
+    if (!isMortgage || inputs.mode !== 'buy' || !lvrBand) return null;
+    const band = parseLvrTier(lvrBand);
+    const propertyValue = num(inputs.propertyValue);
+    if (!band || band.lo <= 0 || propertyValue <= 0) return null;
+    const extra = depositToReachLvr(propertyValue, lvrResult.depositApplied, band.lo);
+    if (extra <= 0) return null;
+    return { extra, targetPct: band.lo };
+  }, [isMortgage, inputs.mode, inputs.propertyValue, lvrBand, lvrResult.depositApplied]);
+
+  // Loan amount that drives the savings comparison.
+  const balance = isMortgage
+    ? lvrResult.loan ?? 0
+    : num(inputs.savingsBalance) || 50000;
+
   const currentRate = (() => {
-    // Field is labelled "(%)" — always treat input as a percent ("0.5" = 0.5%,
-    // never toFraction's ≤1-means-fraction heuristic).
-    const pct = Number(rateText.trim().replace(/%$/, ''));
+    const pct = Number((inputs.currentRate || '').trim().replace(/%$/, ''));
     if (isFinite(pct) && pct > 0) return pct / 100;
     return median ?? null;
   })();
-  const years = Math.min(40, Math.max(1, Number(yearsText) || 25));
+  const years = Math.min(40, Math.max(1, num(inputs.years) || 25));
   const months = Math.round(years * 12);
 
   const candidates = useMemo<Candidate[]>(() => {
-    if (currentRate === null) return [];
-    // Best comparable rate per lender, then ranked by dollar benefit vs current.
+    if (currentRate === null || balance <= 0) return [];
     const bestByProvider = new Map<string, { row: RateRow; rate: number }>();
     for (const row of rows) {
       const v = toFraction(row.rate);
@@ -95,7 +136,6 @@ export default function Calculator() {
 
   if (!core) return null;
 
-  const profileCount = profileSectionCount(profileFilters, section);
   const inputStyle = {
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -107,6 +147,30 @@ export default function Calculator() {
     fontSize: 16,
   } as const;
 
+  const field = (
+    label: string,
+    value: string,
+    onChangeText: (t: string) => void,
+    placeholder: string,
+    a11y: string,
+    width?: number,
+  ) => (
+    <View style={width ? { width } : { flex: 1 }}>
+      <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
+        {label}
+      </AppText>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.colors.textFaint}
+        keyboardType="numeric"
+        style={inputStyle}
+        accessibilityLabel={a11y}
+      />
+    </View>
+  );
+
   return (
     <ScreenScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
       {sectionOptions.length > 1 ? (
@@ -116,61 +180,109 @@ export default function Calculator() {
       ) : null}
 
       <Card style={{ marginBottom: 16 }}>
-        <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
-          {isLoan ? 'Your current loan' : 'Your current balance'}
-        </AppText>
-        <Row gap={10}>
-          <View style={{ flex: 1 }}>
-            <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
-              Balance ($)
-            </AppText>
-            <TextInput
-              value={balanceText}
-              onChangeText={setBalanceText}
-              placeholder={isLoan ? '500,000' : '50,000'}
-              placeholderTextColor={theme.colors.textFaint}
-              keyboardType="numeric"
-              style={inputStyle}
-              accessibilityLabel="Balance in dollars"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
-              Current rate (%)
-            </AppText>
-            <TextInput
-              value={rateText}
-              onChangeText={setRateText}
-              placeholder={median !== null ? (median * 100).toFixed(2) : '6.00'}
-              placeholderTextColor={theme.colors.textFaint}
-              keyboardType="numeric"
-              style={inputStyle}
-              accessibilityLabel="Current interest rate percent"
-            />
-          </View>
-          {isLoan ? (
-            <View style={{ width: 86 }}>
-              <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
-                Years left
-              </AppText>
-              <TextInput
-                value={yearsText}
-                onChangeText={setYearsText}
-                placeholder="25"
-                placeholderTextColor={theme.colors.textFaint}
-                keyboardType="numeric"
-                style={inputStyle}
-                accessibilityLabel="Years remaining on loan"
+        {isMortgage ? (
+          <>
+            <View style={{ marginBottom: 10 }}>
+              <SegmentedControl<CalcInputs['mode']>
+                options={[
+                  { label: 'Buying', value: 'buy' },
+                  { label: 'Refinancing', value: 'refi' },
+                ]}
+                value={inputs.mode}
+                onChange={(mode) => upd({ mode })}
               />
             </View>
-          ) : null}
-        </Row>
-        <AppText variant="tiny" color="textFaint" style={{ marginTop: 10 }}>
-          {profileCount > 0
-            ? `Compared against lenders' best rates matching your profile (${profileCount} filters).`
-            : 'Compared against every lender’s best advertised rate. Set your profile to compare like-for-like.'}
-        </AppText>
+            {inputs.mode === 'buy' ? (
+              <>
+                <Row gap={10}>
+                  {field('Property price ($)', inputs.propertyValue, (t) => upd({ propertyValue: t }), '650,000', 'Property price in dollars')}
+                  {field('Your savings ($)', inputs.deposit, (t) => upd({ deposit: t }), '130,000', 'Savings available as deposit')}
+                </Row>
+                <Row gap={10} style={{ marginTop: 10 }}>
+                  {field('Upfront costs ($)', inputs.costs, (t) => upd({ costs: t }), 'stamp duty + fees', 'Upfront costs paid from savings')}
+                  <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                    <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
+                      Loan needed
+                    </AppText>
+                    <AppText variant="body" weight="800" style={{ paddingVertical: 10 }}>
+                      {lvrResult.loan != null ? formatDollars(lvrResult.loan) : '—'}
+                    </AppText>
+                  </View>
+                </Row>
+              </>
+            ) : (
+              <Row gap={10}>
+                {field('Property value ($)', inputs.propertyValue, (t) => upd({ propertyValue: t }), '800,000', 'Current property value')}
+                {field('Current loan ($)', inputs.loanBalance, (t) => upd({ loanBalance: t }), '600,000', 'Current loan balance')}
+              </Row>
+            )}
+
+            {lvr !== null ? (
+              <View style={{ marginTop: 12 }}>
+                <Row gap={8} style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                  <AppText variant="small" weight="800">
+                    LVR {lvr.toFixed(lvr < 100 ? 1 : 0)}%
+                  </AppText>
+                  {lvrBand ? (
+                    <Badge label={humanizeEnum(lvrBand)} tone="success" />
+                  ) : (
+                    <AppText variant="tiny" color="textFaint">above tracked LVR bands</AppText>
+                  )}
+                </Row>
+                {lvrBand ? (
+                  <AppText variant="tiny" style={{ color: theme.colors.success, marginTop: 4 }}>
+                    Saved to your profile — comparisons below match your LVR band.
+                  </AppText>
+                ) : null}
+                {nextBandHint ? (
+                  <AppText variant="tiny" color="textMuted" style={{ marginTop: 4 }}>
+                    Add {formatDollars(nextBandHint.extra)} deposit to reach the ≤{nextBandHint.targetPct}% band and
+                    unlock lower-LVR rates.
+                  </AppText>
+                ) : null}
+              </View>
+            ) : (
+              <AppText variant="tiny" color="textFaint" style={{ marginTop: 10 }}>
+                {inputs.mode === 'buy'
+                  ? 'Enter the property price and your savings to calculate your LVR — we’ll save the band to your profile.'
+                  : 'Enter the property value and current loan to calculate your LVR.'}
+              </AppText>
+            )}
+
+            <Row gap={10} style={{ marginTop: 12 }}>
+              {field('Current rate (%)', inputs.currentRate, (t) => upd({ currentRate: t }), median !== null ? (median * 100).toFixed(2) : '6.00', 'Current interest rate percent')}
+              {field('Years left', inputs.years, (t) => upd({ years: t }), '25', 'Years remaining on loan', 86)}
+            </Row>
+          </>
+        ) : (
+          <>
+            <AppText variant="small" weight="700" style={{ marginBottom: 10 }}>
+              Your current balance
+            </AppText>
+            <Row gap={10}>
+              {field('Balance ($)', inputs.savingsBalance, (t) => upd({ savingsBalance: t }), '50,000', 'Balance in dollars')}
+              {field('Current rate (%)', inputs.currentRate, (t) => upd({ currentRate: t }), median !== null ? (median * 100).toFixed(2) : '4.50', 'Current interest rate percent')}
+            </Row>
+          </>
+        )}
       </Card>
+
+      {isMortgage ? (
+        <Card style={{ marginBottom: 16 }}>
+          <AppText variant="small" weight="700" style={{ marginBottom: 4 }}>
+            Your mortgage profile
+          </AppText>
+          <AppText variant="tiny" color="textFaint" style={{ marginBottom: 12 }}>
+            Tune what you’re comparing against. Your LVR band is set automatically from the figures above —
+            tap a different LVR tier to override it.
+          </AppText>
+          <ProfileEditor
+            sections={['Mortgage']}
+            value={profileFilters}
+            onChange={(next) => setPref('profileFilters', next)}
+          />
+        </Card>
+      ) : null}
 
       <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 8 }}>
         {candidates.length
@@ -179,37 +291,55 @@ export default function Calculator() {
             : 'WHAT SWITCHING COULD EARN'
           : currentRate === null
             ? 'ENTER YOUR CURRENT RATE'
-            : 'NO BETTER COMPARABLE RATES FOUND'}
+            : balance <= 0
+              ? 'ENTER YOUR LOAN DETAILS ABOVE'
+              : 'NO BETTER COMPARABLE RATES FOUND'}
       </AppText>
-      {candidates.map((c) => (
-        <Pressable key={c.row.provider} onPress={() => openProduct(c.row.product_key, c.row.rate_index)}>
-          <Card style={{ marginBottom: 10 }}>
-            <Row gap={12} style={{ alignItems: 'center' }}>
-              <BankAvatar provider={c.row.provider} size={36} />
-              <View style={{ flex: 1 }}>
-                <AppText variant="body" weight="700" numberOfLines={1}>
-                  {c.row.provider}
+      {candidates.map((c) => {
+        const access = assessAccess(c.row.product_name, details?.products?.[c.row.product_key] ?? null);
+        return (
+          <Pressable
+            key={c.row.provider}
+            onPress={() => openProduct(c.row.product_key, c.row.rate_index)}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${c.row.provider} ${c.row.product_name}, ${formatRate(c.rate)}`}
+          >
+            <Card style={{ marginBottom: 10 }}>
+              <Row gap={12} style={{ alignItems: 'center' }}>
+                <BankAvatar provider={c.row.provider} size={36} />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="body" weight="700" numberOfLines={1}>
+                    {c.row.provider}
+                  </AppText>
+                  <AppText variant="tiny" color="textMuted" numberOfLines={1}>
+                    {c.row.product_name} · {formatRate(c.rate)}
+                  </AppText>
+                  {access.badge ? (
+                    <AppText variant="tiny" weight="700" style={{ color: theme.colors.warning, marginTop: 2 }}>
+                      {access.verify ? `${access.badge}?` : access.badge}
+                    </AppText>
+                  ) : null}
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <AppText variant="body" weight="800" style={{ color: theme.colors.success }}>
+                    {formatDollars(c.perMonth)}/mo
+                  </AppText>
+                  <AppText variant="tiny" color="textFaint">
+                    {formatDollars(c.total)} {isLoan ? 'over term' : 'per year'}
+                  </AppText>
+                </View>
+                <AppText variant="body" color="textFaint" style={{ marginLeft: 2 }}>
+                  ›
                 </AppText>
-                <AppText variant="tiny" color="textMuted" numberOfLines={1}>
-                  {c.row.product_name} · {formatRate(c.rate)}
-                </AppText>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <AppText variant="body" weight="800" style={{ color: theme.colors.success }}>
-                  {formatDollars(c.perMonth)}/mo
-                </AppText>
-                <AppText variant="tiny" color="textFaint">
-                  {formatDollars(c.total)} {isLoan ? 'over term' : 'per year'}
-                </AppText>
-              </View>
-            </Row>
-          </Card>
-        </Pressable>
-      ))}
+              </Row>
+            </Card>
+          </Pressable>
+        );
+      })}
 
       <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
         Estimates use advertised CDR rates and exclude fees, bonus-rate conditions and switching
-        costs. {isLoan ? 'Repayments assume principal & interest over the years remaining.' : ''}
+        costs. {isMortgage ? 'LVR is loan ÷ property value; repayments assume principal & interest over the years remaining. Some market-leading products are restricted (staff/occupation/membership) — check each product’s eligibility.' : ''}
       </AppText>
     </ScreenScrollView>
   );

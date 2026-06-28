@@ -314,6 +314,9 @@ def build_brands(
 # RBA cash-rate series (single source of truth: dashboard/rba-cash-rate.js)
 # --------------------------------------------------------------------------- #
 _RBA_ENTRY_RE = re.compile(r"date:\s*'([0-9]{4}-[0-9]{2}-[0-9]{2})'\s*,\s*rate:\s*([0-9.]+)")
+# HOLDS is a flat array of meeting dates where the RBA left the rate unchanged.
+_RBA_HOLD_BLOCK_RE = re.compile(r"const\s+HOLDS\s*=\s*\[(.*?)\]", re.DOTALL)
+_RBA_HOLD_DATE_RE = re.compile(r"'([0-9]{4}-[0-9]{2}-[0-9]{2})'")
 
 
 def load_rba_series(dashboard_dir: Path) -> List[Dict[str, Any]]:
@@ -322,6 +325,18 @@ def load_rba_series(dashboard_dir: Path) -> List[Dict[str, Any]]:
         return []
     text = path.read_text(encoding="utf-8", errors="ignore")
     return [{"date": d, "rate": float(r)} for d, r in _RBA_ENTRY_RE.findall(text)]
+
+
+def load_rba_holds(dashboard_dir: Path) -> List[str]:
+    """RBA meeting dates that left the cash-rate target unchanged (holds)."""
+    path = dashboard_dir / "rba-cash-rate.js"
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    block = _RBA_HOLD_BLOCK_RE.search(text)
+    if not block:
+        return []
+    return _RBA_HOLD_DATE_RE.findall(block.group(1))
 
 
 # --------------------------------------------------------------------------- #
@@ -348,6 +363,29 @@ def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[
     return out
 
 
+def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
+    """Authoritative lender document URIs from CDR additionalInformation.
+
+    These are the single best source of accurate, complete, up-to-date spec
+    detail (overview / eligibility / fees / terms), so the app can link straight
+    to the lender's own pages — especially the eligibility page, which carries
+    staff/occupation/membership criteria that the structured eligibility array
+    frequently omits.
+    """
+    info = record.get("additionalInformation")
+    if not isinstance(info, dict):
+        return {}
+    return compact(
+        {
+            "overview": info.get("overviewUri"),
+            "eligibility": info.get("eligibilityUri"),
+            "fees": info.get("feesAndPricingUri"),
+            "terms": info.get("termsUri"),
+            "bundle": info.get("bundleUri"),
+        }
+    )
+
+
 def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     details: Dict[str, Dict[str, Any]] = {}
     for product in products:
@@ -369,6 +407,7 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "features": _detail_items(record, "features", "featureType"),
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
+                "links": _detail_links(record),
             }
         )
         details[key] = entry
@@ -583,6 +622,7 @@ def build_payload(
         "sections": sections,
         "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
         "rba": load_rba_series(dashboard_dir),
+        "rba_holds": load_rba_holds(dashboard_dir),
     }
     details = {
         "schema_version": SCHEMA_VERSION,

@@ -43,6 +43,7 @@ import type { ProductHistoryPayload } from './productHistory';
 import { normalizeProductHistoryPayload, syncProductHistoryFromDailyPayloads } from './productHistory';
 import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
 import { EMPTY_PROFILE, normalizeProfileFilters, type ProfileFilters } from './profile';
+import { EMPTY_CALC, normalizeCalcInputs, type CalcInputs } from './calc';
 import { shouldWarmDetails } from './optionalPrefs';
 import {
   downloadBankInsights,
@@ -86,6 +87,8 @@ export interface Prefs {
   appLockEnabled: boolean;
   /** Saved product profile — default filters applied across the app. */
   profileFilters: ProfileFilters;
+  /** Persisted mortgage/savings calculator inputs (so the calc remembers your situation). */
+  calc: CalcInputs;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -104,6 +107,7 @@ export const DEFAULT_PREFS: Prefs = {
   dismissedUpdateBuild: null,
   appLockEnabled: false,
   profileFilters: { ...EMPTY_PROFILE },
+  calc: { ...EMPTY_CALC },
 };
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error';
@@ -148,11 +152,13 @@ interface AppState {
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
-  ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
-  ensureSearchIndex: () => Promise<void>;
-  ensureHistoryBanks: (opts?: { force?: boolean }) => Promise<void>;
-  ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
-  ensureProductHistory: (opts?: { force?: boolean }) => Promise<void>;
+  ensureDetails: (opts?: { forProductView?: boolean; prefetch?: boolean }) => Promise<void>;
+  ensureSearchIndex: (opts?: { prefetch?: boolean }) => Promise<void>;
+  ensureHistoryBanks: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
+  ensureBankInsights: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
+  ensureProductHistory: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
+  /** Eagerly download + cache every optional asset, bypassing pref/Pro gates (no lazy loading). */
+  prefetchAllAssets: () => Promise<void>;
   retryHistoryBanks: () => Promise<void>;
   retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
@@ -258,14 +264,22 @@ export const useStore = create<AppState>()(
         }
 
         try {
-          const prefs = get().prefs;
           const bundle = await cache.readBundle();
-          const [cachedSearch, cachedHistory] = await Promise.all([
-            effectiveDeepSearch(prefs) ? cache.readSearchIndex() : Promise.resolve(null),
-            effectiveHistoryRibbon(prefs) ? readValidatedHistoryBanks() : Promise.resolve(null),
-          ]);
+          // No lazy loading: pull EVERY cached asset into memory on cold launch so
+          // navigating to any screen renders instantly from cache (prefetch keeps
+          // them current). Gates only decide what the UI shows, not what we cache.
+          const [cachedSearch, cachedHistory, cachedDetails, cachedInsights, cachedProductHistory] =
+            await Promise.all([
+              cache.readSearchIndex(),
+              readValidatedHistoryBanks(),
+              cache.readDetails(),
+              cache.readBankInsights().then(normalizeBankInsightsPayload),
+              cache.readProductHistory().then(normalizeProductHistoryPayload),
+            ]);
           if (bundle) {
             debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
+            const coreRunDate = bundle.core.run_date;
+            const detailsFresh = cachedDetails && cachedDetails.run_date === coreRunDate;
             set({
               core: bundle.core,
               manifest: bundle.meta.manifest,
@@ -274,6 +288,9 @@ export const useStore = create<AppState>()(
               error: null,
               ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
               ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
+              ...(detailsFresh ? { details: cachedDetails } : {}),
+              ...(cachedInsights ? { bankInsights: cachedInsights } : {}),
+              ...(cachedProductHistory ? { productHistory: cachedProductHistory } : {}),
             });
           } else {
             debugLog.info('store', 'cache miss — seeding bundled sample');
@@ -358,10 +375,11 @@ export const useStore = create<AppState>()(
             await get().ensureDetails();
           }
         };
+        // No lazy loading: after every refresh, eagerly prefetch + cache every
+        // optional asset in the background (gates bypassed) so no screen ever has
+        // to download on navigation.
         const warmOptionalAssets = () => {
-          const p = get().prefs;
-          if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
-          if (effectiveBankInsights(p)) void get().ensureBankInsights();
+          void get().prefetchAllAssets();
         };
         if (get().refreshing) { logStoreRefreshSkipped('already_refreshing'); return false; }
         const prefs = get().prefs;
@@ -494,10 +512,10 @@ export const useStore = create<AppState>()(
       },
 
       async ensureDetails(opts = {}) {
-        const { forProductView = false } = opts;
+        const { forProductView = false, prefetch = false } = opts;
         const { details, core, manifest, source, detailsLoading, prefs, subscriptions } = get();
         if (!core || detailsLoading) return;
-        if (!forProductView && !shouldWarmDetails(prefs, subscriptions)) return;
+        if (!forProductView && !prefetch && !shouldWarmDetails(prefs, subscriptions)) return;
 
         // Details are fresh only when run_date AND the manifest's details sha match.
         const wantSha = manifest?.files.details.sha256 ?? null;
@@ -576,17 +594,20 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async ensureSearchIndex() {
-        if (!effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
+      async ensureSearchIndex(opts = {}) {
+        const { prefetch = false } = opts;
+        if (!prefetch && !effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
         const { core, manifest, source, searchIndex } = get();
         if (!core || !manifest?.files.search_index) return;
         const asset = manifest.files.search_index;
-        const meta = await cache.readMeta();
-        if (searchIndex && searchIndex.run_date === core.run_date && meta?.searchIndexSha === asset.sha256) {
+        const coreSha = manifest.files.core.sha256;
+        const meta = await cache.readOptionalMeta();
+        const shaFresh = meta?.coreSha === coreSha && meta?.searchIndexSha === asset.sha256;
+        if (searchIndex && searchIndex.run_date === core.run_date && shaFresh) {
           return;
         }
         const cached = await cache.readSearchIndex();
-        if (cached && cached.run_date === core.run_date && meta?.searchIndexSha === asset.sha256) {
+        if (cached && cached.run_date === core.run_date && shaFresh) {
           set({ searchIndex: cached });
           return;
         }
@@ -594,13 +615,7 @@ export const useStore = create<AppState>()(
         try {
           const { text, searchIndex: fresh } = await downloadSearchIndex(asset.url, asset.sha256);
           await cache.writeSearchIndex(text);
-          await cache.updateMeta({
-            manifest,
-            source: 'remote',
-            savedAt: new Date().toISOString(),
-            coreSha: manifest.files.core.sha256,
-            searchIndexSha: asset.sha256,
-          });
+          await cache.writeOptionalMeta({ coreSha, searchIndexSha: asset.sha256 });
           set({ searchIndex: fresh });
         } catch (err) {
           const msg = String((err as Error)?.message ?? err);
@@ -610,8 +625,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureHistoryBanks(opts = {}) {
-        const { force = false } = opts;
-        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
+        const { force = false, prefetch = false } = opts;
+        if (!prefetch && !effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
         if (force) set({ historyBanksError: null });
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
@@ -624,19 +639,15 @@ export const useStore = create<AppState>()(
           return;
         }
 
-        const meta = await cache.readMeta();
+        const coreSha = manifest.files.core.sha256;
+        const meta = await cache.readOptionalMeta();
+        const shaMatches = (sha?: string) => meta?.coreSha === coreSha && meta?.historyBanksSha === sha;
         const cached = historyBanks ?? (await readValidatedHistoryBanks());
 
         const installHistory = async (validated: HistoryBanksPayload, sha: string) => {
           const text = JSON.stringify(validated);
           await cache.writeHistoryBanks(text);
-          await cache.updateMeta({
-            manifest,
-            source: 'remote',
-            savedAt: new Date().toISOString(),
-            coreSha: manifest.files.core.sha256,
-            historyBanksSha: sha,
-          });
+          await cache.writeOptionalMeta({ coreSha, historyBanksSha: sha });
           set({ historyBanks: validated, historyBanksError: null });
           debugLog.info(
             'store',
@@ -646,12 +657,7 @@ export const useStore = create<AppState>()(
 
         const compactAsset = manifest.files.history_banks;
         if (compactAsset) {
-          if (
-            !force &&
-            cached &&
-            cached.run_date === core.run_date &&
-            meta?.historyBanksSha === compactAsset.sha256
-          ) {
+          if (!force && cached && cached.run_date === core.run_date && shaMatches(compactAsset.sha256)) {
             set({ historyBanks: cached, historyBanksError: null });
             return;
           }
@@ -705,12 +711,7 @@ export const useStore = create<AppState>()(
           return;
         }
 
-        if (
-          !force &&
-          cached &&
-          cached.run_date === core.run_date &&
-          meta?.historyBanksSha === asset.sha256
-        ) {
+        if (!force && cached && cached.run_date === core.run_date && shaMatches(asset.sha256)) {
           set({ historyBanks: cached, historyBanksError: null });
           return;
         }
@@ -732,8 +733,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureBankInsights(opts = {}) {
-        const { force = false } = opts;
-        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
+        const { force = false, prefetch = false } = opts;
+        if (!prefetch && !effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
         if (source !== 'remote' || !manifest) {
@@ -747,9 +748,10 @@ export const useStore = create<AppState>()(
           return;
         }
         if (force) set({ bankInsightsError: null });
-        const meta = await cache.readMeta();
+        const coreSha = manifest.files.core.sha256;
+        const meta = await cache.readOptionalMeta();
         const fresh = (p: BankInsightsPayload | null | undefined) =>
-          !!p && p.run_date === core.run_date && meta?.bankInsightsSha === asset.sha256;
+          !!p && p.run_date === core.run_date && meta?.coreSha === coreSha && meta?.bankInsightsSha === asset.sha256;
         if (!force && fresh(bankInsights)) {
           set({ bankInsightsError: null });
           return;
@@ -762,13 +764,7 @@ export const useStore = create<AppState>()(
         try {
           const { bankInsights: downloaded } = await downloadBankInsights(asset.url, asset.sha256);
           await cache.writeBankInsights(JSON.stringify(downloaded));
-          await cache.updateMeta({
-            manifest,
-            source: 'remote',
-            savedAt: new Date().toISOString(),
-            coreSha: manifest.files.core.sha256,
-            bankInsightsSha: asset.sha256,
-          });
+          await cache.writeOptionalMeta({ coreSha, bankInsightsSha: asset.sha256 });
           set({ bankInsights: downloaded, bankInsightsError: null });
           debugLog.info(
             'store',
@@ -804,8 +800,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureProductHistory(opts = {}) {
-        const { force = false } = opts;
-        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
+        const { force = false, prefetch = false } = opts;
+        if (!prefetch && !effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
         if (force) set({ productHistoryError: null });
         const { core, manifest, source, productHistory } = get();
         if (!core) return;
@@ -849,6 +845,19 @@ export const useStore = create<AppState>()(
           if (!revisionIsCurrent()) return;
           set({ productHistory: cached ?? null, productHistoryError: msg });
         }
+      },
+
+      async prefetchAllAssets() {
+        if (!get().core) return;
+        // Fire every asset loader at once with gates bypassed. Each is independently
+        // cached + freshness-checked, so this no-ops cheaply once everything is current.
+        await Promise.allSettled([
+          get().ensureDetails({ prefetch: true }),
+          get().ensureSearchIndex({ prefetch: true }),
+          get().ensureHistoryBanks({ prefetch: true }),
+          get().ensureBankInsights({ prefetch: true }),
+          get().ensureProductHistory({ prefetch: true }),
+        ]);
       },
 
       getDetail(productKey: string) {
@@ -1012,6 +1021,7 @@ export const useStore = create<AppState>()(
           ...p?.prefs,
           interests: normalizeInterests(p?.prefs?.interests ?? DEFAULT_INTERESTS),
           profileFilters: normalizeProfileFilters(p?.prefs?.profileFilters),
+          calc: normalizeCalcInputs(p?.prefs?.calc),
         };
         const persistedActiveSection = p?.activeSection;
         const isValidActiveSection =

@@ -4,6 +4,7 @@ import {
   historyDatesInWindow,
   normalizeTimelineDates,
   rbaChangesInWindow,
+  rbaHoldsInWindow,
   rbaRateAsOf,
   rbaStepForDates,
   sanitizeRibbonPoint,
@@ -92,6 +93,23 @@ describe('bankHistoryTransform', () => {
     expect(marks[0].bp).toBe(25);
     expect(rbaChangesInWindow(['2026-06-01', '2026-06-15'], rba)).toHaveLength(1);
     expect(rbaChangesInWindow(['2026-06-01', '2026-06-15'], rba, false)).toEqual([]);
+  });
+
+  it('maps RBA hold decisions to in-window timeline marks at the held rate', () => {
+    const rba: RbaEntry[] = [
+      { date: '2026-03-01', rate: 4.25 },
+      { date: '2026-05-01', rate: 4.5 },
+    ];
+    const dates = ['2026-05-13', '2026-06-01', '2026-06-20'];
+    // 2026-06-16 hold falls in-window and snaps forward to the next plotted run.
+    const marks = rbaHoldsInWindow(dates, ['2026-06-16'], rba);
+    expect(marks).toHaveLength(1);
+    expect(marks[0].snap).toBe('2026-06-20');
+    expect(marks[0].rate).toBeCloseTo(0.045); // held at 4.50% as a fraction
+    // Out-of-window holds and empty/absent inputs yield nothing.
+    expect(rbaHoldsInWindow(dates, ['2026-12-08'], rba)).toEqual([]);
+    expect(rbaHoldsInWindow(dates, undefined, rba)).toEqual([]);
+    expect(rbaHoldsInWindow(dates, ['2026-06-16'], [])).toEqual([]);
   });
 
   it('chartYDomain includes median points and extra (highlight) values', () => {

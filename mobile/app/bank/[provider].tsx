@@ -114,6 +114,7 @@ export default function BankDetail() {
                   points={chartModel.points}
                   allDates={chartModel.allDates}
                   rba={core.rba}
+                  rbaHolds={core.rba_holds}
                   section={activeChartSection}
                   height={200}
                 />

@@ -376,9 +376,11 @@
     }
     const ctx = rbaContext || {};
     const rbaChanges = ctx.changes || [];
+    const rbaHolds = ctx.holds || [];
     const rbaStep = ctx.step || [];
     const rbaColor = ctx.color || '#eab308';
     const rbaToday = rbaChanges.filter((c) => c.snap === anchor);
+    const rbaHeldToday = rbaHolds.filter((h) => h.snap === anchor);
     if (rbaToday.length) {
       rbaToday.forEach((c) => {
         const prior = c.priorRate != null ? c.priorRate.toFixed(2) + '%' : emDash;
@@ -387,6 +389,14 @@
         rows.push({
           label: 'RBA ' + c.date,
           value: prior + ' ' + arrow + ' ' + c.rate.toFixed(2) + '%',
+          color: rbaColor,
+        });
+      });
+    } else if (rbaHeldToday.length) {
+      rbaHeldToday.forEach((h) => {
+        rows.push({
+          label: 'RBA ' + h.date,
+          value: 'held at ' + Number(h.rate).toFixed(2) + '%',
           color: rbaColor,
         });
       });
@@ -445,6 +455,30 @@
         }
       }
       return { ...change, snap };
+    });
+  }
+
+  /** Snap RBA hold decisions (rate left unchanged) to plotted run-dates. */
+  function rbaHoldData(dates) {
+    const api = window.AR && window.AR.rbaCashRate;
+    if (!api || typeof api.holdsWithinWindow !== 'function' || !dates.length) return [];
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    const holds = (api.holdsWithinWindow(first, last) || []).filter(
+      (hold) => hold && Number.isFinite(Number(hold.rate)),
+    );
+    if (!holds.length) return [];
+    const dateSet = {};
+    dates.forEach((d) => { dateSet[d] = true; });
+    return holds.map((hold) => {
+      let snap = hold.date;
+      if (!dateSet[snap]) {
+        for (let i = 0; i < dates.length; i += 1) {
+          if (dates[i] >= hold.date) { snap = dates[i]; break; }
+          snap = dates[i];
+        }
+      }
+      return { date: hold.date, snap: snap, rate: Number(hold.rate) };
     });
   }
 
@@ -542,6 +576,7 @@
     const rbaColor = '#f59e0b';
     const rbaChanges = rbaMarkData(dates);
     const rbaMarkPairs = buildRbaChangeMarkAreaPairs(dates, rbaChanges);
+    const rbaHolds = rbaHoldData(dates);
     const rbaStep = rbaStepData(dates);
     const bandYMin = minData.reduce((acc, v) => {
       if (v == null || !Number.isFinite(v)) return acc;
@@ -560,7 +595,27 @@
         itemStyle: { color: rbaColor },
         tooltip: { show: false },
         emphasis: { disabled: true },
-        z: 1,
+        // Hollow diamonds where the RBA met and LEFT the rate unchanged, so a flat
+        // stretch of the step line reads as "actively held" rather than "no meeting".
+        markPoint: rbaHolds.length ? {
+          silent: true,
+          symbol: 'diamond',
+          symbolSize: 9,
+          itemStyle: { color: 'transparent', borderColor: rbaColor, borderWidth: 1.5 },
+          label: {
+            show: true,
+            position: 'top',
+            distance: 5,
+            formatter: 'held',
+            fontSize: 9,
+            fontWeight: 600,
+            color: rbaColor,
+            textBorderColor: 'rgba(15,23,42,0.7)',
+            textBorderWidth: 2,
+          },
+          data: rbaHolds.map((h) => ({ coord: [h.snap, h.rate / 100] })),
+        } : undefined,
+        z: 6,
       },
       // Min as transparent base for stacked area fill.
       {
@@ -743,6 +798,7 @@
       notifyHoverDate(anchor);
       syncReportHoverBox(hoverBox, anchor, dates, points, t, {
         changes: rbaChanges,
+        holds: rbaHolds,
         step: rbaStep,
         color: rbaColor,
       }, hoverHeading);
