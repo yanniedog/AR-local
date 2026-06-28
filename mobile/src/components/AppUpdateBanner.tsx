@@ -73,9 +73,11 @@ export function AppUpdateBanner({ remote, onDismiss }: { remote: ApkManifest; on
         Update available — v{remote.version}
       </AppText>
       <Pressable
-        onPress={() => router.navigate('/settings')}
+        onPress={() =>
+          router.navigate({ pathname: '/settings', params: { focus: 'update', t: String(Date.now()) } })
+        }
         accessibilityRole="button"
-        accessibilityLabel="Open settings to install the update"
+        accessibilityLabel="Open settings and jump to the update section"
         hitSlop={8}
       >
         <AppText variant="small" weight="800" style={{ color: theme.colors.primary }}>
