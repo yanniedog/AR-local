@@ -387,6 +387,11 @@ export const useStore = create<AppState>()(
           const p = get().prefs;
           if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
           if (effectiveBankInsights(p)) void get().ensureBankInsights();
+          // Keep the small precomputed compact history asset warm for users who
+          // have the ribbon on, so a new run is cached for offline use. This is the
+          // cheap compact path; the heavy on-device dated-core build
+          // (ensureProductHistory) is deliberately NOT warmed here.
+          if (effectiveHistoryRibbon(p)) void get().ensureHistoryBanks();
           void get().ensureRbaCalendar();
         };
         if (get().refreshing) { logStoreRefreshSkipped('already_refreshing'); return false; }
