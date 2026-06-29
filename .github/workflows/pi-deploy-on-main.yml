@@ -113,7 +113,7 @@ jobs:
         if: steps.secrets.outputs.configured != 'true'
         run: |
           echo "pi-deploy-on-main: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
-          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~15 minutes."
+          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~5 minutes."
 
       - name: Skip deploy (Tailscale OAuth missing for hosted runner)
         if: >-

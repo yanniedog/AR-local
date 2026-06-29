@@ -2,8 +2,8 @@
 Description=Periodic AR-local Pi deploy verification
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=15min
+OnBootSec=2min
+OnUnitActiveSec=5min
 Persistent=true
 
 [Install]
