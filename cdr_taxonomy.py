@@ -361,6 +361,42 @@ _RESTRICTED_NAME_COHORT_RE = re.compile(
 # products that merely require "employed/PAYG income".
 _RESTRICTED_ELIGIBILITY_TYPES: frozenset[str] = frozenset({"STAFF"})
 
+# Employer/occupation-restricted memberships in CDR eligibility free-text: the
+# product is open only to a closed group the public cannot join (e.g. "team
+# members of Woolworths", "employees of the Australian education sector", "only
+# available to current serving Border Officers", "ADF members", products tied to
+# an "eligible employer"). Scanned ONLY in eligibility text and suppressed when
+# the product also offers an open membership path (see _OPEN_MEMBERSHIP_RE), so
+# ordinary credit unions/mutuals with open membership stay standard. Deliberately
+# narrow: "member of the credit union" / "PAYG employee" / "personal members" do
+# NOT match (those are open or merely require having a job).
+_RESTRICTED_MEMBERSHIP_RE = re.compile(
+    r"\b(?:employees|team\s+members)\s+of\s+(?:the\s+)?[a-z]"
+    r"|\bonly\s+available\s+to\s+[\w\s-]{0,40}?(?:officers?|personnel)\b"
+    r"|\beligible\s+employer\b"
+    r"|\bADF\s+members?\b",
+    re.IGNORECASE,
+)
+
+# Open MEMBERSHIP framing — an explicit statement that the public can join,
+# checked PER eligibility item. This must NOT match a bare residency row (even one
+# phrased "Open to Australian citizens or permanent residents"), which is just a
+# residency requirement, not a membership alternative — otherwise a closed
+# employer/occupation product carrying a normal RESIDENCY_STATUS row would leak
+# through suppression. We therefore require membership-join context: "membership
+# is open to … residents/citizens/public", an "or to … residents/citizens"
+# alternative, "open to all/everyone/the public", "anyone can join", or "do not
+# have to be a member".
+_OPEN_MEMBERSHIP_RE = re.compile(
+    r"do\s+not\s+have\s+to\s+be\s+a\s+member"
+    r"|anyone\s+(?:can|may|is\s+welcome\s+to)\s+(?:join|become|apply)"
+    r"|member(?:ship)?\s+is\s+open\s+to[^.;\n]*?"
+    r"(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia|the\s+(?:general\s+)?public|anyone|everyone)"
+    r"|\bor\s+to\s+(?:any\s+|all\s+)?(?:australian\s+)?(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia)"
+    r"|open\s+to\s+(?:all\b|everyone\b|anyone\b|the\s+(?:general\s+)?public)",
+    re.IGNORECASE,
+)
+
 # CDR eligibility can state who is excluded as well as who qualifies. A cohort token
 # after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
 # flip an otherwise standard product to non_standard.
@@ -431,9 +467,9 @@ def _eligibility_item_text(item: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _eligibility_restricted_cohort(text: str) -> bool:
+def _eligibility_restricted_cohort(text: str, pattern: re.Pattern[str] = _RESTRICTED_COHORT_RE) -> bool:
     """True when eligibility text requires a restricted cohort (not merely excludes one)."""
-    for match in _RESTRICTED_COHORT_RE.finditer(text):
+    for match in pattern.finditer(text):
         clause_start, clause_end = _clause_bounds(text, match.start(), match.end())
         clause = text[clause_start:clause_end]
         rel_start = match.start() - clause_start
@@ -488,13 +524,26 @@ def classify_account_standardness(
     if _RESTRICTED_COHORT_RE.search(name) or _RESTRICTED_NAME_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     if eligibility and isinstance(eligibility, (list, tuple)):
-        for item in eligibility:
-            if isinstance(item, Mapping):
-                etype = str(item.get("eligibilityType") or "").strip().upper()
-                if etype in _RESTRICTED_ELIGIBILITY_TYPES:
-                    return ACCOUNT_CLASS_NON_STANDARD
+        items = [item for item in eligibility if isinstance(item, Mapping)]
+        for item in items:
+            etype = str(item.get("eligibilityType") or "").strip().upper()
+            if etype in _RESTRICTED_ELIGIBILITY_TYPES:
+                return ACCOUNT_CLASS_NON_STANDARD
+            item_text = _eligibility_item_text(item)
+            if item_text and _eligibility_restricted_cohort(item_text):
+                return ACCOUNT_CLASS_NON_STANDARD
+        # Employer/occupation-restricted membership (e.g. "team members of
+        # Woolworths", "employees of the education sector", "serving Border
+        # Officers") — only when no eligibility item offers an open membership
+        # path. The open check is PER ITEM (not the concatenated text) so a closed
+        # cohort row plus a separate residency row can't be mistaken for open.
+        has_open_path = any(
+            _OPEN_MEMBERSHIP_RE.search(_eligibility_item_text(item)) for item in items
+        )
+        if not has_open_path:
+            for item in items:
                 item_text = _eligibility_item_text(item)
-                if item_text and _eligibility_restricted_cohort(item_text):
+                if item_text and _eligibility_restricted_cohort(item_text, _RESTRICTED_MEMBERSHIP_RE):
                     return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
