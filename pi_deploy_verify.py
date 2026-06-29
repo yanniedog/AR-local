@@ -475,19 +475,23 @@ def deploy_services(*, dry_run: bool = False) -> int:
     install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     daily_timer_src = f"{ar_repo}/deploy/pi/ar-local-daily.timer"
     watchdog_timer_src = f"{ar_repo}/deploy/pi/ar-local-daily-watchdog.timer"
+    deploy_watchdog_timer_src = f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.timer"
     script = (
         f"sudo mkdir -p {shell_quote(data)}/runs {shell_quote(data)}/state && "
         f"sudo chown -R $(id -un):$(id -gn) {shell_quote(data)} && "
         "sudo systemctl restart ar-local-dashboard.service && "
         # Sync the verbatim (non-templated) timer units so schedule changes in the
-        # repo (e.g. ar-local-daily.timer OnCalendar) actually land on the Pi.
+        # repo (e.g. ar-local-daily.timer OnCalendar, deploy-watchdog poll interval)
+        # actually land on the Pi via --deploy too, not just install-pi-systemd.sh.
         # .service units are templated by install-pi-systemd.sh and are intentionally
         # not copied here; run that installer for service-unit changes.
         f"sudo install -m 0644 {shell_quote(daily_timer_src)} /etc/systemd/system/ar-local-daily.timer && "
         f"sudo install -m 0644 {shell_quote(watchdog_timer_src)} /etc/systemd/system/ar-local-daily-watchdog.timer && "
+        f"sudo install -m 0644 {shell_quote(deploy_watchdog_timer_src)} /etc/systemd/system/ar-local-deploy-watchdog.timer && "
         "sudo systemctl daemon-reload && "
         "(sudo systemctl restart ar-local-daily.timer || true) && "
         "(sudo systemctl restart ar-local-daily-watchdog.timer || true) && "
+        "(sudo systemctl restart ar-local-deploy-watchdog.timer || true) && "
         "("
         "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
         "sudo nginx -t && sudo systemctl reload-or-restart nginx; "
