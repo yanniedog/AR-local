@@ -215,29 +215,28 @@ describe('optional feature prefs', () => {
     expect(mockDownloadSearchIndex).not.toHaveBeenCalled();
   });
 
-  it('prefetchAllAssets downloads optional assets even with Pro/prefs off (no lazy loading)', async () => {
+  it('ensureProductHistory stays gated off by default (no eager dated-core fan-out)', async () => {
     store.setState({ prefs: { ...DEFAULT_PREFS }, source: 'remote', manifest: remoteManifest, core: remoteCore });
-    // Sidecar (delegates to readMeta) carries no optional shas → everything is stale.
-    mockReadMeta.mockResolvedValue({
-      manifest: remoteManifest,
+    await store.getState().ensureProductHistory();
+    // Default prefs (Pro/history off) must not trigger the on-device history build.
+    expect(mockSyncProductHistoryFromDailyPayloads).not.toHaveBeenCalled();
+  });
+
+  it('ensureProductHistory runs the on-device build when history is enabled', async () => {
+    store.setState({
+      prefs: historyRibbonPrefs,
       source: 'remote',
-      savedAt: '2026-06-09T00:00:00Z',
-      coreSha: remoteManifest.files.core.sha256,
-      detailsSha: null,
+      manifest: remoteManifest,
+      core: remoteCore,
     });
-    mockDownloadSearchIndex.mockResolvedValue({
-      text: '{}',
-      searchIndex: { schema_version: 1, run_date: remoteCore.run_date, products: {} },
+    mockSyncProductHistoryFromDailyPayloads.mockResolvedValue({
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: [remoteCore.run_date],
+      products: {},
     });
-    mockDownloadBankInsights.mockResolvedValue({
-      bankInsights: { schema_version: 1, run_date: remoteCore.run_date, banks: {}, events: [] },
-    });
-
-    await store.getState().prefetchAllAssets();
-
-    // Gates are OFF, yet the prefetch path still fetches them (and caches them).
-    expect(mockDownloadSearchIndex).toHaveBeenCalled();
-    expect(mockDownloadBankInsights).toHaveBeenCalled();
+    await store.getState().ensureProductHistory();
+    expect(mockSyncProductHistoryFromDailyPayloads).toHaveBeenCalled();
   });
 
   it('ensureHistoryBanks downloads the compact asset before daily fallback', async () => {
