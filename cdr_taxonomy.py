@@ -361,6 +361,33 @@ _RESTRICTED_NAME_COHORT_RE = re.compile(
 # products that merely require "employed/PAYG income".
 _RESTRICTED_ELIGIBILITY_TYPES: frozenset[str] = frozenset({"STAFF"})
 
+# Employer/occupation-restricted memberships in CDR eligibility free-text: the
+# product is open only to a closed group the public cannot join (e.g. "team
+# members of Woolworths", "employees of the Australian education sector", "only
+# available to current serving Border Officers", "ADF members", products tied to
+# an "eligible employer"). Scanned ONLY in eligibility text and suppressed when
+# the product also offers an open membership path (see _OPEN_MEMBERSHIP_RE), so
+# ordinary credit unions/mutuals with open membership stay standard. Deliberately
+# narrow: "member of the credit union" / "PAYG employee" / "personal members" do
+# NOT match (those are open or merely require having a job).
+_RESTRICTED_MEMBERSHIP_RE = re.compile(
+    r"\b(?:employees|team\s+members)\s+of\s+(?:the\s+)?[a-z]"
+    r"|\bonly\s+available\s+to\s+[a-z ]*?(?:officers?|personnel)\b"
+    r"|\beligible\s+employer\b"
+    r"|\bADF\s+members?\b",
+    re.IGNORECASE,
+)
+
+# Open membership paths — any of these in the product's eligibility means the
+# general public can join, so the employer/membership patterns must not flag it.
+_OPEN_MEMBERSHIP_RE = re.compile(
+    r"residents?\s+of\s+australia|residential\s+address\s+in\s+australia"
+    r"|citizens?\s+(?:or|and)\s+permanent\s+residents?"
+    r"|do\s+not\s+have\s+to\s+be\s+a\s+member"
+    r"|anyone\s+(?:can|may)\s+(?:join|become|apply)",
+    re.IGNORECASE,
+)
+
 # CDR eligibility can state who is excluded as well as who qualifies. A cohort token
 # after exclusion/negation wording (e.g. "not available to SMSF borrowers") must not
 # flip an otherwise standard product to non_standard.
@@ -431,9 +458,9 @@ def _eligibility_item_text(item: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _eligibility_restricted_cohort(text: str) -> bool:
+def _eligibility_restricted_cohort(text: str, pattern: "re.Pattern[str]" = _RESTRICTED_COHORT_RE) -> bool:
     """True when eligibility text requires a restricted cohort (not merely excludes one)."""
-    for match in _RESTRICTED_COHORT_RE.finditer(text):
+    for match in pattern.finditer(text):
         clause_start, clause_end = _clause_bounds(text, match.start(), match.end())
         clause = text[clause_start:clause_end]
         rel_start = match.start() - clause_start
@@ -488,13 +515,22 @@ def classify_account_standardness(
     if _RESTRICTED_COHORT_RE.search(name) or _RESTRICTED_NAME_COHORT_RE.search(name):
         return ACCOUNT_CLASS_NON_STANDARD
     if eligibility and isinstance(eligibility, (list, tuple)):
-        for item in eligibility:
-            if isinstance(item, Mapping):
-                etype = str(item.get("eligibilityType") or "").strip().upper()
-                if etype in _RESTRICTED_ELIGIBILITY_TYPES:
-                    return ACCOUNT_CLASS_NON_STANDARD
+        items = [item for item in eligibility if isinstance(item, Mapping)]
+        for item in items:
+            etype = str(item.get("eligibilityType") or "").strip().upper()
+            if etype in _RESTRICTED_ELIGIBILITY_TYPES:
+                return ACCOUNT_CLASS_NON_STANDARD
+            item_text = _eligibility_item_text(item)
+            if item_text and _eligibility_restricted_cohort(item_text):
+                return ACCOUNT_CLASS_NON_STANDARD
+        # Employer/occupation-restricted membership (e.g. "team members of
+        # Woolworths", "employees of the education sector", "serving Border
+        # Officers") — only when no eligibility item offers an open membership
+        # path, so open-membership mutuals are not swept in.
+        if not _OPEN_MEMBERSHIP_RE.search(_eligibility_text(eligibility)):
+            for item in items:
                 item_text = _eligibility_item_text(item)
-                if item_text and _eligibility_restricted_cohort(item_text):
+                if item_text and _eligibility_restricted_cohort(item_text, _RESTRICTED_MEMBERSHIP_RE):
                     return ACCOUNT_CLASS_NON_STANDARD
     if token and token not in STANDARD_CATEGORIES:
         return ACCOUNT_CLASS_NON_STANDARD
