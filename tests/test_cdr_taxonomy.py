@@ -118,3 +118,24 @@ def test_open_membership_credit_union_stays_standard(info):
 def test_negated_employer_membership_stays_standard():
     elig = [{"eligibilityType": "OTHER", "additionalInfo": "Not available to employees of the bank"}]
     assert clf("Everyday Saver", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings", eligibility=elig) == "standard"
+
+
+def test_open_and_closed_membership_in_same_item_stays_standard():
+    # Both the employer cohort and an open path in ONE eligibility string.
+    elig = [{
+        "eligibilityType": "OTHER",
+        "additionalInfo": "Membership is open to employees of the rail industry or to citizens "
+        "or permanent residents of Australia",
+    }]
+    assert clf("Everyday Saver", "TRANS_AND_SAVINGS_ACCOUNTS", "Savings", eligibility=elig) == "standard"
+
+
+def test_bare_residency_requirement_does_not_suppress_employer_restriction():
+    # A normal RESIDENCY_STATUS row ("must be a resident of Australia") is NOT an
+    # open-membership alternative — a closed employer cohort with such a row must
+    # still be flagged (otherwise the restriction leaks).
+    elig = [
+        {"eligibilityType": "OTHER", "additionalInfo": "Membership is open to employees of the Australian education sector"},
+        {"eligibilityType": "RESIDENCY_STATUS", "additionalInfo": "Applicants must be permanent residents of Australia"},
+    ]
+    assert clf("Your Way Fixed Rate Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "non_standard"

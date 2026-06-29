@@ -372,19 +372,25 @@ _RESTRICTED_ELIGIBILITY_TYPES: frozenset[str] = frozenset({"STAFF"})
 # NOT match (those are open or merely require having a job).
 _RESTRICTED_MEMBERSHIP_RE = re.compile(
     r"\b(?:employees|team\s+members)\s+of\s+(?:the\s+)?[a-z]"
-    r"|\bonly\s+available\s+to\s+[a-z ]*?(?:officers?|personnel)\b"
+    r"|\bonly\s+available\s+to\s+[\w\s-]{0,40}?(?:officers?|personnel)\b"
     r"|\beligible\s+employer\b"
     r"|\bADF\s+members?\b",
     re.IGNORECASE,
 )
 
-# Open membership paths — any of these in the product's eligibility means the
-# general public can join, so the employer/membership patterns must not flag it.
+# Open MEMBERSHIP framing — an explicit statement that the public can join. This
+# must NOT match a bare residency *requirement* ("must be a resident of
+# Australia"), which is not an open-membership alternative: a closed
+# employer/occupation product can carry a normal RESIDENCY_STATUS row and would
+# otherwise leak through suppression. We therefore require open-membership context
+# ("open to / or to … residents/citizens/the public", "anyone can join", "do not
+# have to be a member") rather than any residency mention.
 _OPEN_MEMBERSHIP_RE = re.compile(
-    r"residents?\s+of\s+australia|residential\s+address\s+in\s+australia"
-    r"|citizens?\s+(?:or|and)\s+permanent\s+residents?"
-    r"|do\s+not\s+have\s+to\s+be\s+a\s+member"
-    r"|anyone\s+(?:can|may)\s+(?:join|become|apply)",
+    r"do\s+not\s+have\s+to\s+be\s+a\s+member"
+    r"|anyone\s+(?:can|may|is\s+welcome\s+to)\s+(?:join|become|apply)"
+    r"|open\s+to\s+(?:all\b|everyone\b|anyone\b|the\s+(?:general\s+)?public)"
+    r"|(?:open\s+to|or\s+to)\s+(?:any\s+|all\s+)?(?:australian\s+)?"
+    r"(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia)",
     re.IGNORECASE,
 )
 
@@ -458,7 +464,7 @@ def _eligibility_item_text(item: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _eligibility_restricted_cohort(text: str, pattern: "re.Pattern[str]" = _RESTRICTED_COHORT_RE) -> bool:
+def _eligibility_restricted_cohort(text: str, pattern: re.Pattern[str] = _RESTRICTED_COHORT_RE) -> bool:
     """True when eligibility text requires a restricted cohort (not merely excludes one)."""
     for match in pattern.finditer(text):
         clause_start, clause_end = _clause_bounds(text, match.start(), match.end())
