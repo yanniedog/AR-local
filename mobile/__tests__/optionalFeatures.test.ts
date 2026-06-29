@@ -222,6 +222,23 @@ describe('optional feature prefs', () => {
     expect(mockSyncProductHistoryFromDailyPayloads).not.toHaveBeenCalled();
   });
 
+  it('ensureProductHistory runs the on-device build when history is enabled', async () => {
+    store.setState({
+      prefs: historyRibbonPrefs,
+      source: 'remote',
+      manifest: remoteManifest,
+      core: remoteCore,
+    });
+    mockSyncProductHistoryFromDailyPayloads.mockResolvedValue({
+      schema_version: 1,
+      run_date: remoteCore.run_date,
+      run_dates: [remoteCore.run_date],
+      products: {},
+    });
+    await store.getState().ensureProductHistory();
+    expect(mockSyncProductHistoryFromDailyPayloads).toHaveBeenCalled();
+  });
+
   it('ensureHistoryBanks downloads the compact asset before daily fallback', async () => {
     const infoSpy = jest.spyOn(debugLog, 'info').mockImplementation(() => {});
     store.setState({
