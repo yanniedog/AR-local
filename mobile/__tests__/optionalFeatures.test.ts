@@ -215,29 +215,11 @@ describe('optional feature prefs', () => {
     expect(mockDownloadSearchIndex).not.toHaveBeenCalled();
   });
 
-  it('prefetchAllAssets downloads optional assets even with Pro/prefs off (no lazy loading)', async () => {
+  it('ensureProductHistory stays gated off by default (no eager dated-core fan-out)', async () => {
     store.setState({ prefs: { ...DEFAULT_PREFS }, source: 'remote', manifest: remoteManifest, core: remoteCore });
-    // Sidecar (delegates to readMeta) carries no optional shas → everything is stale.
-    mockReadMeta.mockResolvedValue({
-      manifest: remoteManifest,
-      source: 'remote',
-      savedAt: '2026-06-09T00:00:00Z',
-      coreSha: remoteManifest.files.core.sha256,
-      detailsSha: null,
-    });
-    mockDownloadSearchIndex.mockResolvedValue({
-      text: '{}',
-      searchIndex: { schema_version: 1, run_date: remoteCore.run_date, products: {} },
-    });
-    mockDownloadBankInsights.mockResolvedValue({
-      bankInsights: { schema_version: 1, run_date: remoteCore.run_date, banks: {}, events: [] },
-    });
-
-    await store.getState().prefetchAllAssets();
-
-    // Gates are OFF, yet the prefetch path still fetches them (and caches them).
-    expect(mockDownloadSearchIndex).toHaveBeenCalled();
-    expect(mockDownloadBankInsights).toHaveBeenCalled();
+    await store.getState().ensureProductHistory();
+    // Default prefs (Pro/history off) must not trigger the on-device history build.
+    expect(mockSyncProductHistoryFromDailyPayloads).not.toHaveBeenCalled();
   });
 
   it('ensureHistoryBanks downloads the compact asset before daily fallback', async () => {

@@ -158,14 +158,12 @@ interface AppState {
   /** Load core/manifest from disk cache if not already in memory (used by the headless task). */
   ensureCoreLoaded: () => Promise<void>;
   refresh: (opts?: { force?: boolean; manual?: boolean }) => Promise<boolean>;
-  ensureDetails: (opts?: { forProductView?: boolean; prefetch?: boolean }) => Promise<void>;
-  ensureSearchIndex: (opts?: { prefetch?: boolean }) => Promise<void>;
-  ensureHistoryBanks: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
-  ensureBankInsights: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
+  ensureDetails: (opts?: { forProductView?: boolean }) => Promise<void>;
+  ensureSearchIndex: () => Promise<void>;
+  ensureHistoryBanks: (opts?: { force?: boolean }) => Promise<void>;
+  ensureBankInsights: (opts?: { force?: boolean }) => Promise<void>;
   ensureRbaCalendar: () => Promise<void>;
-  ensureProductHistory: (opts?: { force?: boolean; prefetch?: boolean }) => Promise<void>;
-  /** Eagerly download + cache every optional asset, bypassing pref/Pro gates (no lazy loading). */
-  prefetchAllAssets: () => Promise<void>;
+  ensureProductHistory: (opts?: { force?: boolean }) => Promise<void>;
   retryHistoryBanks: () => Promise<void>;
   retryBankInsights: () => Promise<void>;
   getDetail: (productKey: string) => ProductDetail | null;
@@ -274,22 +272,19 @@ export const useStore = create<AppState>()(
         }
 
         try {
+          const prefs = get().prefs;
           const bundle = await cache.readBundle();
-          // No lazy loading: pull EVERY cached asset into memory on cold launch so
-          // navigating to any screen renders instantly from cache (prefetch keeps
-          // them current). Gates only decide what the UI shows, not what we cache.
-          const [cachedSearch, cachedHistory, cachedDetails, cachedInsights, cachedProductHistory] =
-            await Promise.all([
-              cache.readSearchIndex(),
-              readValidatedHistoryBanks(),
-              cache.readDetails(),
-              cache.readBankInsights().then(normalizeBankInsightsPayload),
-              cache.readProductHistory().then(normalizeProductHistoryPayload),
-            ]);
+          // Cold launch loads only the core into memory, plus the small optional
+          // assets the user has actually enabled. Heavy assets (details,
+          // bank-insights, and especially the on-device product-history built from
+          // dated cores) are loaded lazily on the screens that need them — parsing
+          // them eagerly here froze the JS thread and made every tap lag.
+          const [cachedSearch, cachedHistory] = await Promise.all([
+            effectiveDeepSearch(prefs) ? cache.readSearchIndex() : Promise.resolve(null),
+            effectiveHistoryRibbon(prefs) ? readValidatedHistoryBanks() : Promise.resolve(null),
+          ]);
           if (bundle) {
             debugLog.info('store', `cache hit run_date=${bundle.core.run_date} source=${bundle.meta.source}`);
-            const coreRunDate = bundle.core.run_date;
-            const detailsFresh = cachedDetails && cachedDetails.run_date === coreRunDate;
             set({
               core: bundle.core,
               manifest: bundle.meta.manifest,
@@ -298,9 +293,6 @@ export const useStore = create<AppState>()(
               error: null,
               ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
               ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
-              ...(detailsFresh ? { details: cachedDetails } : {}),
-              ...(cachedInsights ? { bankInsights: cachedInsights } : {}),
-              ...(cachedProductHistory ? { productHistory: cachedProductHistory } : {}),
             });
           } else {
             debugLog.info('store', 'cache miss — seeding bundled sample');
@@ -388,11 +380,14 @@ export const useStore = create<AppState>()(
             await get().ensureDetails();
           }
         };
-        // No lazy loading: after every refresh, eagerly prefetch + cache every
-        // optional asset in the background (gates bypassed) so no screen ever has
-        // to download on navigation.
+        // Warm only the small, enabled optional assets in the background. Heavy
+        // assets stay lazy (loaded by their screens) so refresh never blocks the
+        // UI thread parsing multi-MB payloads or fanning out over dated cores.
         const warmOptionalAssets = () => {
-          void get().prefetchAllAssets();
+          const p = get().prefs;
+          if (effectiveDeepSearch(p)) void get().ensureSearchIndex();
+          if (effectiveBankInsights(p)) void get().ensureBankInsights();
+          void get().ensureRbaCalendar();
         };
         if (get().refreshing) { logStoreRefreshSkipped('already_refreshing'); return false; }
         const prefs = get().prefs;
@@ -525,10 +520,10 @@ export const useStore = create<AppState>()(
       },
 
       async ensureDetails(opts = {}) {
-        const { forProductView = false, prefetch = false } = opts;
+        const { forProductView = false } = opts;
         const { details, core, manifest, source, detailsLoading, prefs, subscriptions } = get();
         if (!core || detailsLoading) return;
-        if (!forProductView && !prefetch && !shouldWarmDetails(prefs, subscriptions)) return;
+        if (!forProductView && !shouldWarmDetails(prefs, subscriptions)) return;
 
         // Details are fresh only when run_date AND the manifest's details sha match.
         const wantSha = manifest?.files.details.sha256 ?? null;
@@ -607,9 +602,8 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async ensureSearchIndex(opts = {}) {
-        const { prefetch = false } = opts;
-        if (!prefetch && !effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
+      async ensureSearchIndex() {
+        if (!effectiveDeepSearch(get().prefs)) { logEnsureSkipped('ensureSearchIndex', 'proGate'); return; }
         const { core, manifest, source, searchIndex } = get();
         if (!core || !manifest?.files.search_index) return;
         const asset = manifest.files.search_index;
@@ -638,8 +632,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureHistoryBanks(opts = {}) {
-        const { force = false, prefetch = false } = opts;
-        if (!prefetch && !effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
+        const { force = false } = opts;
+        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureHistoryBanks', 'proGate'); return; }
         if (force) set({ historyBanksError: null });
         debugLog.info('store', 'ensureHistoryBanks start');
         const { core, manifest, source, historyBanks } = get();
@@ -746,8 +740,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureBankInsights(opts = {}) {
-        const { force = false, prefetch = false } = opts;
-        if (!prefetch && !effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
+        const { force = false } = opts;
+        if (!effectiveBankInsights(get().prefs)) { logEnsureSkipped('ensureBankInsights', 'proGate'); return; }
         const { core, manifest, source, bankInsights } = get();
         if (!core) return;
         if (source !== 'remote' || !manifest) {
@@ -841,8 +835,8 @@ export const useStore = create<AppState>()(
       },
 
       async ensureProductHistory(opts = {}) {
-        const { force = false, prefetch = false } = opts;
-        if (!prefetch && !effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
+        const { force = false } = opts;
+        if (!effectiveHistoryRibbon(get().prefs)) { logEnsureSkipped('ensureProductHistory', 'proGate'); return; }
         if (force) set({ productHistoryError: null });
         const { core, manifest, source, productHistory } = get();
         if (!core) return;
@@ -886,20 +880,6 @@ export const useStore = create<AppState>()(
           if (!revisionIsCurrent()) return;
           set({ productHistory: cached ?? null, productHistoryError: msg });
         }
-      },
-
-      async prefetchAllAssets() {
-        if (!get().core) return;
-        // Fire every asset loader at once with gates bypassed. Each is independently
-        // cached + freshness-checked, so this no-ops cheaply once everything is current.
-        await Promise.allSettled([
-          get().ensureDetails({ prefetch: true }),
-          get().ensureSearchIndex({ prefetch: true }),
-          get().ensureHistoryBanks({ prefetch: true }),
-          get().ensureBankInsights({ prefetch: true }),
-          get().ensureRbaCalendar(),
-          get().ensureProductHistory({ prefetch: true }),
-        ]);
       },
 
       getDetail(productKey: string) {
