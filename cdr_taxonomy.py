@@ -378,19 +378,22 @@ _RESTRICTED_MEMBERSHIP_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Open MEMBERSHIP framing — an explicit statement that the public can join. This
-# must NOT match a bare residency *requirement* ("must be a resident of
-# Australia"), which is not an open-membership alternative: a closed
-# employer/occupation product can carry a normal RESIDENCY_STATUS row and would
-# otherwise leak through suppression. We therefore require open-membership context
-# ("open to / or to … residents/citizens/the public", "anyone can join", "do not
-# have to be a member") rather than any residency mention.
+# Open MEMBERSHIP framing — an explicit statement that the public can join,
+# checked PER eligibility item. This must NOT match a bare residency row (even one
+# phrased "Open to Australian citizens or permanent residents"), which is just a
+# residency requirement, not a membership alternative — otherwise a closed
+# employer/occupation product carrying a normal RESIDENCY_STATUS row would leak
+# through suppression. We therefore require membership-join context: "membership
+# is open to … residents/citizens/public", an "or to … residents/citizens"
+# alternative, "open to all/everyone/the public", "anyone can join", or "do not
+# have to be a member".
 _OPEN_MEMBERSHIP_RE = re.compile(
     r"do\s+not\s+have\s+to\s+be\s+a\s+member"
     r"|anyone\s+(?:can|may|is\s+welcome\s+to)\s+(?:join|become|apply)"
-    r"|open\s+to\s+(?:all\b|everyone\b|anyone\b|the\s+(?:general\s+)?public)"
-    r"|(?:open\s+to|or\s+to)\s+(?:any\s+|all\s+)?(?:australian\s+)?"
-    r"(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia)",
+    r"|member(?:ship)?\s+is\s+open\s+to[^.;\n]*?"
+    r"(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia|the\s+(?:general\s+)?public|anyone|everyone)"
+    r"|\bor\s+to\s+(?:any\s+|all\s+)?(?:australian\s+)?(?:citizens?|permanent\s+residents?|residents?\s+of\s+australia)"
+    r"|open\s+to\s+(?:all\b|everyone\b|anyone\b|the\s+(?:general\s+)?public)",
     re.IGNORECASE,
 )
 
@@ -532,8 +535,12 @@ def classify_account_standardness(
         # Employer/occupation-restricted membership (e.g. "team members of
         # Woolworths", "employees of the education sector", "serving Border
         # Officers") — only when no eligibility item offers an open membership
-        # path, so open-membership mutuals are not swept in.
-        if not _OPEN_MEMBERSHIP_RE.search(_eligibility_text(eligibility)):
+        # path. The open check is PER ITEM (not the concatenated text) so a closed
+        # cohort row plus a separate residency row can't be mistaken for open.
+        has_open_path = any(
+            _OPEN_MEMBERSHIP_RE.search(_eligibility_item_text(item)) for item in items
+        )
+        if not has_open_path:
             for item in items:
                 item_text = _eligibility_item_text(item)
                 if item_text and _eligibility_restricted_cohort(item_text, _RESTRICTED_MEMBERSHIP_RE):

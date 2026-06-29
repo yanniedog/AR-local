@@ -139,3 +139,14 @@ def test_bare_residency_requirement_does_not_suppress_employer_restriction():
         {"eligibilityType": "RESIDENCY_STATUS", "additionalInfo": "Applicants must be permanent residents of Australia"},
     ]
     assert clf("Your Way Fixed Rate Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "non_standard"
+
+
+def test_residency_row_phrased_open_to_citizens_does_not_suppress():
+    # A RESIDENCY_STATUS row phrased "Open to Australian citizens or permanent
+    # residents" is still just a residency requirement, not a membership path —
+    # the open check is per-item and requires membership-join framing.
+    elig = [
+        {"eligibilityType": "OTHER", "additionalInfo": "Membership is open to employees of the Australian education sector"},
+        {"eligibilityType": "RESIDENCY_STATUS", "additionalInfo": "Open to Australian citizens or permanent residents"},
+    ]
+    assert clf("Your Way Fixed Rate Home Loan", "RESIDENTIAL_MORTGAGES", "Mortgage", eligibility=elig) == "non_standard"
