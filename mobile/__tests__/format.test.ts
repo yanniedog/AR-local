@@ -1,3 +1,4 @@
+import { nameRestrictsAccess } from '../src/data/access';
 import {
   bpsBetween,
   formatBalanceRange,
@@ -5,6 +6,7 @@ import {
   formatRateDigits,
   formatTerm,
   humanizeEnum,
+  isBroadlyAvailable,
   isNonStandard,
   toFraction,
 } from '../src/data/format';
@@ -109,5 +111,45 @@ describe('format', () => {
         account_class: 'standard',
       } as RateRow),
     ).toBe(false);
+  });
+
+  test('nameRestrictsAccess flags narrowly available product names', () => {
+    expect(nameRestrictsAccess('Police Bank Staff Home Loan')).toBe(true);
+    expect(nameRestrictsAccess('Nurses & Midwives Health Saver')).toBe(true);
+    expect(nameRestrictsAccess('Teachers Union Members Saver')).toBe(true);
+    expect(nameRestrictsAccess('Business Cash Management Account')).toBe(true);
+    expect(nameRestrictsAccess('Student Everyday Account')).toBe(true);
+    // Mainstream retail names stay broadly available.
+    expect(nameRestrictsAccess('Basic Variable Home Loan')).toBe(false);
+    expect(nameRestrictsAccess('Online Saver')).toBe(false);
+    expect(nameRestrictsAccess('')).toBe(false);
+    expect(nameRestrictsAccess(null)).toBe(false);
+  });
+
+  test('isBroadlyAvailable excludes non-standard, curated, and access-restricted rows', () => {
+    const mainstream = {
+      provider: 'Bank A',
+      product_name: 'Basic Variable Home Loan',
+      account_class: 'standard',
+    } as RateRow;
+    const backendNonStandard = {
+      provider: 'Bank A',
+      product_name: 'FX Term Deposit',
+      account_class: 'non_standard',
+    } as RateRow;
+    const curated = {
+      provider: 'RACQ Bank',
+      product_name: 'Green Home Loan',
+      account_class: 'standard',
+    } as RateRow;
+    const staffOnly = {
+      provider: 'Police Bank',
+      product_name: 'Staff Home Loan',
+      account_class: 'standard',
+    } as RateRow;
+    expect(isBroadlyAvailable(mainstream)).toBe(true);
+    expect(isBroadlyAvailable(backendNonStandard)).toBe(false);
+    expect(isBroadlyAvailable(curated)).toBe(false);
+    expect(isBroadlyAvailable(staffOnly)).toBe(false);
   });
 });

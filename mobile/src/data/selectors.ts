@@ -10,7 +10,7 @@ import { productHasAllFeatures } from './features';
 import {
   effectiveFraction,
   effectiveRate,
-  isNonStandard,
+  isBroadlyAvailable,
   sortByDisplayLabel,
   toFraction,
   visibleAccountRows,
@@ -124,7 +124,7 @@ export function filterRows(
 ): RateRow[] {
   const runtimeDetailIndex = searchIndex ? null : detailSearchIndex(detailsProducts);
   return rows.filter((row) => {
-    if (!filters.includeNonStandard && isNonStandard(row)) return false;
+    if (!filters.includeNonStandard && !isBroadlyAvailable(row)) return false;
     if (
       !rowMatchesSearchQuery(
         row,

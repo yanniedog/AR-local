@@ -1,5 +1,6 @@
 import type { RateRow } from '../types';
 import { isKnownNonStandardProduct } from './accountClass';
+import { nameRestrictsAccess } from './access';
 
 /** Parse a rate that may be a normalized fraction ("0.0634") or a raw percent ("6.34"). */
 export function toFraction(rate: string | number | null | undefined): number | null {
@@ -161,8 +162,22 @@ export function isNonStandard(row: RateRow): boolean {
   return isKnownNonStandardProduct(row);
 }
 
+/**
+ * The unified default-suitability gate. A product is shown to ordinary users by
+ * default only when it is *broadly available*: not a non-standard account class,
+ * not a curated non-standard cohort, and not name-restricted to staff / an
+ * occupation / a union or association / business / students / a region. Advanced
+ * users opt everything back in via the "Show broadly applicable products by
+ * default" setting (the persisted `includeNonStandard` flag). This is the ONE
+ * predicate every surface — search, lists, calculator, rankings, ribbon/charts,
+ * hierarchy — must use so classification stays consistent everywhere.
+ */
+export function isBroadlyAvailable(row: RateRow): boolean {
+  return !isNonStandard(row) && !nameRestrictsAccess(row.product_name);
+}
+
 export function visibleAccountRows(rows: RateRow[], includeNonStandard = false): RateRow[] {
-  return includeNonStandard ? rows : rows.filter((row) => !isNonStandard(row));
+  return includeNonStandard ? rows : rows.filter(isBroadlyAvailable);
 }
 
 /** Short, friendly "Updated 3 days ago" / "Updated today". */
