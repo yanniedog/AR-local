@@ -114,6 +114,7 @@ export function statsFor(rows: RateRow[], includeNonStandard = false): RateStats
   const providers = new Set<string>();
   const products = new Set<string>();
   for (const r of rows) {
+    if (!r) continue;
     if (!includeNonStandard && !isBroadlyAvailable(r)) continue;
     const f = effectiveFraction(r);
     if (f === null) continue;

@@ -151,5 +151,8 @@ describe('format', () => {
     expect(isBroadlyAvailable(backendNonStandard)).toBe(false);
     expect(isBroadlyAvailable(curated)).toBe(false);
     expect(isBroadlyAvailable(staffOnly)).toBe(false);
+    // Defensive: never throws on null/undefined rows.
+    expect(isBroadlyAvailable(null)).toBe(false);
+    expect(isBroadlyAvailable(undefined)).toBe(false);
   });
 });

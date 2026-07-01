@@ -172,7 +172,8 @@ export function isNonStandard(row: RateRow): boolean {
  * predicate every surface — search, lists, calculator, rankings, ribbon/charts,
  * hierarchy — must use so classification stays consistent everywhere.
  */
-export function isBroadlyAvailable(row: RateRow): boolean {
+export function isBroadlyAvailable(row: RateRow | null | undefined): boolean {
+  if (!row) return false;
   return !isNonStandard(row) && !nameRestrictsAccess(row.product_name);
 }
 

@@ -62,7 +62,7 @@ export default function Calculator() {
   const rows = useMemo(() => {
     const all = core?.sections?.[section]?.rates ?? [];
     return profileFilterRows(rowsUnder(all, section, []), profileFilters, section).filter(
-      (r) => includeNonStandard || isBroadlyAvailable(r),
+      (r) => !!r && (includeNonStandard || isBroadlyAvailable(r)),
     );
   }, [core, section, profileFilters, includeNonStandard]);
 

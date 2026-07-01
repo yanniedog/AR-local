@@ -93,7 +93,7 @@ function currentRibbonFallback(
   const hierRows = rowsUnder(sectionData.rates, section, []);
   const visibleKeys = new Set(
     hierRows
-      .filter((row) => includeNonStandard || isBroadlyAvailable(row))
+      .filter((row) => !!row && (includeNonStandard || isBroadlyAvailable(row)))
       .map((row) => row.product_key),
   );
   if (!visibleKeys.size && sectionData.ribbon?.range?.min == null) return null;
@@ -153,7 +153,7 @@ export function selectBankHistoryChartModel(
       const hierRows = rowsUnder(sectionRows, section, []);
       const visibleKeys = new Set(
         hierRows
-          .filter((row) => includeNonStandard || isBroadlyAvailable(row))
+          .filter((row) => !!row && (includeNonStandard || isBroadlyAvailable(row)))
           .map((row) => row.product_key),
       );
       const filtered = historyCache.rates.filter((row) => visibleKeys.has(row.product_key));
