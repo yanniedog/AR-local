@@ -87,7 +87,17 @@ export function rankFraction(
 ): number | null {
   if (metric === 'base') {
     const q = rateQualifier(row, section);
-    if (q.kind === 'bonus' || q.kind === 'intro') return toFraction(row.ongoing_rate);
+    if (q.kind === 'bonus' || q.kind === 'intro') {
+      // Some bonus/intro accounts legitimately pay 0% ongoing (see rateQualifier's
+      // formatOngoingRate). toFraction rejects <= 0 as missing, so handle a published
+      // 0% explicitly — rank it at 0 rather than treating it as unpublished/unrankable.
+      const raw = row.ongoing_rate;
+      if (raw !== null && raw !== undefined && raw !== '') {
+        const n = typeof raw === 'number' ? raw : Number(raw);
+        if (n === 0) return 0;
+      }
+      return toFraction(raw);
+    }
   }
   return effectiveFraction(row);
 }
