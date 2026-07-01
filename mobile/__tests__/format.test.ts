@@ -122,6 +122,11 @@ describe('format', () => {
     // Mainstream retail names stay broadly available.
     expect(nameRestrictsAccess('Basic Variable Home Loan')).toBe(false);
     expect(nameRestrictsAccess('Online Saver')).toBe(false);
+    // Retail "Education Saver" (a savings product) is not occupation-restricted.
+    expect(nameRestrictsAccess('Education Saver')).toBe(false);
+    expect(nameRestrictsAccess('Darling Downs Education Saver')).toBe(false);
+    // ...but an explicit educator occupation restriction still flags.
+    expect(nameRestrictsAccess('Educators Rewards Saver')).toBe(true);
     expect(nameRestrictsAccess('')).toBe(false);
     expect(nameRestrictsAccess(null)).toBe(false);
   });

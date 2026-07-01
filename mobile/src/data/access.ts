@@ -51,7 +51,7 @@ const RESTRICTING_TYPES: Record<string, AccessCategory> = {
 };
 
 const OCCUPATION_RE =
-  /\b(police|nurs(?:e|es|ing)|teacher|education(?:\s|al)|doctor|health\s*(?:care|sector|worker)|medical|defence|defense|military|navy|army|veteran|firefighter|ambulance|paramedic|emergency\s*services|first\s*responder)\b/i;
+  /\b(police|nurs(?:e|es|ing)|teacher|educator(?:s)?|doctor|health\s*(?:care|sector|worker)|medical|defence|defense|military|navy|army|veteran|firefighter|ambulance|paramedic|emergency\s*services|first\s*responder)\b/i;
 const STAFF_RE = /\b(staff|employe[er]|colleague)\b/i;
 const MEMBERSHIP_RE = /\bmembers?\s+of\b|\bassociation\b|\bunion\b|\balumni\b|\bdiocese\b|\bparish\b/i;
 const BUSINESS_RE = /\b(business|commercial|corporate|company|smsf|self[-\s]?managed\s+super|trust)\b/i;
