@@ -35,6 +35,7 @@ export default function Home() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const profileFilters = useStore((s) => s.prefs.profileFilters);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const [shareOpen, setShareOpen] = useState(false);
@@ -58,12 +59,12 @@ export default function Home() {
   // The hero "best" honours the saved product profile (e.g. OO, P&I, your LVR).
   const profileCount = profileSectionCount(profileFilters, section);
   const best = useMemo(
-    () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard),
-    [hierRows, profileFilters, section, includeNonStandard],
+    () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard, depositRankMetric),
+    [hierRows, profileFilters, section, includeNonStandard, depositRankMetric],
   );
   const fallbackBest = useMemo(
-    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard),
-    [sectionRows, profileFilters, section, includeNonStandard],
+    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard, depositRankMetric),
+    [sectionRows, profileFilters, section, includeNonStandard, depositRankMetric],
   );
 
   const meta = SECTIONS[section];

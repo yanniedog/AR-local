@@ -21,6 +21,7 @@ import {
   unregisterBackgroundRefresh,
 } from '../../src/data/notifications';
 import { useStore } from '../../src/data/store';
+import type { RankMetric } from '../../src/data/selectors';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
 import {
   checkForAppUpdate,
@@ -237,6 +238,23 @@ export default function Settings() {
           value={!prefs.includeNonStandard}
           onChange={(v) => setPref('includeNonStandard', !v)}
         />
+      </Section>
+
+      <Section title="Rate ranking">
+        <Label text="Rank savings & term deposits by" />
+        <SegmentedControl<RankMetric>
+          options={[
+            { value: 'base', label: 'Base ongoing rate' },
+            { value: 'max', label: 'Maximum rate' },
+          ]}
+          value={prefs.depositRankMetric}
+          onChange={(v) => setPref('depositRankMetric', v)}
+        />
+        <AppText variant="tiny" color="textFaint" style={{ marginTop: 6, lineHeight: 16 }}>
+          Base ranks by the ongoing rate you keep after any intro or bonus period — the honest
+          default. Maximum ranks by the best advertised rate, including conditional bonus and
+          introductory rates.
+        </AppText>
       </Section>
 
       <Section title="Features">

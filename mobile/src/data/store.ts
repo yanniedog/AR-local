@@ -74,6 +74,9 @@ export interface Prefs {
   diagnosticsEnabled: boolean;
   wifiOnly: boolean;
   includeNonStandard: boolean;
+  /** How savings & term-deposit lists rank: 'base' ongoing rate (default, honest)
+   *  vs 'max' headline/bonus rate. Mirrors RankMetric in data/selectors. */
+  depositRankMetric: 'base' | 'max';
   /** Fulltext search across product info (off by default). */
   enableDeepSearch: boolean;
   /** Section ribbon time-series chart in Charts & trends (off by default). */
@@ -100,6 +103,7 @@ export const DEFAULT_PREFS: Prefs = {
   diagnosticsEnabled: true,
   wifiOnly: false,
   includeNonStandard: false,
+  depositRankMetric: 'base',
   enableDeepSearch: false,
   showHistoryRibbon: false,
   rateIntelligencePro: false,

@@ -9,12 +9,12 @@ import { productHasAllEligibilityCriteria } from './eligibility';
 import { productHasAllFeatures } from './features';
 import {
   effectiveFraction,
-  effectiveRate,
   isBroadlyAvailable,
   sortByDisplayLabel,
   toFraction,
   visibleAccountRows,
 } from './format';
+import { rateQualifier } from '../lib/rateQualifier';
 
 export type SortKey = 'rate' | 'comparison' | 'bank';
 
@@ -67,17 +67,43 @@ export function activeFilterCount(f: Filters): number {
   );
 }
 
+/** How savings & term-deposit lists are ranked. `base` = the unconditional
+ *  ongoing rate a typical customer keeps (a bonus/intro row ranks on the base
+ *  rate it reverts to), so conditional promo rates never top the list; `max` =
+ *  the headline/maximum achievable rate. Mortgages are unaffected — they carry
+ *  no bonus/intro concept (rateQualifier returns 'none'). */
+export type RankMetric = 'base' | 'max';
+
+/** The fraction a row should be ranked/compared by, honouring the deposit rank
+ *  metric. For `base` (default), a bonus/intro deposit row ranks on the base
+ *  ongoing rate it reverts to (`null` when the bank publishes none, so it can't
+ *  masquerade as a broadly-earned rate); everything else uses the effective
+ *  (comparison-or-headline) rate. This is the single ranking metric every
+ *  best/sort/compare surface shares. */
+export function rankFraction(
+  row: RateRow,
+  section: SectionKey,
+  metric: RankMetric = 'base',
+): number | null {
+  if (metric === 'base') {
+    const q = rateQualifier(row, section);
+    if (q.kind === 'bonus' || q.kind === 'intro') return toFraction(row.ongoing_rate);
+  }
+  return effectiveFraction(row);
+}
+
 /** The "best" rate in a list, honouring lower-is-better for loans. */
 export function bestRow(
   rows: RateRow[],
   section: SectionKey,
   includeNonStandard = false,
+  metric: RankMetric = 'base',
 ): RateRow | null {
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   let best: RateRow | null = null;
   let bestVal: number | null = null;
   for (const row of visibleAccountRows(rows, includeNonStandard)) {
-    const v = effectiveFraction(row);
+    const v = rankFraction(row, section, metric);
     if (v === null) continue;
     if (bestVal === null || (lowerIsBetter ? v < bestVal : v > bestVal)) {
       bestVal = v;
@@ -87,21 +113,24 @@ export function bestRow(
   return best;
 }
 
-export function sortRows(rows: RateRow[], sortKey: SortKey, section: SectionKey): RateRow[] {
+export function sortRows(
+  rows: RateRow[],
+  sortKey: SortKey,
+  section: SectionKey,
+  metric: RankMetric = 'base',
+): RateRow[] {
   const lowerIsBetter = SECTIONS[section].lowerIsBetter;
   const copy = rows.slice();
   copy.sort((a, b) => {
     if (sortKey === 'bank') {
       return a.provider.localeCompare(b.provider) || a.product_name.localeCompare(b.product_name);
     }
-    // Default ("rate") ranks by the effective metric — comparison rate when the
-    // row publishes one, headline rate otherwise — so the list order matches the
-    // best-rate claims. The explicit "comparison" key is now equivalent for loans
-    // and kept only for backward-compatible deep links.
-    const field = sortKey === 'comparison' ? a.comparison_rate ?? a.rate : effectiveRate(a);
-    const fieldB = sortKey === 'comparison' ? b.comparison_rate ?? b.rate : effectiveRate(b);
-    const va = toFraction(field);
-    const vb = toFraction(fieldB);
+    // Default ("rate") ranks by the deposit rank metric — base ongoing rate by
+    // default, so conditional bonus/intro rates don't top the list; otherwise the
+    // effective comparison/headline rate. The explicit "comparison" key stays
+    // comparison-rate for backward-compatible loan deep links.
+    const va = sortKey === 'comparison' ? toFraction(a.comparison_rate ?? a.rate) : rankFraction(a, section, metric);
+    const vb = sortKey === 'comparison' ? toFraction(b.comparison_rate ?? b.rate) : rankFraction(b, section, metric);
     if (va === null && vb === null) return 0;
     if (va === null) return 1;
     if (vb === null) return -1;
@@ -166,8 +195,9 @@ export function queryAndSort(
   section: SectionKey,
   detailsProducts?: Record<string, ProductDetail> | null,
   searchIndex?: SearchIndexPayload | null,
+  metric: RankMetric = 'base',
 ): RateRow[] {
-  return sortRows(filterRows(rows, filters, detailsProducts, searchIndex), sortKey, section);
+  return sortRows(filterRows(rows, filters, detailsProducts, searchIndex), sortKey, section, metric);
 }
 
 /** Distinct non-empty values for a field, sorted by frequency then label. */
