@@ -9,6 +9,7 @@ import {
   groupByProvider,
   normalizeSortKey,
   queryAndSort,
+  rankFraction,
   sortRows,
 } from '../src/data/selectors';
 import type { RateRow, SectionKey } from '../src/types';
@@ -57,6 +58,97 @@ describe('selectors', () => {
     expect(loans.map((r) => r.product_key)).toEqual(['A|1', 'B|1']);
     const deps = sortRows(savings, 'rate', 'Savings');
     expect(deps.map((r) => r.product_key)).toEqual(['B|S', 'A|S']);
+  });
+
+  test('rankFraction ranks deposit bonus/intro rows by their base ongoing rate', () => {
+    const base = mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' });
+    const bonus = mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' });
+    const bonusNoBase = mk({ product_key: 'C|S', rate: '0.055', ribbon_deposit_kind: 'bonus' });
+    expect(rankFraction(base, 'Savings')).toBeCloseTo(0.045);
+    expect(rankFraction(bonus, 'Savings')).toBeCloseTo(0.01); // the ongoing rate, not 5.2%
+    expect(rankFraction(bonusNoBase, 'Savings')).toBeNull(); // no base published -> unrankable
+    expect(rankFraction(bonus, 'Savings', 'max')).toBeCloseTo(0.052); // opt into max
+    // Mortgages carry no bonus/intro concept — always the effective rate.
+    expect(rankFraction(mk({ rate: '0.06', comparison_rate: '0.061' }), 'Mortgage')).toBeCloseTo(0.061);
+  });
+
+  test('bestRow (savings) ignores conditional bonus rates by default', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' }),
+    ];
+    // Base 4.5% beats the bonus account's 1.0% ongoing rate.
+    expect(bestRow(rows, 'Savings')?.product_key).toBe('A|S');
+    // Opting into max ranks by the 5.2% headline bonus rate.
+    expect(bestRow(rows, 'Savings', false, 'max')?.product_key).toBe('B|S');
+  });
+
+  test('sortRows (savings) orders by base ongoing rate by default', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' }),
+    ];
+    expect(sortRows(rows, 'rate', 'Savings').map((r) => r.product_key)).toEqual(['A|S', 'B|S']);
+    expect(sortRows(rows, 'rate', 'Savings', 'max').map((r) => r.product_key)).toEqual(['B|S', 'A|S']);
+  });
+
+  test('rankFraction leaves non-deposit sections unchanged under either metric', () => {
+    const loan = mk({ rate: '0.06', comparison_rate: '0.061' });
+    expect(rankFraction(loan, 'Mortgage', 'max')).toBeCloseTo(0.061);
+    expect(rankFraction(loan, 'Mortgage', 'base')).toBeCloseTo(0.061);
+  });
+
+  test('rankFraction treats a published 0% ongoing rate as 0, not unranked', () => {
+    const zeroBonus = mk({ ribbon_deposit_kind: 'bonus', rate: '0.05', ongoing_rate: '0' });
+    expect(rankFraction(zeroBonus, 'Savings')).toBe(0);
+    // Genuinely absent base stays unrankable (null), not coerced to 0.
+    const noBase = mk({ ribbon_deposit_kind: 'bonus', rate: '0.05', ongoing_rate: '' });
+    expect(rankFraction(noBase, 'Savings')).toBeNull();
+  });
+
+  test('bestRow (savings) prefers base over an unrankable bonus with no ongoing_rate', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.055', ribbon_deposit_kind: 'bonus' }), // no ongoing_rate -> unrankable
+    ];
+    expect(bestRow(rows, 'Savings')?.product_key).toBe('A|S');
+    expect(bestRow(rows, 'Savings', false, 'max')?.product_key).toBe('B|S');
+  });
+
+  test('bestRow (savings) returns null when every candidate is an unrankable bonus', () => {
+    const rows = [
+      mk({ product_key: 'B|S', rate: '0.055', ribbon_deposit_kind: 'bonus' }),
+      mk({ product_key: 'C|S', rate: '0.050', ribbon_deposit_kind: 'bonus' }),
+    ];
+    expect(bestRow(rows, 'Savings')).toBeNull();
+  });
+
+  test('sortRows & queryAndSort (savings) push unrankable bonus rows last and honour the metric', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' }),
+      mk({ product_key: 'C|S', rate: '0.055', ribbon_deposit_kind: 'bonus' }), // unrankable (no ongoing_rate)
+    ];
+    expect(sortRows(rows, 'rate', 'Savings').map((r) => r.product_key)).toEqual(['A|S', 'B|S', 'C|S']);
+    expect(queryAndSort(rows, EMPTY_FILTERS, 'rate', 'Savings').map((r) => r.product_key)).toEqual(['A|S', 'B|S', 'C|S']);
+    expect(
+      queryAndSort(rows, EMPTY_FILTERS, 'rate', 'Savings', null, null, 'max').map((r) => r.product_key),
+    ).toEqual(['C|S', 'B|S', 'A|S']);
+  });
+
+  test('sortRows comparison key also uses base ranking for deposits', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' }),
+    ];
+    // The legacy "comparison" sort must not reintroduce bonus-first ordering.
+    expect(sortRows(rows, 'comparison', 'Savings').map((r) => r.product_key)).toEqual(['A|S', 'B|S']);
+    // Loans keep comparison-rate ordering (rankFraction = comparison-or-headline).
+    const loans = [
+      mk({ product_key: 'L1', rate: '0.061', comparison_rate: '0.059' }),
+      mk({ product_key: 'L2', rate: '0.058', comparison_rate: '0.060' }),
+    ];
+    expect(sortRows(loans, 'comparison', 'Mortgage').map((r) => r.product_key)).toEqual(['L1', 'L2']);
   });
 
   test('sortRows by bank A-Z', () => {

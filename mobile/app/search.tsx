@@ -63,6 +63,7 @@ export default function Search() {
   const ensureDetails = useStore((s) => s.ensureDetails);
   const ensureSearchIndex = useStore((s) => s.ensureSearchIndex);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const notificationsEnabled = useStore((s) => s.prefs.notificationsEnabled);
   const setPref = useStore((s) => s.setPref);
   const subscribeSearch = useStore((s) => s.subscribeSearch);
@@ -106,8 +107,9 @@ export default function Search() {
         section,
         deepSearchActive ? details?.products : null,
         deepSearchActive ? searchIndex : null,
+        depositRankMetric,
       ),
-    [baseRows, effectiveFilters, query, sortKey, section, deepSearchActive, details?.products, searchIndex],
+    [baseRows, effectiveFilters, query, sortKey, section, deepSearchActive, details?.products, searchIndex, depositRankMetric],
   );
 
   const showDeepSearchHint =

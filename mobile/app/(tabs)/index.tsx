@@ -11,11 +11,11 @@ import { ScreenScrollView } from '../../src/components/Screen';
 import { SectionCrossfade, SegmentedControl } from '../../src/components/controls';
 import { AppText, Card, Chip, Row } from '../../src/components/ui';
 import { SECTIONS } from '../../src/constants';
-import { effectiveFraction, formatRate, formatRunDate, relativeDate, toFraction } from '../../src/data/format';
+import { formatRate, formatRunDate, relativeDate } from '../../src/data/format';
 import { resolveInterestSection, sectionSegmentOptions } from '../../src/data/interests';
 import { resolveSectionRibbonStats } from '../../src/data/ribbonStats';
 import { profileFilterRows, profileSectionCount } from '../../src/data/profile';
-import { bestRow } from '../../src/data/selectors';
+import { bestRow, rankFraction } from '../../src/data/selectors';
 import { conditionalNote } from '../../src/lib/rateQualifier';
 import { ShareQrModal } from '../../src/components/ShareQrModal';
 import { rowsUnder } from '../../src/data/taxonomy';
@@ -35,6 +35,7 @@ export default function Home() {
   const section = useStore((s) => s.activeSection);
   const setActiveSection = useStore((s) => s.setActiveSection);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const profileFilters = useStore((s) => s.prefs.profileFilters);
   const sectionOptions = useMemo(() => sectionSegmentOptions(interests), [interests]);
   const [shareOpen, setShareOpen] = useState(false);
@@ -58,12 +59,12 @@ export default function Home() {
   // The hero "best" honours the saved product profile (e.g. OO, P&I, your LVR).
   const profileCount = profileSectionCount(profileFilters, section);
   const best = useMemo(
-    () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard),
-    [hierRows, profileFilters, section, includeNonStandard],
+    () => bestRow(profileFilterRows(hierRows, profileFilters, section), section, includeNonStandard, depositRankMetric),
+    [hierRows, profileFilters, section, includeNonStandard, depositRankMetric],
   );
   const fallbackBest = useMemo(
-    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard),
-    [sectionRows, profileFilters, section, includeNonStandard],
+    () => bestRow(profileFilterRows(sectionRows ?? [], profileFilters, section), section, includeNonStandard, depositRankMetric),
+    [sectionRows, profileFilters, section, includeNonStandard, depositRankMetric],
   );
 
   const meta = SECTIONS[section];
@@ -84,9 +85,11 @@ export default function Home() {
   const sectionAccent = meta.accentColor;
   const rateInk = meta.lowerIsBetter ? theme.colors.rateLoan : theme.colors.rateDeposit;
   const activeBest = best ?? fallbackBest;
-  // With a profile active the hero must show the best profile-matched rate,
-  // not the unfiltered market extreme it would otherwise mislabel.
-  const heroRate = profileCount > 0 ? (activeBest ? effectiveFraction(activeBest) : null) : meta.lowerIsBetter ? stats.min : stats.max;
+  // Show the ranked best product's own rate (base ongoing by default) so the
+  // headline can't overstate what the winner actually pays; with a profile active,
+  // show nothing (not the market extreme) when nothing matches.
+  const heroBest = activeBest ? rankFraction(activeBest, section, depositRankMetric) : null;
+  const heroRate = profileCount > 0 ? heroBest : heroBest ?? (meta.lowerIsBetter ? stats.min : stats.max);
   const bestNote = conditionalNote(activeBest, section);
   const lenderCount = Object.keys(core.brands ?? {}).length;
   const heroDataKey = `${core.run_date}:${section}:${heroRate ?? 'na'}`;

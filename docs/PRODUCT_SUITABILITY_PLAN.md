@@ -92,7 +92,17 @@ Pi payload build (`app_payload.py` / `cdr_taxonomy.py`) to emit per product:
 
 ---
 
-## Phase 3 — Rate-ranking preferences (savings / mortgage / TD) ⬜
+## Phase 3 — Rate-ranking preferences (savings / mortgage / TD) 🟡
+
+**Shipped (v1):** savings & term deposits rank on the **base ongoing rate** by
+default everywhere via `rankFraction` / `RankMetric` in `selectors.ts` (a
+bonus/intro deposit row ranks on the `ongoing_rate` it reverts to; `null` when
+unpublished, so a conditional promo rate can't top the list). New
+`depositRankMetric` pref (default `base`) + a **Rate ranking** settings section
+let advanced users switch to `max` (the headline/bonus rate); the override is
+wired into Search and the Home hero. **Follow-ups:** propagate the override to
+Browse/calculator/Banks A–Z; per-section metrics (intro/bonus/effective, TD
+maturity/term); `statsFor`/ribbon on the base metric; availability overrides.
 
 Default behaviour ("Core objective") with advanced overrides.
 
