@@ -136,6 +136,21 @@ describe('selectors', () => {
     ).toEqual(['C|S', 'B|S', 'A|S']);
   });
 
+  test('sortRows comparison key also uses base ranking for deposits', () => {
+    const rows = [
+      mk({ product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'base' }),
+      mk({ product_key: 'B|S', rate: '0.052', ribbon_deposit_kind: 'bonus', ongoing_rate: '0.010' }),
+    ];
+    // The legacy "comparison" sort must not reintroduce bonus-first ordering.
+    expect(sortRows(rows, 'comparison', 'Savings').map((r) => r.product_key)).toEqual(['A|S', 'B|S']);
+    // Loans keep comparison-rate ordering (rankFraction = comparison-or-headline).
+    const loans = [
+      mk({ product_key: 'L1', rate: '0.061', comparison_rate: '0.059' }),
+      mk({ product_key: 'L2', rate: '0.058', comparison_rate: '0.060' }),
+    ];
+    expect(sortRows(loans, 'comparison', 'Mortgage').map((r) => r.product_key)).toEqual(['L1', 'L2']);
+  });
+
   test('sortRows by bank A-Z', () => {
     const sorted = sortRows(mortgage, 'bank', 'Mortgage');
     expect(sorted.map((r) => r.provider)).toEqual(['Bank A', 'Bank B', 'Bank C']);

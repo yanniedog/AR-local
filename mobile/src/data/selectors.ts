@@ -135,12 +135,12 @@ export function sortRows(
     if (sortKey === 'bank') {
       return a.provider.localeCompare(b.provider) || a.product_name.localeCompare(b.product_name);
     }
-    // Default ("rate") ranks by the deposit rank metric — base ongoing rate by
-    // default, so conditional bonus/intro rates don't top the list; otherwise the
-    // effective comparison/headline rate. The explicit "comparison" key stays
-    // comparison-rate for backward-compatible loan deep links.
-    const va = sortKey === 'comparison' ? toFraction(a.comparison_rate ?? a.rate) : rankFraction(a, section, metric);
-    const vb = sortKey === 'comparison' ? toFraction(b.comparison_rate ?? b.rate) : rankFraction(b, section, metric);
+    // "rate" — and the legacy "comparison" deep-link alias — both rank by the
+    // deposit rank metric: base ongoing rate by default, so conditional bonus/intro
+    // rates never top a deposit list on ANY sort. For loans rankFraction is the
+    // comparison-or-headline rate, so comparison ordering is preserved.
+    const va = rankFraction(a, section, metric);
+    const vb = rankFraction(b, section, metric);
     if (va === null && vb === null) return 0;
     if (va === null) return 1;
     if (vb === null) return -1;
