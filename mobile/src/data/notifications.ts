@@ -6,8 +6,8 @@ import { SECTIONS, SECTION_ORDER } from '../constants';
 import { debugLog } from '../lib/debugLog';
 import type { CorePayload, ProductDetail, RateRow, SectionKey } from '../types';
 import { ongoingRateCaveat } from '../lib/rateQualifier';
-import { bpsBetween, effectiveFraction, formatRate, toFraction } from './format';
-import { bestRow } from './selectors';
+import { bpsBetween, formatRate, toFraction } from './format';
+import { bestRow, rankFraction } from './selectors';
 import {
   computeSubscriptionChanges,
   largestRateChange,
@@ -134,9 +134,10 @@ export function hrefFromNotificationData(
 function bestFraction(core: CorePayload, section: SectionKey): number | null {
   const rows = core.sections[section]?.rates ?? [];
   const best = bestRow(rows, section);
-  // Measure the move with the same metric bestRow ranks by (comparison rate for
-  // loans), so the threshold and body text can't disagree with the winner.
-  return best ? effectiveFraction(best) : null;
+  // Measure the move with the same metric bestRow ranks by (base ongoing rate for
+  // deposits, comparison rate for loans), so the threshold and body text can't
+  // disagree with the winner.
+  return best ? rankFraction(best, section) : null;
 }
 
 /** All rate rows for a product, keyed by rate_index, so changes can be matched
@@ -294,7 +295,7 @@ export function computeChanges(
   for (const section of SECTION_ORDER) {
     const before = bestFraction(oldCore, section);
     const afterRow = bestRow(newCore.sections[section]?.rates ?? [], section);
-    const after = afterRow ? effectiveFraction(afterRow) : null;
+    const after = afterRow ? rankFraction(afterRow, section) : null;
     if (before === null || after === null) continue;
     const bps = Math.abs(bpsBetween(after, before) ?? 0);
     if (bps < thresholdBps) continue;
