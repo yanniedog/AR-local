@@ -78,6 +78,19 @@ describe('selectors', () => {
     expect(filterRows(mortgage, { ...EMPTY_FILTERS, query: 'green', includeNonStandard: true })).toHaveLength(1);
   });
 
+  test('filterRows excludes access-restricted products by name unless opted in', () => {
+    const rows = [
+      mk({ provider: 'Bank A', product_key: 'A|1', product_name: 'Basic Variable Loan', rate: '0.057' }),
+      mk({ provider: 'Police Bank', product_key: 'P|1', product_name: 'Staff Home Loan', rate: '0.049' }),
+      mk({ provider: 'Bank B', product_key: 'B|1', product_name: 'Business Overdraft', rate: '0.051' }),
+    ];
+    // Staff-only and business products no longer leak into the default view.
+    expect(filterRows(rows, EMPTY_FILTERS).map((r) => r.product_key)).toEqual(['A|1']);
+    expect(filterRows(rows, { ...EMPTY_FILTERS, includeNonStandard: true })).toHaveLength(3);
+    // And the same rule governs the ranked "best" result.
+    expect(bestRow(rows, 'Mortgage')?.product_key).toBe('A|1');
+  });
+
   test('filterRows applies depositKinds for deposit sections', () => {
     const deposits = [
       mk({ provider: 'Bank A', product_key: 'A|S', rate: '0.045', ribbon_deposit_kind: 'at_call' }),

@@ -51,7 +51,7 @@ const RESTRICTING_TYPES: Record<string, AccessCategory> = {
 };
 
 const OCCUPATION_RE =
-  /\b(police|nurs(?:e|es|ing)|teacher|education(?:\s|al)|doctor|health\s*(?:care|sector|worker)|medical|defence|defense|military|navy|army|veteran|firefighter|ambulance|paramedic|emergency\s*services|first\s*responder)\b/i;
+  /\b(police|nurs(?:e|es|ing)|teacher|educator(?:s)?|doctor|health\s*(?:care|sector|worker)|medical|defence|defense|military|navy|army|veteran|firefighter|ambulance|paramedic|emergency\s*services|first\s*responder)\b/i;
 const STAFF_RE = /\b(staff|employe[er]|colleague)\b/i;
 const MEMBERSHIP_RE = /\bmembers?\s+of\b|\bassociation\b|\bunion\b|\balumni\b|\bdiocese\b|\bparish\b/i;
 const BUSINESS_RE = /\b(business|commercial|corporate|company|smsf|self[-\s]?managed\s+super|trust)\b/i;
@@ -137,4 +137,27 @@ export function assessAccess(name: string, detail: ProductDetail | null | undefi
   }
 
   return { restricted, categories, verify, badge, summary };
+}
+
+/**
+ * Row-level access restriction derived from the product NAME alone (no details
+ * required). This is the name-signal half of {@link assessAccess}, exposed as a
+ * cheap predicate the default suitability filter can run over every rate row so
+ * staff-only, occupation/union, membership, business/SMSF, student and
+ * region-restricted products are not surfaced as headline/search/ranking results
+ * to ordinary users. Structured eligibility codes (from loaded details) add more
+ * signal via {@link assessAccess}; the name check makes the leak impossible even
+ * before details download.
+ */
+export function nameRestrictsAccess(name: string | null | undefined): boolean {
+  const text = name ?? '';
+  if (!text) return false;
+  return (
+    STAFF_RE.test(text) ||
+    OCCUPATION_RE.test(text) ||
+    MEMBERSHIP_RE.test(text) ||
+    STUDENT_RE.test(text) ||
+    GEO_RE.test(text) ||
+    BUSINESS_RE.test(text)
+  );
 }

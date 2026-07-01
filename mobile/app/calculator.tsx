@@ -9,7 +9,7 @@ import { AppText, Badge, Card, Row } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
 import { assessAccess } from '../src/data/access';
 import { computeLvr, depositToReachLvr, num, type CalcInputs } from '../src/data/calc';
-import { formatRate, humanizeEnum, toFraction } from '../src/data/format';
+import { formatRate, humanizeEnum, isBroadlyAvailable, toFraction } from '../src/data/format';
 import { sectionSegmentOptions } from '../src/data/interests';
 import { lvrTierForValue, parseLvrTier, profileFilterRows } from '../src/data/profile';
 import { distinctValues } from '../src/data/selectors';
@@ -62,7 +62,7 @@ export default function Calculator() {
   const rows = useMemo(() => {
     const all = core?.sections?.[section]?.rates ?? [];
     return profileFilterRows(rowsUnder(all, section, []), profileFilters, section).filter(
-      (r) => includeNonStandard || r.account_class !== 'non_standard',
+      (r) => !!r && (includeNonStandard || isBroadlyAvailable(r)),
     );
   }, [core, section, profileFilters, includeNonStandard]);
 

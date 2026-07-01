@@ -1,6 +1,6 @@
 import { SECTIONS } from '../constants';
 import type { RateRow, SectionKey } from '../types';
-import { effectiveFraction, isNonStandard, visibleAccountRows } from './format';
+import { effectiveFraction, isBroadlyAvailable, visibleAccountRows } from './format';
 
 // The Pi packages a dot-delimited `taxonomy_path` per rate row, e.g.
 //   HOME_LOAN.OO.PI.VARIABLE.LVR_70_80
@@ -114,7 +114,8 @@ export function statsFor(rows: RateRow[], includeNonStandard = false): RateStats
   const providers = new Set<string>();
   const products = new Set<string>();
   for (const r of rows) {
-    if (!includeNonStandard && isNonStandard(r)) continue;
+    if (!r) continue;
+    if (!includeNonStandard && !isBroadlyAvailable(r)) continue;
     const f = effectiveFraction(r);
     if (f === null) continue;
     fractions.push(f);

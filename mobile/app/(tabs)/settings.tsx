@@ -161,6 +161,10 @@ export default function Settings() {
         )}
       </Section>
 
+      <View onLayout={(e) => { updateSectionY.current = e.nativeEvent.layout.y; }}>
+        <AppUpdateSection />
+      </View>
+
       <Section title="Personalise">
         <Button
           title="Your product profile"
@@ -225,15 +229,17 @@ export default function Settings() {
         </Row>
       </Section>
 
-      <Section title="Features">
+      <Section title="Product filtering">
         <ToggleRow
-          icon="layers-outline"
-          label="Include non-standard accounts"
-          sub="Business, trust, FX, and other non-retail products"
-          value={prefs.includeNonStandard}
-          onChange={(v) => setPref('includeNonStandard', v)}
+          icon="people-outline"
+          label="Show broadly applicable products by default"
+          sub="Prioritise standard, broadly available rates. Hides staff-only, business, industry, foreign-investor and other narrowly available products. Turn off to include everything."
+          value={!prefs.includeNonStandard}
+          onChange={(v) => setPref('includeNonStandard', !v)}
         />
-        <Divider style={{ marginVertical: 12 }} />
+      </Section>
+
+      <Section title="Features">
         <ToggleRow
           icon="search-outline"
           label="Deep product search"
@@ -391,10 +397,6 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
         </TouchTarget>
       </Section>
-
-      <View onLayout={(e) => { updateSectionY.current = e.nativeEvent.layout.y; }}>
-        <AppUpdateSection />
-      </View>
 
       <Section title="About">
         <InfoRow
