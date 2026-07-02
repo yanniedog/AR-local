@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, Switch, TextInput, View } from 'react-native';
 
 import { BankAvatar } from '../src/components/BankAvatar';
 import { ProfileEditor } from '../src/components/ProfileEditor';
@@ -8,7 +8,7 @@ import { SegmentedControl } from '../src/components/controls';
 import { AppText, Badge, Card, Row } from '../src/components/ui';
 import { SECTIONS } from '../src/constants';
 import { assessAccess } from '../src/data/access';
-import { computeLvr, depositToReachLvr, num, type CalcInputs } from '../src/data/calc';
+import { computeLvr, depositToReachLvr, monthlyPayment, num, simulateOffset, type CalcInputs } from '../src/data/calc';
 import { formatRate, humanizeEnum, isBroadlyAvailable, toFraction } from '../src/data/format';
 import { sectionSegmentOptions } from '../src/data/interests';
 import { lvrTierForValue, parseLvrTier, profileFilterRows } from '../src/data/profile';
@@ -19,13 +19,14 @@ import { openProduct } from '../src/lib/nav';
 import type { RateRow, SectionKey } from '../src/types';
 import { useTheme } from '../src/theme/ThemeProvider';
 
-function monthlyPayment(balance: number, annualRate: number, months: number): number {
-  const r = annualRate / 12;
-  if (r <= 0) return balance / months;
-  return (r * balance) / (1 - Math.pow(1 + r, -months));
-}
-
 const formatDollars = (n: number): string => `$${Math.round(n).toLocaleString('en-AU')}`;
+
+const monthsSavedLabel = (m: number): string => {
+  const y = Math.floor(m / 12);
+  const mo = m % 12;
+  if (y > 0) return mo ? `${y}y ${mo}m` : `${y} yr${y > 1 ? 's' : ''}`;
+  return `${mo} mo`;
+};
 
 interface Candidate {
   row: RateRow;
@@ -108,6 +109,14 @@ export default function Calculator() {
   })();
   const years = Math.min(40, Math.max(1, num(inputs.years) || 25));
   const months = Math.round(years * 12);
+
+  const offsetResult = useMemo(
+    () =>
+      isMortgage && inputs.wantsOffset && currentRate !== null && balance > 0
+        ? simulateOffset(balance, currentRate, months, num(inputs.offsetBalance))
+        : null,
+    [isMortgage, inputs.wantsOffset, inputs.offsetBalance, currentRate, balance, months],
+  );
 
   const candidates = useMemo<Candidate[]>(() => {
     if (currentRate === null || balance <= 0) return [];
@@ -253,6 +262,31 @@ export default function Calculator() {
               {field('Current rate (%)', inputs.currentRate, (t) => upd({ currentRate: t }), median !== null ? (median * 100).toFixed(2) : '6.00', 'Current interest rate percent')}
               {field('Years left', inputs.years, (t) => upd({ years: t }), '25', 'Years remaining on loan', 86)}
             </Row>
+
+            <Row gap={10} style={{ marginTop: 12, alignItems: 'center' }}>
+              <AppText variant="small" weight="600" style={{ flex: 1 }}>
+                Offset account
+              </AppText>
+              <Switch
+                value={inputs.wantsOffset}
+                onValueChange={(v) => upd({ wantsOffset: v })}
+                trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
+                accessibilityLabel="Include a mortgage offset account"
+              />
+            </Row>
+            {inputs.wantsOffset ? (
+              <Row gap={10} style={{ marginTop: 10 }}>
+                {field('Offset balance ($)', inputs.offsetBalance, (t) => upd({ offsetBalance: t }), '30,000', 'Expected offset account balance')}
+                <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                  <AppText variant="tiny" color="textFaint" style={{ marginBottom: 4 }}>
+                    Interest-bearing
+                  </AppText>
+                  <AppText variant="body" weight="800" style={{ paddingVertical: 10 }}>
+                    {offsetResult ? formatDollars(offsetResult.effectiveBalance) : '—'}
+                  </AppText>
+                </View>
+              </Row>
+            ) : null}
           </>
         ) : (
           <>
@@ -266,6 +300,32 @@ export default function Calculator() {
           </>
         )}
       </Card>
+
+      {offsetResult && offsetResult.offset > 0 ? (
+        <Card style={{ marginBottom: 16 }}>
+          <AppText variant="small" weight="700" style={{ marginBottom: 8 }}>
+            Offset impact on your loan
+          </AppText>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="tiny" color="textFaint">Interest saved</AppText>
+              <AppText variant="body" weight="800" style={{ color: theme.colors.success, marginTop: 2 }}>
+                {formatDollars(offsetResult.interestSaved)}
+              </AppText>
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppText variant="tiny" color="textFaint">Loan paid off</AppText>
+              <AppText variant="body" weight="800" style={{ marginTop: 2 }}>
+                {offsetResult.monthsSaved > 0 ? `${monthsSavedLabel(offsetResult.monthsSaved)} sooner` : 'no change'}
+              </AppText>
+            </View>
+          </Row>
+          <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
+            Assumes the offset balance stays constant and repayments are unchanged. Estimate only —
+            confirm offset terms with the lender.
+          </AppText>
+        </Card>
+      ) : null}
 
       {isMortgage ? (
         <Card style={{ marginBottom: 16 }}>

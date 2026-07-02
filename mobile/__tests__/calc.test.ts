@@ -1,4 +1,11 @@
-import { computeLvr, depositToReachLvr, EMPTY_CALC, normalizeCalcInputs } from '../src/data/calc';
+import {
+  computeLvr,
+  depositToReachLvr,
+  EMPTY_CALC,
+  monthlyPayment,
+  normalizeCalcInputs,
+  simulateOffset,
+} from '../src/data/calc';
 
 describe('computeLvr (buying)', () => {
   it('derives loan and LVR from price, deposit and costs', () => {
@@ -35,5 +42,57 @@ describe('normalizeCalcInputs', () => {
     expect(normalizeCalcInputs(null)).toEqual(EMPTY_CALC);
     expect(normalizeCalcInputs({ mode: 'refi', propertyValue: 5 as unknown as string }).mode).toBe('refi');
     expect(normalizeCalcInputs({ mode: 'weird' as never }).mode).toBe('buy');
+  });
+
+  it('coerces the offset fields to a safe shape', () => {
+    expect(normalizeCalcInputs(null).wantsOffset).toBe(false);
+    expect(normalizeCalcInputs({ wantsOffset: true, offsetBalance: '30000' }).offsetBalance).toBe('30000');
+    expect(normalizeCalcInputs({ wantsOffset: 'yes' as never }).wantsOffset).toBe(false);
+  });
+});
+
+describe('monthlyPayment', () => {
+  it('amortises with interest and straight-lines at 0%', () => {
+    expect(monthlyPayment(1200, 0, 12)).toBeCloseTo(100, 6);
+    // 500k @ 6% over 25y ≈ $3,221/mo
+    expect(monthlyPayment(500000, 0.06, 300)).toBeCloseTo(3221.51, 0);
+  });
+});
+
+describe('simulateOffset', () => {
+  const loan = 500000;
+  const rate = 0.06;
+  const months = 300;
+
+  it('saves interest and shortens the term with an offset', () => {
+    const r = simulateOffset(loan, rate, months, 50000)!;
+    expect(r.offset).toBe(50000);
+    expect(r.effectiveBalance).toBe(450000);
+    expect(r.interestSaved).toBeGreaterThan(0);
+    expect(r.monthsSaved).toBeGreaterThan(0);
+    expect(r.monthsToPayoff).toBeLessThan(months);
+    // An offset can never make the loan cost more.
+    expect(r.interestWith).toBeLessThan(r.interestWithout);
+  });
+
+  it('is essentially a no-op with a zero offset', () => {
+    const r = simulateOffset(loan, rate, months, 0)!;
+    expect(r.monthsSaved).toBeLessThanOrEqual(1);
+    expect(r.interestSaved).toBeLessThan(1);
+    expect(r.monthsToPayoff).toBeGreaterThanOrEqual(months - 1);
+  });
+
+  it('clamps an over-large offset to the loan and clears quickly', () => {
+    const r = simulateOffset(loan, rate, months, 999999)!;
+    expect(r.offset).toBe(loan);
+    expect(r.effectiveBalance).toBe(0);
+    expect(r.monthsToPayoff).toBeLessThan(months);
+    expect(r.interestWith).toBeCloseTo(0, 2);
+  });
+
+  it('returns null for insufficient inputs', () => {
+    expect(simulateOffset(0, rate, months, 10000)).toBeNull();
+    expect(simulateOffset(loan, 0, months, 10000)).toBeNull();
+    expect(simulateOffset(loan, rate, 0, 10000)).toBeNull();
   });
 });
