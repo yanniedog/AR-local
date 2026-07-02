@@ -138,7 +138,7 @@ export function simulateOffset(
   offset: number,
 ): OffsetResult | null {
   if (loan <= 0 || annualRate <= 0 || months <= 0) return null;
-  const off = Math.max(0, Math.min(offset, loan));
+  const off = Math.max(0, Math.min(Number.isFinite(offset) ? offset : 0, loan));
   const payment = monthlyPayment(loan, annualRate, months);
   const r = annualRate / 12;
   let balance = loan;

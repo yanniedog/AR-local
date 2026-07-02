@@ -95,4 +95,22 @@ describe('simulateOffset', () => {
     expect(simulateOffset(loan, 0, months, 10000)).toBeNull();
     expect(simulateOffset(loan, rate, 0, 10000)).toBeNull();
   });
+
+  it('clamps a negative or non-finite offset to zero', () => {
+    const zero = simulateOffset(loan, rate, months, 0)!;
+    const neg = simulateOffset(loan, rate, months, -10000)!;
+    expect(neg.offset).toBe(0);
+    expect(neg.monthsToPayoff).toBe(zero.monthsToPayoff);
+    expect(neg.interestSaved).toBe(zero.interestSaved);
+    expect(simulateOffset(loan, rate, months, NaN)!.offset).toBe(0);
+  });
+
+  it('terminates and stays bounded on a high-rate / short-term loan', () => {
+    // 200% p.a. over 6 months — stresses the amortisation loop.
+    const r = simulateOffset(200000, 2, 6, 20000)!;
+    expect(r.monthsToPayoff).toBeGreaterThan(0);
+    expect(r.monthsToPayoff).toBeLessThanOrEqual(6);
+    expect(Number.isFinite(r.interestWith)).toBe(true);
+    expect(r.interestSaved).toBeGreaterThanOrEqual(0);
+  });
 });
