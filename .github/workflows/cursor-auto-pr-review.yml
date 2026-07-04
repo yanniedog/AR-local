@@ -1,0 +1,224 @@
+name: cursor-auto-pr-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**/*.md"
+      - ".github/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
+
+concurrency:
+  group: cursor-auto-review-${{ github.event.pull_request.number || inputs.pr_number }}-${{ github.event.pull_request.head.sha || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  cursor-auto-review:
+    name: cursor-auto-review
+    if: >-
+      github.event.pull_request != null
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resolve pull request metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          INPUT_PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_NUMBER="$INPUT_PR"
+            PR_JSON="$(gh pr view "$PR_NUMBER" --json headRefOid,baseRefName)"
+            HEAD_SHA="$(printf '%s' "$PR_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).headRefOid));")"
+            BASE_REF="$(printf '%s' "$PR_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).baseRefName));")"
+          else
+            PR_NUMBER="$EVENT_PR"
+            HEAD_SHA="$EVENT_HEAD_SHA"
+            BASE_REF="$EVENT_BASE_REF"
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Gate exempt check
+        id: gate_exempt
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        run: |
+          set -euo pipefail
+          if [ "$PR_AUTHOR_TYPE" = "Bot" ] || [[ "$PR_AUTHOR" == *"[bot]" ]]; then
+            echo "exempt=true" >> "$GITHUB_OUTPUT"
+            echo "reason=bot-authored" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if echo "$PR_TITLE" | grep -qiE '^chore(\(|:)'; then
+            echo "exempt=true" >> "$GITHUB_OUTPUT"
+            echo "reason=chore" >> "$GITHUB_OUTPUT"
+          else
+            echo "exempt=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if already reviewed for this commit
+        id: already
+        if: steps.gate_exempt.outputs.exempt != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" --paginate \
+            --jq '.check_runs[] | select(.name=="cursor-auto-review" and .conclusion=="success") | .id' | head -n 1 || true)"
+          if [ -n "$existing" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gate exempt or already reviewed — pass
+        if: steps.gate_exempt.outputs.exempt == 'true' || steps.already.outputs.skip == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          REASON: ${{ steps.gate_exempt.outputs.reason || 'already-reviewed' }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+            --field name="cursor-auto-review" \
+            --field head_sha="$HEAD_SHA" \
+            --field status="completed" \
+            --field conclusion="success" \
+            --field "output[title]=Cursor Auto Review" \
+            --field "output[summary]=Skipped ($REASON)." > /dev/null
+          echo "cursor-auto-review: skipped ($REASON)"
+
+      - uses: actions/checkout@v4
+        if: steps.gate_exempt.outputs.exempt != 'true' && steps.already.outputs.skip != 'true'
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        if: steps.gate_exempt.outputs.exempt != 'true' && steps.already.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
+
+      - name: Run Cursor Auto review
+        id: review
+        if: steps.gate_exempt.outputs.exempt != 'true' && steps.already.outputs.skip != 'true'
+        env:
+          CURSOR_SECRETS_JSON: ${{ toJSON(secrets) }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          CURSOR_TOKEN="$(node -e "const secrets = JSON.parse(process.env.CURSOR_SECRETS_JSON || '{}'); process.stdout.write(secrets.CURSOR_API_KEY || '');")"
+          if [ -z "$CURSOR_TOKEN" ]; then
+            echo "Cursor API key is missing. Add CURSOR_API_KEY as an Actions secret." > /tmp/cursor-review-error.txt
+            echo "status=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export CURSOR_API_KEY="$CURSOR_TOKEN"
+
+          git fetch origin "$BASE_REF" --depth=1
+          {
+            cat .cursor/PR_REVIEW_PROMPT.md
+            printf '\n\nRepository: %s\n' "$GITHUB_REPOSITORY"
+            printf 'Pull request: #%s\n' "$PR_NUMBER"
+            printf 'Base branch: %s\n' "$BASE_REF"
+            printf 'Head commit: %s\n\n' "$HEAD_SHA"
+            printf 'Review only the pull request diff from origin/%s...HEAD. Do not edit files, commit, push, or post comments yourself.\n' "$BASE_REF"
+          } > /tmp/cursor-review-prompt.md
+
+          set +e
+          agent -p "$(cat /tmp/cursor-review-prompt.md)" --model auto --force --trust --output-format text > /tmp/cursor-review.txt 2> /tmp/cursor-review-error.txt
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "status=$status" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -s /tmp/cursor-review.txt ]; then
+            echo "Cursor CLI completed without producing review output." > /tmp/cursor-review-error.txt
+            echo "status=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "status=0" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update PR review comment
+        if: always() && steps.gate_exempt.outputs.exempt != 'true' && steps.already.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REVIEW_STATUS: ${{ steps.review.outputs.status }}
+        run: |
+          set -euo pipefail
+          {
+            echo "<!-- cursor-auto-review -->"
+            echo "## Cursor Auto Review"
+            echo
+            if [ "${REVIEW_STATUS:-1}" = "0" ]; then
+              cat /tmp/cursor-review.txt
+            else
+              echo "Cursor Auto review did not complete successfully."
+              echo
+              echo '```text'
+              sed -e 's/\r$//' /tmp/cursor-review-error.txt
+              echo '```'
+            fi
+          } > /tmp/cursor-review-comment.md
+
+          comment_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --jq '.[] | select(.body | contains("<!-- cursor-auto-review -->")) | .id' | tail -n 1 || true)"
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --field body=@/tmp/cursor-review-comment.md > /dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body-file /tmp/cursor-review-comment.md
+          fi
+
+      - name: Publish cursor-auto-review check
+        if: always() && steps.gate_exempt.outputs.exempt != 'true' && steps.already.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_STATUS: ${{ steps.review.outputs.status }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          conclusion="success"
+          summary="Cursor Auto review completed and posted a PR comment."
+          if [ "${REVIEW_STATUS:-1}" != "0" ]; then
+            conclusion="failure"
+            summary="Cursor Auto review failed. See the PR comment and workflow logs."
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+            --field name="cursor-auto-review" \
+            --field head_sha="$HEAD_SHA" \
+            --field status="completed" \
+            --field conclusion="$conclusion" \
+            --field "output[title]=Cursor Auto Review" \
+            --field "output[summary]=$summary" > /dev/null
+          if [ "$conclusion" != "success" ]; then
+            exit 1
+          fi

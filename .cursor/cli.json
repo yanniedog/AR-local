@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**/*)",
+      "Shell(git)",
+      "Shell(gh)"
+    ],
+    "deny": [
+      "Write(**/*)",
+      "Shell(curl)",
+      "Shell(wget)"
+    ]
+  }
+}
