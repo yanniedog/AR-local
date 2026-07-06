@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Switch, View } from 'react-native';
 
-import { TOUCH_TARGET_MIN, TouchTarget } from '../../TouchTarget';
-import { AppText, Card, IconButton, Row } from '../../ui';
-import { useTheme } from '../../../theme/ThemeProvider';
+import { TOUCH_TARGET_MIN, TouchTarget } from '../TouchTarget';
+import { AppText, Card, IconButton, Row } from '../ui';
+import { useTheme } from '../../theme/ThemeProvider';
 
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

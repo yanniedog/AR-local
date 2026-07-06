@@ -1,4 +1,3 @@
-import type { DetailsPayload } from '../types';
 import { cache } from './cache';
 import type { PayloadProgressSnapshot } from './downloadProgress';
 import { computeChanges, notify } from './notifications';

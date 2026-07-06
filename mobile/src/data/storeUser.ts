@@ -11,9 +11,7 @@ import {
   removeSubscription as dropSubscription,
   type Subscription,
 } from './subscriptions';
-import { DEFAULT_INTERESTS, normalizeInterests, resolveInterestSection } from './interests';
-import { normalizeProfileFilters } from './profile';
-import { normalizeCalcInputs } from './calc';
+import { normalizeInterests, resolveInterestSection } from './interests';
 import { debugLog } from '../lib/debugLog';
 import { hapticSelection } from '../lib/haptics';
 import type { AppState, Prefs, StoreGet, StoreSet } from './storeTypes';

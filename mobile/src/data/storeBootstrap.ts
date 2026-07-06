@@ -10,7 +10,7 @@ import { installSampleSeed, readValidatedHistoryBanks } from './storeHelpers';
 export function createBootstrapActions(
   set: StoreSet,
   get: StoreGet,
-  getStore: () => { persist?: { rehydrate?: () => Promise<void> } },
+  getStore: () => { persist?: { rehydrate?: () => void | Promise<void> } },
 ) {
   return {
     async bootstrap() {

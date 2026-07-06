@@ -14,14 +14,15 @@ import { bootstrapInitialState, createBootstrapActions } from './storeBootstrap'
 import { createRefreshActions } from './storeRefresh';
 import { createEnsureActions } from './storeEnsure';
 import { createUserActions } from './storeUser';
-import { DEFAULT_PREFS, type AppState, type SectionKey } from './storeTypes';
+import { DEFAULT_PREFS, type AppState } from './storeTypes';
+import type { SectionKey } from '../types';
 
 export { shouldWarmDetails } from './optionalPrefs';
 export type { Prefs, Status } from './storeTypes';
 export { DEFAULT_PREFS } from './storeTypes';
 
 type StoreApi = {
-  persist?: { rehydrate?: () => Promise<void> };
+  persist?: { rehydrate?: () => void | Promise<void> };
   getState: () => AppState;
 };
 
