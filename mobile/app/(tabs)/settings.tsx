@@ -2,16 +2,25 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import { useScrollToTop } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Linking, Platform, Pressable, ScrollView, Switch, View } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Alert, ScrollView, View } from 'react-native';
 
 import { SegmentedControl } from '../../src/components/controls';
 import { ProPaywall } from '../../src/components/ProPaywall';
 import { Screen, ScreenScrollView } from '../../src/components/Screen';
 import { UndoSnackbar } from '../../src/components/Snackbar';
 import { SubscriptionRow } from '../../src/components/SubscriptionRow';
-import { TOUCH_TARGET_MIN, TouchTarget } from '../../src/components/TouchTarget';
-import { AppText, Button, Card, Chip, Divider, IconButton, Row } from '../../src/components/ui';
+import { TouchTarget } from '../../src/components/TouchTarget';
+import { AppText, Button, Chip, Divider, Row } from '../../src/components/ui';
+import { AccountSecurityRows } from '../../src/components/settings/AccountSecurityRows';
+import { AppUpdateSection } from '../../src/components/settings/AppUpdateSection';
+import {
+  InfoRow,
+  InterestOrderRow,
+  Label,
+  Section,
+  ToggleRow,
+} from '../../src/components/settings/settingsUi';
 import { SECTIONS, SECTION_ORDER } from '../../src/constants';
 import { formatRunDate, relativeDate } from '../../src/data/format';
 import { moveInterest, orderedInterestSections, toggleInterest } from '../../src/data/interests';
@@ -23,28 +32,6 @@ import {
 import { useStore } from '../../src/data/store';
 import type { RankMetric } from '../../src/data/selectors';
 import { useProPaywall } from '../../src/hooks/useProPaywall';
-import {
-  checkForAppUpdate,
-  downloadAndInstallUpdate,
-  getInstalledAppInfo,
-  type ApkManifest,
-  type UpdateCheckResult,
-  type VersionChangelogSummary,
-} from '../../src/lib/appUpdate';
-import {
-  canInstallApkUpdates,
-  ensureInstallPermission,
-  openInstallPermissionSettings,
-} from '../../src/lib/installPermission';
-import { authenticateBiometric, biometricsAvailable } from '../../src/lib/appLock';
-import {
-  isSignInConfigured,
-  signInWithGoogle,
-  signOutUser,
-  subscribeAuth,
-  type AuthUser,
-} from '../../src/lib/auth';
-import { adoptConfigKey } from '../../src/lib/keyVault';
 import { setDiagnosticsEnabled } from '../../src/lib/observability';
 import type { Subscription } from '../../src/data/subscriptions';
 import type { ThemeMode } from '../../src/theme/theme';
@@ -78,15 +65,10 @@ export default function Settings() {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  // Deep-link from the "Update available" banner: jump straight to the update
-  // section so the user can tap Update immediately. `t` is a nonce so repeated
-  // taps re-fire the effect even though `focus` is unchanged.
   const { focus, t } = useLocalSearchParams<{ focus?: string; t?: string }>();
   const updateSectionY = useRef(0);
   useEffect(() => {
     if (focus !== 'update') return;
-    // Wait for the tab transition + layout before scrolling, then clear the
-    // params so returning to Settings later doesn't re-scroll unexpectedly.
     const id = setTimeout(() => {
       scrollRef.current?.scrollTo({ y: Math.max(0, updateSectionY.current - 8), animated: true });
       router.setParams({ focus: undefined, t: undefined });
@@ -455,375 +437,5 @@ export default function Settings() {
     </ScreenScrollView>
     <UndoSnackbar snack={snack} onUndo={undo} />
     </Screen>
-  );
-}
-
-function AppUpdateSection() {
-  const installed = getInstalledAppInfo();
-  const [checkResult, setCheckResult] = useState<UpdateCheckResult | null>(null);
-  const [remote, setRemote] = useState<ApkManifest | null>(null);
-  const [changelogs, setChangelogs] = useState<VersionChangelogSummary[]>([]);
-  const [checking, setChecking] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadPct, setDownloadPct] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [installAllowed, setInstallAllowed] = useState<boolean | null>(null);
-
-  const refreshInstallPermission = useCallback(async () => {
-    setInstallAllowed(await canInstallApkUpdates());
-  }, []);
-
-  useEffect(() => {
-    void refreshInstallPermission();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshInstallPermission();
-    });
-    return () => sub.remove();
-  }, [refreshInstallPermission]);
-
-  const onCheck = useCallback(async () => {
-    setChecking(true);
-    setError(null);
-    setCheckResult(null);
-    setChangelogs([]);
-    try {
-      const result = await checkForAppUpdate();
-      setCheckResult(result);
-      if (result.status === 'available' || result.status === 'current') {
-        setRemote(result.remote);
-      }
-      if (result.status === 'available') {
-        setChangelogs(result.changelogs);
-      }
-      if (result.status === 'error') {
-        setError(result.message);
-      }
-    } finally {
-      setChecking(false);
-    }
-  }, []);
-
-  // Prime the update check when the section mounts so the "Download update"
-  // button is ready the instant the user arrives — especially via the banner's
-  // View → jump-to-update flow (no need to tap "Check for update" first).
-  useEffect(() => {
-    void onCheck();
-  }, [onCheck]);
-
-  const onDownload = useCallback(async () => {
-    if (!remote) return;
-    const allowed = await ensureInstallPermission();
-    if (!allowed) return;
-    setDownloading(true);
-    setError(null);
-    setDownloadPct(null);
-    try {
-      await downloadAndInstallUpdate(remote, (progress) => {
-        if (progress.totalBytes) {
-          setDownloadPct(Math.round((progress.bytesWritten / progress.totalBytes) * 100));
-        }
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      Alert.alert('Update failed', message);
-    } finally {
-      setDownloading(false);
-    }
-  }, [remote]);
-
-  if (Platform.OS !== 'android') {
-    return null;
-  }
-
-  const updateAvailable = checkResult?.status === 'available';
-  const latestLabel = remote
-    ? `${remote.version} (${remote.build_number})`
-    : checkResult?.status === 'current'
-      ? `${installed.version} (${installed.buildNumber})`
-      : '—';
-
-  return (
-    <Section title="App update">
-      <InfoRow label="Installed" value={`${installed.version} (${installed.buildNumber})`} />
-      <InfoRow label="Latest" value={latestLabel} />
-      <InfoRow
-        label="Install permission"
-        value={installAllowed === null ? '—' : installAllowed ? 'Allowed' : 'Required'}
-      />
-      {installAllowed === false ? (
-        <Row gap={12} style={{ marginTop: 8 }}>
-          <Button
-            title="Allow app updates"
-            icon="settings-outline"
-            variant="secondary"
-            style={{ flex: 1 }}
-            onPress={() => void openInstallPermissionSettings()}
-          />
-        </Row>
-      ) : null}
-      {downloadPct !== null ? (
-        <InfoRow label="Download" value={`${downloadPct}%`} />
-      ) : null}
-      {error ? (
-        <AppText variant="tiny" color="danger" style={{ marginTop: 6 }}>
-          {error}
-        </AppText>
-      ) : null}
-      {updateAvailable && changelogs.length ? (
-        <UpdateChangelogList entries={changelogs} />
-      ) : null}
-      <Row gap={12} style={{ marginTop: 12 }}>
-        <Button
-          title="Check for update"
-          icon="cloud-download-outline"
-          variant="secondary"
-          style={{ flex: 1 }}
-          loading={checking}
-          disabled={downloading}
-          onPress={() => void onCheck()}
-        />
-        {updateAvailable ? (
-          <Button
-            title="Download update"
-            icon="download-outline"
-            style={{ flex: 1 }}
-            loading={downloading}
-            disabled={checking}
-            onPress={() => void onDownload()}
-          />
-        ) : null}
-      </Row>
-      <AppText variant="tiny" color="textFaint" style={{ marginTop: 8, lineHeight: 16 }}>
-        Required to install updates from the app. Android keeps this setting across app updates for
-        the same package and signing key.
-      </AppText>
-    </Section>
-  );
-}
-
-function UpdateChangelogList({ entries }: { entries: VersionChangelogSummary[] }) {
-  return (
-    <View style={{ marginTop: 10, maxHeight: 220 }}>
-      <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 6 }}>
-        WHAT&apos;S NEW
-      </AppText>
-      <ScrollView nestedScrollEnabled>
-        {entries.map((entry) => (
-          <View key={entry.version} style={{ marginBottom: 10 }}>
-            <AppText variant="small" weight="700">
-              {entry.version}
-            </AppText>
-            {entry.summaryBullets.map((bullet, idx) => (
-              <AppText key={`${entry.version}-${idx}`} variant="tiny" color="textFaint" style={{ marginLeft: 8 }}>
-                • {bullet}
-              </AppText>
-            ))}
-            <Pressable onPress={() => void Linking.openURL(entry.releaseUrl)}>
-              <AppText variant="tiny" color="primary" style={{ marginTop: 4 }}>
-                Full changelog
-              </AppText>
-            </Pressable>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={{ marginBottom: 18 }}>
-      <AppText variant="small" weight="700" color="textMuted" style={{ marginBottom: 8, marginLeft: 4 }}>
-        {title.toUpperCase()}
-      </AppText>
-      <Card style={{ gap: 4 }}>{children}</Card>
-    </View>
-  );
-}
-
-function InterestOrderRow({
-  title,
-  canMoveUp,
-  canMoveDown,
-  canRemove,
-  onMoveUp,
-  onMoveDown,
-  onRemove,
-}: {
-  title: string;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  canRemove: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onRemove: () => void;
-}) {
-  return (
-    <Row style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
-      <AppText variant="body" weight="600" style={{ flex: 1 }}>
-        {title}
-      </AppText>
-      <Row gap={4}>
-        <IconButton
-          icon="chevron-up"
-          onPress={onMoveUp}
-          disabled={!canMoveUp}
-          accessibilityLabel={`Move ${title} up`}
-        />
-        <IconButton
-          icon="chevron-down"
-          onPress={onMoveDown}
-          disabled={!canMoveDown}
-          accessibilityLabel={`Move ${title} down`}
-        />
-        <IconButton
-          icon="close"
-          onPress={onRemove}
-          disabled={!canRemove}
-          accessibilityLabel={`Remove ${title}`}
-        />
-      </Row>
-    </Row>
-  );
-}
-
-function Label({ text }: { text: string }) {
-  return (
-    <AppText variant="small" color="textMuted" style={{ marginBottom: 10 }}>
-      {text}
-    </AppText>
-  );
-}
-
-function ToggleRow({
-  icon,
-  label,
-  sub,
-  value,
-  onChange,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  sub?: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Row gap={12} style={{ minHeight: TOUCH_TARGET_MIN }}>
-      <Ionicons name={icon} size={20} color={theme.colors.primary} />
-      <View style={{ flex: 1 }}>
-        <AppText variant="body" weight="600">
-          {label}
-        </AppText>
-        {sub ? (
-          <AppText variant="tiny" color="textFaint">
-            {sub}
-          </AppText>
-        ) : null}
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
-      />
-    </Row>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Row style={{ justifyContent: 'space-between', paddingVertical: 5 }}>
-      <AppText variant="small" color="textMuted">
-        {label}
-      </AppText>
-      <AppText variant="small" weight="600">
-        {value}
-      </AppText>
-    </Row>
-  );
-}
-
-/** Google sign-in + biometric app lock rows (Phase C of docs/SECURITY_CDR_PIPELINE.md). */
-function AccountSecurityRows({
-  appLockEnabled,
-  onAppLockChange,
-}: {
-  appLockEnabled: boolean;
-  onAppLockChange: (v: boolean) => void;
-}) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => subscribeAuth(setUser), []);
-
-  const handleSignIn = async () => {
-    setBusy(true);
-    try {
-      await signInWithGoogle();
-      await adoptConfigKey();
-      // Content-key sync rides the root-layout auth listener; no direct call here.
-    } catch (err) {
-      Alert.alert('Sign-in failed', String((err as Error)?.message ?? err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setBusy(true);
-    try {
-      await signOutUser();
-    } catch (err) {
-      Alert.alert('Sign-out failed', String((err as Error)?.message ?? err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleAppLockChange = async (next: boolean) => {
-    if (next && !(await biometricsAvailable())) {
-      Alert.alert(
-        'No screen lock set up',
-        'Add a fingerprint, face unlock, or device PIN in your system settings first.',
-      );
-      return;
-    }
-    // Confirm with the OS prompt before changing either direction, so a passerby
-    // can't quietly disable the lock.
-    if (await authenticateBiometric(next ? 'Confirm to enable app lock' : 'Confirm to disable app lock')) {
-      onAppLockChange(next);
-    }
-  };
-
-  return (
-    <>
-      {user ? (
-        <>
-          <InfoRow label="Signed in as" value={user.email ?? user.displayName ?? user.uid} />
-          <Button title="Sign out" variant="ghost" onPress={handleSignOut} loading={busy} disabled={busy} />
-        </>
-      ) : isSignInConfigured() ? (
-        <>
-          <AppText variant="tiny" color="textFaint" style={{ marginBottom: 8, lineHeight: 16 }}>
-            Sign in to keep your rate history access when tiered plans launch.
-          </AppText>
-          <Button title="Sign in with Google" icon="logo-google" onPress={handleSignIn} loading={busy} disabled={busy} />
-        </>
-      ) : (
-        <AppText variant="tiny" color="textFaint" style={{ lineHeight: 16 }}>
-          Account sign-in is not enabled for this build yet.
-        </AppText>
-      )}
-      <Divider style={{ marginVertical: 8 }} />
-      <ToggleRow
-        icon="finger-print"
-        label="App lock"
-        sub="Require fingerprint / face unlock on app start"
-        value={appLockEnabled}
-        onChange={(v) => void handleAppLockChange(v)}
-      />
-    </>
   );
 }
