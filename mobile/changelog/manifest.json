@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-06-17T16:27:34.060Z",
+  "generated_at": "2026-07-07T00:35:13.547Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -347,6 +347,18 @@
         "Maintenance release 1.0.36"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.36"
+    },
+    {
+      "version": "1.0.37",
+      "date": "2026-07-07",
+      "summaryBullets": [
+        "refactor(app): split oversized app modules for maintainability (#428)",
+        "feat(mobile): rank savings & term deposits by base ongoing rate by default (#425)",
+        "fix(mobile): unified product-suitability filter + broadly-applicable default setting (#423)",
+        "fix(mobile): kill 10-20s tap lag — stop eager prefetch of heavy assets (#421)",
+        "feat(mobile): update banner View jumps to the Settings update section (#416)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.37"
     }
   ]
 }

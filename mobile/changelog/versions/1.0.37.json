@@ -1,0 +1,65 @@
+{
+  "version": "1.0.37",
+  "date": "2026-07-07",
+  "summaryBullets": [
+    "refactor(app): split oversized app modules for maintainability (#428)",
+    "feat(mobile): rank savings & term deposits by base ongoing rate by default (#425)",
+    "fix(mobile): unified product-suitability filter + broadly-applicable default setting (#423)",
+    "fix(mobile): kill 10-20s tap lag — stop eager prefetch of heavy assets (#421)",
+    "feat(mobile): update banner View jumps to the Settings update section (#416)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "refactor(app): split oversized app modules for maintainability (#428)"
+        },
+        {
+          "text": "feat(mobile): rank savings & term deposits by base ongoing rate by default (#425)"
+        },
+        {
+          "text": "fix(mobile): unified product-suitability filter + broadly-applicable default setting (#423)"
+        },
+        {
+          "text": "fix(mobile): kill 10-20s tap lag — stop eager prefetch of heavy assets (#421)"
+        },
+        {
+          "text": "feat(mobile): update banner View jumps to the Settings update section (#416)"
+        },
+        {
+          "text": "feat: prefetch perf + RBA holds + real LVR calculator + product eligibility/specs (#414)"
+        },
+        {
+          "text": "perf(mobile): make Browse section switching instant (#411)"
+        },
+        {
+          "text": "feat(mobile/rba): \"Why rates move\" macro screen + Home shortcut (#408)"
+        },
+        {
+          "text": "feat(mobile/rba): tiered countdown — tap to reveal recent decisions (#405)"
+        },
+        {
+          "text": "feat(mobile/rba): RBA countdown card on Home (#404)"
+        },
+        {
+          "text": "feat(mobile/rba): RBA decision-calendar parser + live countdown logic (#402)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.37"
+        },
+        {
+          "text": "Since tag: app-v1.0.36"
+        }
+      ]
+    }
+  ]
+}
