@@ -58,6 +58,9 @@
         },
         {
           "text": "Since tag: app-v1.0.36"
+        },
+        {
+          "text": "Ships refactored app modules from #428 (store, settings, product detail, app_payload)"
         }
       ]
     }
