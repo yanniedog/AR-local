@@ -106,6 +106,26 @@ export function logEnsureSkipped(fn: string, reason: string): void {
   logDegradation('debug', 'store.ensureSkipped', { fn, reason });
 }
 
+/** One-shot diagnostic for the default suitability filter (Phase 1.1). */
+export function logSuitabilityExclusions(
+  runDate: string | null | undefined,
+  counts: {
+    total: number;
+    nonStandard: number;
+    byAccess: Partial<Record<string, number>>;
+  },
+): void {
+  const fields: Record<string, string | number | boolean | null | undefined> = {
+    run_date: runDate ?? null,
+    total: counts.total,
+    non_standard: counts.nonStandard,
+  };
+  for (const [cat, n] of Object.entries(counts.byAccess)) {
+    if (n) fields[`access_${cat}`] = n;
+  }
+  logDegradation('info', 'suitability.exclusions', fields);
+}
+
 type RetryOutcome = 'start' | 'success' | 'failure';
 
 export function logRetry(action: string, outcome: RetryOutcome, detail?: string): void {
