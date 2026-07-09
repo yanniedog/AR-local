@@ -7,6 +7,7 @@
   },
   "scripts": {
     "wait-for-bots": "node wait_for_bots.mjs",
+    "pr:request-codex-review": "node scripts/request-codex-review.mjs",
     "pr:bot-feedback-check": "node scripts/pr-bot-feedback-check.mjs",
     "pr:gates:check": "node scripts/pr-gates-check.mjs",
     "pr:watch-once": "node scripts/pr-watch-once.mjs",
