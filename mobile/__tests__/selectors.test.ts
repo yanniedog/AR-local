@@ -297,4 +297,36 @@ describe('selectors', () => {
     expect(bankA?.bestBySection.Mortgage?.product_key).toBe('A|1');
     expect(bankA?.bestBySection.Savings?.product_key).toBe('A|S');
   });
+
+  test('groupByProvider honours depositRankMetric for savings best', () => {
+    const sections = {
+      Mortgage: { rates: [] },
+      Savings: {
+        rates: [
+          mk({
+            provider: 'Bank A',
+            product_key: 'A|S',
+            product_name: 'Base Saver',
+            rate: '0.045',
+            ribbon_deposit_kind: 'base',
+          }),
+          mk({
+            provider: 'Bank A',
+            product_key: 'B|S',
+            product_name: 'Bonus Saver',
+            rate: '0.052',
+            ongoing_rate: '0.01',
+            ribbon_deposit_kind: 'bonus',
+          }),
+        ],
+      },
+      TD: { rates: [] },
+    } as Record<SectionKey, { rates: RateRow[] }>;
+    expect(groupByProvider(sections, 'base').find((g) => g.provider === 'Bank A')?.bestBySection.Savings?.product_key).toBe(
+      'A|S',
+    );
+    expect(groupByProvider(sections, 'max').find((g) => g.provider === 'Bank A')?.bestBySection.Savings?.product_key).toBe(
+      'B|S',
+    );
+  });
 });
