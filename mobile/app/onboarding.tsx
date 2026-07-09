@@ -101,6 +101,7 @@ export default function Onboarding() {
   const core = useStore((s) => s.core);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const setPref = useStore((s) => s.setPref);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const [step, setStep] = useState<OnboardingStep>(1);
   const [interests, setInterests] = useState<SectionKey[]>([...DEFAULT_INTERESTS]);
   const [profile, setProfile] = useState<ProfileFilters>({ ...EMPTY_PROFILE });
@@ -116,11 +117,11 @@ export default function Onboarding() {
     const sectionData = core.sections[section];
     const hierRows = rowsUnder(sectionRows ?? [], section, []);
     const stats = resolveSectionRibbonStats(sectionData, hierRows, false);
-    const best = bestRow(hierRows, section, false);
+    const best = bestRow(hierRows, section, false, depositRankMetric);
     const heroRate = meta.lowerIsBetter ? stats.min : stats.max;
     const rba = section === 'Mortgage' ? core.rba?.at(-1)?.rate : undefined;
     return { best, heroRate, stats, rba, runDate: core.run_date };
-  }, [core, section, meta.lowerIsBetter]);
+  }, [core, section, meta.lowerIsBetter, depositRankMetric]);
 
   const toggle = (key: SectionKey) => setInterests((prev) => toggleInterest(prev, key));
 
