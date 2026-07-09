@@ -1,3 +1,4 @@
+import type { SuitabilityExclusionCounts } from '../data/access';
 import { debugLog, type LogLevel } from './debugLog';
 import { isDiagnosticsEnabled } from './observability';
 import type { ProGateIntent } from './proAccess';
@@ -104,6 +105,22 @@ export function logStoreRefreshSkipped(reason: string): void {
 
 export function logEnsureSkipped(fn: string, reason: string): void {
   logDegradation('debug', 'store.ensureSkipped', { fn, reason });
+}
+
+/** One-shot diagnostic for the default suitability filter (Phase 1.1). */
+export function logSuitabilityExclusions(
+  runDate: string | null | undefined,
+  counts: SuitabilityExclusionCounts,
+): void {
+  const fields: Record<string, string | number | boolean | null | undefined> = {
+    run_date: runDate ?? null,
+    total: counts.total,
+    non_standard: counts.nonStandard,
+  };
+  for (const [cat, n] of Object.entries(counts.byAccess)) {
+    if (n) fields[`access_${cat}`] = n;
+  }
+  logDegradation('info', 'suitability.exclusions', fields);
 }
 
 type RetryOutcome = 'start' | 'success' | 'failure';

@@ -1,4 +1,4 @@
-import { nameRestrictsAccess } from '../src/data/access';
+import { countSuitabilityExclusions, nameRestrictsAccess } from '../src/data/access';
 import {
   bpsBetween,
   formatBalanceRange,
@@ -129,6 +129,60 @@ describe('format', () => {
     expect(nameRestrictsAccess('Educators Rewards Saver')).toBe(true);
     expect(nameRestrictsAccess('')).toBe(false);
     expect(nameRestrictsAccess(null)).toBe(false);
+  });
+
+  test('countSuitabilityExclusions tallies non-standard and access categories', () => {
+    const counts = countSuitabilityExclusions([
+      { account_class: 'standard', product_name: 'Basic Variable Home Loan' },
+      { account_class: 'non_standard', product_name: 'FX Term Deposit' },
+      { account_class: 'standard', product_name: 'Staff Home Loan' },
+      { account_class: 'standard', product_name: 'Educators Rewards Saver' },
+      { account_class: 'standard', product_name: 'Education Saver' },
+    ]);
+    expect(counts.total).toBe(3);
+    expect(counts.nonStandard).toBe(1);
+    expect(counts.byAccess.staff).toBe(1);
+    expect(counts.byAccess.occupation).toBe(1);
+    expect(counts.byAccess.business).toBeUndefined();
+  });
+
+  test('countSuitabilityExclusions treats non-standard rows with null or empty names as exclusions', () => {
+    const counts = countSuitabilityExclusions([
+      { account_class: 'non_standard', product_name: null },
+      { account_class: 'non_standard', product_name: '' },
+    ]);
+    expect(counts.total).toBe(2);
+    expect(counts.nonStandard).toBe(2);
+    expect(Object.keys(counts.byAccess)).toHaveLength(0);
+  });
+
+  test('countSuitabilityExclusions tallies multiple access categories for a single product', () => {
+    const counts = countSuitabilityExclusions([
+      { account_class: 'standard', product_name: 'Staff Educators Business Rewards Saver' },
+    ]);
+    expect(counts.total).toBe(1);
+    expect(counts.nonStandard).toBe(0);
+    expect(counts.byAccess.staff).toBe(1);
+    expect(counts.byAccess.occupation).toBe(1);
+    expect(counts.byAccess.business).toBe(1);
+  });
+
+  test('countSuitabilityExclusions counts access-restricted standard accounts', () => {
+    const counts = countSuitabilityExclusions([
+      { account_class: 'standard', product_name: 'Staff Home Loan' },
+      { account_class: 'standard', product_name: 'Educators Rewards Saver' },
+    ]);
+    expect(counts.total).toBe(2);
+    expect(counts.nonStandard).toBe(0);
+    expect(counts.byAccess.staff).toBe(1);
+    expect(counts.byAccess.occupation).toBe(1);
+  });
+
+  test('countSuitabilityExclusions handles empty input', () => {
+    const counts = countSuitabilityExclusions([]);
+    expect(counts.total).toBe(0);
+    expect(counts.nonStandard).toBe(0);
+    expect(Object.keys(counts.byAccess)).toHaveLength(0);
   });
 
   test('isBroadlyAvailable excludes non-standard, curated, and access-restricted rows', () => {
