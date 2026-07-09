@@ -119,6 +119,7 @@ export function createRefreshActions(set: StoreSet, get: StoreGet) {
             get().subscriptions,
             previousDetailsProducts,
             get().details?.products ?? null,
+            prefs.depositRankMetric,
           );
           await notify(messages);
           debugLog.info('store', `notified ${messages.length} rate-change message(s)`);
