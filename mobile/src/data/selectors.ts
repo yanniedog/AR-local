@@ -244,6 +244,7 @@ export interface ProviderGroup {
 /** Group every row across all sections by provider (for the Banks screen). */
 export function groupByProvider(
   sections: Record<SectionKey, { rates: RateRow[] }>,
+  metric: RankMetric = 'base',
 ): ProviderGroup[] {
   // Bucket rows per provider AND per section in a single pass. The previous
   // implementation re-scanned every section's full row array (Array.includes)
@@ -270,7 +271,7 @@ export function groupByProvider(
     for (const section of keys) {
       const inSection = bySection[section];
       if (!inSection?.length) continue;
-      const best = bestRow(inSection, section);
+      const best = bestRow(inSection, section, false, metric);
       if (best) group.bestBySection[section] = best;
     }
     out.push(group);

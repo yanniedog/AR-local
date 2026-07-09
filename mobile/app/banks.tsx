@@ -19,9 +19,13 @@ import { useTheme } from '../src/theme/ThemeProvider';
 
 export default function Banks() {
   const core = useStore((s) => s.core);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const [query, setQuery] = useState('');
 
-  const groups = useMemo(() => (core ? groupByProvider(core.sections) : []), [core]);
+  const groups = useMemo(
+    () => (core ? groupByProvider(core.sections, depositRankMetric) : []),
+    [core, depositRankMetric],
+  );
   const filtered = useMemo(
     () => groups.filter((g) => g.provider.toLowerCase().includes(query.toLowerCase())),
     [groups, query],
