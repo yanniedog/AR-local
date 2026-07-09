@@ -596,7 +596,7 @@ the committed sample); the **Pi is the primary daily publisher**.
 - **Required status checks (branch protection):** `bot-feedback-gate` + `bot-presence-gate`,
   `strict: true` (up-to-date), `enforce_admins: true` (**admins cannot bypass** — even
   `gh pr merge --admin` is refused).
-- **Required bot (presence gate):** **gemini** only (`AR_BOT_WAIT_REQUIRED=gemini` in
+- **Required bots (presence gate):** **gemini**, **codex**, **sourcery** (`AR_BOT_WAIT_REQUIRED=gemini,codex,sourcery` in
   `pr-bot-presence-gate.yml`). Sourcery is optional — it may still comment but does not block
   merge. A bot's `pull_request_review` event auto-re-runs the presence gate.
 - **Resolving a thread emits no webhook** → a previously-failed gate won't auto-re-run after
@@ -644,8 +644,7 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 
 - **Pi offline = everything stops.** Check `tailscale status` first when data looks stale.
 - **`enforce_admins: true`** — you cannot force-merge; satisfy the gates for real.
-- **`bot-presence-gate` is single-shot** and waits for **gemini** only. If the gate failed
-  before gemini reviewed, re-run it with a fresh push or `gh run rerun <run-id>` once gemini
+- **`bot-presence-gate` is single-shot** and waits for **gemini**, **codex**, and **sourcery**. If the gate failed before required bots reviewed, re-run it with a fresh push or `gh run rerun <run-id>` once they
   has commented.
 - **Pi file ownership**: some `/srv/ar-local` paths are root-owned; use the blessed scripts
   (`pi_deploy_verify.py`, `install-pi-systemd.sh`) rather than ad-hoc `git pull`/edits.

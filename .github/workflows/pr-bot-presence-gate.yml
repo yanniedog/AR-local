@@ -80,10 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # gemini is the required reviewer. sourcery was dropped 2026-06-09 because it
-          # stalled (free-tier review quota / outage) and blocked merges; re-add it here
-          # (AR_BOT_WAIT_REQUIRED: gemini,sourcery) once it's reliably reviewing again.
-          AR_BOT_WAIT_REQUIRED: gemini
+          AR_BOT_WAIT_REQUIRED: gemini,codex,sourcery
           BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check
           # CI has no .ar-bot-wait state; anchor falls back to PR createdAt (long-open PRs exceed 28m).
           BOT_WAIT_MAX_MIN: "240"
