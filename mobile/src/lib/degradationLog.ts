@@ -1,3 +1,4 @@
+import type { SuitabilityExclusionCounts } from '../data/access';
 import { debugLog, type LogLevel } from './debugLog';
 import { isDiagnosticsEnabled } from './observability';
 import type { ProGateIntent } from './proAccess';
@@ -109,11 +110,7 @@ export function logEnsureSkipped(fn: string, reason: string): void {
 /** One-shot diagnostic for the default suitability filter (Phase 1.1). */
 export function logSuitabilityExclusions(
   runDate: string | null | undefined,
-  counts: {
-    total: number;
-    nonStandard: number;
-    byAccess: Partial<Record<string, number>>;
-  },
+  counts: SuitabilityExclusionCounts,
 ): void {
   const fields: Record<string, string | number | boolean | null | undefined> = {
     run_date: runDate ?? null,
