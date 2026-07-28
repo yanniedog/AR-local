@@ -1,4 +1,4 @@
-name: pr-coderabbit-rate-limit-retry
+﻿name: pr-coderabbit-rate-limit-retry
 
 # Portable / self-contained: no repo scripts required.
 # CodeRabbit does not auto-resume after rate limits. When it posts
@@ -23,9 +23,13 @@ permissions:
   pull-requests: write
   issues: write
 
+# Do not cancel-in-progress: ordinary PR comments also fire issue_comment and
+# would kill a sleeping rate-limit waiter before the replacement job's `if`
+# filter skips. Keep the sleeper; duplicate rate-limit runs self-skip via the
+# "already armed / already reviewed" checks below.
 concurrency:
   group: pr-coderabbit-rate-limit-retry-${{ github.event.issue.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   retry-after-rate-limit:
@@ -126,46 +130,48 @@ jobs:
             exit 0
           fi
 
-          WAIT_MIN="$(BODY="$BODY" python3 - <<'PY'
-import os, re
-text = os.environ.get("BODY") or ""
-patterns = [
-    r"next review available in[:\s*]*\*?\*?(\d+)\s*minutes?",
-    r"more reviews will be available in\s+(\d+)\s*minutes?",
-    r"available in[:\s*]*\*?\*?(\d+)\s*minutes?",
-    r"next review available in[:\s*]*\*?\*?(\d+)\s*hours?",
-    r"more reviews will be available in\s+(\d+)\s*hours?",
-    r"available in[:\s*]*\*?\*?(\d+)\s*hours?",
-]
-for pat in patterns:
-    m = re.search(pat, text, re.I)
-    if not m:
-        continue
-    n = int(m.group(1))
-    if re.search(r"hours?", m.group(0), re.I) and not re.search(r"minutes?", m.group(0), re.I):
-        print(n * 60)
-    else:
-        print(n)
-    raise SystemExit
-print(60)
-PY
-)"
+          WAIT_MIN="$(
+            BODY="$BODY" python3 -c "
+          import os, re
+          text = os.environ.get('BODY') or ''
+          patterns = [
+              r'next review available in[:\s*]*\*?\*?(\d+)\s*minutes?',
+              r'more reviews will be available in\s+(\d+)\s*minutes?',
+              r'available in[:\s*]*\*?\*?(\d+)\s*minutes?',
+              r'next review available in[:\s*]*\*?\*?(\d+)\s*hours?',
+              r'more reviews will be available in\s+(\d+)\s*hours?',
+              r'available in[:\s*]*\*?\*?(\d+)\s*hours?',
+          ]
+          for pat in patterns:
+              m = re.search(pat, text, re.I)
+              if not m:
+                  continue
+              n = int(m.group(1))
+              if re.search(r'hours?', m.group(0), re.I) and not re.search(r'minutes?', m.group(0), re.I):
+                  print(n * 60)
+              else:
+                  print(n)
+              raise SystemExit
+          print(60)
+          "
+          )"
 
           BUFFER_MIN=2
           MAX_WAIT_MIN=120
-          SLEEP_SEC="$(CREATED="$CREATED" WAIT_MIN="$WAIT_MIN" BUFFER_MIN="$BUFFER_MIN" MAX_WAIT_MIN="$MAX_WAIT_MIN" python3 - <<'PY'
-import os, datetime
-created = os.environ["CREATED"]
-wait = int(os.environ["WAIT_MIN"])
-buf = int(os.environ["BUFFER_MIN"])
-max_wait = int(os.environ["MAX_WAIT_MIN"])
-ts = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
-ready = ts + datetime.timedelta(minutes=wait + buf)
-now = datetime.datetime.now(datetime.timezone.utc)
-sec = max(0, int((ready - now).total_seconds()))
-print(min(sec, max_wait * 60))
-PY
-)"
+          SLEEP_SEC="$(
+            CREATED="$CREATED" WAIT_MIN="$WAIT_MIN" BUFFER_MIN="$BUFFER_MIN" MAX_WAIT_MIN="$MAX_WAIT_MIN" python3 -c "
+          import os, datetime
+          created = os.environ['CREATED']
+          wait = int(os.environ['WAIT_MIN'])
+          buf = int(os.environ['BUFFER_MIN'])
+          max_wait = int(os.environ['MAX_WAIT_MIN'])
+          ts = datetime.datetime.fromisoformat(created.replace('Z', '+00:00'))
+          ready = ts + datetime.timedelta(minutes=wait + buf)
+          now = datetime.datetime.now(datetime.timezone.utc)
+          sec = max(0, int((ready - now).total_seconds()))
+          print(min(sec, max_wait * 60))
+          "
+          )"
 
           echo "PR #$PR rate-limited at ${CREATED}; wait_min=${WAIT_MIN}; sleep_sec=${SLEEP_SEC}"
           if [ "${NO_SLEEP:-false}" != "true" ] && [ "${SLEEP_SEC}" -gt 0 ]; then
@@ -184,6 +190,18 @@ PY
           if [ "${STATE}" != "OPEN" ]; then
             echo "PR #$PR closed during wait; skip"
             exit 0
+          fi
+
+          META_AFTER="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select((.user.login=="coderabbitai[bot]" or .user.login=="coderabbitai")
+              and (.body|test("Review limit reached|rate limited by coderabbit|reached your PR review limit";"i")))]
+              | sort_by(.created_at) | reverse | .[0] // empty | {body, created_at}')"
+          if [ -n "$META_AFTER" ] && [ "$META_AFTER" != "null" ]; then
+            CREATED_AFTER="$(printf '%s' "$META_AFTER" | jq -r .created_at)"
+            if [ -n "$CREATED_AFTER" ] && [ "$CREATED_AFTER" \> "$CREATED" ]; then
+              echo "Newer rate-limit at ${CREATED_AFTER} (was ${CREATED}); skip so that window owns the retry"
+              exit 0
+            fi
           fi
 
           REVIEWED_AFTER="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" --paginate \
