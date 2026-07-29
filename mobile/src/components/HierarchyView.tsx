@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SECTIONS } from '../constants';
 import { visibleAccountRows } from '../data/format';
 import { resolveSectionRibbonStats } from '../data/ribbonStats';
-import { sortRows } from '../data/selectors';
+import { sortRows, type RankMetric } from '../data/selectors';
 import {
   childrenFromScoped,
   rowsUnder,
@@ -39,6 +39,7 @@ function computeHierarchyView(
   section: SectionKey,
   path: string[],
   includeNonStandard: boolean,
+  depositRankMetric: RankMetric = 'base',
 ) {
   const under = rowsUnder(all, section, path);
   const nodeRows = visibleAccountRows(under, includeNonStandard);
@@ -52,7 +53,7 @@ function computeHierarchyView(
     data = kids.map((node) => ({ kind: 'node', node }) as Item);
   } else {
     const seen = new Set<string>();
-    data = sortRows(nodeRows, 'rate', section)
+    data = sortRows(nodeRows, 'rate', section, depositRankMetric)
       .filter((r) => (seen.has(r.product_key) ? false : seen.add(r.product_key)))
       .map((row) => ({ kind: 'product', row }) as Item);
   }
@@ -91,6 +92,7 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
   const rows = sectionData?.rates;
   const rba = useStore((s) => s.core?.rba?.at(-1)?.rate ?? null);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const pathKey = path.join('.');
 
   useEffect(() => {
@@ -106,15 +108,22 @@ export function HierarchyView({ section, path }: { section: SectionKey; path: st
       byKey = new Map();
       viewCache.set(sectionData, byKey);
     }
-    const cacheKey = `${section}|${pathKey}|${includeNonStandard ? 1 : 0}`;
+    const cacheKey = `${section}|${pathKey}|${includeNonStandard ? 1 : 0}|${depositRankMetric}`;
     let cached = byKey.get(cacheKey);
     if (!cached) {
-      cached = computeHierarchyView(rows, sectionData, section, path, includeNonStandard);
+      cached = computeHierarchyView(
+        rows,
+        sectionData,
+        section,
+        path,
+        includeNonStandard,
+        depositRankMetric,
+      );
       byKey.set(cacheKey, cached);
     }
     return cached;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pathKey encodes path
-  }, [rows, sectionData, section, pathKey, includeNonStandard]);
+  }, [rows, sectionData, section, pathKey, includeNonStandard, depositRankMetric]);
 
   if (!rows) return null;
 

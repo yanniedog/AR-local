@@ -38,6 +38,7 @@ export default function Trends() {
   const core = useStore((s) => s.core);
   const interests = useStore((s) => s.prefs.interests);
   const includeNonStandard = useStore((s) => s.prefs.includeNonStandard);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const showHistoryRibbon = useStore((s) => effectiveHistoryRibbon(s.prefs));
   const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
   const historyBanks = useStore((s) => s.historyBanks);
@@ -329,7 +330,7 @@ export default function Trends() {
         if (!data) return null;
         const stats = resolveSectionRibbonStats(data, data.rates, false);
         if (stats.min === null) return null;
-        const best = bestRow(data.rates, key);
+        const best = bestRow(data.rates, key, false, depositRankMetric);
         const bestLabel = rateValueLabel(key, 'best');
         const bestRate = best ? formatRate(effectiveRate(best)) : '—';
         return (

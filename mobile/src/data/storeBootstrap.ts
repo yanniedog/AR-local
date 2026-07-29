@@ -3,9 +3,18 @@ import { cache } from './cache';
 import { effectiveDeepSearch, effectiveHistoryRibbon } from '../lib/proAccess';
 import { debugLog } from '../lib/debugLog';
 import { useRegisterLogosStore } from '../lib/registerLogos';
-import { logRetry } from '../lib/degradationLog';
+import { logRetry, logSuitabilityExclusions } from '../lib/degradationLog';
+import { countSuitabilityExclusions } from './access';
 import { sampleCore, sampleManifest } from './sample';
 import { installSampleSeed, readValidatedHistoryBanks } from './storeHelpers';
+import { SECTION_ORDER } from '../constants';
+import type { CorePayload } from '../types';
+
+function reportSuitabilityExclusions(core: CorePayload | null | undefined): void {
+  if (!core) return;
+  const rows = SECTION_ORDER.flatMap((section) => core.sections[section]?.rates ?? []);
+  logSuitabilityExclusions(core.run_date, countSuitabilityExclusions(rows));
+}
 
 export function createBootstrapActions(
   set: StoreSet,
@@ -42,6 +51,7 @@ export function createBootstrapActions(
             ...(cachedSearch ? { searchIndex: cachedSearch } : {}),
             ...(cachedHistory ? { historyBanks: cachedHistory } : {}),
           });
+          reportSuitabilityExclusions(bundle.core);
         } else {
           debugLog.info('store', 'cache miss — seeding bundled sample');
           await installSampleSeed();
@@ -52,6 +62,7 @@ export function createBootstrapActions(
             status: 'ready',
             error: null,
           });
+          reportSuitabilityExclusions(sampleCore);
         }
       } catch (err) {
         const msg = String((err as Error)?.message ?? err);

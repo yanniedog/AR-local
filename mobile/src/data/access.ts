@@ -161,3 +161,47 @@ export function nameRestrictsAccess(name: string | null | undefined): boolean {
     BUSINESS_RE.test(text)
   );
 }
+
+/** Which name-signal categories fire for a product name (may be empty). */
+export function nameRestrictionCategories(name: string | null | undefined): AccessCategory[] {
+  const text = name ?? '';
+  if (!text) return [];
+  const cats: AccessCategory[] = [];
+  if (STAFF_RE.test(text)) cats.push('staff');
+  if (OCCUPATION_RE.test(text)) cats.push('occupation');
+  if (MEMBERSHIP_RE.test(text)) cats.push('membership');
+  if (BUSINESS_RE.test(text)) cats.push('business');
+  if (STUDENT_RE.test(text)) cats.push('student');
+  if (GEO_RE.test(text)) cats.push('geographic');
+  return cats;
+}
+
+export type SuitabilityExclusionCounts = {
+  total: number;
+  nonStandard: number;
+  byAccess: Partial<Record<AccessCategory, number>>;
+};
+
+/**
+ * Count rows the default suitability filter would hide, split by non-standard
+ * account class vs name-access category. Used for diagnostics / false-positive
+ * watch (Phase 1.1) — not for filtering itself.
+ */
+export function countSuitabilityExclusions(
+  rows: Iterable<{ account_class?: string | null; product_name?: string | null }>,
+): SuitabilityExclusionCounts {
+  const byAccess: Partial<Record<AccessCategory, number>> = {};
+  let total = 0;
+  let nonStandard = 0;
+  for (const row of rows) {
+    const ns = row.account_class === 'non_standard';
+    const cats = nameRestrictionCategories(row.product_name);
+    if (!ns && !cats.length) continue;
+    total += 1;
+    if (ns) nonStandard += 1;
+    for (const cat of cats) {
+      byAccess[cat] = (byAccess[cat] ?? 0) + 1;
+    }
+  }
+  return { total, nonStandard, byAccess };
+}

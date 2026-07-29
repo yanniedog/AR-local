@@ -26,6 +26,7 @@ export default function BankDetail() {
   const { provider: raw } = useLocalSearchParams<{ provider: string }>();
   const provider = raw ?? '';
   const core = useStore((s) => s.core);
+  const depositRankMetric = useStore((s) => s.prefs.depositRankMetric);
   const showBankInsights = useStore((s) => effectiveBankInsights(s.prefs));
   const bankInsights = useStore((s) => s.bankInsights);
   const ensureBankInsights = useStore((s) => s.ensureBankInsights);
@@ -44,15 +45,15 @@ export default function BankDetail() {
     if (!core) return out;
     for (const section of SECTION_ORDER) {
       const rows = core.sections[section]?.rates.filter((r) => r.provider === provider) ?? [];
-      // De-duplicate to one card per product (lowest/best rate row).
+      // De-duplicate to one card per product (best rate row under the ranking metric).
       const byProduct = new Map<string, RateRow>();
-      for (const r of sortRows(rows, 'rate', section)) {
+      for (const r of sortRows(rows, 'rate', section, depositRankMetric)) {
         if (!byProduct.has(r.product_key)) byProduct.set(r.product_key, r);
       }
       if (byProduct.size) out.push({ section, rows: Array.from(byProduct.values()) });
     }
     return out;
-  }, [core, provider]);
+  }, [core, provider, depositRankMetric]);
 
   const chartSections = useMemo(
     () =>
