@@ -136,6 +136,7 @@ def refresh_dates_index(
     repo: str = DEFAULT_REPO,
     tag: str = DEFAULT_TAG,
     min_date: str = HISTORY_MIN_DATE,
+    out_dir: Optional[Path] = None,
 ) -> bool:
     """Rebuild ``dates-index.json`` from published dated releases and upload to rolling tag."""
     gh = _app_payload("_gh_available")()
@@ -161,7 +162,7 @@ def refresh_dates_index(
         "min_date": index["min_date"],
         "latest_date": index["latest_date"],
     }
-    out_dir = runs_root.expanduser().resolve() / ".dates-index"
+    out_dir = out_dir or (runs_root.expanduser().resolve() / ".dates-index")
     out_dir.mkdir(parents=True, exist_ok=True)
     index_path = out_dir / DATES_INDEX_FILENAME
     index_path.write_text(
