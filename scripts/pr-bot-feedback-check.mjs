@@ -84,7 +84,8 @@ function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(
-      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots <list>|off]',
+      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots <list>|off]\n'
+      + 'Exit 0 clear; 2 GitHub rate limit; 3 open feedback; 1 hard execution error.',
     );
     process.exit(0);
   }
@@ -201,7 +202,9 @@ function main() {
       `PR #${result.number}: bot feedback gate passed (${result.threadCount} review thread(s) checked)`,
     );
   }
-  process.exit(result.violations.length ? 1 : 0);
+  // Exit 3 is an expected, actionable thread-closure state. Exit 1 remains a
+  // hard execution/configuration error so CI can fail fast instead of retrying it.
+  process.exit(result.violations.length ? 3 : 0);
 }
 
 main();

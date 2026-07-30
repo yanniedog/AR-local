@@ -18,6 +18,7 @@ import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-w
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
 import { isBotNoise } from './scripts/lib/bot-noise.mjs';
 import { gateExemptReason } from './scripts/lib/pr-gate-exempt.mjs';
+import { parseRequiredChecksResult } from './scripts/lib/required-check-settlement.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -176,79 +177,13 @@ function fetchBotActivity(owner, name, prNumber) {
   return { events };
 }
 
-const DEFAULT_IGNORED_CHECK_NAMES = [
-  'bot-presence-gate',
-  'bot-feedback-gate',
-  'pr-bot-presence-gate',
-  'pr-bot-feedback-check',
-  'pr-gates-advisory',
-];
-
-function ignoredCheckNames() {
-  const raw = process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '';
-  const fromEnv = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...fromEnv]);
-}
-
-/** Match full `gh pr checks` name or trailing job segment (e.g. `workflow / job`). */
-function checkNameMatchesIgnore(checkName, ignore) {
-  const lower = (checkName || '').toLowerCase();
-  if (ignore.has(lower)) return true;
-  const slash = lower.lastIndexOf('/');
-  const tail = slash >= 0 ? lower.slice(slash + 1).trim() : lower;
-  return ignore.has(tail);
-}
-
-function checksPendingShape(extra = {}) {
-  return { pending: true, failed: false, failedNames: [], ...extra };
-}
-
 function fetchChecks(prNumber) {
-  const r = spawnSync(
+  const result = spawnSync(
     'gh',
     ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
     { encoding: 'utf8' },
   );
-  if (r.status === 8) return checksPendingShape();
-  if (r.status !== 0) {
-    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
-    // PR branches often have no required checks registered until branch protection applies.
-    if (/no required checks reported/i.test(msg) || /no checks reported/i.test(msg)) {
-      return { pending: false, failed: false, failedNames: [] };
-    }
-    return checksPendingShape({ error: msg });
-  }
-  const stdout = (r.stdout || '').trim();
-  if (!stdout) return checksPendingShape();
-  try {
-    const checks = JSON.parse(stdout);
-    const ignore = ignoredCheckNames();
-    let pending = false;
-    let failed = false;
-    const failedNames = [];
-    if (Array.isArray(checks)) {
-      for (const c of checks) {
-        if (checkNameMatchesIgnore(c.name, ignore)) continue;
-        if (c.bucket === 'pending') pending = true;
-        if (
-          c.bucket === 'fail' ||
-          c.bucket === 'cancel' ||
-          c.state === 'FAILURE' ||
-          c.state === 'ERROR' ||
-          c.state === 'CANCELLED'
-        ) {
-          failed = true;
-          failedNames.push(c.name);
-        }
-      }
-    }
-    return { pending, failed, failedNames };
-  } catch (e) {
-    return checksPendingShape({ error: `Invalid JSON from gh pr checks: ${e.message}` });
-  }
+  return parseRequiredChecksResult(result);
 }
 
 function formatDuration(ms) {

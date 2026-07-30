@@ -267,6 +267,22 @@ armAndParkOnce(
 );
 assert.equal(explicitProgressOptions.markReady, true);
 
+const dryRunResult = armAndParkOnce(
+  7,
+  { baseGuard, dryRun: true },
+  {
+    fetchPrMergeMeta: () => ({ ...openMeta, isDraft: false, autoMergeRequest: null }),
+    progressPullRequest: () => ({
+      blocked: false,
+      ok: true,
+      ready: { action: 'skipped' },
+      autoMerge: { ok: true, action: 'skipped' },
+    }),
+    evaluateGates: () => ({ gates: [] }),
+  },
+);
+assert.equal(dryRunResult.autoMergeArmed, false);
+
 const mergeWrapper = readFileSync('scripts/pr-merge.mjs', 'utf8');
 assert.match(mergeWrapper, /checkDefaultBase/);
 assert.match(mergeWrapper, /base-unprotected/);

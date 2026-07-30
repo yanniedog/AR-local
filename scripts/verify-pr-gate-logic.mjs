@@ -10,6 +10,7 @@
  *  - Low-signal bot threads never block. Unresolved human threads block.
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
+import { isQuotaBotMessage } from './lib/bot-noise.mjs';
 import {
   isMatrixCommitTitle,
   isReportsOnlyFileList,
@@ -94,6 +95,16 @@ for (const [body, want] of [
   ['thanks', false], ['ok', false], ['', false],
 ]) {
   if (isClosureReply(body) !== want) failures.push(`isClosureReply(${body !== '' ? body : '<empty>'}) !== ${want}`);
+}
+
+for (const [body, want] of [
+  ['ERROR: null dereference when the export is empty', false],
+  ['ERROR: 429 RESOURCE_EXHAUSTED quota exceeded', true],
+  ['Service temporarily unavailable; please try again later', true],
+]) {
+  if (isQuotaBotMessage(body) !== want) {
+    failures.push(`isQuotaBotMessage(${body}) !== ${want}`);
+  }
 }
 
 for (const [path, want] of [

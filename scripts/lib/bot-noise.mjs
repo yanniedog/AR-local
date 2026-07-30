@@ -40,7 +40,6 @@ const QUOTA_PATTERNS = [
   /\breview activity has ceased\b/i,
   /\bconsumer version (?:has been )?(?:sunset|retired|deprecated)\b/i,
   /\bdid not complete successfully\b/i,
-  /^\s*ERROR:/i,
 ];
 
 const TRIVIAL_PATTERNS = [

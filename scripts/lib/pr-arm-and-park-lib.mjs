@@ -151,7 +151,7 @@ export function armAndParkOnce(prNumber, opts = {}, deps = {}) {
       ...terminal,
       progression,
       baseGuard,
-      autoMergeArmed: progression?.autoMerge?.ok === true,
+      autoMergeArmed: !opts.dryRun && progression?.autoMerge?.ok === true,
     };
   }
   if (terminal) {
@@ -217,6 +217,7 @@ export function armAndParkOnce(prNumber, opts = {}, deps = {}) {
     classification,
     baseGuard,
     autoMergeArmed:
-      isAutoMergeEnabled(refreshed) || progression?.autoMerge?.ok === true,
+      isAutoMergeEnabled(refreshed)
+      || (!opts.dryRun && progression?.autoMerge?.ok === true),
   };
 }

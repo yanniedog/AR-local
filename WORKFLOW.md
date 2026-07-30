@@ -52,7 +52,9 @@ existing blessed commands.
 
    `pr:gates:check`, `wait-for-bots`, and `pr:bot-feedback-check` remain
    diagnostic commands. `wait-for-bots` means required-CI settlement; reviewer
-   presence defaults to off.
+   presence defaults to off. `pr:bot-feedback-check` distinguishes open feedback
+   (exit 3, retryable by the workflow) from a hard execution error (exit 1,
+   fail-fast).
 5. Read all review threads and relevant top-level comments before replying. Post
    one `## Feedback plan`, implement valid fixes together, then reply in-thread
    with a disposition and resolve each thread.

@@ -99,8 +99,11 @@ jobs:
             fi
             if [ "$code" -eq 2 ]; then
               echo "::warning::GitHub API rate limit - retrying after 60 seconds"
-            else
+            elif [ "$code" -eq 3 ]; then
               echo "Review feedback is still open (attempt $attempt/40); keeping the required check pending."
+            else
+              echo "::error::Feedback gate execution failed permanently (exit $code)."
+              exit "$code"
             fi
             sleep 60
           done

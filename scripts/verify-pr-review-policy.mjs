@@ -11,6 +11,7 @@ import {
   gateGithubBotChecksResult,
   selectNewestCheck,
 } from './lib/pr-gates-lib.mjs';
+import { parseRequiredChecksResult } from './lib/required-check-settlement.mjs';
 
 assert.deepEqual(DEFAULT_REQUIRED_KEYS, []);
 assert.deepEqual(parseRequiredKeys('off'), []);
@@ -57,6 +58,28 @@ assert.equal(
   'a stale pass must not hide a newer pending gate run',
 );
 
+const ignoredPendingOnly = parseRequiredChecksResult({
+  status: 8,
+  stderr: '',
+  stdout: JSON.stringify([
+    { name: 'bot-feedback-gate', bucket: 'pending', state: 'IN_PROGRESS' },
+  ]),
+});
+assert.equal(
+  ignoredPendingOnly.pending,
+  false,
+  'exit 8 must be parsed before ignored required checks are classified',
+);
+const productPending = parseRequiredChecksResult({
+  status: 8,
+  stderr: '',
+  stdout: JSON.stringify([
+    { name: 'bot-feedback-gate', bucket: 'pending', state: 'IN_PROGRESS' },
+    { name: 'app-ci', bucket: 'pending', state: 'QUEUED' },
+  ]),
+});
+assert.equal(productPending.pending, true);
+
 const branchProtection = readFileSync('scripts/apply-branch-protection.mjs', 'utf8');
 const requiredBlock =
   branchProtection.match(/const REQUIRED_CHECKS = \[[\s\S]*?\];/)?.[0] || '';
@@ -100,6 +123,15 @@ assert.match(
 assert.match(feedbackWorkflow, /cancel-in-progress:\s*false/);
 assert.doesNotMatch(feedbackWorkflow, /queue:\s*max/);
 assert.doesNotMatch(feedbackWorkflow, /pull_request\.head\.sha|github\.sha/);
+assert.match(feedbackWorkflow, /elif \[ "\$code" -eq 3 \]/);
+assert.match(feedbackWorkflow, /Feedback gate execution failed permanently/);
+
+const feedbackCheck = readFileSync('scripts/pr-bot-feedback-check.mjs', 'utf8');
+assert.match(
+  feedbackCheck,
+  /process\.exit\(result\.violations\.length \? 3 : 0\)/,
+  'open feedback must have a distinct retryable exit from hard execution failures',
+);
 
 const appCi = readFileSync('.github/workflows/app-ci.yml', 'utf8');
 assert.match(
