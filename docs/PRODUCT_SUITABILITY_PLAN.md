@@ -147,7 +147,16 @@ availability: {                    // advanced include/exclude (all default excl
 
 ---
 
-## Phase 4 — Mortgage offset in the calculator ⬜
+## Phase 4 — Mortgage offset in the calculator 🟡
+
+**Shipped (v1):** `calc.simulateOffset` (pure month-by-month amortisation — interest
+charged on `balance − offset`, repayments unchanged) returns interest saved, months
+saved, payoff term, and effective interest-bearing balance. `CalcInputs` gains
+`wantsOffset` + `offsetBalance`; the calculator shows an offset toggle (field only
+when on) + an "Offset impact" card. `monthlyPayment` moved into `calc.ts` (shared,
+tested). **Follow-ups:** apply offset to switch comparables (needs the Phase 2
+`offset` feature boolean, to avoid assuming a feature), forecast principal curve +
+effective-rate delta.
 
 Build on `calc.ts` + `calculator.tsx` (already has LVR + persisted `calc`).
 
