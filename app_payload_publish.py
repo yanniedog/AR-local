@@ -1,6 +1,7 @@
 """GitHub release publish helpers for the mobile-app payload."""
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ from app_payload_common import (
     SCHEMA_VERSION,
     SUBPROCESS_TIMEOUT_SEC,
     SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+    VALID_SECTIONS,
     _RUN_DATE_RE,
     _app_payload,
     dated_release_title,
@@ -31,6 +33,14 @@ from app_payload_common import (
     release_title,
     _load_json,
 )
+
+# Absolute floor for a publishable CDR payload. Production days are ~3k products /
+# ~350KB core; the empty stub that wiped the live channel was 0 products / ~90B.
+MIN_PUBLISH_PRODUCTS = 100
+MIN_PUBLISH_CORE_BYTES = 10_000
+MIN_PUBLISH_DETAILS_BYTES = 10_000
+# Never replace a healthy live release with less than half its product/core mass.
+MIN_LIVE_RETENTION_RATIO = 0.5
 def _gh_available() -> Optional[str]:
     return shutil.which("gh")
 
@@ -248,6 +258,150 @@ def _prune_release_assets(gh: str, repo: str, tag: str, keep_names: set[str]) ->
     return deleted
 
 
+def _manifest_products(manifest: Optional[Dict[str, Any]]) -> int:
+    counts = (manifest or {}).get("counts") or {}
+    try:
+        return max(0, int(counts.get("products") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _manifest_file_bytes(manifest: Optional[Dict[str, Any]], key: str) -> int:
+    entry = ((manifest or {}).get("files") or {}).get(key) or {}
+    try:
+        return max(0, int(entry.get("bytes") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _core_sections_populated(payload_dir: Path, manifest: Dict[str, Any]) -> Tuple[bool, str]:
+    """Reject empty-stub cores (``sections: {}`` / no rates) before they can go live."""
+    name = str(((manifest.get("files") or {}).get("core") or {}).get("name") or "")
+    if not name:
+        return False, "missing_core_name"
+    path = payload_dir / name
+    if not path.is_file():
+        return False, "missing_core_file"
+    try:
+        core = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - treat any decode failure as unfit
+        return False, f"core_unreadable:{exc!r}"
+    sections = core.get("sections")
+    if not isinstance(sections, dict) or not sections:
+        return False, "empty_sections"
+    for section in VALID_SECTIONS:
+        data = sections.get(section)
+        if not isinstance(data, dict):
+            return False, f"missing_section:{section}"
+        rates = data.get("rates")
+        if not isinstance(rates, list) or not rates:
+            return False, f"empty_rates:{section}"
+    brands = core.get("brands")
+    if not isinstance(brands, dict) or not brands:
+        return False, "empty_brands"
+    return True, "ok"
+
+
+def payload_quality_snapshot(payload_dir: Path, manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """Local quality metrics for a built payload about to be published."""
+    files = manifest.get("files") or {}
+    core_name = str((files.get("core") or {}).get("name") or "")
+    details_name = str((files.get("details") or {}).get("name") or "")
+    core_path = payload_dir / core_name if core_name else None
+    details_path = payload_dir / details_name if details_name else None
+    core_disk = core_path.stat().st_size if core_path is not None and core_path.is_file() else 0
+    details_disk = (
+        details_path.stat().st_size if details_path is not None and details_path.is_file() else 0
+    )
+    sections_ok, sections_reason = _core_sections_populated(payload_dir, manifest)
+    # Prefer on-disk sizes for the floor — declared manifest bytes alone must not
+    # let a tiny stub clear MIN_PUBLISH_*_BYTES.
+    return {
+        "products": _manifest_products(manifest),
+        "core_bytes": core_disk or _manifest_file_bytes(manifest, "core"),
+        "details_bytes": details_disk or _manifest_file_bytes(manifest, "details"),
+        "sections_ok": sections_ok,
+        "sections_reason": sections_reason,
+    }
+
+
+def _live_quality_snapshot(live: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Quality from live manifest metadata only (no asset download)."""
+    products = _manifest_products(live)
+    core_bytes = _manifest_file_bytes(live, "core")
+    details_bytes = _manifest_file_bytes(live, "details")
+    healthy = (
+        products >= MIN_PUBLISH_PRODUCTS
+        and core_bytes >= MIN_PUBLISH_CORE_BYTES
+        and details_bytes >= MIN_PUBLISH_DETAILS_BYTES
+    )
+    return {
+        "products": products,
+        "core_bytes": core_bytes,
+        "details_bytes": details_bytes,
+        "sections_ok": healthy,
+        "sections_reason": "live_manifest_meta",
+    }
+
+
+def _quality_meets_absolute_floor(snap: Dict[str, Any]) -> Tuple[bool, str]:
+    if int(snap.get("products") or 0) < MIN_PUBLISH_PRODUCTS:
+        return (
+            False,
+            f"products_below_floor:{snap.get('products')}<{MIN_PUBLISH_PRODUCTS}",
+        )
+    if int(snap.get("core_bytes") or 0) < MIN_PUBLISH_CORE_BYTES:
+        return (
+            False,
+            f"core_bytes_below_floor:{snap.get('core_bytes')}<{MIN_PUBLISH_CORE_BYTES}",
+        )
+    if int(snap.get("details_bytes") or 0) < MIN_PUBLISH_DETAILS_BYTES:
+        return (
+            False,
+            f"details_bytes_below_floor:{snap.get('details_bytes')}<{MIN_PUBLISH_DETAILS_BYTES}",
+        )
+    if not snap.get("sections_ok"):
+        return False, str(snap.get("sections_reason") or "sections_unfit")
+    return True, "ok"
+
+
+def _publish_quality_allows(
+    candidate: Dict[str, Any],
+    live_status: str,
+    live: Optional[Dict[str, Any]],
+    *,
+    force: bool,
+) -> Tuple[bool, str]:
+    """Keep the live channel at least as good as recent healthy publishes.
+
+    ``force`` is the only escape hatch (operator-confirmed seed/downgrade).
+    """
+    if force:
+        return True, "force"
+    abs_ok, abs_reason = _quality_meets_absolute_floor(candidate)
+    if not abs_ok:
+        return False, abs_reason
+    if live_status != "present" or live is None:
+        return True, "ok"
+    live_snap = _live_quality_snapshot(live)
+    if not live_snap["sections_ok"]:
+        # Live is already below floor — allow a floor-passing candidate to repair it.
+        return True, "repair_unhealthy_live"
+    min_products = max(
+        MIN_PUBLISH_PRODUCTS,
+        int(live_snap["products"] * MIN_LIVE_RETENTION_RATIO),
+    )
+    min_core = max(
+        MIN_PUBLISH_CORE_BYTES,
+        int(live_snap["core_bytes"] * MIN_LIVE_RETENTION_RATIO),
+    )
+    if int(candidate["products"]) < min_products:
+        return False, f"products_downgrade:{candidate['products']}<{min_products}"
+    if int(candidate["core_bytes"]) < min_core:
+        return False, f"core_bytes_downgrade:{candidate['core_bytes']}<{min_core}"
+    return True, "ok"
+
+
 def _manifest_should_replace(
     status: str,
     live: Optional[Dict[str, Any]],
@@ -306,7 +460,10 @@ def publish_payload(
 
     Token-gated: with no gh/auth it prints a message and returns False (a no-op),
     unless ``require_token`` is set, in which case it raises. ``force`` overrides the
-    "don't overwrite a newer live manifest" guard (operator-confirmed downgrade).
+    newer-live and quality-floor guards (operator-confirmed seed/downgrade).
+
+    Quality floor: refuse empty/thin payloads so a bad build cannot replace a healthy
+    live channel. Checks run before any asset upload.
     """
     manifest_path = payload_dir / "manifest.json"
     if not manifest_path.exists():
@@ -321,6 +478,21 @@ def publish_payload(
     if missing:
         raise FileNotFoundError(f"missing payload assets: {missing}")
 
+    our_run_date = str(manifest.get("run_date") or "")
+    our_gen = str(manifest.get("generated_at") or "")
+    candidate_quality = payload_quality_snapshot(payload_dir, manifest)
+    abs_ok, abs_reason = _quality_meets_absolute_floor(candidate_quality)
+    if not force and not abs_ok:
+        print(
+            f"[app_payload] publish skipped run_date={our_run_date} tag={tag} "
+            f"reason=quality_floor ({abs_reason}) "
+            f"products={candidate_quality.get('products')} "
+            f"core_bytes={candidate_quality.get('core_bytes')} "
+            f"details_bytes={candidate_quality.get('details_bytes')} "
+            "live channel unchanged; pass force=true to override"
+        )
+        return False
+
     gh = _app_payload("_gh_available")()
     if not gh or not _app_payload("_gh_authed")(gh):
         msg = (
@@ -331,16 +503,16 @@ def publish_payload(
             raise RuntimeError(msg)
         print(msg)
         print(
-            f"[app_payload] publish skipped run_date={str(manifest.get('run_date') or '')} "
+            f"[app_payload] publish skipped run_date={our_run_date} "
             "reason=no_gh_auth exit=0"
         )
         return False
 
-    our_run_date = str(manifest.get("run_date") or "")
-    our_gen = str(manifest.get("generated_at") or "")
     print(
         f"[app_payload] publish starting run_date={our_run_date} tag={tag} repo={repo} "
-        f"assets={[*names, 'manifest.json']}"
+        f"assets={[*names, 'manifest.json']} "
+        f"products={candidate_quality.get('products')} "
+        f"core_bytes={candidate_quality.get('core_bytes')}"
     )
     rolling = is_rolling_tag(tag)
     title = release_title(our_run_date) if rolling else dated_release_title(our_run_date)
@@ -371,24 +543,8 @@ def publish_payload(
             check=True, timeout=SUBPROCESS_TIMEOUT_SEC,
         )
 
-    # Data assets are content-addressed, so a same-name asset already on the release is
-    # byte-identical. Upload only the MISSING ones, WITHOUT --clobber — never delete an
-    # asset the current manifest still references (an interrupted clobber could lose it).
-    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-    listed = _app_payload("subprocess").run(
-        [gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q", ".assets[].name"],
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
-    existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
-    to_upload = [a for a in data_assets if a.name not in existing]
-    if to_upload:
-        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
-        _app_payload("subprocess").run(
-            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo],
-            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
-        )
-    # ...then replace manifest.json last, so it only ever points at assets already live.
-    # First check the live manifest, distinguishing present / missing / transient-error.
+    # Gate on live freshness + quality BEFORE uploading any new assets, so an empty
+    # stub cannot litter the release (or race a manifest replace) when rejected.
     status, live = _app_payload("_live_manifest_status")(repo, tag)
 
     should_replace, replace_reason = _app_payload("_manifest_should_replace")(
@@ -412,9 +568,43 @@ def publish_payload(
         print(
             f"[app_payload] publish skipped manifest run_date={our_run_date} tag={tag} "
             f"(live run_date={live_run_date} generated_at={live_gen} is newer; "
-            f"uploaded {len(to_upload)} new data asset(s); pass force=true to override)"
+            "no assets uploaded; pass force=true to override)"
         )
         return False
+
+    quality_ok, quality_reason = _publish_quality_allows(
+        candidate_quality,
+        status,
+        live,
+        force=force,
+    )
+    if not quality_ok:
+        live_products = _manifest_products(live)
+        print(
+            f"[app_payload] publish skipped run_date={our_run_date} tag={tag} "
+            f"reason=quality_floor ({quality_reason}) "
+            f"candidate_products={candidate_quality.get('products')} "
+            f"live_products={live_products} "
+            "live channel unchanged; pass force=true to override"
+        )
+        return False
+
+    # Data assets are content-addressed, so a same-name asset already on the release is
+    # byte-identical. Upload only the MISSING ones, WITHOUT --clobber — never delete an
+    # asset the current manifest still references (an interrupted clobber could lose it).
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    listed = _app_payload("subprocess").run(
+        [gh, "release", "view", tag, "--repo", repo, "--json", "assets", "-q", ".assets[].name"],
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC,
+    )
+    existing = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    to_upload = [a for a in data_assets if a.name not in existing]
+    if to_upload:
+        # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+        _app_payload("subprocess").run(
+            [gh, "release", "upload", tag, *[str(a) for a in to_upload], "--repo", repo],
+            check=True, timeout=SUBPROCESS_UPLOAD_TIMEOUT_SEC,
+        )
 
     # Keep the displaced manifest so a failed --clobber replacement can be rolled back.
     backup_gen = str((live or {}).get("generated_at") or "") if status == "present" else None
