@@ -4,25 +4,19 @@ All PRs to `main` use **squash auto-merge** by default.
 
 ## Agent / automation command
 
-Use the canonical one-shot helper:
+After `npm run pr:gates:check -- --pr <n>` exits **0**:
 
 ```sh
-npm run pr:arm-and-park -- --pr <n>
+npm run pr:merge -- --pr <n>
+# equivalent:
+gh pr merge <n> --auto --squash --delete-branch
 ```
 
-It verifies the exact default base, explicitly promotes a draft, syncs when
-needed, and arms squash auto-merge with branch deletion. The guarded
-`npm run pr:merge` wrapper is the only other command allowed to promote a draft;
-background queue/watch/update helpers never publish drafts. Exit 0 means ready
-or merged, exit 2 means pending-only/parked, and exit 3 means actionable. Never
-invoke bare `gh pr merge`; the legacy wrapper is not the preferred agent
-entrypoint.
+`--auto` queues merge until required checks pass (and updates branch when protection requires up-to-date). Do not merge on CI green alone — complete bot wait and thread closure per `WORKFLOW.md`.
 
 ## `gh pr create`
 
-Squash is **not** set at PR creation. Opening a draft PR does not choose the
-merge method; only an explicit `pr:arm-and-park` or guarded `pr:merge` invocation
-marks it ready. Background automation preserves the draft state.
+Squash is **not** set at PR creation. Opening a PR does not choose merge method; use the merge command above when gates pass.
 
 ## Repository settings (squash-only)
 
@@ -46,6 +40,4 @@ If the API returns 403, apply manually: **Settings → General → Pull Requests
 
 ## Branch protection
 
-The universal gate on `main` is `bot-feedback-gate`:
-`npm run branch-protection:apply` (see `WORKFLOW.md`). Applicable product CI
-remains path-filtered and is not added as a synthetic universal context.
+Bot gates on `main`: `npm run branch-protection:apply` (see `WORKFLOW.md`). Protection blocks merge until checks pass; it does not replace squash-only repo settings above.

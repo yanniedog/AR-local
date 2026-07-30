@@ -501,175 +501,6 @@ def test_manifest_should_replace_dated_blocks_same_day_correction_race():
     assert reason == "live_newer"
 
 
-def _write_floor_payload(tmp_path, *, products: int, rates_per_section: int = 3):
-    """Build a minimal gzip payload that clears the absolute publish floor."""
-    import gzip
-
-    sections = {}
-    for section in app_payload.VALID_SECTIONS:
-        sections[section] = {
-            "rates": [
-                {
-                    "product_key": f"{section}-{i}",
-                    "provider": f"Bank{i}",
-                    "dataset": section,
-                    "rate": 0.05,
-                }
-                for i in range(rates_per_section)
-            ]
-        }
-    core = {
-        "schema_version": 1,
-        "run_date": "2026-07-31",
-        "sections": sections,
-        "brands": {f"Bank{i}": {"name": f"Bank{i}"} for i in range(rates_per_section)},
-        "rba": [],
-        "rba_holds": [],
-    }
-    details = {
-        "schema_version": 1,
-        "run_date": "2026-07-31",
-        "products": {f"Mortgage-{i}": {"product_name": f"P{i}"} for i in range(rates_per_section)},
-    }
-    # High-entropy pad so on-disk gzip clears MIN_PUBLISH_*_BYTES.
-    import os
-
-    pad = os.urandom(14_000).hex()
-    core["pad"] = pad
-    details["pad"] = pad
-    core_name = "core-floor-test.json.gz"
-    details_name = "details-floor-test.json.gz"
-    core_bytes = gzip.compress(json.dumps(core).encode("utf-8"), compresslevel=1)
-    details_bytes = gzip.compress(json.dumps(details).encode("utf-8"), compresslevel=1)
-    assert len(core_bytes) >= app_payload.MIN_PUBLISH_CORE_BYTES
-    assert len(details_bytes) >= app_payload.MIN_PUBLISH_DETAILS_BYTES
-    (tmp_path / core_name).write_bytes(core_bytes)
-    (tmp_path / details_name).write_bytes(details_bytes)
-    manifest = {
-        "run_date": "2026-07-31",
-        "generated_at": "2026-07-31T00:00:00Z",
-        "counts": {"products": products},
-        "files": {
-            "core": {"name": core_name, "bytes": len(core_bytes), "sha256": "c" * 64},
-            "details": {
-                "name": details_name,
-                "bytes": len(details_bytes),
-                "sha256": "d" * 64,
-            },
-        },
-    }
-    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return manifest
-
-
-def test_publish_quality_rejects_empty_stub_core(tmp_path):
-    import gzip
-
-    core = {
-        "schema_version": 1,
-        "run_date": "2026-07-31",
-        "sections": {},
-        "brands": {},
-        "rba": {},
-    }
-    details = {"schema_version": 1, "run_date": "2026-07-31", "products": {}}
-    core_name = "core-empty.json.gz"
-    details_name = "details-empty.json.gz"
-    (tmp_path / core_name).write_bytes(gzip.compress(json.dumps(core).encode("utf-8")))
-    (tmp_path / details_name).write_bytes(
-        gzip.compress(json.dumps(details).encode("utf-8"))
-    )
-    (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_date": "2026-07-31",
-                "counts": {"products": 0},
-                "files": {
-                    "core": {"name": core_name, "bytes": 90},
-                    "details": {"name": details_name, "bytes": 78},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    snap = app_payload.payload_quality_snapshot(
-        tmp_path, json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    )
-    ok, reason = app_payload._publish_quality_allows(snap, "missing", None, force=False)
-    assert not ok
-    assert "products_below_floor" in reason or "empty_sections" in reason
-
-
-def test_publish_quality_blocks_downgrade_vs_healthy_live(tmp_path):
-    manifest = _write_floor_payload(tmp_path, products=200)
-    snap = app_payload.payload_quality_snapshot(tmp_path, manifest)
-    live = {
-        "run_date": "2026-07-30",
-        "counts": {"products": 3000},
-        "files": {
-            "core": {"bytes": 350_000},
-            "details": {"bytes": 600_000},
-        },
-    }
-    ok, reason = app_payload._publish_quality_allows(snap, "present", live, force=False)
-    assert not ok
-    assert reason.startswith("products_downgrade:")
-
-
-def test_publish_quality_allows_peer_of_live(tmp_path):
-    manifest = _write_floor_payload(tmp_path, products=2800)
-    snap = app_payload.payload_quality_snapshot(tmp_path, manifest)
-    live = {
-        "run_date": "2026-07-30",
-        "counts": {"products": 3000},
-        "files": {
-            "core": {"bytes": 20_000},
-            "details": {"bytes": 20_000},
-        },
-    }
-    ok, reason = app_payload._publish_quality_allows(snap, "present", live, force=False)
-    assert ok
-    assert reason == "ok"
-
-
-def test_publish_skips_empty_stub_without_uploading(tmp_path, monkeypatch, capsys):
-    import gzip
-
-    core = {"schema_version": 1, "run_date": "2026-07-31", "sections": {}, "brands": {}, "rba": {}}
-    details = {"schema_version": 1, "run_date": "2026-07-31", "products": {}}
-    (tmp_path / "core.json.gz").write_bytes(gzip.compress(json.dumps(core).encode("utf-8")))
-    (tmp_path / "details.json.gz").write_bytes(
-        gzip.compress(json.dumps(details).encode("utf-8"))
-    )
-    (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_date": "2026-07-31",
-                "generated_at": "2026-07-31T12:00:00Z",
-                "counts": {"products": 0},
-                "files": {
-                    "core": {"name": "core.json.gz", "bytes": 90},
-                    "details": {"name": "details.json.gz", "bytes": 78},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    uploads = []
-
-    def fake_run(args, **_kwargs):
-        uploads.append(list(args))
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
-    monkeypatch.setattr(app_payload, "_gh_authed", lambda _gh: True)
-    monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
-
-    assert app_payload.publish_payload(tmp_path) is False
-    assert uploads == []
-    assert "quality_floor" in capsys.readouterr().out
-
-
 def test_update_release_title_calls_gh_release_edit(monkeypatch):
     calls: list[list[str]] = []
 
@@ -917,9 +748,7 @@ def test_publish_dry_run_includes_optional_assets(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(app_payload, "_gh_available", lambda: "gh")
     monkeypatch.setattr(app_payload, "_gh_authed", lambda _gh: True)
 
-    # Tiny fixture assets are below the publish quality floor; force keeps this a
-    # dry-run/upload-shape test rather than a quality-gate test.
-    assert app_payload.publish_payload(tmp_path, dry_run=True, force=True) is False
+    assert app_payload.publish_payload(tmp_path, dry_run=True) is False
 
     output = capsys.readouterr().out
     assert "search-index.json.gz" in output
@@ -971,7 +800,7 @@ def test_publish_protects_optional_assets_from_pruning(tmp_path, monkeypatch):
 
     monkeypatch.setattr(app_payload.subprocess, "run", fake_run)
 
-    assert app_payload.publish_payload(tmp_path, force=True) is True
+    assert app_payload.publish_payload(tmp_path) is True
     assert protected["keep"] == set(names)
     assert any("history-banks.json.gz" in " ".join(command) for command in uploads)
     assert any("bank-history.json.gz" in " ".join(command) for command in uploads)

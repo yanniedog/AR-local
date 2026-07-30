@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
- * Dynamic pre-merge settlement helper.
- * With the default advisory-reviewer policy, exit 0 when required CI settles.
- * Owners may explicitly opt specific reviewers into the older presence wait.
+ * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
+ * Exit 0 only when CI is settled, every required bot has completed since anchor,
+ * and the quiet window has passed after the last bot activity.
  * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
 import { execSync, spawnSync } from 'node:child_process';
@@ -18,7 +18,6 @@ import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-w
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
 import { isBotNoise } from './scripts/lib/bot-noise.mjs';
 import { gateExemptReason } from './scripts/lib/pr-gate-exempt.mjs';
-import { fetchRequiredCheckState } from './scripts/lib/required-ci-checks.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -118,14 +117,13 @@ function resolveRepo() {
 }
 
 function resolvePr(prArg, branch) {
-  const fields = 'number,createdAt,headRefName,headRefOid,baseRefName';
   if (prArg) {
-    const r = gh(['pr', 'view', String(prArg), '--json', fields], { json: true });
+    const r = gh(['pr', 'view', String(prArg), '--json', 'number,createdAt,headRefName'], { json: true });
     if (!r.ok) return { error: r.error };
     return { pr: r.data };
   }
   if (!branch) return { pr: null };
-  const r = gh(['pr', 'list', '--state', 'open', '--head', branch, '--json', fields], {
+  const r = gh(['pr', 'list', '--state', 'open', '--head', branch, '--json', 'number,createdAt,headRefName'], {
     json: true,
   });
   if (!r.ok) return { error: r.error };
@@ -187,22 +185,70 @@ const DEFAULT_IGNORED_CHECK_NAMES = [
 ];
 
 function ignoredCheckNames() {
-  const configured = (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '')
+  const raw = process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '';
+  const fromEnv = raw
     .split(',')
-    .map((name) => name.trim().toLowerCase())
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...configured]);
+  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...fromEnv]);
 }
 
-function fetchChecks(prNumber, repo, headSha, baseRefName) {
-  return fetchRequiredCheckState({
-    prNumber,
-    repo: `${repo.owner}/${repo.name}`,
-    headSha,
-    baseRefName,
-    ignoredNames: [...ignoredCheckNames()],
-    fallbackRequiredNames: ['bot-feedback-gate'],
-  });
+/** Match full `gh pr checks` name or trailing job segment (e.g. `workflow / job`). */
+function checkNameMatchesIgnore(checkName, ignore) {
+  const lower = (checkName || '').toLowerCase();
+  if (ignore.has(lower)) return true;
+  const slash = lower.lastIndexOf('/');
+  const tail = slash >= 0 ? lower.slice(slash + 1).trim() : lower;
+  return ignore.has(tail);
+}
+
+function checksPendingShape(extra = {}) {
+  return { pending: true, failed: false, failedNames: [], ...extra };
+}
+
+function fetchChecks(prNumber) {
+  const r = spawnSync(
+    'gh',
+    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
+    { encoding: 'utf8' },
+  );
+  if (r.status === 8) return checksPendingShape();
+  if (r.status !== 0) {
+    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
+    // PR branches often have no required checks registered until branch protection applies.
+    if (/no required checks reported/i.test(msg) || /no checks reported/i.test(msg)) {
+      return { pending: false, failed: false, failedNames: [] };
+    }
+    return checksPendingShape({ error: msg });
+  }
+  const stdout = (r.stdout || '').trim();
+  if (!stdout) return checksPendingShape();
+  try {
+    const checks = JSON.parse(stdout);
+    const ignore = ignoredCheckNames();
+    let pending = false;
+    let failed = false;
+    const failedNames = [];
+    if (Array.isArray(checks)) {
+      for (const c of checks) {
+        if (checkNameMatchesIgnore(c.name, ignore)) continue;
+        if (c.bucket === 'pending') pending = true;
+        if (
+          c.bucket === 'fail' ||
+          c.bucket === 'cancel' ||
+          c.state === 'FAILURE' ||
+          c.state === 'ERROR' ||
+          c.state === 'CANCELLED'
+        ) {
+          failed = true;
+          failedNames.push(c.name);
+        }
+      }
+    }
+    return { pending, failed, failedNames };
+  } catch (e) {
+    return checksPendingShape({ error: `Invalid JSON from gh pr checks: ${e.message}` });
+  }
 }
 
 function formatDuration(ms) {
@@ -212,65 +258,10 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({
-  prNumber,
-  anchorIso,
-  headSha,
-  baseRefName,
-  state,
-  repo: repoIn,
-  requiredKeys,
-  singleShot = false,
-}) {
+function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, singleShot = false }) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
-  }
-
-  if (requiredKeys.length === 0) {
-    const elapsedMs = Date.now() - anchor.getTime();
-    const maxMs = MAX_WAIT_MIN * 60 * 1000;
-    const checks = fetchChecks(prNumber, repoIn, headSha, baseRefName);
-    if (checks.error && !checks.failed) {
-      if (isGithubRateLimitError(checks.error)) {
-        return {
-          status: 'waiting',
-          message: `GitHub API rate limit on required checks — retry later (${checks.error})`,
-          elapsedMs,
-          remainingCapMs: maxMs - elapsedMs,
-        };
-      }
-      return { status: 'error', message: checks.error };
-    }
-    if (checks.failed) {
-      const names = checks.failedNames?.length ? checks.failedNames.join(', ') : 'required check(s)';
-      return {
-        status: 'error',
-        message: `PR #${prNumber} has failed required check(s): ${names}. Fix CI before merge.`,
-      };
-    }
-    if (checks.pending) {
-      if (elapsedMs > maxMs) {
-        return {
-          status: 'timeout',
-          message:
-            `Required CI safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ` +
-            `${anchor.toISOString()}.`,
-        };
-      }
-      return {
-        status: 'waiting',
-        message: `PR #${prNumber}: required CI checks are still pending; reviewer presence is advisory.`,
-        elapsedMs,
-        remainingCapMs: maxMs - elapsedMs,
-      };
-    }
-    return {
-      status: 'ready',
-      message: 'Reviewer presence is advisory; required CI checks are settled.',
-      botsSeen: [],
-      missing: [],
-    };
   }
 
   const repo = repoIn || resolveRepo();
@@ -322,7 +313,7 @@ function evaluate({
     lastQuietAnchorAt !== null &&
     Date.now() - lastQuietAnchorAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
-  const checks = fetchChecks(prNumber, repo, headSha, baseRefName);
+  const checks = fetchChecks(prNumber);
   if (checks.error && !checks.failed) {
     if (isGithubRateLimitError(checks.error)) {
       return {
@@ -442,17 +433,17 @@ function evaluate({
 function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Check required CI settlement. Reviewer presence is advisory unless explicitly configured.
+Poll GitHub until every required bot has posted or reacted with thumbs-up since the wait anchor and activity is quiet.
 
 Options:
   --pr <n>              Pull request number (default: open PR for current branch)
-  --watch, -w           Legacy interactive polling; agents use single-shot calls
+  --watch, -w           Poll every ${POLL_INTERVAL_SEC}s until ready or cap
   --bot-tag             Reset wait anchor to now (after @mentioning bots)
   --since <iso>         Anchor wait window to timestamp (ISO 8601)
-  --require-bots <list> Comma-separated required keys, or off/none/disabled (default: none)
+  --require-bots <list> Comma-separated required keys (default: gemini,codex,sourcery)
   --help, -h            Show this help
 
-Exit codes: 0 ready | 2 still waiting | 1 failed/error
+Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap (DO NOT MERGE)
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
      AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
@@ -529,9 +520,10 @@ async function main() {
     writeState(prNumber, state);
   }
 
-  // Current repository policy is authoritative. Persisted state must not
-  // resurrect reviewer requirements retired by a later policy change.
-  const effectiveRequired = requiredKeys;
+  const cliOverride = args.requireBots !== null;
+  const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
+  const effectiveRequired =
+    cliOverride || envOverride ? requiredKeys : state.requiredKeys || requiredKeys;
   if (
     state.requiredKeys &&
     JSON.stringify(state.requiredKeys) !== JSON.stringify(effectiveRequired)
@@ -571,14 +563,13 @@ async function main() {
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
+    const keys = st.requiredKeys || effectiveRequired;
     return evaluate({
       prNumber,
       anchorIso: st.anchor || anchorFromPr,
-      headSha: resolved.pr.headRefOid,
-      baseRefName: resolved.pr.baseRefName,
       state: st,
       repo,
-      requiredKeys: effectiveRequired,
+      requiredKeys: keys,
       singleShot: !args.watch,
     });
   };

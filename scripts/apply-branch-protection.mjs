@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Apply branch protection on main requiring the vendor-neutral feedback gate.
+ * Apply branch protection on main requiring bot merge gates.
  * Requires admin/repo scope on GH_TOKEN or gh auth.
  *
  * Usage: npm run branch-protection:apply [-- --branch main] [-- --dry-run]
@@ -8,14 +8,7 @@
 import { spawnSync } from 'node:child_process';
 
 /** Bot merge gates — must match workflow YAML job keys exactly. */
-const REQUIRED_CHECKS = ['bot-feedback-gate'];
-const RETIRED_CHECKS = new Set([
-  'bot-presence-gate',
-  'local-llm-review',
-  'qwen-code-review',
-  'qwen-review',
-  'qwen-review-runner',
-]);
+const BOT_GATE_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -43,19 +36,19 @@ function ghJson(args, { allow404 = false } = {}) {
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }
 
-function mergeCheckContexts(existingContexts, requiredChecks) {
-  const retained = (existingContexts || []).filter((context) => !RETIRED_CHECKS.has(context));
-  const merged = [...retained, ...requiredChecks];
+function mergeCheckContexts(existingContexts, botChecks) {
+  const merged = [...(existingContexts || []), ...botChecks];
   return [...new Set(merged.filter(Boolean))];
 }
 
 /** Map GET branch protection to PUT input, merging required check contexts. */
 function buildProtectionPayload(existing, mergedContexts) {
+  const strict = existing?.required_status_checks?.strict ?? true;
   const enforceAdmins =
     typeof existing?.enforce_admins?.enabled === 'boolean' ? existing.enforce_admins.enabled : true;
 
   const payload = {
-    required_status_checks: { strict: true, contexts: mergedContexts },
+    required_status_checks: { strict, contexts: mergedContexts },
     enforce_admins: enforceAdmins,
     required_pull_request_reviews: null,
     restrictions: null,
@@ -92,7 +85,7 @@ ${checks.map((c) => `     - \`${c}\``).join('\n')}
 5. Do not allow bypassing the above settings (recommended for admins too)
 
 Repo merge method (Settings → General → Pull Requests, or \`npm run repo-merge-settings:apply\`):
-squash only, auto-merge ON, delete head branches ON. Agents: \`npm run pr:arm-and-park -- --pr <n>\`.
+squash only, auto-merge ON, delete head branches ON. Agents: \`npm run pr:merge -- --pr <n>\`.
 
 Note: GitHub cannot block "Close pull request" via branch protection. Agents must not close
 PRs without merge unless the user waives in writing; \`npm run agent:auditor\` flags
@@ -130,7 +123,7 @@ function main() {
   }
 
   const existingContexts = existing?.required_status_checks?.contexts || [];
-  const mergedContexts = mergeCheckContexts(existingContexts, REQUIRED_CHECKS);
+  const mergedContexts = mergeCheckContexts(existingContexts, BOT_GATE_CHECKS);
   const payload = buildProtectionPayload(existing, mergedContexts);
 
   if (args.dryRun) {
@@ -141,8 +134,7 @@ function main() {
           branch: args.branch,
           existingContexts,
           mergedContexts,
-          requiredChecks: REQUIRED_CHECKS,
-          retiredChecks: [...RETIRED_CHECKS],
+          botGates: BOT_GATE_CHECKS,
           payload,
         },
         null,
@@ -162,9 +154,7 @@ function main() {
     console.log(`Branch protection applied on ${repo}:${args.branch}`);
     console.log(`Required checks (${mergedContexts.length}): ${mergedContexts.join(', ')}`);
     if (existingContexts.length) {
-      console.log(
-        `Reconciled ${existingContexts.length} existing check(s); required gate: ${REQUIRED_CHECKS.join(', ')}`,
-      );
+      console.log(`Preserved ${existingContexts.length} existing check(s); added bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
     }
     console.log(`required_conversation_resolution: ${payload.required_conversation_resolution}`);
     process.exit(0);

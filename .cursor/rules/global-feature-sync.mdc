@@ -32,7 +32,7 @@ Also mirror edits under `~/.cursor/skills/` or `~/.cursor/workflow-scripts/` whe
 
 Chief: if a worker edits listed paths, assign sync in the **same PR cycle** or spawn a sync subagent before merge.
 
-Orchestrator: **global mirror check** before `npm run pr:arm-and-park` when the PR diff includes any row above.
+Orchestrator: **global mirror check** before `gh pr merge` when the PR diff includes any row above.
 
 ## Invoke
 

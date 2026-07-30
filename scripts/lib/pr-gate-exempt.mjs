@@ -1,8 +1,8 @@
 /**
- * PRs that retain the repository's established feedback-gate exemptions.
+ * PRs that skip bot-presence-gate, bot-feedback-gate, and wait-for-bots.
  *
- * Reviewer vendors and reviewer-presence checks are advisory for every PR.
- * The feedback gate is exempt for:
+ * Policy: Gemini / Codex / Sourcery are required only on human-initiated work PRs
+ * (e.g. yanniedog). Skip for:
  *   - PRs opened by GitHub bots (github-actions[bot], dependabot, …)
  *   - Conventional chore PRs (chore: / chore(scope):)
  *   - Known automated chores (reports matrix, mobile auto-release bumps)

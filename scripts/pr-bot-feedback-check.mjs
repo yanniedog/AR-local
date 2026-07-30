@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
+import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
 import {
   GhRateLimitError,
   classifyThreads,
@@ -84,8 +84,7 @@ function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(
-      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots <list>|off]\n'
-      + 'Exit 0 clear; 2 GitHub rate limit; 3 open feedback; 1 hard execution error.',
+      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots gemini,codex,sourcery]',
     );
     process.exit(0);
   }
@@ -149,24 +148,21 @@ function main() {
 
   let botPresence = null;
   if (!args.skipBotPresence) {
-    // Current policy is authoritative; stale wait-state files must not
-    // resurrect reviewer requirements retired by the repository owner.
-    const requiredKeys = resolveRequiredKeys(args.requireBots);
-    if (requiredKeys.length === 0) {
-      botPresence = {
-        ok: true,
-        requiredKeys: [],
-        missing: [],
-        botsSeen: [],
-        detail: 'none (reviewers are advisory)',
-      };
-    } else {
-      try {
-        botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
-      } catch (e) {
-        console.error(`pr-bot-feedback-check: bot presence check failed: ${e.message}`);
-        process.exit(1);
-      }
+    const state = readBotWaitState(prNumber);
+    const cliOverride = args.requireBots !== null;
+    const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
+    const requiredKeys = cliOverride
+      ? resolveRequiredKeys(args.requireBots)
+      : envOverride
+        ? resolveRequiredKeys()
+        : state?.requiredKeys?.length
+          ? state.requiredKeys
+          : resolveRequiredKeys();
+    try {
+      botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
+    } catch (e) {
+      console.error(`pr-bot-feedback-check: bot presence check failed: ${e.message}`);
+      process.exit(1);
     }
     if (!botPresence.ok) {
       console.error(
@@ -195,21 +191,14 @@ function main() {
   } else if (result.violations.length) {
     printViolations(result);
     console.error(
-      'pr-bot-feedback-check: merge blocked — disposition and resolution are required for substantive feedback',
+      'pr-bot-feedback-check: merge blocked — resolve threads or reply in-thread (implemented / deferred / declined) per WORKFLOW.md step 6',
     );
   } else {
     console.log(
       `PR #${result.number}: bot feedback gate passed (${result.threadCount} review thread(s) checked)`,
     );
   }
-  // Exit 3 is an expected, actionable thread-closure state. Exit 1 remains a
-  // hard execution/configuration error so CI can fail fast instead of retrying it.
-  process.exit(result.violations.length ? 3 : 0);
+  process.exit(result.violations.length ? 1 : 0);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`pr-bot-feedback-check: GitHub API check could not complete: ${error.message}`);
-  process.exit(2);
-}
+main();
