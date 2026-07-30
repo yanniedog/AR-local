@@ -26,17 +26,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run only at 03:00 Australia/Brisbane
+      - name: Decide whether to run manifest check
         id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           hour=$(TZ=Australia/Brisbane date +%H)
           echo "brisbane_hour=$hour" >> "$GITHUB_OUTPUT"
-          if [ "$hour" = "03" ]; then
+          # workflow_dispatch: always run (manual triage).
+          # schedule: accept 03:00-06:59 Brisbane — hosted runners often start
+          # 1-2h after the cron fires, which previously skipped every nightly check.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "03:00 Australia/Brisbane — running manifest check"
+            echo "workflow_dispatch — running manifest check"
+          elif [ "$hour" -ge 3 ] && [ "$hour" -le 6 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Brisbane ${hour}:xx — running manifest check (post-03:00 window)"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skip: Brisbane local hour is ${hour}:xx (want 03:xx)"
+            echo "Skip: Brisbane local hour is ${hour}:xx (want 03:xx-06:xx or workflow_dispatch)"
           fi
 
       - name: Check manifest freshness
