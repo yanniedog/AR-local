@@ -9,9 +9,9 @@ export function gitRepoRoot() {
 }
 
 /**
- * Directory for per-PR bot-wait anchor JSON (portable across linked worktrees).
+ * Directory for per-PR bot-wait anchor JSON (valid in linked worktrees).
  * Override: AR_BOT_WAIT_STATE_DIR (absolute, or repo-relative).
- * Default: <repo>/.ar-bot-wait (not under .git).
+ * Default: Git's resolved metadata path for the current worktree.
  */
 export function botWaitStateDir(repoRoot) {
   const env = process.env.AR_BOT_WAIT_STATE_DIR?.trim();
@@ -19,7 +19,16 @@ export function botWaitStateDir(repoRoot) {
   if (env) {
     return path.isAbsolute(env) ? path.resolve(env) : path.resolve(root, env);
   }
-  return path.join(root, '.ar-bot-wait');
+  const resolved = spawnSync(
+    'git',
+    ['-C', root, 'rev-parse', '--git-path', 'ar-bot-wait'],
+    { encoding: 'utf8' },
+  );
+  const gitPath = (resolved.stdout || '').trim();
+  if (resolved.status === 0 && gitPath) {
+    return path.isAbsolute(gitPath) ? gitPath : path.resolve(root, gitPath);
+  }
+  return path.join(root, '.git', 'ar-bot-wait');
 }
 
 /** @param {number} prNumber @param {string} [repoRoot] */
@@ -27,10 +36,10 @@ export function botWaitStatePath(prNumber, repoRoot) {
   return path.join(botWaitStateDir(repoRoot), `${prNumber}.json`);
 }
 
-/** Legacy path under .git (read-only fallback). */
+/** Legacy repo-root path used before linked-worktree state was shared. */
 export function legacyBotWaitStatePath(prNumber, repoRoot) {
   const root = repoRoot || gitRepoRoot();
-  return path.join(root, '.git', 'ar-bot-wait', `${prNumber}.json`);
+  return path.join(root, '.ar-bot-wait', `${prNumber}.json`);
 }
 
 /**

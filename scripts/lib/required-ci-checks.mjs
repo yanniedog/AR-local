@@ -24,18 +24,64 @@ function runGhJson(args) {
 }
 
 export function requiredChecksFromProtection(protection) {
-  return [
-    ...(protection?.required_status_checks?.checks || []).map((row) => row.context),
-    ...(protection?.required_status_checks?.contexts || []),
-  ].filter(Boolean);
+  return requiredCheckSpecsFromProtection(protection).map((row) => row.context);
 }
 
 export function requiredChecksFromRules(rules) {
+  return requiredCheckSpecsFromRules(rules).map((row) => row.context);
+}
+
+function asRequiredCheck(context, appId = null) {
+  if (!context) return null;
+  const parsedAppId = Number(appId);
+  return {
+    context,
+    appId: Number.isFinite(parsedAppId) && parsedAppId > 0 ? parsedAppId : null,
+  };
+}
+
+export function requiredCheckSpecsFromProtection(protection) {
+  const checks = (protection?.required_status_checks?.checks || [])
+    .map((row) => asRequiredCheck(row.context, row.app_id))
+    .filter(Boolean);
+  const boundContexts = new Set(checks.map((row) => normalizedName(row.context)));
+  const legacyContexts = (protection?.required_status_checks?.contexts || [])
+    .filter((context) => !boundContexts.has(normalizedName(context)))
+    .map((context) => asRequiredCheck(context))
+    .filter(Boolean);
+  return [...checks, ...legacyContexts];
+}
+
+export function requiredCheckSpecsFromRules(rules) {
   return (rules || [])
     .filter((rule) => rule?.type === 'required_status_checks')
     .flatMap((rule) => rule?.parameters?.required_status_checks || [])
-    .map((row) => row.context)
+    .map((row) => asRequiredCheck(row.context, row.integration_id ?? row.app_id))
     .filter(Boolean);
+}
+
+function uniqueRequiredChecks(checks) {
+  const seen = new Set();
+  return (checks || []).filter((row) => {
+    if (!row?.context) return false;
+    const key = `${normalizedName(row.context)}:${row.appId ?? '*'}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function mergePolicyAndPrRequiredChecks(policy, prChecks = []) {
+  return uniqueRequiredChecks([
+    ...(policy?.requirements || []),
+    ...prChecks
+      .filter((row) =>
+        !(policy?.values || []).some(
+          (name) => normalizedName(name) === normalizedName(row.name),
+        ))
+      .map((row) => asRequiredCheck(row.name))
+      .filter(Boolean),
+  ]);
 }
 
 export function combineRequiredCheckState({
@@ -45,23 +91,34 @@ export function combineRequiredCheckState({
   rules,
   fallbackRequiredNames = DEFAULT_REQUIRED_CHECKS,
 }) {
-  if (protectionOk || rulesOk) {
-    const sources = [];
-    if (protectionOk) sources.push('branch protection');
-    if (rulesOk) sources.push('rules');
-    return {
-      values: [
-        ...new Set([
-          ...requiredChecksFromProtection(protection),
-          ...requiredChecksFromRules(rules),
-        ]),
-      ],
-      source: `live ${sources.join(' + ')}`,
-    };
+  const sources = [];
+  const liveChecks = [];
+  if (protectionOk) {
+    sources.push('branch protection');
+    liveChecks.push(...requiredCheckSpecsFromProtection(protection));
   }
+  if (rulesOk) {
+    sources.push('rules');
+    liveChecks.push(...requiredCheckSpecsFromRules(rules));
+  }
+  const completeLivePolicy = protectionOk && rulesOk;
+  const liveNames = new Set(liveChecks.map((row) => normalizedName(row.context)));
+  const fallbackChecks = completeLivePolicy
+    ? []
+    : fallbackRequiredNames
+      .filter((name) => !liveNames.has(normalizedName(name)))
+      .map((name) => asRequiredCheck(name))
+      .filter(Boolean);
+  const requirements = uniqueRequiredChecks([...liveChecks, ...fallbackChecks]);
+  const source = completeLivePolicy
+    ? `live ${sources.join(' + ')}`
+    : sources.length
+      ? `partial live ${sources.join(' + ')} + configured policy fallback`
+      : 'configured policy fallback; live policy APIs unavailable';
   return {
-    values: [...fallbackRequiredNames],
-    source: 'configured policy fallback; live policy APIs unavailable',
+    values: [...new Set(requirements.map((row) => row.context))],
+    requirements,
+    source,
   };
 }
 
@@ -133,20 +190,34 @@ function observationState(row) {
   return 'pending';
 }
 
+function observationAppId(row) {
+  const parsed = Number(row?.app?.id ?? row?.app_id ?? row?.appId);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function requiredCheckMatches(candidate, required) {
+  if (!nameMatches(candidate.name || candidate.context, required.context)) return false;
+  return required.appId == null || observationAppId(candidate) === required.appId;
+}
+
 /**
  * Evaluate required contexts on the exact current PR head. Missing contexts are
  * pending because branch protection cannot merge until they are reported.
  */
 export function evaluateRequiredCheckState({
   requiredNames,
+  requiredChecks,
   ignoredNames = [],
   prChecks = [],
   headCheckRuns = [],
   commitStatuses = [],
 }) {
   const ignored = new Set(ignoredNames.map(normalizedName));
-  const activeNames = [...new Set((requiredNames || []).filter(Boolean))]
-    .filter((name) => !ignored.has(normalizedName(name)));
+  const requirements = uniqueRequiredChecks(
+    requiredChecks?.length
+      ? requiredChecks
+      : (requiredNames || []).map((name) => asRequiredCheck(name)).filter(Boolean),
+  ).filter((row) => !ignored.has(normalizedName(row.context)));
   const observations = [
     ...(prChecks || []),
     ...(headCheckRuns || []),
@@ -157,10 +228,10 @@ export function evaluateRequiredCheckState({
   const pendingNames = [];
   const missingNames = [];
 
-  for (const name of activeNames) {
+  for (const required of requirements) {
+    const name = required.context;
     const row = selectNewest(
-      observations.filter((candidate) =>
-        nameMatches(candidate.name || candidate.context, name)),
+      observations.filter((candidate) => requiredCheckMatches(candidate, required)),
     );
     if (!row) {
       missingNames.push(name);
@@ -168,7 +239,7 @@ export function evaluateRequiredCheckState({
       continue;
     }
     const state = observationState(row);
-    checks.push({ name, state });
+    checks.push({ name, state, ...(required.appId == null ? {} : { appId: required.appId }) });
     if (state === 'failed') failedNames.push(name);
     else if (state !== 'passed') pendingNames.push(name);
   }
@@ -255,7 +326,10 @@ export function fetchRequiredCheckState({
   ]);
 
   const evaluated = evaluateRequiredCheckState({
-    requiredNames: policy.values,
+    requiredChecks: mergePolicyAndPrRequiredChecks(
+      policy,
+      prChecks.ok ? prChecks.data : [],
+    ),
     ignoredNames,
     prChecks: prChecks.ok ? prChecks.data : [],
     headCheckRuns: checkRuns.ok ? checkRuns.data?.check_runs || [] : [],
