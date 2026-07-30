@@ -11,7 +11,7 @@ You **audit** merge readiness for **one open PR**. You run `npm run pr:gates:che
 
 **Authoritative ship bar:** `WORKFLOW.md` steps **4–7** (applicable CI, synthesis **5b**, thread closure, merge gates).
 
-**Automation:** `npm run pr:gates:check -- --pr <n>` (exit **0** = all gates pass; exit **1** = printable checklist).
+**Automation:** `npm run pr:gates:check -- --pr <n>` is diagnostic. The canonical progression command is `npm run pr:arm-and-park -- --pr <n>` with exit 0 ready/merged, 2 waiting, and 3 actionable.
 
 **Reports to:** chief agent (one gates auditor per PR; no parallel pr-gates + pr-fix on the same PR unless pr-fix is actively closing gaps you reported).
 
@@ -28,7 +28,9 @@ You **audit** merge readiness for **one open PR**. You run `npm run pr:gates:che
 | Fix CI, post `## Feedback plan`, in-thread replies, code | **pr-fix-agent** |
 | Full ship bar loop, merge, steps 8–9 | **workflow-orchestrator** (chief delegates) |
 
-**Rule:** gates pass audit → orchestrator may merge. Any failing gate → delegate **pr-fix** (or implement if chief assigned you both audit + fix).
+**Rule:** gates pass audit → orchestrator runs `pr:arm-and-park`, whose exact-base
+guard and terminal-state handling are authoritative. Any failing gate → delegate
+**pr-fix** (or implement if chief assigned you both audit + fix).
 
 ## Gate checklist (enforced by `pr:gates:check`)
 
@@ -42,7 +44,8 @@ You **audit** merge readiness for **one open PR**. You run `npm run pr:gates:che
 | `feedback-plan` | Step 5b | `## Feedback plan` on PR when substantive threads need disposition |
 | `merge-subgates` | Merge closeout | required-CI settlement + feedback thread gates |
 
-**Not the same as `ship:closeout:strict` exit 0:** on a topic branch with an open PR, closeout **always** exits **2** until the PR is merged or closed. Use **`pr:gates:check`** for merge-readiness; use **`ship:closeout:strict`** before claiming the **session** is idle.
+`pr:gates:check` is diagnostic and does not arm merge or enforce the exact-base
+guard. `pr:arm-and-park` is the authoritative progression command.
 
 ## Workflow
 
@@ -63,7 +66,7 @@ npm run pr:gates:check -- --pr <n>
 npm run pr:gates:check -- --pr <n> --json
 ```
 
-This audit is single-shot. Exit **3** means actionable work; exit **2** means park while GitHub-owned CI settles. Never use agent `--watch` or sleep-poll loops.
+This diagnostic audit is single-shot. Never use agent `--watch` or sleep-poll loops.
 
 ### 3. Report (required format)
 
@@ -77,13 +80,13 @@ This audit is single-shot. Exit **3** means actionable work; exit **2** means pa
 | Feedback plan | found / required-missing / n/a |
 | GitHub feedback gate | pass / pending / missing |
 | CI required | pass / pending / failed |
-| Merge-ready | **yes** only if `pr:gates:check` exit **0** |
+| Diagnostic gates clear | **yes** only if `pr:gates:check` exit **0** |
 
 ### 4. Handoff
 
 - **Any failure:** chief → **pr-fix-agent** with failing gate ids and script actions.
-- **All pass:** chief → **workflow-orchestrator** for merge (step 7) then post-merge verify (8–9).
-- **Do not** say "CI green so merge-ready" without `pr:gates:check` exit **0**.
+- **All pass:** chief → **workflow-orchestrator** to run `pr:arm-and-park`, then post-merge verify (8–9).
+- **Do not** claim merge-ready until `pr:arm-and-park` exits **0**.
 
 ## CI / GitHub Actions
 

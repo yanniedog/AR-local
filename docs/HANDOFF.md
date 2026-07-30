@@ -603,7 +603,9 @@ the committed sample); the **Pi is the primary daily publisher**.
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
   `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
   protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
-- **Enable auto-merge**: `npm run pr:merge -- --pr <n> --enable-only` on PR open (or `npm run pr:merge -- --pr <n>` for enable + wait). Lands when all required checks are green and **0 review threads are unresolved**.
+- **Canonical closeout**: `npm run pr:arm-and-park -- --pr <n>`. It refuses
+  non-default bases, marks drafts ready, syncs when needed, arms squash
+  auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable.
 - **Bot matrix & direct-to-main bypass (one-time operator):** `pr-bot-spreadsheet` and `mobile-auto-release-on-queue-drain` commit directly to `main` (reports-only / version bump). GitHub rejects those pushes unless **GitHub Actions** is on the `main` **ruleset** bypass list. The REST API cannot add that bypass on this personal repo (422) — use **Settings → Rules → Rulesets →** open `main` ruleset → **Bypass list → GitHub Actions → Always**, then delete duplicate **legacy** branch protection on `main`. Full click-path, migration steps, and verify commands: [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md#direct-commit-to-main-one-time-github-setup).
 
 ### 6.1 PR queue efficiency (agents)
@@ -613,11 +615,11 @@ ownership while only GitHub-owned work remains.
 
 | Step | Command |
 |------|---------|
-| PR opens | `npm run pr:merge -- --pr <n> --enable-only` |
+| PR closeout | `npm run pr:arm-and-park -- --pr <n>` |
 | Queue scan | `npm run pr:queue:drive` or `npm run pr:watch-once` |
 | Required-CI settlement | `npm run wait-for-bots -- --pr <n>` |
 | Branch sync | `npm run pr:update-branch -- --pr <n> --progress` |
-| Gates | `npm run pr:gates:check -- --pr <n>` |
+| Diagnostic gates | `npm run pr:gates:check -- --pr <n>` |
 
 Chore bypass: matrix direct commit; mobile auto-release drain workflow.
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.

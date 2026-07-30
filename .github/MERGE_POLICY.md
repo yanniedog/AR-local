@@ -4,22 +4,22 @@ All PRs to `main` use **squash auto-merge** by default.
 
 ## Agent / automation command
 
-After `npm run pr:gates:check -- --pr <n>` exits **0**:
+Use the canonical one-shot helper:
 
 ```sh
-npm run pr:merge -- --pr <n>
-# equivalent:
-gh pr merge <n> --auto --squash --delete-branch
+npm run pr:arm-and-park -- --pr <n>
 ```
 
-`--auto` queues merge until required checks pass. Reviewer presence is
-advisory; complete substantive feedback disposition and thread closure per
-`WORKFLOW.md`. Agents use single-shot gate reads and park while GitHub owns the
-clock.
+It verifies the exact default base, marks a draft ready, syncs when needed, and
+arms squash auto-merge with branch deletion. Exit 0 means ready or merged, exit
+2 means pending-only/parked, and exit 3 means actionable. Never invoke bare
+`gh pr merge`; the legacy `npm run pr:merge` wrapper is guarded but not the
+preferred agent entrypoint.
 
 ## `gh pr create`
 
-Squash is **not** set at PR creation. Opening a PR does not choose merge method; use the merge command above when gates pass.
+Squash is **not** set at PR creation. Opening a draft PR does not choose the
+merge method; `pr:arm-and-park` marks it ready and arms the canonical method.
 
 ## Repository settings (squash-only)
 

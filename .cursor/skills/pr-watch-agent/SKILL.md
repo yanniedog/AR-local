@@ -87,16 +87,15 @@ Hand off to **pr-fix-agent** if you lack write access or the PR is outside your 
 #### 4. Gate audit (steps 4–7)
 
 ```sh
-npm run pr:gates:check -- --pr <n>
+npm run pr:arm-and-park -- --pr <n>
 ```
 
-Merge **only** when `pr:gates:check` exits **0** (applicable product CI, `bot-feedback-gate`, thread dispositions/resolution, feedback plan when required). Exit 3 means act; exit 2 means park while GitHub owns the clock.
+Exit 0 is ready or merged, exit 2 is pending-only/parked, and exit 3 is actionable. The helper rejects non-default bases and marks draft PRs ready.
 
 #### 5. Merge (step 7)
 
 ```sh
-npm run pr:merge -- --pr <n>
-# gh pr merge <n> --auto --squash --delete-branch
+npm run pr:arm-and-park -- --pr <n>
 npm run close-loop:check -- --pr <n>
 npm run git:graph-hygiene
 ```
@@ -135,7 +134,7 @@ Optional: **post-merge-verify-agent** for evidence (Browser MCP on Pi URL).
 
 ```sh
 npm run ship:closeout:strict
-npm run pr:gates:check -- --pr <n>
+npm run pr:arm-and-park -- --pr <n>
 ```
 
 ## Return format

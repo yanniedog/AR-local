@@ -16,11 +16,16 @@ Single-shot closeout:
 
 ```sh
 npm run ship:closeout:strict
-npm run pr:gates:check -- --pr <n>
+npm run pr:arm-and-park -- --pr <n>
 ```
 
 - `bot-feedback-gate` is the only universal required check. AR-local product CI
   stays path-filtered and is required only where GitHub reports it.
+- `pr:arm-and-park` verifies the exact default base, marks a draft ready, syncs
+  it when needed, and arms squash auto-merge in one shot. Exit 0 is ready or
+  merged; exit 2 is pending-only and should be parked; exit 3 is actionable.
+- A PR based on anything other than the repository default branch is
+  `base-unprotected` and must be retargeted. Never stack PRs on feature branches.
 - `npm run wait-for-bots -- --pr <n>` now checks required CI settlement only;
   reviewer presence defaults to off.
 - Do not run agent `--watch` or sleep-poll loops. Fix actionable state immediately;
@@ -55,7 +60,8 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Required-CI settlement | `npm run wait-for-bots -- --pr <n>` |
 | Bot thread closure gate | `npm run pr:bot-feedback-check -- --pr <n>` |
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
-| Squash auto-merge (step 7) | `npm run pr:merge -- --pr <n>` |
+| Preferred one-shot closeout | `npm run pr:arm-and-park -- --pr <n>` |
+| Guarded legacy merge wrapper | `npm run pr:merge -- --pr <n>` |
 | Repo squash-only settings | `npm run repo-merge-settings:apply` |
 | PR audit one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = work remains) |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |

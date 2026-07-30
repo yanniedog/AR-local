@@ -23,6 +23,20 @@ assert.deepEqual(
 );
 assert.deepEqual(BOT_GATE_CHECK_NAMES, ['bot-feedback-gate']);
 
+const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+assert.equal(
+  packageJson.scripts?.['pr:arm-and-park'],
+  'node scripts/pr-arm-and-park.mjs',
+);
+assert.match(packageJson.scripts?.['pr:automation:verify'] || '', /verify-pr-arm-and-park/);
+
+const gatesLib = readFileSync('scripts/lib/pr-gates-lib.mjs', 'utf8');
+assert.match(
+  gatesLib,
+  /pass:\s*false,\s*\r?\n\s*detail:\s*'bot-feedback-gate: not reported yet'/,
+  'an unreported required feedback check must wait rather than pass',
+);
+
 const olderPass = {
   name: 'bot-feedback-gate',
   bucket: 'pass',

@@ -221,9 +221,9 @@ export function gateGithubBotChecks(prNumber) {
   if (skipped || !BOT_GATE_CHECK_NAMES.some((name) => found[name])) {
     return {
       id: 'github-bot-gates',
-      pass: true,
-      detail: 'No GitHub bot gate checks reported; relying on local wait/thread gates',
-      skipped: true,
+      pass: false,
+      detail: 'bot-feedback-gate: not reported yet',
+      action: 'Required feedback check has not reported on this head; park and re-run once later',
     };
   }
   const parts = [];
@@ -374,14 +374,16 @@ export function gateFeedbackPlan(prNumber, { skip, waitPass, feedbackPass }) {
 
 export function gateShipCloseoutSubgates(waitGate, feedbackGate) {
   const pass = waitGate.pass && feedbackGate.pass;
+  const waiting = !pass && waitGate.exitCode === 2 && feedbackGate.pass;
   return {
     id: 'merge-subgates',
     pass,
+    exitCode: pass ? 0 : waiting ? 2 : 1,
     detail: pass
       ? 'Required CI settlement and feedback thread gates passed'
       : 'Required CI settlement and pr:bot-feedback-check must both pass before merge',
-    action: pass ? undefined : 'Fix CI or review feedback, then rerun npm run pr:gates:check',
-    note: 'Use pr:gates:check for AR-local merge readiness',
+    action: pass ? undefined : 'Fix CI or review feedback, then rerun npm run pr:arm-and-park',
+    note: 'Use pr:arm-and-park for AR-local progression; pr:gates:check is diagnostic',
   };
 }
 

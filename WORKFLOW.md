@@ -31,24 +31,31 @@ existing blessed commands.
 
 3. Push and open a **draft** PR against `main`. State the agent role in the PR
    body. Do not stack a PR onto another feature branch.
-4. Use single-shot reads:
+4. Run the canonical single-shot helper:
 
    ```sh
-   npm run pr:gates:check -- --pr <n>
-   npm run wait-for-bots -- --pr <n>
-   npm run pr:bot-feedback-check -- --pr <n>
+   npm run pr:arm-and-park -- --pr <n>
    ```
 
-   `wait-for-bots` now means required-CI settlement; reviewer presence defaults
-   to off.
+   It verifies the PR targets the repository's exact default branch, marks a
+   draft ready, syncs when behind, arms squash auto-merge, and classifies the
+   current state. A non-default base exits 3 as `base-unprotected`.
+
+   - Exit 0: gates are ready, or the PR merged while auto-merge was being armed.
+   - Exit 2: pending-only state; park and re-run once later.
+   - Exit 3: actionable CI, conflict, unexpected closure, or feedback work.
+
+   `pr:gates:check`, `wait-for-bots`, and `pr:bot-feedback-check` remain
+   diagnostic commands. `wait-for-bots` means required-CI settlement; reviewer
+   presence defaults to off.
 5. Read all review threads and relevant top-level comments before replying. Post
    one `## Feedback plan`, implement valid fixes together, then reply in-thread
    with a disposition and resolve each thread.
-6. Re-run the single-shot gate audit after each fix push. Do not use agent
+6. Re-run `pr:arm-and-park` after each fix push. Do not use agent
    `--watch`, sleep, or polling loops. If only GitHub-owned work remains, keep
    ownership parked and re-check on a later turn.
-7. Enable squash auto-merge only when the PR targets `main`, actionable work is
-   complete, required checks are green, and feedback closure passes.
+7. `pr:arm-and-park` owns squash auto-merge. Do not hand-roll `gh pr merge`.
+   The guarded legacy `pr:merge` wrapper also refuses a non-default base.
 8. After merge, run `npm run pr:bot-feedback-audit`. Late substantive review
    feedback requires a follow-up PR.
 9. For product/Pi changes, complete the existing post-merge deploy and

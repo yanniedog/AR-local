@@ -200,9 +200,9 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 2. Partition mixed WIP — stash or branch per path prefix; document paths per PR
 3. For CONFLICTING PRs: checkout head branch, rebase origin/main, resolve conflicts, push
 4. npm run pr:bot-feedback-check -- --pr <n>
-5. npm run pr:gates:check -- --pr <n> once (exit 3 = act; exit 2 = park while GitHub-owned CI settles)
+5. npm run pr:arm-and-park -- --pr <n> once (exit 3 = act; exit 2 = park while GitHub-owned CI settles)
 6. In-thread implement/defer/decline on every substantive bot/human thread
-7. npm run pr:merge (`gh pr merge --auto --squash --delete-branch`) only after applicable product CI + bot-feedback-gate are green, pr:bot-feedback-check exits 0, and threads are dispositioned/resolved — **never** on CI green alone
+7. pr:arm-and-park owns squash auto-merge and refuses non-default bases; never hand-roll gh pr merge
 8. Pi verify / npm run verify:local when code shipped
 9. npm run chief:scan — must exit 0 before chief marks cycle complete
 ```
@@ -228,7 +228,7 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 | PR detail | `gh pr view <n> --comments`, checks | CI and feedback threads (assigned pr-fix worker owns ship bar for that PR) |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` (mtime sort, last ~2h) | Active/completed subagents; changed paths |
 | Orchestrator state | Recent transcript mentioning `workflow-orchestrator` or SCAN→PLAN→DELEGATE | Dedupe: resume existing cycle |
-| Closeout (delegate) | `npm run ship:closeout:strict`, `npm run pr:gates:check -- --pr <n>` | Chief asks orchestrator to act; chief does not merge |
+| Closeout (delegate) | `npm run ship:closeout:strict`, `npm run pr:arm-and-park -- --pr <n>` | Chief asks orchestrator to act; chief does not merge |
 
 **Transcript scan:** read last lines of recent `subagents/*.jsonl` for completion summaries, paths, branch names, PR numbers. Map to branch lock registry.
 

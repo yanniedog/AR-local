@@ -40,10 +40,10 @@ When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROAD
 
 ## Mandatory gates (before merge request)
 
-Prefer the aggregate audit (chief may run this before assigning you):
+Prefer the canonical one-shot helper:
 
 ```sh
-npm run pr:gates:check -- --pr <n>         # exit 0 = all merge gates
+npm run pr:arm-and-park -- --pr <n>        # 0 ready/merged, 2 parked, 3 actionable
 ```
 
 Individual gates (same bar):
@@ -56,7 +56,7 @@ gh pr checks <n>                            # applicable product CI + bot-feedba
 
 Reviewer vendors, Qwen/local LLM, and `bot-presence-gate` are advisory. Do not use agent watch or sleep-poll loops.
 
-**Never** recommend merge on “CI green” alone. **pr-gates-agent** audits; you implement fixes until `pr:gates:check` exits **0**.
+**Never** recommend merge on “CI green” alone. Implement fixes until `pr:arm-and-park` exits **0**; never hand-roll `gh pr merge`.
 
 ## Workflow
 
@@ -97,11 +97,10 @@ Scoped fixes only. Do not weaken CI workflows to pass. Re-run checks until green
 
 ### 6. Merge (step 7)
 
-When all gates exit **0** and substantive threads are closed:
+After substantive threads are closed, let the canonical helper classify and arm:
 
 ```sh
-npm run pr:gates:check -- --pr <pr-number>   # must exit 0
-gh pr merge <pr-number> --squash
+npm run pr:arm-and-park -- --pr <pr-number>
 npm run close-loop:check -- --pr <pr-number>
 npm run close-loop:check -- --post-merge-gap
 ```

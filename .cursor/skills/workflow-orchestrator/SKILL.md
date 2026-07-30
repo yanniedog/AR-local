@@ -31,7 +31,7 @@ You are the **single-pass workflow guardian** for the current repository. You ru
 | Branch | `git branch --show-current` | Never feature work on `main` |
 | Open PRs | `gh pr list --state open` | One pr-fix/babysit worker per PR number |
 | Closeout | `npm run ship:closeout:strict` | Exit 2 ? open PR |
-| Gate audit | `npm run pr:gates:check -- --pr <n>` | Exit 3 = act; exit 2 = park |
+| Closeout | `npm run pr:arm-and-park -- --pr <n>` | Exit 3 = act; exit 2 = park |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` | Active/completed subagents |
 
 ## Task ? owner routing
@@ -62,7 +62,7 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 - The universal protected review context **`bot-feedback-gate`** is green.
 - `npm run wait-for-bots -- --pr <n>` is a single-shot required-CI settlement check. Gemini, Codex, Sourcery, CodeRabbit, Qwen/local LLM, and reviewer-presence checks are advisory.
 - `npm run pr:bot-feedback-check -- --pr <n>` exits **0**: every substantive automated-review thread has an explicit disposition and is resolved.
-- **Never** `npm run pr:merge` / `gh pr merge --auto --squash` on "CI green" alone or before applicable product CI, `bot-feedback-gate`, and local gates pass.
+- **Never** hand-roll `gh pr merge`. Use `pr:arm-and-park`, which refuses any base other than the exact default branch.
 - **Never** close a PR without merge unless the user waives in writing; auditor fails on closed-unmerged PRs with open bot threads.
 
 **After merge (step 7b ? before step 8):**
@@ -71,11 +71,11 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 2. Commit + push on topic branch only
 3. `gh pr create --base main`
 4. CI green
-5. Run `npm run pr:gates:check -- --pr <n>` once. Exit **3** means act on the reported problem; exit **2** means park while GitHub-owned CI settles. Never use agent watch/sleep loops.
+5. Run `npm run pr:arm-and-park -- --pr <n>` once. It marks drafts ready, arms auto-merge, returns **3** for actionable work and **2** for pending-only state. Never use agent watch/sleep loops.
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
 7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
-8. `npm run pr:merge -- --pr <n>` (`gh pr merge --auto --squash --delete-branch`) — **FORBIDDEN** until applicable product CI and **`bot-feedback-gate`** are green, `npm run pr:bot-feedback-check -- --pr <n>` exits **0**, and substantive inline threads are dispositioned and resolved. Reviewer presence is advisory.
+8. `npm run pr:arm-and-park -- --pr <n>` owns merge progression. Exit **0** means ready or merged, **2** means parked, and **3** means fix the reported CI/base/conflict/thread state.
 7b. Post-merge close-loop:
 
 ```sh
@@ -118,7 +118,7 @@ SCAN → PLAN → DELEGATE (pr-fix per PR + path owners) → (subagents run) →
 
 ```sh
 npm run ship:closeout:strict
-npm run pr:gates:check -- --pr <n>
+npm run pr:arm-and-park -- --pr <n>
 npm run close-loop:check -- --post-merge-gap   # on main after merges
 ```
 

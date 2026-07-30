@@ -171,8 +171,8 @@ Local (no GitHub push):
 Exempt PR (expect gate-exempt reason):
   node scripts/github-bot-gates-operator.mjs --verify-pr <n>
 
-Human PR gates:
-  npm run pr:gates:check -- --pr <n>
+Human PR closeout:
+  npm run pr:arm-and-park -- --pr <n>
 
 Direct-to-main workflows (need Actions bypass + no legacy protection):
   gh workflow run pr-bot-spreadsheet.yml
