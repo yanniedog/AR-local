@@ -15,10 +15,11 @@ existing blessed commands.
 - Every substantive finding that does arrive must receive an explicit
   `Implemented`, `Deferred`, or `Declined` in-thread disposition and GitHub
   resolution.
-- The feedback workflow has one PR-scoped concurrency owner and serializes event
-  bursts without cancelling duplicate required contexts. Each run is
-  single-shot with a five-minute ceiling, and stale events for closed PRs exit
-  cleanly instead of holding a runner.
+- The feedback workflow intentionally has no shared concurrency group: GitHub
+  may replace an older pending run even when `cancel-in-progress` is false.
+  Created, edited, and deleted inline-review comments re-evaluate the gate.
+  Each run has a five-minute ceiling and a bounded 4 x 5-second retry for the
+  reply-before-resolution race; stale events for closed PRs exit cleanly.
 - Squash auto-merge and branch deletion are the repository defaults.
 
 ## Delivery sequence
@@ -54,9 +55,12 @@ existing blessed commands.
    `pr:gates:check`, `wait-for-bots`, and `pr:bot-feedback-check` remain
    diagnostic commands. `wait-for-bots` means exact-current-head required-CI
    settlement from live protection/rules; reviewer presence defaults to off.
-   Missing contexts stay pending. `pr:bot-feedback-check` distinguishes open
-   feedback (exit 3) from a hard execution error (exit 1); the workflow reports
-   either result in one run and relies on the next PR-head event to re-evaluate.
+   Missing contexts stay pending. Live policy results retain any required names
+   reported by `gh pr checks`, and app-bound checks must match the configured
+   GitHub App identity. `pr:bot-feedback-check` distinguishes retryable
+   GitHub-state/API reads (exit 2), open feedback (exit 3), and a hard execution
+   error (exit 1). The workflow briefly retries only open feedback so an inline
+   reply that arrived just before thread resolution can settle in the same run.
 5. Read all review threads and relevant top-level comments before replying. Post
    one `## Feedback plan`, implement valid fixes together, then reply in-thread
    with a disposition and resolve each thread.

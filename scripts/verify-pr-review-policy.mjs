@@ -14,6 +14,7 @@ import {
   combineRequiredCheckState,
   DEFAULT_REQUIRED_CHECKS,
   evaluateRequiredCheckState,
+  mergePolicyAndPrRequiredChecks,
 } from './lib/required-ci-checks.mjs';
 
 assert.deepEqual(DEFAULT_REQUIRED_KEYS, []);
@@ -67,6 +68,7 @@ assert.deepEqual(
   }),
   {
     values: ['bot-feedback-gate'],
+    requirements: [{ context: 'bot-feedback-gate', appId: null }],
     source: 'live branch protection + rules',
   },
 );
@@ -77,8 +79,66 @@ assert.deepEqual(
   }),
   {
     values: ['bot-feedback-gate'],
+    requirements: [{ context: 'bot-feedback-gate', appId: null }],
     source: 'configured policy fallback; live policy APIs unavailable',
   },
+);
+assert.deepEqual(
+  combineRequiredCheckState({
+    protectionOk: false,
+    rulesOk: true,
+    rules: [],
+    fallbackRequiredNames: ['bot-feedback-gate'],
+  }),
+  {
+    values: ['bot-feedback-gate'],
+    requirements: [{ context: 'bot-feedback-gate', appId: null }],
+    source: 'partial live rules + configured policy fallback',
+  },
+);
+assert.equal(
+  evaluateRequiredCheckState({
+    requiredChecks: [{ context: 'bot-feedback-gate', appId: 100 }],
+    headCheckRuns: [{
+      id: 20,
+      name: 'bot-feedback-gate',
+      app: { id: 200 },
+      conclusion: 'success',
+      completed_at: '2026-07-30T01:00:00Z',
+    }],
+  }).pending,
+  true,
+  'a same-name check from the wrong GitHub App must not satisfy an app-bound policy',
+);
+assert.equal(
+  evaluateRequiredCheckState({
+    requiredChecks: [{ context: 'bot-feedback-gate', appId: 100 }],
+    headCheckRuns: [{
+      id: 21,
+      name: 'bot-feedback-gate',
+      app: { id: 100 },
+      conclusion: 'success',
+      completed_at: '2026-07-30T01:00:00Z',
+    }],
+  }).pending,
+  false,
+);
+assert.deepEqual(
+  mergePolicyAndPrRequiredChecks(
+    {
+      values: ['bot-feedback-gate'],
+      requirements: [{ context: 'bot-feedback-gate', appId: 100 }],
+    },
+    [
+      { name: 'bot-feedback-gate', bucket: 'pass' },
+      { name: 'path-filtered-product-ci', bucket: 'pass' },
+    ],
+  ),
+  [
+    { context: 'bot-feedback-gate', appId: 100 },
+    { context: 'path-filtered-product-ci', appId: null },
+  ],
+  'required names reported by gh pr checks must remain in exact-head evaluation',
 );
 const missingRequired = evaluateRequiredCheckState({
   requiredNames: ['bot-feedback-gate'],
@@ -147,6 +207,10 @@ for (const retired of [
 ]) {
   assert.match(branchProtection, new RegExp(retired));
 }
+assert.match(
+  branchProtection,
+  /required_status_checks:\s*\{\s*strict:\s*true,\s*contexts:\s*mergedContexts\s*\}/,
+);
 
 const ruleset = JSON.parse(
   readFileSync('.github/rulesets/main-bot-gates.json', 'utf8'),
@@ -170,11 +234,18 @@ const feedbackWorkflow = readFileSync(
 assert.match(feedbackWorkflow, /npm run pr:automation:verify/);
 assert.match(
   feedbackWorkflow,
-  /group:\s*bot-feedback-gate-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*inputs\.pr_number\s*\|\|\s*github\.run_id\s*\}\}/,
+  /uses:\s*actions\/checkout@v4\s*\r?\n\s+with:\s*\r?\n\s+ref:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\|\|\s*github\.event\.repository\.default_branch\s*\}\}\s*\r?\n\s+persist-credentials:\s*false/,
+  'the feedback gate must execute trusted policy code from the protected base without checkout credentials',
 );
-assert.match(feedbackWorkflow, /cancel-in-progress:\s*false/);
+assert.doesNotMatch(feedbackWorkflow, /^concurrency:/m);
+assert.doesNotMatch(feedbackWorkflow, /cancel-in-progress:/);
 assert.match(feedbackWorkflow, /timeout-minutes:\s*5/);
-assert.match(feedbackWorkflow, /PR_STATE=\$\(gh api/);
+assert.match(feedbackWorkflow, /types:\s*\[created, edited, deleted\]/);
+assert.match(feedbackWorkflow, /if ! PR_STATE=\$\(gh api/);
+assert.match(feedbackWorkflow, /GitHub API could not read PR state; retry this check/);
+assert.match(feedbackWorkflow, /for attempt in 1 2 3 4/);
+assert.match(feedbackWorkflow, /\[ "\$code" -ne 3 \]/);
+assert.match(feedbackWorkflow, /sleep 5/);
 assert.doesNotMatch(feedbackWorkflow, /queue:\s*max/);
 assert.doesNotMatch(feedbackWorkflow, /pull_request\.head\.sha|github\.sha/);
 assert.match(feedbackWorkflow, /elif \[ "\$code" -eq 3 \]/);
@@ -187,10 +258,17 @@ assert.match(
   /process\.exit\(result\.violations\.length \? 3 : 0\)/,
   'open feedback must have a distinct retryable exit from hard execution failures',
 );
+assert.match(
+  feedbackCheck,
+  /GitHub API check could not complete:[\s\S]*process\.exit\(2\)/,
+  'PR/API read failures must remain retryable rather than becoming permanent execution failures',
+);
 
 const waitForBots = readFileSync('wait_for_bots.mjs', 'utf8');
 assert.match(waitForBots, /fetchRequiredCheckState/);
 assert.match(waitForBots, /headRefOid,baseRefName/);
+const botWaitState = readFileSync('scripts/lib/bot-wait-state.mjs', 'utf8');
+assert.match(botWaitState, /rev-parse', '--git-path', 'ar-bot-wait'/);
 
 const appCi = readFileSync('.github/workflows/app-ci.yml', 'utf8');
 assert.match(

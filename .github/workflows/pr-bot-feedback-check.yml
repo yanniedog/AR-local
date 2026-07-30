@@ -2,8 +2,8 @@ name: pr-bot-feedback-check
 
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# - no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
-# per run; unresolved feedback fails promptly instead of holding a runner.
+# - no manual re-run / empty re-trigger commit needed. A bounded retry covers the
+# reply-before-resolution race; unresolved feedback still fails promptly.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
 # GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
@@ -19,7 +19,7 @@ on:
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
-    types: [created]
+    types: [created, edited, deleted]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -31,12 +31,6 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  # GitHub enforces every duplicate required context. Keep PR-only runs queued
-  # so cancellation cannot leave a blocking CANCELLED sibling on the head.
-  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: false
-
 jobs:
   bot-feedback-gate:
     if: >-
@@ -47,6 +41,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -66,7 +63,10 @@ jobs:
             PR="${{ github.event.pull_request.number }}"
           fi
           [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
-          PR_STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)
+          if ! PR_STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state); then
+            echo "::error::GitHub API could not read PR state; retry this check."
+            exit 2
+          fi
           if [ "$PR_STATE" != "open" ]; then
             echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
             echo "gate_exempt_reason=pull-request-$PR_STATE" >> "$GITHUB_OUTPUT"
@@ -98,13 +98,21 @@ jobs:
             PR="${{ github.event.pull_request.number }}"
           fi
           [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
-          set +e
-          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
-          code=$?
-          set -e
-          if [ "$code" -eq 0 ]; then
-            exit 0
-          fi
+          code=1
+          for attempt in 1 2 3 4; do
+            set +e
+            npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
+            code=$?
+            set -e
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$code" -ne 3 ] || [ "$attempt" -eq 4 ]; then
+              break
+            fi
+            echo "Feedback still open; retrying shortly in case a reply-triggered run preceded thread resolution."
+            sleep 5
+          done
           if [ "$code" -eq 2 ]; then
             echo "::error::GitHub API rate limit prevented the feedback audit; rerun this check."
           elif [ "$code" -eq 3 ]; then
