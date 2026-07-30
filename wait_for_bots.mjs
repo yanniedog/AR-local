@@ -18,7 +18,7 @@ import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-w
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
 import { isBotNoise } from './scripts/lib/bot-noise.mjs';
 import { gateExemptReason } from './scripts/lib/pr-gate-exempt.mjs';
-import { parseRequiredChecksResult } from './scripts/lib/required-check-settlement.mjs';
+import { fetchRequiredCheckState } from './scripts/lib/required-ci-checks.mjs';
 
 const POLL_INTERVAL_SEC = Number(process.env.BOT_WAIT_POLL_SEC || 45);
 const QUIET_WINDOW_SEC = Number(process.env.BOT_WAIT_QUIET_SEC || 90);
@@ -118,13 +118,14 @@ function resolveRepo() {
 }
 
 function resolvePr(prArg, branch) {
+  const fields = 'number,createdAt,headRefName,headRefOid,baseRefName';
   if (prArg) {
-    const r = gh(['pr', 'view', String(prArg), '--json', 'number,createdAt,headRefName'], { json: true });
+    const r = gh(['pr', 'view', String(prArg), '--json', fields], { json: true });
     if (!r.ok) return { error: r.error };
     return { pr: r.data };
   }
   if (!branch) return { pr: null };
-  const r = gh(['pr', 'list', '--state', 'open', '--head', branch, '--json', 'number,createdAt,headRefName'], {
+  const r = gh(['pr', 'list', '--state', 'open', '--head', branch, '--json', fields], {
     json: true,
   });
   if (!r.ok) return { error: r.error };
@@ -177,13 +178,31 @@ function fetchBotActivity(owner, name, prNumber) {
   return { events };
 }
 
-function fetchChecks(prNumber) {
-  const result = spawnSync(
-    'gh',
-    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
-    { encoding: 'utf8' },
-  );
-  return parseRequiredChecksResult(result);
+const DEFAULT_IGNORED_CHECK_NAMES = [
+  'bot-presence-gate',
+  'bot-feedback-gate',
+  'pr-bot-presence-gate',
+  'pr-bot-feedback-check',
+  'pr-gates-advisory',
+];
+
+function ignoredCheckNames() {
+  const configured = (process.env.BOT_WAIT_IGNORE_CHECK_NAMES || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set([...DEFAULT_IGNORED_CHECK_NAMES, ...configured]);
+}
+
+function fetchChecks(prNumber, repo, headSha, baseRefName) {
+  return fetchRequiredCheckState({
+    prNumber,
+    repo: `${repo.owner}/${repo.name}`,
+    headSha,
+    baseRefName,
+    ignoredNames: [...ignoredCheckNames()],
+    fallbackRequiredNames: ['bot-feedback-gate'],
+  });
 }
 
 function formatDuration(ms) {
@@ -193,7 +212,16 @@ function formatDuration(ms) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, singleShot = false }) {
+function evaluate({
+  prNumber,
+  anchorIso,
+  headSha,
+  baseRefName,
+  state,
+  repo: repoIn,
+  requiredKeys,
+  singleShot = false,
+}) {
   const anchor = new Date(anchorIso);
   if (!Number.isFinite(anchor.getTime())) {
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
@@ -202,7 +230,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
   if (requiredKeys.length === 0) {
     const elapsedMs = Date.now() - anchor.getTime();
     const maxMs = MAX_WAIT_MIN * 60 * 1000;
-    const checks = fetchChecks(prNumber);
+    const checks = fetchChecks(prNumber, repoIn, headSha, baseRefName);
     if (checks.error && !checks.failed) {
       if (isGithubRateLimitError(checks.error)) {
         return {
@@ -294,7 +322,7 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
     lastQuietAnchorAt !== null &&
     Date.now() - lastQuietAnchorAt.getTime() >= QUIET_WINDOW_SEC * 1000;
 
-  const checks = fetchChecks(prNumber);
+  const checks = fetchChecks(prNumber, repo, headSha, baseRefName);
   if (checks.error && !checks.failed) {
     if (isGithubRateLimitError(checks.error)) {
       return {
@@ -546,6 +574,8 @@ async function main() {
     return evaluate({
       prNumber,
       anchorIso: st.anchor || anchorFromPr,
+      headSha: resolved.pr.headRefOid,
+      baseRefName: resolved.pr.baseRefName,
       state: st,
       repo,
       requiredKeys: effectiveRequired,

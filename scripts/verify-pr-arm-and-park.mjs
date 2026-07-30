@@ -12,10 +12,10 @@ import {
 import { shouldMarkReady } from './lib/pr-branch-sync.mjs';
 import { checkDefaultBase, evaluateDefaultBase } from './lib/pr-base-guard.mjs';
 import {
+  fetchRequiredCi,
   gateCiRequiredResult,
   gateGithubBotChecksResult,
   gateShipCloseoutSubgates,
-  parseRequiredCiResult,
 } from './lib/pr-gates-lib.mjs';
 
 assert.equal(evaluateDefaultBase('main', 'main').covered, true);
@@ -75,46 +75,38 @@ assert.equal(
   2,
 );
 
-const missingRequiredChecks = parseRequiredCiResult({
-  status: 1,
-  stderr: 'no required checks reported on the current head',
-  stdout: '',
-});
+const missingRequiredChecks = {
+  ok: true,
+  pending: true,
+  failed: false,
+  failedNames: [],
+  pendingNames: ['bot-feedback-gate'],
+  missingNames: ['bot-feedback-gate'],
+  missing: true,
+  checks: [],
+};
 assert.equal(missingRequiredChecks.pending, true);
 assert.equal(missingRequiredChecks.missing, true);
 assert.equal(
   classifyGateFailure(gateCiRequiredResult(missingRequiredChecks)),
   'waiting',
 );
-const emptyRequiredChecks = parseRequiredCiResult({
-  status: 0,
-  stderr: '',
-  stdout: '[]',
-});
-assert.equal(emptyRequiredChecks.pending, true);
-assert.equal(emptyRequiredChecks.missing, true);
-const missingFeedbackGate = gateGithubBotChecksResult({ found: {}, skipped: true });
+const missingFeedbackGate = gateGithubBotChecksResult(missingRequiredChecks);
 assert.equal(missingFeedbackGate.pending, true);
 assert.equal(classifyGateFailure(missingFeedbackGate), 'waiting');
 const pendingFeedbackGate = gateGithubBotChecksResult({
-  found: {
-    'bot-feedback-gate': {
-      name: 'bot-feedback-gate',
-      bucket: 'pending',
-      state: 'IN_PROGRESS',
-    },
-  },
+  ok: true,
+  failedNames: [],
+  pendingNames: ['bot-feedback-gate'],
+  missingNames: [],
 });
 assert.equal(pendingFeedbackGate.pending, true);
 assert.equal(classifyGateFailure(pendingFeedbackGate), 'waiting');
 const failedFeedbackGate = gateGithubBotChecksResult({
-  found: {
-    'bot-feedback-gate': {
-      name: 'bot-feedback-gate',
-      bucket: 'fail',
-      state: 'FAILURE',
-    },
-  },
+  ok: true,
+  failedNames: ['bot-feedback-gate'],
+  pendingNames: [],
+  missingNames: [],
 });
 assert.equal(failedFeedbackGate.pending, false);
 assert.equal(classifyGateFailure(failedFeedbackGate), 'actionable');
@@ -163,6 +155,11 @@ assert.equal(
     sync: null,
   }),
   'gh pr ready failed: auth denied',
+);
+assert.match(
+  fetchRequiredCi.toString(),
+  /fetchRequiredCheckState/,
+  'required checks must be evaluated against the exact current PR head',
 );
 assert.deepEqual(
   classifyPostProgressState({ state: 'MERGED' }, 7),
@@ -227,6 +224,7 @@ const mergedAfterThrownProgression = armAndParkOnce(
 );
 assert.equal(mergedAfterThrownProgression.mode, 'ready');
 assert.equal(mergedAfterThrownProgression.merged, true);
+assert.equal(mergedAfterThrownProgression.progression, null);
 
 let blockedRaceFetches = 0;
 const mergedAfterBlockedProgression = armAndParkOnce(

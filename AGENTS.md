@@ -29,7 +29,9 @@ npm run pr:arm-and-park -- --pr <n>
 - A PR based on anything other than the repository default branch is
   `base-unprotected` and must be retargeted. Never stack PRs on feature branches.
 - `npm run wait-for-bots -- --pr <n>` now checks required CI settlement only;
-  reviewer presence defaults to off.
+  reviewer presence defaults to off. Required contexts come from live protection
+  and rules, then are evaluated from checks and statuses on the exact PR head;
+  an unreported context remains pending.
 - Do not run agent `--watch` or sleep-poll loops. Fix actionable state immediately;
   when only GitHub-owned work remains, park ownership and re-check with a later
   single-shot invocation.

@@ -3,7 +3,7 @@ name: pr-bot-feedback-check
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
 # - no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
-# per attempt; newer events supersede stale work for the same PR.
+# per run; unresolved feedback fails promptly instead of holding a runner.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
 # GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
@@ -32,8 +32,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Serialize each PR's gate runs. Cancelling an in-progress required context can
-  # leave GitHub selecting CANCELLED instead of the queued replacement.
+  # GitHub enforces every duplicate required context. Keep PR-only runs queued
+  # so cancellation cannot leave a blocking CANCELLED sibling on the head.
   group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
@@ -44,7 +44,7 @@ jobs:
       || github.event.review != null
       || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -64,6 +64,14 @@ jobs:
             PR="${{ inputs.pr_number }}"
           else
             PR="${{ github.event.pull_request.number }}"
+          fi
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
+          PR_STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)
+          if [ "$PR_STATE" != "open" ]; then
+            echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
+            echo "gate_exempt_reason=pull-request-$PR_STATE" >> "$GITHUB_OUTPUT"
+            echo "PR #$PR is $PR_STATE - stale review event skipped"
+            exit 0
           fi
           export PR
           EXEMPT=$(node scripts/pr-gate-exempt-reason.mjs || true)
@@ -89,23 +97,19 @@ jobs:
           else
             PR="${{ github.event.pull_request.number }}"
           fi
-          for attempt in $(seq 1 40); do
-            set +e
-            npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
-            code=$?
-            set -e
-            if [ "$code" -eq 0 ]; then
-              exit 0
-            fi
-            if [ "$code" -eq 2 ]; then
-              echo "::warning::GitHub API rate limit - retrying after 60 seconds"
-            elif [ "$code" -eq 3 ]; then
-              echo "Review feedback is still open (attempt $attempt/40); keeping the required check pending."
-            else
-              echo "::error::Feedback gate execution failed permanently (exit $code)."
-              exit "$code"
-            fi
-            sleep 60
-          done
-          echo "::error::Substantive review feedback remained open for 40 minutes."
-          exit 1
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
+          set +e
+          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$code" -eq 2 ]; then
+            echo "::error::GitHub API rate limit prevented the feedback audit; rerun this check."
+          elif [ "$code" -eq 3 ]; then
+            echo "::error::Substantive review feedback remains open. Reply and resolve it; the reply event will re-run this gate."
+          else
+            echo "::error::Feedback gate execution failed permanently (exit $code)."
+          fi
+          exit "$code"

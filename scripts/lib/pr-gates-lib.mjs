@@ -8,6 +8,7 @@ import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 import { isReportsOnlyPr } from './pr-reports-only.mjs';
 import { fetchPrMergeMeta, gateAutoMergeEnabled, gateBranchFreshMeta } from './pr-branch-sync.mjs';
 import { gateExemptReason } from './pr-gate-exempt.mjs';
+import { fetchRequiredCheckState } from './required-ci-checks.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -100,121 +101,38 @@ export function resolvePrNumber(prArg) {
   return { pr: view, branch };
 }
 
-export function parseRequiredCiResult(result) {
-  if (result.status === 8) {
-    return { ok: true, pending: true, failed: false, failedNames: [], checks: [] };
-  }
-  if (result.status !== 0) {
-    const msg = (result.stderr || '').trim() || `gh pr checks exit ${result.status}`;
-    if (/no checks reported/i.test(msg) || /no required checks reported/i.test(msg)) {
-      return {
-        ok: true,
-        pending: true,
-        missing: true,
-        failed: false,
-        failedNames: [],
-        checks: [],
-      };
-    }
-    return { ok: false, error: msg };
-  }
-  let checks;
-  try {
-    checks = JSON.parse(result.stdout || '[]');
-  } catch (error) {
-    return { ok: false, error: `Invalid required-check JSON: ${error.message}` };
-  }
-  if (!Array.isArray(checks) || checks.length === 0) {
-    return {
-      ok: true,
-      pending: true,
-      missing: true,
-      failed: false,
-      failedNames: [],
-      checks: [],
-    };
-  }
-  let pending = false;
-  let failed = false;
-  const failedNames = [];
-  for (const c of checks) {
-    if (c.bucket === 'pending') pending = true;
-    if (
-      c.bucket === 'fail' ||
-      c.bucket === 'cancel' ||
-      c.state === 'FAILURE' ||
-      c.state === 'ERROR' ||
-      c.state === 'CANCELLED'
-    ) {
-      failed = true;
-      failedNames.push(c.name);
-    }
-  }
-  return { ok: true, pending, failed, failedNames, checks };
-}
-
 export function fetchRequiredCi(prNumber) {
-  const result = spawnSync(
-    'gh',
-    ['pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,state'],
-    { encoding: 'utf8' },
-  );
-  return parseRequiredCiResult(result);
-}
-
-export function fetchNamedChecks(prNumber, names) {
-  const r = spawnSync(
-    'gh',
-    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,startedAt,completedAt'],
-    { encoding: 'utf8' },
-  );
-  if (r.status !== 0) {
-    const msg = (r.stderr || '').trim() || `gh pr checks exit ${r.status}`;
-    if (/no checks reported/i.test(msg)) return { found: {}, skipped: true };
-    return { found: {}, error: msg };
+  let pr;
+  let repo;
+  try {
+    pr = ghJson([
+      'pr',
+      'view',
+      String(prNumber),
+      '--json',
+      'headRefOid,baseRefName',
+    ]);
+    repo = repoSlug();
+  } catch (error) {
+    return { ok: false, error: error.message };
   }
-  const all = JSON.parse(r.stdout || '[]');
-  const want = new Set(names.map((n) => n.toLowerCase()));
-  const found = {};
-  for (const c of all) {
-    const lower = (c.name || '').toLowerCase();
-    const tail = lower.includes('/') ? lower.slice(lower.lastIndexOf('/') + 1) : lower;
-    for (const key of want) {
-      if (lower === key || tail === key) {
-        found[key] = selectNewestCheck(found[key], c);
-      }
-    }
-  }
-  return { found };
-}
-
-export function selectNewestCheck(prior, candidate) {
-  if (!prior) return candidate;
-  const priorAt = new Date(prior.startedAt || prior.completedAt || 0).getTime();
-  const nextAt = new Date(candidate.startedAt || candidate.completedAt || 0).getTime();
-  if (nextAt > priorAt) return candidate;
-  if (nextAt < priorAt) return prior;
-  const candidatePending =
-    candidate.bucket === 'pending' ||
-    candidate.state === 'PENDING' ||
-    candidate.state === 'IN_PROGRESS';
-  const priorPending =
-    prior.bucket === 'pending' || prior.state === 'PENDING' || prior.state === 'IN_PROGRESS';
-  return candidatePending && !priorPending ? candidate : prior;
-}
-
-export function classifyCheckStatus(check) {
-  if (!check) return 'missing';
-  if (check.bucket === 'pass' || check.state === 'SUCCESS') return 'pass';
-  if (
-    check.bucket === 'pending'
-    || check.state === 'PENDING'
-    || check.state === 'IN_PROGRESS'
-    || check.state === 'QUEUED'
-  ) {
-    return 'pending';
-  }
-  return 'failed';
+  const fallbackRequiredNames = (process.env.PR_REQUIRED_CHECKS || 'bot-feedback-gate')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const result = fetchRequiredCheckState({
+    prNumber,
+    repo: `${repo.owner}/${repo.name}`,
+    headSha: pr.headRefOid,
+    baseRefName: pr.baseRefName,
+    fallbackRequiredNames,
+  });
+  if (result.error) return { ok: false, error: result.error };
+  return {
+    ok: true,
+    ...result,
+    missing: result.missingNames.length > 0,
+  };
 }
 
 export function gateCiRequiredResult(ci) {
@@ -247,50 +165,37 @@ export function gateCiRequired(prNumber) {
   return gateCiRequiredResult(fetchRequiredCi(prNumber));
 }
 
-export function gateGithubBotChecksResult(
-  { found = {}, error, skipped } = {},
-  names = BOT_GATE_CHECK_NAMES,
-) {
-  if (error) {
+export function gateGithubBotChecksResult(exact, names = BOT_GATE_CHECK_NAMES) {
+  if (!exact?.ok) {
     return {
       id: 'github-bot-gates',
       pass: false,
-      detail: error,
-      action: 'Ensure the GitHub Actions workflow pr-bot-feedback-check ran',
+      detail: exact?.error || 'Exact-head feedback check state unavailable',
+      action: 'Ensure the pr-bot-feedback-check workflow ran on the PR head',
     };
   }
-  if (skipped || !names.some((name) => found[name])) {
-    return {
-      id: 'github-bot-gates',
-      pass: false,
-      pending: true,
-      detail: 'bot-feedback-gate: not reported yet',
-      action: 'Required feedback check has not reported on this head; park and re-run once later',
-    };
-  }
+  const failedNames = new Set(exact.failedNames || []);
+  const pendingNames = new Set(exact.pendingNames || []);
+  const missingNames = new Set(exact.missingNames || []);
   const parts = [];
   let pass = true;
   let pending = false;
   let failed = false;
   for (const name of names) {
-    const c = found[name];
-    if (!c) {
+    if (missingNames.has(name)) {
       parts.push(`${name}: not reported yet`);
       pass = false;
       pending = true;
-      continue;
-    }
-    const status = classifyCheckStatus(c);
-    if (status === 'pass') {
-      parts.push(`${name}: pass`);
-    } else if (status === 'pending') {
-      parts.push(`${name}: ${c.bucket || c.state}`);
+    } else if (failedNames.has(name)) {
+      parts.push(`${name}: failure`);
+      pass = false;
+      failed = true;
+    } else if (pendingNames.has(name)) {
+      parts.push(`${name}: pending`);
       pass = false;
       pending = true;
     } else {
-      parts.push(`${name}: ${c.bucket || c.state} (failed)`);
-      pass = false;
-      failed = true;
+      parts.push(`${name}: pass`);
     }
   }
   return {
@@ -305,7 +210,7 @@ export function gateGithubBotChecksResult(
 }
 
 export function gateGithubBotChecks(prNumber) {
-  return gateGithubBotChecksResult(fetchNamedChecks(prNumber, BOT_GATE_CHECK_NAMES));
+  return gateGithubBotChecksResult(fetchRequiredCi(prNumber));
 }
 
 export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxBuffer, timeout } = {}) {
