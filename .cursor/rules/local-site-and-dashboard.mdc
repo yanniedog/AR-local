@@ -18,7 +18,7 @@ Python ingest and export scripts plus a **local HTTP dashboard** (`cdr_dashboard
 | Purpose | Command |
 |--------|---------|
 | Local dashboard smoke | `npm run verify:local -- --base-url=<url>/` |
-| Bot wait | `npm run wait-for-bots` |
+| Required-CI settlement | `npm run wait-for-bots -- --pr <n>` |
 | Open PR closeout guard | `npm run ship:closeout:strict` |
 
 ## Verification checklist

@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RULESET_JSON = join(repoRoot, '.github', 'rulesets', 'main-bot-gates.json');
-const REQUIRED_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const REQUIRED_CHECKS = ['bot-feedback-gate'];
 
 function parseArgs(argv) {
   const out = { verifyPr: null, dryRunProtection: false, help: false };
@@ -35,17 +35,20 @@ function printPolicy() {
 === Bot review policy (repo code — NOT in GitHub ruleset) ===
 
 Required on merge (human work PRs):
-  - bot-presence-gate   (waits for gemini on human feat/fix/agent PRs)
-  - bot-feedback-gate   (thread closure on human PRs)
+  - bot-feedback-gate   (substantive feedback disposition + thread closure)
+
+Advisory:
+  - Gemini, Codex, Sourcery, CodeRabbit, Qwen/local LLM, and presence checks
+  - Vendor availability and quota never block merge
 
 Skipped automatically (scripts/lib/pr-gate-exempt.mjs):
   - PR author is a GitHub bot (login ends with [bot], e.g. github-actions[bot])
   - Title is conventional chore (chore: or chore(scope):)
   - Known automation titles (mobile auto-release bump, PR bot matrix)
 
-Human PR example (bots required):  yanniedog + feat/fix/agent/*
-Chore example (bots skipped):     chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)
-Bot PR example (bots skipped):      github-actions[bot] opens any title
+Human PR example (feedback required): yanniedog + feat/fix/agent/*
+Chore example (feedback exempt):      chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)
+Bot PR example (feedback exempt):     github-actions[bot] opens any title
 `);
 }
 
@@ -61,7 +64,7 @@ Steps:
   2. Select the JSON file above
   3. Confirm:
        Target branches: refs/heads/main, ~DEFAULT_BRANCH
-       Required checks:  bot-presence-gate, bot-feedback-gate (strict)
+       Required checks:  bot-feedback-gate (strict)
        PR rule:          squash only, conversation resolution ON, 0 approvals
        Bypass list:      GitHub Actions — mode Always (actor_id 15368)
   4. Save → Enforcement: Active
@@ -102,6 +105,7 @@ function validateRulesetJson() {
 
 function runLocalVerifiers() {
   const scripts = [
+    'scripts/verify-pr-review-policy.mjs',
     'scripts/verify-pr-gate-exempt-policy.mjs',
     'scripts/verify-pr-gate-logic.mjs',
     'scripts/verify-mobile-auto-release-commit.mjs',
@@ -142,7 +146,7 @@ function verifyPrExemption(prNumber) {
     console.log(`PR #${prNumber}: gate-exempt (${reason}) — bot review NOT required for merge`);
     return;
   }
-  console.log(`PR #${prNumber}: NOT gate-exempt — gemini + thread closure required for merge`);
+  console.log(`PR #${prNumber}: NOT gate-exempt — feedback thread closure required for merge`);
 }
 
 function dryRunBranchProtection() {
@@ -161,7 +165,7 @@ function printPostSetupVerify() {
 === After ruleset is active — verify ===
 
 Local (no GitHub push):
-  npm run pr:gate-logic:verify
+  npm run pr:automation:verify
   node scripts/github-bot-gates-operator.mjs
 
 Exempt PR (expect gate-exempt reason):

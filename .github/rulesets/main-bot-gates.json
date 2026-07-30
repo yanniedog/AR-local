@@ -1,5 +1,5 @@
 {
-  "name": "main — bot gates + Actions bypass",
+  "name": "main — feedback gate + Actions bypass",
   "target": "branch",
   "source_type": "Repository",
   "enforcement": "active",
@@ -47,10 +47,6 @@
         "required_status_checks": [
           {
             "context": "bot-feedback-gate",
-            "integration_id": 15368
-          },
-          {
-            "context": "bot-presence-gate",
             "integration_id": 15368
           }
         ]

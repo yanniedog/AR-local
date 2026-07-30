@@ -6,7 +6,7 @@
  * Usage:
  *   npm run pr:gates:check -- --pr <n>
  *   npm run pr:gates:check              # open PR for current branch
- *   npm run pr:gates:check -- --watch   # poll until pass or timeout
+ *   npm run pr:gates:check -- --watch   # legacy interactive mode; agents use single-shot
  */
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import {
@@ -54,10 +54,10 @@ async function main() {
 
 Gates enforced:
   ci-required              Required GitHub checks green (gh pr checks --required)
-  github-bot-gates           bot-presence-gate + bot-feedback-gate when reported
-  wait-for-bots            npm run wait-for-bots -- --pr N (exit 0)
+  github-bot-gates         bot-feedback-gate when reported
+  wait-for-bots            required CI settlement; reviewer presence is advisory
   pr-bot-feedback-check    npm run pr:bot-feedback-check -- --pr N (exit 0)
-  feedback-plan            ## Feedback plan when bot wait ready and threads open
+  feedback-plan            ## Feedback plan when substantive threads are open
   ship-closeout-subgates   wait + thread gates (ship:closeout:strict embeds these)
 
 Note: ship:closeout:strict exit 0 on a topic branch with an open PR is expected only after merge/close.

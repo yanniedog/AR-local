@@ -35,7 +35,7 @@ When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROAD
 ## When to run
 
 - Open PR with failing CI, unresolved review threads, or bot findings.
-- After `wait-for-bots` exit 0 — begin **5b** synthesis before replying.
+- After reading all current threads — begin **5b** synthesis before replying.
 - Chief assigns one babysit worker per PR (no five parallel pr-fix on same PR).
 
 ## Mandatory gates (before merge request)
@@ -49,10 +49,12 @@ npm run pr:gates:check -- --pr <n>         # exit 0 = all merge gates
 Individual gates (same bar):
 
 ```sh
-npm run wait-for-bots -- --pr <n>          # exit 0 required
-npm run pr:bot-feedback-check -- --pr <n>  # exit 0 required
-gh pr checks <n> --watch                   # bot-presence-gate, bot-feedback-gate green
+npm run wait-for-bots -- --pr <n>          # single-shot required-CI settlement
+npm run pr:bot-feedback-check -- --pr <n>  # dispositions + resolution
+gh pr checks <n>                            # applicable product CI + bot-feedback-gate
 ```
+
+Reviewer vendors, Qwen/local LLM, and `bot-presence-gate` are advisory. Do not use agent watch or sleep-poll loops.
 
 **Never** recommend merge on “CI green” alone. **pr-gates-agent** audits; you implement fixes until `pr:gates:check` exits **0**.
 
@@ -70,7 +72,7 @@ git fetch origin && git checkout <head-branch> && git rebase origin/main  # if b
 
 Resolve preserving branch intent + `main`; if intents conflict, stop and ask chief/user with evidence.
 
-### 3. After `wait-for-bots` exit 0 — synthesis (step 5b)
+### 3. Feedback synthesis (step 5b)
 
 1. Fetch all threads: `gh pr view <n> --comments`, review APIs, Files tab on GitHub.
 2. **Read every thread before replying to any.**
@@ -118,7 +120,7 @@ After merge: run or delegate **post-merge-verify-agent** (`verify:local` on Pi w
 | codex | chatgpt-codex-connector[bot] |
 | sourcery | sourcery-ai[bot] |
 
-After @mentioning bots: `npm run wait-for-bots -- --bot-tag` then loop until exit 0.
+Reviewer mentions do not create a merge-blocking wait. Read and disposition any substantive feedback that actually arrives, including late feedback found by the post-merge audit.
 
 ## Return format
 

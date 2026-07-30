@@ -21,4 +21,4 @@ For every conversation with repo changes, complete the full ship bar before clai
 
 **There is no Cloudflare deploy** for this repo; do not wait on Workers/Pages.
 
-Full detail: **`WORKFLOW.md`**. Closeout: **`npm run ship:closeout:strict && npm run wait-for-bots`**.
+Full detail: **`WORKFLOW.md`**. Closeout uses the single-shot `npm run ship:closeout:strict` and `npm run pr:gates:check -- --pr <n>` commands.

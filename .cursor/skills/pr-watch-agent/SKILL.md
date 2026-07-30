@@ -1,13 +1,13 @@
 ---
 name: pr-watch-agent
 description: >-
-  Continuous loop on open PRs: bot/human thread closure, gates, squash merge,
-  Pi deploy + verify on http://100.78.28.10/. Delegates path locks to chief.
+  Single-pass open-PR closeout: bot/human thread closure, gates, squash merge,
+  then Pi deploy and verification when the task authorizes it.
 ---
 
 # PR watch agent (AR-local)
 
-You run a **continuous ship-bar loop** on **yanniedog/AR-local** open pull requests: triage and close review threads, pass merge gates, squash merge (oldest first), then sync and verify the **Pi dashboard** — not localhost by default.
+You run a **single ship-bar pass** on **yanniedog/AR-local** open pull requests: triage and close review threads, run the merge-gate audit once, squash merge eligible PRs (oldest first), then sync and verify the **Pi dashboard** only when the task authorizes deployment.
 
 You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (merge + close-loop), pi-deploy-watchdog (runtime), and post-merge-verify (acceptance HTTP). You **do not** own unrelated feature implementation or path locks across concurrent agent branches — **chief** still assigns one writer per branch.
 
@@ -18,8 +18,8 @@ You **combine** pr-fix (remediation), pr-gates (audit), workflow-orchestrator (m
 ## Invocation phrases
 
 - **"run pr watch"** / **"watch open PRs"**
-- Chief/orchestrator: *Follow `.cursor/skills/pr-watch-agent/SKILL.md` in background until idle.*
-- *Run `npm run pr:watch-once` each cycle; exit 0 idle or all gates green.*
+- Chief/orchestrator: *Follow `.cursor/skills/pr-watch-agent/SKILL.md` for one closeout pass.*
+- *Run `npm run pr:watch-once` once; exit 0 means idle or all currently reachable work is complete.*
 
 ## Relationship to other agents
 
@@ -52,7 +52,7 @@ npm run chief:scan             # exit 1 → fix clashes before merging
 
 **Merge order:** Process open PRs **oldest `createdAt` first** (script default). If multiple PRs touch `dashboard/app.css` or the same paths, **rebase the younger PR onto `origin/main`** after the older merges (dependency-aware). `pr:watch-once` prints `BEHIND` / `DIRTY` hints.
 
-**Idle:** No open PRs → report **idle**; with `--watch`, poll every `--idle-min` (default 5). Otherwise exit cycle and let chief re-spawn when PRs exist.
+**Idle:** No open PRs → report **idle**. Otherwise finish one reachable pass and return; never use agent watch or sleep-poll loops.
 
 ### Per PR (repeat until queue empty or blocked)
 
@@ -63,14 +63,13 @@ gh pr view <n> --json title,state,headRefName,statusCheckRollup
 git fetch origin && git checkout <headRefName> && git rebase origin/main   # if behind
 ```
 
-#### 2. Bot wait (step 5)
+#### 2. Required-CI settlement (step 5)
 
 ```sh
 npm run wait-for-bots -- --pr <n>
-npm run wait-for-bots -- --pr <n> --watch    # exit 2 → loop
 ```
 
-After @mentioning bots: `npm run wait-for-bots -- --bot-tag` then loop until exit **0**. Code-only pushes do **not** reset the anchor.
+This is a single-shot helper for applicable required CI. Reviewer vendors, Qwen/local LLM, and reviewer presence are advisory. Exit 2 means park; do not poll.
 
 #### 3. Synthesis + fixes (steps 5b–6) — pr-fix patterns
 
@@ -89,10 +88,9 @@ Hand off to **pr-fix-agent** if you lack write access or the PR is outside your 
 
 ```sh
 npm run pr:gates:check -- --pr <n>
-npm run pr:gates:check -- --pr <n> --watch --timeout-min 35
 ```
 
-Merge **only** when `pr:gates:check` exit **0** (CI, GitHub `bot-*` gates, wait-for-bots, thread closure, feedback plan when required).
+Merge **only** when `pr:gates:check` exits **0** (applicable product CI, `bot-feedback-gate`, thread dispositions/resolution, feedback plan when required). Exit 3 means act; exit 2 means park while GitHub owns the clock.
 
 #### 5. Merge (step 7)
 
@@ -103,7 +101,7 @@ npm run close-loop:check -- --pr <n>
 npm run git:graph-hygiene
 ```
 
-Forbidden: merge on CI green alone; merge with `wait-for-bots` exit **2**; merge with open substantive threads.
+Forbidden: merge on CI green alone; merge with a pending required check; merge with open or undispositioned substantive threads.
 
 ### Post-merge (main)
 
@@ -127,16 +125,17 @@ On SSH failure → **pi-deploy-agent**. On verify failure → fix and re-deploy;
 
 Optional: **post-merge-verify-agent** for evidence (Browser MCP on Pi URL).
 
-## Continuous mode
+## Invocation mode
 
 | Mode | How |
 |------|-----|
-| Agent loop | Re-invoke skill after each cycle until idle |
-| Script poll | `npm run pr:watch-once -- --watch --idle-min 5` |
-| Chief background | `Task` + this skill when open PRs exist; one pr-watch worker at a time |
+| Agent pass | Run once and report actionable, parked, or idle |
+| Script | `npm run pr:watch-once` |
+| Chief delegation | Invoke when open PRs have reachable work; one pr-watch worker at a time |
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots   # session idle only when no open PR work
+npm run ship:closeout:strict
+npm run pr:gates:check -- --pr <n>
 ```
 
 ## Return format

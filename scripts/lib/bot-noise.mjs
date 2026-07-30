@@ -37,6 +37,10 @@ const QUOTA_PATTERNS = [
   /\bplease (?:try|come back) (?:again )?later\b/i,
   /couldn'?t (?:review|process|complete)/i,
   /unable to (?:review|process|complete)/i,
+  /\breview activity has ceased\b/i,
+  /\bconsumer version (?:has been )?(?:sunset|retired|deprecated)\b/i,
+  /\bdid not complete successfully\b/i,
+  /^\s*ERROR:/i,
 ];
 
 const TRIVIAL_PATTERNS = [

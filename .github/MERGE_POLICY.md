@@ -12,7 +12,10 @@ npm run pr:merge -- --pr <n>
 gh pr merge <n> --auto --squash --delete-branch
 ```
 
-`--auto` queues merge until required checks pass (and updates branch when protection requires up-to-date). Do not merge on CI green alone — complete bot wait and thread closure per `WORKFLOW.md`.
+`--auto` queues merge until required checks pass. Reviewer presence is
+advisory; complete substantive feedback disposition and thread closure per
+`WORKFLOW.md`. Agents use single-shot gate reads and park while GitHub owns the
+clock.
 
 ## `gh pr create`
 
@@ -40,4 +43,6 @@ If the API returns 403, apply manually: **Settings → General → Pull Requests
 
 ## Branch protection
 
-Bot gates on `main`: `npm run branch-protection:apply` (see `WORKFLOW.md`). Protection blocks merge until checks pass; it does not replace squash-only repo settings above.
+The universal gate on `main` is `bot-feedback-gate`:
+`npm run branch-protection:apply` (see `WORKFLOW.md`). Applicable product CI
+remains path-filtered and is not added as a synthetic universal context.

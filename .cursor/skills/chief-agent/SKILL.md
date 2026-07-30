@@ -45,7 +45,7 @@ See `~/.cursor/rules/close-loop-never-defer.mdc`.
 4. **Perfection bar** — deliverables = merged PRs with thread closure and project verify when code shipped.
 5. **Escalation to human** — only after a remediation subagent reports a **hard blocker** (auth failure, GitHub outage) **with evidence**. Until then, chief keeps delegating.
 
-See `workflow-orchestrator` skill — orchestrator **must not merge** until `wait-for-bots` exit **0** (gemini + codex + sourcery posted since anchor), `pr:bot-feedback-check` exit **0**, and substantive bot/human inline threads are closed. **Never** merge on CI green alone.
+See `workflow-orchestrator` skill — orchestrator **must not merge** until applicable product CI and `bot-feedback-gate` pass, `pr:bot-feedback-check` exits **0**, and substantive bot/human inline threads have dispositions and are resolved. Reviewer vendors, Qwen/local LLM, and reviewer presence are advisory. **Never** merge on CI green alone.
 
 ## Global feature sync (chief enforces)
 
@@ -200,9 +200,9 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 2. Partition mixed WIP — stash or branch per path prefix; document paths per PR
 3. For CONFLICTING PRs: checkout head branch, rebase origin/main, resolve conflicts, push
 4. npm run pr:bot-feedback-check -- --pr <n>
-5. npm run wait-for-bots until exit 0 (gemini + codex + sourcery each posted since anchor; exit 1 = do not merge)
+5. npm run pr:gates:check -- --pr <n> once (exit 3 = act; exit 2 = park while GitHub-owned CI settles)
 6. In-thread implement/defer/decline on every substantive bot/human thread
-7. npm run pr:merge (`gh pr merge --auto --squash --delete-branch`) only after GitHub checks bot-presence-gate + pr-bot-feedback-check green, wait-for-bots exit 0, pr:bot-feedback-check exit 0, and threads closed — **never** on CI green alone
+7. npm run pr:merge (`gh pr merge --auto --squash --delete-branch`) only after applicable product CI + bot-feedback-gate are green, pr:bot-feedback-check exits 0, and threads are dispositioned/resolved — **never** on CI green alone
 8. Pi verify / npm run verify:local when code shipped
 9. npm run chief:scan — must exit 0 before chief marks cycle complete
 ```
@@ -225,10 +225,10 @@ When `chief:scan` exit 1, path overlap, worktree duplicate, or branch/PR mismatc
 | Worktrees | `git worktree list` | Branch contention across trees |
 | Stashes | `git stash list` | Mixed partitions — do not blind `stash pop` |
 | Open PRs | `gh pr list --state open` | One babysit worker per PR number |
-| PR detail | `gh pr view <n> --comments`, checks | CI, bot wait, threads (assigned pr-fix worker owns ship bar for that PR) |
+| PR detail | `gh pr view <n> --comments`, checks | CI and feedback threads (assigned pr-fix worker owns ship bar for that PR) |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` (mtime sort, last ~2h) | Active/completed subagents; changed paths |
 | Orchestrator state | Recent transcript mentioning `workflow-orchestrator` or SCAN→PLAN→DELEGATE | Dedupe: resume existing cycle |
-| Closeout (delegate) | `npm run ship:closeout:strict`, `npm run wait-for-bots` | Chief asks orchestrator to act; chief does not merge |
+| Closeout (delegate) | `npm run ship:closeout:strict`, `npm run pr:gates:check -- --pr <n>` | Chief asks orchestrator to act; chief does not merge |
 
 **Transcript scan:** read last lines of recent `subagents/*.jsonl` for completion summaries, paths, branch names, PR numbers. Map to branch lock registry.
 
@@ -239,7 +239,7 @@ Chief handles **coordination-level** routing only: PR number, branch lock, worke
 | Concern | Delegate to | Notes |
 |---------|-------------|-------|
 | Queue coordination, split PRs, path routing, merge order | **workflow-orchestrator** | Does **not** own thread closure; spawns/resumes per-PR pr-fix workers |
-| Continuous open-PR queue (multi-PR merge + Pi) | **pr-watch-agent** | Background when `gh pr list --state open` non-empty; delegates one pr-fix per PR; `npm run pr:watch-once`; chief holds path locks |
+| Single-pass open-PR closeout (multi-PR merge + Pi) | **pr-watch-agent** | Invoke when `gh pr list --state open` has reachable work; delegates one pr-fix per PR; `npm run pr:watch-once`; chief holds path locks |
 | Open PR #N ship bar (bots, threads, merge) | **pr-fix** + **babysit** | **Mandatory:** one dedicated worker per PR number through squash merge |
 | Browser QA | **deep-browser-explore** | After deploy or for UI tasks |
 | Global sync only | **generalPurpose** sync worker | Push `cursor-global-workflow`; return SHA |

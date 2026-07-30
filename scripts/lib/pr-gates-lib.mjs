@@ -4,7 +4,6 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readBotWaitStateFile } from './bot-wait-state.mjs';
 import { hasGh, ghJson, repoSlug } from './gh-pr-review-threads.mjs';
 import { isReportsOnlyPr } from './pr-reports-only.mjs';
 import { fetchPrMergeMeta, gateAutoMergeEnabled, gateBranchFreshMeta } from './pr-branch-sync.mjs';
@@ -13,7 +12,7 @@ import { gateExemptReason } from './pr-gate-exempt.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(__dirname, '../..');
 
-export const BOT_GATE_CHECK_NAMES = ['bot-presence-gate', 'bot-feedback-gate'];
+export const BOT_GATE_CHECK_NAMES = ['bot-feedback-gate'];
 
 const FEEDBACK_PLAN_RE = /##\s*feedback\s+plan\b/i;
 
@@ -140,7 +139,7 @@ export function fetchRequiredCi(prNumber) {
 export function fetchNamedChecks(prNumber, names) {
   const r = spawnSync(
     'gh',
-    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,completedAt'],
+    ['pr', 'checks', String(prNumber), '--json', 'name,bucket,state,startedAt,completedAt'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) {
@@ -155,10 +154,27 @@ export function fetchNamedChecks(prNumber, names) {
     const lower = (c.name || '').toLowerCase();
     const tail = lower.includes('/') ? lower.slice(lower.lastIndexOf('/') + 1) : lower;
     for (const key of want) {
-      if (lower === key || tail === key) found[key] = c;
+      if (lower === key || tail === key) {
+        found[key] = selectNewestCheck(found[key], c);
+      }
     }
   }
   return { found };
+}
+
+export function selectNewestCheck(prior, candidate) {
+  if (!prior) return candidate;
+  const priorAt = new Date(prior.startedAt || prior.completedAt || 0).getTime();
+  const nextAt = new Date(candidate.startedAt || candidate.completedAt || 0).getTime();
+  if (nextAt > priorAt) return candidate;
+  if (nextAt < priorAt) return prior;
+  const candidatePending =
+    candidate.bucket === 'pending' ||
+    candidate.state === 'PENDING' ||
+    candidate.state === 'IN_PROGRESS';
+  const priorPending =
+    prior.bucket === 'pending' || prior.state === 'PENDING' || prior.state === 'IN_PROGRESS';
+  return candidatePending && !priorPending ? candidate : prior;
 }
 
 function checkBucketPass(c) {
@@ -178,7 +194,7 @@ export function gateCiRequired(prNumber) {
       id: 'ci-required',
       pass: false,
       detail: `Failed: ${ci.failedNames.join(', ')}`,
-      action: 'Fix failing required checks; gh pr checks <n> --watch',
+      action: 'Fix failing required checks; inspect with gh pr checks <n>',
     };
   }
   if (ci.pending) {
@@ -186,7 +202,7 @@ export function gateCiRequired(prNumber) {
       id: 'ci-required',
       pass: false,
       detail: 'Required checks still pending',
-      action: 'Wait for CI; gh pr checks <n> --watch',
+      action: 'Required CI is pending; re-run this single-shot audit later',
     };
   }
   return { id: 'ci-required', pass: true, detail: 'All required checks passed' };
@@ -199,7 +215,7 @@ export function gateGithubBotChecks(prNumber) {
       id: 'github-bot-gates',
       pass: false,
       detail: error,
-      action: 'Ensure GitHub Actions workflows pr-bot-presence-gate and pr-bot-feedback-check ran',
+      action: 'Ensure the GitHub Actions workflow pr-bot-feedback-check ran',
     };
   }
   if (skipped || !BOT_GATE_CHECK_NAMES.some((name) => found[name])) {
@@ -212,8 +228,6 @@ export function gateGithubBotChecks(prNumber) {
   }
   const parts = [];
   let pass = true;
-  let botPresencePass = false;
-  let botPresenceCompletedAt = null;
   for (const name of BOT_GATE_CHECK_NAMES) {
     const c = found[name];
     if (!c) {
@@ -224,10 +238,6 @@ export function gateGithubBotChecks(prNumber) {
     const ok = checkBucketPass(c);
     if (ok === true) {
       parts.push(`${name}: pass`);
-      if (name === 'bot-presence-gate') {
-        botPresencePass = true;
-        botPresenceCompletedAt = c.completedAt || null;
-      }
     }
     else if (ok === false) {
       parts.push(`${name}: ${c.bucket || c.state}`);
@@ -241,11 +251,9 @@ export function gateGithubBotChecks(prNumber) {
     id: 'github-bot-gates',
     pass,
     detail: parts.join('; '),
-    botPresencePass,
-    botPresenceCompletedAt,
     action: pass
       ? undefined
-      : 'Wait for bot-presence-gate and bot-feedback-gate on GitHub (branch protection)',
+      : 'Wait for bot-feedback-gate on GitHub',
   };
 }
 
@@ -265,7 +273,7 @@ export function runNodeScript(relPath, extraArgs = [], { env: envOverrides, maxB
   };
 }
 
-export function gateWaitForBots(prNumber, githubBotGate) {
+export function gateWaitForBots(prNumber) {
   const exempt = gateExemptReason(prNumber);
   if (exempt) {
     return {
@@ -275,22 +283,9 @@ export function gateWaitForBots(prNumber, githubBotGate) {
       skipped: true,
     };
   }
-  if (githubBotGate?.botPresencePass) {
-    const state = readBotWaitStateFile(prNumber, REPO_ROOT);
-    const anchorMs = new Date(state?.anchor || '').getTime();
-    const gateMs = new Date(githubBotGate.botPresenceCompletedAt || '').getTime();
-    if (!Number.isFinite(anchorMs) || (Number.isFinite(gateMs) && anchorMs <= gateMs)) {
-      return {
-        id: 'wait-for-bots',
-        pass: true,
-        detail: 'Bot wait satisfied by green GitHub bot-presence-gate',
-        exitCode: 0,
-      };
-    }
-  }
   const { exitCode, stderr, stdout } = runNodeScript('wait_for_bots.mjs', ['--pr', String(prNumber)]);
   if (exitCode === 0) {
-    return { id: 'wait-for-bots', pass: true, detail: 'Bot wait satisfied (exit 0)', exitCode };
+    return { id: 'wait-for-bots', pass: true, detail: 'Required CI settled (exit 0)', exitCode };
   }
   const msg = stderr || stdout || `exit ${exitCode}`;
   return {
@@ -300,8 +295,8 @@ export function gateWaitForBots(prNumber, githubBotGate) {
     exitCode,
     action:
       exitCode === 2
-        ? `npm run wait-for-bots -- --watch --pr ${prNumber}`
-        : `npm run wait-for-bots -- --pr ${prNumber} (exit 1 = missing bots or error — do not merge)`,
+        ? `Required CI is pending; re-run npm run wait-for-bots -- --pr ${prNumber} later`
+        : `Inspect required CI or GitHub access, then rerun npm run wait-for-bots -- --pr ${prNumber}`,
   };
 }
 
@@ -362,7 +357,7 @@ export function gateFeedbackPlan(prNumber, { skip, waitPass, feedbackPass }) {
     return {
       id: 'feedback-plan',
       pass: true,
-      detail: 'Deferred until wait-for-bots exit 0 (WORKFLOW.md step 5b)',
+      detail: 'Deferred until required CI settles',
       waived: true,
     };
   }
@@ -372,21 +367,21 @@ export function gateFeedbackPlan(prNumber, { skip, waitPass, feedbackPass }) {
   return {
     id: 'feedback-plan',
     pass: false,
-    detail: 'Bot wait ready but no ## Feedback plan comment and threads still open',
-    action: `Post one ## Feedback plan on PR #${prNumber} before in-thread replies (WORKFLOW.md step 5b)`,
+    detail: 'Substantive feedback is open but no ## Feedback plan comment exists',
+    action: `Post one ## Feedback plan on PR #${prNumber} before in-thread replies`,
   };
 }
 
 export function gateShipCloseoutSubgates(waitGate, feedbackGate) {
   const pass = waitGate.pass && feedbackGate.pass;
   return {
-    id: 'ship-closeout-subgates',
+    id: 'merge-subgates',
     pass,
     detail: pass
-      ? 'Same checks ship:closeout:strict runs on topic branches (merge blockers clear)'
-      : 'ship:closeout:strict would exit 2 until wait-for-bots and pr:bot-feedback-check pass',
-    action: pass ? undefined : 'npm run ship:closeout:strict (after fixes above)',
-    note: 'ship:closeout:strict exit 0 on an open PR branch only after merge/close; use pr:gates:check for merge readiness',
+      ? 'Required CI settlement and feedback thread gates passed'
+      : 'Required CI settlement and pr:bot-feedback-check must both pass before merge',
+    action: pass ? undefined : 'Fix CI or review feedback, then rerun npm run pr:gates:check',
+    note: 'Use pr:gates:check for AR-local merge readiness',
   };
 }
 
@@ -418,7 +413,7 @@ export function evaluateGates(prNumber, options = {}) {
 
   const ci = gateCiRequired(prNumber);
   const ghBot = gateGithubBotChecks(prNumber);
-  const wait = gateWaitForBots(prNumber, ghBot);
+  const wait = gateWaitForBots(prNumber);
   const feedback = gateBotFeedback(prNumber);
   const plan = gateFeedbackPlan(prNumber, {
     skip: options.skipFeedbackPlan,

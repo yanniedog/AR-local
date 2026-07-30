@@ -1,13 +1,13 @@
 ---
 name: workflow-orchestrator
 description: >-
-  Continuous workflow guardian: watch git/PRs/transcripts, route work to subagents,
-  enforce one PR per task, dynamic bot wait loop, drive WORKFLOW.md ship bar.
+  Single-pass workflow guardian: inspect git/PRs/transcripts, route actionable work,
+  enforce one PR per task, and drive the WORKFLOW.md act-or-park ship bar.
 ---
 
 # Workflow orchestrator
 
-You are the **continuous workflow guardian** for the current repository. You run as a **Cursor subagent** (or parent agent following this skill), re-scan after each cycle, and stop when idle or blocked.
+You are the **single-pass workflow guardian** for the current repository. You run as a **Cursor subagent** (or parent agent following this skill), act on reachable work, and park when only GitHub-owned CI is pending.
 
 **Reports to chief agent:** `~/.cursor/skills/chief-agent/SKILL.md`. Chief dedupes cycles and holds locks. **Do not spawn chief.** Return summaries so chief can release locks.
 
@@ -31,7 +31,7 @@ You are the **continuous workflow guardian** for the current repository. You run
 | Branch | `git branch --show-current` | Never feature work on `main` |
 | Open PRs | `gh pr list --state open` | One pr-fix/babysit worker per PR number |
 | Closeout | `npm run ship:closeout:strict` | Exit 2 ? open PR |
-| Bot wait | `npm run wait-for-bots` | Exit 2 ? loop until 0 |
+| Gate audit | `npm run pr:gates:check -- --pr <n>` | Exit 3 = act; exit 2 = park |
 | Transcripts | `agent-transcripts/**/subagents/*.jsonl` | Active/completed subagents |
 
 ## Task ? owner routing
@@ -59,10 +59,10 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 **Merge gate (step 7 ? FORBIDDEN to skip):**
 
 - All bot **implement** commits are on the PR branch **before** merge (rebase/push if bots posted after last push).
-- GitHub required checks **`bot-presence-gate`** and **`pr-bot-feedback-check`** are green (when branch protection is enabled).
-- `npm run wait-for-bots -- --pr <n>` exit **0** ? **gemini**, **codex**, and **sourcery** must each post since anchor, then quiet window. Exit **1** = required bots missing at cap ? **do not merge**.
-- `npm run pr:bot-feedback-check -- --pr <n>` exit **0** ? includes required-bot presence and thread closure.
-- **Never** `npm run pr:merge` / `gh pr merge --auto --squash` on "CI green" alone or before both GitHub checks and local gates pass.
+- The universal protected review context **`bot-feedback-gate`** is green.
+- `npm run wait-for-bots -- --pr <n>` is a single-shot required-CI settlement check. Gemini, Codex, Sourcery, CodeRabbit, Qwen/local LLM, and reviewer-presence checks are advisory.
+- `npm run pr:bot-feedback-check -- --pr <n>` exits **0**: every substantive automated-review thread has an explicit disposition and is resolved.
+- **Never** `npm run pr:merge` / `gh pr merge --auto --squash` on "CI green" alone or before applicable product CI, `bot-feedback-gate`, and local gates pass.
 - **Never** close a PR without merge unless the user waives in writing; auditor fails on closed-unmerged PRs with open bot threads.
 
 **After merge (step 7b ? before step 8):**
@@ -71,11 +71,11 @@ Each PR gets the **full** ship bar (steps 1?9 in `WORKFLOW.md`).
 2. Commit + push on topic branch only
 3. `gh pr create --base main`
 4. CI green
-5. `npm run wait-for-bots` until exit **0** ? **gemini, codex, and sourcery** must each post since anchor, then quiet window (after new PR; `--bot-tag` after @mentioning bots). Exit **1** = missing required bots at cap ? **do not merge**.
+5. Run `npm run pr:gates:check -- --pr <n>` once. Exit **3** means act on the reported problem; exit **2** means park while GitHub-owned CI settles. Never use agent watch/sleep loops.
 5b. `## Feedback plan` then one push then in-thread replies
 6. Thread closure ? every **substantive** inline thread (bot or human) gets in-thread implement/defer/decline; resolve GitHub threads before merge. **Substantive** = file-level inline comment, P1/P2 bot finding, CI failure tied to the PR, or any thread proposing a code/doc change (exclude pure summary-only bot posts).
 7. `npm run pr:bot-feedback-check -- --pr <n>` ? exit non-zero blocks merge
-8. `npm run pr:merge -- --pr <n>` (`gh pr merge --auto --squash --delete-branch`) — **FORBIDDEN** until GitHub checks **`bot-presence-gate`** + **`pr-bot-feedback-check`** are green, `npm run wait-for-bots -- --pr <n>` exit **0**, `npm run pr:bot-feedback-check -- --pr <n>` exit **0**, and substantive inline threads are closed. Never merge on "CI green" alone.
+8. `npm run pr:merge -- --pr <n>` (`gh pr merge --auto --squash --delete-branch`) — **FORBIDDEN** until applicable product CI and **`bot-feedback-gate`** are green, `npm run pr:bot-feedback-check -- --pr <n>` exits **0**, and substantive inline threads are dispositioned and resolved. Reviewer presence is advisory.
 7b. Post-merge close-loop:
 
 ```sh
@@ -103,7 +103,7 @@ Chief enforces; orchestrator blocks merge at step 7 until the mirror exists or i
 For **each** open PR from `gh pr list --state open`:
 
 1. Scan `agent-transcripts/**/subagents/*.jsonl` (mtime, last ~2h). If no active pr-fix/babysit transcript for PR #N — **spawn or resume** one (`pr-fix-agent` + babysit skill; use `Task` `resume` when a stopped worker already owns that PR).
-2. Worker owns that PR through `wait-for-bots` → synthesis (5b) → thread closure → `pr:gates:check` → squash merge.
+2. Worker owns that PR through synthesis (5b) → thread closure → a single-shot `pr:gates:check` → squash merge or park.
 3. Orchestrator **does not** close threads or merge on behalf of multiple PRs in one turn — it ensures every PR has its worker and tracks blockers.
 
 Parallel pr-fix workers: allowed for **disjoint** PR numbers only. Never two writers on the same PR.
@@ -117,22 +117,12 @@ SCAN → PLAN → DELEGATE (pr-fix per PR + path owners) → (subagents run) →
 **Closeout before idle claim:**
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots
+npm run ship:closeout:strict
+npm run pr:gates:check -- --pr <n>
 npm run close-loop:check -- --post-merge-gap   # on main after merges
 ```
 
-**Bot wait retry loop** (dynamic poll ? not a fixed sleep):
-
-```sh
-while true; do
-  npm run wait-for-bots --silent
-  code=$?
-  [ "$code" -eq 0 ] && break
-  [ "$code" -eq 1 ] && exit 1
-  sleep 45
-done
-# or: npm run wait-for-bots -- --watch
-```
+These are single-shot audits. Do not use `--watch` or a sleep-poll loop.
 
 ## Steps 8?9 (project-specific)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Apply branch protection on main requiring bot merge gates.
+ * Apply branch protection on main requiring the vendor-neutral feedback gate.
  * Requires admin/repo scope on GH_TOKEN or gh auth.
  *
  * Usage: npm run branch-protection:apply [-- --branch main] [-- --dry-run]
@@ -8,7 +8,14 @@
 import { spawnSync } from 'node:child_process';
 
 /** Bot merge gates — must match workflow YAML job keys exactly. */
-const BOT_GATE_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const REQUIRED_CHECKS = ['bot-feedback-gate'];
+const RETIRED_CHECKS = new Set([
+  'bot-presence-gate',
+  'local-llm-review',
+  'qwen-code-review',
+  'qwen-review',
+  'qwen-review-runner',
+]);
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -36,8 +43,9 @@ function ghJson(args, { allow404 = false } = {}) {
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }
 
-function mergeCheckContexts(existingContexts, botChecks) {
-  const merged = [...(existingContexts || []), ...botChecks];
+function mergeCheckContexts(existingContexts, requiredChecks) {
+  const retained = (existingContexts || []).filter((context) => !RETIRED_CHECKS.has(context));
+  const merged = [...retained, ...requiredChecks];
   return [...new Set(merged.filter(Boolean))];
 }
 
@@ -123,7 +131,7 @@ function main() {
   }
 
   const existingContexts = existing?.required_status_checks?.contexts || [];
-  const mergedContexts = mergeCheckContexts(existingContexts, BOT_GATE_CHECKS);
+  const mergedContexts = mergeCheckContexts(existingContexts, REQUIRED_CHECKS);
   const payload = buildProtectionPayload(existing, mergedContexts);
 
   if (args.dryRun) {
@@ -134,7 +142,8 @@ function main() {
           branch: args.branch,
           existingContexts,
           mergedContexts,
-          botGates: BOT_GATE_CHECKS,
+          requiredChecks: REQUIRED_CHECKS,
+          retiredChecks: [...RETIRED_CHECKS],
           payload,
         },
         null,
@@ -154,7 +163,9 @@ function main() {
     console.log(`Branch protection applied on ${repo}:${args.branch}`);
     console.log(`Required checks (${mergedContexts.length}): ${mergedContexts.join(', ')}`);
     if (existingContexts.length) {
-      console.log(`Preserved ${existingContexts.length} existing check(s); added bot gates: ${BOT_GATE_CHECKS.join(', ')}`);
+      console.log(
+        `Reconciled ${existingContexts.length} existing check(s); required gate: ${REQUIRED_CHECKS.join(', ')}`,
+      );
     }
     console.log(`required_conversation_resolution: ${payload.required_conversation_resolution}`);
     process.exit(0);

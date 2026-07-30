@@ -1,8 +1,8 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
- * Dynamic pre-merge bot wait gate (WORKFLOW.md step 5).
- * Exit 0 only when CI is settled, every required bot has completed since anchor,
- * and the quiet window has passed after the last bot activity.
+ * Dynamic pre-merge settlement helper.
+ * With the default advisory-reviewer policy, exit 0 when required CI settles.
+ * Owners may explicitly opt specific reviewers into the older presence wait.
  * Exit 2 = still waiting; exit 1 = error or required bots missing at safety cap.
  */
 import { execSync, spawnSync } from 'node:child_process';
@@ -264,6 +264,52 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
     return { status: 'error', message: `Invalid anchor time: ${anchorIso}` };
   }
 
+  if (requiredKeys.length === 0) {
+    const elapsedMs = Date.now() - anchor.getTime();
+    const maxMs = MAX_WAIT_MIN * 60 * 1000;
+    const checks = fetchChecks(prNumber);
+    if (checks.error && !checks.failed) {
+      if (isGithubRateLimitError(checks.error)) {
+        return {
+          status: 'waiting',
+          message: `GitHub API rate limit on required checks — retry later (${checks.error})`,
+          elapsedMs,
+          remainingCapMs: maxMs - elapsedMs,
+        };
+      }
+      return { status: 'error', message: checks.error };
+    }
+    if (checks.failed) {
+      const names = checks.failedNames?.length ? checks.failedNames.join(', ') : 'required check(s)';
+      return {
+        status: 'error',
+        message: `PR #${prNumber} has failed required check(s): ${names}. Fix CI before merge.`,
+      };
+    }
+    if (checks.pending) {
+      if (elapsedMs > maxMs) {
+        return {
+          status: 'timeout',
+          message:
+            `Required CI safety cap (${MAX_WAIT_MIN} min) exceeded since anchor ` +
+            `${anchor.toISOString()}.`,
+        };
+      }
+      return {
+        status: 'waiting',
+        message: `PR #${prNumber}: required CI checks are still pending; reviewer presence is advisory.`,
+        elapsedMs,
+        remainingCapMs: maxMs - elapsedMs,
+      };
+    }
+    return {
+      status: 'ready',
+      message: 'Reviewer presence is advisory; required CI checks are settled.',
+      botsSeen: [],
+      missing: [],
+    };
+  }
+
   const repo = repoIn || resolveRepo();
   if (!repo) return { status: 'error', message: 'Could not resolve repository (gh repo view).' };
 
@@ -433,17 +479,17 @@ function evaluate({ prNumber, anchorIso, state, repo: repoIn, requiredKeys, sing
 function printHelp(requiredKeys) {
   console.log(`Usage: npm run wait-for-bots -- [options]
 
-Poll GitHub until every required bot has posted or reacted with thumbs-up since the wait anchor and activity is quiet.
+Check required CI settlement. Reviewer presence is advisory unless explicitly configured.
 
 Options:
   --pr <n>              Pull request number (default: open PR for current branch)
-  --watch, -w           Poll every ${POLL_INTERVAL_SEC}s until ready or cap
+  --watch, -w           Legacy interactive polling; agents use single-shot calls
   --bot-tag             Reset wait anchor to now (after @mentioning bots)
   --since <iso>         Anchor wait window to timestamp (ISO 8601)
-  --require-bots <list> Comma-separated required keys (default: gemini,codex,sourcery)
+  --require-bots <list> Comma-separated required keys, or off/none/disabled (default: none)
   --help, -h            Show this help
 
-Exit codes: 0 ready | 2 still waiting | 1 error or required bots missing at cap (DO NOT MERGE)
+Exit codes: 0 ready | 2 still waiting | 1 failed/error
 
 Env: BOT_WAIT_POLL_SEC, BOT_WAIT_QUIET_SEC, BOT_WAIT_MIN_SEC, BOT_WAIT_MAX_MIN,
      AR_BOT_WAIT_REQUIRED (or BOT_WAIT_REQUIRED) — comma-separated bot keys
@@ -520,10 +566,9 @@ async function main() {
     writeState(prNumber, state);
   }
 
-  const cliOverride = args.requireBots !== null;
-  const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
-  const effectiveRequired =
-    cliOverride || envOverride ? requiredKeys : state.requiredKeys || requiredKeys;
+  // Current repository policy is authoritative. Persisted state must not
+  // resurrect reviewer requirements retired by a later policy change.
+  const effectiveRequired = requiredKeys;
   if (
     state.requiredKeys &&
     JSON.stringify(state.requiredKeys) !== JSON.stringify(effectiveRequired)
@@ -563,13 +608,12 @@ async function main() {
 
   const runOnce = () => {
     const st = readState(prNumber) || state;
-    const keys = st.requiredKeys || effectiveRequired;
     return evaluate({
       prNumber,
       anchorIso: st.anchor || anchorFromPr,
       state: st,
       repo,
-      requiredKeys: keys,
+      requiredKeys: effectiveRequired,
       singleShot: !args.watch,
     });
   };

@@ -1,6 +1,6 @@
 /**
- * Required-bot aliases for wait-for-bots and pr-bot-feedback-check.
- * Keys are short names (gemini, codex, sourcery); values are GitHub logins to match.
+ * Reviewer aliases for wait-for-bots and pr-bot-feedback-check.
+ * Review vendors are advisory by default; owners may opt in explicitly.
  */
 export const BOT_ALIASES = {
   gemini: [
@@ -13,7 +13,7 @@ export const BOT_ALIASES = {
   sourcery: ['sourcery-ai', 'sourcery-ai[bot]'],
 };
 
-export const DEFAULT_REQUIRED_KEYS = ['gemini', 'codex', 'sourcery'];
+export const DEFAULT_REQUIRED_KEYS = [];
 
 export const OPTIONAL_BOT_LOGINS = [
   'copilot-pull-request-reviewer[bot]',
@@ -23,6 +23,7 @@ export const OPTIONAL_BOT_LOGINS = [
 
 export function parseRequiredKeys(raw) {
   if (!raw || !String(raw).trim()) return [...DEFAULT_REQUIRED_KEYS];
+  if (/^(?:off|none|disabled)$/i.test(String(raw).trim())) return [];
   return String(raw)
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -30,7 +31,7 @@ export function parseRequiredKeys(raw) {
 }
 
 export function resolveRequiredKeys(argvKeys, envRaw) {
-  if (argvKeys?.length) return [...argvKeys];
+  if (argvKeys !== null && argvKeys !== undefined) return [...argvKeys];
   const fromEnv = envRaw ?? process.env.AR_BOT_WAIT_REQUIRED ?? process.env.BOT_WAIT_REQUIRED ?? '';
   return parseRequiredKeys(fromEnv);
 }
@@ -65,5 +66,7 @@ export function missingRequiredKeys(requiredKeys, seenLogins) {
 }
 
 export function formatRequiredKeys(keys) {
-  return keys.map((k) => `${k} (${loginsForKey(k).join(' | ')})`).join(', ');
+  return keys.length
+    ? keys.map((k) => `${k} (${loginsForKey(k).join(' | ')})`).join(', ')
+    : 'none (reviewers are advisory)';
 }

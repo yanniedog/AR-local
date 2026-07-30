@@ -280,8 +280,8 @@ For any repo change, follow `WORKFLOW.md` end to end:
 1. Branch from fresh `origin/main`.
 2. Commit and push the topic branch.
 3. Open a PR to `main`.
-4. Wait for CI.
-5. Run `npm run wait-for-bots` and do feedback synthesis.
+4. Run the single-shot required-CI and feedback gate audit.
+5. Synthesize any feedback that arrived; reviewer presence is advisory.
 6. Reply to/close substantive review threads.
 7. Squash merge.
 8. Update/restart the local/Pi dashboard from merged `main`.

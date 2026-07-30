@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
 import { parseRequiredKeys, resolveRequiredKeys } from './lib/bot-wait-config.mjs';
-import { checkRequiredBotsOnPr, readBotWaitState } from './lib/bot-wait-presence.mjs';
+import { checkRequiredBotsOnPr } from './lib/bot-wait-presence.mjs';
 import {
   GhRateLimitError,
   classifyThreads,
@@ -84,7 +84,7 @@ function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
     console.log(
-      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots gemini,codex,sourcery]',
+      'Usage: node scripts/pr-bot-feedback-check.mjs [--pr N] [--audit-merged] [--limit N] [--json] [--skip-bot-presence] [--require-bots <list>|off]',
     );
     process.exit(0);
   }
@@ -148,21 +148,24 @@ function main() {
 
   let botPresence = null;
   if (!args.skipBotPresence) {
-    const state = readBotWaitState(prNumber);
-    const cliOverride = args.requireBots !== null;
-    const envOverride = Boolean(process.env.AR_BOT_WAIT_REQUIRED || process.env.BOT_WAIT_REQUIRED);
-    const requiredKeys = cliOverride
-      ? resolveRequiredKeys(args.requireBots)
-      : envOverride
-        ? resolveRequiredKeys()
-        : state?.requiredKeys?.length
-          ? state.requiredKeys
-          : resolveRequiredKeys();
-    try {
-      botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
-    } catch (e) {
-      console.error(`pr-bot-feedback-check: bot presence check failed: ${e.message}`);
-      process.exit(1);
+    // Current policy is authoritative; stale wait-state files must not
+    // resurrect reviewer requirements retired by the repository owner.
+    const requiredKeys = resolveRequiredKeys(args.requireBots);
+    if (requiredKeys.length === 0) {
+      botPresence = {
+        ok: true,
+        requiredKeys: [],
+        missing: [],
+        botsSeen: [],
+        detail: 'none (reviewers are advisory)',
+      };
+    } else {
+      try {
+        botPresence = checkRequiredBotsOnPr(owner, name, prNumber, { requiredKeys });
+      } catch (e) {
+        console.error(`pr-bot-feedback-check: bot presence check failed: ${e.message}`);
+        process.exit(1);
+      }
     }
     if (!botPresence.ok) {
       console.error(
@@ -191,7 +194,7 @@ function main() {
   } else if (result.violations.length) {
     printViolations(result);
     console.error(
-      'pr-bot-feedback-check: merge blocked — resolve threads or reply in-thread (implemented / deferred / declined) per WORKFLOW.md step 6',
+      'pr-bot-feedback-check: merge blocked — disposition and resolution are required for substantive feedback',
     );
   } else {
     console.log(

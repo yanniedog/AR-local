@@ -1,8 +1,7 @@
 name: pr-bot-presence-gate
 
-# Single-shot bot presence check. Re-fires on PR lifecycle + bot review/comment events,
-# so a miss while bots are still in flight self-heals when they post (no GraphQL polling from
-# Actions â€” installation quota). Local --watch (npm run wait-for-bots) remains the pre-merge gate.
+# Advisory compatibility check. Reviewer vendors are not merge-required; this
+# workflow keeps the historical check name while protection is migrated away from it.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -23,12 +22,7 @@ permissions:
   issues: read
 
 concurrency:
-  # cancel-in-progress MUST stay false for a required check. Cancelling an
-  # in-flight run leaves a "cancelled" check-run that branch protection reads as
-  # the latest required status, blocking the PR even when a later run succeeds
-  # (the "BLOCKED but all-green" trap that forced empty re-trigger commits on
-  # every PR). With false, the newest event still runs to completion, so the
-  # latest required check-run is always success/failure â€” never a stale cancel.
+  # Keep compatibility runs ordered so the advisory signal is stable.
   group: bot-presence-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
@@ -48,7 +42,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Skip bot wait for non-human / chore PRs
+      - name: Identify repository feedback-gate exemption
         id: gate_exempt
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
@@ -67,25 +61,21 @@ jobs:
           if [ -n "$EXEMPT" ]; then
             echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
             echo "gate_exempt_reason=$EXEMPT" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is gate-exempt ($EXEMPT) — bot review not required"
+            echo "PR #$PR is feedback-gate exempt ($EXEMPT)"
           else
             echo "gate_exempt=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Gate exempt — pass (no bot wait)
+      - name: Advisory compatibility check — exempt
         if: steps.gate_exempt.outputs.gate_exempt == 'true'
         run: |
-          echo "bot-presence-gate: skipped (${{ steps.gate_exempt.outputs.gate_exempt_reason }} — human bot review not required)"
-      - name: Required bot wait gate (single shot)
+          echo "bot-presence-gate: advisory compatibility pass (${{ steps.gate_exempt.outputs.gate_exempt_reason }})"
+      - name: Advisory reviewer policy check
         if: steps.gate_exempt.outputs.gate_exempt != 'true'
         env:
           GH_TOKEN: ${{ secrets.BOT_GATE_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # sourcery is the required reviewer while Gemini Code Assist is silent on
-          # AR-local (2026-07-09: tagged + ready_for_review, 0 posts; last Gemini on
-          # this repo was a quota warning on #435). Gemini still reviews other
-          # yanniedog repos. Re-add gemini here (AR_BOT_WAIT_REQUIRED: gemini,sourcery)
-          # once Gemini posts on AR-local again.
-          AR_BOT_WAIT_REQUIRED: sourcery
+          # Reviewer vendors remain useful but advisory.
+          AR_BOT_WAIT_REQUIRED: off
           BOT_WAIT_IGNORE_CHECK_NAMES: bot-presence-gate,bot-feedback-gate,pr-bot-presence-gate,pr-bot-feedback-check
           # CI has no .ar-bot-wait state; anchor falls back to PR createdAt (long-open PRs exceed 28m).
           BOT_WAIT_MAX_MIN: "240"
@@ -101,7 +91,7 @@ jobs:
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
-            echo "::warning::Bot wait not ready yet (exit 2) â€” run npm run wait-for-bots locally until exit 0, then re-run this workflow"
+            echo "::warning::Required CI is still settling; re-run this workflow later"
             exit 1
           fi
           exit "$code"
