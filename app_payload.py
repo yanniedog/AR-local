@@ -114,6 +114,15 @@ from app_payload_publish import (
     refresh_dates_index,
     retitle_payload_releases,
 )
+from app_payload_v2 import (
+    V2_MANIFEST_FILENAME,
+    V2_PRODUCT_HISTORY_PREFIX,
+    V2_SCHEMA_VERSION,
+    build_and_publish_v2,
+    build_product_history,
+    build_v2_sidecar,
+    publish_v2_sidecar,
+)
 
 __all__ = [
     "APP_MIN_VERSION",
@@ -130,6 +139,9 @@ __all__ = [
     "SUBPROCESS_TIMEOUT_SEC",
     "SUBPROCESS_UPLOAD_TIMEOUT_SEC",
     "VALID_SECTIONS",
+    "V2_MANIFEST_FILENAME",
+    "V2_PRODUCT_HISTORY_PREFIX",
+    "V2_SCHEMA_VERSION",
     "_RUN_DATE_RE",
     "_asset",
     "_brand_lookup_keys",
@@ -165,10 +177,13 @@ __all__ = [
     "attach_ongoing_rates",
     "build_and_publish",
     "build_and_publish_dual",
+    "build_and_publish_v2",
     "build_brands",
     "build_dates_index",
     "build_details",
     "build_payload",
+    "build_product_history",
+    "build_v2_sidecar",
     "compact",
     "core_section_summary",
     "dated_release_title",
@@ -183,6 +198,7 @@ __all__ = [
     "load_rba_series",
     "main",
     "publish_payload",
+    "publish_v2_sidecar",
     "refresh_dates_index",
     "release_display_title",
     "release_title",
