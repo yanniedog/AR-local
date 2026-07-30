@@ -9,10 +9,7 @@ npm run github:bot-gates:operator
 npm run github:bot-gates:operator -- --verify-pr 310
 ```
 
-**Gate skip policy** (chore + `github-actions[bot]` PRs) lives in repo
-code (`scripts/lib/pr-gate-exempt.mjs`), not in the ruleset JSON. The ruleset
-lists the vendor-neutral feedback gate; its workflow passes explicitly when a
-PR is exempt.
+**Bot skip policy** (chore + `github-actions[bot]` PRs) lives in repo code (`scripts/lib/pr-gate-exempt.mjs`), not in the ruleset JSON. The ruleset always lists the two gate checks; workflows skip them when exempt.
 
 **Artifact:** [`.github/rulesets/main-bot-gates.json`](../.github/rulesets/main-bot-gates.json)
 
@@ -20,7 +17,7 @@ Mirrors legacy branch protection on `main` (verified via `gh api repos/yanniedog
 
 | Setting | Value |
 |---------|-------|
-| Required checks | `bot-feedback-gate` (strict / up-to-date) |
+| Required checks | `bot-feedback-gate`, `bot-presence-gate` (strict / up-to-date) |
 | Conversation resolution | Required |
 | Force push | Blocked |
 | Branch deletion | Blocked |

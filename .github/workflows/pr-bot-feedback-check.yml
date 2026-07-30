@@ -2,8 +2,8 @@ name: pr-bot-feedback-check
 
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# - no manual re-run / empty re-trigger commit needed. A bounded retry covers the
-# reply-before-resolution race; unresolved feedback still fails promptly.
+# â€” no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
+# per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
 # GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
@@ -19,7 +19,7 @@ on:
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
-    types: [created, edited, deleted]
+    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -31,6 +31,15 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  # MUST be false for a required check â€” cancelling an in-flight run leaves a
+  # "cancelled" check-run that branch protection reads as the latest required
+  # status, blocking the PR even when a later run succeeds (the "BLOCKED but
+  # all-green" trap). With false the newest event runs to completion, so the
+  # latest required check-run is always success/failure, never a stale cancel.
+  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   bot-feedback-gate:
     if: >-
@@ -38,17 +47,12 @@ jobs:
       || github.event.review != null
       || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
-          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Review gate automation tests
-        run: npm run pr:automation:verify
       - name: Skip thread gate for non-human / chore PRs
         id: gate_exempt
         env:
@@ -61,17 +65,6 @@ jobs:
             PR="${{ inputs.pr_number }}"
           else
             PR="${{ github.event.pull_request.number }}"
-          fi
-          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
-          if ! PR_STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state); then
-            echo "::error::GitHub API could not read PR state; retry this check."
-            exit 2
-          fi
-          if [ "$PR_STATE" != "open" ]; then
-            echo "gate_exempt=true" >> "$GITHUB_OUTPUT"
-            echo "gate_exempt_reason=pull-request-$PR_STATE" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR is $PR_STATE - stale review event skipped"
-            exit 0
           fi
           export PR
           EXEMPT=$(node scripts/pr-gate-exempt-reason.mjs || true)
@@ -97,27 +90,12 @@ jobs:
           else
             PR="${{ github.event.pull_request.number }}"
           fi
-          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Pull request number must be numeric"; exit 1; }
-          code=1
-          for attempt in 1 2 3 4; do
-            set +e
-            npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
-            code=$?
-            set -e
-            if [ "$code" -eq 0 ]; then
-              exit 0
-            fi
-            if [ "$code" -ne 3 ] || [ "$attempt" -eq 4 ]; then
-              break
-            fi
-            echo "Feedback still open; retrying shortly in case a reply-triggered run preceded thread resolution."
-            sleep 5
-          done
+          set +e
+          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
+          code=$?
+          set -e
           if [ "$code" -eq 2 ]; then
-            echo "::error::GitHub API rate limit prevented the feedback audit; rerun this check."
-          elif [ "$code" -eq 3 ]; then
-            echo "::error::Substantive review feedback remains open. Reply and resolve it; the reply event will re-run this gate."
-          else
-            echo "::error::Feedback gate execution failed permanently (exit $code)."
+            echo "::warning::GitHub API rate limit â€” re-run after quota resets"
+            exit 1
           fi
           exit "$code"

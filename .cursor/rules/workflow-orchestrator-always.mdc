@@ -3,9 +3,9 @@ description: "Chief delegates workflow orchestrator for ship bar; one PR per tas
 alwaysApply: true
 ---
 
-# Single-pass workflow orchestrator
+# Continuous workflow orchestrator
 
-AR-local uses **chief agent** (coordination) above a **single-pass orchestrator** (ship bar). Parent agents spawn **chief first**; chief delegates an orchestrator pass. This rule documents orchestrator policy when chief (or the user) invokes it directly.
+AR-local uses **chief agent** (coordination) above a **polling orchestrator** (ship bar). Parent agents spawn **chief first**; chief delegates orchestrator cycles. This rule documents orchestrator policy when chief (or the user) invokes it directly.
 
 ## Session start
 
@@ -42,4 +42,4 @@ User phrase: **"run workflow orchestrator"** — read `.cursor/skills/workflow-o
 
 ## Ship bar unchanged
 
-Orchestrator coordinates ship bar when delegated; it does **not** waive `WORKFLOW.md` steps 5–7, applicable required CI, `bot-feedback-gate`, thread closure, or `verify:local`. Reviewer presence remains advisory, and agent polling loops are forbidden.
+Orchestrator coordinates ship bar when delegated; it does **not** waive `WORKFLOW.md` steps 5–7, bot wait, thread closure, or `verify:local`.

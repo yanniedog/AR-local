@@ -6,12 +6,7 @@ dashboard and offline mobile app.
 Agent workflow (Git/PR/bots/Pi verify — aligned with AustralianRates, no Cloudflare):
 **`WORKFLOW.md`** and **`AGENTS.md`**.
 
-Canonical PR closeout: `npm run pr:arm-and-park -- --pr <n>` (exit 0
-ready/merged, 2 pending-only, 3 actionable). It enforces the exact default base,
-marks drafts ready, and arms squash auto-merge. **`bot-feedback-gate`** is the
-universal required review context; reviewer presence is advisory. Repo + branch:
-`npm run repo-merge-settings:apply` and `npm run branch-protection:apply` (see
-**`WORKFLOW.md`** and **`.github/MERGE_POLICY.md`**).
+Before squash merge: `npm run pr:bot-feedback-check -- --pr <n>` (exit 0 required). Merge: `npm run pr:merge -- --pr <n>` (`gh pr merge --auto --squash --delete-branch`). CI required checks: **`bot-presence-gate`**, **`bot-feedback-gate`**. Repo + branch: `npm run repo-merge-settings:apply` and `npm run branch-protection:apply` (see **`WORKFLOW.md`** and **`.github/MERGE_POLICY.md`**).
 
 Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banking-only scope, and the
@@ -40,8 +35,8 @@ Scan with **Android Chrome** to install the latest preview APK. Asset path is st
 
 | | |
 |---|---|
-| Version | **1.0.37** (build 142) |
-| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=142) |
+| Version | **1.0.37** (build 137) |
+| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=137) |
 | APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
 | Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
 | Version history | [app-v* releases](https://github.com/yanniedog/AR-local/releases?q=app-v&expanded=true) |

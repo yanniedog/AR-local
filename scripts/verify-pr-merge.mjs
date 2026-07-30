@@ -3,7 +3,6 @@
  * Self-test for canonical PR merge flags. Run: node scripts/verify-pr-merge.mjs
  */
 import { PR_MERGE_FLAGS, mergeCommandLine } from './lib/pr-merge.mjs';
-import { readFileSync } from 'node:fs';
 
 let failed = 0;
 
@@ -21,9 +20,6 @@ assert(
   mergeCommandLine(42) === 'gh pr merge 42 --auto --squash --delete-branch',
   'mergeCommandLine canonical form',
 );
-const mergeWrapper = readFileSync('scripts/pr-merge.mjs', 'utf8');
-assert(mergeWrapper.includes('checkDefaultBase'), 'pr:merge invokes exact-default-base guard');
-assert(mergeWrapper.includes('base-unprotected'), 'pr:merge reports base-unprotected');
 
 if (failed) {
   console.error(`verify-pr-merge: ${failed} failure(s)`);

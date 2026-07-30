@@ -52,8 +52,8 @@ Manual steps for ${repo} → Settings → General → Pull Requests:
 4. Allow auto-merge: ON
 5. Automatically delete head branches: ON
 
-Agents use: npm run pr:arm-and-park -- --pr <n>
-The guarded pr:merge wrapper is legacy; never hand-roll gh pr merge.
+Agents merge with: gh pr merge <n> --auto --squash --delete-branch
+(or: npm run pr:merge -- --pr <n> after pr:gates:check exit 0)
 
 Squash is selected at merge time, not when opening a PR with gh pr create.
 `);
