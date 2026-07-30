@@ -2,8 +2,8 @@ name: pr-bot-feedback-check
 
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# â€” no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
-# per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
+# - no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
+# per attempt; newer events supersede stale work for the same PR.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
 # GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
@@ -32,14 +32,10 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # MUST be false for a required check â€” cancelling an in-flight run leaves a
-  # "cancelled" check-run that branch protection reads as the latest required
-  # status, blocking the PR even when a later run succeeds (the "BLOCKED but
-  # all-green" trap). With false the newest event runs to completion, so the
-  # latest required check-run is always success/failure, never a stale cancel.
-  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
-  queue: max
+  # One liveness owner per PR. A new head/review event cancels stale work and
+  # immediately re-evaluates the latest PR state.
+  group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   bot-feedback-gate:

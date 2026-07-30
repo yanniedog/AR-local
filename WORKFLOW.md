@@ -15,6 +15,8 @@ existing blessed commands.
 - Every substantive finding that does arrive must receive an explicit
   `Implemented`, `Deferred`, or `Declined` in-thread disposition and GitHub
   resolution.
+- The feedback workflow has one PR-scoped concurrency owner. New head or review
+  activity cancels stale work and immediately re-evaluates the latest PR state.
 - Squash auto-merge and branch deletion are the repository defaults.
 
 ## Delivery sequence

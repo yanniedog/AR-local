@@ -91,7 +91,13 @@ const feedbackWorkflow = readFileSync(
   'utf8',
 );
 assert.match(feedbackWorkflow, /npm run pr:automation:verify/);
-assert.match(feedbackWorkflow, /queue:\s*max/);
+assert.match(
+  feedbackWorkflow,
+  /group:\s*bot-feedback-gate-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*inputs\.pr_number\s*\|\|\s*github\.run_id\s*\}\}/,
+);
+assert.match(feedbackWorkflow, /cancel-in-progress:\s*true/);
+assert.doesNotMatch(feedbackWorkflow, /queue:\s*max/);
+assert.doesNotMatch(feedbackWorkflow, /pull_request\.head\.sha|github\.sha/);
 
 const appCi = readFileSync('.github/workflows/app-ci.yml', 'utf8');
 assert.match(
