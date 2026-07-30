@@ -16,8 +16,9 @@ existing blessed commands.
   `Implemented`, `Deferred`, or `Declined` in-thread disposition and GitHub
   resolution.
 - The feedback workflow has one PR-scoped concurrency owner and serializes event
-  bursts without cancelling the in-progress required context. This prevents a
-  newer queued run from leaving `CANCELLED` as GitHub's selected gate result.
+  bursts without cancelling duplicate required contexts. Each run is
+  single-shot with a five-minute ceiling, and stale events for closed PRs exit
+  cleanly instead of holding a runner.
 - Squash auto-merge and branch deletion are the repository defaults.
 
 ## Delivery sequence
@@ -51,10 +52,11 @@ existing blessed commands.
    - Exit 3: actionable CI, conflict, unexpected closure, or feedback work.
 
    `pr:gates:check`, `wait-for-bots`, and `pr:bot-feedback-check` remain
-   diagnostic commands. `wait-for-bots` means required-CI settlement; reviewer
-   presence defaults to off. `pr:bot-feedback-check` distinguishes open feedback
-   (exit 3, retryable by the workflow) from a hard execution error (exit 1,
-   fail-fast).
+   diagnostic commands. `wait-for-bots` means exact-current-head required-CI
+   settlement from live protection/rules; reviewer presence defaults to off.
+   Missing contexts stay pending. `pr:bot-feedback-check` distinguishes open
+   feedback (exit 3) from a hard execution error (exit 1); the workflow reports
+   either result in one run and relies on the next PR-head event to re-evaluate.
 5. Read all review threads and relevant top-level comments before replying. Post
    one `## Feedback plan`, implement valid fixes together, then reply in-thread
    with a disposition and resolve each thread.

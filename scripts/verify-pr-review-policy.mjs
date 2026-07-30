@@ -9,9 +9,12 @@ import {
 import {
   BOT_GATE_CHECK_NAMES,
   gateGithubBotChecksResult,
-  selectNewestCheck,
 } from './lib/pr-gates-lib.mjs';
-import { parseRequiredChecksResult } from './lib/required-check-settlement.mjs';
+import {
+  combineRequiredCheckState,
+  DEFAULT_REQUIRED_CHECKS,
+  evaluateRequiredCheckState,
+} from './lib/required-ci-checks.mjs';
 
 assert.deepEqual(DEFAULT_REQUIRED_KEYS, []);
 assert.deepEqual(parseRequiredKeys('off'), []);
@@ -24,6 +27,7 @@ assert.deepEqual(
   'an explicit advisory policy must override stale environment requirements',
 );
 assert.deepEqual(BOT_GATE_CHECK_NAMES, ['bot-feedback-gate']);
+assert.deepEqual(DEFAULT_REQUIRED_CHECKS, ['bot-feedback-gate']);
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 assert.equal(
@@ -32,7 +36,12 @@ assert.equal(
 );
 assert.match(packageJson.scripts?.['pr:automation:verify'] || '', /verify-pr-arm-and-park/);
 
-const missingFeedbackGate = gateGithubBotChecksResult({ found: {}, skipped: true });
+const missingFeedbackGate = gateGithubBotChecksResult({
+  ok: true,
+  failedNames: [],
+  pendingNames: ['bot-feedback-gate'],
+  missingNames: ['bot-feedback-gate'],
+});
 assert.equal(
   missingFeedbackGate.pass,
   false,
@@ -40,45 +49,88 @@ assert.equal(
 );
 assert.equal(missingFeedbackGate.pending, true);
 
-const olderPass = {
-  name: 'bot-feedback-gate',
-  bucket: 'pass',
-  state: 'SUCCESS',
-  startedAt: '2026-07-30T01:00:00Z',
-};
-const newerPending = {
-  name: 'bot-feedback-gate',
-  bucket: 'pending',
-  state: 'IN_PROGRESS',
-  startedAt: '2026-07-30T02:00:00Z',
-};
-assert.equal(
-  selectNewestCheck(olderPass, newerPending),
-  newerPending,
-  'a stale pass must not hide a newer pending gate run',
+assert.deepEqual(
+  combineRequiredCheckState({
+    protectionOk: true,
+    protection: {
+      required_status_checks: {
+        checks: [{ context: 'bot-feedback-gate' }],
+      },
+    },
+    rulesOk: true,
+    rules: [{
+      type: 'required_status_checks',
+      parameters: {
+        required_status_checks: [{ context: 'bot-feedback-gate' }],
+      },
+    }],
+  }),
+  {
+    values: ['bot-feedback-gate'],
+    source: 'live branch protection + rules',
+  },
 );
-
-const ignoredPendingOnly = parseRequiredChecksResult({
-  status: 8,
-  stderr: '',
-  stdout: JSON.stringify([
-    { name: 'bot-feedback-gate', bucket: 'pending', state: 'IN_PROGRESS' },
-  ]),
+assert.deepEqual(
+  combineRequiredCheckState({
+    protectionOk: false,
+    rulesOk: false,
+  }),
+  {
+    values: ['bot-feedback-gate'],
+    source: 'configured policy fallback; live policy APIs unavailable',
+  },
+);
+const missingRequired = evaluateRequiredCheckState({
+  requiredNames: ['bot-feedback-gate'],
+  prChecks: [],
+  headCheckRuns: [],
 });
+assert.deepEqual(missingRequired.missingNames, ['bot-feedback-gate']);
+assert.equal(missingRequired.pending, true);
+const newerPending = evaluateRequiredCheckState({
+  requiredNames: ['bot-feedback-gate'],
+  prChecks: [{
+    name: 'bot-feedback-gate',
+    bucket: 'pass',
+    state: 'SUCCESS',
+    startedAt: '2026-07-30T01:00:00Z',
+  }],
+  headCheckRuns: [{
+    id: 11,
+    name: 'bot-feedback-gate',
+    status: 'in_progress',
+    started_at: '2026-07-30T02:00:00Z',
+  }],
+});
+assert.equal(newerPending.pending, true, 'a stale pass must not hide a newer pending run');
+const newerPass = evaluateRequiredCheckState({
+  requiredNames: ['bot-feedback-gate'],
+  headCheckRuns: [{
+    id: 12,
+    name: 'bot-feedback-gate',
+    status: 'in_progress',
+    started_at: '2026-07-30T01:00:00Z',
+  }],
+  commitStatuses: [{
+    id: 13,
+    context: 'bot-feedback-gate',
+    state: 'success',
+    updated_at: '2026-07-30T02:00:00Z',
+  }],
+});
+assert.equal(newerPass.pending, false);
+assert.equal(newerPass.failed, false);
 assert.equal(
-  ignoredPendingOnly.pending,
+  evaluateRequiredCheckState({
+    requiredNames: ['bot-feedback-gate'],
+    ignoredNames: ['bot-feedback-gate'],
+    headCheckRuns: [{
+      name: 'bot-feedback-gate',
+      status: 'in_progress',
+    }],
+  }).pending,
   false,
-  'exit 8 must be parsed before ignored required checks are classified',
 );
-const productPending = parseRequiredChecksResult({
-  status: 8,
-  stderr: '',
-  stdout: JSON.stringify([
-    { name: 'bot-feedback-gate', bucket: 'pending', state: 'IN_PROGRESS' },
-    { name: 'app-ci', bucket: 'pending', state: 'QUEUED' },
-  ]),
-});
-assert.equal(productPending.pending, true);
 
 const branchProtection = readFileSync('scripts/apply-branch-protection.mjs', 'utf8');
 const requiredBlock =
@@ -121,10 +173,13 @@ assert.match(
   /group:\s*bot-feedback-gate-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*inputs\.pr_number\s*\|\|\s*github\.run_id\s*\}\}/,
 );
 assert.match(feedbackWorkflow, /cancel-in-progress:\s*false/);
+assert.match(feedbackWorkflow, /timeout-minutes:\s*5/);
+assert.match(feedbackWorkflow, /PR_STATE=\$\(gh api/);
 assert.doesNotMatch(feedbackWorkflow, /queue:\s*max/);
 assert.doesNotMatch(feedbackWorkflow, /pull_request\.head\.sha|github\.sha/);
 assert.match(feedbackWorkflow, /elif \[ "\$code" -eq 3 \]/);
 assert.match(feedbackWorkflow, /Feedback gate execution failed permanently/);
+assert.doesNotMatch(feedbackWorkflow, /seq 1 40|sleep 60|40 minutes/);
 
 const feedbackCheck = readFileSync('scripts/pr-bot-feedback-check.mjs', 'utf8');
 assert.match(
@@ -132,6 +187,10 @@ assert.match(
   /process\.exit\(result\.violations\.length \? 3 : 0\)/,
   'open feedback must have a distinct retryable exit from hard execution failures',
 );
+
+const waitForBots = readFileSync('wait_for_bots.mjs', 'utf8');
+assert.match(waitForBots, /fetchRequiredCheckState/);
+assert.match(waitForBots, /headRefOid,baseRefName/);
 
 const appCi = readFileSync('.github/workflows/app-ci.yml', 'utf8');
 assert.match(

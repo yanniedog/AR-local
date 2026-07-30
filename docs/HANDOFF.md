@@ -601,8 +601,9 @@ the committed sample); the **Pi is the primary daily publisher**.
   substantive findings still require disposition and resolution.
 - **Resolving a thread emits no webhook** → a previously-failed gate won't auto-re-run after
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
-  `gh run rerun <run-id>`. Gate runs serialize per PR with cancellation disabled
-  so GitHub cannot select a cancelled context while its replacement is queued.
+  `gh run rerun <run-id>`. Five-minute, single-shot gate runs serialize per PR
+  with cancellation disabled so duplicate required contexts cannot be stranded
+  as cancelled; stale events for closed PRs exit cleanly.
 - **Canonical closeout**: `npm run pr:arm-and-park -- --pr <n>`. It refuses
   non-default bases, explicitly promotes drafts, syncs when needed, arms squash
   auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable. Only
