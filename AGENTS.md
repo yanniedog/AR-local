@@ -4,18 +4,35 @@ Local CDR ingest, exports, and dashboard. Workflow matches **Australian Rates** 
 
 ## Ship bar
 
-Full procedure ? branch, commit, PR, CI, bot wait, feedback synthesis, thread closure, merge, **local dashboard**, **`npm run verify:local`** ? all steps required unless the user explicitly waives in writing for that PR.
+Full procedure: branch, commit, PR, applicable product CI, feedback synthesis,
+thread closure, merge, **local dashboard**, and **`npm run verify:local`**. Review
+vendors are advisory: their availability, quota, and local-runner state never
+block merge, but every substantive finding that arrives still requires an
+`Implemented`, `Deferred`, or `Declined` disposition and thread resolution.
 
 **Read `WORKFLOW.md` in full** before opening or merging a PR.
 
-Anti-early-stop:
+Single-shot closeout:
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots
+npm run ship:closeout:strict
+npm run pr:arm-and-park -- --pr <n>
 ```
 
-- Exit **2** from `ship:closeout:strict` ? open PR still exists; continue `WORKFLOW.md` steps 5?9.
-- Exit **2** from `wait-for-bots` ? bots/CI not settled; re-run until exit **0** (or use `--watch`).
+- `bot-feedback-gate` is the only universal required check. AR-local product CI
+  stays path-filtered and is required only where GitHub reports it.
+- `pr:arm-and-park` explicitly verifies the exact default base, promotes a draft,
+  syncs it when needed, and arms squash auto-merge in one shot. The guarded
+  `pr:merge` wrapper is the only other command allowed to promote a draft;
+  background queue/watch/update helpers never publish drafts. Exit 0 is ready or
+  merged; exit 2 is pending-only and should be parked; exit 3 is actionable.
+- A PR based on anything other than the repository default branch is
+  `base-unprotected` and must be retargeted. Never stack PRs on feature branches.
+- `npm run wait-for-bots -- --pr <n>` now checks required CI settlement only;
+  reviewer presence defaults to off.
+- Do not run agent `--watch` or sleep-poll loops. Fix actionable state immediately;
+  when only GitHub-owned work remains, park ownership and re-check with a later
+  single-shot invocation.
 
 Cursor rules live under **`.cursor/rules/`** (mirrors AustralianRates rule names and intent; Cloudflare and production-URL steps are replaced with local equivalents).
 
@@ -25,7 +42,7 @@ Same expectations as Australian Rates:
 
 - Fresh **`origin/main`**, distinctive **`agent/<slug>`** (or feat/fix), no branch reuse across concurrent agents.
 - Rebase/merge when stale; resolve overlaps with other topic branches deliberately.
-- **`ci_result` (or equivalent) green ? merge-ready** ? complete wait gate, synthesis, and threaded replies per **`WORKFLOW.md`**.
+- **`ci_result` (or equivalent) green is not merge-ready** — complete synthesis, threaded dispositions/resolution, and the single-shot gate audit in **`WORKFLOW.md`**.
 - **Soft target ~800 LOC per file**, **hard ceiling ~1000 LOC**; split along natural seams when adding non-trivial code.
 - **~50 lines per function** where practical; avoid copying the same logic in 3+ places.
 
@@ -42,12 +59,13 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 
 | Purpose | Command |
 |--------|---------|
-| Bot wait gate (new PR) | `npm run wait-for-bots` |
+| Required-CI settlement | `npm run wait-for-bots -- --pr <n>` |
 | Bot thread closure gate | `npm run pr:bot-feedback-check -- --pr <n>` |
 | PR merge gates (aggregate) | `npm run pr:gates:check -- --pr <n>` |
-| Squash auto-merge (step 7) | `npm run pr:merge -- --pr <n>` |
+| Preferred one-shot closeout | `npm run pr:arm-and-park -- --pr <n>` |
+| Guarded legacy merge wrapper | `npm run pr:merge -- --pr <n>` |
 | Repo squash-only settings | `npm run repo-merge-settings:apply` |
-| PR watch one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = gates failing) |
+| PR audit one cycle | `npm run pr:watch-once` (oldest open PRs first; exit 2 = work remains) |
 | Merged PR bot audit | `npm run pr:bot-feedback-audit` |
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Pi dashboard smoke HTTP (default acceptance) | `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/` |
@@ -111,7 +129,9 @@ Ship-bar guardian (reports to chief agent). Cursor subagents are **not** OS daem
 
 **Manual invoke:** say **"run workflow orchestrator"** — agent reads the skill and runs SCAN → PLAN → DELEGATE.
 
-**Policy:** one logical task → one branch → one PR; **one dedicated pr-fix/babysit worker per open PR** for ship bar. Chief prevents path conflicts when invoked; orchestrator coordinates queue and splits; pr-fix owns each PR through merge.
+**Policy:** one logical task → one branch → one PR. Chief prevents path
+conflicts; orchestrator coordinates queue and splits; pr-fix acts on actionable
+CI/thread state and parks when only GitHub-owned work remains.
 
 ## Team agents (specialized workers)
 
@@ -125,7 +145,7 @@ Chief assigns **one writer per path prefix and branch** when invoked. Each skill
 | Dashboard | [`.cursor/skills/dashboard-agent/SKILL.md`](.cursor/skills/dashboard-agent/SKILL.md) | **run dashboard agent** | `dashboard/**`, `cdr_dashboard_server.py`; one PR family per UI task |
 | PR gates | [`.cursor/skills/pr-gates-agent/SKILL.md`](.cursor/skills/pr-gates-agent/SKILL.md) | **run pr gates agent** / **ensure PR gates** | Read-only: `npm run pr:gates:check`; hand off failures to pr-fix |
 | PR fix | [`.cursor/skills/pr-fix-agent/SKILL.md`](.cursor/skills/pr-fix-agent/SKILL.md) | **run pr fix** | **One dedicated worker per open PR:** threads, CI, synthesis, gates, squash merge |
-| PR watch | [`.cursor/skills/pr-watch-agent/SKILL.md`](.cursor/skills/pr-watch-agent/SKILL.md) | **run pr watch** / **watch open PRs** | Continuous open-PR loop: gates, merge (oldest first), Pi deploy + verify; `npm run pr:watch-once`; chief holds path locks |
+| PR watch | [`.cursor/skills/pr-watch-agent/SKILL.md`](.cursor/skills/pr-watch-agent/SKILL.md) | **run pr watch** / **watch open PRs** | One-shot open-PR audit: gates, merge readiness (oldest first), Pi deploy + verify; no agent polling |
 | Parity | [`.cursor/skills/parity-agent/SKILL.md`](.cursor/skills/parity-agent/SKILL.md) | **run parity check** | Prod vs local/Pi layout/CSS; not functional QA |
 | Post-merge verify | [`.cursor/skills/post-merge-verify-agent/SKILL.md`](.cursor/skills/post-merge-verify-agent/SKILL.md) | **run post-merge verify** | `WORKFLOW.md` steps 8-9 after merge |
 | Split PRs | [`.cursor/skills/split-pr-agent/SKILL.md`](.cursor/skills/split-pr-agent/SKILL.md) | **split PRs** | Partition mixed WIP; then orchestrator per slice |

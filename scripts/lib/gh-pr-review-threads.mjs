@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { isBotNoise } from './bot-noise.mjs';
 
 const BOT_LOGIN_RE =
-  /(?:gemini|codex|sourcery|coderabbit|copilot|greptile|chatgpt|github-actions\[bot\])/i;
+  /^(?:qwen(?:-code-review)?(?:\[bot\])?|cursor(?:-auto-review)?(?:\[bot\])?|gemini-code-assist(?:\[bot\])?|chatgpt-codex-connector(?:\[bot\])?|codex(?:\[bot\])?|sourcery-ai(?:\[bot\])?|coderabbitai(?:\[bot\])?|github-copilot(?:\[bot\])?|copilot-pull-request-reviewer(?:\[bot\])?|greptile-apps(?:\[bot\])?|chatgpt(?:\[bot\])?|github-actions\[bot\])$/i;
 
 // Disposition reply detection. Used by the merged-PR audit (a historical PR may
 // have replied-but-not-resolved threads); the LIVE gate requires resolution, so
@@ -190,12 +190,6 @@ export function classifyThreads(threads, opts = {}) {
     const comments = (t.comments?.nodes || []).filter((c) => c?.author?.login);
     if (!comments.length) continue;
 
-    // Resolving a thread on GitHub is a deliberate acknowledgement and satisfies
-    // the gate on its own — no separate "closure reply" keyword is also required.
-    // (Previously a resolved thread still failed without a magic-word reply, which
-    // forced agents to repost "Implemented in <sha>" and burn a whole CI cycle.)
-    if (t.isResolved) continue;
-
     const first = comments[0];
     const starterLogin = first.author.login;
     const starterIsBot = isBotLogin(starterLogin) || first.author.__typename === 'Bot';
@@ -206,11 +200,29 @@ export function classifyThreads(threads, opts = {}) {
     // emoji-only acks) carry no actionable feedback and never block merge.
     if (starterIsBot && isLowSignalBotThread(comments)) continue;
 
+    const hasDisposition =
+      threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments);
+
+    // Substantive bot feedback needs both an explicit disposition and GitHub
+    // resolution. Human threads still rely on GitHub resolution.
+    if (t.isResolved) {
+      if (hasDisposition || !starterIsBot) continue;
+      violations.push({
+        threadIndex: i + 1,
+        kind: 'missing-disposition',
+        starter: starterLogin,
+        isBot: starterIsBot,
+        excerpt,
+        body: first.body || '',
+      });
+      continue;
+    }
+
     // Merged-PR audit is lenient: a historical PR may legitimately have
     // replied-but-not-resolved threads, and only bot threads are audited.
     if (mergedAudit) {
       if (!starterIsBot) continue;
-      if (threadHasOwnerClosure(comments, botAt) || threadHasBotSelfAddressed(comments)) continue;
+      if (hasDisposition) continue;
     }
 
     // LIVE gate: an unresolved thread is always a violation. This repo enables
@@ -225,6 +237,7 @@ export function classifyThreads(threads, opts = {}) {
       starter: starterLogin,
       isBot: starterIsBot,
       excerpt,
+      body: first.body || '',
     });
   }
 

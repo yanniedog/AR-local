@@ -35,26 +35,28 @@ When PR text or skills reference Pi smoke hosts, point to **`docs/UNIVERSAL_ROAD
 ## When to run
 
 - Open PR with failing CI, unresolved review threads, or bot findings.
-- After `wait-for-bots` exit 0 — begin **5b** synthesis before replying.
+- After reading all current threads — begin **5b** synthesis before replying.
 - Chief assigns one babysit worker per PR (no five parallel pr-fix on same PR).
 
 ## Mandatory gates (before merge request)
 
-Prefer the aggregate audit (chief may run this before assigning you):
+Prefer the canonical one-shot helper:
 
 ```sh
-npm run pr:gates:check -- --pr <n>         # exit 0 = all merge gates
+npm run pr:arm-and-park -- --pr <n>        # 0 ready/merged, 2 parked, 3 actionable
 ```
 
 Individual gates (same bar):
 
 ```sh
-npm run wait-for-bots -- --pr <n>          # exit 0 required
-npm run pr:bot-feedback-check -- --pr <n>  # exit 0 required
-gh pr checks <n> --watch                   # bot-presence-gate, bot-feedback-gate green
+npm run wait-for-bots -- --pr <n>          # single-shot required-CI settlement
+npm run pr:bot-feedback-check -- --pr <n>  # dispositions + resolution
+gh pr checks <n>                            # applicable product CI + bot-feedback-gate
 ```
 
-**Never** recommend merge on “CI green” alone. **pr-gates-agent** audits; you implement fixes until `pr:gates:check` exits **0**.
+Reviewer vendors, Qwen/local LLM, and `bot-presence-gate` are advisory. Do not use agent watch or sleep-poll loops.
+
+**Never** recommend merge on “CI green” alone. Implement fixes until `pr:arm-and-park` exits **0**; never hand-roll `gh pr merge`.
 
 ## Workflow
 
@@ -70,7 +72,7 @@ git fetch origin && git checkout <head-branch> && git rebase origin/main  # if b
 
 Resolve preserving branch intent + `main`; if intents conflict, stop and ask chief/user with evidence.
 
-### 3. After `wait-for-bots` exit 0 — synthesis (step 5b)
+### 3. Feedback synthesis (step 5b)
 
 1. Fetch all threads: `gh pr view <n> --comments`, review APIs, Files tab on GitHub.
 2. **Read every thread before replying to any.**
@@ -95,11 +97,10 @@ Scoped fixes only. Do not weaken CI workflows to pass. Re-run checks until green
 
 ### 6. Merge (step 7)
 
-When all gates exit **0** and substantive threads are closed:
+After substantive threads are closed, let the canonical helper classify and arm:
 
 ```sh
-npm run pr:gates:check -- --pr <pr-number>   # must exit 0
-gh pr merge <pr-number> --squash
+npm run pr:arm-and-park -- --pr <pr-number>
 npm run close-loop:check -- --pr <pr-number>
 npm run close-loop:check -- --post-merge-gap
 ```
@@ -118,7 +119,7 @@ After merge: run or delegate **post-merge-verify-agent** (`verify:local` on Pi w
 | codex | chatgpt-codex-connector[bot] |
 | sourcery | sourcery-ai[bot] |
 
-After @mentioning bots: `npm run wait-for-bots -- --bot-tag` then loop until exit 0.
+Reviewer mentions do not create a merge-blocking wait. Read and disposition any substantive feedback that actually arrives, including late feedback found by the post-merge audit.
 
 ## Return format
 

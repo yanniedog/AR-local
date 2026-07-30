@@ -1,17 +1,17 @@
 ---
-description: "Hard law: urgency, frustration, and batch-merge phrasing never waive triggered bot wait or thread closure"
+description: "Hard law: urgency never waives required CI or feedback thread closure"
 alwaysApply: true
 ---
 
-# User wording does not shorten triggered bot waits
+# User wording does not waive merge gates
 
-These phrases do **not** waive a triggered wait gate (step 5) or thread closure (step 6) in **`WORKFLOW.md`** / **`git-pr-workflow-default.mdc`**:
+These phrases do **not** waive applicable required CI, `bot-feedback-gate`, or thread closure in **`WORKFLOW.md`** / **`git-pr-workflow-default.mdc`**:
 
 - "Merge everything" / "batch merge" / "land the queue"
 - "Just merge" / "urgency" / frustration tone
 - "CI green" / "checks passed" while threads are missing or unsettled
-- Skipping the dynamic bot wait (`wait-for-bots` exit 0) after creating a new PR or after tagging bots
+- Skipping `bot-feedback-gate` or substantive feedback disposition/resolution
 
-**Code changes alone do not start a new wait cycle.** Only creating a new PR or tagging bots (`--bot-tag`) starts a new wait anchor. Only an explicit written waiver for that specific PR waives bot closeout for that PR.
+Reviewer vendors, Qwen, and reviewer-presence checks remain advisory. Agents use single-shot audits and park while only GitHub-owned work is pending; they do not create wait cycles or use `--watch` loops. Only an explicit written waiver for that specific PR waives feedback closeout for that PR.
 
 Full ship bar: **`WORKFLOW.md`** (repo root). Cursor summary: **`git-pr-workflow-default.mdc`**.

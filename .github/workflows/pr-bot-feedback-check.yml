@@ -2,8 +2,8 @@ name: pr-bot-feedback-check
 
 # Thread closure gate. Runs on PR lifecycle AND on review-comment activity so an
 # in-thread reply (or a bot posting a finding) re-evaluates the gate automatically
-# â€” no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
-# per run; cancel-in-progress:false keeps volume bounded without cancelled runs.
+# - no manual re-run / empty re-trigger commit needed. One paginated GraphQL query
+# per attempt; newer events supersede stale work for the same PR.
 # Self-heal triggers are limited to events whose check-run attaches to the PR
 # HEAD: pull_request (push) and pull_request_review[_comment] (these run with
 # GITHUB_SHA = the PR head). NOT issue_comment / workflow_dispatch â€” those run
@@ -32,11 +32,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # MUST be false for a required check â€” cancelling an in-flight run leaves a
-  # "cancelled" check-run that branch protection reads as the latest required
-  # status, blocking the PR even when a later run succeeds (the "BLOCKED but
-  # all-green" trap). With false the newest event runs to completion, so the
-  # latest required check-run is always success/failure, never a stale cancel.
+  # Serialize each PR's gate runs. Cancelling an in-progress required context can
+  # leave GitHub selecting CANCELLED instead of the queued replacement.
   group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
@@ -47,12 +44,14 @@ jobs:
       || github.event.review != null
       || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - name: Review gate automation tests
+        run: npm run pr:automation:verify
       - name: Skip thread gate for non-human / chore PRs
         id: gate_exempt
         env:
@@ -90,12 +89,23 @@ jobs:
           else
             PR="${{ github.event.pull_request.number }}"
           fi
-          set +e
-          npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
-          code=$?
-          set -e
-          if [ "$code" -eq 2 ]; then
-            echo "::warning::GitHub API rate limit â€” re-run after quota resets"
-            exit 1
-          fi
-          exit "$code"
+          for attempt in $(seq 1 40); do
+            set +e
+            npm run pr:bot-feedback-check -- --pr "$PR" --skip-bot-presence
+            code=$?
+            set -e
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$code" -eq 2 ]; then
+              echo "::warning::GitHub API rate limit - retrying after 60 seconds"
+            elif [ "$code" -eq 3 ]; then
+              echo "Review feedback is still open (attempt $attempt/40); keeping the required check pending."
+            else
+              echo "::error::Feedback gate execution failed permanently (exit $code)."
+              exit "$code"
+            fi
+            sleep 60
+          done
+          echo "::error::Substantive review feedback remained open for 40 minutes."
+          exit 1

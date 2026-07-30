@@ -3,11 +3,16 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mergePullRequest } from './pr-merge.mjs';
+import { checkDefaultBase } from './pr-base-guard.mjs';
 import { ghJson } from './gh-pr-review-threads.mjs';
 
 const GH_TIMEOUT_MS = 120_000;
 const PR_VIEW_FIELDS =
-  'number,state,headRefName,baseRefName,mergeable,mergeStateStatus,autoMergeRequest';
+  'number,state,isDraft,headRefName,baseRefName,mergeable,mergeStateStatus,autoMergeRequest';
+
+export function shouldMarkReady(meta, requested = false) {
+  return Boolean(requested) && meta?.state === 'OPEN' && Boolean(meta.isDraft);
+}
 
 export function classifyBranchState(meta) {
   const ms = meta?.mergeStateStatus || 'UNKNOWN';
@@ -56,9 +61,9 @@ export function isAutoMergeEnabled(meta) {
   return Boolean(meta?.autoMergeRequest?.enabledAt);
 }
 
-export function fetchPrMergeMeta(prNumber) {
+export function fetchPrMergeMeta(prNumber, { requireOpen = true } = {}) {
   const view = ghJson(['pr', 'view', String(prNumber), '--json', PR_VIEW_FIELDS]);
-  if (view.state !== 'OPEN') {
+  if (requireOpen && view.state !== 'OPEN') {
     throw new Error(`PR #${prNumber} is not open (state=${view.state})`);
   }
   return view;
@@ -80,6 +85,31 @@ function ghUpdateBranch(prNumber, { dryRun = false } = {}) {
     ok: r.status === 0,
     stdout: (r.stdout || '').trim(),
     stderr: (r.stderr || '').trim(),
+    exitCode: r.status ?? 1,
+  };
+}
+
+export function markPrReady(prNumber, { dryRun = false } = {}) {
+  const args = ['pr', 'ready', String(prNumber)];
+  if (dryRun) {
+    return { ok: true, action: 'skipped', detail: `gh ${args.join(' ')}`, exitCode: 0 };
+  }
+  const r = spawnSync('gh', args, { encoding: 'utf8', timeout: GH_TIMEOUT_MS });
+  if (r.error?.code === 'ETIMEDOUT') {
+    return {
+      ok: false,
+      action: 'failed',
+      detail: `gh timed out after ${GH_TIMEOUT_MS}ms`,
+      exitCode: 1,
+    };
+  }
+  if (r.error) {
+    return { ok: false, action: 'failed', detail: r.error.message, exitCode: 1 };
+  }
+  return {
+    ok: r.status === 0,
+    action: r.status === 0 ? 'ready' : 'failed',
+    detail: (r.stderr || r.stdout || (r.status === 0 ? 'PR marked ready' : 'gh pr ready failed')).trim(),
     exitCode: r.status ?? 1,
   };
 }
@@ -131,6 +161,15 @@ export function updatePrBranch(prNumber, { dryRun = false, force = false } = {})
 
 export function enableSquashAutoMerge(prNumber, { dryRun = false } = {}) {
   const meta = fetchPrMergeMeta(prNumber);
+  const baseGuard = checkDefaultBase(meta.baseRefName);
+  if (!baseGuard.covered) {
+    return {
+      ok: false,
+      action: 'base-unprotected',
+      detail: baseGuard.detail,
+      exitCode: 3,
+    };
+  }
   if (isAutoMergeEnabled(meta)) {
     return {
       ok: true,
@@ -156,12 +195,59 @@ export function enableSquashAutoMerge(prNumber, { dryRun = false } = {}) {
   };
 }
 
-export function progressPullRequest(prNumber, { dryRun = false, syncBranch = true, enableAuto = true } = {}) {
-  const meta = fetchPrMergeMeta(prNumber);
+export function progressPullRequest(
+  prNumber,
+  {
+    dryRun = false,
+    syncBranch = true,
+    enableAuto = true,
+    markReady = false,
+  } = {},
+) {
+  let meta = fetchPrMergeMeta(prNumber);
+  const baseGuard = enableAuto ? checkDefaultBase(meta.baseRefName) : {
+    covered: true,
+    detail: 'auto-merge not requested',
+  };
+  if (!baseGuard.covered) {
+    return {
+      prNumber,
+      headRefName: meta.headRefName,
+      baseGuard,
+      ready: null,
+      sync: null,
+      autoMerge: null,
+      blocked: true,
+      ok: false,
+    };
+  }
+  const ready = shouldMarkReady(meta, markReady) ? markPrReady(prNumber, { dryRun }) : {
+    ok: true,
+    action: 'skipped',
+    detail: meta.isDraft ? 'Draft promotion not requested' : 'PR already ready for review',
+    exitCode: 0,
+  };
+  if (!ready.ok) {
+    return {
+      prNumber,
+      headRefName: meta.headRefName,
+      ready,
+      sync: null,
+      autoMerge: null,
+      blocked: true,
+      hardError: true,
+      ok: false,
+    };
+  }
+  if (ready.action === 'ready') {
+    meta = fetchPrMergeMeta(prNumber);
+  }
   const state = classifyBranchState(meta);
   const out = {
     prNumber,
     headRefName: meta.headRefName,
+    baseGuard,
+    ready,
     branchState: state,
     sync: null,
     autoMerge: null,
@@ -223,6 +309,6 @@ export function gateAutoMergeEnabled(meta) {
     detail: enabled
       ? `Squash auto-merge enabled (${meta?.autoMergeRequest?.enabledAt || 'active'})`
       : 'Squash auto-merge not enabled',
-    action: enabled ? undefined : `npm run pr:merge -- --pr ${meta?.number} --enable-only`,
+    action: enabled ? undefined : `npm run pr:arm-and-park -- --pr ${meta?.number}`,
   };
 }

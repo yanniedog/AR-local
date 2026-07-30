@@ -8,14 +8,16 @@ alwaysApply: true
 Before ending any turn on a shipping task:
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots
+npm run ship:closeout:strict
+npm run pr:arm-and-park -- --pr <n>
 ```
 
 from repo root.
 
 - **Exit 0** — clear to stop (for these guards).
 - **`ship:closeout:strict` exit 2** — open PR exists; continue **`WORKFLOW.md`** steps 5–9.
-- **`wait-for-bots` exit 2** — bots/CI not settled; re-run until exit 0 (dynamic poll, not a fixed timer).
+- **`pr:arm-and-park` exit 2** — only GitHub-owned CI is still settling; auto-merge is armed, so park and re-run once later.
+- **`pr:arm-and-park` exit 3** — actionable CI, conflict, base, unexpected closure, or feedback-thread work remains.
 
 **Never** end with "done", "shipped", "PR opened", "CI green so we're good", or "handing off the PR" while an open PR exists and you have merge ability.
 

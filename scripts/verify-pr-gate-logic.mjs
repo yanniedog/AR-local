@@ -4,12 +4,13 @@
  * isClosureReply). Standalone, no test framework. Run: node scripts/verify-pr-gate-logic.mjs
  *
  * Rules under test (WORKFLOW.md step 6, optimized):
- *  - A RESOLVED thread always passes (resolution is the acknowledgement).
+ *  - A substantive bot thread needs a disposition reply and resolution.
  *  - An UNRESOLVED bot thread passes only with a disposition reply (fixed /
  *    implemented / deferred / declined / by design / "fixed in <sha>" …).
  *  - Low-signal bot threads never block. Unresolved human threads block.
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
+import { isQuotaBotMessage } from './lib/bot-noise.mjs';
 import {
   isMatrixCommitTitle,
   isReportsOnlyFileList,
@@ -43,8 +44,10 @@ function c(author, body, createdAt = T0) {
 // Substantive bot findings must be >= 40 chars (shorter ones are low-signal noise).
 const FINDING = 'high-priority: this dereferences a null pointer when the list is empty';
 const cases = [
-  ['resolved bot thread, no reply -> pass',
-    thread(true, [c(BOT, FINDING)]), 0],
+  ['resolved bot thread, no reply -> missing disposition',
+    thread(true, [c(BOT, FINDING)]), 1],
+  ['resolved bot thread with disposition -> pass',
+    thread(true, [c(BOT, FINDING), c(HUMAN, 'Implemented in 6f3f466', T1)]), 0],
   ['unresolved bot thread, no reply -> 1 violation',
     thread(false, [c(BOT, FINDING)]), 1],
   // LIVE gate: an unresolved thread fails even WITH a disposition reply, because
@@ -66,8 +69,10 @@ const auditCases = [
     thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'Fixed in abc1234', T1)]), 0],
   ['[audit] unresolved bot + "thanks" -> 1 violation',
     thread(false, [c(BOT, FINDING, T0), c(HUMAN, 'thanks', T1)]), 1],
-  ['[audit] resolved bot -> pass',
-    thread(true, [c(BOT, FINDING)]), 0],
+  ['[audit] resolved bot without disposition -> violation',
+    thread(true, [c(BOT, FINDING)]), 1],
+  ['[audit] resolved bot with disposition -> pass',
+    thread(true, [c(BOT, FINDING), c(HUMAN, 'Declined — by design', T1)]), 0],
 ];
 
 const failures = [];
@@ -90,6 +95,16 @@ for (const [body, want] of [
   ['thanks', false], ['ok', false], ['', false],
 ]) {
   if (isClosureReply(body) !== want) failures.push(`isClosureReply(${body !== '' ? body : '<empty>'}) !== ${want}`);
+}
+
+for (const [body, want] of [
+  ['ERROR: null dereference when the export is empty', false],
+  ['ERROR: 429 RESOURCE_EXHAUSTED quota exceeded', true],
+  ['Service temporarily unavailable; please try again later', true],
+]) {
+  if (isQuotaBotMessage(body) !== want) {
+    failures.push(`isQuotaBotMessage(${body}) !== ${want}`);
+  }
 }
 
 for (const [path, want] of [

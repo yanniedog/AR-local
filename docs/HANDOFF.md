@@ -593,30 +593,35 @@ the committed sample); the **Pi is the primary daily publisher**.
 - **Branch off `main`, open a PR.** `main` is protected — direct pushes are blocked. Note:
   `main` is checked out in another git **worktree** locally (`AR-local-banking-only-pi-ssd`),
   so work from a feature branch and don't `git checkout main` here.
-- **Required status checks (branch protection):** `bot-feedback-gate` + `bot-presence-gate`,
-  `strict: true` (up-to-date), `enforce_admins: true` (**admins cannot bypass** — even
-  `gh pr merge --admin` is refused).
-- **Required bot (presence gate):** **gemini** only (`AR_BOT_WAIT_REQUIRED=gemini` in
-  `pr-bot-presence-gate.yml`). Sourcery is optional — it may still comment but does not block
-  merge. A bot's `pull_request_review` event auto-re-runs the presence gate.
+- **Universal required status check:** `bot-feedback-gate`, `strict: true`
+  (up-to-date). Product CI remains path-filtered and applies only when GitHub
+  reports it.
+- **Reviewer policy:** Gemini, Codex, Sourcery, CodeRabbit, Qwen/local LLM, and
+  presence checks are advisory. Their availability and quota never block merge;
+  substantive findings still require disposition and resolution.
 - **Resolving a thread emits no webhook** → a previously-failed gate won't auto-re-run after
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
-  `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
-  protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
-- **Enable auto-merge**: `npm run pr:merge -- --pr <n> --enable-only` on PR open (or `npm run pr:merge -- --pr <n>` for enable + wait). Lands when all required checks are green and **0 review threads are unresolved**.
+  `gh run rerun <run-id>`. Gate runs serialize per PR with cancellation disabled
+  so GitHub cannot select a cancelled context while its replacement is queued.
+- **Canonical closeout**: `npm run pr:arm-and-park -- --pr <n>`. It refuses
+  non-default bases, explicitly promotes drafts, syncs when needed, arms squash
+  auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable. Only
+  this command and guarded `pr:merge` promote drafts; queue/watch/update scans
+  preserve draft state.
 - **Bot matrix & direct-to-main bypass (one-time operator):** `pr-bot-spreadsheet` and `mobile-auto-release-on-queue-drain` commit directly to `main` (reports-only / version bump). GitHub rejects those pushes unless **GitHub Actions** is on the `main` **ruleset** bypass list. The REST API cannot add that bypass on this personal repo (422) — use **Settings → Rules → Rulesets →** open `main` ruleset → **Bypass list → GitHub Actions → Always**, then delete duplicate **legacy** branch protection on `main`. Full click-path, migration steps, and verify commands: [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md#direct-commit-to-main-one-time-github-setup).
 
 ### 6.1 PR queue efficiency (agents)
 
-One pr-fix worker per open PR owns the full loop to squash merge.
+One pr-fix worker acts on actionable state. Use single-shot audits and park
+ownership while only GitHub-owned work remains.
 
 | Step | Command |
 |------|---------|
-| PR opens | `npm run pr:merge -- --pr <n> --enable-only` |
+| PR closeout | `npm run pr:arm-and-park -- --pr <n>` |
 | Queue scan | `npm run pr:queue:drive` or `npm run pr:watch-once` |
-| Bot wait | `npm run wait-for-bots -- --pr <n>` (parallel per PR) |
+| Required-CI settlement | `npm run wait-for-bots -- --pr <n>` |
 | Branch sync | `npm run pr:update-branch -- --pr <n> --progress` |
-| Gates | `npm run pr:gates:check -- --pr <n>` |
+| Diagnostic gates | `npm run pr:gates:check -- --pr <n>` |
 
 Chore bypass: matrix direct commit; mobile auto-release drain workflow.
 - **Address bot threads in-thread**: reply, then resolve via GraphQL `resolveReviewThread`.
@@ -644,9 +649,8 @@ needs its PAT to keep publishing — don't revoke that without re-installing a n
 
 - **Pi offline = everything stops.** Check `tailscale status` first when data looks stale.
 - **`enforce_admins: true`** — you cannot force-merge; satisfy the gates for real.
-- **`bot-presence-gate` is single-shot** and waits for **gemini** only. If the gate failed
-  before gemini reviewed, re-run it with a fresh push or `gh run rerun <run-id>` once gemini
-  has commented.
+- **`bot-presence-gate` is compatibility-only and advisory.** The protection
+  reconciler removes it together with retired Qwen/local-LLM contexts.
 - **Pi file ownership**: some `/srv/ar-local` paths are root-owned; use the blessed scripts
   (`pi_deploy_verify.py`, `install-pi-systemd.sh`) rather than ad-hoc `git pull`/edits.
 - **Line endings**: repo is LF; Windows checkouts warn about CRLF — harmless.

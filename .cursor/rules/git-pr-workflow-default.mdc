@@ -7,7 +7,7 @@ alwaysApply: true
 
 **Authoritative copy with every step written out:** **`WORKFLOW.md`** at the repo root. Read it in full before shipping. This file states the same bar at a high level so Cursor always loads it.
 
-Every repo change follows: `agent/<slug>` branch → PR to `main` → CI → wait gate → feedback synthesis → thread closure → merge → **local dashboard** → **`npm run verify:local`**.
+Every repo change follows: `agent/<slug>` branch → draft PR to `main` → applicable CI → feedback synthesis → thread closure → single-shot gate audit → merge → **local dashboard** → **`npm run verify:local`**.
 
 **There is no Cloudflare deploy** and **production URL verification does not apply** to this repository.
 
@@ -16,18 +16,19 @@ Every repo change follows: `agent/<slug>` branch → PR to `main` → CI → wai
 1. Branch from fresh `main` (`git fetch`, `checkout -b agent/<slug>`).
 2. Commit and push on the topic branch only.
 3. One PR to `main`; fix-ups stay on the same branch.
-4. CI green (`gh pr checks <n> --watch`).
-5. **`npm run wait-for-bots`** after creating a PR; exit 2 means bots/CI not settled — loop until exit 0 (or `--watch`). After tagging bots: `npm run wait-for-bots -- --bot-tag` then loop. Code pushes alone do not restart the wait.
+4. Run the single-shot applicable-CI audit (`gh pr checks <n>`).
+5. **`npm run wait-for-bots -- --pr <n>`** is a single-shot required-CI settlement check. Reviewer vendors, Qwen, and reviewer-presence checks are advisory. Exit 2 means GitHub-owned CI is still settling: park and re-run once later; never use an agent `--watch` or sleep-poll loop.
 5b. Synthesize all threads → post `## Feedback plan` → then one push → in-thread replies.
 6. Thread closure on every substantive thread before merge.
-7. Merge (`npm run pr:merge` / `gh pr merge --auto --squash --delete-branch`) only after 5–6.
+7. Run `npm run pr:arm-and-park -- --pr <n>`. It rejects non-default bases, marks drafts ready, arms squash auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable.
 8. **Local:** restart/reload **`cdr_dashboard_server.py`** (or your launcher) so `main` is what runs; confirm **`site`** / **`--site-root`** as needed.
 9. **Local:** **`npm run verify:local -- --base-url=<printed-dashboard-url>/`**; use Browser MCP when validating UI. Exit code must be **0**.
 
 ## Closeout (before claiming done on a topic branch)
 
 ```sh
-npm run ship:closeout:strict && npm run wait-for-bots
+npm run ship:closeout:strict
+npm run pr:arm-and-park -- --pr <n>
 ```
 
 ## Forbidden completions
