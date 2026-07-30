@@ -232,6 +232,11 @@ const feedbackWorkflow = readFileSync(
   'utf8',
 );
 assert.match(feedbackWorkflow, /npm run pr:automation:verify/);
+assert.match(
+  feedbackWorkflow,
+  /uses:\s*actions\/checkout@v4\s*\r?\n\s+with:\s*\r?\n\s+ref:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\|\|\s*github\.event\.repository\.default_branch\s*\}\}\s*\r?\n\s+persist-credentials:\s*false/,
+  'the feedback gate must execute trusted policy code from the protected base without checkout credentials',
+);
 assert.doesNotMatch(feedbackWorkflow, /^concurrency:/m);
 assert.doesNotMatch(feedbackWorkflow, /cancel-in-progress:/);
 assert.match(feedbackWorkflow, /timeout-minutes:\s*5/);
