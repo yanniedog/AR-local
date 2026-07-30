@@ -31,7 +31,7 @@ function main() {
   if (args.help) {
     console.log(`Usage: npm run pr:arm-and-park -- [--pr N] [--json] [--dry-run]
 
-One shot: verify the exact default base, mark a draft ready, sync when behind,
+One shot: verify the exact default base, explicitly promote a draft, sync when behind,
 arm squash auto-merge, and classify the remaining state.
 
 Exit 0 ready or merged; 2 waiting on CI; 3 actionable; 1 hard error.

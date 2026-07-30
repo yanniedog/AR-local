@@ -15,8 +15,9 @@ existing blessed commands.
 - Every substantive finding that does arrive must receive an explicit
   `Implemented`, `Deferred`, or `Declined` in-thread disposition and GitHub
   resolution.
-- The feedback workflow has one PR-scoped concurrency owner. New head or review
-  activity cancels stale work and immediately re-evaluates the latest PR state.
+- The feedback workflow has one PR-scoped concurrency owner and serializes event
+  bursts without cancelling the in-progress required context. This prevents a
+  newer queued run from leaving `CANCELLED` as GitHub's selected gate result.
 - Squash auto-merge and branch deletion are the repository defaults.
 
 ## Delivery sequence
@@ -39,9 +40,11 @@ existing blessed commands.
    npm run pr:arm-and-park -- --pr <n>
    ```
 
-   It verifies the PR targets the repository's exact default branch, marks a
-   draft ready, syncs when behind, arms squash auto-merge, and classifies the
-   current state. A non-default base exits 3 as `base-unprotected`.
+   It verifies the PR targets the repository's exact default branch, explicitly
+   promotes a draft, syncs when behind, arms squash auto-merge, and classifies
+   the current state. The guarded `pr:merge` wrapper is the only other command
+   that may promote a draft. Background queue/watch/update helpers leave drafts
+   unpublished. A non-default base exits 3 as `base-unprotected`.
 
    - Exit 0: gates are ready, or the PR merged while auto-merge was being armed.
    - Exit 2: pending-only state; park and re-run once later.

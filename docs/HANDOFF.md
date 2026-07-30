@@ -601,11 +601,13 @@ the committed sample); the **Pi is the primary daily publisher**.
   substantive findings still require disposition and resolution.
 - **Resolving a thread emits no webhook** → a previously-failed gate won't auto-re-run after
   a resolve-only round. To re-fire: push a commit, post an inline reply, or
-  `gh run rerun <run-id>`. Multiple same-named gate runs on one commit can leave branch
-  protection latched on an old failure — a **fresh push (new head)** is the reliable fix.
+  `gh run rerun <run-id>`. Gate runs serialize per PR with cancellation disabled
+  so GitHub cannot select a cancelled context while its replacement is queued.
 - **Canonical closeout**: `npm run pr:arm-and-park -- --pr <n>`. It refuses
-  non-default bases, marks drafts ready, syncs when needed, arms squash
-  auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable.
+  non-default bases, explicitly promotes drafts, syncs when needed, arms squash
+  auto-merge, and returns 0 ready/merged, 2 pending-only, or 3 actionable. Only
+  this command and guarded `pr:merge` promote drafts; queue/watch/update scans
+  preserve draft state.
 - **Bot matrix & direct-to-main bypass (one-time operator):** `pr-bot-spreadsheet` and `mobile-auto-release-on-queue-drain` commit directly to `main` (reports-only / version bump). GitHub rejects those pushes unless **GitHub Actions** is on the `main` **ruleset** bypass list. The REST API cannot add that bypass on this personal repo (422) — use **Settings → Rules → Rulesets →** open `main` ruleset → **Bypass list → GitHub Actions → Always**, then delete duplicate **legacy** branch protection on `main`. Full click-path, migration steps, and verify commands: [`docs/PR_BOT_MATRIX.md`](PR_BOT_MATRIX.md#direct-commit-to-main-one-time-github-setup).
 
 ### 6.1 PR queue efficiency (agents)

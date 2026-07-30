@@ -10,8 +10,8 @@ const GH_TIMEOUT_MS = 120_000;
 const PR_VIEW_FIELDS =
   'number,state,isDraft,headRefName,baseRefName,mergeable,mergeStateStatus,autoMergeRequest';
 
-export function shouldMarkReady(meta) {
-  return meta?.state === 'OPEN' && Boolean(meta.isDraft);
+export function shouldMarkReady(meta, requested = false) {
+  return Boolean(requested) && meta?.state === 'OPEN' && Boolean(meta.isDraft);
 }
 
 export function classifyBranchState(meta) {
@@ -195,7 +195,15 @@ export function enableSquashAutoMerge(prNumber, { dryRun = false } = {}) {
   };
 }
 
-export function progressPullRequest(prNumber, { dryRun = false, syncBranch = true, enableAuto = true } = {}) {
+export function progressPullRequest(
+  prNumber,
+  {
+    dryRun = false,
+    syncBranch = true,
+    enableAuto = true,
+    markReady = false,
+  } = {},
+) {
   let meta = fetchPrMergeMeta(prNumber);
   const baseGuard = enableAuto ? checkDefaultBase(meta.baseRefName) : {
     covered: true,
@@ -213,10 +221,10 @@ export function progressPullRequest(prNumber, { dryRun = false, syncBranch = tru
       ok: false,
     };
   }
-  const ready = shouldMarkReady(meta) ? markPrReady(prNumber, { dryRun }) : {
+  const ready = shouldMarkReady(meta, markReady) ? markPrReady(prNumber, { dryRun }) : {
     ok: true,
     action: 'skipped',
-    detail: 'PR already ready for review',
+    detail: meta.isDraft ? 'Draft promotion not requested' : 'PR already ready for review',
     exitCode: 0,
   };
   if (!ready.ok) {
@@ -227,6 +235,7 @@ export function progressPullRequest(prNumber, { dryRun = false, syncBranch = tru
       sync: null,
       autoMerge: null,
       blocked: true,
+      hardError: true,
       ok: false,
     };
   }

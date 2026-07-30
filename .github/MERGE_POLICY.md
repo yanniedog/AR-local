@@ -10,16 +10,19 @@ Use the canonical one-shot helper:
 npm run pr:arm-and-park -- --pr <n>
 ```
 
-It verifies the exact default base, marks a draft ready, syncs when needed, and
-arms squash auto-merge with branch deletion. Exit 0 means ready or merged, exit
-2 means pending-only/parked, and exit 3 means actionable. Never invoke bare
-`gh pr merge`; the legacy `npm run pr:merge` wrapper is guarded but not the
-preferred agent entrypoint.
+It verifies the exact default base, explicitly promotes a draft, syncs when
+needed, and arms squash auto-merge with branch deletion. The guarded
+`npm run pr:merge` wrapper is the only other command allowed to promote a draft;
+background queue/watch/update helpers never publish drafts. Exit 0 means ready
+or merged, exit 2 means pending-only/parked, and exit 3 means actionable. Never
+invoke bare `gh pr merge`; the legacy wrapper is not the preferred agent
+entrypoint.
 
 ## `gh pr create`
 
 Squash is **not** set at PR creation. Opening a draft PR does not choose the
-merge method; `pr:arm-and-park` marks it ready and arms the canonical method.
+merge method; only an explicit `pr:arm-and-park` or guarded `pr:merge` invocation
+marks it ready. Background automation preserves the draft state.
 
 ## Repository settings (squash-only)
 

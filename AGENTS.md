@@ -21,8 +21,10 @@ npm run pr:arm-and-park -- --pr <n>
 
 - `bot-feedback-gate` is the only universal required check. AR-local product CI
   stays path-filtered and is required only where GitHub reports it.
-- `pr:arm-and-park` verifies the exact default base, marks a draft ready, syncs
-  it when needed, and arms squash auto-merge in one shot. Exit 0 is ready or
+- `pr:arm-and-park` explicitly verifies the exact default base, promotes a draft,
+  syncs it when needed, and arms squash auto-merge in one shot. The guarded
+  `pr:merge` wrapper is the only other command allowed to promote a draft;
+  background queue/watch/update helpers never publish drafts. Exit 0 is ready or
   merged; exit 2 is pending-only and should be parked; exit 3 is actionable.
 - A PR based on anything other than the repository default branch is
   `base-unprotected` and must be retargeted. Never stack PRs on feature branches.

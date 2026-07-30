@@ -8,6 +8,7 @@ import {
 } from './lib/bot-wait-config.mjs';
 import {
   BOT_GATE_CHECK_NAMES,
+  gateGithubBotChecksResult,
   selectNewestCheck,
 } from './lib/pr-gates-lib.mjs';
 
@@ -30,12 +31,13 @@ assert.equal(
 );
 assert.match(packageJson.scripts?.['pr:automation:verify'] || '', /verify-pr-arm-and-park/);
 
-const gatesLib = readFileSync('scripts/lib/pr-gates-lib.mjs', 'utf8');
-assert.match(
-  gatesLib,
-  /pass:\s*false,\s*\r?\n\s*detail:\s*'bot-feedback-gate: not reported yet'/,
+const missingFeedbackGate = gateGithubBotChecksResult({ found: {}, skipped: true });
+assert.equal(
+  missingFeedbackGate.pass,
+  false,
   'an unreported required feedback check must wait rather than pass',
 );
+assert.equal(missingFeedbackGate.pending, true);
 
 const olderPass = {
   name: 'bot-feedback-gate',
@@ -95,7 +97,7 @@ assert.match(
   feedbackWorkflow,
   /group:\s*bot-feedback-gate-\$\{\{\s*github\.event\.pull_request\.number\s*\|\|\s*inputs\.pr_number\s*\|\|\s*github\.run_id\s*\}\}/,
 );
-assert.match(feedbackWorkflow, /cancel-in-progress:\s*true/);
+assert.match(feedbackWorkflow, /cancel-in-progress:\s*false/);
 assert.doesNotMatch(feedbackWorkflow, /queue:\s*max/);
 assert.doesNotMatch(feedbackWorkflow, /pull_request\.head\.sha|github\.sha/);
 

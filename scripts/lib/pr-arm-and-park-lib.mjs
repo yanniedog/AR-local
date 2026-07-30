@@ -17,13 +17,8 @@ const ALWAYS_ACTIONABLE = new Set([
 export function classifyGateFailure(gate) {
   if (!gate || gate.pass) return 'ok';
   if (ALWAYS_ACTIONABLE.has(gate.id)) return 'actionable';
-  if (gate.id === 'ci-required') {
-    return /pending/i.test(gate.detail || '') ? 'waiting' : 'actionable';
-  }
-  if (gate.id === 'github-bot-gates') {
-    return /not reported yet|pending|in_progress|queued/i.test(gate.detail || '')
-      ? 'waiting'
-      : 'actionable';
+  if (gate.id === 'ci-required' || gate.id === 'github-bot-gates') {
+    return gate.pending === true ? 'waiting' : 'actionable';
   }
   if (gate.id === 'wait-for-bots') {
     return gate.exitCode === 2 ? 'waiting' : 'actionable';
@@ -47,6 +42,7 @@ export function requireNewlyReadyChecks(classification, wasMarkedReady) {
   const gate = {
     id: 'ci-required',
     pass: false,
+    pending: true,
     detail: 'Required checks have not reported on the newly-ready head',
   };
   const waiting = [...(classification.waiting || [])];
@@ -93,14 +89,25 @@ export function classifyPostProgressState(meta, prNumber) {
   };
 }
 
+export function progressionFailureDetail(progression) {
+  return progression?.ready?.detail
+    || progression?.sync?.detail
+    || progression?.branchState?.detail
+    || progression?.autoMerge?.detail
+    || 'PR progression failed';
+}
+
 /**
- * Verify the exact default base, mark a draft ready, sync when needed, arm
+ * Verify the exact default base, explicitly promote a draft, sync when needed, arm
  * squash auto-merge, and classify the remaining state. Never polls.
  */
-export function armAndParkOnce(prNumber, opts = {}) {
+export function armAndParkOnce(prNumber, opts = {}, deps = {}) {
+  const fetchMeta = deps.fetchPrMergeMeta ?? fetchPrMergeMeta;
+  const progress = deps.progressPullRequest ?? progressPullRequest;
+  const evaluate = deps.evaluateGates ?? evaluateGates;
   let meta;
   try {
-    meta = fetchPrMergeMeta(prNumber);
+    meta = fetchMeta(prNumber);
   } catch (error) {
     return { mode: 'error', error: error.message, autoMergeArmed: false };
   }
@@ -119,35 +126,22 @@ export function armAndParkOnce(prNumber, opts = {}) {
     };
   }
 
-  const progression = progressPullRequest(prNumber, {
-    dryRun: Boolean(opts.dryRun),
-    syncBranch: !opts.skipSync,
-    enableAuto: !opts.skipArm,
-  });
-  if (progression.blocked) {
-    return {
-      mode: 'actionable',
-      progression,
-      baseGuard,
-      autoMergeArmed: false,
-      classification: {
-        mode: 'actionable',
-        actionable: [{
-          id: 'branch-fresh',
-          pass: false,
-          detail:
-            progression.ready?.action === 'failed'
-              ? progression.ready.detail
-              : progression.sync?.detail || progression.branchState?.detail,
-        }],
-        waiting: [],
-      },
-    };
+  let progression = null;
+  let progressionError = null;
+  try {
+    progression = progress(prNumber, {
+      dryRun: Boolean(opts.dryRun),
+      syncBranch: !opts.skipSync,
+      enableAuto: !opts.skipArm,
+      markReady: true,
+    });
+  } catch (error) {
+    progressionError = error;
   }
 
   let postProgress = null;
   try {
-    postProgress = fetchPrMergeMeta(prNumber, { requireOpen: false });
+    postProgress = fetchMeta(prNumber, { requireOpen: false });
   } catch {
     // Gate evaluation below reports a hard API/auth failure if the PR is open.
   }
@@ -157,7 +151,7 @@ export function armAndParkOnce(prNumber, opts = {}) {
       ...terminal,
       progression,
       baseGuard,
-      autoMergeArmed: progression.autoMerge?.ok === true,
+      autoMergeArmed: progression?.autoMerge?.ok === true,
     };
   }
   if (terminal) {
@@ -168,15 +162,51 @@ export function armAndParkOnce(prNumber, opts = {}) {
       autoMergeArmed: false,
     };
   }
+  if (progressionError) {
+    return {
+      mode: 'error',
+      error: progressionError.message,
+      progression,
+      baseGuard,
+      autoMergeArmed: false,
+    };
+  }
+  if (progression?.blocked) {
+    const detail = progressionFailureDetail(progression);
+    if (progression.hardError) {
+      return {
+        mode: 'error',
+        error: detail,
+        progression,
+        baseGuard,
+        autoMergeArmed: false,
+      };
+    }
+    return {
+      mode: 'actionable',
+      progression,
+      baseGuard,
+      autoMergeArmed: false,
+      classification: {
+        mode: 'actionable',
+        actionable: [{
+          id: 'branch-fresh',
+          pass: false,
+          detail,
+        }],
+        waiting: [],
+      },
+    };
+  }
 
-  const gates = evaluateGates(prNumber);
+  const gates = evaluate(prNumber);
   const classification = requireNewlyReadyChecks(
     classifyWorkMode(gates),
     progression.ready?.action === 'ready',
   );
   let refreshed = postProgress || meta;
   try {
-    refreshed = fetchPrMergeMeta(prNumber);
+    refreshed = fetchMeta(prNumber);
   } catch {
     // The progression result still proves whether the arm command succeeded.
   }
@@ -187,6 +217,6 @@ export function armAndParkOnce(prNumber, opts = {}) {
     classification,
     baseGuard,
     autoMergeArmed:
-      isAutoMergeEnabled(refreshed) || progression.autoMerge?.ok === true,
+      isAutoMergeEnabled(refreshed) || progression?.autoMerge?.ok === true,
   };
 }

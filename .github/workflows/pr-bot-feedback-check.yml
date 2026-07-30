@@ -32,10 +32,10 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # One liveness owner per PR. A new head/review event cancels stale work and
-  # immediately re-evaluates the latest PR state.
+  # Serialize each PR's gate runs. Cancelling an in-progress required context can
+  # leave GitHub selecting CANCELLED instead of the queued replacement.
   group: bot-feedback-gate-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bot-feedback-gate:

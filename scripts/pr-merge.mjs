@@ -54,7 +54,13 @@ Guarded legacy wrapper. Prefer:
     console.log(`auto-merge ${auto.action}: ${auto.detail}`);
     process.exit(auto.ok ? 0 : auto.exitCode || 1);
   }
-  const r = progressPullRequest(args.pr, { dryRun: args.dryRun, syncBranch: !args.noSync, enableAuto: true });
+  const r = progressPullRequest(args.pr, {
+    dryRun: args.dryRun,
+    syncBranch: !args.noSync,
+    enableAuto: true,
+    markReady: true,
+  });
+  if (r.ready) console.log(`ready ${r.ready.action}: ${r.ready.detail}`);
   if (r.sync && !args.noSync) console.log(`sync ${r.sync.action}: ${r.sync.detail}`);
   if (r.autoMerge) console.log(`auto-merge ${r.autoMerge.action}: ${r.autoMerge.detail}`);
   if (r.blocked) process.exit(r.sync?.exitCode === 2 ? 2 : 1);
