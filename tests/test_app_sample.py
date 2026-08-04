@@ -5,7 +5,10 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from app_sample import build_app_sample
+from app_payload_contracts import validate_coverage
 import payload_crypto
 
 
@@ -127,6 +130,7 @@ def test_normalizes_percent_rates_and_skips_invalid_fallbacks(tmp_path: Path) ->
 
 
 def test_decrypts_verified_encrypted_source_assets(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("cryptography")
     source = tmp_path / "source"
     output = tmp_path / "sample"
     source.mkdir()
@@ -155,3 +159,89 @@ def test_decrypts_verified_encrypted_source_assets(tmp_path: Path, monkeypatch) 
     result = build_app_sample(source, output)
 
     assert result["counts"]["rates"] == 6
+
+
+def test_constructs_valid_coverage_when_legacy_source_has_none(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+
+    build_app_sample(source, output)
+
+    core = json.loads((output / "core.json").read_text())
+    validate_coverage(core["coverage"])
+    assert core["coverage"]["counts"] == {
+        "providers": 1,
+        "products": 3,
+        "rates": 6,
+        "failures": 2,
+    }
+    assert any("Bundled sample only" in item for item in core["coverage"]["limitations"])
+
+
+def test_reserves_a_slot_for_a_standard_product(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    core_path = source / manifest["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    rows = [
+        {"provider": "Bank A", "product_key": "a-0", "rate": "0.08", "account_class": "non_standard"},
+        {"provider": "Bank A", "product_key": "a-1", "rate": "0.07", "account_class": "non_standard"},
+        {"provider": "Bank A", "product_key": "a-2", "rate": "0.05", "account_class": "standard"},
+    ]
+    for section in core["sections"].values():
+        section["rates"] = rows
+    compressed = gzip.compress(json.dumps(core).encode())
+    core_path.write_bytes(compressed)
+    manifest["files"]["core"].update(
+        bytes=len(compressed), sha256=hashlib.sha256(compressed).hexdigest()
+    )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    build_app_sample(source, output)
+
+    sample = json.loads((output / "core.json").read_text())
+    for section in sample["sections"].values():
+        assert "a-2" in {row["product_key"] for row in section["rates"]}
+
+
+def test_rejects_unsupported_schema_before_writing(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    manifest["schema_version"] = 2
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="schema_version 1"):
+        build_app_sample(source, output)
+
+    assert not output.exists()
+
+
+def test_rejects_empty_selection_before_writing(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    core_path = source / manifest["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    for section in core["sections"].values():
+        section["rates"] = []
+    compressed = gzip.compress(json.dumps(core).encode())
+    core_path.write_bytes(compressed)
+    manifest["files"]["core"].update(
+        bytes=len(compressed), sha256=hashlib.sha256(compressed).hexdigest()
+    )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="empty sample"):
+        build_app_sample(source, output)
+
+    assert not output.exists()

@@ -81,8 +81,15 @@ def _representative_rows(rows: list[dict[str, Any]], section: str) -> list[dict[
             else float("-inf") if reverse else float("inf"),
             reverse=reverse,
         )
+        # Preserve at least one broadly available product when the provider has
+        # one, so the app's default Standard-only filter does not erase that
+        # provider from the representative fallback.
+        broadly_available = [
+            row for row in ranked if row.get("account_class") == "standard"
+        ]
+        candidates = [*broadly_available[:1], *ranked]
         product_keys: set[str] = set()
-        for row in ranked:
+        for row in candidates:
             if rates[id(row)] is None:
                 continue
             key = str(row.get("product_key") or "")
@@ -105,8 +112,15 @@ def _section(rows: list[dict[str, Any]], name: str) -> dict[str, Any]:
 
 def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
     source_manifest = json.loads((payload_dir / "manifest.json").read_text(encoding="utf-8"))
+    if source_manifest.get("schema_version") != 1:
+        raise ValueError("manifest, core, and details must use supported schema_version 1")
     core = _read_verified_payload(payload_dir, source_manifest, "core")
     details = _read_verified_payload(payload_dir, source_manifest, "details")
+    if any(
+        value.get("schema_version") != 1
+        for value in (source_manifest, core, details)
+    ):
+        raise ValueError("manifest, core, and details must use supported schema_version 1")
     run_date = str(source_manifest.get("run_date") or "")
     if not run_date or core.get("run_date") != run_date or details.get("run_date") != run_date:
         raise ValueError("manifest, core, and details run_date values must match")
@@ -120,6 +134,9 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         for section in sections.values()
         for row in section["rates"]
     }
+    selected_rate_count = sum(len(section["rates"]) for section in sections.values())
+    if not selected_keys or selected_rate_count <= 0:
+        raise ValueError("refusing to replace the bundled fallback with an empty sample")
     products = {
         key: value for key, value in details["products"].items() if key in selected_keys
     }
@@ -128,17 +145,41 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         for section in sections.values()
         for row in section["rates"]
     }
-    sample_core = {
+    source_coverage = core.get("coverage") if isinstance(core.get("coverage"), dict) else {}
+    coverage_sections = {
+        name: {
+            "rates": len(section["rates"]),
+            "products": len({str(row["product_key"]) for row in section["rates"]}),
+            "providers": len({str(row["provider"]) for row in section["rates"]}),
+        }
+        for name, section in sections.items()
+    }
+    limitations = [
+        *(source_coverage.get("limitations") or []),
+        "Bundled sample only: up to two representative published products per provider and section; not a complete or current market view.",
+    ]
+    sample_coverage = {
+        "schema_version": 1,
+        "observed_on": run_date,
+        "observed_at": source_coverage.get("observed_at") or source_manifest.get("generated_at"),
+        "counts": {
+            "providers": len(providers),
+            "products": len(selected_keys),
+            "rates": selected_rate_count,
+            "failures": int(source_manifest.get("counts", {}).get("failures") or 0),
+        },
+        "sections": coverage_sections,
+        "provider_failures": list(source_coverage.get("provider_failures") or []),
+        "providers_attempted": len(providers),
+        "providers_succeeded": len(providers),
+        "failures": list(source_coverage.get("failures") or []),
+        "limitations": limitations,
+    }
+    sample_core: dict[str, Any] = {
         **core,
         "sections": sections,
         "brands": {key: value for key, value in core.get("brands", {}).items() if key in providers},
-        "coverage": {
-            **(core.get("coverage") or {}),
-            "limitations": [
-                *(core.get("coverage", {}).get("limitations") or []),
-                "Bundled sample only: up to two representative published products per provider and section; not a complete or current market view.",
-            ],
-        },
+        "coverage": sample_coverage,
     }
     sample_details = {**details, "products": products}
     encoded = {"core": _json_bytes(sample_core), "details": _json_bytes(sample_details)}
@@ -163,7 +204,7 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         "counts": {
             "products": len(selected_keys),
             "providers": len(providers),
-            "rates": sum(len(section["rates"]) for section in sections.values()),
+            "rates": selected_rate_count,
             "fees": sum(len(item.get("fees") or []) for item in detail_values),
             "features": sum(len(item.get("features") or []) for item in detail_values),
             "eligibility": sum(len(item.get("eligibility") or []) for item in detail_values),
