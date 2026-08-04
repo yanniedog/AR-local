@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List
 
 from app_payload_common import compact
+from cdr_clean_export import official_product_links
 
 def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[str, Any]]:
     items = record.get(key)
@@ -36,9 +37,7 @@ def _detail_links(record: Dict[str, Any]) -> Dict[str, str]:
     staff/occupation/membership criteria that the structured eligibility array
     frequently omits.
     """
-    info = record.get("additionalInformation")
-    if not isinstance(info, dict):
-        return {}
+    info = official_product_links(record)
     return compact(
         {
             "overview": info.get("overviewUri"),

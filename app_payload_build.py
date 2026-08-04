@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import math
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -14,6 +15,9 @@ import cdr_brand_logos
 import payload_crypto
 import rba_decisions
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
+from cdr_clean_export import coverage_summary
+
+from app_payload_contracts import validate_coverage
 
 from app_payload_brands import (
     build_brands,
@@ -220,6 +224,7 @@ def _compute_payload(
     *,
     dashboard_dir: Path = BASE_DIR / "dashboard",
     include_history: bool = True,
+    state_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Parse the run's exports into the (tag-independent) payload data.
 
@@ -235,6 +240,17 @@ def _compute_payload(
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
+    coverage = banks.get("coverage")
+    if not isinstance(coverage, dict):
+        coverage = coverage_summary(banks, run_date)
+        coverage["failure_provenance_complete"] = False
+        counts_hint = latest.get("banks_counts") or {}
+        try:
+            coverage["counts"]["failure_records"] = int(counts_hint.get("failures") or 0)
+        except (TypeError, ValueError):
+            pass
+    coverage["source_generated_at"] = latest.get("generated_at")
+    validate_coverage(coverage)
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
@@ -256,9 +272,14 @@ def _compute_payload(
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
     # v2: cache name bumped when SVG logoUris started being kept, so a fresh
     # raster-only cache can't suppress SVG entries for up to 7 days.
-    register_logos = cdr_brand_logos.fetch_register_logos(
-        cache_path=exports_dir / "cdr-brand-logos-v2.json"
-    )
+    legacy_logo_cache = exports_dir / "cdr-brand-logos-v2.json"
+    logo_cache = legacy_logo_cache
+    if state_dir is not None:
+        logo_cache = state_dir / "register-logos" / run_date / "cdr-brand-logos-v2.json"
+        if not logo_cache.exists() and legacy_logo_cache.is_file():
+            logo_cache.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_logo_cache, logo_cache)
+    register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
     core = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
@@ -266,6 +287,7 @@ def _compute_payload(
         "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
         "rba": load_rba_series(dashboard_dir),
         "rba_holds": load_rba_holds(dashboard_dir),
+        "coverage": coverage,
     }
     details = {
         "schema_version": SCHEMA_VERSION,
@@ -455,6 +477,7 @@ def build_and_publish_dual(
     repo: str = DEFAULT_REPO,
     out_dir: Optional[Path] = None,
     update_latest: bool = True,
+    state_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -482,10 +505,14 @@ def build_and_publish_dual(
     # Compute the (tag-independent) payload data ONCE, then package both releases.
     # History/search are rolling-only, so only compute them when the rolling latest
     # will be built. Previously each release rebuilt from scratch every run.
-    data = _app_payload("_compute_payload")(exports_dir, include_history=need_latest)
+    data = _app_payload("_compute_payload")(
+        exports_dir, include_history=need_latest, state_dir=state_dir
+    )
 
     dated = dated_tag(run_date)
-    out_dated = out_dir or (exports_dir / "app-payload")
+    out_dated = out_dir or (
+        state_dir / "v1-dated" if state_dir is not None else exports_dir / "app-payload"
+    )
     manifest = _package_payload(data, out_dated, repo=repo, tag=dated)
     try:
         published_dated = publish_payload(out_dated, repo=repo, tag=dated)
@@ -503,7 +530,11 @@ def build_and_publish_dual(
     published_latest = False
     if update_latest:
         if need_latest:
-            out_latest = exports_dir / "app-payload-latest"
+            out_latest = (
+                state_dir / "v1-latest"
+                if state_dir is not None
+                else exports_dir / "app-payload-latest"
+            )
             _package_payload(data, out_latest, repo=repo, tag=DEFAULT_TAG)
             published_latest = publish_payload(out_latest, repo=repo, tag=DEFAULT_TAG)
             print(
