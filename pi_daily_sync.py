@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -13,12 +14,46 @@ from typing import Optional
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
 from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
 from ar_local_subprocess import run_checked
+from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent
 AR_SITE_REPO = REPO_ROOT.parent / "australianrates"
 AR_SITE_URL = "https://github.com/yanniedog/australianrates.git"
 LOCK_STALE_SECONDS = 6 * 60 * 60
 GIT_TIMEOUT_SEC = 30
+
+
+def v2_publication_allowed() -> bool:
+    """V2 is plaintext-only today; preserve ciphertext-only mode when enabled."""
+    return (os.environ.get("AR_LOCAL_PAYLOAD_ENC") or "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def prune_payload_staging(out_dir: Path, manifest_name: str) -> int:
+    """Remove stale staged assets while retaining the current manifest contract."""
+    manifest_path = out_dir / manifest_name
+    if not manifest_path.is_file():
+        return 0
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        files = manifest.get("files") or {}
+        keep = {manifest_name}
+        keep.update(
+            str(entry.get("name"))
+            for entry in files.values()
+            if isinstance(entry, dict) and entry.get("name")
+        )
+    except (OSError, ValueError, TypeError):
+        return 0
+    removed = 0
+    for path in out_dir.iterdir():
+        if path.is_file() and path.name not in keep:
+            path.unlink()
+            removed += 1
+    return removed
 
 
 class DailyIngestLock:
@@ -85,6 +120,19 @@ def _app_payload_enabled() -> bool:
     return os.environ.get("AR_LOCAL_APP_PAYLOAD", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _same_payload_revision(left: dict, right: dict) -> bool:
+    if str(left.get("run_date") or "") != str(right.get("run_date") or ""):
+        return False
+    left_files = left.get("files") or {}
+    right_files = right.get("files") or {}
+    return all(
+        str((left_files.get(kind) or {}).get("sha256") or "")
+        and str((left_files.get(kind) or {}).get("sha256") or "")
+        == str((right_files.get(kind) or {}).get("sha256") or "")
+        for kind in ("core", "details")
+    )
+
+
 def maybe_publish_app_payload(repo_root: Path) -> None:
     """Build + publish the mobile-app payload after a successful ingest.
 
@@ -102,8 +150,16 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
         if exports is None:
             print("[pi_daily_sync] app_payload skipped reason=no_valid_exports")
             return
+        runtime_state = data_state_root(repo_root)
+        payload_state = runtime_state / "app-payload"
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
-        manifest, published_dated, published_latest = app_payload.build_and_publish_dual(exports)
+        manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
+            exports, state_dir=payload_state / "v1"
+        )
+        pruned_v1 = sum(
+            prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
+            for folder in ("v1-dated", "v1-latest")
+        )
         run_date = str(manifest.get("run_date") or "")
         dated_tag = app_payload.dated_tag(run_date)
         core_name = manifest.get("files", {}).get("core", {}).get("name", "")
@@ -114,11 +170,57 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
             f"dated_tag={dated_tag} published_dated={published_dated} "
             f"published_latest={published_latest} state={state} "
             f"core={core_name} details={details_name} exit=0"
+            f" pruned_local_assets={pruned_v1}"
         )
+        v2_eligible = published_latest
+        if not v2_eligible:
+            try:
+                live_status, live_v1 = app_payload._live_manifest_status(
+                    app_payload.DEFAULT_REPO, app_payload.DEFAULT_TAG
+                )
+                v2_eligible = (
+                    live_status == "present"
+                    and live_v1 is not None
+                    and _same_payload_revision(manifest, live_v1)
+                )
+            except Exception as live_exc:  # noqa: BLE001 - optional sidecar check
+                print(
+                    "[pi_daily_sync] app_payload v2 skipped "
+                    f"reason=v1_revision_check_failed error={live_exc!r}"
+                )
+        if v2_eligible and not v2_publication_allowed():
+            print(
+                "[pi_daily_sync] app_payload v2 skipped "
+                "reason=payload_encryption_enabled_plaintext_v2_forbidden"
+            )
+        elif v2_eligible:
+            try:
+                v2_manifest, published_v2 = app_payload.build_and_publish_v2(
+                    exports,
+                    v1_manifest=manifest,
+                    out_dir=payload_state / "v2",
+                    economic_store_path=DEFAULT_MACRO_STORE_PATH,
+                )
+                pruned_v2 = prune_payload_staging(
+                    payload_state / "v2", app_payload.V2_MANIFEST_FILENAME
+                )
+                print(
+                    "[pi_daily_sync] app_payload v2 finished "
+                    f"run_date={v2_manifest.get('run_date', '')} "
+                    f"capabilities={v2_manifest.get('capabilities', [])} "
+                    f"published={published_v2} pruned_local_assets={pruned_v2} exit=0"
+                )
+            except Exception as v2_exc:  # noqa: BLE001 - v1 is already complete
+                print(
+                    "[pi_daily_sync] app_payload v2 failed "
+                    f"(non-fatal; v1 preserved) error={v2_exc!r} exit=0"
+                )
         if published_dated or published_latest:
             try:
                 runs_root = data_runs_root(repo_root)
-                app_payload.refresh_dates_index(runs_root)
+                app_payload.refresh_dates_index(
+                    runs_root, out_dir=payload_state / "v1-dates-index"
+                )
             except Exception as idx_exc:  # noqa: BLE001 - index is informational
                 print(
                     f"[pi_daily_sync] app_payload dates-index refresh failed "

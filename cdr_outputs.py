@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from cdr_clean_export import parse_banks_run, summary_counts, utc_now
+from cdr_clean_export import coverage_summary, parse_banks_run, summary_counts, utc_now
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
@@ -344,6 +344,7 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
         "products": banks["products"],
         "rates": banks["rates"],
         "counts": summary_counts(banks),
+        "coverage": coverage_summary(banks, run_date),
     }
     manifest = {
         "generated_at": utc_now(),

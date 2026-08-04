@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
+from urllib.parse import urlsplit
 
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 NOISE_KEYS = {
@@ -24,6 +25,13 @@ NOISE_KEYS = {
 URL_KEY_RE = re.compile(r"(uri|url|href|link)$", re.I)
 URL_TEXT_RE = re.compile(r"https?://\S+", re.I)
 SPACE_RE = re.compile(r"\s+")
+OFFICIAL_PRODUCT_LINK_FIELDS = (
+    "overviewUri",
+    "eligibilityUri",
+    "feesAndPricingUri",
+    "termsUri",
+    "bundleUri",
+)
 
 
 def utc_now() -> str:
@@ -121,8 +129,96 @@ def normalized_rate_text(value: Any, divisor: float, family: str) -> str:
     return f"{number:.6g}"
 
 
+def _official_https_url(value: Any) -> str:
+    """Return a source-supplied public HTTPS URL, excluding credentials/fragments."""
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 2048:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return ""
+    return raw.split("#", 1)[0]
+
+
+def official_product_links(record: Mapping[str, Any]) -> Dict[str, str]:
+    """Allowlisted lender links from CDR ``additionalInformation`` metadata."""
+    info = record.get("additionalInformation")
+    if not isinstance(info, Mapping):
+        return {}
+    return {
+        field: url
+        for field in OFFICIAL_PRODUCT_LINK_FIELDS
+        if (url := _official_https_url(info.get(field)))
+    }
+
+
 def detail_json(record: Mapping[str, Any]) -> str:
-    return json.dumps(clean_value(dict(record)), ensure_ascii=False, sort_keys=True)
+    cleaned = clean_value(dict(record))
+    links = official_product_links(record)
+    if links:
+        # Generic cleaning intentionally removes arbitrary URLs. Restore only the
+        # CDR-defined lender metadata fields that the app can identify and label.
+        cleaned["additionalInformation"] = links
+    return json.dumps(cleaned, ensure_ascii=False, sort_keys=True)
+
+
+def _failure_rollup(failures: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[tuple[str, str, str], int] = {}
+    for item in failures:
+        provider = text(item.get("bank")) or "Unknown"
+        phase = text(item.get("phase")) or "unknown"
+        status = text(item.get("status")) or "unknown"
+        key = (provider, phase, status)
+        grouped[key] = grouped.get(key, 0) + 1
+    return [
+        {"provider": provider, "phase": phase, "status": status, "count": count}
+        for (provider, phase, status), count in sorted(grouped.items())
+    ]
+
+
+def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
+    """Privacy-safe measured coverage and failure provenance for app clients."""
+    rates = [row for row in banks.get("rates", []) if isinstance(row, Mapping)]
+    products = [row for row in banks.get("products", []) if isinstance(row, Mapping)]
+    failures = [row for row in banks.get("failures", []) if isinstance(row, Mapping)]
+    observed = {text(row.get("provider")) for row in [*rates, *products]} - {""}
+    failed = {text(row.get("bank")) for row in failures} - {""}
+    sections: Dict[str, Any] = {}
+    for section in ("Mortgage", "Savings", "TD"):
+        section_rates = [row for row in rates if row.get("dataset") == section]
+        sections[section] = {
+            "rates": len(section_rates),
+            "products": len({text(row.get("product_key")) for row in section_rates} - {""}),
+            "providers": len({text(row.get("provider")) for row in section_rates} - {""}),
+            "standard_rates": sum(row.get("account_class") == "standard" for row in section_rates),
+            "non_standard_rates": sum(
+                row.get("account_class") == "non_standard" for row in section_rates
+            ),
+            "unclassified_rates": sum(
+                row.get("account_class") not in ("standard", "non_standard")
+                for row in section_rates
+            ),
+        }
+    return {
+        "schema_version": 1,
+        "observed_on": run_date,
+        "source": "consumer_data_right_export",
+        "failure_provenance_complete": True,
+        "counts": {
+            "brands_observed": len(observed),
+            "products": len(products),
+            "rates": len(rates),
+            "failure_records": len(failures),
+            "providers_failed": len(failed - observed),
+            "providers_partial": len(failed & observed),
+        },
+        "sections": sections,
+        # Deliberately excludes endpoint URLs and response snippets.
+        "provider_failures": _failure_rollup(failures),
+    }
 
 
 def bank_product_key(row: Mapping[str, str]) -> str:

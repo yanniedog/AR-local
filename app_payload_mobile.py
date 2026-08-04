@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import bank_behaviour
 import rba_decisions
+from app_payload_contracts import ALL_PRODUCTS_COHORT
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 _WS = re.compile(r"\s+")
@@ -221,6 +222,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
         "schema_version": schema_version,
         "run_date": run_date,
         "run_dates": dates,
+        "cohort": dict(ALL_PRODUCTS_COHORT),
         "sections": sections,
     }
 
@@ -260,6 +262,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
         "schema_version": schema_version,
         "run_date": run_date,
         "run_dates": dates,
+        "cohort": dict(ALL_PRODUCTS_COHORT),
         "banks": banks,
         "events": events[-MAX_EVENTS:],
         "behaviour": behaviour,
