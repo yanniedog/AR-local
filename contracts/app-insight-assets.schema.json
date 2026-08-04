@@ -14,12 +14,16 @@
       "properties": {
         "schema_version": { "const": 1 },
         "observed_on": { "type": "string", "format": "date" },
+        "observed_at": { "type": "string", "format": "date-time" },
         "source": { "const": "consumer_data_right_export" },
         "failure_provenance_complete": { "type": "boolean" },
         "source_generated_at": { "type": ["string", "null"] },
         "counts": { "type": "object" },
         "sections": { "type": "object" },
-        "provider_failures": { "type": "array", "maxItems": 2000 }
+        "provider_failures": { "type": "array", "maxItems": 2000 },
+        "providers_attempted": { "type": "integer", "minimum": 0 },
+        "providers_succeeded": { "type": "integer", "minimum": 0 },
+        "failures": { "type": "array", "maxItems": 2000 }
       },
       "additionalProperties": false
     },

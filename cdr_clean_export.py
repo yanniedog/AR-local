@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 from urllib.parse import urlsplit
@@ -179,6 +179,37 @@ def _failure_rollup(failures: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any
     ]
 
 
+def app_coverage_aliases(coverage: Mapping[str, Any]) -> Dict[str, Any]:
+    """Add the legacy app-facing names without replacing the canonical contract."""
+    result = dict(coverage)
+    observed_on = text(result.get("observed_on"))
+    counts = result.get("counts") if isinstance(result.get("counts"), Mapping) else {}
+    provider_failures = (
+        result.get("provider_failures")
+        if isinstance(result.get("provider_failures"), list)
+        else []
+    )
+    succeeded = int(counts.get("providers_succeeded") or counts.get("brands_observed") or 0)
+    attempted = int(
+        counts.get("providers_attempted")
+        or (succeeded + int(counts.get("providers_failed") or 0))
+    )
+    observed_at = ""
+    if observed_on:
+        observed_at = (
+            datetime.strptime(observed_on, "%Y-%m-%d")
+            .replace(tzinfo=timezone(timedelta(hours=10)))
+            .astimezone(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    result.setdefault("observed_at", observed_at)
+    result.setdefault("providers_succeeded", succeeded)
+    result.setdefault("providers_attempted", attempted)
+    result.setdefault("failures", list(provider_failures))
+    return result
+
+
 def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
     """Privacy-safe measured coverage and failure provenance for app clients."""
     rates = [row for row in banks.get("rates", []) if isinstance(row, Mapping)]
@@ -186,6 +217,10 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
     failures = [row for row in banks.get("failures", []) if isinstance(row, Mapping)]
     observed = {text(row.get("provider")) for row in [*rates, *products]} - {""}
     failed = {text(row.get("bank")) for row in failures} - {""}
+    attempted = {
+        text(provider) for provider in banks.get("holder_attempts", []) if text(provider)
+    } | observed | failed
+    succeeded = attempted - (failed - observed)
     sections: Dict[str, Any] = {}
     for section in ("Mortgage", "Savings", "TD"):
         section_rates = [row for row in rates if row.get("dataset") == section]
@@ -202,7 +237,7 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
                 for row in section_rates
             ),
         }
-    return {
+    return app_coverage_aliases({
         "schema_version": 1,
         "observed_on": run_date,
         "source": "consumer_data_right_export",
@@ -214,11 +249,13 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
             "failure_records": len(failures),
             "providers_failed": len(failed - observed),
             "providers_partial": len(failed & observed),
+            "providers_attempted": len(attempted),
+            "providers_succeeded": len(succeeded),
         },
         "sections": sections,
         # Deliberately excludes endpoint URLs and response snippets.
         "provider_failures": _failure_rollup(failures),
-    }
+    })
 
 
 def bank_product_key(row: Mapping[str, str]) -> str:
@@ -332,9 +369,13 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "eligibility": [],
         "constraints": [],
         "failures": read_failures(banks_root),
+        "holder_attempts": [],
     }
     if not banks_root.exists():
         return dataset
+    holders_root = banks_root / "_holders"
+    if holders_root.exists():
+        dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
     for path in sorted(banks_root.rglob("product-detail.json")):
         rec = inner_record(load_json(path))
         base = bank_base_row(path, banks_root, rec)

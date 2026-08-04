@@ -16,7 +16,7 @@ import cdr_brand_logos
 import payload_crypto
 import rba_decisions
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
-from cdr_clean_export import coverage_summary
+from cdr_clean_export import app_coverage_aliases, coverage_summary
 
 from app_payload_contracts import validate_coverage
 
@@ -237,6 +237,7 @@ def _stable_payload_coverage(
     # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
     # is dated by its stable source observation (`observed_on`).
     coverage.pop("source_generated_at", None)
+    coverage = app_coverage_aliases(coverage)
     validate_coverage(coverage)
     return coverage
 
