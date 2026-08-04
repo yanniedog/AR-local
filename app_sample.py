@@ -11,8 +11,12 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+import payload_crypto
+from cdr_ribbon_normalize import aggregate_ribbon, effective_rate, normalized_rate_value
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -26,32 +30,39 @@ def _read_verified_payload(payload_dir: Path, manifest: dict[str, Any], kind: st
         raise ValueError(f"{kind} compressed byte count does not match manifest")
     if hashlib.sha256(compressed).hexdigest() != entry["sha256"]:
         raise ValueError(f"{kind} compressed SHA-256 does not match manifest")
+    encryption = entry.get("enc") or manifest.get("enc")
+    if encryption or compressed.startswith(payload_crypto.MAGIC):
+        key_path = Path(
+            os.environ.get(payload_crypto.ENV_KEY_FILE) or payload_crypto.DEFAULT_KEY_FILE
+        )
+        key = payload_crypto.load_key(key_path)
+        expected_key_id = (encryption or {}).get("key_id")
+        if expected_key_id and payload_crypto.key_id(key) != expected_key_id:
+            raise ValueError(f"{kind} payload encryption key id does not match manifest")
+        compressed = payload_crypto.decrypt_asset(compressed, key)
     value = json.loads(gzip.decompress(compressed))
     if not isinstance(value, dict):
         raise ValueError(f"{kind} payload must be an object")
     return value
 
 
-def _numeric_rate(row: dict[str, Any]) -> float | None:
-    raw = row.get("comparison_rate") or row.get("rate")
-    try:
-        value = float(raw)
-        return value if value > 0 else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _stats(rows: list[dict[str, Any]]) -> dict[str, float | None]:
-    values = sorted(value for row in rows if (value := _numeric_rate(row)) is not None)
-    if not values:
-        return {"min": None, "max": None, "mean": None, "median": None}
-    middle = len(values) // 2
-    median = values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
+def _normalized_rates(
+    rows: list[dict[str, Any]], section: str
+) -> dict[int, float | None]:
+    percent_style: set[str] = set()
+    for row in rows:
+        key = str(row.get("product_key") or "")
+        try:
+            raw = float(effective_rate(row))
+        except (TypeError, ValueError):
+            continue
+        if key and raw > 1:
+            percent_style.add(key)
     return {
-        "min": values[0],
-        "max": values[-1],
-        "mean": sum(values) / len(values),
-        "median": median,
+        id(row): normalized_rate_value(
+            effective_rate(row), section, str(row.get("product_key") or "") in percent_style
+        )
+        for row in rows
     }
 
 
@@ -61,14 +72,19 @@ def _representative_rows(rows: list[dict[str, Any]], section: str) -> list[dict[
         by_provider.setdefault(str(row.get("provider") or ""), []).append(row)
     selected: list[dict[str, Any]] = []
     reverse = section != "Mortgage"
+    rates = _normalized_rates(rows, section)
     for provider_rows in by_provider.values():
         ranked = sorted(
             provider_rows,
-            key=lambda row: _numeric_rate(row) if _numeric_rate(row) is not None else float("-inf") if reverse else float("inf"),
+            key=lambda row: rates[id(row)]
+            if rates[id(row)] is not None
+            else float("-inf") if reverse else float("inf"),
             reverse=reverse,
         )
         product_keys: set[str] = set()
         for row in ranked:
+            if rates[id(row)] is None:
+                continue
             key = str(row.get("product_key") or "")
             if not key or key in product_keys:
                 continue
@@ -81,29 +97,9 @@ def _representative_rows(rows: list[dict[str, Any]], section: str) -> list[dict[
 
 def _section(rows: list[dict[str, Any]], name: str) -> dict[str, Any]:
     selected = _representative_rows(rows, name)
-    by_provider: dict[str, list[dict[str, Any]]] = {}
-    for row in selected:
-        by_provider.setdefault(str(row["provider"]), []).append(row)
-    providers = [
-        {
-            "provider": provider,
-            "rates": len(provider_rows),
-            "products": len({str(row["product_key"]) for row in provider_rows}),
-            **_stats(provider_rows),
-        }
-        for provider, provider_rows in by_provider.items()
-    ]
     return {
         "rates": selected,
-        "ribbon": {
-            "counts": {
-                "rates": len(selected),
-                "products": len({str(row["product_key"]) for row in selected}),
-                "providers": len(by_provider),
-            },
-            "range": _stats(selected),
-            "providers": providers,
-        },
+        "ribbon": aggregate_ribbon(selected, name),
     }
 
 

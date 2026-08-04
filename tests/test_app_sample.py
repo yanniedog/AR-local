@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from app_sample import build_app_sample
+import payload_crypto
 
 
 def _write_source(root: Path) -> None:
@@ -86,3 +87,62 @@ def test_builds_small_self_contained_sample(tmp_path: Path) -> None:
     core = json.loads((output / "core.json").read_text())
     assert [row["rate"] for row in core["sections"]["Mortgage"]["rates"]] == ["0.0500", "0.0600"]
     assert [row["rate"] for row in core["sections"]["Savings"]["rates"]] == ["0.0700", "0.0600"]
+
+
+def test_normalizes_percent_rates_and_skips_invalid_fallbacks(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    core_path = source / manifest["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    for section in core["sections"].values():
+        section["rates"] = [
+            {"provider": "Bank A", "product_key": "valid", "rate": "5.0", "comparison_rate": "0"},
+            {"provider": "Bank A", "product_key": "zero", "rate": "0", "comparison_rate": "0"},
+        ]
+    compressed = gzip.compress(json.dumps(core).encode())
+    core_path.write_bytes(compressed)
+    manifest["files"]["core"].update(
+        bytes=len(compressed), sha256=hashlib.sha256(compressed).hexdigest()
+    )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    build_app_sample(source, output)
+
+    sample = json.loads((output / "core.json").read_text())
+    mortgage = sample["sections"]["Mortgage"]
+    assert [row["product_key"] for row in mortgage["rates"]] == ["valid"]
+    assert mortgage["ribbon"]["range"]["min"] == 0.05
+
+
+def test_decrypts_verified_encrypted_source_assets(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    key = bytes(range(32))
+    key_path = tmp_path / "payload.key"
+    key_path.write_text(key.hex())
+    monkeypatch.setenv(payload_crypto.ENV_KEY_FILE, str(key_path))
+
+    manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(key)}
+    for entry in manifest["files"].values():
+        path = source / entry["name"]
+        encrypted = payload_crypto.encrypt_asset(path.read_bytes(), key)
+        encrypted_path = path.with_suffix(path.suffix + ".enc")
+        encrypted_path.write_bytes(encrypted)
+        path.unlink()
+        entry.update(
+            name=encrypted_path.name,
+            bytes=len(encrypted),
+            sha256=hashlib.sha256(encrypted).hexdigest(),
+            enc=manifest["enc"],
+        )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    result = build_app_sample(source, output)
+
+    assert result["counts"]["rates"] == 6
