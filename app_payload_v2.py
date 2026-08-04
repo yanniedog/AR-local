@@ -111,6 +111,9 @@ def _moves(series: List[Optional[float]], dates: List[str]) -> List[Dict[str, An
     previous: Optional[float] = None
     for index, value in enumerate(series):
         if value is None:
+            # A gap breaks observed continuity. Never date a movement on
+            # reappearance when the actual change could have happened earlier.
+            previous = None
             continue
         if previous is not None and abs(value - previous) > _MOVE_EPSILON:
             events.append(
@@ -255,7 +258,7 @@ def _freshness(con: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
             "last_success_at": row[2],
             "last_observation_date": row[3],
             "status": row[4],
-            "source_url": row[5],
+            "source_url": _public_https_url(row[5]),
         }
         for row in rows
     }

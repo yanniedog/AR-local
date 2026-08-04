@@ -5,13 +5,16 @@ import gzip
 import hashlib
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 import app_payload_contracts
+import app_payload_build
 import app_payload_v2
 import cdr_clean_export
+import pi_daily_sync
 
 ROOT = Path(__file__).resolve().parents[1]
 REAL_EXPORTS = Path(os.environ["AR_LOCAL_REAL_EXPORTS"]) if os.environ.get("AR_LOCAL_REAL_EXPORTS") else None
@@ -101,6 +104,71 @@ def test_standard_history_filter_never_admits_non_standard_rates():
     assert len(best) == 1
     assert {key for keys in aliases.values() for key in keys} == {standard["product_key"]}
     assert excluded == {"non_standard": 1, "unclassified": 0, "unkeyed": 0}
+
+
+def test_history_movements_never_cross_an_observation_gap():
+    dates = ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04"]
+    assert app_payload_v2._moves([0.05, None, 0.06, 0.061], dates) == [
+        {
+            "date": "2026-08-04",
+            "from_rate": 0.06,
+            "to_rate": 0.061,
+            "bps": 10.0,
+        }
+    ]
+
+
+def test_rebuild_timestamp_is_not_part_of_content_hashed_coverage():
+    coverage = {
+        "schema_version": 1,
+        "observed_on": "2026-08-04",
+        "counts": {},
+        "sections": {},
+        "provider_failures": [],
+        "source_generated_at": "2026-08-04T01:00:00Z",
+    }
+    banks = {"coverage": coverage}
+    first = app_payload_build._stable_payload_coverage(
+        banks, {"generated_at": "2026-08-04T01:00:00Z"}, "2026-08-04"
+    )
+    second = app_payload_build._stable_payload_coverage(
+        banks, {"generated_at": "2026-08-04T02:00:00Z"}, "2026-08-04"
+    )
+    assert first == second
+    assert "source_generated_at" not in first
+
+
+def test_economic_freshness_sanitizes_source_urls():
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        """CREATE TABLE ingest_runs (
+            series_id TEXT, last_checked_at TEXT, last_success_at TEXT,
+            last_observation_date TEXT, status TEXT, source_url TEXT
+        )"""
+    )
+    con.executemany(
+        "INSERT INTO ingest_runs VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("safe", None, None, None, "ok", "https://www.rba.gov.au/data.csv#fragment"),
+            ("secret", None, None, None, "failed", "https://user:token@example.test/data"),
+        ],
+    )
+    freshness = app_payload_v2._freshness(con)
+    assert freshness["safe"]["source_url"] == "https://www.rba.gov.au/data.csv"
+    assert freshness["secret"]["source_url"] is None
+
+
+def test_plaintext_v2_is_suppressed_when_payload_encryption_is_enabled(monkeypatch):
+    monkeypatch.setenv("AR_LOCAL_PAYLOAD_ENC", "true")
+    assert pi_daily_sync.v2_publication_allowed() is False
+    monkeypatch.setenv("AR_LOCAL_PAYLOAD_ENC", "0")
+    assert pi_daily_sync.v2_publication_allowed() is True
+
+
+def test_daily_v2_uses_the_macro_producers_canonical_store_path():
+    from cdr_macro_ingest import DEFAULT_STORE_PATH
+
+    assert pi_daily_sync.DEFAULT_MACRO_STORE_PATH == DEFAULT_STORE_PATH
 
 
 def test_v2_manifest_validator_enforces_capabilities_and_size_limits():

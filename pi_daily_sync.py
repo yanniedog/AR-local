@@ -13,12 +13,22 @@ from typing import Optional
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
 from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
 from ar_local_subprocess import run_checked
+from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent
 AR_SITE_REPO = REPO_ROOT.parent / "australianrates"
 AR_SITE_URL = "https://github.com/yanniedog/australianrates.git"
 LOCK_STALE_SECONDS = 6 * 60 * 60
 GIT_TIMEOUT_SEC = 30
+
+
+def v2_publication_allowed() -> bool:
+    """V2 is plaintext-only today; preserve ciphertext-only mode when enabled."""
+    return (os.environ.get("AR_LOCAL_PAYLOAD_ENC") or "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 class DailyIngestLock:
@@ -148,13 +158,18 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
                     "[pi_daily_sync] app_payload v2 skipped "
                     f"reason=v1_revision_check_failed error={live_exc!r}"
                 )
-        if v2_eligible:
+        if v2_eligible and not v2_publication_allowed():
+            print(
+                "[pi_daily_sync] app_payload v2 skipped "
+                "reason=payload_encryption_enabled_plaintext_v2_forbidden"
+            )
+        elif v2_eligible:
             try:
                 v2_manifest, published_v2 = app_payload.build_and_publish_v2(
                     exports,
                     v1_manifest=manifest,
                     out_dir=payload_state / "v2",
-                    economic_store_path=runtime_state / "local-macro.sqlite",
+                    economic_store_path=DEFAULT_MACRO_STORE_PATH,
                 )
                 print(
                     "[pi_daily_sync] app_payload v2 finished "

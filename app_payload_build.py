@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import shutil
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -219,6 +220,27 @@ def build_payload(
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
+def _stable_payload_coverage(
+    banks: Dict[str, Any], latest: Dict[str, Any], run_date: str
+) -> Dict[str, Any]:
+    existing = banks.get("coverage")
+    if isinstance(existing, dict):
+        coverage = deepcopy(existing)
+    else:
+        coverage = coverage_summary(banks, run_date)
+        coverage["failure_provenance_complete"] = False
+        counts_hint = latest.get("banks_counts") or {}
+        try:
+            coverage["counts"]["failure_records"] = int(counts_hint.get("failures") or 0)
+        except (TypeError, ValueError):
+            pass
+    # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
+    # is dated by its stable source observation (`observed_on`).
+    coverage.pop("source_generated_at", None)
+    validate_coverage(coverage)
+    return coverage
+
+
 def _compute_payload(
     exports_dir: Path,
     *,
@@ -240,17 +262,7 @@ def _compute_payload(
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
-    coverage = banks.get("coverage")
-    if not isinstance(coverage, dict):
-        coverage = coverage_summary(banks, run_date)
-        coverage["failure_provenance_complete"] = False
-        counts_hint = latest.get("banks_counts") or {}
-        try:
-            coverage["counts"]["failure_records"] = int(counts_hint.get("failures") or 0)
-        except (TypeError, ValueError):
-            pass
-    coverage["source_generated_at"] = latest.get("generated_at")
-    validate_coverage(coverage)
+    coverage = _stable_payload_coverage(banks, latest, run_date)
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
