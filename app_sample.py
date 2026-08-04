@@ -207,7 +207,11 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         "sections": source_coverage.get("sections") or coverage_sections,
         "sample_sections": coverage_sections,
         "provider_failures": list(source_coverage.get("provider_failures") or []),
-        "failures": list(source_coverage.get("failures") or []),
+        "failures": list(
+            source_coverage.get("failures")
+            or source_coverage.get("provider_failures")
+            or []
+        ),
         "limitations": limitations,
     }
     if not source_coverage:

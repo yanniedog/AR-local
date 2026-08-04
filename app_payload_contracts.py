@@ -45,6 +45,11 @@ def validate_coverage(value: Any) -> None:
         raise ValueError("coverage.provider_failures must be a list")
     if len(value["provider_failures"]) > MAX_COVERAGE_FAILURE_GROUPS:
         raise ValueError("coverage.provider_failures exceeds the contract limit")
+    if "failures" in value and not isinstance(value.get("failures"), list):
+        raise ValueError("coverage.failures must be a list when present")
+    for field in ("providers_attempted", "providers_succeeded"):
+        if field in value and (not isinstance(value[field], int) or value[field] < 0):
+            raise ValueError(f"coverage.{field} must be a non-negative integer")
 
 
 def validate_product_history(value: Any) -> None:

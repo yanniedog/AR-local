@@ -175,6 +175,40 @@ def test_rebuild_timestamp_is_not_part_of_content_hashed_coverage():
     )
     assert first == second
     assert "source_generated_at" not in first
+    assert first["observed_at"] == "2026-08-04T00:00:00Z"
+    assert first["providers_attempted"] == 0
+    assert first["providers_succeeded"] == 0
+    assert first["failures"] == []
+
+
+def test_coverage_exposes_canonical_and_app_compatible_failure_provenance():
+    coverage = cdr_clean_export.coverage_summary(
+        {
+            "rates": [
+                {
+                    "dataset": "Mortgage",
+                    "provider": "Observed Bank",
+                    "product_key": "observed|home",
+                    "account_class": "standard",
+                }
+            ],
+            "products": [{"provider": "Observed Bank"}],
+            "failures": [
+                {"bank": "Observed Bank", "phase": "rates", "status": "partial"},
+                {"bank": "Failed Bank", "phase": "products", "status": "timeout"},
+            ],
+        },
+        "2026-08-04",
+    )
+
+    assert coverage["observed_on"] == "2026-08-04"
+    assert coverage["observed_at"] == "2026-08-04T00:00:00Z"
+    assert coverage["providers_succeeded"] == 1
+    assert coverage["providers_attempted"] == 2
+    assert coverage["failures"] == coverage["provider_failures"]
+    assert coverage["counts"]["providers_partial"] == 1
+    assert coverage["counts"]["providers_failed"] == 1
+    app_payload_contracts.validate_coverage(coverage)
 
 
 def test_economic_freshness_sanitizes_source_urls():

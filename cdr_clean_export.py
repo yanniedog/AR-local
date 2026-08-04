@@ -179,6 +179,25 @@ def _failure_rollup(failures: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any
     ]
 
 
+def app_coverage_aliases(coverage: Mapping[str, Any]) -> Dict[str, Any]:
+    """Add the legacy app-facing names without replacing the canonical contract."""
+    result = dict(coverage)
+    observed_on = text(result.get("observed_on"))
+    counts = result.get("counts") if isinstance(result.get("counts"), Mapping) else {}
+    provider_failures = (
+        result.get("provider_failures")
+        if isinstance(result.get("provider_failures"), list)
+        else []
+    )
+    succeeded = int(counts.get("brands_observed") or 0)
+    failed_only = int(counts.get("providers_failed") or 0)
+    result.setdefault("observed_at", f"{observed_on}T00:00:00Z" if observed_on else "")
+    result.setdefault("providers_succeeded", succeeded)
+    result.setdefault("providers_attempted", succeeded + failed_only)
+    result.setdefault("failures", list(provider_failures))
+    return result
+
+
 def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
     """Privacy-safe measured coverage and failure provenance for app clients."""
     rates = [row for row in banks.get("rates", []) if isinstance(row, Mapping)]
@@ -202,7 +221,7 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
                 for row in section_rates
             ),
         }
-    return {
+    return app_coverage_aliases({
         "schema_version": 1,
         "observed_on": run_date,
         "source": "consumer_data_right_export",
@@ -218,7 +237,7 @@ def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
         "sections": sections,
         # Deliberately excludes endpoint URLs and response snippets.
         "provider_failures": _failure_rollup(failures),
-    }
+    })
 
 
 def bank_product_key(row: Mapping[str, str]) -> str:
