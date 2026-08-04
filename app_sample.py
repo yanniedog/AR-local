@@ -12,11 +12,46 @@ import gzip
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import payload_crypto
 from cdr_ribbon_normalize import aggregate_ribbon, effective_rate, normalized_rate_value
+
+
+# Keep the bounded producer aligned with the app's cheap, core-only
+# `isBroadlyAvailable` predicate. Structured eligibility is not present in the
+# core payload, so these are deliberately the same product/name safeguards the
+# app applies before details have loaded.
+_CURATED_NON_STANDARD_PRODUCTS = {
+    "racq": {"green home loan", "green home loan investment"},
+    "westpac": {
+        "sustainable upgrades home loan",
+        "sustainable upgrades investment",
+        "sustainable upgrades investment loan",
+    },
+}
+_NAME_RESTRICTS_ACCESS = re.compile(
+    r"\b(staff|employe[er]|colleague)\b"
+    r"|\b(police|nurs(?:e|es|ing)|teacher|educator(?:s)?|doctor|health\s*(?:care|sector|worker)|medical|defence|defense|military|navy|army|veteran|firefighter|ambulance|paramedic|emergency\s*services|first\s*responder)\b"
+    r"|\bmembers?\s+of\b|\bassociation\b|\bunion\b|\balumni\b|\bdiocese\b|\bparish\b"
+    r"|\b(business|commercial|corporate|company|smsf|self[-\s]?managed\s+super|trust)\b"
+    r"|\bstudent[s]?\b"
+    r"|\bresidents?\s+of\b|\bonly\s+available\s+in\b",
+    re.IGNORECASE,
+)
+
+
+def _is_broadly_available(row: dict[str, Any]) -> bool:
+    if row.get("account_class") == "non_standard":
+        return False
+    provider = str(row.get("provider") or "").strip().lower()
+    provider_key = "racq" if "racq" in provider else "westpac" if "westpac" in provider else ""
+    product_name = str(row.get("product_name") or "").strip()
+    if product_name.lower() in _CURATED_NON_STANDARD_PRODUCTS.get(provider_key, set()):
+        return False
+    return not bool(_NAME_RESTRICTS_ACCESS.search(product_name))
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -84,9 +119,7 @@ def _representative_rows(rows: list[dict[str, Any]], section: str) -> list[dict[
         # Preserve at least one broadly available product when the provider has
         # one, so the app's default Standard-only filter does not erase that
         # provider from the representative fallback.
-        broadly_available = [
-            row for row in ranked if row.get("account_class") == "standard"
-        ]
+        broadly_available = [row for row in ranked if _is_broadly_available(row)]
         candidates = [*broadly_available[:1], *ranked]
         product_keys: set[str] = set()
         for row in candidates:
@@ -158,23 +191,31 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         *(source_coverage.get("limitations") or []),
         "Bundled sample only: up to two representative published products per provider and section; not a complete or current market view.",
     ]
+    sample_counts = {
+        "providers": len(providers),
+        "products": len(selected_keys),
+        "rates": selected_rate_count,
+        "failures": int(source_manifest.get("counts", {}).get("failures") or 0),
+    }
     sample_coverage = {
+        **source_coverage,
         "schema_version": 1,
         "observed_on": run_date,
         "observed_at": source_coverage.get("observed_at") or source_manifest.get("generated_at"),
-        "counts": {
-            "providers": len(providers),
-            "products": len(selected_keys),
-            "rates": selected_rate_count,
-            "failures": int(source_manifest.get("counts", {}).get("failures") or 0),
-        },
-        "sections": coverage_sections,
+        "counts": source_coverage.get("counts") or sample_counts,
+        "sample_counts": sample_counts,
+        "sections": source_coverage.get("sections") or coverage_sections,
+        "sample_sections": coverage_sections,
         "provider_failures": list(source_coverage.get("provider_failures") or []),
-        "providers_attempted": len(providers),
-        "providers_succeeded": len(providers),
         "failures": list(source_coverage.get("failures") or []),
         "limitations": limitations,
     }
+    if not source_coverage:
+        sample_coverage.update(
+            providers_attempted=len(providers),
+            providers_succeeded=len(providers),
+            failure_provenance_complete=False,
+        )
     sample_core: dict[str, Any] = {
         **core,
         "sections": sections,

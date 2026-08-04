@@ -209,6 +209,77 @@ def test_reserves_a_slot_for_a_standard_product(tmp_path: Path) -> None:
         assert "a-2" in {row["product_key"] for row in section["rates"]}
 
 
+def test_reserves_slot_using_apps_full_broad_availability_rule(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    core_path = source / manifest["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    rows = [
+        {"provider": "RACQ Bank", "product_key": "green-owner", "product_name": "Green Home Loan", "rate": "0.04", "account_class": "standard"},
+        {"provider": "RACQ Bank", "product_key": "green-investor", "product_name": "Green Home Loan Investment", "rate": "0.05", "account_class": "standard"},
+        {"provider": "RACQ Bank", "product_key": "public", "product_name": "Variable Home Loan", "rate": "0.06", "account_class": "standard"},
+    ]
+    for section in core["sections"].values():
+        section["rates"] = rows
+    compressed = gzip.compress(json.dumps(core).encode())
+    core_path.write_bytes(compressed)
+    manifest["files"]["core"].update(
+        bytes=len(compressed), sha256=hashlib.sha256(compressed).hexdigest()
+    )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    build_app_sample(source, output)
+
+    sample = json.loads((output / "core.json").read_text())
+    for section in sample["sections"].values():
+        assert "public" in {row["product_key"] for row in section["rates"]}
+
+
+def test_preserves_measured_provider_failure_provenance(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "sample"
+    source.mkdir()
+    _write_source(source)
+    manifest = json.loads((source / "manifest.json").read_text())
+    core_path = source / manifest["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    core["coverage"] = {
+        "schema_version": 1,
+        "observed_on": "2026-08-04",
+        "source": "consumer_data_right_export",
+        "failure_provenance_complete": True,
+        "providers_attempted": 12,
+        "providers_succeeded": 9,
+        "counts": {"providers_failed": 2, "providers_partial": 1},
+        "sections": {},
+        "provider_failures": [{"provider": "Bank Z", "count": 2}],
+    }
+    compressed = gzip.compress(json.dumps(core).encode())
+    core_path.write_bytes(compressed)
+    manifest["files"]["core"].update(
+        bytes=len(compressed), sha256=hashlib.sha256(compressed).hexdigest()
+    )
+    (source / "manifest.json").write_text(json.dumps(manifest))
+
+    build_app_sample(source, output)
+
+    coverage = json.loads((output / "core.json").read_text())["coverage"]
+    assert coverage["failure_provenance_complete"] is True
+    assert coverage["providers_attempted"] == 12
+    assert coverage["providers_succeeded"] == 9
+    assert coverage["provider_failures"] == [{"provider": "Bank Z", "count": 2}]
+    assert coverage["counts"] == {"providers_failed": 2, "providers_partial": 1}
+    assert coverage["sample_counts"] == {
+        "providers": 1,
+        "products": 3,
+        "rates": 6,
+        "failures": 2,
+    }
+
+
 def test_rejects_unsupported_schema_before_writing(tmp_path: Path) -> None:
     source = tmp_path / "source"
     output = tmp_path / "sample"
