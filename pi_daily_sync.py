@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +30,30 @@ def v2_publication_allowed() -> bool:
         "true",
         "yes",
     }
+
+
+def prune_payload_staging(out_dir: Path, manifest_name: str) -> int:
+    """Remove stale staged assets while retaining the current manifest contract."""
+    manifest_path = out_dir / manifest_name
+    if not manifest_path.is_file():
+        return 0
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        files = manifest.get("files") or {}
+        keep = {manifest_name}
+        keep.update(
+            str(entry.get("name"))
+            for entry in files.values()
+            if isinstance(entry, dict) and entry.get("name")
+        )
+    except (OSError, ValueError, TypeError):
+        return 0
+    removed = 0
+    for path in out_dir.iterdir():
+        if path.is_file() and path.name not in keep:
+            path.unlink()
+            removed += 1
+    return removed
 
 
 class DailyIngestLock:
@@ -131,6 +156,10 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
             exports, state_dir=payload_state / "v1"
         )
+        pruned_v1 = sum(
+            prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
+            for folder in ("v1-dated", "v1-latest")
+        )
         run_date = str(manifest.get("run_date") or "")
         dated_tag = app_payload.dated_tag(run_date)
         core_name = manifest.get("files", {}).get("core", {}).get("name", "")
@@ -141,6 +170,7 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
             f"dated_tag={dated_tag} published_dated={published_dated} "
             f"published_latest={published_latest} state={state} "
             f"core={core_name} details={details_name} exit=0"
+            f" pruned_local_assets={pruned_v1}"
         )
         v2_eligible = published_latest
         if not v2_eligible:
@@ -171,11 +201,14 @@ def maybe_publish_app_payload(repo_root: Path) -> None:
                     out_dir=payload_state / "v2",
                     economic_store_path=DEFAULT_MACRO_STORE_PATH,
                 )
+                pruned_v2 = prune_payload_staging(
+                    payload_state / "v2", app_payload.V2_MANIFEST_FILENAME
+                )
                 print(
                     "[pi_daily_sync] app_payload v2 finished "
                     f"run_date={v2_manifest.get('run_date', '')} "
                     f"capabilities={v2_manifest.get('capabilities', [])} "
-                    f"published={published_v2} exit=0"
+                    f"published={published_v2} pruned_local_assets={pruned_v2} exit=0"
                 )
             except Exception as v2_exc:  # noqa: BLE001 - v1 is already complete
                 print(

@@ -118,6 +118,45 @@ def test_history_movements_never_cross_an_observation_gap():
     ]
 
 
+def test_product_aliases_only_receive_dates_the_alias_was_observed(tmp_path, monkeypatch):
+    dates = ["2026-08-01", "2026-08-02"]
+    rows = {
+        dates[0]: [{
+            "dataset": "Mortgage", "provider": "Bank", "product_id": "p1",
+            "product_key": "Bank|p1|old", "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.06", "rate_family": "lending", "rate_type": "VARIABLE",
+            "account_class": "standard",
+        }],
+        dates[1]: [{
+            "dataset": "Mortgage", "provider": "Bank", "product_id": "p1",
+            "product_key": "Bank|p1|new", "category": "RESIDENTIAL_MORTGAGES",
+            "rate": "0.055", "rate_family": "lending", "rate_type": "VARIABLE",
+            "account_class": "standard",
+        }],
+    }
+    monkeypatch.setattr(app_payload_v2.app_payload_mobile, "_history_dates", lambda *_: dates)
+    monkeypatch.setattr(app_payload_v2.app_payload_mobile, "_banks", lambda _root, date: tmp_path / f"{date}.json")
+    for date, rates in rows.items():
+        (tmp_path / f"{date}.json").write_text(json.dumps({"rates": rates}), encoding="utf-8")
+    history = app_payload_v2.build_product_history(tmp_path, run_date=dates[-1])
+    assert history["products"]["Bank|p1|old"] == [0.06, None]
+    assert history["products"]["Bank|p1|new"] == [None, 0.055]
+
+
+def test_payload_staging_prune_keeps_only_manifest_referenced_assets(tmp_path):
+    current = tmp_path / "core-current.json.gz"
+    stale = tmp_path / "core-stale.json.gz"
+    current.write_bytes(b"current")
+    stale.write_bytes(b"stale")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"files": {"core": {"name": current.name}}}), encoding="utf-8"
+    )
+    assert pi_daily_sync.prune_payload_staging(tmp_path, "manifest.json") == 1
+    assert current.is_file()
+    assert not stale.exists()
+    assert (tmp_path / "manifest.json").is_file()
+
+
 def test_rebuild_timestamp_is_not_part_of_content_hashed_coverage():
     coverage = {
         "schema_version": 1,

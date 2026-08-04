@@ -148,6 +148,7 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
     dates = app_payload_mobile._history_dates(exports_dir, run_date)
     identities: Dict[str, List[Optional[float]]] = {}
     aliases_by_identity: Dict[str, set[str]] = {}
+    alias_dates: Dict[str, set[str]] = {}
     section_by_identity: Dict[str, str] = {}
     excluded = {"non_standard": 0, "unclassified": 0, "unkeyed": 0}
     daily_aggregates: Dict[str, List[Dict[str, Any]]] = {section: [] for section in VALID_SECTIONS}
@@ -160,6 +161,8 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
             excluded[key] += count
         for identity, keys in aliases.items():
             aliases_by_identity.setdefault(identity, set()).update(keys)
+            for key in keys:
+                alias_dates.setdefault(key, set()).add(date)
         section_by_identity.update(sections)
         for series in identities.values():
             series.append(None)
@@ -178,7 +181,11 @@ def build_product_history(exports_dir: Path, *, run_date: str) -> Dict[str, Any]
     product_meta: Dict[str, Dict[str, str]] = {}
     for identity in sorted(identities):
         for key in sorted(aliases_by_identity.get(identity) or (identity,)):
-            products[key] = list(identities[identity])
+            observed = alias_dates.get(key, set())
+            products[key] = [
+                value if date in observed else None
+                for date, value in zip(dates, identities[identity])
+            ]
             product_meta[key] = {"section": section_by_identity.get(identity, "")}
     moves = {key: events for key, series in products.items() if (events := _moves(series, dates))}
     payload = {
