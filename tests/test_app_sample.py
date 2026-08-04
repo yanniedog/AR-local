@@ -251,9 +251,7 @@ def test_preserves_measured_provider_failure_provenance(tmp_path: Path) -> None:
         "observed_on": "2026-08-04",
         "source": "consumer_data_right_export",
         "failure_provenance_complete": True,
-        "providers_attempted": 12,
-        "providers_succeeded": 9,
-        "counts": {"providers_failed": 2, "providers_partial": 1},
+        "counts": {"brands_observed": 9, "providers_failed": 2, "providers_partial": 1},
         "sections": {},
         "provider_failures": [{"provider": "Bank Z", "count": 2}],
     }
@@ -268,10 +266,14 @@ def test_preserves_measured_provider_failure_provenance(tmp_path: Path) -> None:
 
     coverage = json.loads((output / "core.json").read_text())["coverage"]
     assert coverage["failure_provenance_complete"] is True
-    assert coverage["providers_attempted"] == 12
+    assert coverage["providers_attempted"] == 11
     assert coverage["providers_succeeded"] == 9
     assert coverage["provider_failures"] == [{"provider": "Bank Z", "count": 2}]
-    assert coverage["counts"] == {"providers_failed": 2, "providers_partial": 1}
+    assert coverage["counts"] == {
+        "brands_observed": 9,
+        "providers_failed": 2,
+        "providers_partial": 1,
+    }
     assert coverage["sample_counts"] == {
         "providers": 1,
         "products": 3,

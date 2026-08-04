@@ -175,7 +175,7 @@ def test_rebuild_timestamp_is_not_part_of_content_hashed_coverage():
     )
     assert first == second
     assert "source_generated_at" not in first
-    assert first["observed_at"] == "2026-08-04T00:00:00Z"
+    assert first["observed_at"] == "2026-08-03T14:00:00Z"
     assert first["providers_attempted"] == 0
     assert first["providers_succeeded"] == 0
     assert first["failures"] == []
@@ -197,18 +197,32 @@ def test_coverage_exposes_canonical_and_app_compatible_failure_provenance():
                 {"bank": "Observed Bank", "phase": "rates", "status": "partial"},
                 {"bank": "Failed Bank", "phase": "products", "status": "timeout"},
             ],
+            "holder_attempts": ["Observed Bank", "Empty Bank", "Failed Bank"],
         },
         "2026-08-04",
     )
 
     assert coverage["observed_on"] == "2026-08-04"
-    assert coverage["observed_at"] == "2026-08-04T00:00:00Z"
-    assert coverage["providers_succeeded"] == 1
-    assert coverage["providers_attempted"] == 2
+    assert coverage["observed_at"] == "2026-08-03T14:00:00Z"
+    assert coverage["providers_succeeded"] == 2
+    assert coverage["providers_attempted"] == 3
     assert coverage["failures"] == coverage["provider_failures"]
     assert coverage["counts"]["providers_partial"] == 1
     assert coverage["counts"]["providers_failed"] == 1
     app_payload_contracts.validate_coverage(coverage)
+
+
+def test_parse_banks_run_records_successful_empty_holder_attempts(tmp_path):
+    run_root = tmp_path / "2026-08-04"
+    (run_root / "banks" / "_holders" / "Observed Bank").mkdir(parents=True)
+    (run_root / "banks" / "_holders" / "Empty Bank").mkdir(parents=True)
+
+    banks = cdr_clean_export.parse_banks_run(run_root)
+
+    assert banks["holder_attempts"] == ["Empty Bank", "Observed Bank"]
+    coverage = cdr_clean_export.coverage_summary(banks, "2026-08-04")
+    assert coverage["providers_attempted"] == 2
+    assert coverage["providers_succeeded"] == 2
 
 
 def test_economic_freshness_sanitizes_source_urls():

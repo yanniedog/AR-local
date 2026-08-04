@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import payload_crypto
+from cdr_clean_export import app_coverage_aliases
 from cdr_ribbon_normalize import aggregate_ribbon, effective_rate, normalized_rate_value
 
 
@@ -179,6 +180,8 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         for row in section["rates"]
     }
     source_coverage = core.get("coverage") if isinstance(core.get("coverage"), dict) else {}
+    if source_coverage:
+        source_coverage = app_coverage_aliases(source_coverage)
     coverage_sections = {
         name: {
             "rates": len(section["rates"]),
@@ -220,6 +223,7 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
             providers_succeeded=len(providers),
             failure_provenance_complete=False,
         )
+    sample_coverage = app_coverage_aliases(sample_coverage)
     sample_core: dict[str, Any] = {
         **core,
         "sections": sections,
