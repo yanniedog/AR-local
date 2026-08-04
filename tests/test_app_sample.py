@@ -77,6 +77,7 @@ def test_builds_small_self_contained_sample(tmp_path: Path) -> None:
 
     assert manifest["run_date"] == "2026-08-04"
     assert manifest["counts"]["rates"] == 6
+    assert manifest["counts"]["providers"] == 1
     assert manifest["files"]["core"]["name"] == "core.json"
     assert manifest["files"]["details"]["name"] == "details.json"
     assert manifest["files"]["core"]["url"] == "bundled://sample/core.json"
@@ -101,6 +102,8 @@ def test_normalizes_percent_rates_and_skips_invalid_fallbacks(tmp_path: Path) ->
         section["rates"] = [
             {"provider": "Bank A", "product_key": "valid", "rate": "5.0", "comparison_rate": "0"},
             {"provider": "Bank A", "product_key": "zero", "rate": "0", "comparison_rate": "0"},
+            {"provider": "Invalid Bank", "product_key": "invalid-zero", "rate": "0", "comparison_rate": "0"},
+            {"provider": "Invalid Bank", "product_key": "invalid-text", "rate": "call us", "comparison_rate": None},
         ]
     compressed = gzip.compress(json.dumps(core).encode())
     core_path.write_bytes(compressed)
@@ -112,9 +115,15 @@ def test_normalizes_percent_rates_and_skips_invalid_fallbacks(tmp_path: Path) ->
     build_app_sample(source, output)
 
     sample = json.loads((output / "core.json").read_text())
-    mortgage = sample["sections"]["Mortgage"]
-    assert [row["product_key"] for row in mortgage["rates"]] == ["valid"]
-    assert mortgage["ribbon"]["range"]["min"] == 0.05
+    for section in sample["sections"].values():
+        assert [row["product_key"] for row in section["rates"]] == ["valid"]
+        assert section["ribbon"]["counts"] == {
+            "rates": 1,
+            "products": 1,
+            "providers": 1,
+        }
+        assert section["ribbon"]["range"]["min"] == 0.05
+        assert section["ribbon"]["providers"][0]["provider"] == "Bank A"
 
 
 def test_decrypts_verified_encrypted_source_assets(tmp_path: Path, monkeypatch) -> None:

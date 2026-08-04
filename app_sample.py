@@ -162,6 +162,7 @@ def build_app_sample(payload_dir: Path, output_dir: Path) -> dict[str, Any]:
         "tag": "bundled-sample",
         "counts": {
             "products": len(selected_keys),
+            "providers": len(providers),
             "rates": sum(len(section["rates"]) for section in sections.values()),
             "fees": sum(len(item.get("fees") or []) for item in detail_values),
             "features": sum(len(item.get("features") or []) for item in detail_values),
