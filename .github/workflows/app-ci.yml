@@ -8,6 +8,7 @@ on:
     paths:
       - 'mobile/**'
       - 'app_payload*.py'
+      - 'app_sample.py'
       - 'contracts/**'
       - 'cdr_*.py'
       - 'pi_*.py'
@@ -24,6 +25,7 @@ on:
     paths:
       - 'mobile/**'
       - 'app_payload*.py'
+      - 'app_sample.py'
       - 'contracts/**'
       - 'cdr_*.py'
       - 'pi_*.py'
