@@ -119,6 +119,44 @@ def test_media_release_feed_selects_latest_policy_item_when_unordered():
     assert decision["rate"] == 4.35
 
 
+def test_load_calendar_preserves_multiple_missing_feed_decisions():
+    stale = rba_decisions.calendar_payload()
+    stale["decisions"] = [
+        decision for decision in stale["decisions"]
+        if decision["date"] < "2026-08-01"
+    ]
+    stale["schedule"] = [
+        {"date": "2026-08-11", "announce_utc": "2026-08-11T04:30:00+00:00"},
+        {"date": "2026-09-29", "announce_utc": "2026-09-29T04:30:00+00:00"},
+    ]
+    september_cut = FEED.replace("2026-08-11", "2026-09-29").replace("4.35", "4.10")
+    merged = rba_official.load_calendar(
+        stale,
+        fetch=lambda: (_ for _ in ()).throw(rba_official.RbaOfficialError("table lagging")),
+        fetch_feed=lambda: september_cut + FEED,
+        fetch_overview=lambda: "unavailable",
+        now=datetime(2026, 9, 29, 5, 0, tzinfo=timezone.utc),
+    )
+    assert [(decision["date"], decision["outcome"]) for decision in merged["decisions"][-2:]] == [
+        ("2026-08-11", "hold"),
+        ("2026-09-29", "cut"),
+    ]
+    assert merged["schedule"] == []
+
+
+def test_feed_parser_uses_earlier_parsed_decisions_as_the_rate_baseline():
+    first_hike = FEED.replace("2026-08-11", "2026-08-11").replace("4.35", "4.60")
+    later_hold = FEED.replace("2026-08-11", "2026-09-29").replace("4.35", "4.60")
+    decisions = rba_official.parse_media_release_feed_decisions(
+        later_hold + first_hike,
+        rba_decisions.calendar_payload(),
+    )
+    assert [(decision["date"], decision["outcome"], decision["delta_bps"]) for decision in decisions] == [
+        ("2026-08-11", "hike", 25),
+        ("2026-09-29", "hold", 0),
+    ]
+
+
 def test_live_delta_is_rebased_on_newer_official_history():
     stale = rba_decisions.calendar_payload()
     stale["decisions"] = [

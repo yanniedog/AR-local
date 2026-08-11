@@ -111,14 +111,18 @@ def fetch_cash_rate_overview(timeout: int = 20) -> str:
     return _fetch_url(OVERVIEW_URL, timeout)
 
 
-def parse_media_release_feed(xml: str, calendar: dict) -> Optional[dict]:
-    """Extract the newest monetary-policy decision from the official RSS item."""
-    candidates: list[tuple[str, str]] = []
+def parse_media_release_feed_decisions(xml: str, calendar: dict) -> list[dict]:
+    """Extract all monetary-policy decisions from the official RSS feed."""
+    # The domain has one Board decision per meeting date. If the feed carries a
+    # same-day correction, keep the item with the newest publication timestamp.
+    candidates: dict[str, tuple[str, str]] = {}
     for item_match in re.finditer(r"<item\b[\s\S]*?</item>", xml, flags=re.IGNORECASE):
         item = item_match.group(0)
         if not re.search(r"Monetary Policy Decision", item, re.I):
             continue
-        date_match = re.search(r"<dc:date>(\d{4}-\d{2}-\d{2})T", item, re.I)
+        date_match = re.search(
+            r"<dc:date>((\d{4}-\d{2}-\d{2})T[^<]+)</dc:date>", item, re.I
+        )
         rate_match = re.search(
             r"cash rate target[^.]*?\b(?:at|to)\s+(\d+(?:\.\d+)?)\s+per cent",
             item,
@@ -126,31 +130,40 @@ def parse_media_release_feed(xml: str, calendar: dict) -> Optional[dict]:
         )
         if not date_match or not rate_match:
             continue
-        candidates.append((date_match.group(1), rate_match.group(1)))
-    if not candidates:
-        return None
-    announcement_text, rate_text = max(candidates, key=lambda candidate: candidate[0])
-    announcement = date.fromisoformat(announcement_text)
-    prior = sorted(
-        (
-            decision
-            for decision in calendar.get("decisions", [])
-            if decision.get("date", "") < announcement.isoformat()
-        ),
-        key=lambda decision: decision["date"],
-    )
-    if not prior:
-        return None
-    rate_bps = int(Decimal(rate_text) * 100)
-    previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
-    delta_bps = rate_bps - previous_bps
-    return {
-        "date": announcement.isoformat(),
-        "effective": (announcement + timedelta(days=1)).isoformat() if delta_bps else None,
-        "rate": rate_bps / 100,
-        "delta_bps": delta_bps,
-        "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
-    }
+        timestamp = date_match.group(1)
+        announcement_text = date_match.group(2)
+        previous = candidates.get(announcement_text)
+        if previous is None or timestamp > previous[0]:
+            candidates[announcement_text] = (timestamp, rate_match.group(1))
+    decisions: list[dict] = []
+    for announcement_text, (_, rate_text) in sorted(candidates.items()):
+        announcement = date.fromisoformat(announcement_text)
+        prior = sorted(
+            (
+                decision
+                for decision in [*calendar.get("decisions", []), *decisions]
+                if decision.get("date", "") < announcement.isoformat()
+            ),
+            key=lambda decision: decision["date"],
+        )
+        if not prior:
+            continue
+        rate_bps = int(Decimal(rate_text) * 100)
+        previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
+        delta_bps = rate_bps - previous_bps
+        decisions.append({
+            "date": announcement.isoformat(),
+            "effective": (announcement + timedelta(days=1)).isoformat() if delta_bps else None,
+            "rate": rate_bps / 100,
+            "delta_bps": delta_bps,
+            "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
+        })
+    return decisions
+
+
+def parse_media_release_feed(xml: str, calendar: dict) -> Optional[dict]:
+    """Extract the newest monetary-policy decision from the official RSS feed."""
+    return (parse_media_release_feed_decisions(xml, calendar) or [None])[-1]
 
 
 def parse_cash_rate_overview(html: str, calendar: dict) -> Optional[dict]:
@@ -293,9 +306,7 @@ def load_calendar(
     """Reconcile immediate RSS, live overview, and historical table snapshots."""
     extras: list[dict] = []
     try:
-        feed_decision = parse_media_release_feed(fetch_feed(), calendar)
-        if feed_decision:
-            extras.append(feed_decision)
+        extras.extend(parse_media_release_feed_decisions(fetch_feed(), calendar))
     except RbaOfficialError:
         pass
     try:
