@@ -113,32 +113,40 @@ def fetch_cash_rate_overview(timeout: int = 20) -> str:
 
 def parse_media_release_feed(xml: str, calendar: dict) -> Optional[dict]:
     """Extract the newest monetary-policy decision from the official RSS item."""
-    item_match = re.search(r"<item\b[\s\S]*?</item>", xml, flags=re.IGNORECASE)
-    if not item_match or not re.search(r"Monetary Policy Decision", item_match.group(0), re.I):
-        return None
-    item = item_match.group(0)
-    date_match = re.search(r"<dc:date>(\d{4}-\d{2}-\d{2})T", item, re.I)
-    rate_match = re.search(
-        r"cash rate target[^.]*?\b(?:at|to)\s+(\d+(?:\.\d+)?)\s+per cent",
-        item,
-        re.I,
-    )
-    if not date_match or not rate_match:
-        return None
-    announcement = date.fromisoformat(date_match.group(1))
-    prior = [d for d in calendar.get("decisions", []) if d.get("date", "") < announcement.isoformat()]
-    if not prior:
-        return None
-    rate_bps = int(Decimal(rate_match.group(1)) * 100)
-    previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
-    delta_bps = rate_bps - previous_bps
-    return {
-        "date": announcement.isoformat(),
-        "effective": (announcement + timedelta(days=1)).isoformat() if delta_bps else None,
-        "rate": rate_bps / 100,
-        "delta_bps": delta_bps,
-        "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
-    }
+    for item_match in re.finditer(r"<item\b[\s\S]*?</item>", xml, flags=re.IGNORECASE):
+        item = item_match.group(0)
+        if not re.search(r"Monetary Policy Decision", item, re.I):
+            continue
+        date_match = re.search(r"<dc:date>(\d{4}-\d{2}-\d{2})T", item, re.I)
+        rate_match = re.search(
+            r"cash rate target[^.]*?\b(?:at|to)\s+(\d+(?:\.\d+)?)\s+per cent",
+            item,
+            re.I,
+        )
+        if not date_match or not rate_match:
+            continue
+        announcement = date.fromisoformat(date_match.group(1))
+        prior = sorted(
+            (
+                decision
+                for decision in calendar.get("decisions", [])
+                if decision.get("date", "") < announcement.isoformat()
+            ),
+            key=lambda decision: decision["date"],
+        )
+        if not prior:
+            continue
+        rate_bps = int(Decimal(rate_match.group(1)) * 100)
+        previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
+        delta_bps = rate_bps - previous_bps
+        return {
+            "date": announcement.isoformat(),
+            "effective": (announcement + timedelta(days=1)).isoformat() if delta_bps else None,
+            "rate": rate_bps / 100,
+            "delta_bps": delta_bps,
+            "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
+        }
+    return None
 
 
 def parse_cash_rate_overview(html: str, calendar: dict) -> Optional[dict]:
@@ -155,7 +163,14 @@ def parse_cash_rate_overview(html: str, calendar: dict) -> Optional[dict]:
     except ValueError:
         return None
     announcement = effective - timedelta(days=1)
-    prior = [d for d in calendar.get("decisions", []) if d.get("date", "") < announcement.isoformat()]
+    prior = sorted(
+        (
+            decision
+            for decision in calendar.get("decisions", [])
+            if decision.get("date", "") < announcement.isoformat()
+        ),
+        key=lambda decision: decision["date"],
+    )
     if not prior:
         return None
     rate_bps = int(Decimal(rate_match.group(1)) * 100)

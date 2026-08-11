@@ -100,6 +100,17 @@ def test_immediate_media_release_feed_resolves_before_history_table():
     assert merged["decisions"][-1]["outcome"] == "hold"
 
 
+def test_media_release_feed_scans_past_newer_unrelated_items():
+    unrelated = """
+    <item><title>Payments bulletin</title>
+      <dc:date>2026-08-11T15:00:00+10:00</dc:date></item>
+    """
+    decision = rba_official.parse_media_release_feed(unrelated + FEED, rba_decisions.calendar_payload())
+    assert decision is not None
+    assert decision["date"] == "2026-08-11"
+    assert decision["outcome"] == "hold"
+
+
 def test_checked_in_calendar_survives_a_temporary_official_outage():
     unavailable = lambda: (_ for _ in ()).throw(rba_official.RbaOfficialError("offline"))
     merged = rba_official.load_calendar(
