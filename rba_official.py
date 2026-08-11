@@ -113,12 +113,16 @@ def fetch_cash_rate_overview(timeout: int = 20) -> str:
 
 def parse_media_release_feed_decisions(xml: str, calendar: dict) -> list[dict]:
     """Extract all monetary-policy decisions from the official RSS feed."""
-    candidates: dict[str, str] = {}
+    # The domain has one Board decision per meeting date. If the feed carries a
+    # same-day correction, keep the item with the newest publication timestamp.
+    candidates: dict[str, tuple[str, str]] = {}
     for item_match in re.finditer(r"<item\b[\s\S]*?</item>", xml, flags=re.IGNORECASE):
         item = item_match.group(0)
         if not re.search(r"Monetary Policy Decision", item, re.I):
             continue
-        date_match = re.search(r"<dc:date>(\d{4}-\d{2}-\d{2})T", item, re.I)
+        date_match = re.search(
+            r"<dc:date>((\d{4}-\d{2}-\d{2})T[^<]+)</dc:date>", item, re.I
+        )
         rate_match = re.search(
             r"cash rate target[^.]*?\b(?:at|to)\s+(\d+(?:\.\d+)?)\s+per cent",
             item,
@@ -126,14 +130,18 @@ def parse_media_release_feed_decisions(xml: str, calendar: dict) -> list[dict]:
         )
         if not date_match or not rate_match:
             continue
-        candidates[date_match.group(1)] = rate_match.group(1)
+        timestamp = date_match.group(1)
+        announcement_text = date_match.group(2)
+        previous = candidates.get(announcement_text)
+        if previous is None or timestamp > previous[0]:
+            candidates[announcement_text] = (timestamp, rate_match.group(1))
     decisions: list[dict] = []
-    for announcement_text, rate_text in sorted(candidates.items()):
+    for announcement_text, (_, rate_text) in sorted(candidates.items()):
         announcement = date.fromisoformat(announcement_text)
         prior = sorted(
             (
                 decision
-                for decision in calendar.get("decisions", [])
+                for decision in [*calendar.get("decisions", []), *decisions]
                 if decision.get("date", "") < announcement.isoformat()
             ),
             key=lambda decision: decision["date"],
