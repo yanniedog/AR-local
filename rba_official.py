@@ -265,7 +265,8 @@ def load_calendar(
     try:
         records = parse_cash_rate_table(fetch())
     except RbaOfficialError:
-        if not extras:
-            raise
+        # Network or upstream-table failure must not suppress otherwise-fresh
+        # bank payloads. The merge invariant below still fails closed at the
+        # instant a scheduled outcome is missing from every official source.
         records = []
     return merge_calendar(calendar, records, now=now, extra_decisions=extras)

@@ -60,16 +60,16 @@ def test_next_meeting_and_countdown_at_a_known_instant():
     now = datetime(2026, 6, 21, 0, 0, tzinfo=timezone.utc)
     meeting = rba.next_meeting(now)
     assert meeting is not None
-    assert meeting.date == date(2026, 8, 11)
+    assert meeting.date == date(2026, 9, 29)
     assert rba.countdown(now) == meeting.announce_utc - now
     assert rba.countdown(now).total_seconds() > 0
 
 
 def test_next_meeting_boundary_is_exclusive_at_the_announcement():
-    aug = rba.announce_instant(date(2026, 8, 11))
-    assert rba.next_meeting(aug.replace(minute=29)).date == date(2026, 8, 11)  # just before
-    assert rba.next_meeting(aug).date == date(2026, 9, 29)                     # exactly at -> rolled over
-    assert rba.next_meeting(aug.replace(minute=31)).date == date(2026, 9, 29)  # just after
+    sep = rba.announce_instant(date(2026, 9, 29))
+    assert rba.next_meeting(sep.replace(minute=29)).date == date(2026, 9, 29)  # just before
+    assert rba.next_meeting(sep).date == date(2026, 11, 3)                     # exactly at -> rolled over
+    assert rba.next_meeting(sep.replace(minute=31)).date == date(2026, 11, 3)  # just after
 
 
 def test_next_meeting_is_none_after_the_last_scheduled_meeting():
@@ -145,9 +145,9 @@ def test_api_payload_shape_and_values():
     assert p["timezone"] == "Australia/Sydney"
     assert p["current_rate"] == 4.35
     nm = p["next_meeting"]
-    assert nm["date"] == "2026-08-11"
-    assert nm["announce_utc"] == "2026-08-11T04:30:00+00:00"
-    assert nm["days_until"] == 51
+    assert nm["date"] == "2026-09-29"
+    assert nm["announce_utc"] == "2026-09-29T04:30:00+00:00"
+    assert nm["days_until"] == 100
     assert nm["seconds_until"] > 0
     assert any(d["outcome"] == "hold" for d in p["decisions"])
     assert p["schedule"][0]["date"] == "2026-09-29"

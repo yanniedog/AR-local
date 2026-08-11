@@ -425,6 +425,22 @@ def test_optional_assets_are_rolling_only(tmp_path):
     assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
 
+    empty_schedule = dict(kwargs)
+    empty_schedule["rba_calendar"] = {
+        "timezone": "Australia/Sydney",
+        "decisions": [{"date": "2026-12-08", "outcome": "hold"}],
+        "schedule": [],
+    }
+    final_calendar = app_payload._package(
+        {"schema_version": 1},
+        {"schema_version": 1},
+        "2026-12-08",
+        tmp_path / "final-calendar",
+        tag=app_payload.DEFAULT_TAG,
+        **empty_schedule,
+    )
+    assert "rba_calendar" in final_calendar["files"]
+
 
 def test_dated_release_title():
     assert app_payload.dated_release_title("2026-06-08") == "Australian Rates payload — 2026-06-08"

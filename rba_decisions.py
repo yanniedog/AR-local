@@ -256,7 +256,10 @@ def next_meeting(now: Optional[datetime] = None) -> Optional[Meeting]:
     is no longer "upcoming" (its outcome is being announced), so the next meeting is
     returned."""
     now = now or datetime.now(timezone.utc)
+    recorded_dates = {dec.date for dec in decisions()}
     for meeting in schedule():
+        if meeting.date in recorded_dates:
+            continue
         if meeting.announce_utc > now:
             return meeting
     return None

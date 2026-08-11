@@ -432,7 +432,7 @@ def _package(
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
         )
-    if is_rolling_tag(tag) and rba_calendar and rba_calendar.get("schedule"):
+    if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(
             out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )
