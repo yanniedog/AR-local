@@ -5,9 +5,11 @@ import gzip
 import hashlib
 import json
 import math
+import os
 import shutil
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -15,6 +17,7 @@ import app_payload_mobile
 import cdr_brand_logos
 import payload_crypto
 import rba_decisions
+import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
 
@@ -293,13 +296,42 @@ def _compute_payload(
             logo_cache.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(legacy_logo_cache, logo_cache)
     register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
+    rba_calendar = rba_decisions.calendar_payload()
+    fetch_official = os.environ.get(
+        "AR_LOCAL_RBA_OFFICIAL_FETCH",
+        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
+    ).strip().lower() in ("1", "true", "yes", "on")
+    if fetch_official:
+        rba_calendar = rba_official.load_calendar(rba_calendar)
+    rba_decision_models = [
+        rba_decisions.Decision(
+            date.fromisoformat(decision["date"]),
+            date.fromisoformat(decision["effective"]) if decision.get("effective") else None,
+            int(Decimal(str(decision["rate"])) * 100),
+            int(decision["delta_bps"]),
+        )
+        for decision in rba_calendar["decisions"]
+    ]
+
+    rba_series = load_rba_series(dashboard_dir)
+    series_by_date = {str(item.get("date") or ""): item for item in rba_series}
+    rba_holds = set(load_rba_holds(dashboard_dir))
+    for decision in rba_calendar["decisions"]:
+        if decision["outcome"] == "hold":
+            rba_holds.add(decision["date"])
+        elif _decision_is_effective(decision, run_date):
+            series_by_date[decision["effective"]] = {
+                "date": decision["effective"],
+                "rate": decision["rate"],
+            }
+
     core = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
         "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
-        "rba": load_rba_series(dashboard_dir),
-        "rba_holds": load_rba_holds(dashboard_dir),
+        "rba": sorted(series_by_date.values(), key=lambda item: item["date"]),
+        "rba_holds": sorted(rba_holds),
         "coverage": coverage,
     }
     details = {
@@ -325,6 +357,7 @@ def _compute_payload(
             section_filter=section_filter,
             normalized_rate_value=_normalized_rate_value,
             schema_version=SCHEMA_VERSION,
+            rba_calendar=rba_decision_models,
         )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
@@ -335,8 +368,15 @@ def _compute_payload(
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
-        "rba_calendar": rba_decisions.calendar_payload(),
+        "rba_calendar": rba_calendar,
     }
+
+
+def _decision_is_effective(decision: Dict[str, Any], run_date: str) -> bool:
+    """Whether a change belongs in the prevailing core series for this run."""
+    effective = str(decision.get("effective") or "")[:10]
+    as_of = str(run_date or "")[:10]
+    return bool(effective and as_of and effective <= as_of)
 
 
 def _package_payload(
@@ -399,7 +439,7 @@ def _package(
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
         )
-    if is_rolling_tag(tag) and rba_calendar and rba_calendar.get("schedule"):
+    if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(
             out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )

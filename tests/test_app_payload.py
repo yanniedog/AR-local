@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
+import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
@@ -76,6 +77,7 @@ def test_rba_holds_parsed_from_dashboard_js():
     assert all(isinstance(d, str) and len(d) == 10 for d in holds)
     # The known 16 Jun 2026 hold (RBA met, held at 4.35%) must be present.
     assert "2026-06-16" in holds
+    assert "2026-08-11" in holds
     # Holds must not collide with change dates (a hold left the rate unchanged).
     change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT / "dashboard")}
     assert not (set(holds) & change_dates), "hold dates must not also be change dates"
@@ -87,6 +89,12 @@ def test_rba_holds_empty_when_no_holds_block(tmp_path):
         "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
     )
     assert app_payload.load_rba_holds(tmp_path) == []
+
+
+def test_future_effective_rba_change_is_not_yet_prevailing():
+    decision = {"effective": "2026-08-12", "rate": 4.60, "outcome": "hike"}
+    assert not app_payload_build._decision_is_effective(decision, "2026-08-11")
+    assert app_payload_build._decision_is_effective(decision, "2026-08-12")
 
 
 def test_detail_links_extracts_authoritative_uris():
@@ -424,6 +432,22 @@ def test_optional_assets_are_rolling_only(tmp_path):
 
     assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
+
+    empty_schedule = dict(kwargs)
+    empty_schedule["rba_calendar"] = {
+        "timezone": "Australia/Sydney",
+        "decisions": [{"date": "2026-12-08", "outcome": "hold"}],
+        "schedule": [],
+    }
+    final_calendar = app_payload._package(
+        {"schema_version": 1},
+        {"schema_version": 1},
+        "2026-12-08",
+        tmp_path / "final-calendar",
+        tag=app_payload.DEFAULT_TAG,
+        **empty_schedule,
+    )
+    assert "rba_calendar" in final_calendar["files"]
 
 
 def test_dated_release_title():

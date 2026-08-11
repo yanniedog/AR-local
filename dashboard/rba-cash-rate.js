@@ -45,6 +45,7 @@
   // (Meetings that changed the rate belong in ENTRIES, never here.)
   const HOLDS = [
     '2026-06-16',
+    '2026-08-11',
   ];
 
   function entries() {
