@@ -111,6 +111,14 @@ def test_media_release_feed_scans_past_newer_unrelated_items():
     assert decision["outcome"] == "hold"
 
 
+def test_media_release_feed_selects_latest_policy_item_when_unordered():
+    older = FEED.replace("2026-08-11", "2026-06-16").replace("4.35", "4.10")
+    decision = rba_official.parse_media_release_feed(older + FEED, rba_decisions.calendar_payload())
+    assert decision is not None
+    assert decision["date"] == "2026-08-11"
+    assert decision["rate"] == 4.35
+
+
 def test_checked_in_calendar_survives_a_temporary_official_outage():
     unavailable = lambda: (_ for _ in ()).throw(rba_official.RbaOfficialError("offline"))
     merged = rba_official.load_calendar(
