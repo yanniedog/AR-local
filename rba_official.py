@@ -220,12 +220,31 @@ def merge_calendar(
     decisions_by_date = {item["date"]: dict(item) for item in calendar.get("decisions", [])}
     for item in decision_entries(records):
         decisions_by_date[item["date"]] = item
-    for item in extra_decisions:
-        decisions_by_date[item["date"]] = dict(item)
+    for item in sorted(extra_decisions, key=lambda decision: decision["date"]):
+        previous = sorted(
+            (
+                decision
+                for decision in decisions_by_date.values()
+                if decision["date"] < item["date"]
+            ),
+            key=lambda decision: decision["date"],
+        )
+        normalized = dict(item)
+        if previous:
+            previous_bps = int(Decimal(str(previous[-1]["rate"])) * 100)
+            current_bps = int(Decimal(str(normalized["rate"])) * 100)
+            delta_bps = current_bps - previous_bps
+            normalized["delta_bps"] = delta_bps
+            normalized["outcome"] = (
+                "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold"
+            )
+            if delta_bps == 0:
+                normalized["effective"] = None
+        decisions_by_date[normalized["date"]] = normalized
     decisions = sorted(decisions_by_date.values(), key=lambda item: item["date"])
     for previous, current in zip(decisions, decisions[1:]):
-        expected_bps = round(float(previous["rate"]) * 100) + int(current["delta_bps"])
-        actual_bps = round(float(current["rate"]) * 100)
+        expected_bps = int(Decimal(str(previous["rate"])) * 100) + int(current["delta_bps"])
+        actual_bps = int(Decimal(str(current["rate"])) * 100)
         if actual_bps != expected_bps:
             raise RbaOfficialError(
                 f"cash-rate continuity failed at {current['date']}: "

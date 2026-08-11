@@ -319,7 +319,7 @@ def _compute_payload(
     for decision in rba_calendar["decisions"]:
         if decision["outcome"] == "hold":
             rba_holds.add(decision["date"])
-        elif decision.get("effective"):
+        elif _decision_is_effective(decision, run_date):
             series_by_date[decision["effective"]] = {
                 "date": decision["effective"],
                 "rate": decision["rate"],
@@ -370,6 +370,13 @@ def _compute_payload(
         "bank_history": bank_history,
         "rba_calendar": rba_calendar,
     }
+
+
+def _decision_is_effective(decision: Dict[str, Any], run_date: str) -> bool:
+    """Whether a change belongs in the prevailing core series for this run."""
+    effective = str(decision.get("effective") or "")[:10]
+    as_of = str(run_date or "")[:10]
+    return bool(effective and as_of and effective <= as_of)
 
 
 def _package_payload(

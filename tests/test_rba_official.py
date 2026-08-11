@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -117,6 +117,30 @@ def test_media_release_feed_selects_latest_policy_item_when_unordered():
     assert decision is not None
     assert decision["date"] == "2026-08-11"
     assert decision["rate"] == 4.35
+
+
+def test_live_delta_is_rebased_on_newer_official_history():
+    stale = rba_decisions.calendar_payload()
+    stale["decisions"] = [
+        decision for decision in stale["decisions"]
+        if decision["date"] < "2026-06-01"
+    ]
+    stale["schedule"] = []
+    records = [{
+        "effective": date(2026, 6, 17),
+        "change_bps": -25,
+        "rate_bps": 410,
+    }]
+    latest = {
+        "date": "2026-08-11",
+        "effective": "2026-08-12",
+        "rate": 3.85,
+        "delta_bps": -50,
+        "outcome": "cut",
+    }
+    merged = rba_official.merge_calendar(stale, records, extra_decisions=[latest])
+    assert merged["decisions"][-1]["delta_bps"] == -25
+    assert merged["decisions"][-1]["outcome"] == "cut"
 
 
 def test_checked_in_calendar_survives_a_temporary_official_outage():
