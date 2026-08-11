@@ -143,6 +143,35 @@ def test_live_delta_is_rebased_on_newer_official_history():
     assert merged["decisions"][-1]["outcome"] == "cut"
 
 
+def test_rebased_change_restores_a_missing_effective_date():
+    stale = rba_decisions.calendar_payload()
+    stale["decisions"] = [
+        decision for decision in stale["decisions"]
+        if decision["date"] < "2026-06-01"
+    ]
+    stale["schedule"] = []
+    records = [{
+        "effective": date(2026, 6, 17),
+        "change_bps": -25,
+        "rate_bps": 410,
+    }]
+    parsed_as_hold = {
+        "date": "2026-08-11",
+        "effective": None,
+        "rate": 4.35,
+        "delta_bps": 0,
+        "outcome": "hold",
+    }
+    merged = rba_official.merge_calendar(stale, records, extra_decisions=[parsed_as_hold])
+    assert merged["decisions"][-1] == {
+        "date": "2026-08-11",
+        "effective": "2026-08-12",
+        "rate": 4.35,
+        "delta_bps": 25,
+        "outcome": "hike",
+    }
+
+
 def test_checked_in_calendar_survives_a_temporary_official_outage():
     unavailable = lambda: (_ for _ in ()).throw(rba_official.RbaOfficialError("offline"))
     merged = rba_official.load_calendar(

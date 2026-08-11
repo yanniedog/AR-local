@@ -240,6 +240,10 @@ def merge_calendar(
             )
             if delta_bps == 0:
                 normalized["effective"] = None
+            elif not normalized.get("effective"):
+                normalized["effective"] = (
+                    date.fromisoformat(normalized["date"]) + timedelta(days=1)
+                ).isoformat()
         decisions_by_date[normalized["date"]] = normalized
     decisions = sorted(decisions_by_date.values(), key=lambda item: item["date"])
     for previous, current in zip(decisions, decisions[1:]):
