@@ -5,11 +5,14 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
+import re
 from typing import Callable, Iterable, Optional
 from urllib.request import Request, urlopen
 
 SOURCE_URL = "https://www.rba.gov.au/statistics/cash-rate/"
-PUBLICATION_GRACE = timedelta(hours=6)
+MEDIA_RELEASE_FEED_URL = "https://www.rba.gov.au/rss/rss-cb-media-releases.xml"
+OVERVIEW_URL = "https://www.rba.gov.au/cash-rate-target-overview.html"
+PUBLICATION_GRACE = timedelta(0)
 
 
 class RbaOfficialError(RuntimeError):
@@ -54,6 +57,7 @@ class _CashRateTableParser(HTMLParser):
 
 
 def parse_cash_rate_table(html: str) -> list[dict]:
+    """Parse exact-basis-point decision rows from the official RBA HTML table."""
     parser = _CashRateTableParser()
     parser.feed(html)
     records: list[dict] = []
@@ -80,19 +84,94 @@ def parse_cash_rate_table(html: str) -> list[dict]:
     return records
 
 
-def fetch_cash_rate_table(timeout: int = 20) -> str:
+def _fetch_url(url: str, timeout: int = 20) -> str:
     request = Request(
-        SOURCE_URL,
+        url,
         headers={"User-Agent": "AustralianRates/1.0 (+https://github.com/yanniedog/AR-local)"},
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed HTTPS authority
             return response.read().decode("utf-8")
     except Exception as exc:  # noqa: BLE001 - normalized at the source boundary
-        raise RbaOfficialError(f"official RBA table fetch failed: {exc}") from exc
+        raise RbaOfficialError(f"official RBA fetch failed for {url}: {exc}") from exc
+
+
+def fetch_cash_rate_table(timeout: int = 20) -> str:
+    """Fetch the official historical cash-rate table."""
+    return _fetch_url(SOURCE_URL, timeout)
+
+
+def fetch_media_release_feed(timeout: int = 20) -> str:
+    """Fetch the RBA media-release RSS feed published at the decision instant."""
+    return _fetch_url(MEDIA_RELEASE_FEED_URL, timeout)
+
+
+def fetch_cash_rate_overview(timeout: int = 20) -> str:
+    """Fetch the live official cash-rate overview fallback."""
+    return _fetch_url(OVERVIEW_URL, timeout)
+
+
+def parse_media_release_feed(xml: str, calendar: dict) -> Optional[dict]:
+    """Extract the newest monetary-policy decision from the official RSS item."""
+    item_match = re.search(r"<item\b[\s\S]*?</item>", xml, flags=re.IGNORECASE)
+    if not item_match or not re.search(r"Monetary Policy Decision", item_match.group(0), re.I):
+        return None
+    item = item_match.group(0)
+    date_match = re.search(r"<dc:date>(\d{4}-\d{2}-\d{2})T", item, re.I)
+    rate_match = re.search(
+        r"cash rate target[^.]*?\b(?:at|to)\s+(\d+(?:\.\d+)?)\s+per cent",
+        item,
+        re.I,
+    )
+    if not date_match or not rate_match:
+        return None
+    announcement = date.fromisoformat(date_match.group(1))
+    prior = [d for d in calendar.get("decisions", []) if d.get("date", "") < announcement.isoformat()]
+    if not prior:
+        return None
+    rate_bps = int(Decimal(rate_match.group(1)) * 100)
+    previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
+    delta_bps = rate_bps - previous_bps
+    return {
+        "date": announcement.isoformat(),
+        "effective": (announcement + timedelta(days=1)).isoformat() if delta_bps else None,
+        "rate": rate_bps / 100,
+        "delta_bps": delta_bps,
+        "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
+    }
+
+
+def parse_cash_rate_overview(html: str, calendar: dict) -> Optional[dict]:
+    """Extract the live target/effective date when the RSS item is unavailable."""
+    text = " ".join(re.sub(r"<[^>]+>", " ", html).replace("&nbsp;", " ").split())
+    rate_match = re.search(r"Cash rate target\s+(\d+(?:\.\d+)?)\s*%", text, re.I)
+    effective_match = re.search(
+        r"Effective date\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", text, re.I
+    )
+    if not rate_match or not effective_match:
+        return None
+    try:
+        effective = datetime.strptime(" ".join(effective_match.groups()), "%d %B %Y").date()
+    except ValueError:
+        return None
+    announcement = effective - timedelta(days=1)
+    prior = [d for d in calendar.get("decisions", []) if d.get("date", "") < announcement.isoformat()]
+    if not prior:
+        return None
+    rate_bps = int(Decimal(rate_match.group(1)) * 100)
+    previous_bps = int(Decimal(str(prior[-1]["rate"])) * 100)
+    delta_bps = rate_bps - previous_bps
+    return {
+        "date": announcement.isoformat(),
+        "effective": effective.isoformat() if delta_bps else None,
+        "rate": rate_bps / 100,
+        "delta_bps": delta_bps,
+        "outcome": "hike" if delta_bps > 0 else "cut" if delta_bps < 0 else "hold",
+    }
 
 
 def decision_entries(records: Iterable[dict]) -> list[dict]:
+    """Map effective-dated official rows to announcement-dated app decisions."""
     entries: list[dict] = []
     for record in records:
         effective = record["effective"]
@@ -116,10 +195,14 @@ def merge_calendar(
     records: Iterable[dict],
     *,
     now: Optional[datetime] = None,
+    extra_decisions: Iterable[dict] = (),
 ) -> dict:
+    """Merge verified official rows and reject inconsistent or overdue gaps."""
     decisions_by_date = {item["date"]: dict(item) for item in calendar.get("decisions", [])}
     for item in decision_entries(records):
         decisions_by_date[item["date"]] = item
+    for item in extra_decisions:
+        decisions_by_date[item["date"]] = dict(item)
     decisions = sorted(decisions_by_date.values(), key=lambda item: item["date"])
     for previous, current in zip(decisions, decisions[1:]):
         expected_bps = round(float(previous["rate"]) * 100) + int(current["delta_bps"])
@@ -142,6 +225,8 @@ def merge_calendar(
             announced = datetime.fromisoformat(str(meeting["announce_utc"]).replace("Z", "+00:00"))
         except (KeyError, ValueError):
             raise RbaOfficialError(f"invalid scheduled meeting: {meeting!r}") from None
+        if announced.tzinfo is None:
+            announced = announced.replace(tzinfo=timezone.utc)
         if announced <= cutoff:
             unresolved.append(str(meeting.get("date") or "unknown"))
     if unresolved:
@@ -159,6 +244,28 @@ def load_calendar(
     calendar: dict,
     *,
     fetch: Callable[[], str] = fetch_cash_rate_table,
+    fetch_feed: Callable[[], str] = fetch_media_release_feed,
+    fetch_overview: Callable[[], str] = fetch_cash_rate_overview,
     now: Optional[datetime] = None,
 ) -> dict:
-    return merge_calendar(calendar, parse_cash_rate_table(fetch()), now=now)
+    """Reconcile immediate RSS, live overview, and historical table snapshots."""
+    extras: list[dict] = []
+    try:
+        feed_decision = parse_media_release_feed(fetch_feed(), calendar)
+        if feed_decision:
+            extras.append(feed_decision)
+    except RbaOfficialError:
+        pass
+    try:
+        overview_decision = parse_cash_rate_overview(fetch_overview(), calendar)
+        if overview_decision:
+            extras.append(overview_decision)
+    except RbaOfficialError:
+        pass
+    try:
+        records = parse_cash_rate_table(fetch())
+    except RbaOfficialError:
+        if not extras:
+            raise
+        records = []
+    return merge_calendar(calendar, records, now=now, extra_decisions=extras)

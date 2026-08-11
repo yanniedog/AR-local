@@ -273,6 +273,8 @@ def calendar_payload() -> dict:
     decision calendar + the forward schedule, with NO wall-clock fields. The client
     computes the live countdown from ``schedule``; stable bytes keep same-day rebuilds
     content-addressable (the published asset is content-hashed)."""
+    decs = decisions()
+    recorded_dates = {dec.date for dec in decs}
     return {
         "timezone": SYDNEY_TZ,
         "decisions": [
@@ -283,12 +285,12 @@ def calendar_payload() -> dict:
                 "delta_bps": dec.delta_bps,
                 "outcome": dec.outcome,
             }
-            for dec in decisions()
+            for dec in decs
         ],
         "schedule": [
             {"date": m.date.isoformat(), "announce_utc": m.announce_utc.isoformat()}
             for m in schedule()
-            if m.date not in {dec.date for dec in decisions()}
+            if m.date not in recorded_dates
         ],
     }
 

@@ -9,6 +9,7 @@ import os
 import shutil
 from copy import deepcopy
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -306,7 +307,7 @@ def _compute_payload(
         rba_decisions.Decision(
             date.fromisoformat(decision["date"]),
             date.fromisoformat(decision["effective"]) if decision.get("effective") else None,
-            round(float(decision["rate"]) * 100),
+            int(Decimal(str(decision["rate"])) * 100),
             int(decision["delta_bps"]),
         )
         for decision in rba_calendar["decisions"]

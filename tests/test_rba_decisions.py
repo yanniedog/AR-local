@@ -191,4 +191,7 @@ def test_calendar_payload_is_stable_and_has_no_wallclock():
     assert set(a) == {"timezone", "decisions", "schedule"}  # no generated_at / countdown
     assert a["schedule"][0]["date"] == "2026-09-29"
     assert any(d["outcome"] == "hold" for d in a["decisions"])
+    decision_dates = {d["date"] for d in a["decisions"]}
+    schedule_dates = {m["date"] for m in a["schedule"]}
+    assert decision_dates.isdisjoint(schedule_dates)
     json.dumps(a)  # must be JSON-serialisable
