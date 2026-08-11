@@ -150,7 +150,7 @@ def test_api_payload_shape_and_values():
     assert nm["days_until"] == 51
     assert nm["seconds_until"] > 0
     assert any(d["outcome"] == "hold" for d in p["decisions"])
-    assert p["schedule"][0]["date"] == "2026-08-11"
+    assert p["schedule"][0]["date"] == "2026-09-29"
     json.dumps(p)  # must be JSON-serialisable
     # off-contract inputs must not raise (naive datetime assumed UTC; bare date -> UTC midnight)
     assert rba.api_payload(datetime(2026, 6, 21, 0, 0))["current_rate"] == 4.35
@@ -189,6 +189,6 @@ def test_calendar_payload_is_stable_and_has_no_wallclock():
     b = rba.calendar_payload()
     assert a == b  # deterministic — keeps the daily content-hashed asset stable
     assert set(a) == {"timezone", "decisions", "schedule"}  # no generated_at / countdown
-    assert a["schedule"][0]["date"] == "2026-08-11"
+    assert a["schedule"][0]["date"] == "2026-09-29"
     assert any(d["outcome"] == "hold" for d in a["decisions"])
     json.dumps(a)  # must be JSON-serialisable

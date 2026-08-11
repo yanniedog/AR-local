@@ -169,7 +169,16 @@ def _provider_events(date, section, prev_best, providers):
     return events
 
 
-def build_history_assets(exports_dir, *, run_date, load_json, section_filter, normalized_rate_value, schema_version=1):
+def build_history_assets(
+    exports_dir,
+    *,
+    run_date,
+    load_json,
+    section_filter,
+    normalized_rate_value,
+    schema_version=1,
+    rba_calendar=None,
+):
     """Single pass over the daily banks.json snapshots producing BOTH mobile history assets:
 
     1. ``history_banks`` — per-section daily aggregate ribbon points (existing asset).
@@ -250,7 +259,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
     # are bounded to the ledger window: a decision predating the first retained run
     # can't have its true first response observed, so it is excluded (Codex). Pure
     # logic + honesty/confidence model live in bank_behaviour.
-    rba_calendar = rba_decisions.decisions()
+    rba_calendar = rba_calendar if rba_calendar is not None else rba_decisions.decisions()
     ledger_start = _date.fromisoformat(dates[0]) if dates else None
     behaviour = {
         section: bank_behaviour.pass_through_summary(
