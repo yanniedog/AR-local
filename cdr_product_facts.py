@@ -143,9 +143,9 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
     lvr = canonical in {"constraint.value", "tier.minimum", "tier.maximum"} and (
         parent.get("unitOfMeasure") == "PERCENT" or "LVR" in str(parent.get("constraintType") or "")
     )
-    if rate_leaf or lvr:
-        fraction = _fraction(value)
-        return "rate", fraction, "fraction", "canonical" if not isinstance(fraction, float) or abs(fraction) <= 1 else "preserved"
+    if (rate_leaf or lvr) and (number := _number(value)) is not None:
+        fraction = float(number)
+        return "rate", fraction, "fraction", "canonical" if abs(fraction) <= 1 else "preserved"
     constraint_type = str(_ancestor_value(ancestors, "constraintType") or "").upper()
     eligibility_type = str(_ancestor_value(ancestors, "eligibilityType") or "").upper()
     tier_unit = str(_ancestor_value(ancestors, "unitOfMeasure") or "").upper()
@@ -153,16 +153,16 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         return "duration", value.upper(), "duration", "canonical"
     if canonical == "eligibility.value" and eligibility_type in {"MIN_AGE", "MAX_AGE"} and (number := _number(value)) is not None:
         return "number", float(number), "year", "canonical"
-    if canonical == "constraint.value" and "LVR" in constraint_type:
-        return "rate", _fraction(value), "fraction", "canonical"
+    if canonical == "constraint.value" and "LVR" in constraint_type and (number := _number(value)) is not None:
+        return "rate", float(number), "fraction", "canonical"
     money = leaf in {"amount", "feeCap", "feeMinimum", "feeMaximum", "discountMinimum", "discountMaximum"}
     money = money or (canonical == "constraint.value" and constraint_type in {"MIN_BALANCE", "MAX_BALANCE", "OPENING_BALANCE", "MIN_LIMIT", "MAX_LIMIT"})
     money = money or (canonical.startswith("tier.") and tier_unit == "DOLLAR")
     money = money or (leaf in {"minimumValue", "maximumValue"} and parent.get("unitOfMeasure") == "DOLLAR")
     if money and (number := _number(value)) is not None:
         return "money", float(number), str(_ancestor_value(ancestors, "currency") or "AUD").upper(), "canonical"
-    if canonical in {"tier.minimum", "tier.maximum"} and tier_unit == "PERCENT":
-        return "rate", _fraction(value), "fraction", "canonical"
+    if canonical in {"tier.minimum", "tier.maximum"} and tier_unit == "PERCENT" and (number := _number(value)) is not None:
+        return "rate", float(number), "fraction", "canonical"
     if (number := _number(value)) is not None and leaf not in _TYPE_KEYS:
         return "number", float(number), "count", "canonical"
     if leaf.endswith("Type") or leaf.endswith("UType") or leaf in {"currency", "unitOfMeasure", "rateApplicationMethod", "interestPaymentDue", "repaymentType", "loanPurpose"}:
@@ -313,17 +313,21 @@ def _range_facts(record: Mapping[str, Any], product_key: str) -> Iterator[Dict[s
                     kind, _ = _path_context(base_path)
                     money = low_key != "minimumValue" or value.get("unitOfMeasure") == "DOLLAR"
                     unit = str(_ancestor_value([*ancestors, (path, value)], "currency") or "AUD").upper() if money else "fraction" if value.get("unitOfMeasure") == "PERCENT" else "count"
-                    convert = _fraction if unit == "fraction" else lambda item: float(_number(item)) if _number(item) is not None else None
+                    def convert(item: Any) -> Optional[float]:
+                        number = _number(item)
+                        return float(number) if number is not None else None
                     canonical = "range.amount" if money else "range.value"
                     group_id = _group_id(product_key, base_path, value)
-                    yield {
-                        "fact_id": _fact_id(product_key, base_path, canonical, None, "range"), "kind": kind,
-                        "canonical_key": canonical, "value_type": "range", "value": None,
-                        "min_value": convert(low), "max_value": convert(high), "unit": unit,
-                        "mapping": "canonical", "source_path": base_path, "source_pattern": source_pattern(base_path),
-                        "source_value_json": json.dumps(value, ensure_ascii=False, sort_keys=True),
-                        "qualifiers": {"groupId": group_id},
-                    }
+                    min_value, max_value = convert(low), convert(high)
+                    if min_value is not None or max_value is not None:
+                        yield {
+                            "fact_id": _fact_id(product_key, base_path, canonical, None, "range"), "kind": kind,
+                            "canonical_key": canonical, "value_type": "range", "value": None,
+                            "min_value": min_value, "max_value": max_value, "unit": unit,
+                            "mapping": "canonical", "source_path": base_path, "source_pattern": source_pattern(base_path),
+                            "source_value_json": json.dumps(value, ensure_ascii=False, sort_keys=True),
+                            "qualifiers": {"groupId": group_id},
+                        }
             for key, child in value.items():
                 yield from walk(child, f"{path}.{key}" if path else key, [*ancestors, (path, value)])
         elif isinstance(value, list):

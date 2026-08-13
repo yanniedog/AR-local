@@ -55,7 +55,7 @@ def _rate(row: Mapping[str, Any]) -> Optional[float]:
         return None
     if not math.isfinite(value) or value <= 0:
         return None
-    return value / 100 if value > 1 else value
+    return value / 100 if value >= 1 else value
 
 
 def _membership_hash(keys: Iterable[str]) -> str:

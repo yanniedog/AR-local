@@ -42,6 +42,34 @@ def test_real_tier_emits_explicit_fraction_range_and_preserves_leaves():
     assert any(fact.get("minValue") == 0.6001 and fact.get("maxValue") == 0.7 for fact in compact)
 
 
+def test_non_numeric_rate_and_range_values_are_preserved_without_invalid_sql_types():
+    record = {
+        "productId": "non-numeric",
+        "lendingRates": [{
+            "rate": "POA",
+            "tiers": [{
+                "minimumValue": "Varies",
+                "maximumValue": "N/A",
+                "unitOfMeasure": "PERCENT",
+            }],
+        }],
+    }
+    base = {
+        "dataset": "Mortgage", "provider": "Example", "product_id": "non-numeric",
+        "product_key": "Mortgage|Example|non-numeric", "product_name": "Example loan",
+    }
+    facts = extract_product_facts(record, base["product_key"])
+    advertised = next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")
+    assert (advertised["value_type"], advertised["value"], advertised["unit"]) == ("text", "POA", "text")
+    assert not any(fact["value_type"] == "range" for fact in facts)
+
+    rows = [{**row, "run_date": "2026-05-19"} for row in clean_fact_rows(record, base)]
+    with sqlite3.connect(":memory:") as con:
+        cdr_outputs.ensure_db(con)
+        cdr_outputs.insert_rows(con, "bank_product_facts", rows)
+        assert con.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0] == len(rows)
+
+
 def test_compact_facts_consolidate_structural_fields_and_keep_exact_conditions():
     compact = compact_facts(captured()[0]["record"], "Mortgage|Up|up-home")
     assert not any(fact["canonicalKey"] in {"feature.type", "currency", "fee.method"} for fact in compact)
@@ -99,6 +127,14 @@ def test_search_index_uses_vetted_fact_values_labels_and_conditions_not_raw_path
     assert "feature offset" in text
     assert "use your up spending account and savers as offsets" in text
     assert "source_path" not in text and "http" not in text
+
+
+def test_search_index_ignores_scalar_search_terms_without_failing():
+    index = app_payload_mobile.build_search_index(
+        [], {"key": {"facts": [{"searchTerms": "offset account", "value": True}]}},
+        run_date="2026-05-19",
+    )
+    assert index["products"]["key"] == "true key"
 
 
 def test_compact_payload_has_a_bounded_entity_count_and_size():
@@ -167,3 +203,11 @@ def test_normal_outputs_index_previous_run_product_changes(tmp_path: Path):
             ("2026-05-19", "Example Bank", "condition_changed", "feature.offset"),
         ).fetchall()
         assert any("idx_bank_product_changes_lookup" in row[-1] for row in plan)
+
+    current_detail = next((current / "banks").rglob("product-detail.json"))
+    refreshed = json.loads(current_detail.read_text(encoding="utf-8"))
+    refreshed["data"]["description"] = "Offset access now requires an eligible transaction account."
+    current_detail.write_text(json.dumps(refreshed), encoding="utf-8")
+    cdr_outputs.build_outputs(current)
+    rebuilt = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
+    assert "eligible transaction account" in json.dumps(rebuilt["product_changes"])

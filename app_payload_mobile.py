@@ -27,11 +27,16 @@ def _items(items: Any) -> List[str]:
 
 def _fact_terms(items: Any) -> List[str]:
     """Index only vetted compact fact fields; never evidence paths/raw JSON/URLs."""
-    if not isinstance(items, list): return []
+    if not isinstance(items, list):
+        return []
     out: List[str] = []
     for item in items:
-        if not isinstance(item, dict): continue
-        for raw in item.get("searchTerms") or []:
+        if not isinstance(item, dict):
+            continue
+        search_terms = item.get("searchTerms")
+        if not isinstance(search_terms, list):
+            search_terms = []
+        for raw in search_terms:
             if isinstance(raw, str) and not raw.lower().startswith(("http://", "https://")):
                 out.append(raw)
         value = item.get("value")

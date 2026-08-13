@@ -297,8 +297,13 @@ def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[
 
 def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
     """Choose a useful flat-export value while details_json stays lossless."""
+    def present(raw: Any) -> bool:
+        return raw is not None and not (
+            isinstance(raw, str) and raw.strip().lower() in {"", "null"}
+        )
+
     value = item.get("additionalValue")
-    if value not in (None, "") or sheet != "fees":
+    if present(value) or sheet != "fees":
         return value
     method = text(item.get("feeMethodUType")).lower()
     fee_type = text(item.get("feeType")).upper()
@@ -307,20 +312,22 @@ def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
         if isinstance(variable, Mapping):
             minimum = variable.get("feeMinimum")
             maximum = variable.get("feeMaximum")
-            if minimum not in (None, "", "null") or maximum not in (None, "", "null"):
-                return f"{text(minimum)}..{text(maximum)}".strip(".")
+            low = text(minimum) if present(minimum) else ""
+            high = text(maximum) if present(maximum) else ""
+            if low or high:
+                return f"{low}..{high}"
         return "VARIABLE"
     amount = item.get("amount")
-    if amount not in (None, ""):
+    if present(amount):
         return amount
     fixed_amount = item.get("fixedAmount")
-    if isinstance(fixed_amount, Mapping) and fixed_amount.get("amount") not in (None, ""):
+    if isinstance(fixed_amount, Mapping) and present(fixed_amount.get("amount")):
         return fixed_amount.get("amount")
     rate_based = item.get("rateBased")
-    if isinstance(rate_based, Mapping) and rate_based.get("rate") not in (None, ""):
+    if isinstance(rate_based, Mapping) and present(rate_based.get("rate")):
         return rate_based.get("rate")
     for key in ("balanceRate", "transactionRate", "accruedRate"):
-        if item.get(key) not in (None, ""):
+        if present(item.get(key)):
             return item.get(key)
     return None
 

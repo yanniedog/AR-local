@@ -70,6 +70,15 @@ def test_clean_export_fee_value_supports_both_cdr_fee_schemas():
     assert cdr_clean_export.bank_detail_item_value(
         "fees", {"feeType": "VARIABLE", "amount": "0.00"}
     ) == "VARIABLE"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "variable": {"feeMinimum": "5.00", "feeMaximum": "null"}}
+    ) == "5.00.."
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "variable": {"feeMinimum": "", "feeMaximum": "10.00"}}
+    ) == "..10.00"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "EVENT", "amount": "null", "balanceRate": "0.01"}
+    ) == "0.01"
 
 
 def test_runtime_contract_validators_reject_ambiguous_or_unbound_payloads():

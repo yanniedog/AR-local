@@ -42,6 +42,10 @@ def test_real_fixture_excludes_fixed_conditional_and_term_deposit_rows() -> None
     assert savings["count"] == 2
 
 
+def test_exact_one_percent_is_normalized_as_a_percentage() -> None:
+    assert spread._rate({"rate": 1}) == 0.01
+
+
 def test_missing_side_is_explicit_and_never_manufactures_a_gap(tmp_path: Path) -> None:
     captured = json.loads(FIXTURE.read_text(encoding="utf-8"))
     day = captured["run_date"]

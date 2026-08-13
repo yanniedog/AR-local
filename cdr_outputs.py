@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from cdr_clean_export import coverage_summary, parse_banks_run, summary_counts, utc_now
-from cdr_product_changes import compare_runs, previous_finalized_run
+from cdr_product_changes import diff_normalized_product_facts, load_run_facts, previous_finalized_run
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
@@ -473,7 +473,12 @@ def build_outputs(
     run_date = run_root.name
     banks = parse_banks_run(run_root)
     previous = previous_finalized_run(run_root)
-    changes = compare_runs(previous, run_root) if previous else {
+    changes = diff_normalized_product_facts(
+        load_run_facts(previous),
+        banks["product_facts"],
+        previous_run_date=previous.name,
+        current_run_date=run_date,
+    ) if previous else {
         "schema_version": 1, "normalization_version": None,
         "previous_run_date": None, "run_date": run_date, "change_count": 0,
         "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},

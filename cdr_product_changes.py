@@ -920,11 +920,15 @@ def _enriched_facts(products: Mapping[str, Mapping[str, Any]]) -> List[Dict[str,
     return output
 
 
+def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
+    """Load normalized facts from a finalized export, or scan its raw run as fallback."""
+    return _enriched_facts(_load_run(run_root))
+
+
 def compare_runs(previous_root: Path, current_root: Path) -> Dict[str, Any]:
     """Load two finalized roots and return the integration report with flat events."""
-    previous, current = _load_run(previous_root), _load_run(current_root)
     return diff_normalized_product_facts(
-        _enriched_facts(previous), _enriched_facts(current),
+        load_run_facts(previous_root), load_run_facts(current_root),
         previous_run_date=_run_date(previous_root), current_run_date=_run_date(current_root),
     )
 
