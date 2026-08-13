@@ -112,7 +112,7 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 |---|---|---|
 | **fsck auto-repair** | `cmdline.txt` `fsck.mode=force fsck.repair=yes` | Boot self-repairs an unclean filesystem instead of halting at a prompt. |
 | **Dormant hardware watchdog** | `config.txt` `dtparam=watchdog=on` | Makes the BCM watchdog device available, but does not arm a reboot countdown. |
-| **Stable recovery policy** | `RuntimeWatchdogSec=off`, `RebootWatchdogSec=off` | Avoids reboot loops during normal boot or ingest recovery; bounded network and service timers perform self-healing instead. |
+| **Stable recovery policy** | `RuntimeWatchdogSec=off`, `RebootWatchdogSec=off`, `ShutdownWatchdogSec=off` | Avoids reboot loops during normal boot, ingest recovery, or shutdown; bounded network and service timers perform self-healing instead. |
 | **Persistent, capped logs** | journald `Storage=persistent`, `SystemMaxUse=200M` | Boot logs survive for diagnosis; logs can't fill the disk. |
 | **Tailscale auto-start + tailnet SSH** | `enable --now tailscaled`, `tailscale set --ssh` | Remote access returns automatically after a reboot; tailnet SSH is a key-independent recovery path. |
 | **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | **The actual fix:** re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |

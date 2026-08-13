@@ -71,8 +71,9 @@ cat > /etc/systemd/system.conf.d/ar-local-watchdog.conf <<'EOF'
 [Manager]
 RuntimeWatchdogSec=off
 RebootWatchdogSec=off
+ShutdownWatchdogSec=off
 EOF
-log "systemd: RuntimeWatchdogSec=off, RebootWatchdogSec=off"
+log "systemd: RuntimeWatchdogSec=off, RebootWatchdogSec=off, ShutdownWatchdogSec=off"
 
 # --- 4. journald: persistent + bounded so logs survive but never fill disk ---
 mkdir -p /etc/systemd/journald.conf.d

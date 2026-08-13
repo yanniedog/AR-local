@@ -35,10 +35,12 @@ def test_power_resilience_does_not_arm_reboot_loop() -> None:
     )
     assert "RuntimeWatchdogSec=off" in text
     assert "RebootWatchdogSec=off" in text
+    assert "ShutdownWatchdogSec=off" in text
     assert "RuntimeWatchdogSec=20" not in text
 
     docs = (ROOT / "docs" / "PI_POWER_RESILIENCE.md").read_text(encoding="utf-8")
     assert "RuntimeWatchdogSec=off" in docs
+    assert "ShutdownWatchdogSec=off" in docs
     assert "RuntimeWatchdogSec=20" not in docs
 
 
@@ -57,6 +59,42 @@ def test_sync_success_is_reported_by_return_value() -> None:
     with mock.patch.object(pi_daily_sync, "sync_existing_repo") as sync:
         assert pi_daily_sync.sync_repo_for_ingest(ROOT, "https://example.invalid/repo.git")
     sync.assert_called_once()
+
+
+def test_sync_failure_on_unverifiable_checkout_is_fatal() -> None:
+    failure = subprocess.CalledProcessError(1, ["git", "fetch", "origin"])
+    with mock.patch.object(pi_daily_sync, "sync_existing_repo", side_effect=failure):
+        with mock.patch.object(
+            pi_daily_sync,
+            "assert_clean",
+            side_effect=RuntimeError("dirty checkout"),
+        ):
+            with pytest.raises(RuntimeError, match="fallback checkout is not verifiable"):
+                pi_daily_sync.sync_repo_for_ingest(
+                    ROOT, "https://example.invalid/repo.git"
+                )
+
+
+def test_sync_failure_without_main_fallback_skips_checkout_verification(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    failure = subprocess.CalledProcessError(1, ["git", "fetch", "origin"])
+    with mock.patch.object(
+        pi_daily_sync,
+        "sync_existing_repo",
+        side_effect=failure,
+    ) as sync:
+        with mock.patch.object(pi_daily_sync, "assert_clean") as assert_clean:
+            with mock.patch.object(pi_daily_sync, "current_branch") as current_branch:
+                assert not pi_daily_sync.sync_repo_for_ingest(
+                    ROOT,
+                    "https://example.invalid/repo.git",
+                    require_main_fallback=False,
+                )
+    sync.assert_called_once()
+    assert_clean.assert_not_called()
+    current_branch.assert_not_called()
+    assert "git sync deferred" in capsys.readouterr().err
 
 
 def test_sync_failure_rejects_non_main_fallback() -> None:
@@ -84,7 +122,9 @@ def test_dirty_checkout_still_blocks_ingest(tmp_path: Path, monkeypatch: pytest.
 
 
 def test_transient_sync_failure_does_not_block_ingest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
     monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
@@ -100,6 +140,10 @@ def test_transient_sync_failure_does_not_block_ingest(
     assert sync.call_count == 2
     ingest.assert_called_once()
     publish.assert_not_called()
+    assert (
+        "[pi_daily_sync] app_payload skipped reason=code_sync_deferred"
+        in capsys.readouterr().err
+    )
 
 
 def test_successful_code_sync_keeps_payload_publication(
