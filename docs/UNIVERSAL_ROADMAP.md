@@ -28,7 +28,8 @@ This section is intentionally practical. It should let a future LLM or human ope
 
 ### Public, non-secret access facts
 
-- Pi LAN IP: `10.0.0.92`
+- Pi hostname: `pi5` (Tailscale node: `ar-local-pi5`)
+- Pi LAN IP: `192.168.20.19` (DHCP; rediscover before assuming it is permanent)
 - Pi Tailscale IP: `100.78.28.10`
 - Pi SSH user: `pi`
 - Local private key path on the Windows development machine: `%USERPROFILE%\.ssh\pi5`
@@ -44,41 +45,43 @@ Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo passw
 
 ### Rediscovering current addresses
 
-The addresses above are the known-good deployment facts at the time this roadmap was written. They are operational facts, not permanent infrastructure guarantees.
+The addresses above were verified on 2026-08-14. They are operational facts, not permanent infrastructure guarantees.
 
-- LAN IP drift: check the home router DHCP client/reservation table for host `ar`, then update this file if the reserved address changes.
-- Tailscale IP drift: check the Tailscale admin console or local Tailscale client for the Pi node named `ar`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
+- LAN IP drift: run `tailscale ping ar-local-pi5` from Windows. Its `via <ip>:41641` result identifies the current direct LAN endpoint when both machines are onsite. The router DHCP table for host `pi5` is the fallback. After rediscovery, replace `HostName` in the `ar-local-pi5-lan` entry below and update the recorded LAN address in this section; a router DHCP reservation is preferable.
+- Tailscale IP drift: run `& 'C:\Program Files\Tailscale\tailscale.exe' status` or check the Tailscale admin console for node `ar-local-pi5`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
 - Once SSH works, confirm both addresses from the Pi itself:
 
 ```sh
 hostname -I
 ```
 
-The Pi should continue to advertise `10.0.0.92` on the LAN and `100.78.28.10` on Tailscale unless the router or Tailscale node identity changes.
+The Pi currently advertises `192.168.20.19` on the LAN and `100.78.28.10` on Tailscale. Expect the LAN address to change unless it receives a DHCP reservation.
 
 ### SSH from the Windows development machine
 
-LAN command when on the home network:
+Current LAN command when on the home network:
 
 ```powershell
-ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@10.0.0.92
+ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@192.168.20.19
 ```
 
-Remote command over Tailscale:
+The `HostKeyAlias` retains the trusted host key that was originally recorded when this same Pi used `10.0.0.92`; that address itself is obsolete.
 
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@100.78.28.10
-```
+Port 22 on `100.78.28.10` currently uses Tailscale SSH. It is useful as a recovery route, but its tailnet policy can require interactive browser authentication and therefore must not be assumed to work for unattended deploys. Use the LAN alias below for unattended work while onsite. The dashboard itself remains reachable over Tailscale.
 
 Recommended `%USERPROFILE%\.ssh\config` entries:
 
 ```sshconfig
-Host ar-local-pi5
-  HostName 100.78.28.10
+Host ar-local-pi5-lan
+  HostName 192.168.20.19
   User pi
   IdentityFile ~/.ssh/pi5
   IdentitiesOnly yes
   HostKeyAlias 10.0.0.92
+
+Host ar-local-pi5
+  HostName 100.78.28.10
+  User pi
 
 Host ar-local-pi5-dashboard
   HostName 100.78.28.10
@@ -91,7 +94,7 @@ Host ar-local-pi5-dashboard
   LocalForward 127.0.0.1:18808 127.0.0.1:8808
 ```
 
-Use `HostKeyAlias=10.0.0.92` for the Tailscale address because the known host identity was originally established for the LAN address.
+Use `HostKeyAlias=10.0.0.92` for the current LAN address because the same Pi host identity was originally recorded under that address. Set `AR_PI_SSH_HOST=ar-local-pi5-lan` before `npm run pi:deploy` or `npm run pi:deploy:verify` when using the unattended LAN route.
 
 ### Remote dashboard access while travelling
 
@@ -129,7 +132,7 @@ Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19
 | --- | --- |
 | **Primary (local metrics UI)** | `http://100.78.28.10/netdata/v3/` |
 | Short redirect (same UI) | `http://100.78.28.10/netdata/` |
-| LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
+| LAN IP equivalent | `http://192.168.20.19/netdata/v3/` (update after DHCP changes) |
 | Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
 
 No Netdata Cloud account is required for **metrics** (overview charts, nodes, alerts). Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled v3 UI loads from the agent instead of `app.netdata.cloud`.
@@ -648,12 +651,12 @@ Every agent should leave the next agent with:
 
 Snapshot of operational facts the next agent can trust without re-running every probe. **Treat as stale** unless `Last verified` is within **48 hours** of the current work. Re-verify and overwrite this section whenever the underlying state changes. Use the `Live Pi Observability` probes; do not invent fresh commands here.
 
-Last verified: **2026-05-15** (UTC ~13:24).
+Last full service/data snapshot: **2026-05-15** (UTC ~13:24). Hostname and address rows were refreshed separately on **2026-08-14 AEST**; re-run every probe before relying on the other dated rows.
 
 | Fact | Value |
 | --- | --- |
-| Pi hostname | `ar` |
-| Pi LAN IP | `10.0.0.92` |
+| Pi hostname | `pi5` |
+| Pi LAN IP | `192.168.20.19` (DHCP; verified 2026-08-14) |
 | Pi Tailscale IP | `100.78.28.10` |
 | `ar-local-dashboard.service` state | active, enabled |
 | `ar-local-dashboard.service` `WorkingDirectory` | `/srv/ar-local/AR-local` |

@@ -10,6 +10,8 @@
  *  - Low-signal bot threads never block. Unresolved human threads block.
  */
 import { classifyThreads, isClosureReply } from './lib/gh-pr-review-threads.mjs';
+import { collectBotEvents } from './lib/bot-wait-presence.mjs';
+import { allKnownBotLogins } from './lib/bot-wait-config.mjs';
 import {
   isMatrixCommitTitle,
   isReportsOnlyFileList,
@@ -71,6 +73,31 @@ const auditCases = [
 ];
 
 const failures = [];
+
+const botEvents = collectBotEvents(
+  {
+    comments: {
+      nodes: [
+        {
+          author: { login: 'github-actions' },
+          body: '<!-- gemini-code-review -->\nsubstantive review',
+          createdAt: T1,
+        },
+        {
+          author: { login: 'github-actions[bot]' },
+          body: 'unrelated workflow comment',
+          createdAt: T1,
+        },
+      ],
+    },
+  },
+  allKnownBotLogins(['gemini']),
+  T0,
+  T0,
+);
+if (botEvents.length !== 1 || botEvents[0].login !== 'google-github-actions-bot[bot]') {
+  failures.push('Gemini workflow marker was not classified narrowly as Gemini bot activity');
+}
 for (const [name, t, expected] of cases) {
   const got = classifyThreads([t]).length;
   if (got !== expected) failures.push(`${name}: got ${got} violations, expected ${expected}`);
