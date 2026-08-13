@@ -49,29 +49,31 @@ if [ -n "$boot_dir" ] && [ -f "$boot_dir/cmdline.txt" ]; then
   fi
 fi
 
-# --- 2. hardware watchdog: auto-reboot a hung kernel / hung boot -------------
+# --- 2. hardware watchdog: expose the device without arming systemd ----------
 if [ -n "$boot_dir" ] && [ -f "$boot_dir/config.txt" ]; then
   config="$boot_dir/config.txt"
   if ! grep -qE '^[[:space:]]*dtparam=watchdog=on' "$config"; then
-    printf '\n# AR-local: enable BCM hardware watchdog (auto-reboot on hang)\ndtparam=watchdog=on\n' >> "$config"
-    log "config.txt: enabled dtparam=watchdog=on (reboot to apply)"
+    printf '\n# AR-local: expose BCM watchdog; systemd runtime watchdog stays off\ndtparam=watchdog=on\n' >> "$config"
+    log "config.txt: exposed BCM watchdog device (reboot to apply; not armed)"
   else
-    log "config.txt: hardware watchdog already enabled"
+    log "config.txt: BCM watchdog device already exposed (not armed by systemd)"
   fi
 fi
 
-# --- 3. systemd watchdog: pet the hardware watchdog + bounded reboot ---------
-# RuntimeWatchdogSec arms the hardware watchdog via systemd so a frozen
-# userspace triggers a reboot. RebootWatchdogSec caps how long a shutdown can
-# hang before being forced. ShutdownWatchdogSec is the legacy alias.
+# --- 3. systemd watchdog: keep boot stable -----------------------------------
+# The BCM watchdog remains available via dtparam above, but do not arm systemd's
+# runtime watchdog by default. A short watchdog loop can reboot the Pi during a
+# normal boot or ingest recovery and leave Git files or ingest locks incomplete.
+# Prefer the bounded network and service self-heal timers below.
 mkdir -p /etc/systemd/system.conf.d
 cat > /etc/systemd/system.conf.d/ar-local-watchdog.conf <<'EOF'
 # Managed by AR-local install-power-resilience.sh
 [Manager]
-RuntimeWatchdogSec=20
-RebootWatchdogSec=2min
+RuntimeWatchdogSec=off
+RebootWatchdogSec=off
+ShutdownWatchdogSec=off
 EOF
-log "systemd: RuntimeWatchdogSec=20, RebootWatchdogSec=2min"
+log "systemd: RuntimeWatchdogSec=off, RebootWatchdogSec=off, ShutdownWatchdogSec=off"
 
 # --- 4. journald: persistent + bounded so logs survive but never fill disk ---
 mkdir -p /etc/systemd/journald.conf.d

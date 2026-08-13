@@ -7,6 +7,14 @@ site_dir="${3:-$portable_root/australianrates}"
 data_dir="${4:-$portable_root/data}"
 run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
 run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
+run_home="$(getent passwd "$run_user" | cut -d: -f6)"
+case "$run_home" in
+  /*) ;;
+  *)
+    echo "Unable to resolve an absolute home directory for service user $run_user" >&2
+    exit 1
+    ;;
+esac
 
 sudo apt-get update
 sudo apt-get install -y git python3 gh rsync avahi-daemon nginx curl
@@ -51,6 +59,7 @@ render_unit() {
   sed \
     -e "s|{{AR_LOCAL_USER}}|$run_user|g" \
     -e "s|{{AR_LOCAL_GROUP}}|$run_group|g" \
+    -e "s|{{AR_LOCAL_HOME}}|$run_home|g" \
     -e "s|{{AR_LOCAL_PORTABLE_ROOT}}|$portable_root|g" \
     -e "s|{{AR_LOCAL_REPO}}|$repo_dir|g" \
     -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_dir|g" \
@@ -90,8 +99,9 @@ sudo systemctl enable --now ar-local-daily-watchdog.timer
 sudo systemctl enable --now ar-local-deploy-watchdog.timer
 sudo systemctl enable --now ar-local-runtime-health.timer
 
-# Power-loss hardening: fsck auto-repair, hardware watchdog, tailscaled auto-start,
-# bounded persistent journald. cmdline.txt/config.txt edits apply on next reboot.
+# Power-loss hardening: fsck auto-repair, a dormant BCM watchdog device,
+# tailscaled auto-start, and bounded persistent journald. Boot firmware edits
+# apply on the next reboot; systemd's runtime watchdog stays deliberately off.
 sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
   sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir"
