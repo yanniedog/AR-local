@@ -62,6 +62,16 @@ def test_semantic_condition_slot_changes_are_material_and_non_equivalent(
     assert condition["after"]["text"] == after
 
 
+def test_attribute_wording_does_not_emit_condition_change() -> None:
+    before = fact("name", "Old Saver", factType="ATTRIBUTE", canonicalKey="product.name", value="Old Saver")
+    after = fact("name", "New Saver", factType="ATTRIBUTE", canonicalKey="product.name", value="New Saver")
+
+    payload = changes.diff_normalized_product_facts([before], [after])
+
+    assert of_type(payload, "value_changed")
+    assert not of_type(payload, "condition_changed")
+
+
 @pytest.mark.parametrize(
     ("before", "after", "expected"),
     [

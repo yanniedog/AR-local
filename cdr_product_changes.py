@@ -612,7 +612,13 @@ def _compare_fact(
             "cadence_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent", reasons=["semantic_slot_changed:cadence_timing"],
         ))
-    if condition_slots:
+    before_kind = str(_first(before, ("kind", "fact_type", "factType", "category")) or "").casefold()
+    condition_fact = (
+        kind in {"condition", "eligibility", "constraint"}
+        or before_kind in {"condition", "eligibility", "constraint"}
+        or canonical.startswith(("condition.", "eligibility.", "constraint."))
+    )
+    if condition_slots and condition_fact:
         events.append(_event(
             "condition_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent",

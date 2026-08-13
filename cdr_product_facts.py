@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 SCHEMA_VERSION = 1
-NORMALIZATION_VERSION = "cdr-product-facts-1"
+NORMALIZATION_VERSION = "cdr-product-facts-2"
 _DURATION = re.compile(r"^P(?:[0-9.]+[YMWD])+(?:T(?:[0-9.]+[HMS])+)?$", re.I)
 _URL = re.compile(r"^https?://", re.I)
 _INDEX = re.compile(r"\[\d+\]")
 _NON_KEY = re.compile(r"[^a-z0-9]+")
+_TEXT_CLAUSE_SPLIT = re.compile(r"\s*(?:;|(?<=[.!?])\s+|\b(?:but|however|whereas)\b)\s*", re.I)
 
 
 @dataclass(frozen=True)
@@ -168,6 +169,7 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         return "rate", fraction, "fraction", "canonical"
     constraint_type = str(_ancestor_value(ancestors, "constraintType") or "").upper()
     eligibility_type = str(_ancestor_value(ancestors, "eligibilityType") or "").upper()
+    applicability_type = str(_ancestor_value(ancestors, "rateApplicabilityType") or "").upper()
     tier_unit = str(_ancestor_value(ancestors, "unitOfMeasure") or "").upper()
     if canonical == "fee.cadence" and isinstance(value, str) and _DURATION.match(value):
         return "duration", value.upper(), "duration", "canonical"
@@ -175,6 +177,13 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         return "number", float(number), "year", "canonical"
     if canonical == "constraint.value" and "LVR" in constraint_type and (number := _number(value)) is not None:
         return "rate", float(number), "fraction", "canonical"
+    if canonical == "value" and (number := _number(value)) is not None:
+        if any(token in applicability_type for token in ("BALANCE", "AMOUNT", "LIMIT")):
+            return "money", float(number), str(_ancestor_value(ancestors, "currency") or "AUD").upper(), "canonical"
+        if any(token in applicability_type for token in ("LVR", "PERCENT", "RATE")):
+            return "rate", _ratio_fraction(number), "fraction", "canonical"
+        if "AGE" in applicability_type:
+            return "number", float(number), "year", "canonical"
     money = leaf in {"amount", "feeCap", "feeMinimum", "feeMaximum", "discountMinimum", "discountMaximum"}
     money = money or (canonical == "constraint.value" and constraint_type in {"MIN_BALANCE", "MAX_BALANCE", "OPENING_BALANCE", "MIN_LIMIT", "MAX_LIMIT"})
     money = money or (canonical.startswith("tier.") and tier_unit == "DOLLAR")
@@ -251,10 +260,25 @@ def _stable_ids(facts: List[Dict[str, Any]], product_key: str) -> List[Dict[str,
         group_semantic = json.dumps([product_key, entity], ensure_ascii=False, sort_keys=True)
         qualifiers["groupId"] = hashlib.sha256(group_semantic.encode()).hexdigest()[:16]
     for semantic, rows in buckets.items():
-        rows.sort(key=lambda row: (row["source_value_json"], row["source_path"], json.dumps(row.get("value"), sort_keys=True)))
-        for occurrence, fact in enumerate(rows):
-            suffix = occurrence if len(rows) > 1 else None
-            fact["fact_id"] = hashlib.sha256(json.dumps([semantic, suffix], sort_keys=True).encode()).hexdigest()[:20]
+        # A source index cannot identify repeated semantic entities: reordering
+        # would churn every ID.  Content distinguishes the observations that can
+        # genuinely be distinguished, while an occurrence is needed only for
+        # exact duplicates.  Keeping occurrence zero even for one surviving row
+        # makes its ID stable when a duplicate is added or removed.
+        by_content: Dict[str, List[Dict[str, Any]]] = {}
+        for fact in rows:
+            content = json.dumps({
+                "value": fact.get("value"), "value_type": fact.get("value_type"),
+                "unit": fact.get("unit"), "min_value": fact.get("min_value"),
+                "max_value": fact.get("max_value"), "source_value_json": fact.get("source_value_json"),
+            }, ensure_ascii=False, sort_keys=True, default=str)
+            by_content.setdefault(content, []).append(fact)
+        for content, duplicates in sorted(by_content.items()):
+            duplicates.sort(key=lambda row: row["source_path"])
+            for occurrence, fact in enumerate(duplicates):
+                fact["fact_id"] = hashlib.sha256(
+                    json.dumps([semantic, content, occurrence], sort_keys=True).encode()
+                ).hexdigest()[:20]
     return facts
 
 
@@ -349,7 +373,9 @@ def _range_facts(record: Mapping[str, Any], product_key: str) -> Iterator[Dict[s
                     unit = str(_ancestor_value([*ancestors, (path, value)], "currency") or "AUD").upper() if money else "fraction" if value.get("unitOfMeasure") == "PERCENT" else "count"
                     def convert(item: Any) -> Optional[float]:
                         number = _number(item)
-                        return float(number) if number is not None else None
+                        if number is None:
+                            return None
+                        return _ratio_fraction(number) if unit == "fraction" else float(number)
                     canonical = "range.amount" if money else "range.value"
                     group_id = _group_id(product_key, base_path, value)
                     min_value, max_value = convert(low), convert(high)
@@ -392,29 +418,31 @@ def _text_facts(record: Mapping[str, Any], product_key: str, structured: Sequenc
         if fact.get("mapping") == "canonical" and fact.get("source_path"):
             authoritative.setdefault(str(fact["canonical_key"]), set()).add(json.dumps(fact.get("value"), sort_keys=True))
     for path, evidence in _text_values(record):
-        lower = evidence.lower()
-        matched = [
-            rule for rule in TEXT_TAXONOMY
-            if any(re.search(pattern, lower, re.I) for pattern in rule.patterns)
-        ]
-        negative_keys = {rule.key for rule in matched if rule.value is False}
-        for rule in matched:
-            # Negative language takes precedence over a positive substring in the
-            # same clause (for example, "No offset account is available").
-            if rule.value is True and rule.key in negative_keys:
-                continue
-            encoded = json.dumps(rule.value, sort_keys=True)
-            values = authoritative.get(rule.key, set())
-            conflict = bool(values and encoded not in values)
-            yield {
-                "fact_id": _fact_id(product_key, path, rule.key, rule.value, f"text:{_group_id(product_key, path, {})}"),
-                "kind": rule.key.split(".", 1)[0] if rule.key.split(".", 1)[0] in {"fee", "feature", "eligibility", "constraint", "condition"} else "attribute",
-                "canonical_key": rule.key, "value_type": "boolean" if isinstance(rule.value, bool) else "enum",
-                "value": rule.value, "unit": "boolean" if isinstance(rule.value, bool) else "enum",
-                "mapping": "canonical_text", "source_path": path, "source_pattern": source_pattern(path),
-                "source_value_json": json.dumps(evidence, ensure_ascii=False),
-                "qualifiers": {"authority": "text", "evidence": evidence, "conflict": conflict, "groupId": _group_id(product_key, path, {})},
-            }
+        clauses = [clause.strip() for clause in _TEXT_CLAUSE_SPLIT.split(evidence) if clause.strip()]
+        for clause in clauses or [evidence]:
+            lower = clause.lower()
+            matched = [
+                rule for rule in TEXT_TAXONOMY
+                if any(re.search(pattern, lower, re.I) for pattern in rule.patterns)
+            ]
+            negative_keys = {rule.key for rule in matched if rule.value is False}
+            for rule in matched:
+                # Negation wins only within the same clause. A separate product
+                # variant in the same source field remains a distinct fact.
+                if rule.value is True and rule.key in negative_keys:
+                    continue
+                encoded = json.dumps(rule.value, sort_keys=True)
+                values = authoritative.get(rule.key, set())
+                conflict = bool(values and encoded not in values)
+                yield {
+                    "fact_id": _fact_id(product_key, path, rule.key, rule.value, f"text:{_group_id(product_key, path, {})}"),
+                    "kind": rule.key.split(".", 1)[0] if rule.key.split(".", 1)[0] in {"fee", "feature", "eligibility", "constraint", "condition"} else "attribute",
+                    "canonical_key": rule.key, "value_type": "boolean" if isinstance(rule.value, bool) else "enum",
+                    "value": rule.value, "unit": "boolean" if isinstance(rule.value, bool) else "enum",
+                    "mapping": "canonical_text", "source_path": path, "source_pattern": source_pattern(path),
+                    "source_value_json": json.dumps(clause, ensure_ascii=False),
+                    "qualifiers": {"authority": "text", "evidence": clause, "conflict": conflict, "groupId": _group_id(product_key, path, {})},
+                }
 
 
 def extract_product_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str, Any]]:
@@ -470,6 +498,24 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
         value = item.get("additionalInfo")
         return str(value) if value not in (None, "") else None
 
+    def applicability_value(item: Mapping[str, Any]) -> Tuple[Any, str]:
+        raw = item.get("additionalValue")
+        if raw in (None, ""):
+            return True, "boolean"
+        source_type = str(item.get("rateApplicabilityType") or "").upper()
+        number = _number(raw)
+        if number is not None and any(token in source_type for token in ("BALANCE", "AMOUNT", "LIMIT")):
+            return float(number), str(item.get("currency") or "AUD").upper()
+        if number is not None and any(token in source_type for token in ("LVR", "PERCENT", "RATE")):
+            return _ratio_fraction(number), "fraction"
+        if number is not None and "AGE" in source_type:
+            return float(number), "year"
+        if isinstance(raw, str) and _DURATION.match(raw):
+            return raw.upper(), "duration"
+        if number is not None:
+            return float(number), "count"
+        return str(raw), "text"
+
     for index, item in enumerate(record.get("features") or []):
         if not isinstance(item, Mapping): continue
         source_type = str(item.get("featureType") or "OTHER")
@@ -501,8 +547,14 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
         rated = item.get("rateBased") if isinstance(item.get("rateBased"), Mapping) else {}
         variable = item.get("variable") if isinstance(item.get("variable"), Mapping) else {}
         raw_amount = item.get("amount") if item.get("amount") not in (None, "") else fixed.get("amount")
-        if method == "rateBased" or rated.get("rate") not in (None, ""):
+        legacy_rates = [
+            (key, item.get(key)) for key in ("balanceRate", "transactionRate", "accruedRate")
+            if item.get(key) not in (None, "", "null")
+        ]
+        if str(method or "").lower() == "ratebased" or rated.get("rate") not in (None, ""):
             value, unit = _rate_fraction(rated.get("rate") if rated.get("rate") not in (None, "") else item.get("transactionRate")), "fraction"
+        elif legacy_rates:
+            value, unit = _rate_fraction(legacy_rates[0][1]), "fraction"
         elif (method == "variable" or str(fee_type or "").upper() == "VARIABLE") and _number(raw_amount) == 0:
             value = None
         elif raw_amount not in (None, ""):
@@ -512,6 +564,8 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
             max_value = float(_number(variable.get("feeMaximum"))) if _number(variable.get("feeMaximum")) is not None else None
         cadence = item.get("additionalValue") if isinstance(item.get("additionalValue"), str) and _DURATION.match(str(item.get("additionalValue"))) else item.get("accrualFrequency")
         fee_group = add("fee", f"fee.{_slug(name)}", name, entity, value=value, unit=unit, source_type=fee_type, condition=condition(item), cadence=cadence, min_value=min_value, max_value=max_value)
+        for rate_key, raw_rate in legacy_rates[1:]:
+            add("fee", f"fee.{_slug(name)}.{_slug(rate_key)}", rate_key.replace("Rate", " rate").title(), {"fee": entity, "rate_type": rate_key}, value=_rate_fraction(raw_rate), unit="fraction", source_type=rate_key, parent_id=fee_group)
         for discount in item.get("discounts") or []:
             if not isinstance(discount, Mapping): continue
             description = str(discount.get("description") or "Fee discount")
@@ -537,13 +591,15 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
                 for applies_item in tier_conditions or []:
                     if not isinstance(applies_item, Mapping): continue
                     source_type = str(applies_item.get("rateApplicabilityType") or "OTHER")
-                    add("condition", f"condition.{_slug(source_type)}", source_type.replace("_", " ").title(), {"parent": tier_entity, "type": source_type, "value": applies_item.get("additionalValue")}, value=True, unit="boolean", source_type=source_type, condition=condition(applies_item), parent_id=tier_group)
+                    applies_value, applies_unit = applicability_value(applies_item)
+                    add("condition", f"condition.{_slug(source_type)}", source_type.replace("_", " ").title(), {"parent": tier_entity, "type": source_type}, value=applies_value, unit=applies_unit, source_type=source_type, condition=condition(applies_item), parent_id=tier_group)
             rate_conditions = rate.get("applicabilityConditions")
             if isinstance(rate_conditions, Mapping): rate_conditions = [rate_conditions]
             for applies_item in rate_conditions or []:
                 if not isinstance(applies_item, Mapping): continue
                 source_type = str(applies_item.get("rateApplicabilityType") or "OTHER")
-                add("condition", f"condition.{_slug(source_type)}", source_type.replace("_", " ").title(), {"parent": entity, "type": source_type, "value": applies_item.get("additionalValue")}, value=True, unit="boolean", source_type=source_type, condition=condition(applies_item), parent_id=rate_group)
+                applies_value, applies_unit = applicability_value(applies_item)
+                add("condition", f"condition.{_slug(source_type)}", source_type.replace("_", " ").title(), {"parent": entity, "type": source_type}, value=applies_value, unit=applies_unit, source_type=source_type, condition=condition(applies_item), parent_id=rate_group)
 
     semantic_evidence = list(_semantic_facts(record, product_key))
     authoritative_keys = {fact["canonical_key"] for fact in semantic_evidence}
@@ -558,10 +614,16 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
     for identity, item in staged: buckets.setdefault(identity, []).append(item)
     out: List[Dict[str, Any]] = []
     for identity, items in sorted(buckets.items()):
-        items.sort(key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True, default=str))
-        for occurrence, item in enumerate(items):
-            item["id"] = hashlib.sha256(json.dumps([identity, occurrence if len(items) > 1 else None], sort_keys=True).encode()).hexdigest()[:20]
-            out.append(item)
+        by_content: Dict[str, List[Dict[str, Any]]] = {}
+        for item in items:
+            content = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+            by_content.setdefault(content, []).append(item)
+        for content, duplicates in sorted(by_content.items()):
+            for occurrence, item in enumerate(duplicates):
+                item["id"] = hashlib.sha256(
+                    json.dumps([identity, content, occurrence], sort_keys=True).encode()
+                ).hexdigest()[:20]
+                out.append(item)
     return out
 
 

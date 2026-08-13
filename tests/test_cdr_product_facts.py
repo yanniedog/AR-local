@@ -162,6 +162,56 @@ def test_semantic_ids_survive_reordering_and_repeated_tiers_remain_unique():
     assert len({fact["fact_id"] for fact in tier_facts}) == 2
 
 
+def test_duplicate_entity_ids_survive_cardinality_changes():
+    record = {
+        "productId": "fees", "name": "Fees",
+        "fees": [
+            {"name": "Service fee", "feeType": "PERIODIC", "amount": "5"},
+            {"name": "Service fee", "feeType": "PERIODIC", "amount": "10"},
+        ],
+    }
+    full_before = [fact for fact in extract_product_facts(record, "stable-fees") if fact["canonical_key"] == "fee.amount"]
+    compact_before = [fact for fact in compact_facts(record, "stable-fees") if fact["kind"] == "fee"]
+    record["fees"].pop(0)
+    full_after = [fact for fact in extract_product_facts(record, "stable-fees") if fact["canonical_key"] == "fee.amount"]
+    compact_after = [fact for fact in compact_facts(record, "stable-fees") if fact["kind"] == "fee"]
+    assert next(fact["fact_id"] for fact in full_before if fact["value"] == 10) == full_after[0]["fact_id"]
+    assert next(fact["id"] for fact in compact_before if fact.get("value") == 10) == compact_after[0]["id"]
+
+
+def test_text_taxonomy_scopes_negation_to_each_clause():
+    facts = compact_facts({
+        "productId": "variants", "name": "Variants",
+        "description": "No redraw for fixed loans; redraw facility is available for variable loans.",
+    }, "variants")
+    redraw = [fact for fact in facts if fact["canonicalKey"] == "feature.redraw"]
+    assert {fact["value"] for fact in redraw} == {False, True}
+    assert {fact["condition"] for fact in redraw} == {
+        "No redraw for fixed loans", "redraw facility is available for variable loans.",
+    }
+
+
+def test_compact_facts_preserve_legacy_fee_rates_and_applicability_values():
+    facts = compact_facts({
+        "productId": "priced", "name": "Priced",
+        "fees": [{
+            "name": "Usage fee", "feeType": "TRANSACTION",
+            "balanceRate": "1", "transactionRate": "2", "accruedRate": "3",
+        }],
+        "lendingRates": [{
+            "lendingRateType": "VARIABLE", "rate": "5.5",
+            "applicabilityConditions": [{
+                "rateApplicabilityType": "MINIMUM_BALANCE", "additionalValue": "5000",
+            }],
+        }],
+    }, "priced")
+    fee_rates = [fact for fact in facts if fact["kind"] == "fee" and fact.get("unit") == "fraction"]
+    assert {fact["value"] for fact in fee_rates} == {0.01, 0.02, 0.03}
+    minimum = next(fact for fact in facts if fact["canonicalKey"] == "condition.minimum_balance")
+    assert minimum["value"] == 5000
+    assert minimum["unit"] == "AUD"
+
+
 def test_fact_ids_use_stable_product_identity_not_mutable_name_or_category():
     record = {
         "productId": "stable-id", "name": "Original name", "productCategory": "RESIDENTIAL_MORTGAGES",
