@@ -30,7 +30,9 @@ def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[
 
 
 def _present(value: Any) -> bool:
-    return value is not None and value != "" and value != [] and value != {}
+    if isinstance(value, str) and value.strip().lower() in {"", "null", "none"}:
+        return False
+    return value is not None and value != [] and value != {}
 
 
 def _fee_amount_status(item: Dict[str, Any]) -> str:

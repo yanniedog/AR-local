@@ -28,6 +28,7 @@ def _mortgage_member(row: Mapping[str, Any]) -> bool:
         and _text(row, "security_purpose") == "owner_occupied"
         and _text(row, "ribbon_repayment_type") == "principal_and_interest"
         and _text(row, "ribbon_rate_structure") == "variable"
+        and _text(row, "rate_type") != "discount"
     )
 
 

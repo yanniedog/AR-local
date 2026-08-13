@@ -32,9 +32,9 @@ TEXT_TAXONOMY: Tuple[TextRule, ...] = (
     TextRule("feature.offset", True, (r"\boffset (?:account|facility) (?:is )?available\b", r"\buse .{0,40} as offsets?\b")),
     TextRule("fee.package", False, (r"\bno (?:annual )?package fee\b", r"\bwithout (?:an? )?(?:annual )?package fee\b")),
     TextRule("fee.package", True, (r"\bannual package fee (?:of|is|applies)\b",)),
-    TextRule("feature.redraw", False, (r"\bno redraw(?: facility)?\b", r"\bredraw (?:is )?not available\b", r"\bcannot redraw\b")),
+    TextRule("feature.redraw", False, (r"\bno redraw(?: facility)?\b(?!\s+(?:fee|fees|amount|limit|limits)\b)", r"\bredraw (?:is )?not available\b", r"\bcannot redraw\b(?!\s+(?:amount|more than|up to)\b)")),
     TextRule("feature.redraw", True, (r"\bredraw facility (?:is )?(?:available|included)\b", r"\baccess to (?:a )?redraw facility\b", r"\bredraws are (?:available|limited)\b")),
-    TextRule("feature.extra_repayments", False, (r"\bextra repayments? (?:are )?not (?:allowed|available)\b", r"\bno extra repayments?\b", r"\bcannot make (?:unlimited )?extra repayments?\b")),
+    TextRule("feature.extra_repayments", False, (r"\bextra repayments? (?:are )?not (?:allowed|available)\b", r"\bno extra repayments?\b(?!\s+(?:fee|fees|amount|limit|limits)\b)", r"\bcannot make extra repayments?\b")),
     TextRule("feature.extra_repayments", True, (r"\bextra repayments? are (?:allowed|unlimited)\b", r"\bmake (?:unlimited )?extra repayments?\b")),
     TextRule("customer.cohort", "new", (r"\bnew customers? only\b", r"\bnew to bank customers?\b", r"\bnew accounts? only\b")),
     TextRule("customer.cohort", "existing", (r"\bexisting customers? only\b", r"\bexisting customer rate\b")),
@@ -127,6 +127,8 @@ def _path_context(path: str) -> Tuple[str, str]:
         kind = "condition"
     leaf = path.rsplit(".", 1)[-1]
     canonical = _CANONICAL_LEAVES.get(leaf)
+    if canonical and canonical.startswith("product.") and ("." in path or "[" in path):
+        canonical = f"{kind}.{_slug(leaf)}" if leaf in {"name", "description"} else None
     if root == "fees":
         if leaf == "amount" or ".fixedAmount.amount" in path:
             canonical = "fee.amount"

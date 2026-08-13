@@ -42,6 +42,15 @@ def test_real_fixture_excludes_fixed_conditional_and_term_deposit_rows() -> None
     assert savings["count"] == 2
 
 
+def test_mortgage_cohort_excludes_discount_rows_used_only_outside_app_section() -> None:
+    row = {
+        "dataset": "Mortgage", "rate_family": "lending", "account_class": "standard",
+        "security_purpose": "owner_occupied", "ribbon_repayment_type": "principal_and_interest",
+        "ribbon_rate_structure": "variable", "rate_type": "DISCOUNT",
+    }
+    assert spread._mortgage_member(row) is False
+
+
 def test_exact_one_percent_is_normalized_as_a_percentage() -> None:
     assert spread._rate({"rate": 1}) == 0.01
     assert spread._rate({"rate": 0.85}) is None

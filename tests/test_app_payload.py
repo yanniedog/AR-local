@@ -187,6 +187,15 @@ def test_fee_method_union_is_preserved_for_fixed_rate_variable_caps_and_discount
     assert fees[2]["amountStatus"] == "variable"
 
 
+def test_textual_null_fee_amount_is_unpublished():
+    fee = app_payload._fee_items({
+        "fees": [{"name": "At-cost fee", "feeType": "EVENT", "amount": "null"}],
+    })[0]
+    assert fee["amount"] == "null"
+    assert fee["amountStatus"] == "unpublished"
+    assert "value" not in fee
+
+
 def test_build_brands_shortcodes_and_color():
     brands = app_payload.build_brands(["Some New Bank"], {"some new bank": "SNB"})
     assert brands["Some New Bank"]["short"] == "SNB"

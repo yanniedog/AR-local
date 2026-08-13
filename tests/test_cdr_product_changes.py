@@ -72,6 +72,34 @@ def test_attribute_wording_does_not_emit_condition_change() -> None:
     assert not of_type(payload, "condition_changed")
 
 
+def test_scalar_evidence_does_not_fall_back_to_product_description() -> None:
+    row = fact(
+        "tailored", "", factType="ATTRIBUTE", canonicalKey="product.tailored",
+        source_value_json="false", description="Choose from five options", value_boolean=False,
+    )
+    assert changes._evidence_text(row) == ""
+
+
+def test_product_metadata_copies_do_not_create_per_fact_events() -> None:
+    before = fact("offset", "Offset available", last_updated="2026-01-01", category="HOME_LOANS")
+    after = fact("offset", "Offset available", last_updated="2026-02-01", category="HOME_LOANS")
+    assert changes.diff_normalized_product_facts([before], [after])["events"] == []
+
+
+def test_ordinary_attribute_wording_does_not_infer_cadence() -> None:
+    before = fact(
+        "description", "Choose from five options", factType="ATTRIBUTE",
+        canonicalKey="product.description", value="Choose from five options",
+    )
+    after = fact(
+        "description", "Choose five options", factType="ATTRIBUTE",
+        canonicalKey="product.description", value="Choose five options",
+    )
+    payload = changes.diff_normalized_product_facts([before], [after])
+    assert of_type(payload, "value_changed")
+    assert not of_type(payload, "cadence_changed")
+
+
 @pytest.mark.parametrize(
     ("before", "after", "expected"),
     [

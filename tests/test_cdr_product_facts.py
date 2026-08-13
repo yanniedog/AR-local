@@ -191,6 +191,33 @@ def test_text_taxonomy_scopes_negation_to_each_clause():
     }
 
 
+def test_fee_free_wording_does_not_negate_available_features():
+    facts = compact_facts({
+        "productId": "fee-free", "name": "Fee-free features",
+        "features": [
+            {"featureType": "REDRAW", "additionalInfo": "No redraw fee"},
+            {"featureType": "EXTRA_REPAYMENTS", "additionalInfo": "No extra repayment fee"},
+        ],
+    }, "fee-free")
+    assert {fact["value"] for fact in facts if fact["canonicalKey"] == "feature.redraw"} == {True}
+    assert {fact["value"] for fact in facts if fact["canonicalKey"] == "feature.extra_repayments"} == {True}
+
+
+def test_product_fields_are_root_scoped_and_nested_names_keep_entity_kind():
+    facts = extract_product_facts({
+        "productId": "root", "name": "Root product", "description": "Root description",
+        "fees": [{"name": "Valuation fee", "description": "At cost", "feeType": "EVENT"}],
+        "features": [{"name": "Redraw", "description": "Available", "featureType": "REDRAW"}],
+    }, "root")
+    product_names = [fact["value"] for fact in facts if fact["canonical_key"] == "product.name"]
+    product_descriptions = [fact["value"] for fact in facts if fact["canonical_key"] == "product.description"]
+    assert product_names == ["Root product"]
+    assert product_descriptions == ["Root description"]
+    assert {fact["canonical_key"] for fact in facts} >= {
+        "fee.name", "fee.description", "feature.name", "feature.description",
+    }
+
+
 def test_compact_facts_preserve_legacy_fee_rates_and_applicability_values():
     facts = compact_facts({
         "productId": "priced", "name": "Priced",
@@ -290,6 +317,7 @@ def test_normal_outputs_include_facts_json_xlsx_and_sqlite(tmp_path: Path):
     cdr_outputs.build_outputs(run, out_dir=out)
     exported = json.loads((out / "banks-2026-05-19.json").read_text(encoding="utf-8"))
     assert exported["product_facts"]
+    assert exported["product_change_summary"]["normalization_version"] == "cdr-product-facts-2"
     workbook = openpyxl.load_workbook(out / "banks-2026-05-19.xlsx", read_only=True)
     assert "product_facts" in workbook.sheetnames
     with sqlite3.connect(out / "local-cdr.sqlite") as con:

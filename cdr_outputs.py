@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from cdr_clean_export import coverage_summary, parse_banks_run, summary_counts, utc_now
 from cdr_product_changes import diff_normalized_product_facts, load_run_facts, previous_finalized_run
+from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
@@ -518,7 +519,7 @@ def build_outputs(
         previous_run_date=previous.name,
         current_run_date=run_date,
     ) if previous else {
-        "schema_version": 1, "normalization_version": None,
+        "schema_version": 1, "normalization_version": NORMALIZATION_VERSION,
         "previous_run_date": None, "run_date": run_date, "change_count": 0,
         "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
         "events": [],

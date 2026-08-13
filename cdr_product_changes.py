@@ -96,6 +96,10 @@ _QUALIFIER_ID_FIELDS = (
     "repaymentType", "depositRateType", "lendingRateType", "rateApplicabilityType",
     "unitOfMeasure", "currency",
 )
+_DUPLICATED_PRODUCT_FIELDS = {
+    "sector", "brand", "brand_name", "category", "last_updated",
+    "effective_from", "effective_to", "is_tailored", "description",
+}
 _EVENT_ORDER = {
     "product_added": 0, "product_removed": 1, "product_renamed": 2,
     "ambiguous_match": 3, "fact_added": 4, "fact_removed": 5, "value_changed": 6,
@@ -288,6 +292,9 @@ def _evidence_text(fact: Mapping[str, Any]) -> str:
             parsed = encoded
         if isinstance(parsed, str):
             return parsed
+        # A scalar has exact evidence, but it is not prose. Do not substitute
+        # copied product-level description metadata for this fact.
+        return ""
     parts = []
     for field in ("name", "label", "title", *_TEXT_FIELDS):
         value = fact.get(field)
@@ -408,6 +415,7 @@ def _semantic_fact(fact: Mapping[str, Any]) -> Dict[str, Any]:
         "product_key", "source_file",
         *_PRODUCT_NAMES, *_PRODUCT_ALIASES["provider"], *_PRODUCT_ALIASES["product_id"],
         *_PRODUCT_ALIASES["dataset"],
+        *_DUPLICATED_PRODUCT_FIELDS,
     }
     normalized = {key: deepcopy(value) for key, value in fact.items() if key not in ignored}
     qualifiers = {
@@ -523,6 +531,7 @@ def _metadata(fact: Mapping[str, Any]) -> Dict[str, Any]:
         "category", "canonical_key", "canonicalKey", "fact_key", "factKey", "path",
         "name", "label", "title", "source_value_json", "value_json", "qualifiers", "qualifiers_json",
         "source_path", "product_key", "source_file",
+        *_DUPLICATED_PRODUCT_FIELDS,
         *_TEXT_FIELDS, *_VALUE_FIELDS, *_RANGE_FIELDS, *_CADENCE_FIELDS,
     }
     metadata = {key: value for key, value in fact.items() if key not in excluded}
@@ -596,6 +605,12 @@ def _compare_fact(
         ))
     condition_slots = [slot for slot in changed_slots if slot not in {"thresholds", "cadence_timing"}]
     kind = str(_first(after, ("kind", "fact_type", "factType", "category")) or "").casefold()
+    before_kind = str(_first(before, ("kind", "fact_type", "factType", "category")) or "").casefold()
+    condition_fact = (
+        kind in {"condition", "eligibility", "constraint"}
+        or before_kind in {"condition", "eligibility", "constraint"}
+        or canonical.startswith(("condition.", "eligibility.", "constraint."))
+    )
     value_type = str(_first(after, ("value_type", "valueType")) or "").casefold()
     prose_threshold = (
         value_type == "range"
@@ -607,17 +622,12 @@ def _compare_fact(
             "range_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent", reasons=["semantic_slot_changed:thresholds"],
         ))
-    if "cadence_timing" in changed_slots and not any(event["event_type"] == "cadence_changed" for event in events):
+    temporal_fact = condition_fact or any(token in canonical for token in ("frequency", "cadence", "period", "timing"))
+    if "cadence_timing" in changed_slots and temporal_fact and not any(event["event_type"] == "cadence_changed" for event in events):
         events.append(_event(
             "cadence_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent", reasons=["semantic_slot_changed:cadence_timing"],
         ))
-    before_kind = str(_first(before, ("kind", "fact_type", "factType", "category")) or "").casefold()
-    condition_fact = (
-        kind in {"condition", "eligibility", "constraint"}
-        or before_kind in {"condition", "eligibility", "constraint"}
-        or canonical.startswith(("condition.", "eligibility.", "constraint."))
-    )
     if condition_slots and condition_fact:
         events.append(_event(
             "condition_changed", product_key, before, after,
