@@ -32,6 +32,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -417,13 +418,18 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     return ok
 
 
-def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
+def http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    timeout_seconds: float = 30.0,
+) -> int:
     import urllib.error
     import urllib.request
 
     latest = base_url.rstrip("/") + "/api/latest"
     try:
-        with urllib.request.urlopen(latest, timeout=30.0) as resp:
+        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
             if int(resp.status) != 200:
                 print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
                 return EXIT_VERIFY_FAIL
@@ -445,6 +451,39 @@ def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
         return EXIT_VERIFY_FAIL
     print(f"pi_deploy_verify: HTTP OK {latest} run_date={run_date} rates={rates}")
     return EXIT_OK
+
+
+def wait_for_http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    attempts: int = 13,
+    delay_seconds: float = 10.0,
+    budget_seconds: float = 120.0,
+) -> int:
+    """Allow the dashboard's preload phase to finish after a service restart."""
+    deadline = time.monotonic() + max(0.0, budget_seconds)
+    result = EXIT_VERIFY_FAIL
+    for attempt in range(1, attempts + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        result = http_smoke(
+            base_url,
+            require_rates=require_rates,
+            timeout_seconds=min(30.0, remaining),
+        )
+        if result == EXIT_OK:
+            return EXIT_OK
+        remaining = deadline - time.monotonic()
+        if attempt < attempts and remaining > 0:
+            sleep_seconds = min(delay_seconds, remaining)
+            print(
+                f"pi_deploy_verify: dashboard not ready after restart "
+                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
+            )
+            time.sleep(sleep_seconds)
+    return result
 
 
 def verify_sync(*, dry_run: bool = False) -> int:
@@ -596,7 +635,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(f"pi_deploy_verify: dry-run would smoke {pi_base_url()}")
         return EXIT_OK
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: verify OK (sync + dashboard + /api/latest)")
@@ -622,7 +661,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     sync_rc = verify_sync(dry_run=False)
     if sync_rc != EXIT_OK:
         return sync_rc
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: deploy OK")
