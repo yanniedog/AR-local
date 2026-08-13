@@ -149,6 +149,27 @@ def test_deploy_smoke_waits_for_dashboard_preload(monkeypatch):
     assert sleeps == [2.5, 2.5]
 
 
+def test_deploy_smoke_returns_immediately_when_ready(monkeypatch):
+    sleeps = []
+    calls = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "http_smoke",
+        lambda *_args, **kwargs: calls.append(kwargs) or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+
+    assert (
+        pi_deploy_verify.wait_for_http_smoke(
+            "http://pi/", require_rates=False, attempts=3, delay_seconds=2.5
+        )
+        == pi_deploy_verify.EXIT_OK
+    )
+    assert calls[0]["require_rates"] is False
+    assert calls[0]["timeout_seconds"] <= 30.0
+    assert sleeps == []
+
+
 def test_deploy_smoke_fails_after_bounded_retries(monkeypatch):
     attempts = []
     sleeps = []
@@ -167,3 +188,26 @@ def test_deploy_smoke_fails_after_bounded_retries(monkeypatch):
     )
     assert len(attempts) == 3
     assert sleeps == [1.0, 1.0]
+
+
+def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
+    timeouts = []
+    sleeps = []
+    ticks = iter([100.0, 100.0, 125.0, 125.0])
+    monkeypatch.setattr(pi_deploy_verify.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "http_smoke",
+        lambda *_args, **kwargs: timeouts.append(kwargs["timeout_seconds"])
+        or pi_deploy_verify.EXIT_SSH,
+    )
+
+    assert (
+        pi_deploy_verify.wait_for_http_smoke(
+            "http://pi/", attempts=13, delay_seconds=10.0, budget_seconds=20.0
+        )
+        == pi_deploy_verify.EXIT_SSH
+    )
+    assert timeouts == [20.0]
+    assert sleeps == []

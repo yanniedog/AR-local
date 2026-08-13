@@ -418,13 +418,18 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     return ok
 
 
-def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
+def http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    timeout_seconds: float = 30.0,
+) -> int:
     import urllib.error
     import urllib.request
 
     latest = base_url.rstrip("/") + "/api/latest"
     try:
-        with urllib.request.urlopen(latest, timeout=30.0) as resp:
+        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
             if int(resp.status) != 200:
                 print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
                 return EXIT_VERIFY_FAIL
@@ -454,19 +459,31 @@ def wait_for_http_smoke(
     require_rates: bool = True,
     attempts: int = 13,
     delay_seconds: float = 10.0,
+    budget_seconds: float = 120.0,
 ) -> int:
     """Allow the dashboard's preload phase to finish after a service restart."""
+    deadline = time.monotonic() + max(0.0, budget_seconds)
+    result = EXIT_VERIFY_FAIL
     for attempt in range(1, attempts + 1):
-        result = http_smoke(base_url, require_rates=require_rates)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        result = http_smoke(
+            base_url,
+            require_rates=require_rates,
+            timeout_seconds=min(30.0, remaining),
+        )
         if result == EXIT_OK:
             return EXIT_OK
-        if attempt < attempts:
+        remaining = deadline - time.monotonic()
+        if attempt < attempts and remaining > 0:
+            sleep_seconds = min(delay_seconds, remaining)
             print(
                 f"pi_deploy_verify: dashboard not ready after restart "
-                f"(attempt {attempt}/{attempts}); retrying in {delay_seconds:g}s"
+                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
             )
-            time.sleep(delay_seconds)
-    return EXIT_VERIFY_FAIL
+            time.sleep(sleep_seconds)
+    return result
 
 
 def verify_sync(*, dry_run: bool = False) -> int:
