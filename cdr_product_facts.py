@@ -31,9 +31,9 @@ TEXT_TAXONOMY: Tuple[TextRule, ...] = (
     TextRule("feature.offset", True, (r"\boffset (?:account|facility) (?:is )?available\b", r"\buse .{0,40} as offsets?\b")),
     TextRule("fee.package", False, (r"\bno (?:annual )?package fee\b", r"\bwithout (?:an? )?(?:annual )?package fee\b")),
     TextRule("fee.package", True, (r"\bannual package fee (?:of|is|applies)\b",)),
-    TextRule("feature.redraw", False, (r"\bno redraw(?: facility)?\b", r"\bredraw (?:is )?not available\b")),
+    TextRule("feature.redraw", False, (r"\bno redraw(?: facility)?\b", r"\bredraw (?:is )?not available\b", r"\bcannot redraw\b")),
     TextRule("feature.redraw", True, (r"\bredraw facility (?:is )?(?:available|included)\b", r"\baccess to (?:a )?redraw facility\b", r"\bredraws are (?:available|limited)\b")),
-    TextRule("feature.extra_repayments", False, (r"\bextra repayments? (?:are )?not (?:allowed|available)\b", r"\bno extra repayments?\b")),
+    TextRule("feature.extra_repayments", False, (r"\bextra repayments? (?:are )?not (?:allowed|available)\b", r"\bno extra repayments?\b", r"\bcannot make (?:unlimited )?extra repayments?\b")),
     TextRule("feature.extra_repayments", True, (r"\bextra repayments? are (?:allowed|unlimited)\b", r"\bmake (?:unlimited )?extra repayments?\b")),
     TextRule("customer.cohort", "new", (r"\bnew customers? only\b", r"\bnew to bank customers?\b", r"\bnew accounts? only\b")),
     TextRule("customer.cohort", "existing", (r"\bexisting customers? only\b", r"\bexisting customer rate\b")),
@@ -139,6 +139,10 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         return "text", str(value), "text", "preserved"
     if isinstance(value, str) and _DURATION.match(value):
         return "duration", value.upper(), "duration", "canonical"
+    # CDR product identifiers are opaque strings. Numeric-looking IDs must retain
+    # leading zeroes and arbitrary precision for exact joins and filtering.
+    if canonical == "product.id":
+        return "text", str(value), "text", "canonical"
     rate_leaf = canonical in {"rate.advertised", "rate.comparison", "fee.rate"} or leaf == "feeRate"
     lvr = canonical in {"constraint.value", "tier.minimum", "tier.maximum"} and (
         parent.get("unitOfMeasure") == "PERCENT" or "LVR" in str(parent.get("constraintType") or "")
@@ -172,8 +176,10 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
 
 def _qualifiers(path: str, ancestors: Sequence[Tuple[str, Mapping[str, Any]]]) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
-    for _, item in ancestors:
+    for index, (_, item) in enumerate(ancestors):
         for key in ("name", "description", "title", "additionalInfo", "featureType", "eligibilityType", "constraintType", "feeType", "feeMethodUType", "depositRateType", "lendingRateType", "loanPurpose", "repaymentType", "rateApplicabilityType", "discountEligibilityType", "unitOfMeasure", "currency", "applicationFrequency"):
+            if key == "name" and index == 0 and len(ancestors) > 1:
+                continue
             if item.get(key) not in (None, ""):
                 result[key] = item[key]
     result["sourcePattern"] = source_pattern(path)
@@ -187,7 +193,7 @@ def _fact_id(product_key: str, path: str, canonical: str, value: Any, suffix: st
 
 def _group_id(product_key: str, path: str, parent: Mapping[str, Any]) -> str:
     pattern = path.rsplit(".", 1)[0]
-    discriminator = {key: parent.get(key) for key in ("name", "feeType", "featureType", "eligibilityType", "constraintType", "depositRateType", "lendingRateType", "loanPurpose", "repaymentType", "rateApplicabilityType", "discountEligibilityType", "additionalValue", "applicationFrequency") if parent.get(key) not in (None, "")}
+    discriminator = {key: parent.get(key) for key in ("name", "feeType", "featureType", "eligibilityType", "constraintType", "depositRateType", "lendingRateType", "loanPurpose", "repaymentType", "rateApplicabilityType", "discountEligibilityType", "additionalValue") if parent.get(key) not in (None, "")}
     return hashlib.sha256(json.dumps([product_key, pattern, discriminator], sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -195,7 +201,7 @@ def _semantic_entity(parent: Mapping[str, Any], path: str) -> Dict[str, Any]:
     return {key: parent.get(key) for key in (
         "name", "feeType", "feeMethodUType", "featureType", "eligibilityType", "constraintType",
         "depositRateType", "lendingRateType", "loanPurpose", "repaymentType", "applicationType",
-        "applicationFrequency", "rateApplicabilityType", "discountEligibilityType", "unitOfMeasure",
+        "rateApplicabilityType", "discountEligibilityType", "unitOfMeasure",
     ) if parent.get(key) not in (None, "")} | {"entity": source_pattern(path).rsplit(".", 1)[0]}
 
 
@@ -206,9 +212,11 @@ def _stable_ids(facts: List[Dict[str, Any]], product_key: str) -> List[Dict[str,
         qualifiers = fact.get("qualifiers") or {}
         entity = {key: qualifiers.get(key) for key in (
             "name", "featureType", "eligibilityType", "constraintType", "feeType", "feeMethodUType",
-            "depositRateType", "lendingRateType", "loanPurpose", "repaymentType", "applicationFrequency",
+            "depositRateType", "lendingRateType", "loanPurpose", "repaymentType",
             "rateApplicabilityType", "discountEligibilityType", "unitOfMeasure", "additionalValue",
         ) if qualifiers.get(key) not in (None, "")}
+        if str(fact.get("canonical_key") or "").startswith("product."):
+            entity.pop("name", None)
         entity["pattern"] = fact["source_pattern"].rsplit(".", 1)[0]
         if fact["mapping"] == "canonical_text":
             entity["tag_value"] = fact.get("value")
@@ -359,8 +367,15 @@ def _text_facts(record: Mapping[str, Any], product_key: str, structured: Sequenc
             authoritative.setdefault(str(fact["canonical_key"]), set()).add(json.dumps(fact.get("value"), sort_keys=True))
     for path, evidence in _text_values(record):
         lower = evidence.lower()
-        for rule in TEXT_TAXONOMY:
-            if not any(re.search(pattern, lower, re.I) for pattern in rule.patterns):
+        matched = [
+            rule for rule in TEXT_TAXONOMY
+            if any(re.search(pattern, lower, re.I) for pattern in rule.patterns)
+        ]
+        negative_keys = {rule.key for rule in matched if rule.value is False}
+        for rule in matched:
+            # Negative language takes precedence over a positive substring in the
+            # same clause (for example, "No offset account is available").
+            if rule.value is True and rule.key in negative_keys:
                 continue
             encoded = json.dumps(rule.value, sort_keys=True)
             values = authoritative.get(rule.key, set())
@@ -383,7 +398,7 @@ def extract_product_facts(record: Mapping[str, Any], product_key: str) -> List[D
 
 
 def clean_fact_rows(record: Mapping[str, Any], base: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    key = str(base.get("product_key") or "")
+    key = "|".join(str(base.get(field) or "") for field in ("dataset", "provider", "product_id"))
     rows = []
     for fact in extract_product_facts(record, key):
         value = fact["value"]
@@ -479,7 +494,7 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
             if not isinstance(rate, Mapping): continue
             rate_type = str(rate.get(type_key) or "OTHER")
             applies = [str(rate[field]) for field in ("loanPurpose", "repaymentType") if rate.get(field)]
-            entity = {field: rate.get(field) for field in (type_key, "loanPurpose", "repaymentType", "applicationType", "applicationFrequency", "additionalValue") if rate.get(field) not in (None, "")}
+            entity = {field: rate.get(field) for field in (type_key, "loanPurpose", "repaymentType", "applicationType", "additionalValue") if rate.get(field) not in (None, "")}
             rate_group = add("rate", f"rate.{family}.{_slug(rate_type)}", rate_type.replace("_", " ").title(), entity, value=_fraction(rate.get("rate")), comparison_value=_fraction(rate.get("comparisonRate")) if rate.get("comparisonRate") not in (None, "") else None, unit="fraction", source_type=rate_type, cadence=rate.get("applicationFrequency"), applies_to=applies or None, condition=condition(rate))
             tiers = rate.get("tiers") or []
             for tier in tiers if isinstance(tiers, list) else []:

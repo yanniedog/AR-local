@@ -70,6 +70,31 @@ def test_non_numeric_rate_and_range_values_are_preserved_without_invalid_sql_typ
         assert con.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0] == len(rows)
 
 
+def test_numeric_product_id_is_preserved_as_opaque_text():
+    facts = extract_product_facts({"productId": "001234567890123456789"}, "Mortgage|Bank|stable")
+    product_id = next(fact for fact in facts if fact["canonical_key"] == "product.id")
+    assert (product_id["value_type"], product_id["value"], product_id["unit"]) == (
+        "text", "001234567890123456789", "text",
+    )
+
+
+def test_negative_text_rules_take_precedence_over_positive_substrings():
+    record = {
+        "description": (
+            "No offset account is available. Customers cannot redraw and cannot make extra repayments."
+        ),
+    }
+    facts = extract_product_facts(record, "Mortgage|Bank|stable")
+    tagged = {
+        (fact["canonical_key"], fact["value"])
+        for fact in facts if fact["mapping"] == "canonical_text"
+    }
+    assert ("feature.offset", False) in tagged
+    assert ("feature.redraw", False) in tagged
+    assert ("feature.extra_repayments", False) in tagged
+    assert not any(value is True for key, value in tagged if key.startswith("feature."))
+
+
 def test_compact_facts_consolidate_structural_fields_and_keep_exact_conditions():
     compact = compact_facts(captured()[0]["record"], "Mortgage|Up|up-home")
     assert not any(fact["canonicalKey"] in {"feature.type", "currency", "fee.method"} for fact in compact)
@@ -108,6 +133,27 @@ def test_semantic_ids_survive_reordering_and_repeated_tiers_remain_unique():
     tier_facts = [fact for fact in extract_product_facts(tiered, "repeated-tier") if fact["value_type"] == "range"]
     assert len(tier_facts) == 2
     assert len({fact["fact_id"] for fact in tier_facts}) == 2
+
+
+def test_fact_ids_use_stable_product_identity_not_mutable_name_or_category():
+    record = {
+        "productId": "stable-id", "name": "Original name", "productCategory": "RESIDENTIAL_MORTGAGES",
+        "features": [{"featureType": "OFFSET", "additionalValue": "Available"}],
+    }
+    before = clean_fact_rows(record, {
+        "dataset": "Mortgage", "provider": "Example Bank", "product_id": "stable-id",
+        "product_key": "Example Bank|stable-id|RESIDENTIAL_MORTGAGES|Original name",
+        "product_name": "Original name",
+    })
+    renamed = {**record, "name": "Renamed product", "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS"}
+    after = clean_fact_rows(renamed, {
+        "dataset": "Mortgage", "provider": "Example Bank", "product_id": "stable-id",
+        "product_key": "Example Bank|stable-id|TRANS_AND_SAVINGS_ACCOUNTS|Renamed product",
+        "product_name": "Renamed product",
+    })
+    ids = lambda rows, canonical: next(row["fact_id"] for row in rows if row["canonical_key"] == canonical)
+    assert ids(before, "product.id") == ids(after, "product.id")
+    assert ids(before, "feature.type") == ids(after, "feature.type")
 
 
 def test_audit_reports_source_failures_and_does_not_claim_complete_capture():

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cdr_clean_export import bank_base_row, inner_record, load_json
-from cdr_product_facts import NORMALIZATION_VERSION, extract_product_facts
+from cdr_product_facts import NORMALIZATION_VERSION, clean_fact_rows
 
 
 SCHEMA_VERSION = 1
@@ -94,7 +94,7 @@ _QUALIFIER_ID_FIELDS = (
     "name", "sourceType", "feeType", "feeMethodUType", "featureType",
     "eligibilityType", "constraintType", "discountEligibilityType", "loanPurpose",
     "repaymentType", "depositRateType", "lendingRateType", "rateApplicabilityType",
-    "unitOfMeasure", "currency", "applicationFrequency",
+    "unitOfMeasure", "currency",
 )
 _EVENT_ORDER = {
     "product_added": 0, "product_removed": 1, "product_renamed": 2,
@@ -345,7 +345,7 @@ def _entity_qualifiers(family: str, facts: Sequence[Mapping[str, Any]]) -> Dict[
     elif "rate" in family or family in {"tiers", "tier"}:
         allowed = {
             "depositRateType", "lendingRateType", "loanPurpose", "repaymentType",
-            "rateApplicabilityType", "applicationFrequency", "unitOfMeasure", "currency",
+            "rateApplicabilityType", "unitOfMeasure", "currency",
         }
     elif family.startswith(("feature", "eligib", "constraint")):
         allowed = {
@@ -405,13 +405,14 @@ def _semantic_fact(fact: Mapping[str, Any]) -> Dict[str, Any]:
     """Strip array-position provenance before testing semantic equality."""
     ignored = {
         "fact_id", "factId", "id", "source_path", "source_pattern", "qualifiers_json",
+        "product_key",
         *_PRODUCT_NAMES, *_PRODUCT_ALIASES["provider"], *_PRODUCT_ALIASES["product_id"],
         *_PRODUCT_ALIASES["dataset"],
     }
     normalized = {key: deepcopy(value) for key, value in fact.items() if key not in ignored}
     qualifiers = {
         key: value for key, value in _qualifiers(fact).items()
-        if key not in {"groupId", "parentId", "sourcePattern"}
+        if key not in {"groupId", "parentId", "sourcePattern", *_CADENCE_FIELDS}
     }
     if qualifiers:
         normalized["qualifiers"] = qualifiers
@@ -521,13 +522,13 @@ def _metadata(fact: Mapping[str, Any]) -> Dict[str, Any]:
         *_PRODUCT_NAMES, "fact_id", "factId", "id", "kind", "fact_type", "factType",
         "category", "canonical_key", "canonicalKey", "fact_key", "factKey", "path",
         "name", "label", "title", "source_value_json", "value_json", "qualifiers", "qualifiers_json",
-        "source_path",
+        "source_path", "product_key",
         *_TEXT_FIELDS, *_VALUE_FIELDS, *_RANGE_FIELDS, *_CADENCE_FIELDS,
     }
     metadata = {key: value for key, value in fact.items() if key not in excluded}
     qualifiers = {
         key: value for key, value in _qualifiers(fact).items()
-        if key not in {"groupId", "parentId", "sourcePattern"}
+        if key not in {"groupId", "parentId", "sourcePattern", *_CADENCE_FIELDS}
     }
     if qualifiers:
         metadata["qualifiers"] = qualifiers
@@ -572,7 +573,10 @@ def _compare_fact(
     range_fields = _different(before, after, _RANGE_FIELDS)
     cadence_fields = _different(before, after, _CADENCE_FIELDS)
     value_fields = _different(before, after, _VALUE_FIELDS)
-    if value_fields and structured_type != "value_changed":
+    canonical = str(_first(after, ("canonical_key", "canonicalKey", "fact_key", "factKey")) or "").casefold()
+    canonical_is_range = any(token in canonical for token in ("range.", "minimum", "maximum"))
+    canonical_is_cadence = any(token in canonical for token in ("frequency", "cadence", "period", "timing"))
+    if value_fields and structured_type != "value_changed" and not (canonical_is_range or canonical_is_cadence):
         events.append(_event(
             "value_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent",
@@ -591,7 +595,14 @@ def _compare_fact(
             reasons=[f"structured_cadence_changed:{field}" for field in cadence_fields] + slot_reasons,
         ))
     condition_slots = [slot for slot in changed_slots if slot not in {"thresholds", "cadence_timing"}]
-    if "thresholds" in changed_slots and not any(event["event_type"] == "range_changed" for event in events):
+    kind = str(_first(after, ("kind", "fact_type", "factType", "category")) or "").casefold()
+    value_type = str(_first(after, ("value_type", "valueType")) or "").casefold()
+    prose_threshold = (
+        value_type == "range"
+        or canonical == "condition.text"
+        or (kind in {"condition", "eligibility", "constraint"} and value_type in {"text", "enum", ""})
+    )
+    if "thresholds" in changed_slots and prose_threshold and not any(event["event_type"] == "range_changed" for event in events):
         events.append(_event(
             "range_changed", product_key, before, after,
             materiality="material", equivalence="non_equivalent", reasons=["semantic_slot_changed:thresholds"],
@@ -900,7 +911,7 @@ def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
         record = inner_record(load_json(path))
         base = bank_base_row(path, banks_root, record)
         identity = "|".join((base["dataset"].casefold(), base["provider"].casefold(), base["product_id"]))
-        products[identity] = {"base": base, "record": record, "facts": extract_product_facts(record, identity)}
+        products[identity] = {"base": base, "record": record, "facts": clean_fact_rows(record, base)}
     return products
 
 
@@ -936,6 +947,8 @@ def compare_runs(previous_root: Path, current_root: Path) -> Dict[str, Any]:
 def previous_finalized_run(current_root: Path) -> Optional[Path]:
     current = current_root.parent if current_root.name == "_exports" else current_root
     runs = current.parent
+    if not runs.is_dir():
+        return None
     candidates = [
         path for path in runs.iterdir()
         if path.is_dir() and path.name < current.name and _export_file(path) is not None

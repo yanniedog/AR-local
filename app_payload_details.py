@@ -158,7 +158,10 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "links": _detail_links(record),
-                "facts": compact_facts(record, str(key)),
+                "facts": compact_facts(
+                    record,
+                    "|".join(str(product.get(field) or "") for field in ("dataset", "provider", "product_id")),
+                ),
             }
         )
         details[key] = entry

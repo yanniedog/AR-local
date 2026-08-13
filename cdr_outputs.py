@@ -468,11 +468,12 @@ def build_outputs(
     run_root: Path,
     out_dir: Optional[Path] = None,
     db_path: Optional[Path] = None,
+    previous_run_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
     banks = parse_banks_run(run_root)
-    previous = previous_finalized_run(run_root)
+    previous = previous_run_root or previous_finalized_run(run_root)
     changes = diff_normalized_product_facts(
         load_run_facts(previous),
         banks["product_facts"],

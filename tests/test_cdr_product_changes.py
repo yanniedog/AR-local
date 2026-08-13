@@ -110,6 +110,21 @@ def test_cadence_change_is_material_and_exact_evidence_is_retained() -> None:
     assert payload["current_run_date"] == "2026-08-13"
 
 
+def test_structured_rate_cadence_change_matches_the_same_entity() -> None:
+    common = {
+        "provider": "Example Bank", "product_id": "P1", "dataset": "Mortgage",
+        "product_name": "Clear Home Loan", "kind": "rate", "canonical_key": "rate.application_frequency",
+        "value_type": "duration", "unit": "duration", "source_path": "lendingRates[0].applicationFrequency",
+        "source_pattern": "lendingRates[].applicationFrequency",
+    }
+    before = {**common, "value_text": "P1M", "value_json": '"P1M"', "source_value_json": '"P1M"',
+              "qualifiers": {"lendingRateType": "VARIABLE", "applicationFrequency": "P1M"}}
+    after = {**common, "value_text": "P1Y", "value_json": '"P1Y"', "source_value_json": '"P1Y"',
+             "qualifiers": {"lendingRateType": "VARIABLE", "applicationFrequency": "P1Y"}}
+    payload = changes.diff_normalized_product_facts([before], [after])
+    assert [event["event_type"] for event in payload["events"]] == ["cadence_changed"]
+
+
 def test_only_whitespace_case_and_punctuation_is_cosmetic_equivalent() -> None:
     before = fact("redraw", "Customers may redraw, monthly.")
     after = fact("redraw", "  customers MAY redraw monthly!!! ")
@@ -194,6 +209,19 @@ def test_structured_value_range_cadence_and_metadata_changes_are_classified() ->
     assert metadata["materiality"] == "review"
     assert metadata["equivalence"] == "unknown"
     assert metadata["review_required"] is True
+
+
+def test_plain_numeric_rate_change_is_not_duplicated_as_range_change() -> None:
+    before = fact(
+        "rate", "Advertised rate", fact_type="rate", canonical_key="rate.advertised",
+        value_type="rate", value_number=0.05, source_value_json="0.05",
+    )
+    after = fact(
+        "rate", "Advertised rate", fact_type="rate", canonical_key="rate.advertised",
+        value_type="rate", value_number=0.06, source_value_json="0.06",
+    )
+    payload = changes.diff_normalized_product_facts([before], [after])
+    assert [event["event_type"] for event in payload["events"]] == ["value_changed"]
 
 
 def test_stable_provider_product_id_dataset_join_detects_product_rename() -> None:
@@ -361,6 +389,23 @@ def test_run_integration_reads_finalized_normalized_fact_exports(tmp_path: Path)
     assert report["previous_run_date"] == "2026-08-12"
     assert report["current_run_date"] == "2026-08-13"
     assert of_type(report, "condition_changed")[0]["equivalence"] == "non_equivalent"
+
+
+def test_raw_fallback_and_finalized_export_use_the_same_normalized_shape(tmp_path: Path) -> None:
+    previous = tmp_path / "2026-08-12"
+    detail = previous / "banks" / "Mortgage" / "Example Bank" / "Clear Home Loan" / "P1"
+    detail.mkdir(parents=True)
+    record = {
+        "productId": "P1", "name": "Clear Home Loan", "description": "Customers may redraw.",
+        "features": [], "eligibility": [], "constraints": [], "fees": [], "lendingRates": [],
+    }
+    (detail / "product-detail.json").write_text(json.dumps({"data": record}), encoding="utf-8")
+    fallback_rows = changes.load_run_facts(previous)
+    current = tmp_path / "2026-08-13"
+    write_finalized_export(current, fallback_rows)
+    report = changes.compare_runs(previous, current)
+    assert report["events"] == []
+    assert report["change_count"] == 0
 
 
 def test_previous_finalized_run_ignores_partial_sibling(tmp_path: Path) -> None:
