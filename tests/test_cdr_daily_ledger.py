@@ -155,7 +155,22 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     previous = runs / "2026-06-15"
     export = previous / "_exports"
     export.mkdir(parents=True)
-    (export / "banks-2026-06-15.json").write_text(json.dumps({"product_facts": []}), encoding="utf-8")
+    (export / "banks-2026-06-15.json").write_text(json.dumps({
+        "product_facts": [],
+        "product_change_summary": {"normalization_version": "cdr-product-facts-2"},
+    }), encoding="utf-8")
+    (export / "banks-2026-06-15.xlsx").write_bytes(b"complete")
+    (export / "local-cdr.sqlite").write_bytes(b"complete")
+    cache = export / "dashboard-cache"
+    cache.mkdir()
+    (cache / "latest.json").write_text(json.dumps({
+        "run_date": "2026-06-15",
+        "files": {
+            "banks_json": "banks-2026-06-15.json",
+            "banks_xlsx": "banks-2026-06-15.xlsx",
+            "db": "local-cdr.sqlite",
+        },
+    }), encoding="utf-8")
     captured = {}
 
     def fake_build(run_root, out_dir, db_path, *, previous_run_root=None):

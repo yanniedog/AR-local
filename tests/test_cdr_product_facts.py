@@ -6,6 +6,7 @@ from pathlib import Path
 import app_payload_mobile
 import cdr_outputs
 import openpyxl
+import pytest
 from cdr_product_facts import audit_records, clean_fact_rows, compact_facts, extract_product_facts
 
 
@@ -88,6 +89,39 @@ def test_percent_style_rates_are_normalized_to_fractions_everywhere():
     assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == 0.0525
     compact = next(fact for fact in compact_facts(record, "Mortgage|Bank|percent-rates") if fact["kind"] == "rate")
     assert (compact["value"], compact["comparisonValue"]) == (0.05, 0.0525)
+
+
+@pytest.mark.parametrize(
+    ("key", "type_key", "rate", "comparison", "expected_rate", "expected_comparison"),
+    [
+        ("depositRates", "depositRateType", "0.85", "0.90", 0.0085, 0.009),
+        ("lendingRates", "lendingRateType", "0.55", "0.60", 0.055, 0.06),
+    ],
+)
+def test_legacy_sub_one_rates_use_the_same_family_normalization_in_all_facts(
+    key, type_key, rate, comparison, expected_rate, expected_comparison,
+):
+    record = {
+        "productId": "legacy-rate",
+        key: [{type_key: "VARIABLE", "rate": rate, "comparisonRate": comparison}],
+    }
+    facts = extract_product_facts(record, "Savings|Bank|legacy-rate")
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == pytest.approx(expected_rate)
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == pytest.approx(expected_comparison)
+    compact = next(fact for fact in compact_facts(record, "Savings|Bank|legacy-rate") if fact["kind"] == "rate")
+    assert compact["value"] == pytest.approx(expected_rate)
+    assert compact["comparisonValue"] == pytest.approx(expected_comparison)
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_numeric_source_values_are_preserved_as_text(value):
+    record = {
+        "productId": "non-finite",
+        "lendingRates": [{"lendingRateType": "VARIABLE", "rate": value}],
+    }
+    facts = extract_product_facts(record, "Mortgage|Bank|non-finite")
+    advertised = next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")
+    assert (advertised["value_type"], advertised["value"], advertised["unit"]) == ("text", value, "text")
 
 
 def test_variable_zero_fee_is_unpublished_not_free():

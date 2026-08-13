@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
+from cdr_rate_normalize import normalized_rate_value, rate_divisor
+
 SCHEMA_VERSION = 1
 NORMALIZATION_VERSION = "cdr-product-facts-2"
 _DURATION = re.compile(r"^P(?:[0-9.]+[YMWD])+(?:T(?:[0-9.]+[HMS])+)?$", re.I)
@@ -90,7 +92,8 @@ def _number(value: Any) -> Optional[Decimal]:
     if isinstance(value, bool) or value in (None, "", "null"):
         return None
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
+        return number if number.is_finite() else None
     except (InvalidOperation, ValueError):
         return None
 
@@ -102,7 +105,10 @@ def _fraction(value: Any) -> Any:
     return float(number)
 
 
-def _rate_fraction(value: Any) -> Any:
+def _rate_fraction(value: Any, divisor: Optional[float] = None, family: Optional[str] = None) -> Any:
+    if divisor is not None and family:
+        normalized = normalized_rate_value(value, divisor, family)
+        return value if normalized is None else normalized
     number = _number(value)
     if number is None:
         return value
@@ -149,7 +155,13 @@ def _ancestor_value(ancestors: Sequence[Tuple[str, Mapping[str, Any]]], key: str
     return next((item.get(key) for _, item in reversed(ancestors) if item.get(key) not in (None, "")), None)
 
 
-def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Sequence[Tuple[str, Mapping[str, Any]]]) -> Tuple[str, Any, str, str]:
+def _typed_value(
+    path: str,
+    value: Any,
+    parent: Mapping[str, Any],
+    ancestors: Sequence[Tuple[str, Mapping[str, Any]]],
+    rate_divisors: Optional[Mapping[str, float]] = None,
+) -> Tuple[str, Any, str, str]:
     leaf = path.rsplit(".", 1)[-1]
     canonical = _path_context(path)[1]
     if isinstance(value, bool):
@@ -167,7 +179,13 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         parent.get("unitOfMeasure") == "PERCENT" or "LVR" in str(parent.get("constraintType") or "")
     )
     if (rate_leaf or lvr) and (number := _number(value)) is not None:
-        fraction = _ratio_fraction(number) if lvr else _rate_fraction(number)
+        root = path.split("[", 1)[0].split(".", 1)[0]
+        family = "deposit" if root == "depositRates" else "lending" if root == "lendingRates" else None
+        fraction = _ratio_fraction(number) if lvr else _rate_fraction(
+            number,
+            rate_divisors.get(family) if family and rate_divisors else None,
+            family,
+        )
         return "rate", fraction, "fraction", "canonical"
     constraint_type = str(_ancestor_value(ancestors, "constraintType") or "").upper()
     eligibility_type = str(_ancestor_value(ancestors, "eligibilityType") or "").upper()
@@ -285,6 +303,14 @@ def _stable_ids(facts: List[Dict[str, Any]], product_key: str) -> List[Dict[str,
 
 
 def _leaf_facts(record: Mapping[str, Any], product_key: str) -> Iterator[Dict[str, Any]]:
+    rate_divisors = {
+        family: rate_divisor(
+            [item for item in (record.get(key) or []) if isinstance(item, Mapping)],
+            family,
+        )
+        for family, key in (("deposit", "depositRates"), ("lending", "lendingRates"))
+    }
+
     def walk(value: Any, path: str, ancestors: List[Tuple[str, Mapping[str, Any]]]) -> Iterator[Dict[str, Any]]:
         if isinstance(value, Mapping):
             next_ancestors = [*ancestors, (path, value)]
@@ -302,7 +328,9 @@ def _leaf_facts(record: Mapping[str, Any], product_key: str) -> Iterator[Dict[st
             return
         parent = ancestors[-1][1] if ancestors else {}
         kind, canonical = _path_context(path)
-        value_type, typed, unit, mapping = _typed_value(path, value, parent, ancestors)
+        value_type, typed, unit, mapping = _typed_value(
+            path, value, parent, ancestors, rate_divisors,
+        )
         qualifiers = _qualifiers(path, ancestors)
         group_id = _group_id(product_key, path, parent)
         qualifiers["groupId"] = group_id
@@ -574,12 +602,14 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
             add("condition", "fee.discount", description, {"fee": entity, "description": description, "type": discount.get("discountType")}, value=True, unit="boolean", source_type=discount.get("discountType"), condition=discount.get("additionalInfo") or description, parent_id=fee_group)
 
     for family, key, type_key in (("deposit", "depositRates", "depositRateType"), ("lending", "lendingRates", "lendingRateType")):
-        for rate in record.get(key) or []:
+        rates = [item for item in (record.get(key) or []) if isinstance(item, Mapping)]
+        divisor = rate_divisor(rates, family)
+        for rate in rates:
             if not isinstance(rate, Mapping): continue
             rate_type = str(rate.get(type_key) or "OTHER")
             applies = [str(rate[field]) for field in ("loanPurpose", "repaymentType") if rate.get(field)]
             entity = {field: rate.get(field) for field in (type_key, "loanPurpose", "repaymentType", "applicationType", "additionalValue") if rate.get(field) not in (None, "")}
-            rate_group = add("rate", f"rate.{family}.{_slug(rate_type)}", rate_type.replace("_", " ").title(), entity, value=_rate_fraction(rate.get("rate")), comparison_value=_rate_fraction(rate.get("comparisonRate")) if rate.get("comparisonRate") not in (None, "") else None, unit="fraction", source_type=rate_type, cadence=rate.get("applicationFrequency"), applies_to=applies or None, condition=condition(rate))
+            rate_group = add("rate", f"rate.{family}.{_slug(rate_type)}", rate_type.replace("_", " ").title(), entity, value=_rate_fraction(rate.get("rate"), divisor, family), comparison_value=_rate_fraction(rate.get("comparisonRate"), divisor, family) if rate.get("comparisonRate") not in (None, "") else None, unit="fraction", source_type=rate_type, cadence=rate.get("applicationFrequency"), applies_to=applies or None, condition=condition(rate))
             tiers = rate.get("tiers") or []
             for tier in tiers if isinstance(tiers, list) else []:
                 if not isinstance(tier, Mapping): continue

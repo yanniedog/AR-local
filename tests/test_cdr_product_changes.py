@@ -408,12 +408,37 @@ def test_inserting_rate_among_repeated_rates_only_adds_inserted_entity_facts() -
     assert not of_type(payload, "ambiguous_match")
 
 
-def write_finalized_export(root: Path, rows: list[dict[str, object]]) -> None:
+def write_finalized_export(
+    root: Path,
+    rows: list[dict[str, object]],
+    *,
+    normalization_version: str = "cdr-product-facts-2",
+    complete: bool = True,
+) -> None:
     export = root / "_exports"
     export.mkdir(parents=True)
-    (export / f"banks-{root.name}.json").write_text(
-        json.dumps({"run_date": root.name, "product_facts": rows}), encoding="utf-8",
+    banks_name = f"banks-{root.name}.json"
+    (export / banks_name).write_text(
+        json.dumps({
+            "run_date": root.name,
+            "product_facts": rows,
+            "product_change_summary": {"normalization_version": normalization_version},
+        }),
+        encoding="utf-8",
     )
+    if complete:
+        (export / f"banks-{root.name}.xlsx").write_bytes(b"complete")
+        (export / "local-cdr.sqlite").write_bytes(b"complete")
+        cache = export / "dashboard-cache"
+        cache.mkdir()
+        (cache / "latest.json").write_text(json.dumps({
+            "run_date": root.name,
+            "files": {
+                "banks_json": banks_name,
+                "banks_xlsx": f"banks-{root.name}.xlsx",
+                "db": "local-cdr.sqlite",
+            },
+        }), encoding="utf-8")
 
 
 def test_run_integration_reads_finalized_normalized_fact_exports(tmp_path: Path) -> None:
@@ -455,6 +480,37 @@ def test_previous_finalized_run_ignores_partial_sibling(tmp_path: Path) -> None:
     current.mkdir()
 
     assert changes.previous_finalized_run(current) == finalized
+
+
+def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_path: Path) -> None:
+    finalized = tmp_path / "2026-08-10"
+    missing_manifest = tmp_path / "2026-08-11"
+    missing_artifact = tmp_path / "2026-08-12"
+    current = tmp_path / "2026-08-13"
+    write_finalized_export(finalized, [fact("access", "Text")])
+    write_finalized_export(missing_manifest, [fact("access", "Text")], complete=False)
+    write_finalized_export(missing_artifact, [fact("access", "Text")])
+    (missing_artifact / "_exports" / "local-cdr.sqlite").unlink()
+    current.mkdir()
+
+    assert changes.previous_finalized_run(current) == finalized
+
+
+def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_path: Path) -> None:
+    compatible = tmp_path / "2026-08-10"
+    incompatible = tmp_path / "2026-08-12"
+    current = tmp_path / "2026-08-13"
+    write_finalized_export(compatible, [fact("access", "Text")])
+    write_finalized_export(
+        incompatible,
+        [fact("access", "Different text")],
+        normalization_version="cdr-product-facts-1",
+    )
+    current.mkdir()
+
+    assert changes.previous_finalized_run(current) == compatible
+    with pytest.raises(ValueError, match="normalization version mismatch"):
+        changes.load_run_facts(incompatible)
 
 
 def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path) -> None:

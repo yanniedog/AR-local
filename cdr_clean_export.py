@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
 from cdr_product_facts import clean_fact_rows
+from cdr_rate_normalize import normalized_rate_value, rate_divisor
 NOISE_KEYS = {
     "links",
     "meta",
@@ -105,35 +106,9 @@ def rate_text(value: Any, divisor: float = 1.0) -> str:
     return f"{number:.6g}"
 
 
-def rate_divisor(items: List[Dict[str, Any]], family: str) -> float:
-    values: List[float] = []
-    for item in items:
-        try:
-            values.append(float(number_text(item.get("rate"))))
-        except ValueError:
-            pass
-    if any(value > 1 for value in values):
-        return 100
-    if family == "lending" and any(0.3 < value <= 1 for value in values):
-        return 10
-    # Some legacy deposit feeds publish sub-1% values as percentage points
-    # (0.85 means 0.85%), while clean exports are fractional. A 20-100%
-    # at-call deposit rate is not a plausible consumer-rate observation, so
-    # normalize this bounded legacy convention before downstream aggregation.
-    if family == "deposit" and any(0.2 <= value <= 1 for value in values):
-        return 100
-    return 1
-
-
 def normalized_rate_text(value: Any, divisor: float, family: str) -> str:
-    raw = rate_text(value, divisor)
-    try:
-        number = float(raw)
-    except ValueError:
-        return raw
-    if family == "lending" and 0 < number < 0.02:
-        number *= 10
-    return f"{number:.6g}"
+    number = normalized_rate_value(value, divisor, family)
+    return f"{number:.6g}" if number is not None else number_text(value)
 
 
 def _official_https_url(value: Any) -> str:

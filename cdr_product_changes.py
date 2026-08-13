@@ -15,8 +15,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from cdr_clean_export import bank_base_row, inner_record, load_json
-from cdr_product_facts import NORMALIZATION_VERSION, clean_fact_rows
+from cdr_product_change_runs import load_run_facts, previous_finalized_run, run_date
+from cdr_product_facts import NORMALIZATION_VERSION
 
 
 SCHEMA_VERSION = 1
@@ -889,93 +889,12 @@ def _product_ref(key: Tuple[str, str, str]) -> Dict[str, str]:
     return {"provider": key[0], "product_id": key[1], "dataset": key[2]}
 
 
-def _run_date(run_root: Path) -> str:
-    return run_root.parent.name if run_root.name == "_exports" else run_root.name
-
-
-def _export_file(run_root: Path) -> Optional[Path]:
-    date = _run_date(run_root)
-    export_root = run_root if run_root.name == "_exports" else run_root / "_exports"
-    exact = export_root / f"banks-{date}.json"
-    if exact.is_file():
-        return exact
-    candidates = sorted(export_root.glob("banks-*.json")) if export_root.is_dir() else []
-    return candidates[0] if len(candidates) == 1 else None
-
-
-def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
-    exported = _export_file(run_root)
-    if exported:
-        payload = load_json(exported)
-        facts = payload.get("product_facts") if isinstance(payload, Mapping) else None
-        if isinstance(facts, list):
-            products: Dict[str, Dict[str, Any]] = {}
-            for supplied in facts:
-                if not isinstance(supplied, Mapping):
-                    raise ValueError(f"finalized product fact is not an object: {exported}")
-                key = _product_key(supplied)
-                identity = "|".join((key[2].casefold(), key[0].casefold(), key[1]))
-                products.setdefault(identity, {"base": {
-                    "provider": key[0], "product_id": key[1], "dataset": key[2],
-                    "product_name": str(_first(supplied, _PRODUCT_NAMES) or ""),
-                }, "facts": []})["facts"].append(dict(supplied))
-            return products
-    banks_root = run_root / "banks"
-    products = {}
-    for path in sorted(banks_root.rglob("product-detail.json")):
-        record = inner_record(load_json(path))
-        base = bank_base_row(path, banks_root, record)
-        identity = "|".join((base["dataset"].casefold(), base["provider"].casefold(), base["product_id"]))
-        products[identity] = {"base": base, "record": record, "facts": clean_fact_rows(record, base)}
-    return products
-
-
-def _enriched_facts(products: Mapping[str, Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    output = []
-    for identity in sorted(products):
-        product = products[identity]
-        base = product["base"]
-        for fact in product["facts"]:
-            if _first(fact, _PRODUCT_ALIASES["provider"]):
-                output.append(dict(fact))
-                continue
-            output.append({
-                "provider": base["provider"], "product_id": base["product_id"],
-                "dataset": base["dataset"], "product_name": base["product_name"], **fact,
-            })
-    return output
-
-
-def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
-    """Load normalized facts from a finalized export, or scan its raw run as fallback."""
-    return _enriched_facts(_load_run(run_root))
-
-
 def compare_runs(previous_root: Path, current_root: Path) -> Dict[str, Any]:
     """Load two finalized roots and return the integration report with flat events."""
     return diff_normalized_product_facts(
         load_run_facts(previous_root), load_run_facts(current_root),
-        previous_run_date=_run_date(previous_root), current_run_date=_run_date(current_root),
+        previous_run_date=run_date(previous_root), current_run_date=run_date(current_root),
     )
-
-
-def previous_finalized_run(current_root: Path) -> Optional[Path]:
-    current = current_root.parent if current_root.name == "_exports" else current_root
-    runs = current.parent
-    if not runs.is_dir():
-        return None
-    candidates = []
-    for path in runs.iterdir():
-        if not path.is_dir() or path.name >= current.name:
-            continue
-        exported = _export_file(path)
-        if exported is None:
-            continue
-        payload = load_json(exported)
-        has_facts = isinstance(payload, Mapping) and isinstance(payload.get("product_facts"), list)
-        if has_facts or (path / "banks").is_dir():
-            candidates.append(path)
-    return max(candidates, key=lambda path: path.name) if candidates else None
 
 
 def main(argv: Optional[List[str]] = None) -> int:
