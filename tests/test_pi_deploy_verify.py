@@ -126,3 +126,44 @@ def test_remote_wrapper_keeps_marker_outside_trailing_comment():
     wrapped = pi_deploy_verify._remote_command_with_success_sentinel("echo ok # trailing comment")
     assert "trailing comment\n}" in wrapped
     assert wrapped.rstrip().endswith(pi_deploy_verify.shell_quote(pi_deploy_verify.SSH_SUCCESS_SENTINEL))
+
+
+def test_deploy_smoke_waits_for_dashboard_preload(monkeypatch):
+    results = iter(
+        [
+            pi_deploy_verify.EXIT_VERIFY_FAIL,
+            pi_deploy_verify.EXIT_VERIFY_FAIL,
+            pi_deploy_verify.EXIT_OK,
+        ]
+    )
+    sleeps = []
+    monkeypatch.setattr(pi_deploy_verify, "http_smoke", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+
+    assert (
+        pi_deploy_verify.wait_for_http_smoke(
+            "http://pi/", attempts=3, delay_seconds=2.5
+        )
+        == pi_deploy_verify.EXIT_OK
+    )
+    assert sleeps == [2.5, 2.5]
+
+
+def test_deploy_smoke_fails_after_bounded_retries(monkeypatch):
+    attempts = []
+    sleeps = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "http_smoke",
+        lambda *_args, **_kwargs: attempts.append(True) or pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", sleeps.append)
+
+    assert (
+        pi_deploy_verify.wait_for_http_smoke(
+            "http://pi/", attempts=3, delay_seconds=1.0
+        )
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+    assert len(attempts) == 3
+    assert sleeps == [1.0, 1.0]

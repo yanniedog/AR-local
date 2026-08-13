@@ -32,6 +32,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -447,6 +448,27 @@ def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
     return EXIT_OK
 
 
+def wait_for_http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    attempts: int = 13,
+    delay_seconds: float = 10.0,
+) -> int:
+    """Allow the dashboard's preload phase to finish after a service restart."""
+    for attempt in range(1, attempts + 1):
+        result = http_smoke(base_url, require_rates=require_rates)
+        if result == EXIT_OK:
+            return EXIT_OK
+        if attempt < attempts:
+            print(
+                f"pi_deploy_verify: dashboard not ready after restart "
+                f"(attempt {attempt}/{attempts}); retrying in {delay_seconds:g}s"
+            )
+            time.sleep(delay_seconds)
+    return EXIT_VERIFY_FAIL
+
+
 def verify_sync(*, dry_run: bool = False) -> int:
     local_main = origin_main_sha_local()
     if not local_main:
@@ -596,7 +618,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(f"pi_deploy_verify: dry-run would smoke {pi_base_url()}")
         return EXIT_OK
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: verify OK (sync + dashboard + /api/latest)")
@@ -622,7 +644,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     sync_rc = verify_sync(dry_run=False)
     if sync_rc != EXIT_OK:
         return sync_rc
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: deploy OK")
