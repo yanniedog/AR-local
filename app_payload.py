@@ -96,7 +96,7 @@ from app_payload_common import (
     section_filter,
     utc_now_iso,
 )
-from app_payload_details import _detail_items, _detail_links, build_details
+from app_payload_details import _detail_items, _detail_links, _fee_items, build_details
 from app_payload_publish import (
     _gh_authed,
     _gh_available,
@@ -150,6 +150,7 @@ __all__ = [
     "_brand_lookup_keys",
     "_compute_payload",
     "_detail_items",
+    "_fee_items",
     "_detail_links",
     "_find_banks_json",
     "_get_brand_lookup",

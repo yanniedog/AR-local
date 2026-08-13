@@ -1,0 +1,32 @@
+{
+  "source": "runs/2026-05-19/banks/Mortgage/Greater Bank Limited/Discounted Great Rate Home Loan - Variable Interest Only Investment/3365__54224175e152/product-detail.json",
+  "captured_run_date": "2026-05-19",
+  "record": {
+    "fees": [
+      {
+        "feeType": "WITHDRAWAL",
+        "name": "Construction Loan Draw Down Fee",
+        "amount": "80.00",
+        "additionalInfo": "Payable when we make a progress payment pursuant to your loan contract"
+      },
+      {
+        "feeType": "EVENT",
+        "name": "Administration fee",
+        "amount": "350.00",
+        "additionalInfo": "Payable when we consent to any subdivision, lease, discharge, partial discharge, change of name, release of a Security, changing a policy of lenders mortgage insurance, creation of subsequent Security Interest or any dealing in relation to a Security."
+      },
+      {
+        "feeType": "VARIABLE",
+        "name": "Property Exchange Australia (PEXA) transaction fee",
+        "amount": "0.00",
+        "additionalInfo": "Fee amount will be variable, calculated if and when applicable. Payable when we have to register any documents in relation to a security using PEXA, request information using PEXA, or we process a financial settlement using PEXA. Fees are applied as charged by PEXA"
+      },
+      {
+        "feeType": "EXIT",
+        "name": "Discharge administration fee",
+        "amount": "300.00",
+        "additionalInfo": "A Discharge Administration fee is payable when you request us to close your loan account, or produce title deeds at settlement. If Greater Bank incurs any costs associated when doing this, the cost will also be passed on to you."
+      }
+    ]
+  }
+}

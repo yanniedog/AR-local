@@ -57,6 +57,21 @@ def test_official_product_links_reject_non_https_and_credentials():
     assert cdr_clean_export.official_product_links(record) == {}
 
 
+def test_clean_export_fee_value_supports_both_cdr_fee_schemas():
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "EVENT", "amount": "80.00"}
+    ) == "80.00"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "UPFRONT", "feeMethodUType": "fixedAmount", "fixedAmount": {"amount": "250"}}
+    ) == "250"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "TRANSACTION", "feeMethodUType": "rateBased", "rateBased": {"rate": "0.025"}}
+    ) == "0.025"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "amount": "0.00"}
+    ) == "VARIABLE"
+
+
 def test_runtime_contract_validators_reject_ambiguous_or_unbound_payloads():
     with pytest.raises(ValueError, match="standard cohort"):
         app_payload_contracts.validate_product_history(
