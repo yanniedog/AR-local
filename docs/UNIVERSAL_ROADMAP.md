@@ -47,7 +47,7 @@ Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo passw
 
 The addresses above were verified on 2026-08-14. They are operational facts, not permanent infrastructure guarantees.
 
-- LAN IP drift: run `tailscale ping ar-local-pi5` from Windows. Its `via <ip>:41641` result identifies the current direct LAN endpoint when both machines are onsite. The router DHCP table for host `pi5` is the fallback.
+- LAN IP drift: run `tailscale ping ar-local-pi5` from Windows. Its `via <ip>:41641` result identifies the current direct LAN endpoint when both machines are onsite. The router DHCP table for host `pi5` is the fallback. After rediscovery, replace `HostName` in the `ar-local-pi5-lan` entry below and update the recorded LAN address in this section; a router DHCP reservation is preferable.
 - Tailscale IP drift: run `& 'C:\Program Files\Tailscale\tailscale.exe' status` or check the Tailscale admin console for node `ar-local-pi5`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
 - Once SSH works, confirm both addresses from the Pi itself:
 
@@ -132,7 +132,7 @@ Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19
 | --- | --- |
 | **Primary (local metrics UI)** | `http://100.78.28.10/netdata/v3/` |
 | Short redirect (same UI) | `http://100.78.28.10/netdata/` |
-| LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
+| LAN IP equivalent | `http://192.168.20.19/netdata/v3/` (update after DHCP changes) |
 | Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
 
 No Netdata Cloud account is required for **metrics** (overview charts, nodes, alerts). Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled v3 UI loads from the agent instead of `app.netdata.cloud`.
@@ -651,12 +651,12 @@ Every agent should leave the next agent with:
 
 Snapshot of operational facts the next agent can trust without re-running every probe. **Treat as stale** unless `Last verified` is within **48 hours** of the current work. Re-verify and overwrite this section whenever the underlying state changes. Use the `Live Pi Observability` probes; do not invent fresh commands here.
 
-Last verified: **2026-05-15** (UTC ~13:24).
+Last full service/data snapshot: **2026-05-15** (UTC ~13:24). Hostname and address rows were refreshed separately on **2026-08-14 AEST**; re-run every probe before relying on the other dated rows.
 
 | Fact | Value |
 | --- | --- |
-| Pi hostname | `ar` |
-| Pi LAN IP | `10.0.0.92` |
+| Pi hostname | `pi5` |
+| Pi LAN IP | `192.168.20.19` (DHCP; verified 2026-08-14) |
 | Pi Tailscale IP | `100.78.28.10` |
 | `ar-local-dashboard.service` state | active, enabled |
 | `ar-local-dashboard.service` `WorkingDirectory` | `/srv/ar-local/AR-local` |

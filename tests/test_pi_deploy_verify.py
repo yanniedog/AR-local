@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -36,7 +38,7 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data",
         "DAILY_WD": "/srv/ar-local/AR-local",
         "DAILY_EXEC": "/usr/bin/python3 /srv/ar-local/AR-local/pi_daily_sync.py",
-        "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data;HOME=/home/pi;XDG_CONFIG_HOME=/home/pi/.config",
+        "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data HOME=/home/pi XDG_CONFIG_HOME=/home/pi/.config",
         "DF_AR": "/dev/nvme0n1p2|/",
         "DF_SITE": "/dev/nvme0n1p2|/",
         "DF_DATA": "/dev/nvme0n1p2|/",
@@ -57,7 +59,25 @@ def test_service_paths_reject_bootstrap_checkout():
 
 def test_service_paths_reject_data_root_under_bootstrap_home():
     assert not pi_deploy_verify.pi_service_paths_ok(
-        _service_snapshot(DAILY_ENV="AR_LOCAL_DATA_ROOT=/home/pi/data;HOME=/home/pi")
+        _service_snapshot(DAILY_ENV="AR_LOCAL_DATA_ROOT=/home/pi/data HOME=/home/pi")
+    )
+
+
+def test_service_paths_parse_quoted_values_and_embedded_equals():
+    assert pi_deploy_verify.pi_service_paths_ok(
+        _service_snapshot(
+            DAILY_ENV=(
+                'AR_LOCAL_DATA_ROOT="/srv/ar-local/data=primary" '
+                'HOME="/home/pi" XDG_CONFIG_HOME="/home/pi/.config"'
+            )
+        )
+    )
+
+
+@pytest.mark.parametrize("sibling", ["/home/pilot/data", "/home/pine", "/mnt/home/pi"])
+def test_service_paths_allow_paths_outside_pi_home_boundary(sibling):
+    assert pi_deploy_verify.pi_service_paths_ok(
+        _service_snapshot(DASHBOARD_WD=sibling, DAILY_ENV=f"AR_LOCAL_DATA_ROOT={sibling}")
     )
 
 
@@ -70,8 +90,39 @@ def test_windows_openssh_quirk_requires_remote_success_sentinel(monkeypatch):
         marker,
     )
     assert not pi_deploy_verify._windows_openssh_exit_quirk(3221225477, "nginx ok", marker)
+    assert not pi_deploy_verify._windows_openssh_exit_quirk(
+        3221225477,
+        f"{pi_deploy_verify.SSH_SUCCESS_SENTINEL}\nremote failure",
+        marker,
+    )
 
 
-def test_success_sentinel_is_stripped_without_losing_remote_output():
-    output = f"first\n{pi_deploy_verify.SSH_SUCCESS_SENTINEL}\nsecond"
-    assert pi_deploy_verify._strip_success_sentinel(output) == "first\nsecond"
+@pytest.mark.parametrize(
+    "output,expected",
+    [
+        (pi_deploy_verify.SSH_SUCCESS_SENTINEL, ""),
+        (f"output\n  {pi_deploy_verify.SSH_SUCCESS_SENTINEL}  ", "output"),
+        (
+            f"{pi_deploy_verify.SSH_SUCCESS_SENTINEL}\noutput\n{pi_deploy_verify.SSH_SUCCESS_SENTINEL}",
+            f"{pi_deploy_verify.SSH_SUCCESS_SENTINEL}\noutput",
+        ),
+        (
+            f"prefix {pi_deploy_verify.SSH_SUCCESS_SENTINEL} suffix",
+            f"prefix {pi_deploy_verify.SSH_SUCCESS_SENTINEL} suffix",
+        ),
+    ],
+)
+def test_strip_success_sentinel_removes_only_terminal_protocol_marker(output, expected):
+    assert pi_deploy_verify._strip_success_sentinel(output) == expected
+
+
+def test_remote_wrapper_reports_success_only_after_command_status_check():
+    wrapped = pi_deploy_verify._remote_command_with_success_sentinel("false && echo skipped")
+    assert "__ar_pi_remote_status=$?" in wrapped
+    assert wrapped.index("exit \"$__ar_pi_remote_status\"") < wrapped.index("printf")
+
+
+def test_remote_wrapper_keeps_marker_outside_trailing_comment():
+    wrapped = pi_deploy_verify._remote_command_with_success_sentinel("echo ok # trailing comment")
+    assert "trailing comment\n}" in wrapped
+    assert wrapped.rstrip().endswith(pi_deploy_verify.shell_quote(pi_deploy_verify.SSH_SUCCESS_SENTINEL))

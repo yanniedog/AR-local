@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -56,6 +57,9 @@ DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
+FORBIDDEN_PI_BOOTSTRAP_RE = re.compile(
+    rf"(?<![A-Za-z0-9_./-]){re.escape(FORBIDDEN_PI_BOOTSTRAP_PATH)}(?![A-Za-z0-9_.-])"
+)
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "app_payload.py",
@@ -135,7 +139,7 @@ def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
     """Accept a Windows client crash only after a proved successful remote command."""
     if sys.platform != "win32" or code == 0:
         return False
-    if SSH_SUCCESS_SENTINEL not in stdout.splitlines():
+    if not _has_terminal_success_sentinel(stdout):
         return False
     combined = f"{stdout}\n{stderr}"
     return "close - IO is still pending on closed socket" in combined
@@ -143,13 +147,32 @@ def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
 
 def _remote_command_with_success_sentinel(shell_cmd: str) -> str:
     sentinel = shell_quote(SSH_SUCCESS_SENTINEL)
-    return f"set -e; {shell_cmd}; printf '\\n%s\\n' {sentinel}"
+    return (
+        "{\n"
+        f"{shell_cmd}\n"
+        "}\n"
+        "__ar_pi_remote_status=$?\n"
+        "if [ \"$__ar_pi_remote_status\" -ne 0 ]; then\n"
+        "  exit \"$__ar_pi_remote_status\"\n"
+        "fi\n"
+        f"printf '\\n%s\\n' {sentinel}"
+    )
+
+
+def _has_terminal_success_sentinel(stdout: str) -> bool:
+    nonempty_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    return bool(nonempty_lines) and nonempty_lines[-1] == SSH_SUCCESS_SENTINEL
 
 
 def _strip_success_sentinel(stdout: str) -> str:
-    return "\n".join(
-        line for line in stdout.splitlines() if line.strip() != SSH_SUCCESS_SENTINEL
-    ).strip()
+    lines = stdout.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if not lines[index].strip():
+            continue
+        if lines[index].strip() == SSH_SUCCESS_SENTINEL:
+            del lines[index]
+        break
+    return "\n".join(lines).strip()
 
 
 def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
@@ -195,7 +218,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
                 print(f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode}", file=sys.stderr)
             return 0, out, err
         print(f"pi_deploy_verify: ssh failed ({proc.returncode}): {err or out}", file=sys.stderr)
-    elif SSH_SUCCESS_SENTINEL not in raw_out.splitlines():
+    elif not _has_terminal_success_sentinel(raw_out):
         print("pi_deploy_verify: ssh completed without the remote success sentinel", file=sys.stderr)
         return EXIT_SSH, out, err
     return proc.returncode, out, err
@@ -275,8 +298,8 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
         f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
         f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
-        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
-        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
+        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
+        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
@@ -354,13 +377,19 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     for label, value in {**path_fields, **environment_fields}.items():
         print(f"pi_deploy_verify: {label}: {value}")
     for label, value in path_fields.items():
-        if FORBIDDEN_PI_BOOTSTRAP_PATH in value:
+        if FORBIDDEN_PI_BOOTSTRAP_RE.search(value):
             print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
             ok = False
     for label, value in environment_fields.items():
-        for assignment in value.split(";"):
+        try:
+            assignments = shlex.split(value)
+        except ValueError:
+            assignments = [value]
+        for assignment in assignments:
             name, separator, path = assignment.partition("=")
-            if not separator or FORBIDDEN_PI_BOOTSTRAP_PATH not in path:
+            name = name.strip()
+            path = path.strip()
+            if not separator or not FORBIDDEN_PI_BOOTSTRAP_RE.search(path):
                 continue
             if (name, path) in {
                 ("HOME", "/home/pi"),
