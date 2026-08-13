@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from cdr_clean_export import coverage_summary, parse_banks_run, summary_counts, utc_now
+from cdr_product_changes import diff_normalized_product_facts, load_run_facts, previous_finalized_run
+from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "8"
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "runs": ["run_date", "generated_at", "banks_counts_json"],
@@ -75,12 +77,27 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "value",
         "details_json",
     ],
+    "bank_product_facts": [
+        "run_date", "dataset", "provider", "product_id", "product_key", "product_name",
+        "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number",
+        "value_text", "value_json", "min_value", "max_value", "unit", "mapping", "source_path", "source_pattern",
+        "source_value_json", "qualifiers_json",
+    ],
+    "bank_product_changes": [
+        "run_date", "previous_run_date", "event_id", "dataset", "provider", "product_id",
+        "product_name", "event_type", "canonical_key", "kind", "materiality", "equivalence",
+        "review_required", "cosmetic", "material", "slots_changed", "reasons_json",
+        "before_json", "after_json", "before_value_json", "after_value_json",
+        "before_evidence_json", "after_evidence_json", "before_signature_json", "after_signature_json",
+    ],
 }
 
 RESET_TABLES = (
     "bank_products",
     "bank_rates",
     "bank_items",
+    "bank_product_facts",
+    "bank_product_changes",
     "runs",
     "schema_meta",
 )
@@ -116,6 +133,12 @@ def bank_rates_column_names(con: sqlite3.Connection) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
+def table_column_names(con: sqlite3.Connection, table: str) -> set[str]:
+    if not table_exists(con, table):
+        return set()
+    return {str(row[1]) for row in con.execute(f"PRAGMA table_info({quote_table(table)})").fetchall()}
+
+
 def migrate_bank_rates_columns(con: sqlite3.Connection) -> bool:
     """Add missing bank_rates columns in place (avoids wiping history on minor schema bumps)."""
     if not table_exists(con, "bank_rates"):
@@ -141,7 +164,11 @@ def schema_columns_compatible(con: sqlite3.Connection) -> bool:
         run_cols = {str(row[1]) for row in con.execute("PRAGMA table_info(runs)").fetchall()}
         if run_cols != set(TABLE_COLUMNS["runs"]):
             return False
-    return bank_rates_column_names(con) >= set(TABLE_COLUMNS["bank_rates"])
+    return (
+        bank_rates_column_names(con) >= set(TABLE_COLUMNS["bank_rates"])
+        and table_column_names(con, "bank_product_facts") >= set(TABLE_COLUMNS["bank_product_facts"])
+        and table_column_names(con, "bank_product_changes") >= set(TABLE_COLUMNS["bank_product_changes"])
+    )
 
 
 def ensure_db(con: sqlite3.Connection) -> None:
@@ -223,12 +250,54 @@ def ensure_db(con: sqlite3.Connection) -> None:
           value TEXT,
           details_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS bank_product_facts (
+          run_date TEXT NOT NULL, dataset TEXT NOT NULL, provider TEXT NOT NULL,
+          product_id TEXT NOT NULL, product_key TEXT NOT NULL, product_name TEXT NOT NULL,
+          fact_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('fee','rate','tier','bundle','attribute','feature','eligibility','constraint','condition')),
+          canonical_key TEXT NOT NULL,
+          value_type TEXT NOT NULL CHECK(value_type IN ('boolean','money','rate','number','duration','range','enum','text')),
+          value_boolean INTEGER CHECK(value_boolean IN (0,1)), value_number REAL, value_text TEXT,
+          value_json TEXT NOT NULL, min_value REAL, max_value REAL,
+          unit TEXT NOT NULL, mapping TEXT NOT NULL CHECK(mapping IN ('canonical','preserved','canonical_text')),
+          source_path TEXT NOT NULL, source_pattern TEXT NOT NULL,
+          source_value_json TEXT NOT NULL, qualifiers_json TEXT NOT NULL,
+          UNIQUE(run_date, product_key, fact_id),
+          CHECK(
+            (value_type = 'boolean' AND value_boolean IS NOT NULL AND value_number IS NULL AND value_text IS NULL AND min_value IS NULL AND max_value IS NULL)
+            OR (value_type IN ('money','rate','number') AND value_boolean IS NULL AND value_number IS NOT NULL AND value_text IS NULL AND min_value IS NULL AND max_value IS NULL)
+            OR (value_type IN ('duration','enum','text') AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NOT NULL AND min_value IS NULL AND max_value IS NULL)
+            OR (value_type = 'range' AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NULL AND (min_value IS NOT NULL OR max_value IS NOT NULL))
+          )
+        );
+        CREATE TABLE IF NOT EXISTS bank_product_changes (
+          run_date TEXT NOT NULL, previous_run_date TEXT, event_id TEXT NOT NULL,
+          dataset TEXT NOT NULL, provider TEXT NOT NULL, product_id TEXT NOT NULL,
+          product_name TEXT, event_type TEXT NOT NULL, canonical_key TEXT, kind TEXT,
+          materiality TEXT NOT NULL, equivalence TEXT NOT NULL,
+          review_required INTEGER NOT NULL CHECK(review_required IN (0,1)),
+          cosmetic INTEGER NOT NULL CHECK(cosmetic IN (0,1)),
+          material INTEGER NOT NULL CHECK(material IN (0,1)),
+          slots_changed INTEGER NOT NULL CHECK(slots_changed IN (0,1)),
+          reasons_json TEXT NOT NULL, before_json TEXT, after_json TEXT,
+          before_value_json TEXT, after_value_json TEXT,
+          before_evidence_json TEXT, after_evidence_json TEXT,
+          before_signature_json TEXT, after_signature_json TEXT,
+          UNIQUE(run_date, event_id)
+        );
         CREATE INDEX IF NOT EXISTS idx_bank_rates_taxonomy
           ON bank_rates (run_date, taxonomy_path);
         CREATE INDEX IF NOT EXISTS idx_bank_rates_lookup
           ON bank_rates (run_date, dataset, provider, rate_family);
         CREATE INDEX IF NOT EXISTS idx_bank_products_provider
           ON bank_products (run_date, dataset, provider);
+        CREATE INDEX IF NOT EXISTS idx_bank_product_facts_numeric
+          ON bank_product_facts (run_date, dataset, canonical_key, value_number, product_key);
+        CREATE INDEX IF NOT EXISTS idx_bank_product_facts_categorical
+          ON bank_product_facts (run_date, dataset, canonical_key, value_text, product_key);
+        CREATE INDEX IF NOT EXISTS idx_bank_product_facts_product
+          ON bank_product_facts (run_date, product_key, kind);
+        CREATE INDEX IF NOT EXISTS idx_bank_product_changes_lookup
+          ON bank_product_changes (run_date, provider, event_type, canonical_key, product_id);
         """
     )
     con.execute(
@@ -243,12 +312,7 @@ def needs_schema_reset(con: sqlite3.Connection) -> bool:
     migrate_bank_rates_columns(con)
     if schema_columns_compatible(con):
         return False
-    if not table_exists(con, "schema_meta"):
-        return True
-    current = con.execute(
-        "SELECT value FROM schema_meta WHERE key = 'version'",
-    ).fetchone()
-    return current is None or current[0] != SCHEMA_VERSION
+    return True
 
 
 def reset_schema(con: sqlite3.Connection) -> None:
@@ -288,7 +352,12 @@ def insert_rows(con: sqlite3.Connection, table: str, rows: List[Mapping[str, Any
     placeholders = ",".join("?" for _ in columns)
     quoted_columns = ",".join(quote_column(col) for col in columns)
     sql = f"INSERT INTO {quote_table(table)} ({quoted_columns}) VALUES ({placeholders})"
-    con.executemany(sql, [row_for_columns(row, columns) for row in rows])
+    values = (
+        [[row.get(column) for column in columns] for row in rows]
+        if table in {"bank_product_facts", "bank_product_changes"}
+        else [row_for_columns(row, columns) for row in rows]
+    )
+    con.executemany(sql, values)
 
 
 def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> None:
@@ -311,6 +380,8 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
         insert_rows(con, "bank_rates", with_run_date(banks["rates"], run_date))
         for group in ("fees", "features", "eligibility", "constraints"):
             insert_rows(con, "bank_items", with_run_date(add_group(banks[group], group), run_date))
+        insert_rows(con, "bank_product_facts", with_run_date(banks["product_facts"], run_date))
+        insert_rows(con, "bank_product_changes", banks.get("product_changes", []))
 
 
 def add_group(rows: List[Mapping[str, Any]], group: str) -> List[Dict[str, Any]]:
@@ -332,6 +403,12 @@ def write_sector_workbooks(out_dir: Path, run_date: str, banks: Mapping[str, Any
             "features": banks["features"],
             "eligibility": banks["eligibility"],
             "constraints": banks["constraints"],
+            "product_facts": banks["product_facts"],
+            "product_changes": banks.get("product_changes", []),
+            "change_summary": [{
+                **{key: value for key, value in (banks.get("product_change_summary") or {}).items() if key != "products"},
+                "products_json": json.dumps((banks.get("product_change_summary") or {}).get("products") or {}, sort_keys=True),
+            }],
             "failures": banks["failures"],
         },
     )
@@ -361,14 +438,103 @@ def write_dashboard_cache(out_dir: Path, run_date: str, banks: Mapping[str, Any]
     write_json(out_dir / "dashboard-cache" / "latest.json", manifest)
 
 
+def product_change_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for event in report.get("events") or []:
+        if not isinstance(event, Mapping):
+            continue
+        rows.append({
+            "run_date": report.get("run_date") or report.get("current_run_date"),
+            "previous_run_date": report.get("previous_run_date"),
+            "event_id": event.get("event_id"), "dataset": event.get("dataset"),
+            "provider": event.get("provider"), "product_id": event.get("product_id"),
+            "product_name": event.get("product_name"), "event_type": event.get("event_type"),
+            "canonical_key": event.get("canonical_key"), "kind": event.get("kind"),
+            "materiality": event.get("materiality"), "equivalence": event.get("equivalence"),
+            "review_required": int(bool(event.get("review_required"))),
+            "cosmetic": int(bool(event.get("cosmetic"))), "material": int(bool(event.get("material"))),
+            "slots_changed": int(bool(event.get("slots_changed"))),
+            "reasons_json": json.dumps(event.get("reasons") or [], ensure_ascii=False, sort_keys=True),
+            "before_json": json.dumps(event.get("before"), ensure_ascii=False, sort_keys=True),
+            "after_json": json.dumps(event.get("after"), ensure_ascii=False, sort_keys=True),
+            **{key: event.get(key) for key in (
+                "before_value_json", "after_value_json", "before_evidence_json", "after_evidence_json",
+                "before_signature_json", "after_signature_json",
+            )},
+        })
+    return rows
+
+
+def _exclude_failed_missing_products(
+    previous_facts: List[Dict[str, Any]],
+    current_facts: List[Dict[str, Any]],
+    failures: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], int]:
+    """Prevent incomplete fetches from becoming false product removals."""
+    current_keys = {
+        (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
+        for row in current_facts
+    }
+    failed_providers = {
+        str(row.get("bank") or "").casefold()
+        for row in failures
+        if str(row.get("phase") or "") in {"products_index", "holder"}
+    }
+    failed_products = {
+        (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
+        for row in failures
+        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+    }
+    suppressed = set()
+    output = []
+    for row in previous_facts:
+        key = (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
+        failed = key[0] in failed_providers or (key[0], key[1]) in failed_products
+        if failed and key not in current_keys:
+            suppressed.add(key)
+            continue
+        output.append(row)
+    return output, len(suppressed)
+
+
 def build_outputs(
     run_root: Path,
     out_dir: Optional[Path] = None,
     db_path: Optional[Path] = None,
+    previous_run_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     out_dir = (out_dir or (run_root / "_exports")).resolve()
     run_date = run_root.name
     banks = parse_banks_run(run_root)
+    previous = previous_run_root or previous_finalized_run(run_root)
+    previous_facts = load_run_facts(previous) if previous else []
+    previous_facts, suppressed_incomplete_products = _exclude_failed_missing_products(
+        previous_facts,
+        banks["product_facts"],
+        banks["failures"],
+    )
+    changes = diff_normalized_product_facts(
+        previous_facts,
+        banks["product_facts"],
+        previous_run_date=previous.name,
+        current_run_date=run_date,
+    ) if previous else {
+        "schema_version": 1, "normalization_version": NORMALIZATION_VERSION,
+        "previous_run_date": None, "run_date": run_date, "change_count": 0,
+        "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
+        "events": [],
+    }
+    changes["suppressed_incomplete_products"] = suppressed_incomplete_products
+    banks["product_changes"] = product_change_rows(changes)
+    banks["product_change_summary"] = {
+        "schema_version": changes.get("schema_version", 1),
+        "normalization_version": changes.get("normalization_version"),
+        "previous_run_date": changes.get("previous_run_date"),
+        "run_date": changes.get("run_date", run_date),
+        "change_count": changes.get("change_count", len(changes.get("events") or [])),
+        "products": changes.get("products") or {},
+        "suppressed_incomplete_products": changes.get("suppressed_incomplete_products", 0),
+    }
     write_json(out_dir / f"banks-{run_date}.json", banks)
     write_sector_workbooks(out_dir, run_date, banks)
     rebuild_run_db(db_path or (out_dir / "local-cdr.sqlite"), run_date, banks)

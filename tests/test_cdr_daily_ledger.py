@@ -137,3 +137,50 @@ def test_run_once_self_heals_missing_integrity_manifest(tmp_path, monkeypatch):
     )
     assert rc == 0  # already finalized -> skipped
     assert li.manifest_path(state, TODAY).is_file()  # ...but the manifest self-healed
+
+
+def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "persist_ingest_status", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "copytree_atomic", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "_emit_day_manifest", lambda *a, **k: None)
+
+    runs = tmp_path / "runs"
+    previous = runs / "2026-06-15"
+    export = previous / "_exports"
+    export.mkdir(parents=True)
+    (export / "banks-2026-06-15.json").write_text(json.dumps({
+        "product_facts": [],
+        "product_change_summary": {"normalization_version": "cdr-product-facts-2"},
+    }), encoding="utf-8")
+    (export / "banks-2026-06-15.xlsx").write_bytes(b"complete")
+    (export / "local-cdr.sqlite").write_bytes(b"complete")
+    cache = export / "dashboard-cache"
+    cache.mkdir()
+    (cache / "latest.json").write_text(json.dumps({
+        "run_date": "2026-06-15",
+        "files": {
+            "banks_json": "banks-2026-06-15.json",
+            "banks_xlsx": "banks-2026-06-15.xlsx",
+            "db": "local-cdr.sqlite",
+        },
+    }), encoding="utf-8")
+    captured = {}
+
+    def fake_build(run_root, out_dir, db_path, *, previous_run_root=None):
+        captured["previous"] = previous_run_root
+        return {"run_date": TODAY, "out_dir": str(out_dir), "banks": {"rates": 1}}
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", fake_build)
+    args = cdr_daily.parse_args([
+        "--date", TODAY, "--runs", str(runs), "--state", str(tmp_path / "state"),
+        "--ram-stage", "--ram-root", str(tmp_path / "ram"), "--keep-ram-stage",
+    ])
+    assert cdr_daily.run_once(args) == 1
+    assert captured["previous"] == previous

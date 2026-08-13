@@ -57,6 +57,30 @@ def test_official_product_links_reject_non_https_and_credentials():
     assert cdr_clean_export.official_product_links(record) == {}
 
 
+def test_clean_export_fee_value_supports_both_cdr_fee_schemas():
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "EVENT", "amount": "80.00"}
+    ) == "80.00"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "UPFRONT", "feeMethodUType": "fixedAmount", "fixedAmount": {"amount": "250"}}
+    ) == "250"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "TRANSACTION", "feeMethodUType": "rateBased", "rateBased": {"rate": "0.025"}}
+    ) == "0.025"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "amount": "0.00"}
+    ) == "VARIABLE"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "variable": {"feeMinimum": "5.00", "feeMaximum": "null"}}
+    ) == "5.00.."
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "VARIABLE", "variable": {"feeMinimum": "", "feeMaximum": "10.00"}}
+    ) == "..10.00"
+    assert cdr_clean_export.bank_detail_item_value(
+        "fees", {"feeType": "EVENT", "amount": "null", "balanceRate": "0.01"}
+    ) == "0.01"
+
+
 def test_runtime_contract_validators_reject_ambiguous_or_unbound_payloads():
     with pytest.raises(ValueError, match="standard cohort"):
         app_payload_contracts.validate_product_history(
@@ -327,3 +351,9 @@ def test_economic_outlook_uses_real_local_observations():
     assert payload["series"]
     assert all(1 <= len(series["observations"]) <= 2 for series in payload["series"])
     assert all(series["source_url"].startswith("https://") for series in payload["series"])
+
+def test_sub_one_percent_deposit_rates_are_normalized_before_export():
+    rows = [{"rate": "0.85"}, {"rate": "0.65"}]
+    divisor = cdr_clean_export.rate_divisor(rows, "deposit")
+    assert divisor == 100
+    assert cdr_clean_export.normalized_rate_text("0.85", divisor, "deposit") == "0.0085"

@@ -26,6 +26,7 @@ from ar_local_pi_runtime import (
 )
 import cdr_ledger_integrity
 from cdr_outputs import build_outputs
+from cdr_product_changes import previous_finalized_run
 from cdr_ingest_sanity import write_sanity_report
 
 
@@ -187,6 +188,7 @@ def run_once(args: argparse.Namespace) -> int:
     state_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
+    previous_run_root = previous_finalized_run(persistent_runs_root / date)
     if marker.exists() and not args.force:
         if marker_is_trustworthy(marker, export_root, date):
             print(f"Already completed local CDR daily run for {date}: {marker}")
@@ -228,7 +230,12 @@ def run_once(args: argparse.Namespace) -> int:
         prepare_empty_dir(ram_root / "runs" / date)
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
-        result = build_outputs(staged_runs / date, staged_exports, args.db)
+        result = build_outputs(
+            staged_runs / date,
+            staged_exports,
+            args.db,
+            previous_run_root=previous_run_root,
+        )
         persist_ingest_status(staged_runs / date, staged_exports)
         copytree_atomic(staged_exports, target_export_root)
         result["out_dir"] = str(target_export_root)
@@ -244,7 +251,12 @@ def run_once(args: argparse.Namespace) -> int:
         # --no-ram-stage / dev path.
         run_root = target_export_root.parent if is_revision else persistent_runs_root
         run_ingest(script_dir, run_root, date, extra_args)
-        result = build_outputs(run_root / date, target_export_root, args.db)
+        result = build_outputs(
+            run_root / date,
+            target_export_root,
+            args.db,
+            previous_run_root=previous_run_root,
+        )
         persist_ingest_status(run_root / date, target_export_root)
         result["ram_staged"] = False
 

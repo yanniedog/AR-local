@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
+import app_payload_bank_spread
 import cdr_brand_logos
 import payload_crypto
 import rba_decisions
@@ -49,6 +50,7 @@ from app_payload_common import (
     _load_json,
 )
 from app_payload_details import build_details
+from cdr_product_facts import NORMALIZATION_VERSION as PRODUCT_FACTS_NORMALIZATION_VERSION
 from app_payload_publish import publish_payload
 
 def _find_banks_json(exports_dir: Path, run_date: str) -> Path:
@@ -336,6 +338,7 @@ def _compute_payload(
     }
     details = {
         "schema_version": SCHEMA_VERSION,
+        "normalization_version": PRODUCT_FACTS_NORMALIZATION_VERSION,
         "run_date": run_date,
         "products": build_details(products),
     }
@@ -343,6 +346,7 @@ def _compute_payload(
     search_index = None
     history_banks = None
     bank_history = None
+    bank_spread_history = None
     if include_history:
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
@@ -359,6 +363,14 @@ def _compute_payload(
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
         )
+        bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
+            exports_dir,
+            run_date=run_date,
+            history_dates=app_payload_mobile._history_dates,
+            banks_path=app_payload_mobile._banks,
+            load_json=_load_json,
+            schema_version=SCHEMA_VERSION,
+        )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
         "core": core,
@@ -368,6 +380,7 @@ def _compute_payload(
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
+        "bank_spread_history": bank_spread_history,
         "rba_calendar": rba_calendar,
     }
 
@@ -398,6 +411,7 @@ def _package_payload(
         search_index=data["search_index"],
         history_banks=data["history_banks"],
         bank_history=data["bank_history"],
+        bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
@@ -417,6 +431,7 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
+    bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
@@ -438,6 +453,11 @@ def _package(
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
+        )
+    if is_rolling_tag(tag) and bank_spread_history and bank_spread_history.get("banks"):
+        files["bank_spread_history"] = _asset(
+            out_dir, "bank-spread-history", run_date,
+            _gzip_bytes(bank_spread_history), release_base, enc_key,
         )
     if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(

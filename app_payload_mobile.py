@@ -25,6 +25,28 @@ def _items(items: Any) -> List[str]:
             if raw not in (None, ""): out.append(str(raw))
     return out
 
+def _fact_terms(items: Any) -> List[str]:
+    """Index only vetted compact fact fields; never evidence paths/raw JSON/URLs."""
+    if not isinstance(items, list):
+        return []
+    out: List[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        search_terms = item.get("searchTerms")
+        if not isinstance(search_terms, list):
+            search_terms = []
+        for raw in search_terms:
+            if isinstance(raw, str) and not raw.lower().startswith(("http://", "https://")):
+                out.append(raw)
+        value = item.get("value")
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool) and not str(value).lower().startswith(("http://", "https://")):
+            out.append(str(value))
+        condition = item.get("condition")
+        if isinstance(condition, str) and not condition.lower().startswith(("http://", "https://")):
+            out.append(condition)
+    return out
+
 def build_search_index(core_rows, details_map, *, run_date: str, schema_version: int = 1):
     meta: Dict[str, Dict[str, str]] = {}
     for row in core_rows:
@@ -42,6 +64,7 @@ def build_search_index(core_rows, details_map, *, run_date: str, schema_version:
             if detail.get("description"): chunks.append(str(detail["description"]))
             for field in ("fees", "features", "eligibility", "constraints"):
                 chunks.extend(_items(detail.get(field)))
+            chunks.extend(_fact_terms(detail.get("facts")))
         chunks.append(key)
         products[key] = _norm(" ".join(chunks))
     return {"schema_version": schema_version, "run_date": run_date, "products": products}
