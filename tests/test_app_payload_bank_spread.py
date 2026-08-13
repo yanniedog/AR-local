@@ -44,6 +44,7 @@ def test_real_fixture_excludes_fixed_conditional_and_term_deposit_rows() -> None
 
 def test_exact_one_percent_is_normalized_as_a_percentage() -> None:
     assert spread._rate({"rate": 1}) == 0.01
+    assert spread._rate({"rate": 0.85}) is None
 
 
 def test_missing_side_is_explicit_and_never_manufactures_a_gap(tmp_path: Path) -> None:

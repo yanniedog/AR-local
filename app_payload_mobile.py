@@ -40,7 +40,7 @@ def _fact_terms(items: Any) -> List[str]:
             if isinstance(raw, str) and not raw.lower().startswith(("http://", "https://")):
                 out.append(raw)
         value = item.get("value")
-        if isinstance(value, (str, int, float, bool)) and not str(value).lower().startswith(("http://", "https://")):
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool) and not str(value).lower().startswith(("http://", "https://")):
             out.append(str(value))
         condition = item.get("condition")
         if isinstance(condition, str) and not condition.lower().startswith(("http://", "https://")):

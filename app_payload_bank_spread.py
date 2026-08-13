@@ -55,6 +55,11 @@ def _rate(row: Mapping[str, Any]) -> Optional[float]:
         return None
     if not math.isfinite(value) or value <= 0:
         return None
+    # Export rows are fractional. Values in this interval are ambiguous with a
+    # raw sub-1 percentage and too large to be a credible cohort observation;
+    # fail closed rather than charting 20-100% as a bank rate.
+    if 0.2 <= value < 1:
+        return None
     return value / 100 if value >= 1 else value
 
 

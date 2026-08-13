@@ -257,7 +257,7 @@ def test_search_index_ignores_scalar_search_terms_without_failing():
         [], {"key": {"facts": [{"searchTerms": "offset account", "value": True}]}},
         run_date="2026-05-19",
     )
-    assert index["products"]["key"] == "true key"
+    assert index["products"]["key"] == "key"
 
 
 def test_compact_payload_has_a_bounded_entity_count_and_size():
