@@ -55,6 +55,7 @@ EXIT_SSH = 3
 DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
+SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "app_payload.py",
@@ -131,13 +132,24 @@ def on_pi_host() -> bool:
 
 
 def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
-    """Windows OpenSSH often returns a failure code after successful remote output."""
+    """Accept a Windows client crash only after a proved successful remote command."""
     if sys.platform != "win32" or code == 0:
         return False
-    if not stdout.strip():
+    if SSH_SUCCESS_SENTINEL not in stdout.splitlines():
         return False
     combined = f"{stdout}\n{stderr}"
     return "close - IO is still pending on closed socket" in combined
+
+
+def _remote_command_with_success_sentinel(shell_cmd: str) -> str:
+    sentinel = shell_quote(SSH_SUCCESS_SENTINEL)
+    return f"set -e; {shell_cmd}; printf '\\n%s\\n' {sentinel}"
+
+
+def _strip_success_sentinel(stdout: str) -> str:
+    return "\n".join(
+        line for line in stdout.splitlines() if line.strip() != SSH_SUCCESS_SENTINEL
+    ).strip()
 
 
 def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
@@ -161,7 +173,8 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
         return proc.returncode, out, err
 
     host = ssh_host()
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host, shell_cmd]
+    remote_cmd = _remote_command_with_success_sentinel(shell_cmd)
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host, remote_cmd]
     if dry_run:
         print(f"pi_deploy_verify: dry-run ssh {host} {shell_cmd!r}")
         return 0, "", ""
@@ -173,14 +186,18 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
         check=False,
         timeout=SUBPROCESS_TIMEOUT_SEC,
     )
-    out = (proc.stdout or "").strip()
+    raw_out = (proc.stdout or "").strip()
+    out = _strip_success_sentinel(raw_out)
     err = (proc.stderr or "").strip()
     if proc.returncode != 0:
-        if _windows_openssh_exit_quirk(proc.returncode, out, err):
+        if _windows_openssh_exit_quirk(proc.returncode, raw_out, err):
             if err:
                 print(f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode}", file=sys.stderr)
             return 0, out, err
         print(f"pi_deploy_verify: ssh failed ({proc.returncode}): {err or out}", file=sys.stderr)
+    elif SSH_SUCCESS_SENTINEL not in raw_out.splitlines():
+        print("pi_deploy_verify: ssh completed without the remote success sentinel", file=sys.stderr)
+        return EXIT_SSH, out, err
     return proc.returncode, out, err
 
 
@@ -324,18 +341,36 @@ def dashboard_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = 
 
 def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     ok = True
-    fields = {
+    path_fields = {
         "dashboard WorkingDirectory": snap.get("DASHBOARD_WD", ""),
         "dashboard ExecStart": snap.get("DASHBOARD_EXEC", ""),
-        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
         "daily WorkingDirectory": snap.get("DAILY_WD", ""),
         "daily ExecStart": snap.get("DAILY_EXEC", ""),
+    }
+    environment_fields = {
+        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
         "daily Environment": snap.get("DAILY_ENV", ""),
     }
-    for label, value in fields.items():
+    for label, value in {**path_fields, **environment_fields}.items():
         print(f"pi_deploy_verify: {label}: {value}")
+    for label, value in path_fields.items():
         if FORBIDDEN_PI_BOOTSTRAP_PATH in value:
             print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
+            ok = False
+    for label, value in environment_fields.items():
+        for assignment in value.split(";"):
+            name, separator, path = assignment.partition("=")
+            if not separator or FORBIDDEN_PI_BOOTSTRAP_PATH not in path:
+                continue
+            if (name, path) in {
+                ("HOME", "/home/pi"),
+                ("XDG_CONFIG_HOME", "/home/pi/.config"),
+            }:
+                continue
+            print(
+                f"pi_deploy_verify: forbidden bootstrap path in {label}: {assignment}",
+                file=sys.stderr,
+            )
             ok = False
 
     dash_exec = snap.get("DASHBOARD_EXEC", "")
