@@ -113,7 +113,13 @@ class DailyIngestLock:
 
 
 def run_git(args: list[str], cwd: Path | None = None) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd) if cwd else None, check=True, shell=False)
+    subprocess.run(
+        ["git", *args],
+        cwd=str(cwd) if cwd else None,
+        check=True,
+        shell=False,
+        timeout=GIT_TIMEOUT_SEC,
+    )
 
 
 def _app_payload_enabled() -> bool:
@@ -238,6 +244,56 @@ def sync_existing_repo(repo: Path, remote_url: str) -> None:
     run_git(["pull", "--ff-only", "origin", "main"], cwd=repo)
 
 
+def current_branch(repo: Path) -> str:
+    result = subprocess.run(
+        ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=False,
+        timeout=GIT_TIMEOUT_SEC,
+    )
+    return result.stdout.strip()
+
+
+def sync_repo_for_ingest(
+    repo: Path,
+    remote_url: str,
+    *,
+    require_main_fallback: bool = True,
+) -> bool:
+    """Try to update a verified-clean checkout without blocking CDR capture.
+
+    The clean-tree check remains mandatory and happens before this function.
+    Once that check succeeds, a transient remote, DNS, or Git fetch failure must
+    not discard the day's banking snapshot. AR-local itself may fall back only
+    to a clean ``main`` checkout; ancillary site sync can be deferred without
+    that constraint. The deploy watchdog restores remote parity.
+    """
+    try:
+        sync_existing_repo(repo, remote_url)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        if require_main_fallback:
+            try:
+                assert_clean(repo)
+                branch = current_branch(repo)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as verify_exc:
+                raise RuntimeError(
+                    f"git sync failed and fallback checkout is not verifiable: {repo}"
+                ) from verify_exc
+            if branch != "main":
+                raise RuntimeError(
+                    f"git sync failed and fallback checkout is not main: {repo} ({branch!r})"
+                ) from exc
+        print(
+            f"[pi_daily_sync] git sync deferred repo={repo} error={exc!r}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def discard_eol_only_changes(repo: Path) -> bool:
     """Reset tracked files that differ only by CRLF vs LF (common after Windows edits on Pi)."""
     status = subprocess.run(
@@ -336,6 +392,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     ensure_runtime_data_writable(REPO_ROOT)
     lock_path = data_state_root(REPO_ROOT) / "daily-ingest.lock"
+    code_sync_ok = True
     try:
         lock_context = DailyIngestLock(lock_path)
         with lock_context:
@@ -343,8 +400,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 assert_clean(REPO_ROOT)
                 if (AR_SITE_REPO / ".git").is_dir():
                     assert_clean(AR_SITE_REPO)
-                sync_existing_repo(REPO_ROOT, "https://github.com/yanniedog/AR-local.git")
-                sync_existing_repo(AR_SITE_REPO, AR_SITE_URL)
+                code_sync_ok = sync_repo_for_ingest(
+                    REPO_ROOT, "https://github.com/yanniedog/AR-local.git"
+                )
+                sync_repo_for_ingest(
+                    AR_SITE_REPO,
+                    AR_SITE_URL,
+                    require_main_fallback=False,
+                )
             sector_args: list[str] = []
             if args.banks_only:
                 sector_args = ["--banks-only"]
@@ -362,7 +425,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ],
                 cwd=REPO_ROOT,
             )
-            maybe_publish_app_payload(REPO_ROOT)
+            if code_sync_ok:
+                maybe_publish_app_payload(REPO_ROOT)
+            else:
+                print(
+                    "[pi_daily_sync] app_payload skipped reason=code_sync_deferred",
+                    file=sys.stderr,
+                )
     except RuntimeError as exc:
         if "daily ingest already running" in str(exc):
             print(f"pi_daily_sync: {exc}")
