@@ -11,8 +11,8 @@ WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
 Environment=AR_LOCAL_PORTABLE_ROOT={{AR_LOCAL_PORTABLE_ROOT}}
 Environment=AR_LOCAL_DATA_ROOT={{AR_LOCAL_DATA_ROOT}}
-Environment=HOME=/home/{{AR_LOCAL_USER}}
-Environment=XDG_CONFIG_HOME=/home/{{AR_LOCAL_USER}}/.config
+Environment=HOME={{AR_LOCAL_HOME}}
+Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only --force
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service

@@ -7,6 +7,14 @@ site_dir="${3:-$portable_root/australianrates}"
 data_dir="${4:-$portable_root/data}"
 run_user="${AR_LOCAL_USER:-${SUDO_USER:-$(id -un)}}"
 run_group="${AR_LOCAL_GROUP:-$(id -gn "$run_user")}"
+run_home="$(getent passwd "$run_user" | cut -d: -f6)"
+case "$run_home" in
+  /*) ;;
+  *)
+    echo "Unable to resolve an absolute home directory for service user $run_user" >&2
+    exit 1
+    ;;
+esac
 
 sudo apt-get update
 sudo apt-get install -y git python3 gh rsync avahi-daemon nginx curl
@@ -51,6 +59,7 @@ render_unit() {
   sed \
     -e "s|{{AR_LOCAL_USER}}|$run_user|g" \
     -e "s|{{AR_LOCAL_GROUP}}|$run_group|g" \
+    -e "s|{{AR_LOCAL_HOME}}|$run_home|g" \
     -e "s|{{AR_LOCAL_PORTABLE_ROOT}}|$portable_root|g" \
     -e "s|{{AR_LOCAL_REPO}}|$repo_dir|g" \
     -e "s|{{AR_LOCAL_DATA_ROOT}}|$data_dir|g" \
