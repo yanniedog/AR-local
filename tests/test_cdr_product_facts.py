@@ -78,6 +78,33 @@ def test_numeric_product_id_is_preserved_as_opaque_text():
     )
 
 
+def test_percent_style_rates_are_normalized_to_fractions_everywhere():
+    record = {
+        "productId": "percent-rates",
+        "lendingRates": [{"lendingRateType": "VARIABLE", "rate": "5.0", "comparisonRate": "5.25"}],
+    }
+    facts = extract_product_facts(record, "Mortgage|Bank|percent-rates")
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == 0.05
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == 0.0525
+    compact = next(fact for fact in compact_facts(record, "Mortgage|Bank|percent-rates") if fact["kind"] == "rate")
+    assert (compact["value"], compact["comparisonValue"]) == (0.05, 0.0525)
+
+
+def test_variable_zero_fee_is_unpublished_not_free():
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "greater_bank_fee_details_2026-05-19.json").read_text(encoding="utf-8")
+    )
+    record = fixture["record"]
+    facts = extract_product_facts(record, "Mortgage|Greater Bank|loan")
+    pexa = next(
+        fact for fact in facts
+        if fact["canonical_key"] == "fee.amount" and fact["qualifiers"].get("feeType") == "VARIABLE"
+    )
+    assert (pexa["value_type"], pexa["value"], pexa["mapping"]) == ("text", "unpublished", "canonical")
+    compact = next(fact for fact in compact_facts(record, "Mortgage|Greater Bank|loan") if fact["label"].startswith("Property Exchange"))
+    assert "value" not in compact
+
+
 def test_negative_text_rules_take_precedence_over_positive_substrings():
     record = {
         "description": (
@@ -257,3 +284,41 @@ def test_normal_outputs_index_previous_run_product_changes(tmp_path: Path):
     cdr_outputs.build_outputs(current)
     rebuilt = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
     assert "eligible transaction account" in json.dumps(rebuilt["product_changes"])
+
+
+def test_cross_day_source_paths_do_not_create_metadata_changes(tmp_path: Path):
+    def write(day: str) -> Path:
+        run = tmp_path / day
+        detail = run / "banks" / "Mortgage" / "Example Bank" / "Home Loan" / "stable-id"
+        detail.mkdir(parents=True)
+        record = {"productId": "stable-id", "name": "Home Loan", "features": [{"featureType": "OFFSET"}]}
+        (detail / "product-detail.json").write_text(json.dumps({"data": record}), encoding="utf-8")
+        return run
+
+    previous, current = write("2026-05-18"), write("2026-05-19")
+    cdr_outputs.build_outputs(previous)
+    cdr_outputs.build_outputs(current)
+    exported = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
+    assert exported["product_changes"] == []
+
+
+def test_failed_current_detail_does_not_report_product_removal(tmp_path: Path):
+    previous = tmp_path / "2026-05-18"
+    detail = previous / "banks" / "Mortgage" / "Example Bank" / "Home Loan" / "stable-id"
+    detail.mkdir(parents=True)
+    (detail / "product-detail.json").write_text(
+        json.dumps({"data": {"productId": "stable-id", "name": "Home Loan", "features": []}}),
+        encoding="utf-8",
+    )
+    current = tmp_path / "2026-05-19"
+    banks = current / "banks"
+    banks.mkdir(parents=True)
+    (banks / "failures.jsonl").write_text(
+        json.dumps({"phase": "product_detail", "bank": "Example Bank", "product_id": "stable-id", "status": 503}) + "\n",
+        encoding="utf-8",
+    )
+    cdr_outputs.build_outputs(previous)
+    cdr_outputs.build_outputs(current)
+    exported = json.loads((current / "_exports" / "banks-2026-05-19.json").read_text(encoding="utf-8"))
+    assert exported["product_changes"] == []
+    assert exported["product_change_summary"]["suppressed_incomplete_products"] == 1

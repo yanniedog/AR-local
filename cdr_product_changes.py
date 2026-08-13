@@ -405,7 +405,7 @@ def _semantic_fact(fact: Mapping[str, Any]) -> Dict[str, Any]:
     """Strip array-position provenance before testing semantic equality."""
     ignored = {
         "fact_id", "factId", "id", "source_path", "source_pattern", "qualifiers_json",
-        "product_key",
+        "product_key", "source_file",
         *_PRODUCT_NAMES, *_PRODUCT_ALIASES["provider"], *_PRODUCT_ALIASES["product_id"],
         *_PRODUCT_ALIASES["dataset"],
     }
@@ -522,7 +522,7 @@ def _metadata(fact: Mapping[str, Any]) -> Dict[str, Any]:
         *_PRODUCT_NAMES, "fact_id", "factId", "id", "kind", "fact_type", "factType",
         "category", "canonical_key", "canonicalKey", "fact_key", "factKey", "path",
         "name", "label", "title", "source_value_json", "value_json", "qualifiers", "qualifiers_json",
-        "source_path", "product_key",
+        "source_path", "product_key", "source_file",
         *_TEXT_FIELDS, *_VALUE_FIELDS, *_RANGE_FIELDS, *_CADENCE_FIELDS,
     }
     metadata = {key: value for key, value in fact.items() if key not in excluded}
@@ -892,19 +892,18 @@ def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
     if exported:
         payload = load_json(exported)
         facts = payload.get("product_facts") if isinstance(payload, Mapping) else None
-        if not isinstance(facts, list):
-            raise ValueError(f"finalized export has no normalized product_facts list: {exported}")
-        products: Dict[str, Dict[str, Any]] = {}
-        for supplied in facts:
-            if not isinstance(supplied, Mapping):
-                raise ValueError(f"finalized product fact is not an object: {exported}")
-            key = _product_key(supplied)
-            identity = "|".join((key[2].casefold(), key[0].casefold(), key[1]))
-            products.setdefault(identity, {"base": {
-                "provider": key[0], "product_id": key[1], "dataset": key[2],
-                "product_name": str(_first(supplied, _PRODUCT_NAMES) or ""),
-            }, "facts": []})["facts"].append(dict(supplied))
-        return products
+        if isinstance(facts, list):
+            products: Dict[str, Dict[str, Any]] = {}
+            for supplied in facts:
+                if not isinstance(supplied, Mapping):
+                    raise ValueError(f"finalized product fact is not an object: {exported}")
+                key = _product_key(supplied)
+                identity = "|".join((key[2].casefold(), key[0].casefold(), key[1]))
+                products.setdefault(identity, {"base": {
+                    "provider": key[0], "product_id": key[1], "dataset": key[2],
+                    "product_name": str(_first(supplied, _PRODUCT_NAMES) or ""),
+                }, "facts": []})["facts"].append(dict(supplied))
+            return products
     banks_root = run_root / "banks"
     products = {}
     for path in sorted(banks_root.rglob("product-detail.json")):
@@ -949,10 +948,17 @@ def previous_finalized_run(current_root: Path) -> Optional[Path]:
     runs = current.parent
     if not runs.is_dir():
         return None
-    candidates = [
-        path for path in runs.iterdir()
-        if path.is_dir() and path.name < current.name and _export_file(path) is not None
-    ]
+    candidates = []
+    for path in runs.iterdir():
+        if not path.is_dir() or path.name >= current.name:
+            continue
+        exported = _export_file(path)
+        if exported is None:
+            continue
+        payload = load_json(exported)
+        has_facts = isinstance(payload, Mapping) and isinstance(payload.get("product_facts"), list)
+        if has_facts or (path / "banks").is_dir():
+            candidates.append(path)
     return max(candidates, key=lambda path: path.name) if candidates else None
 
 

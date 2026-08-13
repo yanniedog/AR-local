@@ -464,6 +464,38 @@ def product_change_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def _exclude_failed_missing_products(
+    previous_facts: List[Dict[str, Any]],
+    current_facts: List[Dict[str, Any]],
+    failures: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], int]:
+    """Prevent incomplete fetches from becoming false product removals."""
+    current_keys = {
+        (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
+        for row in current_facts
+    }
+    failed_providers = {
+        str(row.get("bank") or "").casefold()
+        for row in failures
+        if str(row.get("phase") or "") in {"products_index", "holder"}
+    }
+    failed_products = {
+        (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
+        for row in failures
+        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+    }
+    suppressed = set()
+    output = []
+    for row in previous_facts:
+        key = (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
+        failed = key[0] in failed_providers or (key[0], key[1]) in failed_products
+        if failed and key not in current_keys:
+            suppressed.add(key)
+            continue
+        output.append(row)
+    return output, len(suppressed)
+
+
 def build_outputs(
     run_root: Path,
     out_dir: Optional[Path] = None,
@@ -474,8 +506,14 @@ def build_outputs(
     run_date = run_root.name
     banks = parse_banks_run(run_root)
     previous = previous_run_root or previous_finalized_run(run_root)
+    previous_facts = load_run_facts(previous) if previous else []
+    previous_facts, suppressed_incomplete_products = _exclude_failed_missing_products(
+        previous_facts,
+        banks["product_facts"],
+        banks["failures"],
+    )
     changes = diff_normalized_product_facts(
-        load_run_facts(previous),
+        previous_facts,
         banks["product_facts"],
         previous_run_date=previous.name,
         current_run_date=run_date,
@@ -485,6 +523,7 @@ def build_outputs(
         "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
         "events": [],
     }
+    changes["suppressed_incomplete_products"] = suppressed_incomplete_products
     banks["product_changes"] = product_change_rows(changes)
     banks["product_change_summary"] = {
         "schema_version": changes.get("schema_version", 1),
@@ -493,6 +532,7 @@ def build_outputs(
         "run_date": changes.get("run_date", run_date),
         "change_count": changes.get("change_count", len(changes.get("events") or [])),
         "products": changes.get("products") or {},
+        "suppressed_incomplete_products": changes.get("suppressed_incomplete_products", 0),
     }
     write_json(out_dir / f"banks-{run_date}.json", banks)
     write_sector_workbooks(out_dir, run_date, banks)

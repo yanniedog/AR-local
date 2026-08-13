@@ -101,6 +101,22 @@ def _fraction(value: Any) -> Any:
     return float(number)
 
 
+def _rate_fraction(value: Any) -> Any:
+    number = _number(value)
+    if number is None:
+        return value
+    numeric = float(number)
+    return numeric / 100 if abs(numeric) >= 1 else numeric
+
+
+def _ratio_fraction(value: Any) -> Any:
+    number = _number(value)
+    if number is None:
+        return value
+    numeric = float(number)
+    return numeric / 100 if abs(numeric) > 1 else numeric
+
+
 def _path_context(path: str) -> Tuple[str, str]:
     root = path.split("[", 1)[0].split(".", 1)[0]
     kind = _ROOT_KIND.get(root, "attribute")
@@ -148,8 +164,8 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
         parent.get("unitOfMeasure") == "PERCENT" or "LVR" in str(parent.get("constraintType") or "")
     )
     if (rate_leaf or lvr) and (number := _number(value)) is not None:
-        fraction = float(number)
-        return "rate", fraction, "fraction", "canonical" if abs(fraction) <= 1 else "preserved"
+        fraction = _ratio_fraction(number) if lvr else _rate_fraction(number)
+        return "rate", fraction, "fraction", "canonical"
     constraint_type = str(_ancestor_value(ancestors, "constraintType") or "").upper()
     eligibility_type = str(_ancestor_value(ancestors, "eligibilityType") or "").upper()
     tier_unit = str(_ancestor_value(ancestors, "unitOfMeasure") or "").upper()
@@ -163,6 +179,16 @@ def _typed_value(path: str, value: Any, parent: Mapping[str, Any], ancestors: Se
     money = money or (canonical == "constraint.value" and constraint_type in {"MIN_BALANCE", "MAX_BALANCE", "OPENING_BALANCE", "MIN_LIMIT", "MAX_LIMIT"})
     money = money or (canonical.startswith("tier.") and tier_unit == "DOLLAR")
     money = money or (leaf in {"minimumValue", "maximumValue"} and parent.get("unitOfMeasure") == "DOLLAR")
+    variable_fee_placeholder = (
+        canonical == "fee.amount"
+        and _number(value) == 0
+        and (
+            str(_ancestor_value(ancestors, "feeType") or "").upper() == "VARIABLE"
+            or str(_ancestor_value(ancestors, "feeMethodUType") or "").lower() == "variable"
+        )
+    )
+    if variable_fee_placeholder:
+        return "text", "unpublished", "text", "canonical"
     if money and (number := _number(value)) is not None:
         return "money", float(number), str(_ancestor_value(ancestors, "currency") or "AUD").upper(), "canonical"
     if canonical in {"tier.minimum", "tier.maximum"} and tier_unit == "PERCENT" and (number := _number(value)) is not None:
@@ -476,7 +502,9 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
         variable = item.get("variable") if isinstance(item.get("variable"), Mapping) else {}
         raw_amount = item.get("amount") if item.get("amount") not in (None, "") else fixed.get("amount")
         if method == "rateBased" or rated.get("rate") not in (None, ""):
-            value, unit = _fraction(rated.get("rate") if rated.get("rate") not in (None, "") else item.get("transactionRate")), "fraction"
+            value, unit = _rate_fraction(rated.get("rate") if rated.get("rate") not in (None, "") else item.get("transactionRate")), "fraction"
+        elif (method == "variable" or str(fee_type or "").upper() == "VARIABLE") and _number(raw_amount) == 0:
+            value = None
         elif raw_amount not in (None, ""):
             value = float(_number(raw_amount)) if _number(raw_amount) is not None else raw_amount
         elif variable:
@@ -495,13 +523,13 @@ def compact_facts(record: Mapping[str, Any], product_key: str) -> List[Dict[str,
             rate_type = str(rate.get(type_key) or "OTHER")
             applies = [str(rate[field]) for field in ("loanPurpose", "repaymentType") if rate.get(field)]
             entity = {field: rate.get(field) for field in (type_key, "loanPurpose", "repaymentType", "applicationType", "additionalValue") if rate.get(field) not in (None, "")}
-            rate_group = add("rate", f"rate.{family}.{_slug(rate_type)}", rate_type.replace("_", " ").title(), entity, value=_fraction(rate.get("rate")), comparison_value=_fraction(rate.get("comparisonRate")) if rate.get("comparisonRate") not in (None, "") else None, unit="fraction", source_type=rate_type, cadence=rate.get("applicationFrequency"), applies_to=applies or None, condition=condition(rate))
+            rate_group = add("rate", f"rate.{family}.{_slug(rate_type)}", rate_type.replace("_", " ").title(), entity, value=_rate_fraction(rate.get("rate")), comparison_value=_rate_fraction(rate.get("comparisonRate")) if rate.get("comparisonRate") not in (None, "") else None, unit="fraction", source_type=rate_type, cadence=rate.get("applicationFrequency"), applies_to=applies or None, condition=condition(rate))
             tiers = rate.get("tiers") or []
             for tier in tiers if isinstance(tiers, list) else []:
                 if not isinstance(tier, Mapping): continue
                 unit_name = str(tier.get("unitOfMeasure") or "").upper()
                 unit = "AUD" if unit_name == "DOLLAR" else "fraction" if unit_name == "PERCENT" else "count"
-                convert = _fraction if unit == "fraction" else lambda raw: float(_number(raw)) if _number(raw) is not None else None
+                convert = _ratio_fraction if unit == "fraction" else lambda raw: float(_number(raw)) if _number(raw) is not None else None
                 tier_entity = {"parent": entity, "name": tier.get("name"), "unit": unit_name, "minimum": tier.get("minimumValue"), "maximum": tier.get("maximumValue")}
                 tier_group = add("tier", "tier.range", str(tier.get("name") or "Rate tier"), tier_entity, unit=unit, source_type=tier.get("rateApplicationMethod"), min_value=convert(tier.get("minimumValue")), max_value=convert(tier.get("maximumValue")), condition=condition(tier), parent_id=rate_group)
                 tier_conditions = tier.get("applicabilityConditions")

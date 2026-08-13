@@ -417,3 +417,15 @@ def test_previous_finalized_run_ignores_partial_sibling(tmp_path: Path) -> None:
     current.mkdir()
 
     assert changes.previous_finalized_run(current) == finalized
+
+
+def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path) -> None:
+    legacy = tmp_path / "2026-08-11"
+    legacy_export = legacy / "_exports"
+    legacy_export.mkdir(parents=True)
+    (legacy_export / "banks-2026-08-11.json").write_text(json.dumps({"products": []}), encoding="utf-8")
+    compatible = tmp_path / "2026-08-12"
+    write_finalized_export(compatible, [fact("access", "Text")])
+    current = tmp_path / "2026-08-13"
+    current.mkdir()
+    assert changes.previous_finalized_run(current) == compatible
