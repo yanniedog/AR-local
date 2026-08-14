@@ -103,13 +103,14 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 - Test manifest check locally:
   `python3 scripts/pi_ingest_manifest_check.py --expected-tz Australia/Brisbane`
 - Test Pi SMTP (dry-run): `python3 pi_ingest_alert.py --reason missed-ingest --dry-run`
-- **CRLF dirty tree:** `pi_daily_sync.py` auto-discards line-ending-only changes; real edits
-  still block ingest — run `git status` on the Pi and reset or commit intentionally.
+- **Checkout drift:** daily ingest never fetches, pulls, switches, or cleans either
+  production checkout. Inspect and report `git status`; code activation is
+  independent and canary-gated.
 
 **Common failure modes** (in order of likelihood):
-- **Dirty Pi git tree.** `pi_daily_sync` refuses pull when tracked files differ (often CRLF on
-  `app_payload.py` after Windows edits). Fix: `ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git checkout -- .'`
-  then `sudo systemctl start --no-block ar-local-daily.service`.
+- **Dirty Pi git tree.** Daily ingest leaves it untouched. Inspect and preserve
+  the changes; never reset a production checkout as an ingest-recovery step.
+  Deployment must refuse until an operator resolves the state deliberately.
 - **Pi offline.** Check `tailscale status` for `ar-local-pi5` (must be "active", not
   "offline"). If offline, nothing publishes — the user must power/reconnect it. The deploy
   Action can't reach it either.
@@ -121,8 +122,10 @@ The whole daily path already exists and is enabled. To **verify** it's working:
   `systemctl cat ar-local-daily.service | grep EnvironmentFile` shows
   `EnvironmentFile=-/etc/ar-local/app-payload.env`. If missing, run `install-pi-systemd.sh`.
 - **Pi behind on code.** `ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git log --oneline -1'`.
-  It self-updates via `ar-local-deploy-watchdog.timer`, or force it:
-  `ssh ar-local-pi5 'cd /srv/ar-local/AR-local && python3 pi_deploy_verify.py --deploy'`.
+  Drift monitors report this state but never repair it. Deploy only the exact
+  canary-approved commit through `.github/workflows/pi-deploy-on-main.yml`; the
+  workflow requires protected commit, immutable-release-tag, and canary-manifest
+  SHA-256 variables, then verifies the manifest's embedded commit before SSH.
 
 **Manual bootstrap (publish without waiting for the timer)** — build on the Pi, publish
 from a machine that has `gh` auth (or with `GH_TOKEN` set):
@@ -531,7 +534,7 @@ the fallback for advanced setups (Blaze plan).
 
 - **SSH**: `ssh ar-local-pi5` (configured in `~/.ssh/config` → HostName `100.78.28.10`,
   user `pi`, **Tailscale**). Needs the tailnet up on your machine (`tailscale status`).
-- **Repo on Pi**: `/srv/ar-local/AR-local` (self-updates via `ar-local-deploy-watchdog.timer`).
+- **Repo on Pi**: `/srv/ar-local/AR-local` (deployment watchdog is verify-only; activation is manual and canary-gated).
 - **Data on Pi**: `/srv/ar-local/data/runs/<date>/_exports/` (has
   `dashboard-cache/<date>/banks.json` + `latest.json`, which `app_payload.py` reads).
 - **Dashboard**: `http://100.78.28.10:8808/` (backend) and `http://100.78.28.10/` (nginx :80).
@@ -691,7 +694,7 @@ curl -fsSL https://github.com/yanniedog/AR-local/releases/download/app-payload-l
 # Pi reachable?           tailscale status | grep ar-local-pi5
 # Pi code / data:         ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git log --oneline -1; ls -d /srv/ar-local/data/runs/*/ | tail -1'
 # Trigger an ingest:      ssh ar-local-pi5 'sudo systemctl start --no-block ar-local-daily.service'
-# Force-deploy latest:    ssh ar-local-pi5 'cd /srv/ar-local/AR-local && python3 pi_deploy_verify.py --deploy'
+# Deploy approved commit: use the manual pi-deploy-canary workflow; never force-deploy moving main
 
 # App locally:            cd mobile && npm install && npx expo start
 # App checks:             cd mobile && npm run typecheck && npm run lint && npm test && npx expo export

@@ -1,11 +1,10 @@
-"""Sync GitHub main and run the Raspberry Pi daily CDR ingest."""
+"""Run the Raspberry Pi daily CDR ingest without changing deployed code."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -18,10 +17,7 @@ from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent
-AR_SITE_REPO = REPO_ROOT.parent / "australianrates"
-AR_SITE_URL = "https://github.com/yanniedog/australianrates.git"
 LOCK_STALE_SECONDS = 6 * 60 * 60
-GIT_TIMEOUT_SEC = 30
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
 
 
@@ -112,16 +108,6 @@ class DailyIngestLock:
             os.close(self.fd)
             self.fd = None
         self.path.unlink(missing_ok=True)
-
-
-def run_git(args: list[str], cwd: Path | None = None) -> None:
-    subprocess.run(
-        ["git", *args],
-        cwd=str(cwd) if cwd else None,
-        check=True,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    )
 
 
 def _app_payload_enabled() -> bool:
@@ -343,176 +329,14 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
         return False
 
 
-def sync_existing_repo(repo: Path, remote_url: str) -> None:
-    if not (repo / ".git").is_dir():
-        run_git(["clone", remote_url, str(repo)])
-    run_git(["fetch", "origin"], cwd=repo)
-    run_git(["checkout", "main"], cwd=repo)
-    run_git(["pull", "--ff-only", "origin", "main"], cwd=repo)
-
-
-def current_branch(repo: Path) -> str:
-    result = subprocess.run(
-        ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=True,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    )
-    return result.stdout.strip()
-
-
-def head_is_contained_by_origin_main(repo: Path) -> bool:
-    """Return whether the checkout can safely fall back to tracked origin/main."""
-    result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"],
-        cwd=str(repo),
-        check=False,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    )
-    if result.returncode == 0:
-        return True
-    if result.returncode == 1:
-        return False
-    raise RuntimeError(
-        f"unable to compare fallback checkout with origin/main: {repo} "
-        f"(exit={result.returncode})"
-    )
-
-
-def sync_repo_for_ingest(
-    repo: Path,
-    remote_url: str,
-    *,
-    require_main_fallback: bool = True,
-) -> bool:
-    """Try to update a verified-clean checkout without blocking CDR capture.
-
-    The clean-tree check remains mandatory and happens before this function.
-    Once that check succeeds, a transient remote, DNS, or Git fetch failure must
-    not discard the day's banking snapshot. AR-local itself may fall back only
-    to a clean ``main`` checkout; ancillary site sync can be deferred without
-    that constraint. The deploy watchdog restores remote parity.
-    """
-    try:
-        sync_existing_repo(repo, remote_url)
-    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-        if require_main_fallback:
-            try:
-                assert_clean(repo)
-                branch = current_branch(repo)
-            except (OSError, RuntimeError, subprocess.SubprocessError) as verify_exc:
-                raise RuntimeError(
-                    f"git sync failed and fallback checkout is not verifiable: {repo}"
-                ) from verify_exc
-            if branch != "main":
-                raise RuntimeError(
-                    f"git sync failed and fallback checkout is not main: {repo} ({branch!r})"
-                ) from exc
-            try:
-                contained = head_is_contained_by_origin_main(repo)
-            except (OSError, RuntimeError, subprocess.SubprocessError) as verify_exc:
-                raise RuntimeError(
-                    f"git sync failed and fallback checkout ancestry is not verifiable: {repo}"
-                ) from verify_exc
-            if not contained:
-                raise RuntimeError(
-                    f"git sync failed and fallback checkout diverges from origin/main: {repo}"
-                ) from exc
-        print(
-            f"[pi_daily_sync] git sync deferred repo={repo} error={exc!r}",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
-def discard_eol_only_changes(repo: Path) -> bool:
-    """Reset tracked files that differ only by CRLF vs LF (common after Windows edits on Pi)."""
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=True,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    ).stdout.strip()
-    if not status:
-        return False
-    for line in status.splitlines():
-        if len(line) < 2:
-            continue
-        staged, unstaged = line[0], line[1]
-        if staged == "?" and unstaged == "?":
-            return False
-        if staged not in (" ", "?"):
-            return False
-    has_unstaged_tracked = subprocess.run(
-        ["git", "diff", "--quiet"],
-        cwd=str(repo),
-        check=False,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    ).returncode != 0
-    if not has_unstaged_tracked:
-        return False
-    eol_only = subprocess.run(
-        ["git", "diff", "--ignore-cr-at-eol", "--quiet"],
-        cwd=str(repo),
-        check=False,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    ).returncode == 0
-    if not eol_only:
-        return False
-    subprocess.run(
-        ["git", "checkout", "--", "."],
-        cwd=str(repo),
-        check=True,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    )
-    remaining = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=True,
-        shell=False,
-        timeout=GIT_TIMEOUT_SEC,
-    ).stdout.strip()
-    if remaining:
-        return False
-
-    print(f"[pi_daily_sync] discarded line-ending-only local changes in {repo}")
-    return True
-
-
-def assert_clean(repo: Path) -> None:
-    if discard_eol_only_changes(repo):
-        return
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        check=True,
-        shell=False,
-    ).stdout.strip()
-    if status:
-        raise RuntimeError(f"{repo} has local changes; refusing automated pull")
-
-
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync GitHub main and run Pi daily ingest.")
+    parser = argparse.ArgumentParser(
+        description="Run Pi daily ingest without changing either production checkout."
+    )
     parser.add_argument(
         "--skip-git-sync",
         action="store_true",
-        help="Run ingest without pulling AR-local or AustralianRates first.",
+        help="Compatibility no-op; ingest never changes production checkouts.",
     )
     parser.add_argument(
         "--force",
@@ -536,28 +360,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     ensure_runtime_data_writable(REPO_ROOT)
     lock_path = data_state_root(REPO_ROOT) / "daily-ingest.lock"
-    code_sync_ok = True
     try:
         lock_context = DailyIngestLock(lock_path)
         with lock_context:
-            if not args.skip_git_sync:
-                assert_clean(REPO_ROOT)
-                if (AR_SITE_REPO / ".git").is_dir():
-                    assert_clean(AR_SITE_REPO)
-                code_sync_ok = sync_repo_for_ingest(
-                    REPO_ROOT, "https://github.com/yanniedog/AR-local.git"
-                )
-                sync_repo_for_ingest(
-                    AR_SITE_REPO,
-                    AR_SITE_URL,
-                    require_main_fallback=False,
-                )
             if args.publish_existing_payload:
                 if not payload_publication_pending(REPO_ROOT):
                     print("[pi_daily_sync] app_payload retry skipped reason=no_pending_marker")
-                elif not code_sync_ok:
+                elif not _app_payload_enabled():
                     print(
-                        "[pi_daily_sync] app_payload retry deferred reason=code_sync_deferred",
+                        "[pi_daily_sync] app_payload retry remains pending "
+                        "reason=publication_disabled",
                         file=sys.stderr,
                     )
                 elif maybe_publish_app_payload(REPO_ROOT):
@@ -586,16 +398,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ],
                 cwd=REPO_ROOT,
             )
-            if code_sync_ok:
+            if _app_payload_enabled():
                 if maybe_publish_app_payload(REPO_ROOT):
                     clear_payload_publication_pending(REPO_ROOT)
-                elif _app_payload_enabled():
+                else:
                     mark_payload_publication_pending(REPO_ROOT, "publish_failed")
-            else:
-                if _app_payload_enabled():
-                    mark_payload_publication_pending(REPO_ROOT, "code_sync_deferred")
+            elif payload_publication_pending(REPO_ROOT):
                 print(
-                    "[pi_daily_sync] app_payload skipped reason=code_sync_deferred",
+                    "[pi_daily_sync] app_payload remains pending "
+                    "reason=publication_disabled",
                     file=sys.stderr,
                 )
     except RuntimeError as exc:

@@ -287,21 +287,24 @@ For any repo change, follow `WORKFLOW.md` end to end:
 5. Run `npm run wait-for-bots` and do feedback synthesis.
 6. Reply to/close substantive review threads.
 7. Squash merge.
-8. Update/restart the local/Pi dashboard from merged `main`.
+8. Keep production unchanged until the exact commit passes the shadow canary;
+   activate only through the manual canary-gated workflow.
 9. Run `npm run verify:local`.
 
 The Pi runtime must end on GitHub `main`. Never leave `/srv/ar-local/AR-local` deployed on an unmerged topic branch.
 
-### Pi deploy watchdog (continuous)
+### Pi deployment and drift monitoring
 
-Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest` (no mock data).
+Drift automation smokes real `/api/latest` without changing the checkout,
+services, or runtime data; verification may refresh remote refs. Production
+activation is a separate exact-commit, canary-approved manual action.
 
 | Layer | Mechanism |
 |-------|-----------|
-| Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:deploy`, `npm run pi:needs-deploy` (`pi_deploy_verify.py`) |
-| GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` ? every push to `main`; `workflow_dispatch` |
-| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` ? cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
-| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` ? every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
+| Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:needs-deploy`; direct deploy requires `--expected-commit` and remains subject to the canary gate |
+| GitHub Actions (deployment) | `.github/workflows/pi-deploy-on-main.yml` — manual only; exact approved commit plus canary-manifest digest |
+| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC / manual; verify-only |
+| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — loopback verify and drift alert only; never deploys |
 | On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` ? every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
 | On-Pi runtime self-heal | `deploy/pi/ar-local-runtime-health.timer` ? every ~2m: `pi_runtime_health.py --heal` probes loopback `:80` and `:8808` `/api/latest`; restarts dashboard + nginx after consecutive failures; restarts `tailscaled` on tailnet/journal wedge with cooldown |
 
@@ -323,22 +326,33 @@ State file: `/srv/ar-local/data/state/runtime_health.json`.
 |-------------------|---------|
 | `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
 | `PI_SSH_USER` | Optional (default `pi`) |
+| `PI_SSH_KNOWN_HOSTS` | Required OpenSSH known-host entry with a pinned host key for the Pi; deployment never trusts `ssh-keyscan` output |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client ? **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
 | `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
-| `AR_PI_AUTO_DEPLOY` (variable) | Set to `1` so scheduled `pi-deploy-watchdog` runs `--deploy` when verify fails |
+| `AR_PI_CANARY_APPROVED_COMMIT` (variable) | Exact 40-character commit permitted for the next production activation |
+| `AR_PI_CANARY_MANIFEST_SHA256` (variable) | SHA-256 of the reviewed `canary-acceptance.json` for that commit |
+| `AR_PI_CANARY_RELEASE_TAG` (variable) | Published immutable release containing the sole `canary-acceptance.json`; its Git tag must resolve to the approved commit |
 
-Without Tailscale OAuth secrets, cloud workflows skip SSH and print a warning; the on-Pi timer still syncs within ~15 minutes. Windows dev: `npm run pi:deploy:verify` may log a harmless OpenSSH socket message after successful output.
+The acceptance file must satisfy
+`contracts/canary-acceptance-v1.schema.json`. The deploy workflow additionally
+re-hashes its bytes and binds `repository` and `target_commit` to the current
+repository and requested protected commit before any Pi connection is configured.
 
-**Install Pi timer (on the Pi):**
+Without Tailscale OAuth secrets, hosted deployment stops before SSH.
+No fallback path deploys automatically. Windows verification may log a harmless
+OpenSSH socket message after successful output.
+
+**Verify the Pi timers after approved activation:**
+
+Do not pull moving `main` to install the watchdog. The manual `pi-deploy-canary`
+workflow validates the immutable acceptance manifest, installs the exact approved
+commit, and enables the verify-only deploy watchdog. Confirm the resulting state:
 
 ```bash
-cd /srv/ar-local/AR-local
-git pull origin main
-chmod +x deploy/pi/ar-local-deploy-watchdog.sh
-sudo AR_LOCAL_REPO=/srv/ar-local/AR-local bash deploy/pi/install-pi-systemd.sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now ar-local-deploy-watchdog.timer
-sudo systemctl enable --now ar-local-runtime-health.timer
+git -C /srv/ar-local/AR-local rev-parse HEAD
+systemctl is-enabled ar-local-deploy-watchdog.timer
+systemctl is-active ar-local-deploy-watchdog.timer
+systemctl cat ar-local-deploy-watchdog.service
 ```
 
 Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` ? invoke **run pi deploy watchdog**.
@@ -458,7 +472,8 @@ One interactive SSH session (sudo password once; enables passwordless `npm run p
 ssh -t ar-local-pi5 'bash /srv/ar-local/AR-local/deploy/pi/bootstrap-pi-port80.sh'
 ```
 
-Or step by step after `git pull origin main`:
+Or step by step after the exact approved commit has been activated through
+`pi-deploy-canary`:
 
 ```bash
 cd /srv/ar-local/AR-local

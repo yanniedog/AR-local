@@ -27,6 +27,136 @@ def test_empty_change_list_does_not_require_pi_deploy():
     assert not pi_deploy_verify.paths_touch_pi_deploy([])
 
 
+def test_deploy_requires_exact_approved_commit(capsys):
+    args = pi_deploy_verify.build_parser().parse_args(["--deploy"])
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+    assert "requires --expected-commit" in capsys.readouterr().err
+
+
+def test_deploy_rejects_commit_other_than_current_main(monkeypatch, capsys):
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", "a" * 40]
+    )
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: "b" * 40)
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+    assert "not the current local origin/main" in capsys.readouterr().err
+
+
+def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
+    expected = "a" * 40
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", expected, "--dry-run"]
+    )
+    calls = []
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: expected)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_pull_all",
+        lambda commit, dry_run=False: calls.append(("pull", commit, dry_run))
+        or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_services",
+        lambda dry_run=False: calls.append(("services", dry_run))
+        or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: pytest.fail("dry-run must not contact the Pi"),
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
+    assert calls == [("pull", expected, True), ("services", True)]
+
+
+def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+    )
+    expected = "a" * 40
+    assert pi_deploy_verify.deploy_pull_all(expected) == pi_deploy_verify.EXIT_OK
+    assert expected in captured[0]
+    assert "git merge --ff-only" in captured[0]
+    assert pi_deploy_verify.pi_site_repo() not in captured[0]
+
+
+def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, "", ""),
+    )
+    assert pi_deploy_verify.deploy_services() == pi_deploy_verify.EXIT_OK
+    command = captured[0]
+    assert "chown -R" not in command
+    assert "mkdir -p" not in command
+    assert "restart ar-local-deploy-watchdog.timer" not in command
+    assert "enable --now ar-local-deploy-watchdog.timer" in command
+    assert "systemctl cat ar-local-deploy-watchdog.service" in command
+    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
+
+
+def test_on_pi_watchdog_is_verify_only():
+    text = (ROOT / "deploy" / "pi" / "ar-local-deploy-watchdog.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "pi_deploy_verify.py --verify" in text
+    assert "pi_deploy_verify.py --deploy" not in text
+
+
+def test_ingest_paths_never_activate_code():
+    daily_sync = (ROOT / "pi_daily_sync.py").read_text(encoding="utf-8")
+    for forbidden in (
+        "git fetch",
+        "git pull",
+        "git checkout",
+        "sync_repo_for_ingest",
+        "sync_existing_repo",
+    ):
+        assert forbidden not in daily_sync
+
+    watchdog = (ROOT / "pi_daily_watchdog.py").read_text(encoding="utf-8")
+    assert watchdog.count('"--skip-git-sync"') == 2
+    for unit_name in ("ar-local-daily.service", "ar-local-ingest-now.service"):
+        unit = (ROOT / "deploy" / "pi" / unit_name).read_text(encoding="utf-8")
+        assert "ExecStart=" in unit
+        assert "--skip-git-sync" in unit
+
+
+def test_github_pi_deploy_is_manual_canary_gated():
+    text = (ROOT / ".github" / "workflows" / "pi-deploy-on-main.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in text
+    assert "push:" not in text
+    assert "AR_PI_CANARY_APPROVED_COMMIT" in text
+    assert "AR_PI_CANARY_MANIFEST_SHA256" in text
+    assert "AR_PI_CANARY_RELEASE_TAG" in text
+    assert "canary_release_tag" in text
+    assert "canary-acceptance.json" in text
+    assert "pi_canary_acceptance.py" in text
+    assert "'.immutable'" in text
+    assert "DEPLOY_VERIFIED_CANARY" in text
+    assert "--expected-commit" in text
+    assert "PI_SSH_KNOWN_HOSTS" in text
+    assert "ssh-keyscan" not in text
+    assert "Skip deploy" not in text
+
+    watchdog = (
+        ROOT / ".github" / "workflows" / "pi-deploy-watchdog.yml"
+    ).read_text(encoding="utf-8")
+    assert "AR_PI_AUTO_DEPLOY" not in watchdog
+    assert "deploy_on_drift" not in watchdog
+    assert "pi_deploy_verify.py --deploy" not in watchdog
+    assert "PI_SSH_KNOWN_HOSTS" in watchdog
+    assert "ssh-keyscan" not in watchdog
+
+
 def test_pi_runtime_health_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_runtime_health.py"])
 
@@ -45,6 +175,62 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
     }
     snapshot.update(overrides)
     return snapshot
+
+
+def _verified_sync_snapshot(ar_commit: str) -> dict[str, str]:
+    site_commit = "c" * 40
+    return {
+        **_service_snapshot(),
+        "AR_HEAD": ar_commit,
+        "AR_ORIGIN": ar_commit,
+        "SITE_HEAD": site_commit,
+        "SITE_ORIGIN": site_commit,
+        "AR_DIRTY": "",
+        "SITE_DIRTY": "",
+        "DASHBOARD": "active",
+    }
+
+
+def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
+    monkeypatch, capsys
+):
+    expected = "a" * 40
+    actual = "b" * 40
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: actual)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: pytest.fail("commit mismatch must fail before Pi contact"),
+    )
+
+    assert (
+        pi_deploy_verify.verify_sync(expected_commit=expected)
+        == pi_deploy_verify.EXIT_CONFIG
+    )
+    error = capsys.readouterr().err
+    assert "local origin/main does not match approved commit" in error
+    assert actual[:12] in error
+    assert expected[:12] in error
+
+
+@pytest.mark.parametrize("expected_commit", [None, "a" * 40])
+def test_verify_sync_accepts_unset_or_matching_canary_commit(
+    monkeypatch, expected_commit
+):
+    actual = "a" * 40
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: actual)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: _verified_sync_snapshot(actual),
+    )
+
+    assert (
+        pi_deploy_verify.verify_sync(
+            dry_run=True, expected_commit=expected_commit
+        )
+        == pi_deploy_verify.EXIT_OK
+    )
 
 
 def test_service_paths_allow_pi_home_and_xdg_environment():

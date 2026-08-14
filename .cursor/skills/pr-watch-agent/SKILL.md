@@ -117,13 +117,13 @@ npm run pi:needs-deploy -- --ref origin/main~1
 If exit **0** (Pi paths touched) or Pi is known behind `main` (e.g. prior drift report):
 
 ```sh
-npm run pi:deploy
 npm run pi:deploy:verify
-npm run verify:pi
-# or: npm run verify:local -- --base-url=http://100.78.28.10/
+# Record the exact drift and health evidence. Do not deploy the merge.
 ```
 
-On SSH failure → **pi-deploy-agent**. On verify failure → fix and re-deploy; do not claim done.
+On SSH failure, report the unavailable verification. On drift, preserve the
+current runtime until an immutable candidate has completed the canary matrix and
+the protected exact-commit deployment gate is approved.
 
 Optional: **post-merge-verify-agent** for evidence (Browser MCP on Pi URL).
 
@@ -146,7 +146,7 @@ npm run ship:closeout:strict && npm run wait-for-bots   # session idle only when
 | Open PRs scanned | # list oldest-first |
 | Per-PR gates | pass / failing gate ids |
 | Merges this cycle | PR # + SHA on main |
-| Pi deploy | verify exit / SHAs |
+| Pi verification | verify exit / SHAs / drift retained |
 | verify:pi | exit code |
 | Idle | yes / no |
 | Blockers | pr-fix handoff / chief clash |
