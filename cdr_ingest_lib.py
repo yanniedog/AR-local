@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import threading
@@ -255,6 +256,16 @@ def ingest_brand(
         pages += 1
         if max_pages is not None and pages > max_pages:
             log(f"max-pages reached for {bank_dir_name}")
+            append_failure(
+                date_root,
+                {
+                    "phase": "products_index",
+                    "bank": bank_dir_name,
+                    "status": "max_pages_reached",
+                    "configured_limit": max_pages,
+                },
+                lock=failure_lock,
+            )
             break
 
         time.sleep(sleep_ms / 1000.0)
@@ -286,6 +297,16 @@ def ingest_brand(
         for product in extract_products(parsed):
             if max_products is not None and products_seen >= max_products:
                 log(f"max-products reached for {bank_dir_name}")
+                append_failure(
+                    date_root,
+                    {
+                        "phase": "products_index",
+                        "bank": bank_dir_name,
+                        "status": "max_products_reached",
+                        "configured_limit": max_products,
+                    },
+                    lock=failure_lock,
+                )
                 capped = True
                 break
             products_seen += 1
@@ -556,14 +577,20 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # ─── Sector runner closures ───────────────────────────────────────────────
 
+    bank_work: List[Tuple[Dict[str, str], str]] = []
+
     def do_banks() -> None:
         banks_root.mkdir(parents=True, exist_ok=True)
         # Start each run with a clean failure log so the end-of-run status rollup
         # reflects THIS run, not stale failures left by a prior same-day --resume
         # rerun (append-only failures.jsonl would otherwise double-count) (Codex).
-        (banks_root / "failures.jsonl").unlink(missing_ok=True)
+        failure_log = banks_root / "failures.jsonl"
+        failure_log.unlink(missing_ok=True)
+        # A retained zero-byte journal is positive evidence that no failure was
+        # recorded. Missing or unreadable evidence is never equivalent to zero.
+        with failure_log.open("x", encoding="utf-8"):
+            pass
         seen_dirs: Set[str] = set()
-        bank_work: List[Tuple[Dict[str, str], str]] = []
         for brand in snap.banking_brands:
             bdir = allocate_bank_dir(
                 brand["brand_name"],
@@ -627,6 +654,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     # complete run from one where holders, products, or a tripped circuit breaker
     # left gaps — without parsing failures.jsonl line by line.
     status = summarize_failures(banks_root)
+    status["register_attempts"] = snap.register_attempts
+    status["register_provenance_complete"] = snap.register_provenance_complete
+    status["failure_provenance_complete"] = bool(
+        status.get("failure_provenance_complete")
+        and snap.register_provenance_complete
+    )
+    status["incomplete"] = bool(
+        status.get("incomplete") or not snap.register_provenance_complete
+    )
+    by_provider = status.get("by_provider") or {}
+    provider_states = []
+    for brand, bdir in bank_work:
+        identity_material = "\x1f".join(
+            (
+                str(brand.get("endpoint_url") or "").strip().lower(),
+                str(brand.get("legal_entity_name") or "").strip().lower(),
+                str(brand.get("brand_name") or "").strip().lower(),
+            )
+        ).encode("utf-8")
+        failures = int(by_provider.get(bdir) or 0)
+        provider_states.append(
+            {
+                "provider_uid": f"legacy-prd:{hashlib.sha256(identity_material).hexdigest()}",
+                "identity_status": "derived_legacy",
+                "brand_name": brand.get("brand_name") or None,
+                "legal_entity_name": brand.get("legal_entity_name") or None,
+                "endpoint_url": brand.get("endpoint_url") or None,
+                "state": "partial" if failures else "complete",
+                "failure_records": failures,
+            }
+        )
+    status["providers_registered"] = snap.banking_count_before_filter
+    status["providers_attempted"] = len(bank_work)
+    status["provider_states"] = provider_states
     (banks_root / "ingest-status.json").write_text(
         json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8"
     )

@@ -14,6 +14,7 @@ from typing import Optional
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
 from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
 from ar_local_subprocess import run_checked
+from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -170,6 +171,28 @@ def clear_payload_publication_pending(repo_root: Path) -> None:
     payload_publication_pending_path(repo_root).unlink(missing_ok=True)
 
 
+def _read_observation_pointer(state_dir: Path, name: str) -> dict:
+    path = state_dir / "observation-pointers-v2" / name
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _exports_from_pointer(state_dir: Path, pointer: dict) -> Optional[Path]:
+    relative = str(pointer.get("export_path") or "")
+    if not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
+        return None
+    data_root = state_dir.parent.resolve()
+    candidate = (data_root / relative).resolve()
+    try:
+        candidate.relative_to(data_root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_dir() else None
+
+
 def maybe_publish_app_payload(repo_root: Path) -> bool:
     """Build + publish the mobile-app payload after a successful ingest.
 
@@ -180,14 +203,65 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
     if not _app_payload_enabled():
         return True
     try:
-        from ar_local_pi_runtime import data_runs_root, latest_exports_root
         import app_payload
 
-        exports = latest_exports_root(data_runs_root(repo_root))
-        if exports is None:
-            print("[pi_daily_sync] app_payload skipped reason=no_valid_exports")
-            return False
         runtime_state = data_state_root(repo_root)
+        latest_observation = _read_observation_pointer(
+            runtime_state, "latest-observation.json"
+        )
+        if latest_observation.get("observation_state") == "partial":
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                f"run_date={latest_observation.get('observation_date', 'unknown')} "
+                "observation_state=partial"
+            )
+            return True
+        latest_complete = _read_observation_pointer(runtime_state, "latest-complete.json")
+        exports = _exports_from_pointer(runtime_state, latest_complete)
+        if exports is None:
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                "reason=missing_or_invalid_latest_complete_pointer"
+            )
+            return True
+        observation_date = str(latest_complete.get("observation_date") or "")
+        marker_relative = str(latest_complete.get("marker_path") or "")
+        marker_part = Path(marker_relative)
+        if (
+            latest_complete.get("observation_state") != "complete"
+            or not marker_relative
+            or marker_part.is_absolute()
+            or ".." in marker_part.parts
+        ):
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                "reason=invalid_latest_complete_pointer"
+            )
+            return True
+        completion_marker = runtime_state / marker_part
+        try:
+            completion = json.loads(completion_marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            completion = {}
+        if not verify_completion_marker(completion, runtime_state, observation_date):
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                f"run_date={observation_date or 'unknown'} "
+                "reason=unverified_completion_marker"
+            )
+            return True
+        if (
+            completion.get("finalization_schema_version") == 2
+            and completion.get("observation_state") != "complete"
+        ):
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                f"run_date={observation_date} "
+                f"observation_state={completion.get('observation_state', 'unknown')}"
+            )
+            # Withholding an incomplete candidate is a successful policy outcome,
+            # not a publication failure that the watchdog should retry forever.
+            return True
         payload_state = runtime_state / "app-payload"
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
