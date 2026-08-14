@@ -43,10 +43,21 @@
       "if": { "properties": { "event_type": { "const": "revision_finalized" } } },
       "then": {
         "required": ["parent_generation_id"],
-        "properties": {
-          "parent_generation_id": { "oneOf": [{ "$ref": "#/$defs/generation" }, { "$ref": "#/$defs/legacyParent" }] },
-          "parent_event_digest": { "$ref": "#/$defs/digest" }
-        }
+        "oneOf": [
+          {
+            "required": ["parent_event_digest"],
+            "properties": {
+              "parent_generation_id": { "$ref": "#/$defs/generation" },
+              "parent_event_digest": { "$ref": "#/$defs/digest" }
+            }
+          },
+          {
+            "properties": {
+              "parent_generation_id": { "oneOf": [{ "$ref": "#/$defs/generation" }, { "$ref": "#/$defs/legacyParent" }] },
+              "parent_event_digest": { "type": "null" }
+            }
+          }
+        ]
       },
       "else": {
         "properties": {

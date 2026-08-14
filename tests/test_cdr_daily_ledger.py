@@ -283,12 +283,13 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     assert captured["previous"] == previous
 
 
-def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, monkeypatch):
+def test_stale_marker_is_preserved_and_rerun_is_refused_before_ingest(tmp_path, monkeypatch, capsys):
     import json
 
     monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
-    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: None)
+    ingest_calls = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: ingest_calls.append(True))
     monkeypatch.setattr(cdr_daily, "persist_ingest_status", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "copytree_atomic", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *a, **k: None)
@@ -298,21 +299,6 @@ def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, 
     stale_marker = state / f"{TODAY}.done.json"
     stale_bytes = b'{"stale":true}'
     stale_marker.write_bytes(stale_bytes)
-    captured = {}
-
-    def fake_build(_run_root, out_dir, _db_path, *, previous_run_root=None):
-        return {"run_date": TODAY, "out_dir": str(out_dir), "banks": {"rates": 1}}
-
-    def fake_finalize(export, _state, marker, **kwargs):
-        captured.update(
-            export=export,
-            marker=marker,
-            parent=kwargs.get("parent_generation_id"),
-        )
-        return {**kwargs["result"], "observation_state": "complete"}
-
-    monkeypatch.setattr(cdr_daily, "build_outputs", fake_build)
-    monkeypatch.setattr(cdr_daily, "finalize_observation", fake_finalize)
     args = cdr_daily.parse_args(
         [
             "--date",
@@ -328,8 +314,8 @@ def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, 
         ]
     )
 
-    assert cdr_daily.run_once(args) == 1
+    assert cdr_daily.run_once(args) == 2
+    assert "recover or import a verified ledger-v2 parent" in capsys.readouterr().err
     assert stale_marker.read_bytes() == stale_bytes
-    assert captured["marker"] != stale_marker
-    assert "_revisions" in captured["export"].parts
-    assert captured["parent"] is None
+    assert ingest_calls == []
+    assert not (runs / TODAY / "_revisions").exists()

@@ -120,9 +120,11 @@ def _load_generation_event(
     return payload
 
 
-def _validate_parent_binding(state_dir: Path, event: Mapping[str, Any]) -> None:
+def _validate_parent_binding(
+    state_dir: Path, event: Mapping[str, Any]
+) -> Optional[dict[str, Any]]:
     if event.get("event_type") != "revision_finalized":
-        return
+        return None
     generation_id = str(event["generation_id"])
     parent_generation_id = str(event["parent_generation_id"])
     if parent_generation_id == generation_id:
@@ -132,17 +134,51 @@ def _validate_parent_binding(state_dir: Path, event: Mapping[str, Any]) -> None:
         # but explicitly unbound. A valid v2 parent ID can still be checked for
         # existence; the older opaque legacy-export alias cannot.
         if _GENERATION.fullmatch(parent_generation_id):
-            _load_generation_event(
+            return _load_generation_event(
                 ledger_root(state_dir),
                 str(event["observation_date"]),
                 parent_generation_id,
             )
-        return
+        return None
     parent = _load_generation_event(
         ledger_root(state_dir), str(event["observation_date"]), parent_generation_id
     )
     if parent.get("event_digest") != event.get("parent_event_digest"):
         raise ValueError("revision parent event digest mismatch")
+    return parent
+
+
+def _reachable_event_digests(
+    root: Path, head: Optional[Mapping[str, Any]] = None
+) -> set[str]:
+    """Return the exact previous-event chain reachable from the current head.
+
+    Event files are create-once but a crash can land one before head.json.  Such
+    an orphan is preserved for recovery, never accepted as a revision parent.
+    """
+
+    if head is None:
+        head = _read_head(root)
+    events: dict[str, dict[str, Any]] = {}
+    for path in sorted((root / "events").glob("*/*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        _validate_event(payload)
+        digest = str(payload["event_digest"])
+        if digest in events:
+            raise ValueError("duplicate ledger event digest")
+        events[digest] = payload
+
+    reached: set[str] = set()
+    cursor = str((head or {}).get("event_digest") or "") or None
+    while cursor is not None:
+        if cursor in reached:
+            raise ValueError("ledger head chain contains a loop")
+        event = events.get(cursor)
+        if event is None:
+            raise ValueError("ledger head chain references a missing event")
+        reached.add(cursor)
+        cursor = event.get("previous_event_digest")
+    return reached
 
 
 def append_contract_event(
@@ -186,6 +222,8 @@ def append_contract_event_locked(
             parent = _load_generation_event(
                 root, observation_date, str(parent_generation_id)
             )
+            if parent["event_digest"] not in _reachable_event_digests(root, head):
+                raise ValueError("revision parent is not reachable from the ledger head")
             verify_event_artifacts(state_dir, parent)
             if existing_parent_digest != parent.get("event_digest"):
                 raise ValueError(
@@ -211,6 +249,8 @@ def append_contract_event_locked(
             )
             if parent_generation_id == generation_id:
                 raise ValueError("revision event cannot parent itself")
+            if parent["event_digest"] not in _reachable_event_digests(root, head):
+                raise ValueError("revision parent is not reachable from the ledger head")
             verify_event_artifacts(state_dir, parent)
             parent_event_digest = str(parent["event_digest"])
         event = {
@@ -299,10 +339,22 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
 def verify_event_artifacts(
     state_dir: Path, event: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Re-hash every artifact bound to one verified ledger event."""
+    """Re-hash one event and every resolvable revision ancestor's artifacts."""
 
-    verify_event(state_dir, event)
-    _verify_artifacts(state_dir.expanduser().resolve(), event)
+    state_dir = state_dir.expanduser().resolve()
+    current = verify_event(state_dir, event)
+    _verify_artifacts(state_dir, current)
+    seen = {str(current["event_digest"])}
+    while True:
+        parent = _validate_parent_binding(state_dir, current)
+        if parent is None:
+            break
+        parent_digest = str(parent["event_digest"])
+        if parent_digest in seen:
+            raise ValueError("revision parent chain contains a loop")
+        seen.add(parent_digest)
+        current = verify_event(state_dir, parent)
+        _verify_artifacts(state_dir, current)
     return dict(event)
 
 

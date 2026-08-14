@@ -312,12 +312,29 @@ def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path)
     schema("ledger-event-v2.schema.json").validate(revision_event)
     invalid_revision = deepcopy(revision_event)
     invalid_revision["parent_event_digest"] = None
-    with pytest.raises(ValidationError):
-        schema("ledger-event-v2.schema.json").validate(invalid_revision)
+    # The public read contract must retain immutable pre-hardening revisions
+    # that used a null binding; the create path still refuses to emit one.
+    schema("ledger-event-v2.schema.json").validate(invalid_revision)
+    invalid_revision["event_digest"] = cdr_ledger_v2.event_digest(invalid_revision)
+    with pytest.raises(ValueError, match="new revision events require"):
+        cdr_ledger_v2._validate_event(
+            invalid_revision, require_parent_binding=True
+        )
     legacy_revision = deepcopy(revision_event)
     legacy_revision.pop("parent_event_digest")
     legacy_revision["event_digest"] = cdr_ledger_v2.event_digest(legacy_revision)
     schema("ledger-event-v2.schema.json").validate(legacy_revision)
+    invalid_bound_legacy_revision = deepcopy(revision_event)
+    invalid_bound_legacy_revision["parent_generation_id"] = (
+        f"legacy-export-{'a' * 24}"
+    )
+    invalid_bound_legacy_revision["event_digest"] = cdr_ledger_v2.event_digest(
+        invalid_bound_legacy_revision
+    )
+    with pytest.raises(ValidationError):
+        schema("ledger-event-v2.schema.json").validate(
+            invalid_bound_legacy_revision
+        )
     with pytest.raises(ValueError, match="new revision events require"):
         cdr_ledger_v2._validate_event(
             legacy_revision, require_parent_binding=True
@@ -418,6 +435,80 @@ def test_ledger_verifier_rejects_changed_revision_parent_digest(tmp_path):
         item["issue"] == "INVALID_EVENT" and "parent event digest" in item["detail"]
         for item in report["findings"]
     )
+
+
+def test_revision_marker_rejects_changed_parent_artifacts(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    second = finalize_observation(
+        revision,
+        state,
+        state / f"{DATE}.revision.later.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+
+    (primary / "banks.json").write_text('{"rates":["changed-parent"]}', encoding="utf-8")
+
+    assert verify_completion_marker(second, state, DATE) is False
+
+
+def test_revision_finalization_rejects_orphan_parent_event(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    orphan_revision = tmp_path / "runs" / DATE / "_revisions" / "orphan" / "_exports"
+    child_revision = tmp_path / "runs" / DATE / "_revisions" / "child" / "_exports"
+    make_export(primary)
+    make_export(orphan_revision)
+    make_export(child_revision)
+    (orphan_revision / "banks.json").write_text(
+        '{"rates":["orphan"]}', encoding="utf-8"
+    )
+    (child_revision / "banks.json").write_text(
+        '{"rates":["child"]}', encoding="utf-8"
+    )
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    head_path = state / "ledger-v2" / "head.json"
+    primary_head = head_path.read_bytes()
+    orphan = finalize_observation(
+        orphan_revision,
+        state,
+        state / f"{DATE}.revision.orphan.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+    # Model the crash window: the immutable event exists, but head advancement
+    # did not survive.  The event must be recovered, not used as a new parent.
+    head_path.write_bytes(primary_head)
+
+    with pytest.raises(ValueError, match="not reachable from the ledger head"):
+        finalize_observation(
+            child_revision,
+            state,
+            state / f"{DATE}.revision.child.json",
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+            parent_generation_id=orphan["generation_id"],
+        )
+    assert not (state / f"{DATE}.revision.child.json").exists()
 
 
 def test_pre_hardening_unbound_revision_remains_readable_and_recoverable(tmp_path):

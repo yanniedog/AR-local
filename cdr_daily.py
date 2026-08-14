@@ -280,9 +280,26 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if is_revision and marker_trusted:
+    if is_revision:
+        # A revision is valid only when it can name an already verified ledger-v2
+        # generation.  A stale/corrupt marker is evidence that bytes exist (and
+        # therefore keeps the primary immutable), but it is not parent evidence.
+        # Prefer the primary marker when it verifies; otherwise a verified
+        # selected-generation pointer may recover the parent.  Refuse before
+        # run_ingest when neither exists so a crash retry cannot silently create
+        # a second primary event under _revisions.
+        parent_marker = marker if marker_trusted else verified_pointer_marker_for_date(
+            state_dir, date
+        )
+        if parent_marker is None:
+            print(
+                f"ERROR: refusing revision of unverified observation {date} before "
+                "ingest; recover or import a verified ledger-v2 parent first.",
+                file=sys.stderr,
+            )
+            return 2
         try:
-            primary_record = json.loads(marker.read_text(encoding="utf-8"))
+            primary_record = json.loads(parent_marker.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             primary_record = {}
         revision_parent_generation_id = str(
