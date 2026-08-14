@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 import pi_daily_sync  # noqa: E402
 import pi_daily_watchdog  # noqa: E402
 import ar_local_pi_runtime  # noqa: E402
+from cdr_finalization import finalize_observation  # noqa: E402
 
 
 SERVICE_TEMPLATES = (
@@ -116,6 +117,76 @@ def test_revision_pointer_requires_its_exact_verified_marker(
         assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
     publish.assert_not_called()
     assert "unverified_completion_marker" in capsys.readouterr().out
+
+
+def test_watchdog_accepts_verified_revision_pointer_over_stale_primary_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    date = "2026-08-14"
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / f"{date}.done.json").write_text("{stale", encoding="utf-8")
+    exports = tmp_path / "runs" / date / "_revisions" / "stamp" / "_exports"
+    cache = exports / "dashboard-cache"
+    cache.mkdir(parents=True)
+    (cache / "latest.json").write_text(
+        json.dumps(
+            {
+                "run_date": date,
+                "banks_counts": {
+                    "products": 1,
+                    "rates": 2,
+                    "fees": 0,
+                    "features": 0,
+                    "eligibility": 0,
+                    "constraints": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (exports / "banks.json").write_text('{"rates":[]}', encoding="utf-8")
+    (exports / "ingest-status.json").write_text(
+        json.dumps(
+            {
+                "total": 0,
+                "corrupt_records": 0,
+                "unattributed_records": 0,
+                "failure_provenance_complete": True,
+                "incomplete": False,
+                "register_provenance_complete": True,
+                "register_attempts": [
+                    {
+                        "source_url": "https://register.example/holders",
+                        "mode": "plain",
+                        "ok": True,
+                        "status": 200,
+                        "bytes": 2,
+                        "sha256": "a" * 64,
+                    }
+                ],
+                "providers_registered": 1,
+                "providers_attempted": 1,
+                "provider_states": [
+                    {"provider_uid": "provider-a", "state": "complete"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    finalize_observation(
+        exports,
+        state,
+        state / f"{date}.revision.stamp.json",
+        observation_date=date,
+        result={"run_date": date, "banks_counts": {"rates": 2}},
+        parent_generation_id="legacy-primary",
+    )
+    monkeypatch.setattr(pi_daily_watchdog, "data_state_root", lambda _repo: state)
+    monkeypatch.setattr(
+        pi_daily_watchdog, "data_runs_root", lambda _repo: tmp_path / "runs"
+    )
+    assert pi_daily_watchdog.run_complete(date) is True
 
 
 @pytest.mark.parametrize("name", SERVICE_TEMPLATES)

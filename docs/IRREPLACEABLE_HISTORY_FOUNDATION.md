@@ -26,8 +26,13 @@ The daily path now installs state in this order:
    or invalidate the mandatory v2 event.
 
 A crash before step 5 leaves recoverable candidate evidence, never a completed
-day. The watchdog accepts only a verified completion marker. A retry against any
-existing export root creates a revision, including on the same calendar day.
+day. A retry deterministically resumes the same generation when its immutable
+source digest and prior head still match. Recovery verifies and completes only
+the missing suffix of the transaction: event to head, head to marker, or marker
+to pointers. It never appends a second event for the same generation and refuses
+ambiguous orphan events. The watchdog accepts only the exact verified marker
+selected by `latest-observation`; a stale primary marker cannot hide a verified
+revision. A genuinely different same-day source generation creates a revision.
 
 ## Truth states
 
@@ -59,8 +64,12 @@ complete observation.
 | `coverage.eligible_rate_rows` | `banks_counts.rates` | Legacy rate-row population pending canonical classifier | Not a product count | Audit only until v3 population model lands |
 | `coverage.failure_records` | Parsed non-corrupt `failures.jsonl` objects | Integer | Corrupt records counted separately | Coverage disclosure |
 | `coverage.failure_provenance_complete` | Full failure-log parse + provider reconciliation | Boolean | False blocks complete state | Promotion gate only |
+| `coverage.register_sources_attempted` | All configured CDR register discovery endpoints | Per-attempt URL, mode, outcome, response bytes, and SHA-256 | Missing attempts make provenance incomplete | Audit and promotion gate only |
+| `coverage.register_sources_complete` | Successful, hash-bound register responses | Integer | Fewer than attempted means a partial register population | Coverage disclosure and promotion gate |
+| `coverage.register_provenance_complete` | Every configured register source completed with retained digest evidence | Boolean | False forces `partial` even if one source returned usable holders | Promotion gate only |
 | `artifacts[*]` | Every file below the finalized export root | Relative path, bytes, SHA-256 | Missing file is corruption | Restore / ledger verification |
 | `prior_ledger_head` | Ledger-v2 head before finalization | SHA-256 or null at epoch | Null only for first event | Chain verification |
+| `completion_marker_path` | Finalizer-selected marker for this exact generation | State-root-relative POSIX path | External, absolute, or mismatched paths are rejected | Recovery and watchdog truth boundary |
 
 The existing ambiguous legacy populations are intentionally not renamed here.
 They are listed under `unavailable_populations` until the canonical taxonomy and

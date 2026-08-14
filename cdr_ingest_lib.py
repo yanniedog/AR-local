@@ -256,6 +256,16 @@ def ingest_brand(
         pages += 1
         if max_pages is not None and pages > max_pages:
             log(f"max-pages reached for {bank_dir_name}")
+            append_failure(
+                date_root,
+                {
+                    "phase": "products_index",
+                    "bank": bank_dir_name,
+                    "status": "max_pages_reached",
+                    "configured_limit": max_pages,
+                },
+                lock=failure_lock,
+            )
             break
 
         time.sleep(sleep_ms / 1000.0)
@@ -287,6 +297,16 @@ def ingest_brand(
         for product in extract_products(parsed):
             if max_products is not None and products_seen >= max_products:
                 log(f"max-products reached for {bank_dir_name}")
+                append_failure(
+                    date_root,
+                    {
+                        "phase": "products_index",
+                        "bank": bank_dir_name,
+                        "status": "max_products_reached",
+                        "configured_limit": max_products,
+                    },
+                    lock=failure_lock,
+                )
                 capped = True
                 break
             products_seen += 1
@@ -629,6 +649,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     # complete run from one where holders, products, or a tripped circuit breaker
     # left gaps — without parsing failures.jsonl line by line.
     status = summarize_failures(banks_root)
+    status["register_attempts"] = snap.register_attempts
+    status["register_provenance_complete"] = snap.register_provenance_complete
+    status["failure_provenance_complete"] = bool(
+        status.get("failure_provenance_complete")
+        and snap.register_provenance_complete
+    )
+    status["incomplete"] = bool(
+        status.get("incomplete") or not snap.register_provenance_complete
+    )
     by_provider = status.get("by_provider") or {}
     provider_states = []
     for brand, bdir in bank_work:

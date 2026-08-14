@@ -28,7 +28,11 @@ import cdr_ledger_integrity
 from cdr_finalization import (
     finalize_observation,
     legacy_parent_generation_id,
+    recover_pending_finalization,
+    repair_observation_pointers,
+    validate_finalization_layout,
     verify_completion_marker,
+    verified_pointer_marker_for_date,
 )
 from cdr_outputs import build_outputs
 from cdr_product_changes import previous_finalized_run
@@ -197,14 +201,48 @@ def run_once(args: argparse.Namespace) -> int:
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
-    state_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
+    try:
+        validate_finalization_layout(export_root, state_dir)
+    except ValueError as exc:
+        print(f"ERROR: unsafe finalization layout: {exc}", file=sys.stderr)
+        return 2
+    state_dir.mkdir(parents=True, exist_ok=True)
+    if not args.force:
+        selected_marker = verified_pointer_marker_for_date(state_dir, date)
+        if selected_marker is not None:
+            print(
+                f"Already finalized local CDR observation for {date}: "
+                f"{selected_marker}"
+            )
+            if selected_marker == marker and args.exports is None:
+                _emit_day_manifest(
+                    persistent_runs_root, state_dir, date, args.exports
+                )
+            return 0
+        recovered_marker = recover_pending_finalization(state_dir, date)
+        if recovered_marker is not None:
+            print(
+                f"Recovered interrupted local CDR finalization for {date}: "
+                f"{recovered_marker}"
+            )
+            if recovered_marker == marker and args.exports is None:
+                _emit_day_manifest(
+                    persistent_runs_root, state_dir, date, args.exports
+                )
+            return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
     marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
         if marker_trusted:
+            try:
+                recorded = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                recorded = {}
+            if recorded.get("finalization_schema_version") == 2:
+                repair_observation_pointers(recorded, state_dir, date, marker)
             print(f"Already completed local CDR daily run for {date}: {marker}")
             # Self-heal a finalized day whose integrity manifest never landed
             # (e.g. a prior best-effort write failed): the trusted-marker path is

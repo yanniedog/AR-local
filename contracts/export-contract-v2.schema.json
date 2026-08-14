@@ -16,6 +16,7 @@
     "ledger_state",
     "observation_state",
     "source_path",
+    "completion_marker_path",
     "register_hashes",
     "provider_states",
     "coverage",
@@ -35,6 +36,7 @@
     "ledger_state": { "const": "provisional" },
     "observation_state": { "enum": ["complete", "partial", "failed"] },
     "source_path": { "$ref": "#/$defs/relativePath" },
+    "completion_marker_path": { "$ref": "#/$defs/relativePath" },
     "register_hashes": {
       "type": "array",
       "items": {
@@ -91,6 +93,9 @@
         "failure_records",
         "corrupt_failure_records",
         "unattributed_failure_records",
+        "register_sources_attempted",
+        "register_sources_complete",
+        "register_provenance_complete",
         "failure_provenance_complete",
         "reconciliation_status",
         "unavailable_populations"
@@ -106,6 +111,9 @@
         "failure_records": { "type": "integer", "minimum": 0 },
         "corrupt_failure_records": { "type": "integer", "minimum": 0 },
         "unattributed_failure_records": { "type": "integer", "minimum": 0 },
+        "register_sources_attempted": { "type": "integer", "minimum": 0 },
+        "register_sources_complete": { "type": "integer", "minimum": 0 },
+        "register_provenance_complete": { "type": "boolean" },
         "failure_provenance_complete": { "type": "boolean" },
         "reconciliation_status": { "enum": ["reconciled", "partial"] },
         "unavailable_populations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }

@@ -9,9 +9,15 @@ from jsonschema import Draft202012Validator
 
 from cdr_atomic import ImmutablePathError, atomic_write_json
 import cdr_atomic
+import cdr_finalization
+import cdr_ledger_v2
 import cdr_run_journal
 from cdr_export_contract import build_contract, load_contract, validate_contract, write_contract
-from cdr_finalization import finalize_observation, verify_completion_marker
+from cdr_finalization import (
+    finalize_observation,
+    recover_pending_finalization,
+    verify_completion_marker,
+)
 from cdr_ledger_v2 import verify_ledger
 from cdr_run_journal import (
     InvalidJournalTransition,
@@ -62,6 +68,17 @@ def make_export(root, *, failures=0, provenance_complete=True):
                 "by_phase": {},
                 "by_status": {},
                 "by_provider": {"provider-a": failures} if failures else {},
+                "register_provenance_complete": True,
+                "register_attempts": [
+                    {
+                        "source_url": "https://register.example/holders",
+                        "mode": "plain",
+                        "ok": True,
+                        "status": 200,
+                        "bytes": 2,
+                        "sha256": "a" * 64,
+                    }
+                ],
                 "providers_registered": 1,
                 "providers_attempted": 1,
                 "provider_states": [
@@ -182,6 +199,72 @@ def test_finalization_retry_reuses_generation_after_ledger_head_advances(tmp_pat
     assert verify_ledger(state)["ok"] is True
 
 
+def test_recovery_finishes_event_written_before_head_marker_and_pointers(
+    tmp_path, monkeypatch
+):
+    export = tmp_path / "runs" / DATE / "_exports"
+    make_export(export)
+    state = tmp_path / "state"
+    marker = state / f"{DATE}.done.json"
+    real_write = cdr_ledger_v2.atomic_write_json
+
+    def crash_before_head(path, value, **kwargs):
+        if path.name == "head.json":
+            raise RuntimeError("simulated power loss before head")
+        return real_write(path, value, **kwargs)
+
+    monkeypatch.setattr(cdr_ledger_v2, "atomic_write_json", crash_before_head)
+    with pytest.raises(RuntimeError, match="before head"):
+        finalize_observation(
+            export,
+            state,
+            marker,
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        )
+    monkeypatch.setattr(cdr_ledger_v2, "atomic_write_json", real_write)
+
+    assert not marker.exists()
+    assert not (state / "ledger-v2" / "head.json").exists()
+    recovered_marker = recover_pending_finalization(state, DATE)
+    assert recovered_marker == marker
+    completion = json.loads(marker.read_text(encoding="utf-8"))
+    assert verify_completion_marker(completion, state, DATE)
+    assert (state / "observation-pointers-v2" / "latest-observation.json").is_file()
+    assert (state / "observation-pointers-v2" / "latest-complete.json").is_file()
+    assert verify_ledger(state)["ok"] is True
+
+
+def test_recovery_repairs_pointers_after_marker_lands(tmp_path, monkeypatch):
+    export = tmp_path / "runs" / DATE / "_exports"
+    make_export(export)
+    state = tmp_path / "state"
+    marker = state / f"{DATE}.done.json"
+    real_advance = cdr_finalization._advance_pointer
+    monkeypatch.setattr(
+        cdr_finalization,
+        "_advance_pointer",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            RuntimeError("simulated power loss before pointers")
+        ),
+    )
+    with pytest.raises(RuntimeError, match="before pointers"):
+        finalize_observation(
+            export,
+            state,
+            marker,
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        )
+    monkeypatch.setattr(cdr_finalization, "_advance_pointer", real_advance)
+
+    assert marker.is_file()
+    assert not (state / "observation-pointers-v2").exists()
+    assert recover_pending_finalization(state, DATE) == marker
+    assert (state / "observation-pointers-v2" / "latest-observation.json").is_file()
+    assert (state / "observation-pointers-v2" / "latest-complete.json").is_file()
+
+
 def test_ledger_verifier_detects_changed_source_bytes(tmp_path):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export)
@@ -235,6 +318,9 @@ def test_orphan_candidate_rebases_safely_after_another_event_advances_head(tmp_p
         "failure_records": 0,
         "corrupt_failure_records": 0,
         "unattributed_failure_records": 0,
+        "register_sources_attempted": 1,
+        "register_sources_complete": 1,
+        "register_provenance_complete": True,
         "failure_provenance_complete": True,
         "reconciliation_status": "reconciled",
         "unavailable_populations": [],
@@ -245,6 +331,7 @@ def test_orphan_candidate_rebases_safely_after_another_event_advances_head(tmp_p
         observed_at="2026-08-14T00:00:00Z",
         observation_state="complete",
         source_path=f"runs/{DATE}/first",
+        completion_marker_path="orphan.done.json",
         coverage=coverage,
         provider_states=[{"provider_uid": "provider-a", "state": "complete"}],
         prior_ledger_head=None,

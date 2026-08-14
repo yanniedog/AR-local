@@ -134,6 +134,29 @@ def test_run_once_missing_past_day_never_writes(tmp_path, monkeypatch):
     assert list(state.glob("2026-05-14*.json")) == []
 
 
+def test_run_once_rejects_nonportable_layout_before_ingest(tmp_path, monkeypatch):
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    called = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: called.append(True))
+    runs = tmp_path / "data-a" / "runs"
+    state = tmp_path / "data-b" / "state"
+    args = cdr_daily.parse_args(
+        [
+            "--date",
+            TODAY,
+            "--runs",
+            str(runs),
+            "--state",
+            str(state),
+            "--no-ram-stage",
+        ]
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert called == []
+    assert not state.exists()
+
+
 def test_run_once_self_heals_missing_integrity_manifest(tmp_path, monkeypatch):
     """A finalized day whose integrity manifest never landed gets it on the next run.
 

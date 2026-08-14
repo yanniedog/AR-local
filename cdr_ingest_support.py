@@ -81,6 +81,8 @@ DATASET_TO_FOLDER = {
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
+    register_provenance_complete: bool
+    register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
 
@@ -779,6 +781,7 @@ def collect_register_snapshot(
     """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
+    register_attempts: List[Dict[str, Any]] = []
 
     attempts: List[Tuple[str, str]] = [
         (REGISTER_URL_SUMMARY, "cdr"),
@@ -799,7 +802,18 @@ def collect_register_snapshot(
             else fetch_json_plain(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
         )
         data = res.data
-        if not res.ok or data is None or has_cdr_errors(data):
+        attempt_ok = res.ok and data is not None and not has_cdr_errors(data)
+        register_attempts.append(
+            {
+                "source_url": url,
+                "mode": mode,
+                "ok": attempt_ok,
+                "status": res.status,
+                "bytes": len((res.text or "").encode("utf-8")),
+                "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
+            }
+        )
+        if not attempt_ok:
             continue
         register_payload_ok = True
         for b in iter_banking_brands_from_payload(data):
@@ -834,6 +848,10 @@ def collect_register_snapshot(
     )
     return RegisterSnapshot(
         register_ok=register_payload_ok,
+        register_provenance_complete=all(
+            attempt["ok"] for attempt in register_attempts
+        ),
+        register_attempts=register_attempts,
         banking_brands=banking_brands,
         banking_count_before_filter=count_banking,
     )

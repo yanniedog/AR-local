@@ -121,6 +121,11 @@ def validate_contract(contract: Mapping[str, Any]) -> None:
     source_path = str(contract.get("source_path") or "")
     if not source_path or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
         raise ValueError("export contract source_path must be safe and relative")
+    marker_path = str(contract.get("completion_marker_path") or "")
+    if not marker_path or Path(marker_path).is_absolute() or ".." in Path(marker_path).parts:
+        raise ValueError(
+            "export contract completion_marker_path must be safe and relative"
+        )
     artifacts = contract.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise ValueError("export contract requires artifacts")
@@ -207,6 +212,7 @@ def build_contract(
     observed_at: Optional[str] = None,
     observation_state: str,
     source_path: str,
+    completion_marker_path: str,
     coverage: Mapping[str, Any],
     provider_states: Iterable[Mapping[str, Any]] = (),
     register_hashes: Iterable[Mapping[str, Any]] = (),
@@ -224,6 +230,7 @@ def build_contract(
         "ledger_state": "provisional",
         "observation_state": observation_state,
         "source_path": source_path,
+        "completion_marker_path": completion_marker_path,
         "register_hashes": [dict(item) for item in register_hashes],
         "provider_states": [dict(item) for item in provider_states],
         "coverage": dict(coverage),

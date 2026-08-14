@@ -16,6 +16,8 @@ from cdr_file_lock import FileLock
 
 SCHEMA_VERSION = 2
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_GENERATION = re.compile(r"^obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}$")
 
 
 def utc_now() -> str:
@@ -49,6 +51,19 @@ def _validate_event(event: Mapping[str, Any]) -> None:
         raise ValueError("invalid ledger event_type")
     if event.get("ledger_state") != "finalized":
         raise ValueError("ledger event must be finalized")
+    observation_date = str(event.get("observation_date") or "")
+    generation_id = str(event.get("generation_id") or "")
+    if not _DATE.fullmatch(observation_date):
+        raise ValueError("invalid ledger event observation_date")
+    if not _GENERATION.fullmatch(generation_id):
+        raise ValueError("invalid ledger event generation_id")
+    contract_path = Path(str(event.get("contract_path") or ""))
+    if (
+        not str(event.get("contract_path") or "")
+        or contract_path.is_absolute()
+        or ".." in contract_path.parts
+    ):
+        raise ValueError("invalid ledger event contract_path")
     for field in ("contract_digest", "event_digest"):
         if not _DIGEST.fullmatch(str(event.get(field) or "")):
             raise ValueError(f"invalid ledger event {field}")
@@ -173,12 +188,20 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
     _validate_event(stored)
     if stored != event:
         raise ValueError("ledger event does not match stored event")
-    contract_path = state_dir.expanduser().resolve() / str(event["contract_path"])
+    state_dir = state_dir.expanduser().resolve()
+    contract_path = (state_dir / str(event["contract_path"])).resolve()
+    try:
+        contract_path.relative_to(state_dir)
+    except ValueError as error:
+        raise ValueError("ledger event contract_path escapes state root") from error
     contract = load_contract(contract_path)
     if contract["contract_digest"] != event["contract_digest"]:
         raise ValueError("ledger event contract binding mismatch")
     if contract.get("prior_ledger_head") != event.get("previous_event_digest"):
         raise ValueError("ledger event prior-head binding mismatch")
+    for field in ("generation_id", "observation_date", "observation_state"):
+        if contract.get(field) != event.get(field):
+            raise ValueError(f"ledger event {field} does not match contract")
     return stored
 
 
@@ -255,7 +278,11 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
 
 
 def _verify_artifacts(state_dir: Path, event: Mapping[str, Any]) -> None:
-    contract_path = state_dir / str(event["contract_path"])
+    contract_path = (state_dir / str(event["contract_path"])).resolve()
+    try:
+        contract_path.relative_to(state_dir)
+    except ValueError as error:
+        raise ValueError("ledger event contract_path escapes state root") from error
     contract = load_contract(contract_path)
     data_root = state_dir.parent.resolve()
     source_root = (data_root / str(contract["source_path"])).resolve()
