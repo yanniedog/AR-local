@@ -236,6 +236,7 @@ def test_daily_ingest_does_not_invoke_sync_path(
 ) -> None:
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
     monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
         with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload") as publish:
             assert pi_daily_sync.main(["--banks-only"]) == 0
@@ -248,10 +249,38 @@ def test_compatibility_skip_git_sync_flag_is_a_no_op(
 ) -> None:
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
     monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     with mock.patch.object(pi_daily_sync, "run_checked"):
         with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload") as publish:
             assert pi_daily_sync.main(["--banks-only", "--skip-git-sync"]) == 0
     publish.assert_called_once_with(pi_daily_sync.REPO_ROOT)
+
+
+@pytest.mark.parametrize(
+    "arguments,should_ingest",
+    [
+        (["--banks-only"], True),
+        (["--publish-existing-payload"], False),
+    ],
+)
+def test_disabled_publication_preserves_existing_pending_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    should_ingest: bool,
+) -> None:
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.delenv("AR_LOCAL_APP_PAYLOAD", raising=False)
+    pi_daily_sync.mark_payload_publication_pending(pi_daily_sync.REPO_ROOT, "test")
+
+    with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
+        with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload") as publish:
+            assert pi_daily_sync.main(arguments) == 0
+
+    assert ingest.called is should_ingest
+    publish.assert_not_called()
+    assert pi_daily_sync.payload_publication_pending(pi_daily_sync.REPO_ROOT)
 
 
 def test_pending_payload_retry_publishes_without_ingesting(

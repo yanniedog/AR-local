@@ -366,6 +366,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.publish_existing_payload:
                 if not payload_publication_pending(REPO_ROOT):
                     print("[pi_daily_sync] app_payload retry skipped reason=no_pending_marker")
+                elif not _app_payload_enabled():
+                    print(
+                        "[pi_daily_sync] app_payload retry remains pending "
+                        "reason=publication_disabled",
+                        file=sys.stderr,
+                    )
                 elif maybe_publish_app_payload(REPO_ROOT):
                     clear_payload_publication_pending(REPO_ROOT)
                     print("[pi_daily_sync] app_payload retry completed")
@@ -392,10 +398,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                 ],
                 cwd=REPO_ROOT,
             )
-            if maybe_publish_app_payload(REPO_ROOT):
-                clear_payload_publication_pending(REPO_ROOT)
-            elif _app_payload_enabled():
-                mark_payload_publication_pending(REPO_ROOT, "publish_failed")
+            if _app_payload_enabled():
+                if maybe_publish_app_payload(REPO_ROOT):
+                    clear_payload_publication_pending(REPO_ROOT)
+                else:
+                    mark_payload_publication_pending(REPO_ROOT, "publish_failed")
+            elif payload_publication_pending(REPO_ROOT):
+                print(
+                    "[pi_daily_sync] app_payload remains pending "
+                    "reason=publication_disabled",
+                    file=sys.stderr,
+                )
     except RuntimeError as exc:
         if "daily ingest already running" in str(exc):
             print(f"pi_daily_sync: {exc}")

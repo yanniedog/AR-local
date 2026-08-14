@@ -295,7 +295,8 @@ The Pi runtime must end on GitHub `main`. Never leave `/srv/ar-local/AR-local` d
 
 ### Pi deployment and drift monitoring
 
-Drift automation smokes real `/api/latest` but never mutates the Pi. Production
+Drift automation smokes real `/api/latest` without changing the checkout,
+services, or runtime data; verification may refresh remote refs. Production
 activation is a separate exact-commit, canary-approved manual action.
 
 | Layer | Mechanism |
@@ -325,7 +326,7 @@ State file: `/srv/ar-local/data/state/runtime_health.json`.
 |-------------------|---------|
 | `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
 | `PI_SSH_USER` | Optional (default `pi`) |
-| `PI_SSH_KNOWN_HOSTS` | Required pinned OpenSSH known-host entry for the Pi; deployment never trusts `ssh-keyscan` output |
+| `PI_SSH_KNOWN_HOSTS` | Required OpenSSH known-host entry with a pinned host key for the Pi; deployment never trusts `ssh-keyscan` output |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client ? **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
 | `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
 | `AR_PI_CANARY_APPROVED_COMMIT` (variable) | Exact 40-character commit permitted for the next production activation |

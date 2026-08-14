@@ -169,6 +169,62 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
     return snapshot
 
 
+def _verified_sync_snapshot(ar_commit: str) -> dict[str, str]:
+    site_commit = "c" * 40
+    return {
+        **_service_snapshot(),
+        "AR_HEAD": ar_commit,
+        "AR_ORIGIN": ar_commit,
+        "SITE_HEAD": site_commit,
+        "SITE_ORIGIN": site_commit,
+        "AR_DIRTY": "",
+        "SITE_DIRTY": "",
+        "DASHBOARD": "active",
+    }
+
+
+def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
+    monkeypatch, capsys
+):
+    expected = "a" * 40
+    actual = "b" * 40
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: actual)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: pytest.fail("commit mismatch must fail before Pi contact"),
+    )
+
+    assert (
+        pi_deploy_verify.verify_sync(expected_commit=expected)
+        == pi_deploy_verify.EXIT_CONFIG
+    )
+    error = capsys.readouterr().err
+    assert "local origin/main does not match approved commit" in error
+    assert actual[:12] in error
+    assert expected[:12] in error
+
+
+@pytest.mark.parametrize("expected_commit", [None, "a" * 40])
+def test_verify_sync_accepts_unset_or_matching_canary_commit(
+    monkeypatch, expected_commit
+):
+    actual = "a" * 40
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: actual)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: _verified_sync_snapshot(actual),
+    )
+
+    assert (
+        pi_deploy_verify.verify_sync(
+            dry_run=True, expected_commit=expected_commit
+        )
+        == pi_deploy_verify.EXIT_OK
+    )
+
+
 def test_service_paths_allow_pi_home_and_xdg_environment():
     assert pi_deploy_verify.pi_service_paths_ok(_service_snapshot())
 

@@ -11,5 +11,5 @@ if python3 pi_deploy_verify.py --verify; then
   exit 0
 fi
 echo "ar-local-deploy-watchdog: drift detected; automatic deployment is disabled" >&2
-echo "Use the canary-gated pi-deploy-on-main workflow with an exact approved commit." >&2
+echo "Use the canary-gated pi-deploy-canary workflow with an exact approved commit." >&2
 exit 1
