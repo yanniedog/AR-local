@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import json
+import shutil
 from pathlib import Path
 from unittest import mock
 
@@ -172,13 +173,22 @@ def test_watchdog_accepts_verified_revision_pointer_over_stale_primary_marker(
         ),
         encoding="utf-8",
     )
+    primary_exports = tmp_path / "runs" / date / "_exports"
+    shutil.copytree(exports, primary_exports)
+    primary = finalize_observation(
+        primary_exports,
+        state,
+        state / f"{date}.primary.json",
+        observation_date=date,
+        result={"run_date": date, "banks_counts": {"rates": 2}},
+    )
     finalize_observation(
         exports,
         state,
         state / f"{date}.revision.stamp.json",
         observation_date=date,
         result={"run_date": date, "banks_counts": {"rates": 2}},
-        parent_generation_id="legacy-primary",
+        parent_generation_id=primary["generation_id"],
     )
     monkeypatch.setattr(pi_daily_watchdog, "data_state_root", lambda _repo: state)
     monkeypatch.setattr(

@@ -8,7 +8,9 @@ Producer-side source preservation now uses three Draft 2020-12 contracts:
   relative source provenance, provider states, coverage, exclusions, and every
   artifact hash.
 - `ledger-event-v2.schema.json` appends finalized primary/revision events into a
-  hash-linked ledger without rewriting legacy manifests.
+  hash-linked ledger without rewriting legacy manifests. Revisions bind an
+  existing same-date parent by both stable generation ID and event SHA-256;
+  primary events must carry null parent fields.
 - `run-journal-v1.schema.json` defines independent stage states and retry evidence.
 
 `ExportContractV2` also binds the exact state-relative completion marker and the
@@ -22,7 +24,8 @@ contract, marker, or source artifact.
 These are producer integrity contracts, not the legacy mobile `manifest-v2`
 sidecar. That dormant sidecar is scheduled for removal rather than reuse. The
 future app boundary is named `manifest-v3` and will be added without redefining
-v2. See `docs/IRREPLACEABLE_HISTORY_FOUNDATION.md`.
+v2. See `docs/IRREPLACEABLE_HISTORY_FOUNDATION.md` and the read-only
+`docs/HISTORICAL_REPAIRABILITY_REPORT.md` before implementing any legacy import.
 
 ## Legacy app contracts
 

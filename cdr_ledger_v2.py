@@ -73,8 +73,57 @@ def _validate_event(event: Mapping[str, Any]) -> None:
     if event_digest(event) != event.get("event_digest"):
         raise ValueError("ledger event digest mismatch")
     is_revision = event.get("event_type") == "revision_finalized"
-    if is_revision != bool(event.get("parent_generation_id")):
-        raise ValueError("revision events require exactly one parent_generation_id")
+    parent_generation_id = event.get("parent_generation_id")
+    parent_event_digest = event.get("parent_event_digest")
+    if is_revision != bool(parent_generation_id) or is_revision != bool(
+        parent_event_digest
+    ):
+        raise ValueError(
+            "revision events require parent_generation_id and parent_event_digest"
+        )
+    if parent_generation_id is not None and not _GENERATION.fullmatch(
+        str(parent_generation_id)
+    ):
+        raise ValueError("invalid parent_generation_id")
+    if parent_event_digest is not None and not _DIGEST.fullmatch(
+        str(parent_event_digest)
+    ):
+        raise ValueError("invalid parent_event_digest")
+
+
+def _generation_event_path(root: Path, observation_date: str, generation_id: str) -> Path:
+    return root / "events" / observation_date / f"{generation_id}.json"
+
+
+def _load_generation_event(
+    root: Path, observation_date: str, generation_id: str
+) -> dict[str, Any]:
+    if not _GENERATION.fullmatch(generation_id):
+        raise ValueError("invalid parent_generation_id")
+    path = _generation_event_path(root, observation_date, generation_id)
+    if not path.is_file():
+        raise ValueError("revision parent generation does not exist on this date")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    _validate_event(payload)
+    if payload.get("generation_id") != generation_id:
+        raise ValueError("revision parent event path does not match its generation")
+    if payload.get("observation_date") != observation_date:
+        raise ValueError("revision parent belongs to a different observation date")
+    return payload
+
+
+def _validate_parent_binding(state_dir: Path, event: Mapping[str, Any]) -> None:
+    if event.get("event_type") != "revision_finalized":
+        return
+    generation_id = str(event["generation_id"])
+    parent_generation_id = str(event["parent_generation_id"])
+    if parent_generation_id == generation_id:
+        raise ValueError("revision event cannot parent itself")
+    parent = _load_generation_event(
+        ledger_root(state_dir), str(event["observation_date"]), parent_generation_id
+    )
+    if parent.get("event_digest") != event.get("parent_event_digest"):
+        raise ValueError("revision parent event digest mismatch")
 
 
 def append_contract_event(
@@ -104,6 +153,14 @@ def append_contract_event_locked(
     contract = load_contract(contract_path)
     head = _read_head(root)
     generation_id = str(contract["generation_id"])
+    observation_date = str(contract["observation_date"])
+    parent_event_digest: Optional[str] = None
+    if parent_generation_id is not None:
+        parent = _load_generation_event(root, observation_date, parent_generation_id)
+        if parent_generation_id == generation_id:
+            raise ValueError("revision event cannot parent itself")
+        verify_event_artifacts(state_dir, parent)
+        parent_event_digest = str(parent["event_digest"])
     event_path = root / "events" / str(contract["observation_date"]) / f"{generation_id}.json"
     if event_path.is_file():
         existing = json.loads(event_path.read_text(encoding="utf-8"))
@@ -112,6 +169,9 @@ def append_contract_event_locked(
             raise ValueError("existing ledger event points at different contract bytes")
         if existing.get("parent_generation_id") != parent_generation_id:
             raise ValueError("existing ledger event has a different revision parent")
+        if existing.get("parent_event_digest") != parent_event_digest:
+            raise ValueError("existing ledger event has a different revision parent digest")
+        _validate_parent_binding(state_dir, existing)
         # Repair only the safe crash window where the event landed but its head
         # pointer did not. Never move a newer head backwards.
         if head and head.get("event_digest") not in {
@@ -132,6 +192,7 @@ def append_contract_event_locked(
             "observation_date": contract["observation_date"],
             "generation_id": generation_id,
             "parent_generation_id": parent_generation_id,
+            "parent_event_digest": parent_event_digest,
             "contract_path": contract_path.resolve().relative_to(
                 state_dir.expanduser().resolve()
             ).as_posix(),
@@ -202,6 +263,7 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
     for field in ("generation_id", "observation_date", "observation_state"):
         if contract.get(field) != event.get(field):
             raise ValueError(f"ledger event {field} does not match contract")
+    _validate_parent_binding(state_dir, stored)
     return stored
 
 
@@ -220,11 +282,15 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
     root = ledger_root(state_dir)
     findings: list[dict[str, Any]] = []
     events: dict[str, dict[str, Any]] = {}
+    events_by_generation: dict[tuple[str, str], dict[str, Any]] = {}
     for path in sorted((root / "events").glob("*/*.json")):
         try:
             event = json.loads(path.read_text(encoding="utf-8"))
             verify_event(state_dir, event)
             events[str(event["event_digest"])] = event
+            events_by_generation[
+                (str(event["observation_date"]), str(event["generation_id"]))
+            ] = event
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
             findings.append(
                 {"path": path.relative_to(root).as_posix(), "issue": "INVALID_EVENT", "detail": str(error)}
@@ -257,6 +323,28 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
                     "issue": "ORPHAN_EVENT",
                 }
             )
+        ancestry_seen: set[tuple[str, str]] = set()
+        ancestry_event: Optional[dict[str, Any]] = event
+        while ancestry_event is not None and ancestry_event.get(
+            "parent_generation_id"
+        ):
+            ancestry_key = (
+                str(ancestry_event["observation_date"]),
+                str(ancestry_event["parent_generation_id"]),
+            )
+            if ancestry_key in ancestry_seen:
+                findings.append(
+                    {
+                        "event_digest": digest,
+                        "generation_id": event.get("generation_id"),
+                        "issue": "PARENT_CHAIN_LOOP",
+                    }
+                )
+                break
+            ancestry_seen.add(ancestry_key)
+            ancestry_event = events_by_generation.get(ancestry_key)
+            if ancestry_event is None:
+                break
         try:
             _verify_artifacts(state_dir, event)
         except (OSError, ValueError, KeyError) as error:
