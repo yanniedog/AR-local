@@ -113,6 +113,34 @@ def test_finalization_binds_contract_event_marker_and_pointers(tmp_path):
     assert verify_ledger(state)["ok"] is True
 
 
+def test_finalization_retry_reuses_generation_after_ledger_head_advances(tmp_path):
+    export = tmp_path / "runs" / DATE / "_exports"
+    make_export(export)
+    state = tmp_path / "state"
+    marker = state / f"{DATE}.done.json"
+    result = {"run_date": DATE, "banks_counts": {"rates": 7}}
+
+    first = finalize_observation(
+        export,
+        state,
+        marker,
+        observation_date=DATE,
+        result=result,
+    )
+    second = finalize_observation(
+        export,
+        state,
+        marker,
+        observation_date=DATE,
+        result=result,
+    )
+
+    assert second == first
+    assert len(list((state / "export-contracts-v2" / DATE).glob("*.json"))) == 1
+    assert len(list((state / "ledger-v2" / "events" / DATE).glob("*.json"))) == 1
+    assert verify_ledger(state)["ok"] is True
+
+
 def test_ledger_verifier_detects_changed_source_bytes(tmp_path):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export)

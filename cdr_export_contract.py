@@ -16,6 +16,17 @@ SCHEMA_VERSION = 2
 NORMALIZATION_VERSION = "legacy-v1"
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _PROVIDER_STATES = {"complete", "empty", "partial", "failed", "not_attempted"}
+_GENERATION_FIELDS = (
+    "schema_version",
+    "observation_date",
+    "normalization_version",
+    "observation_state",
+    "register_hashes",
+    "provider_states",
+    "coverage",
+    "quarantines",
+    "artifacts",
+)
 
 
 def utc_now() -> str:
@@ -67,6 +78,12 @@ def validate_contract(contract: Mapping[str, Any]) -> None:
         raise ValueError("export contract ledger_state must remain provisional")
     if contract.get("observation_state") not in {"complete", "partial", "failed"}:
         raise ValueError("invalid observation_state")
+    source_generation_digest = str(contract.get("source_generation_digest") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", source_generation_digest):
+        raise ValueError("invalid source_generation_digest")
+    expected_generation_id = f"obs-{date}-{source_generation_digest[:16]}"
+    if contract.get("generation_id") != expected_generation_id:
+        raise ValueError("generation_id does not match source generation digest")
     source_path = str(contract.get("source_path") or "")
     if not source_path or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
         raise ValueError("export contract source_path must be safe and relative")
@@ -121,6 +138,19 @@ def contract_digest(contract: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(material)).hexdigest()
 
 
+def source_generation_digest(contract: Mapping[str, Any]) -> str:
+    """Identify source semantics without timestamps or mutable ledger position.
+
+    This digest is intentionally independent of ``observed_at`` and
+    ``prior_ledger_head``. A process retry after the immutable contract or
+    ledger event lands must rediscover the same generation instead of creating
+    a second observation solely because time or the ledger head advanced.
+    """
+
+    material = {field: contract.get(field) for field in _GENERATION_FIELDS}
+    return hashlib.sha256(canonical_json_bytes(material)).hexdigest()
+
+
 def build_contract(
     export_root: Path,
     *,
@@ -151,8 +181,10 @@ def build_contract(
         "artifacts": artifact_records(export_root),
         "prior_ledger_head": prior_ledger_head,
     }
+    generation_digest = source_generation_digest(contract)
+    contract["source_generation_digest"] = generation_digest
     digest = contract_digest(contract)
-    contract["generation_id"] = f"obs-{observation_date}-{digest[:16]}"
+    contract["generation_id"] = f"obs-{observation_date}-{generation_digest[:16]}"
     contract["contract_digest"] = digest
     validate_contract(contract)
     return contract
@@ -160,6 +192,8 @@ def build_contract(
 
 def write_contract(state_dir: Path, contract: Mapping[str, Any]) -> Path:
     validate_contract(contract)
+    if source_generation_digest(contract) != contract.get("source_generation_digest"):
+        raise ValueError("export contract source generation digest mismatch")
     if contract_digest(contract) != contract.get("contract_digest"):
         raise ValueError("export contract digest mismatch")
     date = str(contract["observation_date"])
@@ -172,6 +206,8 @@ def write_contract(state_dir: Path, contract: Mapping[str, Any]) -> Path:
 def load_contract(path: Path) -> dict[str, Any]:
     contract = json.loads(path.read_text(encoding="utf-8"))
     validate_contract(contract)
+    if source_generation_digest(contract) != contract.get("source_generation_digest"):
+        raise ValueError("export contract source generation digest mismatch")
     if contract_digest(contract) != contract.get("contract_digest"):
         raise ValueError("export contract digest mismatch")
     return contract

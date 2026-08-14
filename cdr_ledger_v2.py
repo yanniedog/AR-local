@@ -96,6 +96,8 @@ def append_contract_event(
             _validate_event(existing)
             if existing["contract_digest"] != contract_digest(contract):
                 raise ValueError("existing ledger event points at different contract bytes")
+            if existing.get("parent_generation_id") != parent_generation_id:
+                raise ValueError("existing ledger event has a different revision parent")
             event = existing
             # Repair only the safe crash window where the event landed but its
             # head pointer did not. Never move a newer head backwards.

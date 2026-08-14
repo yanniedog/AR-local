@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
-from cdr_atomic import atomic_write_json, canonical_json_bytes
+from cdr_atomic import ImmutablePathError, atomic_write_json, canonical_json_bytes
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import append_contract_event, ledger_root, verify_event
 from cdr_file_lock import FileLock
@@ -113,7 +113,7 @@ def finalize_observation(
     source_path = _portable_export_path(export_root, state_dir)
     if source_path is None:
         raise ValueError("export root must be inside the portable data root")
-    contract = build_contract(
+    candidate_contract = build_contract(
         export_root,
         observation_date=observation_date,
         observation_state=observation_state,
@@ -122,7 +122,35 @@ def finalize_observation(
         provider_states=provider_states,
         prior_ledger_head=_current_head_digest(state_dir),
     )
-    contract_path = write_contract(state_dir, contract)
+    contract_path = (
+        state_dir
+        / "export-contracts-v2"
+        / observation_date
+        / f"{candidate_contract['generation_id']}.json"
+    )
+    if contract_path.is_file():
+        contract = load_contract(contract_path)
+        if (
+            contract["source_generation_digest"]
+            != candidate_contract["source_generation_digest"]
+        ):
+            raise ValueError("generation id collision with different source semantics")
+    else:
+        contract = candidate_contract
+        try:
+            contract_path = write_contract(state_dir, contract)
+        except ImmutablePathError:
+            # A concurrent finalizer may have installed the same immutable
+            # source generation after the existence check. Accept only that
+            # exact generation; a truncated-ID collision remains fatal.
+            contract = load_contract(contract_path)
+            if (
+                contract["source_generation_digest"]
+                != candidate_contract["source_generation_digest"]
+            ):
+                raise ValueError(
+                    "generation id collision with different source semantics"
+                )
     event = append_contract_event(
         state_dir,
         contract_path,
