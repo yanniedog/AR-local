@@ -70,9 +70,45 @@ def append_contract_event(
 ) -> dict[str, Any]:
     root = ledger_root(state_dir)
     with FileLock(root / ".append.lock"):
-        contract = load_contract(contract_path)
-        head = _read_head(root)
-        generation_id = str(contract["generation_id"])
+        return append_contract_event_locked(
+            state_dir,
+            contract_path,
+            parent_generation_id=parent_generation_id,
+        )
+
+
+def append_contract_event_locked(
+    state_dir: Path,
+    contract_path: Path,
+    *,
+    parent_generation_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Append while the caller holds ``ledger-v2/.append.lock``."""
+
+    root = ledger_root(state_dir)
+    contract = load_contract(contract_path)
+    head = _read_head(root)
+    generation_id = str(contract["generation_id"])
+    event_path = root / "events" / str(contract["observation_date"]) / f"{generation_id}.json"
+    if event_path.is_file():
+        existing = json.loads(event_path.read_text(encoding="utf-8"))
+        _validate_event(existing)
+        if existing["contract_digest"] != contract_digest(contract):
+            raise ValueError("existing ledger event points at different contract bytes")
+        if existing.get("parent_generation_id") != parent_generation_id:
+            raise ValueError("existing ledger event has a different revision parent")
+        # Repair only the safe crash window where the event landed but its head
+        # pointer did not. Never move a newer head backwards.
+        if head and head.get("event_digest") not in {
+            existing["event_digest"],
+            existing["previous_event_digest"],
+        }:
+            return existing
+        event = existing
+    else:
+        current_head = (head or {}).get("event_digest")
+        if contract.get("prior_ledger_head") != current_head:
+            raise ValueError("export contract prior head no longer matches ledger head")
         event = {
             "schema_version": SCHEMA_VERSION,
             "event_type": "revision_finalized" if parent_generation_id else "observation_finalized",
@@ -85,40 +121,48 @@ def append_contract_event(
                 state_dir.expanduser().resolve()
             ).as_posix(),
             "contract_digest": contract["contract_digest"],
-            "previous_event_digest": (head or {}).get("event_digest"),
+            "previous_event_digest": current_head,
             "finalized_at": utc_now(),
         }
         event["event_digest"] = event_digest(event)
         _validate_event(event)
-        event_path = root / "events" / str(contract["observation_date"]) / f"{generation_id}.json"
-        if event_path.is_file():
-            existing = json.loads(event_path.read_text(encoding="utf-8"))
-            _validate_event(existing)
-            if existing["contract_digest"] != contract_digest(contract):
-                raise ValueError("existing ledger event points at different contract bytes")
-            if existing.get("parent_generation_id") != parent_generation_id:
-                raise ValueError("existing ledger event has a different revision parent")
-            event = existing
-            # Repair only the safe crash window where the event landed but its
-            # head pointer did not. Never move a newer head backwards.
-            if head and head.get("event_digest") not in {
-                existing["event_digest"],
-                existing["previous_event_digest"],
-            }:
-                return existing
-        else:
-            atomic_write_json(event_path, event, create_once=True)
-        pointer = {
-            "schema_version": SCHEMA_VERSION,
-            "generation_id": generation_id,
-            "observation_date": contract["observation_date"],
-            "observation_state": contract["observation_state"],
-            "event_path": event_path.relative_to(root).as_posix(),
-            "event_digest": event["event_digest"],
-            "updated_at": utc_now(),
-        }
-        atomic_write_json(root / "head.json", pointer)
-        return event
+        atomic_write_json(event_path, event, create_once=True)
+    pointer = {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": generation_id,
+        "observation_date": contract["observation_date"],
+        "observation_state": contract["observation_state"],
+        "event_path": event_path.relative_to(root).as_posix(),
+        "event_digest": event["event_digest"],
+        "updated_at": utc_now(),
+    }
+    atomic_write_json(root / "head.json", pointer)
+    return event
+
+
+def find_contract_event_locked(
+    state_dir: Path,
+    observation_date: str,
+    source_generation_digest: str,
+    parent_generation_id: Optional[str],
+) -> Optional[tuple[Path, dict[str, Any], dict[str, Any]]]:
+    """Find one already-finalized semantic generation under the append lock."""
+
+    root = ledger_root(state_dir)
+    matches: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    for event_path in sorted((root / "events" / observation_date).glob("*.json")):
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        verify_event_artifacts(state_dir, event)
+        contract_path = state_dir.expanduser().resolve() / str(event["contract_path"])
+        contract = load_contract(contract_path)
+        if (
+            contract.get("source_generation_digest") == source_generation_digest
+            and event.get("parent_generation_id") == parent_generation_id
+        ):
+            matches.append((contract_path, contract, event))
+    if len(matches) > 1:
+        raise ValueError("multiple finalized events share one source generation and parent")
+    return matches[0] if matches else None
 
 
 def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
@@ -138,6 +182,16 @@ def verify_event(state_dir: Path, event: Mapping[str, Any]) -> dict[str, Any]:
     return stored
 
 
+def verify_event_artifacts(
+    state_dir: Path, event: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Re-hash every artifact bound to one verified ledger event."""
+
+    verify_event(state_dir, event)
+    _verify_artifacts(state_dir.expanduser().resolve(), event)
+    return dict(event)
+
+
 def verify_ledger(state_dir: Path) -> dict[str, Any]:
     state_dir = state_dir.expanduser().resolve()
     root = ledger_root(state_dir)
@@ -152,7 +206,13 @@ def verify_ledger(state_dir: Path) -> dict[str, Any]:
             findings.append(
                 {"path": path.relative_to(root).as_posix(), "issue": "INVALID_EVENT", "detail": str(error)}
             )
-    head = _read_head(root)
+    try:
+        head = _read_head(root)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        head = None
+        findings.append(
+            {"path": "head.json", "issue": "INVALID_HEAD", "detail": str(error)}
+        )
     reached: set[str] = set()
     cursor = str((head or {}).get("event_digest") or "") or None
     while cursor is not None:

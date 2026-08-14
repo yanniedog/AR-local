@@ -90,6 +90,7 @@
         "providers_failed",
         "failure_records",
         "corrupt_failure_records",
+        "unattributed_failure_records",
         "failure_provenance_complete",
         "reconciliation_status",
         "unavailable_populations"
@@ -104,6 +105,7 @@
         "providers_failed": { "type": "integer", "minimum": 0 },
         "failure_records": { "type": "integer", "minimum": 0 },
         "corrupt_failure_records": { "type": "integer", "minimum": 0 },
+        "unattributed_failure_records": { "type": "integer", "minimum": 0 },
         "failure_provenance_complete": { "type": "boolean" },
         "reconciliation_status": { "enum": ["reconciled", "partial"] },
         "unavailable_populations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }

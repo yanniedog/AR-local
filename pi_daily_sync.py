@@ -14,6 +14,7 @@ from typing import Optional
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
 from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
 from ar_local_subprocess import run_checked
+from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -218,23 +219,51 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
             return True
         latest_complete = _read_observation_pointer(runtime_state, "latest-complete.json")
         exports = _exports_from_pointer(runtime_state, latest_complete)
+        pointer_selected = exports is not None
         if exports is None:
             exports = latest_exports_root(data_runs_root(repo_root))
         if exports is None:
             print("[pi_daily_sync] app_payload skipped reason=no_valid_exports")
             return False
-        completion_marker = runtime_state / f"{exports.parent.name}.done.json"
+        observation_date = str(latest_complete.get("observation_date") or "")
+        marker_relative = str(latest_complete.get("marker_path") or "")
+        if pointer_selected:
+            marker_part = Path(marker_relative)
+            if (
+                latest_complete.get("observation_state") != "complete"
+                or not marker_relative
+                or marker_part.is_absolute()
+                or ".." in marker_part.parts
+            ):
+                print(
+                    "[pi_daily_sync] app_payload promotion withheld "
+                    "reason=invalid_latest_complete_pointer"
+                )
+                return True
+            completion_marker = runtime_state / marker_part
+        else:
+            observation_date = exports.parent.name
+            completion_marker = runtime_state / f"{observation_date}.done.json"
         try:
             completion = json.loads(completion_marker.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             completion = {}
+        if pointer_selected and not verify_completion_marker(
+            completion, runtime_state, observation_date
+        ):
+            print(
+                "[pi_daily_sync] app_payload promotion withheld "
+                f"run_date={observation_date or 'unknown'} "
+                "reason=unverified_completion_marker"
+            )
+            return True
         if (
             completion.get("finalization_schema_version") == 2
             and completion.get("observation_state") != "complete"
         ):
             print(
                 "[pi_daily_sync] app_payload promotion withheld "
-                f"run_date={exports.parent.name} "
+                f"run_date={observation_date} "
                 f"observation_state={completion.get('observation_state', 'unknown')}"
             )
             # Withholding an incomplete candidate is a successful policy outcome,

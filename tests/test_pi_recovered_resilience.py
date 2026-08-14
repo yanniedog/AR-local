@@ -77,6 +77,47 @@ def test_partial_finalized_observation_is_withheld_from_app_promotion(
     assert "promotion withheld" in capsys.readouterr().out
 
 
+def test_revision_pointer_requires_its_exact_verified_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    date = "2026-08-14"
+    exports = tmp_path / "runs" / date / "_revisions" / "stamp" / "_exports"
+    (exports / "dashboard-cache").mkdir(parents=True)
+    state = tmp_path / "state"
+    pointers = state / "observation-pointers-v2"
+    pointers.mkdir(parents=True)
+    marker_name = f"{date}.revision.stamp.json"
+    (pointers / "latest-complete.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "observation_date": date,
+                "observation_state": "complete",
+                "export_path": f"runs/{date}/_revisions/stamp/_exports",
+                "marker_path": marker_name,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / marker_name).write_text(
+        json.dumps(
+            {
+                "run_date": date,
+                "banks_counts": {"rates": 10},
+                "finalization_schema_version": 2,
+                "observation_state": "partial",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
+    with mock.patch("app_payload.build_and_publish_dual") as publish:
+        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
+    publish.assert_not_called()
+    assert "unverified_completion_marker" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("name", SERVICE_TEMPLATES)
 def test_ingest_units_preserve_service_user_home(name: str) -> None:
     text = (ROOT / "deploy" / "pi" / name).read_text(encoding="utf-8")

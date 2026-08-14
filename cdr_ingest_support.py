@@ -715,6 +715,7 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     by_provider: Dict[str, int] = {}
     total = 0
     corrupt_records = 0
+    unattributed_records = 0
     try:
         handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
@@ -739,15 +740,24 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 total += 1
                 phase = str(rec.get("phase") or "unknown")
                 status = "unknown" if rec.get("status") is None else str(rec.get("status"))
-                provider = str(rec.get("bank") or "unknown")
+                provider_value = rec.get("bank")
+                provider = (
+                    str(provider_value).strip() if provider_value is not None else ""
+                )
+                if not provider:
+                    unattributed_records += 1
+                    provider = "unknown"
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
                 by_provider[provider] = by_provider.get(provider, 0) + 1
     return {
         "total": total,
         "corrupt_records": corrupt_records,
-        "failure_provenance_complete": corrupt_records == 0,
-        "incomplete": total > 0 or corrupt_records > 0,
+        "unattributed_records": unattributed_records,
+        "failure_provenance_complete": (
+            corrupt_records == 0 and unattributed_records == 0
+        ),
+        "incomplete": total > 0 or corrupt_records > 0 or unattributed_records > 0,
         "by_phase": by_phase,
         "by_status": by_status,
         "by_provider": by_provider,

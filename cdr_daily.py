@@ -114,6 +114,7 @@ def resolve_ledger_target(
     today: str,
     force: bool,
     now: Optional[datetime] = None,
+    marker_evidence: bool = False,
 ) -> tuple[Path, bool]:
     """Enforce append-only history; return ``(target_root, is_revision)``.
 
@@ -129,7 +130,7 @@ def resolve_ledger_target(
 
     Dates are ``YYYY-MM-DD`` so lexical comparison is chronological.
     """
-    if _export_root_has_content(primary_root):
+    if _export_root_has_content(primary_root) or marker_evidence:
         if date < today and not force:
             raise LedgerImmutabilityError(
                 f"Refusing to overwrite finalized ledger day {date} at {primary_root}; "
@@ -200,8 +201,10 @@ def run_once(args: argparse.Namespace) -> int:
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
-    if marker.exists() and not args.force:
-        if marker_is_trustworthy(marker, export_root, date):
+    marker_exists = marker.exists()
+    marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
+    if marker_exists and not args.force:
+        if marker_trusted:
             print(f"Already completed local CDR daily run for {date}: {marker}")
             # Self-heal a finalized day whose integrity manifest never landed
             # (e.g. a prior best-effort write failed): the trusted-marker path is
@@ -220,7 +223,11 @@ def run_once(args: argparse.Namespace) -> int:
     # immutable (force => revision; missing gap => refuse).
     try:
         target_export_root, is_revision = resolve_ledger_target(
-            export_root, date, local_date(), args.force
+            export_root,
+            date,
+            local_date(),
+            args.force,
+            marker_evidence=marker_exists,
         )
     except LedgerImmutabilityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -310,9 +317,12 @@ def run_once(args: argparse.Namespace) -> int:
         # Preserve the primary day marker; record the revision under its own
         # create-once marker so the original stays authoritative and auditable.
         revision_marker = state_dir / f"{date}.revision.{target_export_root.parent.name}.json"
-        try:
-            primary_record = json.loads(marker.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        if marker_trusted:
+            try:
+                primary_record = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                primary_record = {}
+        else:
             primary_record = {}
         parent_generation_id = str(primary_record.get("generation_id") or "") or (
             legacy_parent_generation_id(export_root)

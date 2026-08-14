@@ -32,6 +32,7 @@ def test_summarize_failures_complete_run_has_no_failures(tmp_path):
     assert s == {
         "total": 0,
         "corrupt_records": 0,
+        "unattributed_records": 0,
         "failure_provenance_complete": True,
         "incomplete": False,
         "by_phase": {},
@@ -108,6 +109,19 @@ def test_summarize_failures_buckets_missing_or_null_as_unknown(tmp_path):
     assert s["total"] == 2
     assert s["by_phase"] == {"unknown": 2}
     assert s["by_status"] == {"unknown": 2}
+    assert s["unattributed_records"] == 1
+    assert s["failure_provenance_complete"] is False
+
+
+def test_summarize_failures_marks_blank_provider_as_unattributed(tmp_path):
+    (tmp_path / "failures.jsonl").write_text(
+        json.dumps({"bank": "   ", "phase": "products_index", "status": 500}) + "\n",
+        encoding="utf-8",
+    )
+    summary = cis.summarize_failures(tmp_path)
+    assert summary["by_provider"] == {"unknown": 1}
+    assert summary["unattributed_records"] == 1
+    assert summary["failure_provenance_complete"] is False
 
 
 def test_summarize_failures_quarantines_non_object_json_lines(tmp_path):

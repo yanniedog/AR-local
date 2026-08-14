@@ -35,7 +35,7 @@ existing export root creates a revision, including on the same calendar day.
 
 | Field | Values | Meaning |
 | --- | --- | --- |
-| `ledger_state` | `provisional`, `finalized` | Whether immutable evidence has been appended to the ledger |
+| `ledger_state` | `finalized` | Ledger-v2 emits only finalized events. `provisional` is reserved for a later candidate layer and is not currently emitted. |
 | `observation_state` | `complete`, `partial`, `failed` | Whether the observed market population and failure provenance reconcile |
 
 A partial observation is finalized and retained. It advances
@@ -47,7 +47,7 @@ complete observation.
 
 | Published field | Source | Transform / unit | Null or unavailable meaning | Consumer / permitted claim |
 | --- | --- | --- | --- | --- |
-| `generation_id` | Canonical contract bytes | `obs-<date>-<digest-prefix>` | Never null | Ledger, pointers, later v3 manifest; identity only |
+| `generation_id` | Source-generation digest + prior ledger head | `obs-<date>-<digest-prefix>` | Never null | Ledger, pointers, later v3 manifest; chain-position identity only |
 | `contract_digest` | Contract excluding self-identifying fields | SHA-256 | Never null | Ledger binding; no consumer wording |
 | `observation_date` | Daily ingest run date | Hobart calendar date | Never inferred | “Observed on” only |
 | `observed_at` | Finalization clock | UTC RFC 3339 | Never an effective date | Provenance only |

@@ -29,6 +29,21 @@ def test_today_writes_primary(tmp_path, force):
     assert is_revision is False
 
 
+def test_existing_marker_routes_empty_today_to_revision(tmp_path):
+    primary = tmp_path / TODAY / "_exports"
+    when = datetime(2026, 6, 16, 9, 30, 0)
+    target, is_revision = cdr_daily.resolve_ledger_target(
+        primary,
+        TODAY,
+        TODAY,
+        force=False,
+        now=when,
+        marker_evidence=True,
+    )
+    assert is_revision is True
+    assert target == primary.parent / "_revisions" / "20260616T093000_000000" / "_exports"
+
+
 @pytest.mark.parametrize("force", [False, True])
 def test_existing_today_observation_always_appends_revision(tmp_path, force):
     primary = _finalize(tmp_path / TODAY / "_exports")
@@ -203,3 +218,55 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     ])
     assert cdr_daily.run_once(args) == 1
     assert captured["previous"] == previous
+
+
+def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "persist_ingest_status", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "copytree_atomic", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *a, **k: None)
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    state.mkdir()
+    stale_marker = state / f"{TODAY}.done.json"
+    stale_bytes = b'{"stale":true}'
+    stale_marker.write_bytes(stale_bytes)
+    captured = {}
+
+    def fake_build(_run_root, out_dir, _db_path, *, previous_run_root=None):
+        return {"run_date": TODAY, "out_dir": str(out_dir), "banks": {"rates": 1}}
+
+    def fake_finalize(export, _state, marker, **kwargs):
+        captured.update(
+            export=export,
+            marker=marker,
+            parent=kwargs.get("parent_generation_id"),
+        )
+        return {**kwargs["result"], "observation_state": "complete"}
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", fake_build)
+    monkeypatch.setattr(cdr_daily, "finalize_observation", fake_finalize)
+    args = cdr_daily.parse_args(
+        [
+            "--date",
+            TODAY,
+            "--runs",
+            str(runs),
+            "--state",
+            str(state),
+            "--ram-stage",
+            "--ram-root",
+            str(tmp_path / "ram"),
+            "--keep-ram-stage",
+        ]
+    )
+
+    assert cdr_daily.run_once(args) == 1
+    assert stale_marker.read_bytes() == stale_bytes
+    assert captured["marker"] != stale_marker
+    assert "_revisions" in captured["export"].parts
+    assert captured["parent"] is None

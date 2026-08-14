@@ -16,20 +16,24 @@ class FileLock:
     def __enter__(self) -> "FileLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
         stream = self.path.open("a+b")
-        stream.seek(0, os.SEEK_END)
-        if stream.tell() == 0:
-            stream.write(b"0")
-            stream.flush()
-            os.fsync(stream.fileno())
-        stream.seek(0)
-        if os.name == "nt":
-            import msvcrt
+        try:
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"0")
+                stream.flush()
+                os.fsync(stream.fileno())
+            stream.seek(0)
+            if os.name == "nt":
+                import msvcrt
 
-            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
+                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
 
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        except BaseException:
+            stream.close()
+            raise
         self._stream = stream
         return self
 

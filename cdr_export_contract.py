@@ -7,8 +7,12 @@ import json
 import math
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
+
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError
 
 from cdr_atomic import atomic_write_json, canonical_json_bytes
 
@@ -27,6 +31,14 @@ _GENERATION_FIELDS = (
     "quarantines",
     "artifacts",
 )
+
+
+@lru_cache(maxsize=1)
+def _contract_validator() -> Draft202012Validator:
+    schema_path = Path(__file__).resolve().parent / "contracts" / "export-contract-v2.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
 def utc_now() -> str:
@@ -69,11 +81,27 @@ def _finite_numbers(value: Any, path: str = "$") -> None:
 
 
 def validate_contract(contract: Mapping[str, Any]) -> None:
+    try:
+        _contract_validator().validate(dict(contract))
+    except ValidationError as error:
+        location = ".".join(str(part) for part in error.absolute_path) or "$"
+        raise ValueError(f"export contract schema violation at {location}: {error.message}") from error
     if contract.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("export contract schema_version must be 2")
     date = str(contract.get("observation_date") or "")
     if not _DATE.fullmatch(date):
         raise ValueError("invalid observation_date")
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError as error:
+        raise ValueError("invalid observation_date") from error
+    observed_at = str(contract.get("observed_at") or "")
+    try:
+        observed_datetime = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("invalid observed_at") from error
+    if observed_datetime.tzinfo is None:
+        raise ValueError("observed_at must include a timezone offset")
     if contract.get("ledger_state") != "provisional":
         raise ValueError("export contract ledger_state must remain provisional")
     if contract.get("observation_state") not in {"complete", "partial", "failed"}:
@@ -81,9 +109,15 @@ def validate_contract(contract: Mapping[str, Any]) -> None:
     source_generation_digest = str(contract.get("source_generation_digest") or "")
     if not re.fullmatch(r"[0-9a-f]{64}", source_generation_digest):
         raise ValueError("invalid source_generation_digest")
-    expected_generation_id = f"obs-{date}-{source_generation_digest[:16]}"
+    expected_generation_id = generation_id_for(
+        date,
+        source_generation_digest,
+        contract.get("prior_ledger_head"),
+    )
     if contract.get("generation_id") != expected_generation_id:
-        raise ValueError("generation_id does not match source generation digest")
+        raise ValueError(
+            "generation_id does not match source generation and ledger position"
+        )
     source_path = str(contract.get("source_path") or "")
     if not source_path or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
         raise ValueError("export contract source_path must be safe and relative")
@@ -151,6 +185,21 @@ def source_generation_digest(contract: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(material)).hexdigest()
 
 
+def generation_id_for(
+    observation_date: str,
+    source_digest: str,
+    prior_ledger_head: Optional[str],
+) -> str:
+    """Bind a source generation to its immutable ledger insertion point."""
+
+    material = {
+        "source_generation_digest": source_digest,
+        "prior_ledger_head": prior_ledger_head,
+    }
+    digest = hashlib.sha256(canonical_json_bytes(material)).hexdigest()
+    return f"obs-{observation_date}-{digest[:16]}"
+
+
 def build_contract(
     export_root: Path,
     *,
@@ -164,6 +213,7 @@ def build_contract(
     quarantines: Iterable[Mapping[str, Any]] = (),
     prior_ledger_head: Optional[str] = None,
     normalization_version: str = NORMALIZATION_VERSION,
+    artifacts: Optional[Iterable[Mapping[str, Any]]] = None,
 ) -> dict[str, Any]:
     contract: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -178,13 +228,19 @@ def build_contract(
         "provider_states": [dict(item) for item in provider_states],
         "coverage": dict(coverage),
         "quarantines": [dict(item) for item in quarantines],
-        "artifacts": artifact_records(export_root),
+        "artifacts": (
+            [dict(item) for item in artifacts]
+            if artifacts is not None
+            else artifact_records(export_root)
+        ),
         "prior_ledger_head": prior_ledger_head,
     }
     generation_digest = source_generation_digest(contract)
     contract["source_generation_digest"] = generation_digest
     digest = contract_digest(contract)
-    contract["generation_id"] = f"obs-{observation_date}-{generation_digest[:16]}"
+    contract["generation_id"] = generation_id_for(
+        observation_date, generation_digest, prior_ledger_head
+    )
     contract["contract_digest"] = digest
     validate_contract(contract)
     return contract

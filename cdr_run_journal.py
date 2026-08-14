@@ -138,7 +138,32 @@ class RunJournal:
                 "metadata": dict(metadata or {}),
             }
             event_path = self.events / f"{sequence:06d}-{stage.value}-{state.value}.json"
-            atomic_write_json(event_path, event, create_once=True)
+            if event_path.is_file():
+                existing = json.loads(event_path.read_text(encoding="utf-8"))
+                identity = {
+                    "schema_version": 1,
+                    "generation_id": self.generation_id,
+                    "sequence": sequence,
+                    "stage": stage.value,
+                    "previous_state": previous.value,
+                    "state": state.value,
+                }
+                if any(existing.get(key) != value for key, value in identity.items()):
+                    raise InvalidJournalTransition(
+                        f"sequence {sequence} already recorded a different event"
+                    )
+                event = existing
+                when = str(event["at"])
+                stage_record = {
+                    "state": str(event["state"]),
+                    "attempts": int(event["attempt"]),
+                    "error": event.get("error"),
+                    "remote_digest": event.get("remote_digest"),
+                    "retry_at": event.get("retry_at"),
+                    "updated_at": when,
+                }
+            else:
+                atomic_write_json(event_path, event, create_once=True)
             current["stages"][stage.value] = stage_record
             current["sequence"] = sequence
             current["updated_at"] = when

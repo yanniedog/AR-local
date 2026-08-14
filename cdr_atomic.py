@@ -46,6 +46,7 @@ def atomic_write_bytes(path: Path, payload: bytes, *, create_once: bool = False)
     path.parent.mkdir(parents=True, exist_ok=True)
     if create_once and path.exists():
         if path.is_file() and path.read_bytes() == payload:
+            _fsync_directory(path.parent)
             return False
         raise ImmutablePathError(f"immutable path already exists with different bytes: {path}")
 
@@ -59,12 +60,13 @@ def atomic_write_bytes(path: Path, payload: bytes, *, create_once: bool = False)
         if create_once:
             try:
                 os.link(temporary, path)
-            except FileExistsError:
+            except FileExistsError as error:
                 if path.is_file() and path.read_bytes() == payload:
+                    _fsync_directory(path.parent)
                     return False
                 raise ImmutablePathError(
                     f"immutable path appeared with different bytes: {path}"
-                )
+                ) from error
             finally:
                 temporary.unlink(missing_ok=True)
         else:

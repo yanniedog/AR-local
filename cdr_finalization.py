@@ -10,7 +10,12 @@ from typing import Any, Mapping, Optional
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json, canonical_json_bytes
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
-from cdr_ledger_v2 import append_contract_event, ledger_root, verify_event
+from cdr_ledger_v2 import (
+    append_contract_event_locked,
+    find_contract_event_locked,
+    ledger_root,
+    verify_event_artifacts,
+)
 from cdr_file_lock import FileLock
 
 
@@ -44,6 +49,7 @@ def _coverage(export_root: Path) -> tuple[str, dict[str, Any], list[dict[str, An
     status = _ingest_status(export_root)
     failures = int(status.get("total") or 0)
     corrupt = int(status.get("corrupt_records") or 0)
+    unattributed = int(status.get("unattributed_records") or 0)
     provider_states = [
         dict(item)
         for item in (status.get("provider_states") or [])
@@ -81,6 +87,7 @@ def _coverage(export_root: Path) -> tuple[str, dict[str, Any], list[dict[str, An
         "providers_failed": sum(item.get("state") == "failed" for item in provider_states),
         "failure_records": failures,
         "corrupt_failure_records": corrupt,
+        "unattributed_failure_records": unattributed,
         "failure_provenance_complete": provenance_complete,
         "reconciliation_status": "partial" if observation_state == "partial" else "reconciled",
         "unavailable_populations": [
@@ -109,53 +116,70 @@ def finalize_observation(
 ) -> dict[str, Any]:
     export_root = export_root.expanduser().resolve(strict=True)
     state_dir = state_dir.expanduser().resolve()
+    marker_path = marker_path.expanduser().resolve()
+    try:
+        marker_relative = marker_path.relative_to(state_dir).as_posix()
+    except ValueError as error:
+        raise ValueError("completion marker must be inside the state root") from error
     observation_state, coverage, provider_states = _coverage(export_root)
     source_path = _portable_export_path(export_root, state_dir)
     if source_path is None:
         raise ValueError("export root must be inside the portable data root")
-    candidate_contract = build_contract(
-        export_root,
-        observation_date=observation_date,
-        observation_state=observation_state,
-        source_path=source_path,
-        coverage=coverage,
-        provider_states=provider_states,
-        prior_ledger_head=_current_head_digest(state_dir),
-    )
-    contract_path = (
-        state_dir
-        / "export-contracts-v2"
-        / observation_date
-        / f"{candidate_contract['generation_id']}.json"
-    )
-    if contract_path.is_file():
-        contract = load_contract(contract_path)
-        if (
-            contract["source_generation_digest"]
-            != candidate_contract["source_generation_digest"]
-        ):
-            raise ValueError("generation id collision with different source semantics")
-    else:
-        contract = candidate_contract
-        try:
-            contract_path = write_contract(state_dir, contract)
-        except ImmutablePathError:
-            # A concurrent finalizer may have installed the same immutable
-            # source generation after the existence check. Accept only that
-            # exact generation; a truncated-ID collision remains fatal.
-            contract = load_contract(contract_path)
-            if (
-                contract["source_generation_digest"]
-                != candidate_contract["source_generation_digest"]
-            ):
-                raise ValueError(
-                    "generation id collision with different source semantics"
-                )
-    event = append_contract_event(
-        state_dir,
-        contract_path,
-        parent_generation_id=parent_generation_id,
-    )
+    artifacts = artifact_records(export_root)
+    append_lock = ledger_root(state_dir) / ".append.lock"
+    with FileLock(append_lock):
+        candidate_contract = build_contract(
+            export_root,
+            observation_date=observation_date,
+            observation_state=observation_state,
+            source_path=source_path,
+            coverage=coverage,
+            provider_states=provider_states,
+            prior_ledger_head=_current_head_digest(state_dir),
+            artifacts=artifacts,
+        )
+        finalized = find_contract_event_locked(
+            state_dir,
+            observation_date,
+            candidate_contract["source_generation_digest"],
+            parent_generation_id,
+        )
+        if finalized is not None:
+            contract_path, contract, event = finalized
+        else:
+            contract_path = (
+                state_dir
+                / "export-contracts-v2"
+                / observation_date
+                / f"{candidate_contract['generation_id']}.json"
+            )
+            if contract_path.is_file():
+                contract = load_contract(contract_path)
+                if (
+                    contract["source_generation_digest"]
+                    != candidate_contract["source_generation_digest"]
+                ):
+                    raise ValueError(
+                        "generation id collision with different source semantics"
+                    )
+            else:
+                contract = candidate_contract
+                try:
+                    contract_path = write_contract(state_dir, contract)
+                except ImmutablePathError:
+                    contract = load_contract(contract_path)
+                    if (
+                        contract["source_generation_digest"]
+                        != candidate_contract["source_generation_digest"]
+                    ):
+                        raise ValueError(
+                            "generation id collision with different source semantics"
+                        )
+            event = append_contract_event_locked(
+                state_dir,
+                contract_path,
+                parent_generation_id=parent_generation_id,
+            )
     completion = dict(result)
     completion.update(
         {
@@ -175,8 +199,8 @@ def finalize_observation(
         "generation_id": contract["generation_id"],
         "observation_state": observation_state,
         "ledger_event_digest": event["event_digest"],
-        "marker_path": marker_path.relative_to(state_dir).as_posix(),
-        "export_path": source_path,
+        "marker_path": marker_relative,
+        "export_path": str(contract["source_path"]),
     }
     pointers = state_dir / "observation-pointers-v2"
     _advance_pointer(pointers / "latest-observation.json", pointer)
@@ -240,7 +264,7 @@ def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: s
             / f"{contract['generation_id']}.json"
         )
         event = json.loads(event_path.read_text(encoding="utf-8"))
-        verify_event(state_dir, event)
+        verify_event_artifacts(state_dir, event)
         return event["event_digest"] == marker.get("ledger_event_digest")
     except (KeyError, OSError, ValueError, json.JSONDecodeError):
         return False
