@@ -9,7 +9,7 @@
     "offsite_object_locked_copy_status": "pending"
   },
   "retrieval": {
-    "required_root": "<AUSTRALIANRATES_PRESERVATION_ROOT>/20260814T202526AEST-pi5-3dc9b4677",
+    "required_root": "<AUSTRALIANRATES_PRESERVATION_ROOT>",
     "inventory_relative_path": "manifests/preservation-file-inventory.jsonl",
     "procedure": [
       "Obtain the preservation root from the authorized operator; never infer or hard-code a machine path.",

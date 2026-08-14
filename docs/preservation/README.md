@@ -12,6 +12,19 @@ committed snapshot ID below that root, verifies every listed manifest first,
 then uses `preservation-file-inventory.jsonl` to re-hash all 1,932 protected
 files. No CDR or network fallback is permitted.
 
+Validate the committed locator and its cross-field/keyed invariants with:
+
+```sh
+python preservation_evidence.py validate
+```
+
+The validator requires the retrieval root token to match the storage root,
+requires the snapshot-relative path to equal the snapshot ID, and rejects
+duplicate manifest paths even when their sizes or digests differ. The
+non-standard schema annotation `x-semantic-unique-key` documents that final
+invariant; executable validation is authoritative because JSON Schema
+`uniqueItems` compares whole objects rather than one object key.
+
 Absence or mismatch is a hard stop. A fresh checkout is sufficient to identify
 the exact snapshot and evidence digests it must request, but it is not authority
 to access or reconstruct the private preservation corpus. The snapshot remains

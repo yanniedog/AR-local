@@ -47,7 +47,7 @@
         "writes_permitted"
       ],
       "properties": {
-        "required_root": { "$ref": "#/$defs/nonEmpty" },
+        "required_root": { "const": "<AUSTRALIANRATES_PRESERVATION_ROOT>" },
         "inventory_relative_path": { "const": "manifests/preservation-file-inventory.jsonl" },
         "procedure": {
           "type": "array",
@@ -96,6 +96,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
+      "x-semantic-unique-key": "path",
       "items": {
         "type": "object",
         "additionalProperties": false,

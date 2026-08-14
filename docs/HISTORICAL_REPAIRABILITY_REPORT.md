@@ -280,7 +280,7 @@ On 2026-08-14 the preserved populations reconcile as:
 - 1,864 discovered product rows
 - 1,756 unique product keys with at least one rate
 - 1,754 product keys in the v1 core
-- two priced gmcu business-loan products excluded by the old Mortgage `DISCOUNT` filter
+- two priced GMCU business-loan products excluded by the old Mortgage `DISCOUNT` filter
 - 11,389 flattened rates
 - 11,267 v1-core rate rows
 
