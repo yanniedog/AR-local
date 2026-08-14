@@ -712,7 +712,9 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     """
     by_phase: Dict[str, int] = {}
     by_status: Dict[str, int] = {}
+    by_provider: Dict[str, int] = {}
     total = 0
+    corrupt_records = 0
     try:
         handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
@@ -727,21 +729,28 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
+                    corrupt_records += 1
                     continue
                 # A valid-but-non-object JSON line (list/str/number) would crash on
                 # rec.get; skip it rather than fail the whole run at the very end.
                 if not isinstance(rec, dict):
+                    corrupt_records += 1
                     continue
                 total += 1
                 phase = str(rec.get("phase") or "unknown")
                 status = "unknown" if rec.get("status") is None else str(rec.get("status"))
+                provider = str(rec.get("bank") or "unknown")
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
+                by_provider[provider] = by_provider.get(provider, 0) + 1
     return {
         "total": total,
-        "incomplete": total > 0,
+        "corrupt_records": corrupt_records,
+        "failure_provenance_complete": corrupt_records == 0,
+        "incomplete": total > 0 or corrupt_records > 0,
         "by_phase": by_phase,
         "by_status": by_status,
+        "by_provider": by_provider,
     }
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 import pi_daily_sync  # noqa: E402
 import pi_daily_watchdog  # noqa: E402
+import ar_local_pi_runtime  # noqa: E402
 
 
 SERVICE_TEMPLATES = (
@@ -22,6 +24,57 @@ SERVICE_TEMPLATES = (
     "ar-local-ingest-now.service",
     "ar-local-boot-recovery.service",
 )
+
+
+def test_watchdog_never_accepts_markerless_nonzero_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    date = "2026-08-14"
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    cache = runs / date / "_exports" / "dashboard-cache"
+    cache.mkdir(parents=True)
+    (cache / "latest.json").write_text(
+        json.dumps({"run_date": date, "banks_counts": {"rates": 10}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pi_daily_watchdog, "data_runs_root", lambda _repo: runs)
+    monkeypatch.setattr(pi_daily_watchdog, "data_state_root", lambda _repo: state)
+    assert pi_daily_watchdog.run_complete(date) is False
+
+
+def test_partial_finalized_observation_is_withheld_from_app_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    date = "2026-08-14"
+    exports = tmp_path / "runs" / date / "_exports"
+    cache = exports / "dashboard-cache"
+    cache.mkdir(parents=True)
+    (cache / "latest.json").write_text(
+        json.dumps({"run_date": date, "banks_counts": {"rates": 10}}),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / f"{date}.done.json").write_text(
+        json.dumps(
+            {
+                "run_date": date,
+                "banks_counts": {"rates": 10},
+                "finalization_schema_version": 2,
+                "observation_state": "partial",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
+    monkeypatch.setattr(ar_local_pi_runtime, "data_runs_root", lambda _repo: tmp_path / "runs")
+    monkeypatch.setattr(ar_local_pi_runtime, "latest_exports_root", lambda _runs: exports)
+    with mock.patch("app_payload.build_and_publish_dual") as publish:
+        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
+    publish.assert_not_called()
+    assert "promotion withheld" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("name", SERVICE_TEMPLATES)

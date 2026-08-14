@@ -1,5 +1,23 @@
 # Australian Rates app insight contracts
 
+## Observation finalization contracts
+
+Producer-side source preservation now uses three Draft 2020-12 contracts:
+
+- `export-contract-v2.schema.json` binds one immutable observation generation to
+  relative source provenance, provider states, coverage, exclusions, and every
+  artifact hash.
+- `ledger-event-v2.schema.json` appends finalized primary/revision events into a
+  hash-linked ledger without rewriting legacy manifests.
+- `run-journal-v1.schema.json` defines independent stage states and retry evidence.
+
+These are producer integrity contracts, not the legacy mobile `manifest-v2`
+sidecar. That dormant sidecar is scheduled for removal rather than reuse. The
+future app boundary is named `manifest-v3` and will be added without redefining
+v2. See `docs/IRREPLACEABLE_HISTORY_FOUNDATION.md`.
+
+## Legacy app contracts
+
 These contracts are additive. Existing clients continue to use `manifest.json`,
 `core`, and `details` without understanding any new field.
 

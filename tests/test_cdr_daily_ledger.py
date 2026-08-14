@@ -1,8 +1,8 @@
 """Append-only ledger enforcement in cdr_daily.resolve_ledger_target.
 
 Encodes the Permanent CDR Ledger Invariant at the one code path that can reach
-finalized ledger bytes: the daily ingest's write target. Today's partition stays
-mutable; past days are immutable (force => revision, missing gap => refuse).
+finalized ledger bytes: the daily ingest's write target. Every existing
+observation is immutable; a retry creates a revision, including on the same day.
 """
 
 from datetime import datetime
@@ -22,12 +22,23 @@ def _finalize(root):
 
 @pytest.mark.parametrize("force", [False, True])
 def test_today_writes_primary(tmp_path, force):
-    # date >= today is always the primary, regardless of --force, so a same-day
-    # re-ingest refreshes today rather than spawning a revision.
+    # An empty current-day target receives the create-once primary generation.
     primary = tmp_path / TODAY / "_exports"
     target, is_revision = cdr_daily.resolve_ledger_target(primary, TODAY, TODAY, force=force)
     assert target == primary
     assert is_revision is False
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_existing_today_observation_always_appends_revision(tmp_path, force):
+    primary = _finalize(tmp_path / TODAY / "_exports")
+    when = datetime(2026, 6, 16, 9, 30, 0)
+    target, is_revision = cdr_daily.resolve_ledger_target(
+        primary, TODAY, TODAY, force=force, now=when
+    )
+    assert is_revision is True
+    assert target == primary.parent / "_revisions" / "20260616T093000_000000" / "_exports"
+    assert (primary / "local-cdr.sqlite").read_bytes() == b"finalized"
 
 
 @pytest.mark.parametrize("force", [False, True])
@@ -150,6 +161,14 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     monkeypatch.setattr(cdr_daily, "copytree_atomic", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "_emit_day_manifest", lambda *a, **k: None)
+    monkeypatch.setattr(
+        cdr_daily,
+        "finalize_observation",
+        lambda _export, _state, _marker, **kwargs: {
+            **kwargs["result"],
+            "observation_state": "complete",
+        },
+    )
 
     runs = tmp_path / "runs"
     previous = runs / "2026-06-15"

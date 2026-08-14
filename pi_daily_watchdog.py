@@ -16,8 +16,6 @@ from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
     ensure_runtime_data_writable,
-    load_exports_manifest,
-    manifest_banks_rate_count,
 )
 from cdr_daily import marker_is_trustworthy, marker_path
 from pi_daily_sync import payload_publication_pending
@@ -37,10 +35,9 @@ def export_root_for(date_text: str) -> Path:
 def run_complete(date_text: str) -> bool:
     export_root = export_root_for(date_text)
     marker = marker_path(data_state_root(REPO_ROOT), date_text)
-    if marker_is_trustworthy(marker, export_root, date_text):
-        return True
-    manifest = load_exports_manifest(export_root)
-    return bool(manifest and str(manifest.get("run_date") or "") == date_text and manifest_banks_rate_count(manifest) > 0)
+    # A markerless export can be a crash remnant copied just before finalization.
+    # Treat only the transactionally verified completion marker as complete.
+    return marker_is_trustworthy(marker, export_root, date_text)
 
 
 def service_active() -> bool:

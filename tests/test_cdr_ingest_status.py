@@ -29,15 +29,26 @@ def test_summarize_failures_rolls_up_by_phase_and_status(tmp_path):
 
 def test_summarize_failures_complete_run_has_no_failures(tmp_path):
     s = cis.summarize_failures(tmp_path)  # no failures.jsonl written
-    assert s == {"total": 0, "incomplete": False, "by_phase": {}, "by_status": {}}
+    assert s == {
+        "total": 0,
+        "corrupt_records": 0,
+        "failure_provenance_complete": True,
+        "incomplete": False,
+        "by_phase": {},
+        "by_status": {},
+        "by_provider": {},
+    }
 
 
-def test_summarize_failures_skips_blank_and_malformed_lines(tmp_path):
+def test_summarize_failures_quarantines_malformed_lines(tmp_path):
     (tmp_path / "failures.jsonl").write_text(
         '\n{"phase":"product_detail","status":1}\n{not-json\n\n', encoding="utf-8"
     )
     s = cis.summarize_failures(tmp_path)
     assert s["total"] == 1 and s["by_status"] == {"1": 1}
+    assert s["corrupt_records"] == 1
+    assert s["failure_provenance_complete"] is False
+    assert s["incomplete"] is True
 
 
 def test_detail_worker_crash_is_recorded(tmp_path, monkeypatch):
@@ -99,10 +110,12 @@ def test_summarize_failures_buckets_missing_or_null_as_unknown(tmp_path):
     assert s["by_status"] == {"unknown": 2}
 
 
-def test_summarize_failures_skips_non_object_json_lines(tmp_path):
+def test_summarize_failures_quarantines_non_object_json_lines(tmp_path):
     # Valid JSON that isn't an object must be skipped, not crash rec.get(...).
     (tmp_path / "failures.jsonl").write_text(
         '[1, 2]\n"a string"\n42\n{"phase":"p","status":1}\n', encoding="utf-8"
     )
     s = cis.summarize_failures(tmp_path)
     assert s["total"] == 1 and s["by_status"] == {"1": 1}
+    assert s["corrupt_records"] == 3
+    assert s["failure_provenance_complete"] is False
