@@ -319,3 +319,56 @@ def test_stale_marker_is_preserved_and_rerun_is_refused_before_ingest(tmp_path, 
     assert stale_marker.read_bytes() == stale_bytes
     assert ingest_calls == []
     assert not (runs / TODAY / "_revisions").exists()
+
+
+def test_unreachable_revision_parent_is_refused_before_ingest(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    monkeypatch.setattr(cdr_daily, "marker_is_trustworthy", lambda *a, **k: True)
+    monkeypatch.setattr(cdr_daily, "verify_completion_marker", lambda *a, **k: True)
+    monkeypatch.setattr(
+        cdr_daily,
+        "verify_reachable_generation",
+        lambda *a, **k: (_ for _ in ()).throw(
+            ValueError("ledger generation is not reachable from the current head")
+        ),
+    )
+    ingest_calls = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: ingest_calls.append(True))
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    export = runs / TODAY / "_exports"
+    export.mkdir(parents=True)
+    (export / "preserved.json").write_text("{}", encoding="utf-8")
+    state.mkdir()
+    marker = state / f"{TODAY}.done.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "finalization_schema_version": 2,
+                "generation_id": f"obs-{TODAY}-{'a' * 16}",
+                "run_date": TODAY,
+                "banks_counts": {"rates": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = cdr_daily.parse_args(
+        [
+            "--date",
+            TODAY,
+            "--runs",
+            str(runs),
+            "--state",
+            str(state),
+            "--force",
+            "--no-ram-stage",
+        ]
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert "recover the ledger head first" in capsys.readouterr().err
+    assert ingest_calls == []
+    assert not (runs / TODAY / "_revisions").exists()

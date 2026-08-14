@@ -499,6 +499,11 @@ def test_revision_finalization_rejects_orphan_parent_event(tmp_path):
     # did not survive.  The event must be recovered, not used as a new parent.
     head_path.write_bytes(primary_head)
 
+    with pytest.raises(ValueError, match="not reachable from the current head"):
+        cdr_ledger_v2.verify_reachable_generation(
+            state, DATE, orphan["generation_id"]
+        )
+
     with pytest.raises(ValueError, match="not reachable from the ledger head"):
         finalize_observation(
             child_revision,

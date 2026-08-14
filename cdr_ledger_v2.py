@@ -358,6 +358,20 @@ def verify_event_artifacts(
     return dict(event)
 
 
+def verify_reachable_generation(
+    state_dir: Path, observation_date: str, generation_id: str
+) -> dict[str, Any]:
+    """Verify one generation and require it to be on the current ledger chain."""
+
+    state_dir = state_dir.expanduser().resolve()
+    root = ledger_root(state_dir)
+    event = _load_generation_event(root, observation_date, generation_id)
+    verify_event_artifacts(state_dir, event)
+    if event["event_digest"] not in _reachable_event_digests(root):
+        raise ValueError("ledger generation is not reachable from the current head")
+    return event
+
+
 def verify_ledger(state_dir: Path) -> dict[str, Any]:
     state_dir = state_dir.expanduser().resolve()
     root = ledger_root(state_dir)

@@ -25,6 +25,7 @@ from ar_local_pi_runtime import (
     prepare_empty_dir,
 )
 import cdr_ledger_integrity
+from cdr_ledger_v2 import verify_reachable_generation
 from cdr_finalization import (
     finalize_observation,
     recover_pending_finalization,
@@ -313,6 +314,17 @@ def run_once(args: argparse.Namespace) -> int:
             print(
                 f"ERROR: refusing revision of legacy observation {date} before ingest; "
                 "import the preserved primary into ledger-v2 first.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            verify_reachable_generation(
+                state_dir, date, revision_parent_generation_id
+            )
+        except (KeyError, OSError, ValueError, json.JSONDecodeError) as exc:
+            print(
+                f"ERROR: refusing revision of unreachable observation {date} before "
+                f"ingest; recover the ledger head first ({exc}).",
                 file=sys.stderr,
             )
             return 2
