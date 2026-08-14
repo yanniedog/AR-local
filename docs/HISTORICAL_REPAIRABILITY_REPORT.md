@@ -28,7 +28,10 @@ No files, repositories, Pi services, live CDR endpoints, or GitHub state were ch
 
 ## Preservation and corpus facts
 
-**[P] Preservation passed.**
+**[P] Preservation passed.** The committed
+[`preservation/PRESERVATION_EVIDENCE_V1.json`](preservation/PRESERVATION_EVIDENCE_V1.json)
+binds the operator-held snapshot ID, retrieval procedure, and every preservation
+manifest's byte size and SHA-256. Its hash-bound
 `manifests/preservation-gate-status-20260814.json` records:
 
 - 1,932 critical files
@@ -383,10 +386,11 @@ These assets are audit evidence, not source truth. Rebuild histories from the ca
 8. **Complete revision validation before import.** The remediation accompanying
    this report now enforces parent event existence, same-date binding, parent
    event digest binding, verified parent artifacts, and revision ancestry/cycle
-   checks in ledger-v2. Immutable primary events emitted before the new digest
-   field remain schema-readable. Historical import remains blocked until it also
-   supplies a create-once revision ordinal/tag and exercises these checks against
-   the preserved corpus; import tooling must not duplicate or bypass them.
+   checks in ledger-v2. Immutable primary and pre-hardening revision events
+   emitted before the new digest field remain readable; unbound legacy revisions
+   are warned, never silently upgraded. Historical import remains blocked until
+   it also supplies a create-once revision ordinal/tag and exercises these checks
+   against the preserved corpus; import tooling must not duplicate or bypass them.
 
 9. **Double-build offline.** Windows and Linux builds from identical source manifests must produce byte-identical hashes. Packaging must have networking disabled.
 
@@ -460,7 +464,11 @@ Snapshot/run sizes:
 - run-local gzipped JSON: 179,599,685 bytes
 - GitHub mirror: 93,701,756 bytes
 
-The user-authorized 50 GiB free-space floor is recorded in `manifests/capacity-policy-override-20260814.json`. The preservation gate recorded 145.065 GiB free after the snapshot, but current free space must be rechecked before future writes.
+The user-authorized 50 GiB free-space floor is bound by the committed evidence
+locator to `manifests/capacity-policy-override-20260814.json` (575 bytes,
+SHA-256 `06107530fd16f09f900682c4eb36a1005bf52aaf01239eab489eca40dcefeb97`).
+The preservation gate recorded 145.065 GiB free after the snapshot, but current
+free space must be rechecked before future writes.
 
 Migration should:
 

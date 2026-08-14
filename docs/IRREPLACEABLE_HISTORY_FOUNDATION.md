@@ -31,6 +31,12 @@ reject missing, cross-date, self, or structurally invalid parents; full-ledger
 verification also walks revision ancestry and reports loops. Existing primary
 events remain readable without revision metadata.
 
+Immutable revisions emitted before parent-digest hardening also remain readable
+and recoverable. They are reported as `LEGACY_UNBOUND_REVISION_PARENT`; their
+missing binding is never invented or written back. The append path requires the
+digest for every new revision, so this compatibility rule cannot emit new
+unbound history.
+
 A crash before step 5 leaves recoverable candidate evidence, never a completed
 day. A retry deterministically resumes the same generation when its immutable
 source digest and prior head still match. Recovery verifies and completes only

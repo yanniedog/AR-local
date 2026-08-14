@@ -10,8 +10,13 @@ Producer-side source preservation now uses three Draft 2020-12 contracts:
 - `ledger-event-v2.schema.json` appends finalized primary/revision events into a
   hash-linked ledger without rewriting legacy manifests. Revisions bind an
   existing same-date parent by both stable generation ID and event SHA-256;
-  primary events must carry null parent fields.
+  primary events must carry null parent fields. Pre-hardening immutable
+  revisions that omit the digest remain readable as explicitly unbound legacy
+  events, while the producer append path requires it for every new revision.
 - `run-journal-v1.schema.json` defines independent stage states and retry evidence.
+- `preservation-evidence-v1.schema.json` defines the portable, fail-closed
+  locator for the operator-held snapshot and its hash-bound manifest set; it
+  contains no source data or machine-specific root.
 
 `ExportContractV2` also binds the exact state-relative completion marker and the
 evidence for every configured register-discovery attempt. An incomplete register
