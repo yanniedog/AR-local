@@ -1,58 +1,96 @@
-# Deploy Pi runtime after every push to main (squash merges included).
-# Does not gate PR merges.
+# Manually deploy one exact, shadow-canary-approved AR-local commit.
+# Main pushes never deploy. The approved commit and canary-manifest digest must
+# match protected repository variables before this workflow can reach SSH.
 #
 # Secrets (Settings → Secrets and variables → Actions):
-#   PI_SSH_PRIVATE_KEY, PI_SSH_HOST — required for deploy step
+#   PI_SSH_PRIVATE_KEY, PI_SSH_HOST, PI_SSH_KNOWN_HOSTS — required
 #   TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET — required for GitHub-hosted runners (Pi is on Tailscale)
 # Optional: PI_SSH_USER (default pi), variable AR_PI_BASE_URL
 #
-# Without Tailscale OAuth secrets, use on-Pi timer (ar-local-deploy-watchdog) which pulls on drift.
+# Required variables:
+#   AR_PI_CANARY_APPROVED_COMMIT, AR_PI_CANARY_MANIFEST_SHA256
 
-name: pi-deploy-on-main
+name: pi-deploy-canary
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'reports/**'
   workflow_dispatch:
     inputs:
+      target_commit:
+        description: "Exact 40-character AR-local main commit verified by canary"
+        required: true
+        type: string
+      canary_manifest_sha256:
+        description: "SHA-256 of the reviewed canary acceptance manifest"
+        required: true
+        type: string
+      confirm_deploy:
+        description: "Explicit production activation confirmation"
+        required: true
+        default: "NOT_APPROVED"
+        type: choice
+        options:
+          - "NOT_APPROVED"
+          - "DEPLOY_VERIFIED_CANARY"
       dry_run:
         description: "Print deploy steps only (no remote changes)"
         required: false
-        default: "false"
+        default: "true"
         type: choice
         options:
-          - "false"
           - "true"
+          - "false"
 
 permissions:
   contents: read
 
 concurrency:
-  group: pi-deploy-on-main
+  group: pi-production-deploy
   cancel-in-progress: false
 
 jobs:
   pi-deploy:
     runs-on: ubuntu-latest
+    environment: pi-production
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.target_commit }}
+
+      - name: Verify canary approval and exact main commit
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          CANARY_MANIFEST_SHA256: ${{ inputs.canary_manifest_sha256 }}
+          CONFIRM_DEPLOY: ${{ inputs.confirm_deploy }}
+          APPROVED_COMMIT: ${{ vars.AR_PI_CANARY_APPROVED_COMMIT }}
+          APPROVED_MANIFEST_SHA256: ${{ vars.AR_PI_CANARY_MANIFEST_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANARY_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$CONFIRM_DEPLOY" = "DEPLOY_VERIFIED_CANARY"
+          test "$TARGET_COMMIT" = "$APPROVED_COMMIT"
+          test "$CANARY_MANIFEST_SHA256" = "$APPROVED_MANIFEST_SHA256"
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$TARGET_COMMIT"
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Detect Pi SSH secrets
+      - name: Verify Pi connection configuration
         id: secrets
+        env:
+          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
         run: |
-          if [ -n "${{ secrets.PI_SSH_PRIVATE_KEY }}" ] && [ -n "${{ secrets.PI_SSH_HOST }}" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          test -n "$PI_SSH_PRIVATE_KEY"
+          test -n "$PI_SSH_HOST"
+          test -n "$PI_SSH_KNOWN_HOSTS"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Detect runner environment
         id: runner_env
@@ -66,12 +104,23 @@ jobs:
 
       - name: Detect Tailscale OAuth (hosted runner → tailnet)
         id: tailscale
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
-          if [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_SECRET }}" ]; then
+          if [ -n "$TS_OAUTH_CLIENT_ID" ] && [ -n "$TS_OAUTH_SECRET" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Require hosted-runner Tailscale credentials
+        if: >-
+          steps.runner_env.outputs.requires_tailscale == 'true' &&
+          steps.tailscale.outputs.configured != 'true'
+        run: |
+          echo "::error::A hosted production deploy requires TS_OAUTH_CLIENT_ID and TS_OAUTH_SECRET."
+          exit 1
 
       - name: Join Tailscale tailnet
         if: >-
@@ -90,6 +139,7 @@ jobs:
         if: steps.secrets.outputs.configured == 'true'
         env:
           PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
           PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
         run: |
@@ -98,7 +148,8 @@ jobs:
           printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
           chmod 600 ~/.ssh/pi_deploy_key
           USER="${PI_SSH_USER:-pi}"
-          ssh-keyscan -H "$PI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           cat >> ~/.ssh/config <<EOF
           Host ar-local-pi5
             HostName ${PI_SSH_HOST}
@@ -109,22 +160,7 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Skip (Pi SSH secrets not configured)
-        if: steps.secrets.outputs.configured != 'true'
-        run: |
-          echo "pi-deploy-on-main: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
-          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~5 minutes."
-
-      - name: Skip deploy (Tailscale OAuth missing for hosted runner)
-        if: >-
-          steps.secrets.outputs.configured == 'true' &&
-          steps.runner_env.outputs.requires_tailscale == 'true' &&
-          steps.tailscale.outputs.configured != 'true'
-        run: |
-          echo "::warning::PI_SSH_* set but TS_OAUTH_CLIENT_ID/TS_OAUTH_SECRET missing — GitHub cloud cannot reach Tailscale-only Pi."
-          echo "Add Tailscale OAuth secrets (see docs/UNIVERSAL_ROADMAP.md) or use a self-hosted runner on the tailnet."
-
-      - name: Deploy Pi (pull main + restart + smoke)
+      - name: Deploy exact approved commit and verify
         if: >-
           steps.secrets.outputs.configured == 'true' &&
           (
@@ -136,12 +172,13 @@ jobs:
           AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
           AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
           AR_PI_SITE_REPO: /srv/ar-local/australianrates
+          AR_PI_EXPECTED_COMMIT: ${{ inputs.target_commit }}
         run: |
           export AR_PI_BASE_URL="${AR_PI_BASE_URL:-http://100.78.28.10/}"
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            python pi_deploy_verify.py --deploy --dry-run
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python pi_deploy_verify.py --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT" --dry-run
           else
-            python pi_deploy_verify.py --deploy
+            python pi_deploy_verify.py --deploy --expected-commit "$AR_PI_EXPECTED_COMMIT"
           fi
 
       - name: Deploy result
@@ -152,4 +189,4 @@ jobs:
             steps.tailscale.outputs.configured == 'true'
           )
         run: |
-          echo "pi-deploy-on-main: finished (see Deploy Pi step log)"
+          echo "pi-deploy-canary: finished (see Deploy Pi step log)"

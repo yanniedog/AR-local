@@ -11,7 +11,7 @@ When the user says **"run pr watch"**, **"watch open PRs"**, or when **chief/wor
 1. Read [`.cursor/skills/pr-watch-agent/SKILL.md`](../skills/pr-watch-agent/SKILL.md).
 2. Run `npm run pr:watch-once` (add `--watch` for idle polling).
 3. For each open PR (oldest first): pr-fix patterns → `wait-for-bots` → `pr:bot-feedback-check` → `pr:gates:check` → `pr:merge` (squash auto-merge) only at exit **0**.
-4. After merges: `npm run pi:deploy` + `pi:deploy:verify` + `npm run verify:pi` (Pi URL from `docs/UNIVERSAL_ROADMAP.md` — not default `127.0.0.1`).
+4. After merges: run drift verification only. Production activation requires the separate exact-commit canary workflow; never deploy merely because a PR merged.
 
 **Not a replacement for chief** on path locks or concurrent `agent/*` branch writers. One pr-watch worker at a time per repo.
 

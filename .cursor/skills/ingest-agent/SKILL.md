@@ -64,7 +64,7 @@ Dashboard `--exports` must point at a tree with valid **`/api/latest`** backing 
 
 - Timer: `ar-local-daily.timer` → `ar-local-daily.service`
 - Durable data (portable Pi): `/srv/ar-local/data/runs/<date>/_exports/`
-- Sync + ingest script: `python3 pi_daily_sync.py` (pulls `main` for AR-local + australianrates, then runs daily pipeline)
+- Ingest wrapper: `python3 pi_daily_sync.py` (never changes AR-local or australianrates checkouts; code activation is separate and canary-gated)
 
 ```powershell
 ssh ar-local-pi5 "systemctl status ar-local-daily.timer --no-pager"

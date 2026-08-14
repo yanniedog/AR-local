@@ -110,7 +110,7 @@ payload error, and with no token the builder just builds locally and skips the u
    ```
 
 3. Re-render the service units so the new `EnvironmentFile` line lands, then reload
-   (service-unit changes are applied by the installer, not the auto-deploy watchdog):
+   (service-unit changes are applied by the installer, never by the verify-only deployment watchdog):
 
    ```bash
    sh deploy/pi/install-pi-systemd.sh /srv/ar-local
