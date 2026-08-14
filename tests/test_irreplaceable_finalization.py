@@ -319,6 +319,10 @@ def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path)
     invalid_primary["parent_event_digest"] = primary_event["event_digest"]
     with pytest.raises(ValidationError):
         schema("ledger-event-v2.schema.json").validate(invalid_primary)
+    legacy_primary = deepcopy(primary_event)
+    legacy_primary.pop("parent_event_digest")
+    legacy_primary["event_digest"] = cdr_ledger_v2.event_digest(legacy_primary)
+    schema("ledger-event-v2.schema.json").validate(legacy_primary)
     pointer_path = state / "observation-pointers-v2" / "latest-observation.json"
     assert json.loads(pointer_path.read_text(encoding="utf-8"))[
         "ledger_event_digest"

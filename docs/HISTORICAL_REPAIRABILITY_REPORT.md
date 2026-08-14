@@ -380,13 +380,13 @@ These assets are audit evidence, not source truth. Rebuild histories from the ca
 
 7. **Build canonical artifacts in a new namespace.** Never write below preserved run directories. Use content-addressed product/rate/detail/history shards and reference original hashes rather than copying the 25.5 GB corpus again.
 
-8. **Harden revision validation before import.** Current ledger-v2 validates that a revision has a nonempty parent ID but does not prove that the parent exists, has the same observation date, or matches a parent contract/event digest (`cdr_ledger_v2.py:47-77`; schema `contracts/ledger-event-v2.schema.json:21-33`). Add:
-
-   - parent event existence check
-   - same-date check
-   - parent contract/event digest binding
-   - revision ancestry and cycle checks
-   - create-once revision ordinal/tag
+8. **Complete revision validation before import.** The remediation accompanying
+   this report now enforces parent event existence, same-date binding, parent
+   event digest binding, verified parent artifacts, and revision ancestry/cycle
+   checks in ledger-v2. Immutable primary events emitted before the new digest
+   field remain schema-readable. Historical import remains blocked until it also
+   supplies a create-once revision ordinal/tag and exercises these checks against
+   the preserved corpus; import tooling must not duplicate or bypass them.
 
 9. **Double-build offline.** Windows and Linux builds from identical source manifests must produce byte-identical hashes. Packaging must have networking disabled.
 
@@ -507,7 +507,8 @@ Deployment/promotion must stop if:
 - any source file is missing or unreadable
 - row-level cross-format discrepancies remain unexplained
 - the historical importer would write into original namespaces
-- revision-parent validation is not hardened
+- a historical importer bypasses the completed parent checks or lacks a
+  create-once revision ordinal/tag
 - a missing register/provider denominator is represented as zero
 - a historical observation is marked complete
 - ambiguous units, tiers, taxonomy, or terms are coerced into settled values

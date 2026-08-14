@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
-from cdr_atomic import ImmutablePathError, atomic_write_json, canonical_json_bytes
+from cdr_atomic import ImmutablePathError, atomic_write_json
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -124,12 +123,6 @@ def _coverage(
         ],
     }
     return observation_state, coverage, provider_states, register_attempts
-
-
-def legacy_parent_generation_id(export_root: Path) -> str:
-    material = artifact_records(export_root)
-    digest = hashlib.sha256(canonical_json_bytes({"artifacts": material})).hexdigest()
-    return f"legacy-export-{digest[:24]}"
 
 
 def validate_finalization_layout(export_root: Path, state_dir: Path) -> str:

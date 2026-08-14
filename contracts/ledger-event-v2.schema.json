@@ -12,7 +12,6 @@
     "observation_date",
     "generation_id",
     "parent_generation_id",
-    "parent_event_digest",
     "contract_path",
     "contract_digest",
     "previous_event_digest",
@@ -42,6 +41,7 @@
     {
       "if": { "properties": { "event_type": { "const": "revision_finalized" } } },
       "then": {
+        "required": ["parent_generation_id", "parent_event_digest"],
         "properties": {
           "parent_generation_id": { "$ref": "#/$defs/generation" },
           "parent_event_digest": { "$ref": "#/$defs/digest" }
