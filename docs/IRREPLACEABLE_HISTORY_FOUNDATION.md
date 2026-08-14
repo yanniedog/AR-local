@@ -25,6 +25,18 @@ The daily path now installs state in this order:
 7. Legacy ledger-v1 emission may run for compatibility. Its failure cannot erase
    or invalidate the mandatory v2 event.
 
+A revision event must name an existing generation from the same observation
+date and bind that parent event's SHA-256 digest. Runtime and JSON Schema checks
+reject missing, cross-date, self, or structurally invalid parents; full-ledger
+verification also walks revision ancestry and reports loops. Existing primary
+events remain readable without revision metadata.
+
+Immutable revisions emitted before parent-digest hardening also remain readable
+and recoverable. They are reported as `LEGACY_UNBOUND_REVISION_PARENT`; their
+missing binding is never invented or written back. The append path requires the
+digest for every new revision, so this compatibility rule cannot emit new
+unbound history.
+
 A crash before step 5 leaves recoverable candidate evidence, never a completed
 day. A retry deterministically resumes the same generation when its immutable
 source digest and prior head still match. Recovery verifies and completes only
@@ -101,6 +113,12 @@ one unclassified missing date. This implementation does not “heal” that evid
 Deployment and rolling promotion remain blocked until a derived, append-only
 legacy-audit report explains each changed path and references the preserved
 original hashes. No legacy manifest may be regenerated in place.
+
+The read-only feasibility census and date-by-date repair rules are recorded in
+[`HISTORICAL_REPAIRABILITY_REPORT.md`](HISTORICAL_REPAIRABILITY_REPORT.md). Its
+qualified verdict is authoritative for any later importer: retained dates may
+be represented only as hash-bound legacy partial observations and derived
+revisions; they must never advance `latest-complete`.
 
 App publication has no export-directory fallback once this foundation is in
 place. It requires `latest-complete` to select an exact marker whose contract,

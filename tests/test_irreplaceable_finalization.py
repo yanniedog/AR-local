@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 
 from cdr_atomic import ImmutablePathError, atomic_write_json
 import cdr_atomic
@@ -288,6 +289,65 @@ def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path)
         result={"run_date": DATE, "banks_counts": {"rates": 7}},
         parent_generation_id=first["generation_id"],
     )
+    primary_event = json.loads(
+        (
+            state
+            / "ledger-v2"
+            / "events"
+            / DATE
+            / f"{first['generation_id']}.json"
+        ).read_text(encoding="utf-8")
+    )
+    revision_event = json.loads(
+        (
+            state
+            / "ledger-v2"
+            / "events"
+            / DATE
+            / f"{second['generation_id']}.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert revision_event["parent_generation_id"] == first["generation_id"]
+    assert revision_event["parent_event_digest"] == primary_event["event_digest"]
+    schema("ledger-event-v2.schema.json").validate(revision_event)
+    invalid_revision = deepcopy(revision_event)
+    invalid_revision["parent_event_digest"] = None
+    # The public read contract must retain immutable pre-hardening revisions
+    # that used a null binding; the create path still refuses to emit one.
+    schema("ledger-event-v2.schema.json").validate(invalid_revision)
+    invalid_revision["event_digest"] = cdr_ledger_v2.event_digest(invalid_revision)
+    with pytest.raises(ValueError, match="new revision events require"):
+        cdr_ledger_v2._validate_event(
+            invalid_revision, require_parent_binding=True
+        )
+    legacy_revision = deepcopy(revision_event)
+    legacy_revision.pop("parent_event_digest")
+    legacy_revision["event_digest"] = cdr_ledger_v2.event_digest(legacy_revision)
+    schema("ledger-event-v2.schema.json").validate(legacy_revision)
+    invalid_bound_legacy_revision = deepcopy(revision_event)
+    invalid_bound_legacy_revision["parent_generation_id"] = (
+        f"legacy-export-{'a' * 24}"
+    )
+    invalid_bound_legacy_revision["event_digest"] = cdr_ledger_v2.event_digest(
+        invalid_bound_legacy_revision
+    )
+    with pytest.raises(ValidationError):
+        schema("ledger-event-v2.schema.json").validate(
+            invalid_bound_legacy_revision
+        )
+    with pytest.raises(ValueError, match="new revision events require"):
+        cdr_ledger_v2._validate_event(
+            legacy_revision, require_parent_binding=True
+        )
+    invalid_primary = deepcopy(primary_event)
+    invalid_primary["parent_generation_id"] = first["generation_id"]
+    invalid_primary["parent_event_digest"] = primary_event["event_digest"]
+    with pytest.raises(ValidationError):
+        schema("ledger-event-v2.schema.json").validate(invalid_primary)
+    legacy_primary = deepcopy(primary_event)
+    legacy_primary.pop("parent_event_digest")
+    legacy_primary["event_digest"] = cdr_ledger_v2.event_digest(legacy_primary)
+    schema("ledger-event-v2.schema.json").validate(legacy_primary)
     pointer_path = state / "observation-pointers-v2" / "latest-observation.json"
     assert json.loads(pointer_path.read_text(encoding="utf-8"))[
         "ledger_event_digest"
@@ -307,6 +367,215 @@ def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path)
     assert json.loads(pointer_path.read_text(encoding="utf-8"))[
         "ledger_event_digest"
     ] == second["ledger_event_digest"]
+
+
+def test_revision_finalization_rejects_missing_parent_generation(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    state = tmp_path / "state"
+    finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+
+    with pytest.raises(ValueError, match="parent generation does not exist"):
+        finalize_observation(
+            revision,
+            state,
+            state / f"{DATE}.revision.later.json",
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+            parent_generation_id="obs-2026-08-14-deadbeefdeadbeef",
+        )
+    assert not (state / f"{DATE}.revision.later.json").exists()
+
+
+def test_ledger_verifier_rejects_changed_revision_parent_digest(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    (revision / "banks.json").write_text('{"rates":[{"value":1}]}', encoding="utf-8")
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    second = finalize_observation(
+        revision,
+        state,
+        state / f"{DATE}.revision.later.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+    event_path = (
+        state
+        / "ledger-v2"
+        / "events"
+        / DATE
+        / f"{second['generation_id']}.json"
+    )
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["parent_event_digest"] = "f" * 64
+    event["event_digest"] = cdr_ledger_v2.event_digest(event)
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+
+    report = verify_ledger(state)
+    assert report["ok"] is False
+    assert any(
+        item["issue"] == "INVALID_EVENT" and "parent event digest" in item["detail"]
+        for item in report["findings"]
+    )
+
+
+def test_revision_marker_rejects_changed_parent_artifacts(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    second = finalize_observation(
+        revision,
+        state,
+        state / f"{DATE}.revision.later.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+
+    (primary / "banks.json").write_text('{"rates":["changed-parent"]}', encoding="utf-8")
+
+    assert verify_completion_marker(second, state, DATE) is False
+
+
+def test_revision_finalization_rejects_orphan_parent_event(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    orphan_revision = tmp_path / "runs" / DATE / "_revisions" / "orphan" / "_exports"
+    child_revision = tmp_path / "runs" / DATE / "_revisions" / "child" / "_exports"
+    make_export(primary)
+    make_export(orphan_revision)
+    make_export(child_revision)
+    (orphan_revision / "banks.json").write_text(
+        '{"rates":["orphan"]}', encoding="utf-8"
+    )
+    (child_revision / "banks.json").write_text(
+        '{"rates":["child"]}', encoding="utf-8"
+    )
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    head_path = state / "ledger-v2" / "head.json"
+    primary_head = head_path.read_bytes()
+    orphan = finalize_observation(
+        orphan_revision,
+        state,
+        state / f"{DATE}.revision.orphan.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+    # Model the crash window: the immutable event exists, but head advancement
+    # did not survive.  The event must be recovered, not used as a new parent.
+    head_path.write_bytes(primary_head)
+
+    with pytest.raises(ValueError, match="not reachable from the current head"):
+        cdr_ledger_v2.verify_reachable_generation(
+            state, DATE, orphan["generation_id"]
+        )
+
+    with pytest.raises(ValueError, match="not reachable from the ledger head"):
+        finalize_observation(
+            child_revision,
+            state,
+            state / f"{DATE}.revision.child.json",
+            observation_date=DATE,
+            result={"run_date": DATE, "banks_counts": {"rates": 7}},
+            parent_generation_id=orphan["generation_id"],
+        )
+    assert not (state / f"{DATE}.revision.child.json").exists()
+
+
+def test_pre_hardening_unbound_revision_remains_readable_and_recoverable(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    (revision / "banks.json").write_text('{"rates":[{"value":1}]}', encoding="utf-8")
+    state = tmp_path / "state"
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    second_marker_path = state / f"{DATE}.revision.later.json"
+    second = finalize_observation(
+        revision,
+        state,
+        second_marker_path,
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+    event_path = (
+        state / "ledger-v2" / "events" / DATE / f"{second['generation_id']}.json"
+    )
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["parent_generation_id"] = f"legacy-export-{'a' * 24}"
+    event.pop("parent_event_digest")
+    event["event_digest"] = cdr_ledger_v2.event_digest(event)
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    schema("ledger-event-v2.schema.json").validate(event)
+
+    head_path = state / "ledger-v2" / "head.json"
+    head = json.loads(head_path.read_text(encoding="utf-8"))
+    head["event_digest"] = event["event_digest"]
+    head_path.write_text(json.dumps(head), encoding="utf-8")
+    marker = json.loads(second_marker_path.read_text(encoding="utf-8"))
+    marker["ledger_event_digest"] = event["event_digest"]
+    second_marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    pointers = state / "observation-pointers-v2"
+    for pointer_path in pointers.glob("*.json"):
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        if pointer.get("generation_id") == second["generation_id"]:
+            pointer["ledger_event_digest"] = event["event_digest"]
+            pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+    report = verify_ledger(state)
+    assert report["ok"] is True
+    assert report["findings"] == []
+    assert any(
+        item["issue"] == "LEGACY_UNBOUND_REVISION_PARENT"
+        for item in report["warnings"]
+    )
+    assert verify_completion_marker(marker, state, DATE) is True
+
+    for pointer_path in pointers.glob("*.json"):
+        pointer_path.unlink()
+    assert recover_pending_finalization(state, DATE) == second_marker_path
+    assert (pointers / "latest-observation.json").is_file()
 
 
 def test_ledger_verifier_detects_changed_source_bytes(tmp_path):

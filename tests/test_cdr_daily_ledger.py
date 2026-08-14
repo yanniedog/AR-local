@@ -5,6 +5,7 @@ finalized ledger bytes: the daily ingest's write target. Every existing
 observation is immutable; a retry creates a revision, including on the same day.
 """
 
+import json
 from datetime import datetime
 
 import pytest
@@ -18,6 +19,19 @@ def _finalize(root):
     root.mkdir(parents=True, exist_ok=True)
     (root / "local-cdr.sqlite").write_bytes(b"finalized")
     return root
+
+
+def _write_legacy_observation(runs, state, date):
+    export = runs / date / "_exports"
+    cache = export / "dashboard-cache"
+    cache.mkdir(parents=True)
+    manifest = {"run_date": date, "banks_counts": {"rates": 5}}
+    (cache / "latest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (export / "local-cdr.sqlite").write_bytes(b"legacy")
+    state.mkdir(parents=True, exist_ok=True)
+    marker = state / f"{date}.done.json"
+    marker.write_text(json.dumps(manifest), encoding="utf-8")
+    return export, marker
 
 
 @pytest.mark.parametrize("force", [False, True])
@@ -63,24 +77,12 @@ def test_future_date_writes_primary(tmp_path, force):
     assert target == primary and is_revision is False
 
 
-def test_finalized_past_day_refuses_overwrite_without_force(tmp_path):
+@pytest.mark.parametrize("force", [False, True])
+def test_finalized_past_day_refuses_live_ingest_even_with_force(tmp_path, force):
     primary = _finalize(tmp_path / "2026-05-13" / "_exports")
-    with pytest.raises(cdr_daily.LedgerImmutabilityError, match="overwrite finalized ledger day"):
-        cdr_daily.resolve_ledger_target(primary, "2026-05-13", TODAY, force=False)
+    with pytest.raises(cdr_daily.LedgerImmutabilityError, match="live ingest for finalized ledger day"):
+        cdr_daily.resolve_ledger_target(primary, "2026-05-13", TODAY, force=force)
     # The original bytes are untouched by the (refused) call.
-    assert (primary / "local-cdr.sqlite").read_bytes() == b"finalized"
-
-
-def test_finalized_past_day_force_appends_revision(tmp_path):
-    primary = _finalize(tmp_path / "2026-05-13" / "_exports")
-    when = datetime(2026, 6, 16, 9, 30, 0)
-    target, is_revision = cdr_daily.resolve_ledger_target(
-        primary, "2026-05-13", TODAY, force=True, now=when
-    )
-    assert is_revision is True
-    # Revision is a sibling under _revisions/<stamp>/_exports, never the primary.
-    assert target == primary.parent / "_revisions" / "20260616T093000_000000" / "_exports"
-    assert target != primary
     assert (primary / "local-cdr.sqlite").read_bytes() == b"finalized"
 
 
@@ -132,6 +134,44 @@ def test_run_once_missing_past_day_never_writes(tmp_path, monkeypatch):
     # The gap day got no export bytes and no completion/revision markers.
     assert not (runs / "2026-05-14").exists()
     assert list(state.glob("2026-05-14*.json")) == []
+
+
+@pytest.mark.parametrize(
+    ("date", "message"),
+    [
+        (TODAY, "legacy observation"),
+        ("2026-06-15", "live ingest for finalized ledger day"),
+    ],
+)
+def test_run_once_refuses_unsupported_revision_before_ingest(
+    tmp_path, monkeypatch, capsys, date, message
+):
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    calls = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: calls.append(True))
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    export, marker = _write_legacy_observation(runs, state, date)
+    original_marker = marker.read_bytes()
+
+    args = cdr_daily.parse_args(
+        [
+            "--date",
+            date,
+            "--runs",
+            str(runs),
+            "--state",
+            str(state),
+            "--force",
+            "--no-ram-stage",
+        ]
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert message in capsys.readouterr().err
+    assert calls == []
+    assert marker.read_bytes() == original_marker
+    assert not (export.parent / "_revisions").exists()
 
 
 def test_run_once_rejects_nonportable_layout_before_ingest(tmp_path, monkeypatch):
@@ -243,12 +283,13 @@ def test_ram_staged_run_passes_persistent_previous_day_to_output_builder(tmp_pat
     assert captured["previous"] == previous
 
 
-def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, monkeypatch):
+def test_stale_marker_is_preserved_and_rerun_is_refused_before_ingest(tmp_path, monkeypatch, capsys):
     import json
 
     monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
-    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: None)
+    ingest_calls = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: ingest_calls.append(True))
     monkeypatch.setattr(cdr_daily, "persist_ingest_status", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "copytree_atomic", lambda *a, **k: None)
     monkeypatch.setattr(cdr_daily, "write_sanity_report", lambda *a, **k: None)
@@ -258,21 +299,6 @@ def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, 
     stale_marker = state / f"{TODAY}.done.json"
     stale_bytes = b'{"stale":true}'
     stale_marker.write_bytes(stale_bytes)
-    captured = {}
-
-    def fake_build(_run_root, out_dir, _db_path, *, previous_run_root=None):
-        return {"run_date": TODAY, "out_dir": str(out_dir), "banks": {"rates": 1}}
-
-    def fake_finalize(export, _state, marker, **kwargs):
-        captured.update(
-            export=export,
-            marker=marker,
-            parent=kwargs.get("parent_generation_id"),
-        )
-        return {**kwargs["result"], "observation_state": "complete"}
-
-    monkeypatch.setattr(cdr_daily, "build_outputs", fake_build)
-    monkeypatch.setattr(cdr_daily, "finalize_observation", fake_finalize)
     args = cdr_daily.parse_args(
         [
             "--date",
@@ -288,8 +314,61 @@ def test_stale_marker_is_preserved_and_rerun_gets_new_revision_marker(tmp_path, 
         ]
     )
 
-    assert cdr_daily.run_once(args) == 1
+    assert cdr_daily.run_once(args) == 2
+    assert "recover or import a verified ledger-v2 parent" in capsys.readouterr().err
     assert stale_marker.read_bytes() == stale_bytes
-    assert captured["marker"] != stale_marker
-    assert "_revisions" in captured["export"].parts
-    assert captured["parent"] is None
+    assert ingest_calls == []
+    assert not (runs / TODAY / "_revisions").exists()
+
+
+def test_unreachable_revision_parent_is_refused_before_ingest(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(cdr_daily, "ensure_runtime_data_writable", lambda *a, **k: None)
+    monkeypatch.setattr(cdr_daily, "local_date", lambda: TODAY)
+    monkeypatch.setattr(cdr_daily, "marker_is_trustworthy", lambda *a, **k: True)
+    monkeypatch.setattr(cdr_daily, "verify_completion_marker", lambda *a, **k: True)
+    monkeypatch.setattr(
+        cdr_daily,
+        "verify_reachable_generation",
+        lambda *a, **k: (_ for _ in ()).throw(
+            ValueError("ledger generation is not reachable from the current head")
+        ),
+    )
+    ingest_calls = []
+    monkeypatch.setattr(cdr_daily, "run_ingest", lambda *a, **k: ingest_calls.append(True))
+    runs = tmp_path / "runs"
+    state = tmp_path / "state"
+    export = runs / TODAY / "_exports"
+    export.mkdir(parents=True)
+    (export / "preserved.json").write_text("{}", encoding="utf-8")
+    state.mkdir()
+    marker = state / f"{TODAY}.done.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "finalization_schema_version": 2,
+                "generation_id": f"obs-{TODAY}-{'a' * 16}",
+                "run_date": TODAY,
+                "banks_counts": {"rates": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = cdr_daily.parse_args(
+        [
+            "--date",
+            TODAY,
+            "--runs",
+            str(runs),
+            "--state",
+            str(state),
+            "--force",
+            "--no-ram-stage",
+        ]
+    )
+    assert cdr_daily.run_once(args) == 2
+    assert "recover the ledger head first" in capsys.readouterr().err
+    assert ingest_calls == []
+    assert not (runs / TODAY / "_revisions").exists()

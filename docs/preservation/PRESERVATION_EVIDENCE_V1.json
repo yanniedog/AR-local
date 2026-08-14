@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "20260814T202526AEST-pi5-3dc9b4677",
+  "storage": {
+    "kind": "operator_controlled_off_repository_snapshot",
+    "root_placeholder": "<AUSTRALIANRATES_PRESERVATION_ROOT>",
+    "snapshot_relative_path": "20260814T202526AEST-pi5-3dc9b4677",
+    "retention": "retain_until_explicit_user_authorization_after_post_release_verification",
+    "offsite_object_locked_copy_status": "pending"
+  },
+  "retrieval": {
+    "required_root": "<AUSTRALIANRATES_PRESERVATION_ROOT>",
+    "inventory_relative_path": "manifests/preservation-file-inventory.jsonl",
+    "procedure": [
+      "Obtain the preservation root from the authorized operator; never infer or hard-code a machine path.",
+      "Resolve the snapshot ID below that root without contacting CDR sources.",
+      "Hash every manifest and compare it with this descriptor before reading source artifacts.",
+      "Use preservation-file-inventory.jsonl to verify all 1932 files, byte counts, and SHA-256 values.",
+      "Stop the import if the snapshot, inventory, any manifest, or any source artifact is absent or mismatched."
+    ],
+    "network_required": false,
+    "writes_permitted": false
+  },
+  "verification_summary": {
+    "status": "VERIFIED_RESTORABLE_WITH_LEGACY_LEDGER_QUARANTINE",
+    "critical_files": 1932,
+    "critical_bytes": 25586769110,
+    "critical_findings": 0,
+    "semantic_json_files": 1171,
+    "semantic_gzipped_json_files": 806,
+    "semantic_sqlite_databases": 97,
+    "semantic_xlsx_archives": 96,
+    "semantic_findings": 0,
+    "legacy_ledger_findings": 58,
+    "legacy_ledger_exact_restore_match": true,
+    "minimum_free_gib": 50,
+    "free_gib_after_snapshot": 145.065
+  },
+  "manifests": [
+    {
+      "path": "manifests/capacity-policy-override-20260814.json",
+      "bytes": 575,
+      "sha256": "06107530fd16f09f900682c4eb36a1005bf52aaf01239eab489eca40dcefeb97"
+    },
+    {
+      "path": "manifests/pi-critical-source-sha256.txt",
+      "bytes": 280944,
+      "sha256": "640745a74935f70b606d09b9044c8782adc595646858085cc9e37b94cdd57580"
+    },
+    {
+      "path": "manifests/pi-critical-verification.json",
+      "bytes": 413,
+      "sha256": "d47d86b9587713a27dc8bceec753117848d4ebbb10abc63cc1547eade9fc9c1a"
+    },
+    {
+      "path": "manifests/pi-run-entries.txt",
+      "bytes": 1107,
+      "sha256": "2df53c805e7d7e407fff0dd54af6cd52600969d804132e291c3fa65147c4c3e9"
+    },
+    {
+      "path": "manifests/pi-source-ledger-verification.json",
+      "bytes": 4128,
+      "sha256": "65aec269ba5206cfe0c560e4d3596b6694a3e3024fbbbeda6d43332625ef0120"
+    },
+    {
+      "path": "manifests/pi-source-special-entries.txt",
+      "bytes": 140,
+      "sha256": "3b8432fea5480bead04625c523331f9600bc74b4f2302023a88b8ab70e62de92"
+    },
+    {
+      "path": "manifests/preservation-file-inventory.jsonl",
+      "bytes": 744155,
+      "sha256": "0482f54a47536a0971d061a13a7549ffe0a22094eb13c6bd961d714354221325"
+    },
+    {
+      "path": "manifests/preservation-gate-status-20260814.json",
+      "bytes": 1567,
+      "sha256": "86d7dadcb63eada225323f26617c27d1e3c5ed9c7fd8777f9eab4320d8ec3119"
+    },
+    {
+      "path": "manifests/restore-copy-summary.json",
+      "bytes": 42362,
+      "sha256": "b5d029f43aaba0c5ca75774f363da05d4e3d68d6cae06ecf7a2ce24dd4a9ec6b"
+    },
+    {
+      "path": "manifests/snapshot-plan.json",
+      "bytes": 792,
+      "sha256": "b378acdb8cbc95a7d942a5c001a1552e0ea31a3e5d43587e2bd0ff8cebd57056"
+    }
+  ]
+}
