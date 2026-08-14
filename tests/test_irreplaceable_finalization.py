@@ -265,6 +265,50 @@ def test_recovery_repairs_pointers_after_marker_lands(tmp_path, monkeypatch):
     assert (state / "observation-pointers-v2" / "latest-complete.json").is_file()
 
 
+def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path):
+    primary = tmp_path / "runs" / DATE / "_exports"
+    revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
+    make_export(primary)
+    make_export(revision)
+    (revision / "banks.json").write_text('{"rates":[{"value":1}]}', encoding="utf-8")
+    state = tmp_path / "state"
+
+    first = finalize_observation(
+        primary,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    second = finalize_observation(
+        revision,
+        state,
+        state / f"{DATE}.revision.later.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+        parent_generation_id=first["generation_id"],
+    )
+    pointer_path = state / "observation-pointers-v2" / "latest-observation.json"
+    assert json.loads(pointer_path.read_text(encoding="utf-8"))[
+        "ledger_event_digest"
+    ] == second["ledger_event_digest"]
+
+    first_contract = load_contract(state / first["export_contract_path"])
+    delayed_first_pointer = {
+        "schema_version": 2,
+        "observation_date": DATE,
+        "generation_id": first["generation_id"],
+        "observation_state": "complete",
+        "ledger_event_digest": first["ledger_event_digest"],
+        "marker_path": f"{DATE}.done.json",
+        "export_path": first_contract["source_path"],
+    }
+    cdr_finalization._advance_pointer(pointer_path, delayed_first_pointer, state)
+    assert json.loads(pointer_path.read_text(encoding="utf-8"))[
+        "ledger_event_digest"
+    ] == second["ledger_event_digest"]
+
+
 def test_ledger_verifier_detects_changed_source_bytes(tmp_path):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export)

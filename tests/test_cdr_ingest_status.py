@@ -1,6 +1,7 @@
 """Ingest-status rollup (audit P0-retry Phase-4: expose incomplete-ingest status)."""
 
 import json
+from pathlib import Path
 
 import cdr_daily
 import cdr_ingest_lib as lib
@@ -28,17 +29,43 @@ def test_summarize_failures_rolls_up_by_phase_and_status(tmp_path):
 
 
 def test_summarize_failures_complete_run_has_no_failures(tmp_path):
-    s = cis.summarize_failures(tmp_path)  # no failures.jsonl written
+    (tmp_path / "failures.jsonl").write_text("", encoding="utf-8")
+    s = cis.summarize_failures(tmp_path)
     assert s == {
         "total": 0,
         "corrupt_records": 0,
         "unattributed_records": 0,
+        "failure_log_readable": True,
         "failure_provenance_complete": True,
         "incomplete": False,
         "by_phase": {},
         "by_status": {},
         "by_provider": {},
     }
+
+
+def test_summarize_failures_missing_log_is_incomplete(tmp_path):
+    summary = cis.summarize_failures(tmp_path)
+    assert summary["failure_log_readable"] is False
+    assert summary["failure_provenance_complete"] is False
+    assert summary["incomplete"] is True
+
+
+def test_summarize_failures_unreadable_log_is_incomplete(tmp_path, monkeypatch):
+    failure_log = tmp_path / "failures.jsonl"
+    failure_log.write_text("", encoding="utf-8")
+    real_open = Path.open
+
+    def deny_failure_log(path, *args, **kwargs):
+        if path == failure_log:
+            raise OSError("simulated unreadable journal")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_failure_log)
+    summary = cis.summarize_failures(tmp_path)
+    assert summary["failure_log_readable"] is False
+    assert summary["failure_provenance_complete"] is False
+    assert summary["incomplete"] is True
 
 
 def test_summarize_failures_quarantines_malformed_lines(tmp_path):

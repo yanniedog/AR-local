@@ -14,6 +14,7 @@ from cdr_ledger_v2 import (
     append_contract_event_locked,
     find_contract_event_locked,
     ledger_root,
+    verify_event,
     verify_event_artifacts,
 )
 from cdr_file_lock import FileLock
@@ -242,9 +243,9 @@ def finalize_observation(
         "export_path": str(contract["source_path"]),
     }
     pointers = state_dir / "observation-pointers-v2"
-    _advance_pointer(pointers / "latest-observation.json", pointer)
+    _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
     if observation_state == "complete":
-        _advance_pointer(pointers / "latest-complete.json", pointer)
+        _advance_pointer(pointers / "latest-complete.json", pointer, state_dir)
     return completion
 
 
@@ -280,9 +281,9 @@ def repair_observation_pointers(
         "export_path": contract["source_path"],
     }
     pointers = state_dir / "observation-pointers-v2"
-    _advance_pointer(pointers / "latest-observation.json", pointer)
+    _advance_pointer(pointers / "latest-observation.json", pointer, state_dir)
     if contract["observation_state"] == "complete":
-        _advance_pointer(pointers / "latest-complete.json", pointer)
+        _advance_pointer(pointers / "latest-complete.json", pointer, state_dir)
     return True
 
 
@@ -433,7 +434,47 @@ def _source_root_for_contract(
     return candidate
 
 
-def _advance_pointer(path: Path, incoming: Mapping[str, Any]) -> None:
+def _ledger_precedence(
+    state_dir: Path, current_digest: str, incoming_digest: str
+) -> Optional[int]:
+    """Return 1 when incoming is newer, -1 when older, 0 when equal."""
+
+    if current_digest == incoming_digest:
+        return 0
+    events: dict[str, Optional[str]] = {}
+    for event_path in sorted((ledger_root(state_dir) / "events").glob("*/*.json")):
+        try:
+            event = json.loads(event_path.read_text(encoding="utf-8"))
+            verify_event(state_dir, event)
+        except (KeyError, OSError, ValueError, json.JSONDecodeError):
+            continue
+        events[str(event["event_digest"])] = event.get("previous_event_digest")
+    if incoming_digest not in events:
+        return None
+    if current_digest not in events:
+        return 1
+
+    cursor: Optional[str] = incoming_digest
+    seen: set[str] = set()
+    while cursor is not None and cursor not in seen:
+        if cursor == current_digest:
+            return 1
+        seen.add(cursor)
+        cursor = events.get(cursor)
+
+    cursor = current_digest
+    seen.clear()
+    while cursor is not None and cursor not in seen:
+        if cursor == incoming_digest:
+            return -1
+        seen.add(cursor)
+        cursor = events.get(cursor)
+    return None
+
+
+def _advance_pointer(
+    path: Path, incoming: Mapping[str, Any], state_dir: Path
+) -> None:
     with FileLock(path.parent / ".pointer.lock"):
         try:
             current = json.loads(path.read_text(encoding="utf-8"))
@@ -449,6 +490,14 @@ def _advance_pointer(path: Path, incoming: Mapping[str, Any]) -> None:
                 and current.get("ledger_event_digest") == incoming.get("ledger_event_digest")
             ):
                 return
+            if current_date == incoming_date:
+                precedence = _ledger_precedence(
+                    state_dir,
+                    str(current.get("ledger_event_digest") or ""),
+                    str(incoming.get("ledger_event_digest") or ""),
+                )
+                if precedence != 1:
+                    return
         atomic_write_json(path, incoming)
 
 

@@ -584,7 +584,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Start each run with a clean failure log so the end-of-run status rollup
         # reflects THIS run, not stale failures left by a prior same-day --resume
         # rerun (append-only failures.jsonl would otherwise double-count) (Codex).
-        (banks_root / "failures.jsonl").unlink(missing_ok=True)
+        failure_log = banks_root / "failures.jsonl"
+        failure_log.unlink(missing_ok=True)
+        # A retained zero-byte journal is positive evidence that no failure was
+        # recorded. Missing or unreadable evidence is never equivalent to zero.
+        with failure_log.open("x", encoding="utf-8"):
+            pass
         seen_dirs: Set[str] = set()
         for brand in snap.banking_brands:
             bdir = allocate_bank_dir(

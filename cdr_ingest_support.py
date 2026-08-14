@@ -718,11 +718,13 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     total = 0
     corrupt_records = 0
     unattributed_records = 0
+    failure_log_readable = False
     try:
         handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
         handle = None
     if handle is not None:
+        failure_log_readable = True
         with handle:
             # Stream line-by-line so a large failures log stays memory-bounded.
             for line in handle:
@@ -756,10 +758,18 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
         "total": total,
         "corrupt_records": corrupt_records,
         "unattributed_records": unattributed_records,
+        "failure_log_readable": failure_log_readable,
         "failure_provenance_complete": (
-            corrupt_records == 0 and unattributed_records == 0
+            failure_log_readable
+            and corrupt_records == 0
+            and unattributed_records == 0
         ),
-        "incomplete": total > 0 or corrupt_records > 0 or unattributed_records > 0,
+        "incomplete": (
+            not failure_log_readable
+            or total > 0
+            or corrupt_records > 0
+            or unattributed_records > 0
+        ),
         "by_phase": by_phase,
         "by_status": by_status,
         "by_provider": by_provider,

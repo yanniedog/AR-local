@@ -46,7 +46,9 @@ revision. A genuinely different same-day source generation creates a revision.
 A partial observation is finalized and retained. It advances
 `latest-observation`, never `latest-complete`, and is withheld from compatibility
 v1 publication. Missing or malformed failure evidence cannot serialize a
-complete observation.
+complete observation. Each ingest creates an explicit empty failure journal
+before holder work; a missing or unreadable journal is incomplete provenance,
+not authoritative evidence of zero failures.
 
 ## Field lineage for the foundation
 
@@ -99,6 +101,11 @@ one unclassified missing date. This implementation does not “heal” that evid
 Deployment and rolling promotion remain blocked until a derived, append-only
 legacy-audit report explains each changed path and references the preserved
 original hashes. No legacy manifest may be regenerated in place.
+
+App publication has no export-directory fallback once this foundation is in
+place. It requires `latest-complete` to select an exact marker whose contract,
+ledger event, and source artifacts all re-verify. The Pi installer provisions
+and imports the system-Python Draft 2020-12 validator before activating services.
 
 ## Next contract layers
 

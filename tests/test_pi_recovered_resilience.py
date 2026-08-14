@@ -71,11 +71,10 @@ def test_partial_finalized_observation_is_withheld_from_app_promotion(
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
     monkeypatch.setattr(ar_local_pi_runtime, "data_runs_root", lambda _repo: tmp_path / "runs")
-    monkeypatch.setattr(ar_local_pi_runtime, "latest_exports_root", lambda _runs: exports)
     with mock.patch("app_payload.build_and_publish_dual") as publish:
         assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
     publish.assert_not_called()
-    assert "promotion withheld" in capsys.readouterr().out
+    assert "missing_or_invalid_latest_complete_pointer" in capsys.readouterr().out
 
 
 def test_revision_pointer_requires_its_exact_verified_marker(
@@ -202,6 +201,8 @@ def test_systemd_installer_resolves_service_user_home_from_passwd() -> None:
     )
     assert 'getent passwd "$run_user"' in text
     assert 's|{{AR_LOCAL_HOME}}|$run_home|g' in text
+    assert "python3-jsonschema" in text
+    assert "/usr/bin/python3 -c 'from jsonschema import" in text
 
 
 def test_power_resilience_does_not_arm_reboot_loop() -> None:
