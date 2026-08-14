@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yanniedog/AR-local/contracts/canary-acceptance-v1.schema.json",
+  "title": "AR-local Pi canary acceptance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "target_commit",
+    "status",
+    "candidate_generation",
+    "preservation_snapshot_sha256",
+    "completed_at",
+    "acceptance_gates"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "target_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "status": { "const": "passed" },
+    "candidate_generation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "preservation_snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "acceptance_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preservation_restore",
+        "historical_integrity",
+        "shadow_ingest",
+        "producer_contracts",
+        "stable_app_compatibility",
+        "candidate_emulator_matrix",
+        "candidate_device_matrix",
+        "public_candidate_bytes"
+      ],
+      "properties": {
+        "preservation_restore": { "const": true },
+        "historical_integrity": { "const": true },
+        "shadow_ingest": { "const": true },
+        "producer_contracts": { "const": true },
+        "stable_app_compatibility": { "const": true },
+        "candidate_emulator_matrix": { "const": true },
+        "candidate_device_matrix": { "const": true },
+        "public_candidate_bytes": { "const": true }
+      }
+    }
+  }
+}

@@ -84,7 +84,7 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
 
 
-def test_runtime_activation_never_chowns_data_or_rearms_auto_deploy(monkeypatch):
+def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypatch):
     captured = []
     monkeypatch.setattr(
         pi_deploy_verify,
@@ -96,6 +96,9 @@ def test_runtime_activation_never_chowns_data_or_rearms_auto_deploy(monkeypatch)
     assert "chown -R" not in command
     assert "mkdir -p" not in command
     assert "restart ar-local-deploy-watchdog.timer" not in command
+    assert "enable --now ar-local-deploy-watchdog.timer" in command
+    assert "systemctl cat ar-local-deploy-watchdog.service" in command
+    assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
 
 
 def test_on_pi_watchdog_is_verify_only():
@@ -133,6 +136,11 @@ def test_github_pi_deploy_is_manual_canary_gated():
     assert "push:" not in text
     assert "AR_PI_CANARY_APPROVED_COMMIT" in text
     assert "AR_PI_CANARY_MANIFEST_SHA256" in text
+    assert "AR_PI_CANARY_RELEASE_TAG" in text
+    assert "canary_release_tag" in text
+    assert "canary-acceptance.json" in text
+    assert "pi_canary_acceptance.py" in text
+    assert "'.immutable'" in text
     assert "DEPLOY_VERIFIED_CANARY" in text
     assert "--expected-commit" in text
     assert "PI_SSH_KNOWN_HOSTS" in text

@@ -43,8 +43,8 @@ or activates code. Production deployment is permitted only after canary approval
 
 1. **GitHub Actions**
    - **Canary-gated manual deploy** — `.github/workflows/pi-deploy-on-main.yml`
-     - Manual only; exact canary-approved commit and acceptance-manifest digest are required
-     - Refuses activation unless protected variables match the requested commit and canary-manifest digest
+     - Manual only; exact canary-approved commit, immutable release tag, and acceptance-manifest digest are required
+     - Downloads the sole manifest from that published immutable release and verifies its hash, embedded commit, repository, and locked acceptance gates before SSH
    - **Drift watchdog** — `.github/workflows/pi-deploy-watchdog.yml`
      - Cron every **6 hours** (UTC), plus manual verification
      - Secrets `PI_SSH_*`, `TS_OAUTH_*`; it has no deployment step

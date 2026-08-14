@@ -330,22 +330,29 @@ State file: `/srv/ar-local/data/state/runtime_health.json`.
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client ? **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
 | `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
 | `AR_PI_CANARY_APPROVED_COMMIT` (variable) | Exact 40-character commit permitted for the next production activation |
-| `AR_PI_CANARY_MANIFEST_SHA256` (variable) | SHA-256 of the reviewed canary acceptance manifest for that commit |
+| `AR_PI_CANARY_MANIFEST_SHA256` (variable) | SHA-256 of the reviewed `canary-acceptance.json` for that commit |
+| `AR_PI_CANARY_RELEASE_TAG` (variable) | Published immutable release containing the sole `canary-acceptance.json`; its Git tag must resolve to the approved commit |
 
-Without Tailscale OAuth secrets, cloud workflows skip SSH and print a warning.
+The acceptance file must satisfy
+`contracts/canary-acceptance-v1.schema.json`. The deploy workflow additionally
+re-hashes its bytes and binds `repository` and `target_commit` to the current
+repository and requested protected commit before any Pi connection is configured.
+
+Without Tailscale OAuth secrets, hosted deployment stops before SSH.
 No fallback path deploys automatically. Windows verification may log a harmless
 OpenSSH socket message after successful output.
 
-**Install Pi timer (on the Pi):**
+**Verify the Pi timers after approved activation:**
+
+Do not pull moving `main` to install the watchdog. The manual `pi-deploy-canary`
+workflow validates the immutable acceptance manifest, installs the exact approved
+commit, and enables the verify-only deploy watchdog. Confirm the resulting state:
 
 ```bash
-cd /srv/ar-local/AR-local
-git pull origin main
-chmod +x deploy/pi/ar-local-deploy-watchdog.sh
-sudo AR_LOCAL_REPO=/srv/ar-local/AR-local bash deploy/pi/install-pi-systemd.sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now ar-local-deploy-watchdog.timer
-sudo systemctl enable --now ar-local-runtime-health.timer
+git -C /srv/ar-local/AR-local rev-parse HEAD
+systemctl is-enabled ar-local-deploy-watchdog.timer
+systemctl is-active ar-local-deploy-watchdog.timer
+systemctl cat ar-local-deploy-watchdog.service
 ```
 
 Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` ? invoke **run pi deploy watchdog**.
@@ -465,7 +472,8 @@ One interactive SSH session (sudo password once; enables passwordless `npm run p
 ssh -t ar-local-pi5 'bash /srv/ar-local/AR-local/deploy/pi/bootstrap-pi-port80.sh'
 ```
 
-Or step by step after `git pull origin main`:
+Or step by step after the exact approved commit has been activated through
+`pi-deploy-canary`:
 
 ```bash
 cd /srv/ar-local/AR-local

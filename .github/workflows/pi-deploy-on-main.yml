@@ -1,6 +1,6 @@
 # Manually deploy one exact, shadow-canary-approved AR-local commit.
-# Main pushes never deploy. The approved commit and canary-manifest digest must
-# match protected repository variables before this workflow can reach SSH.
+# Main pushes never deploy. The approved commit and immutable canary release
+# must match protected repository variables before this workflow can reach SSH.
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   PI_SSH_PRIVATE_KEY, PI_SSH_HOST, PI_SSH_KNOWN_HOSTS — required
@@ -8,7 +8,8 @@
 # Optional: PI_SSH_USER (default pi), variable AR_PI_BASE_URL
 #
 # Required variables:
-#   AR_PI_CANARY_APPROVED_COMMIT, AR_PI_CANARY_MANIFEST_SHA256
+#   AR_PI_CANARY_APPROVED_COMMIT, AR_PI_CANARY_MANIFEST_SHA256,
+#   AR_PI_CANARY_RELEASE_TAG
 
 name: pi-deploy-canary
 
@@ -21,6 +22,10 @@ on:
         type: string
       canary_manifest_sha256:
         description: "SHA-256 of the reviewed canary acceptance manifest"
+        required: true
+        type: string
+      canary_release_tag:
+        description: "Immutable GitHub release containing canary-acceptance.json"
         required: true
         type: string
       confirm_deploy:
@@ -61,16 +66,20 @@ jobs:
         env:
           TARGET_COMMIT: ${{ inputs.target_commit }}
           CANARY_MANIFEST_SHA256: ${{ inputs.canary_manifest_sha256 }}
+          CANARY_RELEASE_TAG: ${{ inputs.canary_release_tag }}
           CONFIRM_DEPLOY: ${{ inputs.confirm_deploy }}
           APPROVED_COMMIT: ${{ vars.AR_PI_CANARY_APPROVED_COMMIT }}
           APPROVED_MANIFEST_SHA256: ${{ vars.AR_PI_CANARY_MANIFEST_SHA256 }}
+          APPROVED_RELEASE_TAG: ${{ vars.AR_PI_CANARY_RELEASE_TAG }}
         run: |
           set -euo pipefail
           [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CANARY_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CANARY_RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]
           test "$CONFIRM_DEPLOY" = "DEPLOY_VERIFIED_CANARY"
           test "$TARGET_COMMIT" = "$APPROVED_COMMIT"
           test "$CANARY_MANIFEST_SHA256" = "$APPROVED_MANIFEST_SHA256"
+          test "$CANARY_RELEASE_TAG" = "$APPROVED_RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
           git fetch origin main
           test "$(git rev-parse origin/main)" = "$TARGET_COMMIT"
@@ -78,6 +87,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify immutable canary acceptance manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          CANARY_MANIFEST_SHA256: ${{ inputs.canary_manifest_sha256 }}
+          CANARY_RELEASE_TAG: ${{ inputs.canary_release_tag }}
+        run: |
+          set -euo pipefail
+          RELEASE_JSON="$RUNNER_TEMP/canary-release.json"
+          MANIFEST="$RUNNER_TEMP/canary-acceptance.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$CANARY_RELEASE_TAG" > "$RELEASE_JSON"
+          test "$(jq -r '.draft' "$RELEASE_JSON")" = "false"
+          test "$(jq -r '.immutable' "$RELEASE_JSON")" = "true"
+          test "$(jq '[.assets[] | select(.name == "canary-acceptance.json")] | length' "$RELEASE_JSON")" = "1"
+          ASSET_ID="$(jq -r '.assets[] | select(.name == "canary-acceptance.json") | .id' "$RELEASE_JSON")"
+          test -n "$ASSET_ID"
+          git fetch origin "refs/tags/$CANARY_RELEASE_TAG:refs/tags/$CANARY_RELEASE_TAG"
+          test "$(git rev-parse "refs/tags/${CANARY_RELEASE_TAG}^{commit}")" = "$TARGET_COMMIT"
+          gh api -H "Accept: application/octet-stream" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" > "$MANIFEST"
+          python pi_canary_acceptance.py \
+            --manifest "$MANIFEST" \
+            --expected-sha256 "$CANARY_MANIFEST_SHA256" \
+            --expected-commit "$TARGET_COMMIT" \
+            --expected-repository "$GITHUB_REPOSITORY"
 
       - name: Verify Pi connection configuration
         id: secrets

@@ -32,7 +32,8 @@ run a moving-main pull sequence or deploy directly from a post-merge loop.
 
 **Hard rule:** the requested commit must be a 40-character SHA, equal the current
 protected `origin/main`, equal the canary-approved commit, and bind to the
-approved canary-manifest SHA-256. Never infer approval from a merge.
+approved canary-manifest SHA-256 in a protected, immutable release whose tag
+resolves to that commit. Never infer approval from a merge.
 
 ## Portable root (canonical)
 
@@ -84,16 +85,18 @@ ingest, and the current immutable data/pointer inventory. Do not clean either
 checkout.
 
 Run the protected manual `pi-deploy-canary` workflow with the exact commit and
-acceptance-manifest SHA-256. Keep its default `dry_run=true` for the first run;
-inspect the generated steps, then rerun with `dry_run=false` only after approval.
+immutable acceptance-release tag plus manifest SHA-256. Keep its default
+`dry_run=true` for the first run; inspect the generated steps, then rerun with
+`dry_run=false` only after approval.
 The workflow invokes:
 
 ```sh
 python pi_deploy_verify.py --deploy --expected-commit <approved-40-char-sha>
 ```
 
-The verifier must not move the unrelated `australianrates` checkout, recursively
-change data ownership, or re-enable an automatic deployment timer.
+The verifier must not move the unrelated `australianrates` checkout or
+recursively change data ownership. It must enable only the deploy watchdog whose
+installed service is verified to execute the new verify-only script.
 
 3. **Verify the exact activation**
 

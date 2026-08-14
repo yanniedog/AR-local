@@ -124,7 +124,8 @@ The whole daily path already exists and is enabled. To **verify** it's working:
 - **Pi behind on code.** `ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git log --oneline -1'`.
   Drift monitors report this state but never repair it. Deploy only the exact
   canary-approved commit through `.github/workflows/pi-deploy-on-main.yml`; the
-  workflow requires the approved commit and canary-manifest SHA-256 variables.
+  workflow requires protected commit, immutable-release-tag, and canary-manifest
+  SHA-256 variables, then verifies the manifest's embedded commit before SSH.
 
 **Manual bootstrap (publish without waiting for the timer)** — build on the Pi, publish
 from a machine that has `gh` auth (or with `GH_TOKEN` set):
