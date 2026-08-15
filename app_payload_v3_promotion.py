@@ -43,6 +43,7 @@ from app_payload_v3_state import (
     ordered_census,
     release_url,
     require_candidate_artifact_binding,
+    require_candidate_publication_store,
     sha256,
     strict_object,
     validate_dates_index,
@@ -337,6 +338,7 @@ def promote_candidate(
         raise PromotionError("remote promotion requires a candidate run ID")
     if not execute:
         return PromotionResult(candidate.generation_id, candidate.candidate_tag, True)
+    require_candidate_publication_store()
     require_candidate_artifact_binding()
     from app_payload_v3_github import require_consumer_contract_parity
     require_consumer_contract_parity(contract_sha256())
@@ -544,6 +546,7 @@ def _verified_execution_backend(
         )
     from app_payload_v3_github import GitHubPromotionBackend
 
+    require_candidate_publication_store()
     require_candidate_artifact_binding()
     backend = GitHubPromotionBackend(repo)
     verified_commit = backend.verify_candidate_run(candidate_run_id)

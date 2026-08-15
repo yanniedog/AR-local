@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import app_payload_v3_github
+import app_payload_v3_promotion
 import app_payload_v3_state
 from app_payload_v3_github import (
     CANONICAL_CANDIDATE_WORKFLOW,
@@ -128,6 +129,10 @@ def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
     assert "ref: main" not in workflow
     assert "timeout-minutes: 60" in workflow
     assert "AR_V3_PROMOTION_APPROVED" in workflow
+    assert "Candidate publication store contract is intentionally unset" in workflow
+    assert workflow.find("publication store contract is intentionally unset") < workflow.find(
+        "Re-verify canonical producer-run provenance"
+    )
     assert workflow.count("--verify-candidate-run") == 2
     assert workflow.count("--expected-producer-commit") == 2
     assert workflow.count("--candidate-run-id") == 1
@@ -297,6 +302,9 @@ def test_direct_execute_stays_blocked_without_archive_to_tree_binding(monkeypatc
 
     monkeypatch.setattr(
         app_payload_v3_github, "GitHubPromotionBackend", ProvenanceBackend
+    )
+    monkeypatch.setattr(
+        app_payload_v3_promotion, "require_candidate_publication_store", lambda: None
     )
 
     assert CANDIDATE_ARTIFACT_BINDING_CONTRACT is None

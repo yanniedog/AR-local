@@ -186,10 +186,19 @@ converge and their exact reviewed SHA-256 digests must be pinned. Until then,
 `--execute` fails before any repository read or write even if run provenance and
 environment approval are otherwise valid.
 
-Publication validates the prospective published census plus the local candidate
-before creating any tag, draft, asset, or control commit. The invoked candidate
-is staged as an exact resumable draft, its complete asset inventory is uploaded
-and hash-checked, and publication occurs last; a failed draft is preserved and
+A third independent, structured publication-store contract is also unset. The
+current repository cannot enable immutable releases without breaking the mutable
+v1 compatibility channel, leaving an uncloseable publish-between-read-and-write
+race in same-repository draft uploads. Merely assigning this contract remains
+fail-closed until a separately reviewed adapter verifies either a dedicated
+immutable v3 store/repository or a Git content-addressed commit/branch design;
+the execute workflow stops before provenance lookup or candidate download.
+
+The current release adapter is dormant scaffolding, not an activatable
+publication store. Its orchestration validates the prospective published census
+plus the local candidate before creating any tag, draft, asset, or control
+commit. The invoked candidate is staged as an exact resumable draft, its complete
+asset inventory is uploaded and hash-checked, and publication occurs last; a failed draft is preserved and
 never auto-deleted. Published releases are verify-only and cannot receive later
 assets. The current golden builder's shared `app-payload-gen` capability URLs
 therefore must already resolve to exact immutable bytes. A future reviewed

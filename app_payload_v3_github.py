@@ -32,6 +32,7 @@ from app_payload_v3_state import (
     PromotionError,
     RemoteNotFound,
     require_candidate_artifact_binding,
+    require_candidate_publication_store,
     strict_object as _strict_object,
 )
 from app_payload_v3_github_release import GitHubReleaseMixin
@@ -546,6 +547,7 @@ class GitHubPromotionBackend(GitHubReleaseMixin):
             raise PromotionError("candidate run ID must be a positive integer")
         if not candidate.generation_id:
             raise PromotionError("candidate artifact generation is invalid")
+        require_candidate_publication_store()
         require_candidate_artifact_binding()
         raise AssertionError("artifact binding guard unexpectedly returned")
 
@@ -592,6 +594,7 @@ __all__ = [
     "LOCK_LEASE_SECONDS",
     "public_fetch",
     "require_candidate_artifact_binding",
+    "require_candidate_publication_store",
     "require_consumer_contract_parity",
     "validate_candidate_run_metadata",
 ]

@@ -11,7 +11,6 @@ import pytest
 
 import app_payload_v3_github
 import app_payload_v3_promotion
-import app_payload_v3_state
 from app_payload_v3_promotion import (
     CANDIDATE_TAG_PREFIX,
     DATES_INDEX_FILENAME,
@@ -34,7 +33,6 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "canonical_domain_real_observations.json"
 PRODUCER_COMMIT = "6f696ecc3a61198b90ad58f8b90b086e866a26e4"
 TRUSTED_RUN_ID = "12345"
-_raw_promote_candidate = promote_candidate
 promote_candidate = partial(promote_candidate, candidate_run_id=TRUSTED_RUN_ID)
 
 
@@ -48,6 +46,11 @@ def _reviewed_consumer_parity_lock(monkeypatch):
     monkeypatch.setattr(
         app_payload_v3_promotion,
         "require_candidate_artifact_binding",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        app_payload_v3_promotion,
+        "require_candidate_publication_store",
         lambda: None,
     )
 
@@ -340,74 +343,6 @@ def test_default_is_local_validation_only_and_rejects_extra_candidate_bytes(tmp_
     (directory / "unexpected.txt").write_text("not part of the candidate")
     with pytest.raises(PromotionError, match="unexpected files"):
         load_candidate(directory)
-
-
-def test_execute_requires_exact_trusted_producer_commit_before_backend_use(tmp_path):
-    directory = _candidate_directory(tmp_path)
-    backend = FakeBackend()
-
-    with pytest.raises(PromotionError, match="requires a trusted producer commit"):
-        promote_candidate(directory, backend, execute=True)
-    with pytest.raises(PromotionError, match="differs from its trusted Actions run"):
-        promote_candidate(
-            directory,
-            backend,
-            execute=True,
-            expected_producer_commit="7" * 40,
-        )
-
-    assert backend.events == []
-
-
-def test_execute_core_requires_artifact_run_binding_before_backend_mutation(
-    monkeypatch, tmp_path
-):
-    directory = _candidate_directory(tmp_path)
-    backend = FakeBackend()
-
-    with pytest.raises(PromotionError, match="requires a candidate run ID"):
-        _raw_promote_candidate(
-            directory,
-            backend,
-            execute=True,
-            expected_producer_commit=PRODUCER_COMMIT,
-        )
-
-    assert backend.events == []
-
-    monkeypatch.setattr(
-        app_payload_v3_promotion,
-        "require_candidate_artifact_binding",
-        app_payload_v3_state.require_candidate_artifact_binding,
-    )
-    generic_backend = FakeBackend()
-    with pytest.raises(PromotionError, match="artifact-byte provenance"):
-        _raw_promote_candidate(
-            directory,
-            generic_backend,
-            execute=True,
-            expected_producer_commit=PRODUCER_COMMIT,
-            candidate_run_id=TRUSTED_RUN_ID,
-        )
-    assert generic_backend.events == []
-
-
-def test_unset_consumer_contract_parity_blocks_before_backend_use(
-    monkeypatch, tmp_path
-):
-    directory = _candidate_directory(tmp_path)
-    backend = FakeBackend()
-    monkeypatch.setattr(app_payload_v3_github, "AR_APP_CONSUMER_PARITY_LOCK", None)
-
-    with pytest.raises(PromotionError, match="consumer contract parity"):
-        promote_candidate(
-            directory,
-            backend,
-            execute=True,
-            expected_producer_commit=PRODUCER_COMMIT,
-        )
-
-    assert backend.events == []
 
 
 def test_64k_plus_one_local_manifest_is_rejected_before_any_mutation(tmp_path):

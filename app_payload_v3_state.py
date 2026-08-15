@@ -158,6 +158,31 @@ def require_candidate_artifact_binding() -> None:
     )
 
 
+@dataclass(frozen=True)
+class CandidatePublicationStoreContract:
+    """Reviewed future binding to an immutable or atomic v3 publication store."""
+
+    repository: str
+    strategy: str
+    verification_contract_sha256: str
+
+
+# AR-local's release immutability cannot be enabled while mutable v1 releases
+# remain supported. A future slice must implement and verify a separate immutable
+# v3 store or a Git content-addressed publication design before setting this.
+CANDIDATE_PUBLICATION_STORE_CONTRACT: CandidatePublicationStoreContract | None = None
+
+
+def require_candidate_publication_store() -> None:
+    if CANDIDATE_PUBLICATION_STORE_CONTRACT is None:
+        raise PromotionError(
+            "candidate publication store is not locked; execution is blocked"
+        )
+    raise PromotionError(
+        "candidate publication store verification is not implemented"
+    )
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -312,19 +337,36 @@ def ordered_census(candidates: Sequence[CandidateBundle]) -> tuple[CandidateBund
         if coordinate in by_coordinate:
             raise PromotionError("multiple generations occupy one date/revision coordinate")
         by_coordinate[coordinate] = candidate
-    ordered = tuple(by_coordinate[key] for key in sorted(by_coordinate))
-    if ordered[0].manifest["prior_ledger_digest"] is not None:
-        raise PromotionError("first candidate generation must start at a null ledger prior")
-    event_digests: set[str] = set()
-    for candidate in ordered:
+    by_event: dict[str, CandidateBundle] = {}
+    for candidate in candidates:
         event_digest = str(candidate.manifest["ledger_event_digest"])
-        if event_digest in event_digests:
+        if event_digest in by_event:
             raise PromotionError("candidate census reuses a ledger event digest")
-        event_digests.add(event_digest)
-    for previous, current in zip(ordered, ordered[1:]):
-        if current.manifest["prior_ledger_digest"] != previous.manifest["ledger_event_digest"]:
+        by_event[event_digest] = candidate
+    roots: list[CandidateBundle] = []
+    child_by_parent: dict[str, CandidateBundle] = {}
+    for candidate in candidates:
+        prior = candidate.manifest["prior_ledger_digest"]
+        if prior is None:
+            roots.append(candidate)
+            continue
+        if prior not in by_event:
             raise PromotionError("candidate census contains disconnected ledger lineage")
-    return ordered
+        if prior in child_by_parent:
+            raise PromotionError("candidate census branches its ledger lineage")
+        child_by_parent[prior] = candidate
+    if len(roots) != 1:
+        raise PromotionError(
+            "candidate census contains disconnected ledger lineage: expected one null root"
+        )
+    ordered: list[CandidateBundle] = []
+    current: CandidateBundle | None = roots[0]
+    while current is not None:
+        ordered.append(current)
+        current = child_by_parent.get(str(current.manifest["ledger_event_digest"]))
+    if len(ordered) != len(candidates):
+        raise PromotionError("candidate census contains disconnected or cyclic lineage")
+    return tuple(ordered)
 
 
 def complete_heads(census: Sequence[CandidateBundle], repo: str) -> list[dict[str, Any]]:
@@ -333,7 +375,12 @@ def complete_heads(census: Sequence[CandidateBundle], repo: str) -> list[dict[st
         if candidate.manifest["observation_state"] != "complete":
             continue
         day = str(candidate.manifest["observation_date"])
-        latest[day] = candidate
+        current = latest.get(day)
+        if current is None or (
+            generation_coordinate(candidate.generation_id)[1]
+            > generation_coordinate(current.generation_id)[1]
+        ):
+            latest[day] = candidate
     return [latest[day].head(repo) for day in sorted(latest)]
 
 
@@ -355,8 +402,12 @@ def build_pointer(
     ]
     if not complete:
         raise PromotionError("v3 pointer requires at least one complete generation")
-    observation_head = ordered[-1].head(repo)
-    complete_head = complete[-1].head(repo)
+    observation_head = max(
+        ordered, key=lambda item: generation_coordinate(item.generation_id)
+    ).head(repo)
+    complete_head = max(
+        complete, key=lambda item: generation_coordinate(item.generation_id)
+    ).head(repo)
     if previous_pointer is not None and (
         observation_head == previous_pointer["latest_observation"]
         and complete_head == previous_pointer["latest_complete"]
@@ -498,6 +549,7 @@ def build_dates_index(
 __all__ = [
     "CANONICAL_REPO",
     "CANDIDATE_TAG_PREFIX",
+    "CANDIDATE_PUBLICATION_STORE_CONTRACT",
     "CONTENT_RELEASE_TAG",
     "CONTROL_BRANCH",
     "DATES_INDEX_FILENAME",
@@ -512,6 +564,7 @@ __all__ = [
     "CandidateArtifactBindingContract",
     "CandidateReleaseRecord",
     "CandidateBundle",
+    "CandidatePublicationStoreContract",
     "ConcurrencyError",
     "PromotionError",
     "RemoteNotFound",
@@ -525,6 +578,7 @@ __all__ = [
     "release_asset_records",
     "release_url",
     "require_candidate_artifact_binding",
+    "require_candidate_publication_store",
     "sha256",
     "strict_object",
     "validate_candidate_release_identity",

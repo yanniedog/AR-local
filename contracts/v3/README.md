@@ -155,6 +155,15 @@ hatch: assigning a contract still fails until archive-to-tree verification is
 implemented. Matching only `producer_commit` to a successful run is not accepted
 as evidence that a caller-supplied candidate directory came from that run.
 
+Execution is independently blocked by the structured, intentionally unset
+`CANDIDATE_PUBLICATION_STORE_CONTRACT`, and the write-capable workflow stops
+before provenance lookup or candidate download. AR-local's release immutability
+is disabled because mutable v1 releases remain a compatibility requirement, so
+the same-repository draft/upload path cannot close a publish-between-read-and-
+write race. Merely assigning the contract does not enable execution: a separate
+review must implement live verification of either a dedicated immutable v3
+store/repository or a Git content-addressed commit/branch publication design.
+
 An executed promotion uses create-once candidate tags and content-addressed
 release assets. It acquires a two-hour owner-token lease on a dedicated
 append-only Git branch; the workflow's one-hour timeout cannot outlive it. An
@@ -167,7 +176,9 @@ unexpired owner cannot be displaced. A crashed writer's expired lease can be
  command is bounded to 60 seconds, and indeterminate release-write outcomes are
  reconciled from exact remote state before retry or failure.
 
-Before creating a tag or draft, the promoter verifies the published census plus
+The release adapter below is retained only as dormant integration scaffolding;
+it is not a safe activation target in the current mutable release store. Before
+creating a tag or draft, the promoter verifies the published census plus
 the local candidate as one prospective ordered ledger. A prior exact invoked
 draft may be resumed; any unrelated or ambiguous draft fails closed. Candidate
 assets are uploaded to that exact draft, checked by size and GitHub SHA-256,
@@ -189,13 +200,13 @@ and capability byte, then revalidates every censused release as non-draft,
 non-prerelease, with exact create-once title/notes and a direct tag target equal
 to that manifest's `producer_commit`. It fails closed if the complete
 candidate-release listing or any historical release provenance is missing,
-malformed, duplicated, moved, or otherwise uncertain. The first censused
- generation must have a null ledger prior; every ordered successor must name the
- immediately preceding `ledger_event_digest`, and no event digest may repeat or
- form a self-loop/cycle. Same-date revisions are
-append-only: one date/revision coordinate cannot be rebound to different
-generation bytes, and the complete-dates index selects the greatest verified
-complete revision for each date. Both pointer heads are derived from the full
+malformed, duplicated, moved, or otherwise uncertain. Ledger order is derived
+from ancestry, independently of observation coordinates: exactly one generation
+has a null prior, every other generation names the unique preceding event, and
+the full chain cannot branch, repeat, disconnect, self-loop, or cycle. Same-date
+revisions are append-only: one date/revision coordinate cannot be rebound to
+different generation bytes, and the complete-dates index selects the greatest
+verified complete revision for each date. Both pointer heads are derived from the full
 verified lineage census, not merely the candidate named by the invocation, so a
 retry after an interrupted upload cannot publish an older head.
 

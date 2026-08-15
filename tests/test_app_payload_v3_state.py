@@ -143,6 +143,28 @@ def test_same_date_revision_replaces_index_head_but_coordinate_is_immutable(tmp_
         ordered_census((revision_one, conflict))
 
 
+def test_late_historical_revision_uses_ledger_order_and_coordinate_heads(tmp_path):
+    first = _candidate(tmp_path / "first")
+    newer = _candidate(
+        tmp_path / "newer", observation_date="2026-08-15", prior=first
+    )
+    correction = _candidate(
+        tmp_path / "correction", revision=2, prior=newer
+    )
+
+    census = ordered_census((newer, correction, first))
+    assert [item.generation_id for item in census] == [
+        first.generation_id, newer.generation_id, correction.generation_id,
+    ]
+    pointer = strict_object(_pointer(census), "pointer")
+    assert pointer["latest_observation"]["generation_id"] == newer.generation_id
+    assert pointer["latest_complete"]["generation_id"] == newer.generation_id
+    heads = complete_heads(census, CANONICAL_REPO)
+    assert [item["generation_id"] for item in heads] == [
+        correction.generation_id, newer.generation_id,
+    ]
+
+
 def test_exact_retry_is_idempotent_and_creates_no_control_commit(tmp_path):
     candidate = _candidate(tmp_path)
     original = _pointer((candidate,))
@@ -177,3 +199,22 @@ def test_ordered_census_rejects_repeated_ledger_event_digest():
     )
     with pytest.raises(PromotionError, match="reuses a ledger event digest"):
         ordered_census((first, repeated))
+
+
+def test_ordered_census_rejects_branches_and_cycles(tmp_path):
+    root = _candidate(tmp_path / "root")
+    child = _candidate(
+        tmp_path / "child", observation_date="2026-08-15", prior=root
+    )
+    branch = _candidate(tmp_path / "branch", revision=2, prior=root)
+    with pytest.raises(PromotionError, match="branches its ledger lineage"):
+        ordered_census((root, child, branch))
+
+    cycled_root = CandidateBundle(
+        root.directory,
+        {**root.manifest, "prior_ledger_digest": child.manifest["ledger_event_digest"]},
+        root.manifest_bytes,
+        root.capability_bytes,
+    )
+    with pytest.raises(PromotionError, match="disconnected ledger lineage"):
+        ordered_census((cycled_root, child))
