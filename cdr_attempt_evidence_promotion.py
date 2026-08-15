@@ -116,6 +116,36 @@ def _write_unpromoted_status(export_root: Path, status_bytes: bytes) -> None:
         _write_status(export_root / "ingest-status.json", status_bytes)
 
 
+def _reject_other_promotion_state(
+    export_root: Path,
+    session_id: str,
+    source_tree_sha256: str,
+) -> None:
+    namespace = export_root.joinpath(*ARTIFACT_NAMESPACE.parts)
+    try:
+        namespace.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise AttemptEvidencePromotionError(
+            "attempt evidence namespace is unreadable"
+        ) from error
+    _validate_node(export_root, directory=True)
+    _validate_node(export_root / ARTIFACT_NAMESPACE.parts[0], directory=True)
+    _validate_node(namespace, directory=True)
+    allowed = {
+        session_id,
+        f".{session_id}.promote-{source_tree_sha256[:16]}",
+    }
+    unexpected = sorted(
+        child.name for child in namespace.iterdir() if child.name not in allowed
+    )
+    if unexpected:
+        raise AttemptEvidencePromotionError(
+            "refusing to orphan existing attempt evidence from another session"
+        )
+
+
 def _hash_file(path: Path) -> tuple[int, str]:
     before = _validate_node(path, directory=False)
     digest = hashlib.sha256()
@@ -446,8 +476,14 @@ def promote_attempt_evidence(
         raise AttemptEvidencePromotionError("attempt journal status pointer is invalid")
     source, summary, source_relative = _verified_source(run_root, pointer)
     records = _inventory(source.root)
+    source_tree_sha256 = _tree_digest(records)
     _fault(fault_injector, "after_source_verify")
     with FileLock(_promotion_lock_path(export_root)):
+        _reject_other_promotion_state(
+            export_root,
+            source.session_id,
+            source_tree_sha256,
+        )
         destination = export_root.joinpath(
             *ARTIFACT_NAMESPACE.parts, source.session_id
         )
@@ -475,7 +511,7 @@ def promote_attempt_evidence(
                     artifact_path / PROMOTION_MANIFEST
                 ).as_posix(),
                 "promotion_manifest_sha256": manifest_digest,
-                "source_tree_sha256": _tree_digest(records),
+                "source_tree_sha256": source_tree_sha256,
                 "source_file_count": len(records),
                 "source_bytes": sum(int(item["bytes"]) for item in records),
             }

@@ -425,13 +425,42 @@ def test_export_lock_serializes_different_sessions_through_status_creation(tmp_p
     assert not second.is_alive()
     assert isinstance(outcomes["first"], dict)
     assert isinstance(outcomes["second"], AttemptEvidencePromotionError)
-    assert "existing export" in str(outcomes["second"])
+    assert "another session" in str(outcomes["second"])
     status = json.loads(
         (export_root / "ingest-status.json").read_text(encoding="utf-8")
     )
     assert status["raw_attempt_journal"]["session_id"] == SESSION
     assert export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).is_dir()
     assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION_TWO).exists()
+
+
+def test_different_session_cannot_orphan_installed_evidence_after_crash(tmp_path):
+    first_run = tmp_path / "run-one"
+    second_run = tmp_path / "run-two"
+    export_root = tmp_path / "export"
+    _source(first_run)
+    _source(second_run, session_id=SESSION_TWO)
+
+    def crash_after_install(stage):
+        if stage == "after_install":
+            raise RuntimeError("simulated crash after install")
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        promote_attempt_evidence(
+            first_run,
+            export_root,
+            fault_injector=crash_after_install,
+        )
+    assert export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).is_dir()
+    assert not (export_root / "ingest-status.json").exists()
+
+    with pytest.raises(AttemptEvidencePromotionError, match="another session"):
+        promote_attempt_evidence(second_run, export_root)
+
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION_TWO).exists()
+    promoted = promote_attempt_evidence(first_run, export_root)
+    assert promoted is not None
+    assert promoted["session_id"] == SESSION
 
 
 def test_promotion_rejects_linked_artifact_namespace_before_copy(tmp_path):
