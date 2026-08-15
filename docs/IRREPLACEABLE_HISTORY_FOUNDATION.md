@@ -9,20 +9,32 @@ separate revision generations derived from preserved source hashes.
 
 ## Transaction boundary
 
-The daily path now installs state in this order:
+The default RAM-staged daily path now installs state in this order:
 
-1. Raw holder responses and derived exports finish in a new primary or revision
-   export root.
-2. Failure provenance, provider observations, populations, and every export
+1. Raw holder responses and derived exports finish in an isolated RAM stage.
+2. The completed raw-attempt journal is re-verified and copied create-once below
+   `attempt-evidence/raw-attempt-journals-v1/<session-id>` in the staged export.
+   Its deterministic promotion manifest binds the source tree SHA-256, every
+   source file, and the verified journal head. `ingest-status.json` is then
+   rewritten atomically to an export-root-relative path; it never points back to
+   the disposable RAM run root.
+3. The complete staged export tree is re-hashed, copied into a deterministic
+   same-parent temporary tree, re-verified against the unchanged source, and
+   renamed create-once into the new primary or revision export root. An existing
+   different destination is preserved and refused.
+4. Failure provenance, provider observations, populations, and every export
    artifact are validated and hashed into `ExportContractV2`.
-3. The contract is written create-once under
+5. The contract is written create-once under
    `state/export-contracts-v2/<date>/<generation>.json`.
-4. A finalized ledger event is appended create-once under
+6. A finalized ledger event is appended create-once under
    `state/ledger-v2/events/<date>/<generation>.json` and its head is advanced.
-5. The completion marker is written create-once.
-6. `latest-observation` advances; `latest-complete` advances only for a complete,
+7. The completion marker is written create-once.
+8. `latest-observation` advances; `latest-complete` advances only for a complete,
    reconciled observation.
-7. Legacy ledger-v1 emission may run for compatibility. Its failure cannot erase
+9. Only after the completion marker verifies may the default successful path
+   remove its RAM-stage source and derived-export directories. `--keep-ram-stage`
+   retains both for operator inspection.
+10. Legacy ledger-v1 emission may run for compatibility. Its failure cannot erase
    or invalidate the mandatory v2 event.
 
 A revision event must name an existing generation from the same observation
@@ -37,7 +49,7 @@ missing binding is never invented or written back. The append path requires the
 digest for every new revision, so this compatibility rule cannot emit new
 unbound history.
 
-A crash before step 5 leaves recoverable candidate evidence, never a completed
+A crash before step 7 leaves recoverable candidate evidence, never a completed
 day. A retry deterministically resumes the same generation when its immutable
 source digest and prior head still match. Recovery verifies and completes only
 the missing suffix of the transaction: event to head, head to marker, or marker
@@ -81,6 +93,9 @@ not authoritative evidence of zero failures.
 | `coverage.register_sources_attempted` | All configured CDR register discovery endpoints | Per-attempt URL, mode, outcome, response bytes, and SHA-256 | Missing attempts make provenance incomplete | Audit and promotion gate only |
 | `coverage.register_sources_complete` | Successful, hash-bound register responses | Integer | Fewer than attempted means a partial register population | Coverage disclosure and promotion gate |
 | `coverage.register_provenance_complete` | Every configured register source completed with retained digest evidence | Boolean | False forces `partial` even if one source returned usable holders | Promotion gate only |
+| `ingest-status.json.raw_attempt_journal.path` | Verified RAM-stage attempt journal | POSIX path relative to the finalized export root | Missing for legacy ingest only; a current dangling RAM-root pointer is rejected | Audit lookup only |
+| `ingest-status.json.raw_attempt_journal.source_tree_sha256` | Canonical inventory of the sanitized journal files | SHA-256 | Missing blocks current promotion | Evidence identity and replay verification |
+| `attempt-evidence/.../promotion-manifest.json` | Source inventory + verified journal summary | Canonical JSON, create-once | Missing or conflicting bytes block promotion/finalization | Audit and restore verification |
 | `artifacts[*]` | Every file below the finalized export root | Relative path, bytes, SHA-256 | Missing file is corruption | Restore / ledger verification |
 | `prior_ledger_head` | Ledger-v2 head before finalization | SHA-256 or null at epoch | Null only for first event | Chain verification |
 | `completion_marker_path` | Finalizer-selected marker for this exact generation | State-root-relative POSIX path | External, absolute, or mismatched paths are rejected | Recovery and watchdog truth boundary |
@@ -108,6 +123,18 @@ it must not be silently reinterpreted as an official register identifier.
 - every bound artifact size and SHA-256; and
 - containment of all source paths within the portable data root.
 
+For newly ingested observations, the export contract's `artifacts[*]` inventory
+also binds `ingest-status.json`, the promotion manifest, and every sanitized
+attempt-journal event, body, index, and chain-head file. Promotion replays accept
+only a byte-identical verified journal at the deterministic destination. A crash
+may leave a deterministic temporary tree or an installed candidate, but retry
+finishes from those same bytes; it never deletes or overwrites the source or an
+existing finalized destination. Failed or zero-rate RAM stages are retained in
+place for diagnosis. A same-day retry fails closed while that non-empty stage
+remains, instead of deleting it; the operator must archive or clear it
+explicitly. No new time-based quarantine or deletion policy is introduced by
+this layer.
+
 The preserved legacy ledger currently reports historical `CHANGED` findings and
 one unclassified missing date. This implementation does not “heal” that evidence.
 Deployment and rolling promotion remain blocked until a derived, append-only
@@ -127,14 +154,15 @@ and imports the system-Python Draft 2020-12 validator before activating services
 
 ## Next contract layers
 
-This foundation deliberately precedes:
+This foundation now includes bounded HTTPS ingest, immutable sanitized raw
+attempt journals, and their hash-bound promotion into finalized export
+artifacts. The remaining contract layers are:
 
-1. bounded HTTPS ingest and immutable raw-attempt journals;
-2. official register IDs and canonical product/rate-tier identities;
-3. the shared classifier and typed financial units;
-4. reconciled `CoverageV2` populations;
-5. immutable candidate generations and `manifest-v3`; and
-6. the AR-app dual-read/cache bridge.
+1. official register IDs and canonical product/rate-tier identities;
+2. the shared classifier and typed financial units;
+3. reconciled `CoverageV2` populations;
+4. immutable candidate generations and `manifest-v3`; and
+5. the AR-app dual-read/cache bridge.
 
 Those layers may consume these records, but they may not weaken create-once
 semantics or make a partial observation appear complete.
