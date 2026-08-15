@@ -1,15 +1,14 @@
-# End-of-night check: Pi 01:00 ingest should publish today's manifest before 03:00 Brisbane.
+# End-of-night check: Pi 01:00 ingest should publish today's manifest before 03:17 Brisbane.
 # Notify via GitHub (failed workflow + ingest-missed issue) — no SMTP secrets in Actions.
 
 name: pi-ingest-watchdog
 
 on:
   schedule:
-    # 03:00 Australia/Brisbane is UTC+10 year-round (no DST). One of these fires at 03:00 local:
-    #   AEST: 03:00 Brisbane = 17:00 UTC previous calendar day
-    # (16:00 UTC = 02:00 Brisbane — skipped by the Brisbane hour gate below.)
-    - cron: "0 16 * * *"
-    - cron: "0 17 * * *"
+    # 03:17 Australia/Brisbane is 17:17 UTC on the previous calendar day.
+    # Avoid the top of the hour, where GitHub documents higher schedule delay.
+    # Do not gate on runner start time: a delayed scheduled run must still check.
+    - cron: "17 17 * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,21 +25,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run only at 03:00 Australia/Brisbane
-        id: gate
-        run: |
-          hour=$(TZ=Australia/Brisbane date +%H)
-          echo "brisbane_hour=$hour" >> "$GITHUB_OUTPUT"
-          if [ "$hour" = "03" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "03:00 Australia/Brisbane — running manifest check"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skip: Brisbane local hour is ${hour}:xx (want 03:xx)"
-          fi
-
       - name: Check manifest freshness
-        if: steps.gate.outputs.run == 'true'
         id: check
         env:
           TZ: Australia/Brisbane
@@ -60,7 +45,7 @@ jobs:
           PY
 
       - name: Close resolved ingest-missed issues
-        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'false'
+        if: steps.check.outputs.stale == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -81,7 +66,7 @@ jobs:
           done
 
       - name: Open ingest-missed issue when stale
-        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'true'
+        if: steps.check.outputs.stale == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -90,13 +75,13 @@ jobs:
           manifest="${{ steps.check.outputs.manifest }}"
           title="Pi ingest missed: ${expected}"
           body=$(cat <<EOF
-          GitHub \`app-payload-latest\` manifest is stale after the 03:00 Australia/Brisbane watchdog.
+          GitHub \`app-payload-latest\` manifest is stale after the scheduled Australia/Brisbane watchdog.
 
           - expected \`run_date\`: **${expected}**
           - manifest \`run_date\`: **${manifest:-missing}**
           - manifest URL: https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json
 
-          Pi ingest is scheduled for 01:00 local (see \`deploy/pi/ar-local-daily.timer\`). This check runs at 03:00 Brisbane (2h buffer).
+          Pi ingest is scheduled for 01:00 local (see \`deploy/pi/ar-local-daily.timer\`). This check is scheduled for 03:17 Brisbane (2h17m buffer) and may start later if GitHub Actions is queued.
           EOF
           )
           mapfile -t existing < <(gh issue list \
@@ -112,7 +97,7 @@ jobs:
           fi
 
       - name: Fail workflow for GitHub email notification
-        if: steps.gate.outputs.run == 'true' && steps.check.outputs.stale == 'true'
+        if: steps.check.outputs.stale == 'true'
         run: |
           echo "::error::Manifest stale — expected run_date ${{ steps.check.outputs.expected }}"
           exit 1
