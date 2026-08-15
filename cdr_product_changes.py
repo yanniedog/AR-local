@@ -789,79 +789,83 @@ def _diff_entity_facts(
     return events
 
 
-def diff_normalized_product_facts(
-    previous_facts: Iterable[Mapping[str, Any]],
-    current_facts: Iterable[Mapping[str, Any]],
+def _append_product_diff(
+    events: List[Dict[str, Any]],
+    product_key: Tuple[str, str, str],
+    old_facts: Optional[Sequence[Mapping[str, Any]]],
+    new_facts: Optional[Sequence[Mapping[str, Any]]],
+) -> None:
+    representative = next(iter(new_facts or old_facts or []), {})
+    if old_facts is None:
+        events.append(_event(
+            "product_added", product_key, None, representative,
+            materiality="material", equivalence="non_equivalent", reasons=["stable_product_key_added"],
+        ))
+        for fact in sorted(new_facts or [], key=lambda row: (_fact_key(row), _content_fingerprint([row]))):
+            events.append(_event(
+                "fact_added", product_key, None, fact,
+                materiality="material", equivalence="non_equivalent", reasons=["fact_added_to_new_product"],
+            ))
+        return
+    if new_facts is None:
+        events.append(_event(
+            "product_removed", product_key, representative, None,
+            materiality="material", equivalence="non_equivalent", reasons=["stable_product_key_removed"],
+        ))
+        for fact in sorted(old_facts, key=lambda row: (_fact_key(row), _content_fingerprint([row]))):
+            events.append(_event(
+                "fact_removed", product_key, fact, None,
+                materiality="material", equivalence="non_equivalent", reasons=["fact_removed_with_product"],
+            ))
+        return
+    old_name, new_name = _product_name(old_facts), _product_name(new_facts)
+    if old_name != new_name:
+        cosmetic = _cosmetic_fold(old_name) == _cosmetic_fold(new_name)
+        events.append(_event(
+            "product_renamed", product_key,
+            {"product_name": old_name}, {"product_name": new_name},
+            materiality="cosmetic" if cosmetic else "review",
+            equivalence="equivalent" if cosmetic else "unknown",
+            reasons=["only_whitespace_case_or_punctuation_changed" if cosmetic else "product_name_content_changed"],
+        ))
+    pairs, removed_entities, added_entities, ambiguities = _match_entities(old_facts, new_facts)
+    for before_entity, after_entity in pairs:
+        events.extend(_diff_entity_facts(product_key, before_entity, after_entity))
+    for before_entities, after_entities in ambiguities:
+        events.append(_event(
+            "ambiguous_match", product_key,
+            _candidate_evidence(product_key, before_entities),
+            _candidate_evidence(product_key, after_entities),
+            materiality="review", equivalence="unknown",
+            reasons=[
+                "ambiguous_semantic_entity_match",
+                f"before_candidates:{len(before_entities)}",
+                f"after_candidates:{len(after_entities)}",
+            ],
+        ))
+    for entity in removed_entities:
+        for fact in entity:
+            events.append(_event(
+                "fact_removed", product_key, fact, None,
+                materiality="material", equivalence="non_equivalent", reasons=["semantic_entity_removed"],
+            ))
+    for entity in added_entities:
+        for fact in entity:
+            events.append(_event(
+                "fact_added", product_key, None, fact,
+                materiality="material", equivalence="non_equivalent", reasons=["semantic_entity_added"],
+            ))
+
+
+def _build_diff_report(
+    events: List[Dict[str, Any]],
     *,
-    previous_run_date: Optional[str] = None,
-    current_run_date: Optional[str] = None,
+    previous_count: int,
+    current_count: int,
+    joined_count: int,
+    previous_run_date: Optional[str],
+    current_run_date: Optional[str],
 ) -> Dict[str, Any]:
-    """Diff normalized facts by stable provider + product id + dataset."""
-    previous, current = _index(previous_facts), _index(current_facts)
-    events: List[Dict[str, Any]] = []
-    for product_key in sorted(set(previous) | set(current), key=lambda key: (key[0].casefold(), key[1], key[2])):
-        old_facts, new_facts = previous.get(product_key), current.get(product_key)
-        representative = next(iter(new_facts or old_facts or []), {})
-        if old_facts is None:
-            events.append(_event(
-                "product_added", product_key, None, representative,
-                materiality="material", equivalence="non_equivalent", reasons=["stable_product_key_added"],
-            ))
-            for fact in sorted(new_facts or [], key=lambda row: (_fact_key(row), _content_fingerprint([row]))):
-                events.append(_event(
-                    "fact_added", product_key, None, fact,
-                    materiality="material", equivalence="non_equivalent", reasons=["fact_added_to_new_product"],
-                ))
-            continue
-        if new_facts is None:
-            events.append(_event(
-                "product_removed", product_key, representative, None,
-                materiality="material", equivalence="non_equivalent", reasons=["stable_product_key_removed"],
-            ))
-            for fact in sorted(old_facts, key=lambda row: (_fact_key(row), _content_fingerprint([row]))):
-                events.append(_event(
-                    "fact_removed", product_key, fact, None,
-                    materiality="material", equivalence="non_equivalent", reasons=["fact_removed_with_product"],
-                ))
-            continue
-        old_name, new_name = _product_name(old_facts), _product_name(new_facts)
-        if old_name != new_name:
-            cosmetic = _cosmetic_fold(old_name) == _cosmetic_fold(new_name)
-            before = {"product_name": old_name}
-            after = {"product_name": new_name}
-            events.append(_event(
-                "product_renamed", product_key, before, after,
-                materiality="cosmetic" if cosmetic else "review",
-                equivalence="equivalent" if cosmetic else "unknown",
-                reasons=["only_whitespace_case_or_punctuation_changed" if cosmetic else "product_name_content_changed"],
-            ))
-        pairs, removed_entities, added_entities, ambiguities = _match_entities(old_facts, new_facts)
-        for before_entity, after_entity in pairs:
-            events.extend(_diff_entity_facts(product_key, before_entity, after_entity))
-        for before_entities, after_entities in ambiguities:
-            events.append(_event(
-                "ambiguous_match", product_key,
-                _candidate_evidence(product_key, before_entities),
-                _candidate_evidence(product_key, after_entities),
-                materiality="review", equivalence="unknown",
-                reasons=[
-                    "ambiguous_semantic_entity_match",
-                    f"before_candidates:{len(before_entities)}",
-                    f"after_candidates:{len(after_entities)}",
-                ],
-            ))
-        for entity in removed_entities:
-            for fact in entity:
-                events.append(_event(
-                    "fact_removed", product_key, fact, None,
-                    materiality="material", equivalence="non_equivalent", reasons=["semantic_entity_removed"],
-                ))
-        for entity in added_entities:
-            for fact in entity:
-                events.append(_event(
-                    "fact_added", product_key, None, fact,
-                    materiality="material", equivalence="non_equivalent", reasons=["semantic_entity_added"],
-                ))
     events.sort(key=lambda event: (
         event["provider"].casefold(), event["product_id"], event["dataset"],
         _EVENT_ORDER[event["event_type"]], event["canonical_key"], event["event_id"],
@@ -873,13 +877,63 @@ def diff_normalized_product_facts(
         "run_date": current_run_date,
         "current_run_date": current_run_date,
         "products": {
-            "previous": len(previous), "current": len(current), "joined": len(set(previous) & set(current)),
+            "previous": previous_count, "current": current_count, "joined": joined_count,
         },
         "change_count": len(events),
         "events": events,
         # Alias for pure consumers; rows are identical flat event records.
         "changes": events,
     }
+
+
+def diff_normalized_product_fact_groups(
+    previous_groups: Iterable[Tuple[Tuple[str, str, str], Sequence[Mapping[str, Any]]]],
+    current_facts: Iterable[Mapping[str, Any]],
+    *,
+    previous_run_date: Optional[str] = None,
+    current_run_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Diff a streamed prior day against an indexed current day."""
+    current = _index(current_facts)
+    current_count = len(current)
+    previous_keys: set[Tuple[str, str, str]] = set()
+    events: List[Dict[str, Any]] = []
+    joined_count = 0
+    for product_key, old_facts in previous_groups:
+        if product_key in previous_keys:
+            raise ValueError(f"prior product group repeated: {product_key!r}")
+        previous_keys.add(product_key)
+        new_facts = current.pop(product_key, None)
+        if new_facts is not None:
+            joined_count += 1
+        _append_product_diff(events, product_key, old_facts, new_facts)
+    for product_key in sorted(current, key=lambda key: (key[0].casefold(), key[1], key[2])):
+        _append_product_diff(events, product_key, None, current[product_key])
+    return _build_diff_report(
+        events,
+        previous_count=len(previous_keys),
+        current_count=current_count,
+        joined_count=joined_count,
+        previous_run_date=previous_run_date,
+        current_run_date=current_run_date,
+    )
+
+
+def diff_normalized_product_facts(
+    previous_facts: Iterable[Mapping[str, Any]],
+    current_facts: Iterable[Mapping[str, Any]],
+    *,
+    previous_run_date: Optional[str] = None,
+    current_run_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Diff normalized facts by stable provider + product id + dataset."""
+    previous = _index(previous_facts)
+    return diff_normalized_product_fact_groups(
+        previous.items(),
+        current_facts,
+        previous_run_date=previous_run_date,
+        current_run_date=current_run_date,
+    )
 
 
 build_product_changes = diff_normalized_product_facts

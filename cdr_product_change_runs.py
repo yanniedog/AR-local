@@ -1,9 +1,10 @@
 """Run loading and safe baseline selection for normalized product changes."""
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from cdr_clean_export import bank_base_row, inner_record, load_json
 from cdr_product_facts import NORMALIZATION_VERSION, clean_fact_rows
@@ -110,30 +111,33 @@ def _sqlite_facts_compatible(path: Path, expected_run_date: str) -> bool:
     )
 
 
-def _load_sqlite_products(export_root: Path) -> Optional[Dict[str, Dict[str, Any]]]:
+def _iter_sqlite_fact_groups(
+    export_root: Path,
+) -> Iterator[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
     database = export_root / "local-cdr.sqlite"
-    if not _sqlite_facts_compatible(database, run_date(export_root)):
-        return None
     selected = ", ".join(f'"{column}"' for column in _FACT_COLUMNS)
-    products: Dict[str, Dict[str, Any]] = {}
-    with sqlite3.connect(_sqlite_uri(database), uri=True) as connection:
+    with closing(sqlite3.connect(_sqlite_uri(database), uri=True)) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            f"SELECT {selected} FROM bank_product_facts "
-            "ORDER BY provider COLLATE NOCASE, product_id, dataset, fact_id"
+            f"SELECT {selected} FROM bank_product_facts "  # noqa: S608 - trusted constant columns
+            "ORDER BY TRIM(provider) COLLATE NOCASE, TRIM(provider), "
+            "TRIM(product_id), TRIM(dataset), fact_id"
         )
+        current_key: Optional[Tuple[str, str, str]] = None
+        current_facts: List[Dict[str, Any]] = []
         for supplied in rows:
             fact = dict(supplied)
             fact.pop("run_date", None)
             if fact.get("value_type") == "boolean" and fact.get("value_boolean") in (0, 1):
                 fact["value_boolean"] = bool(fact["value_boolean"])
             key = _product_key(fact)
-            identity = "|".join((key[2].casefold(), key[0].casefold(), key[1]))
-            products.setdefault(identity, {"base": {
-                "provider": key[0], "product_id": key[1], "dataset": key[2],
-                "product_name": str(_first(fact, _PRODUCT_NAMES) or ""),
-            }, "facts": []})["facts"].append(fact)
-    return products
+            if current_key is not None and key != current_key:
+                yield current_key, current_facts
+                current_facts = []
+            current_key = key
+            current_facts.append(fact)
+        if current_key is not None:
+            yield current_key, current_facts
 
 
 def _completed_export_file(run_root: Path) -> Optional[Path]:
@@ -160,9 +164,6 @@ def _completed_export_file(run_root: Path) -> Optional[Path]:
 
 
 def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
-    sqlite_products = _load_sqlite_products(_export_root(run_root))
-    if sqlite_products is not None:
-        return sqlite_products
     exported = _export_file(run_root)
     if exported:
         payload = load_json(exported)
@@ -196,21 +197,37 @@ def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
     return products
 
 
-def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
-    """Load current-version exported facts, or normalize retained raw details."""
-    output = []
+def iter_run_fact_groups(
+    run_root: Path,
+) -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
+    """Stream SQLite facts by product; legacy JSON/raw fallback materializes products."""
+    export_root = _export_root(run_root)
+    database = export_root / "local-cdr.sqlite"
+    if _sqlite_facts_compatible(database, run_date(run_root)):
+        yield from _iter_sqlite_fact_groups(export_root)
+        return
     products = _load_run(run_root)
     for identity in sorted(products):
         product = products[identity]
         base = product["base"]
+        facts: List[Dict[str, Any]] = []
         for fact in product["facts"]:
             if _first(fact, _PRODUCT_ALIASES["provider"]):
-                output.append(fact)
+                facts.append(fact)
             else:
-                output.append({
+                facts.append({
                     "provider": base["provider"], "product_id": base["product_id"],
                     "dataset": base["dataset"], "product_name": base["product_name"], **fact,
                 })
+        if facts:
+            yield _product_key(facts[0]), facts
+
+
+def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
+    """Load current-version exported facts, or normalize retained raw details."""
+    output: List[Dict[str, Any]] = []
+    for _product_key_value, facts in iter_run_fact_groups(run_root):
+        output.extend(facts)
     return output
 
 

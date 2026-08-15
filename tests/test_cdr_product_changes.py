@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import gc
 import json
 from pathlib import Path
 import sqlite3
+import weakref
 
 import pytest
 
@@ -319,6 +321,86 @@ def test_product_and_fact_add_remove_records_are_deterministic() -> None:
     )
 
 
+def test_streamed_prior_groups_match_the_classic_diff_exactly() -> None:
+    previous = [
+        fact("old", "Old condition", product_id="OLD"),
+        fact("retained", "Before", product_id="KEEP"),
+        fact("removed", "Removed", product_id="KEEP"),
+    ]
+    current = [
+        fact("new", "New condition", product_id="NEW"),
+        fact("retained", "After", product_id="KEEP"),
+        fact("added", "Added", product_id="KEEP"),
+    ]
+    groups = [
+        (("Example Bank", "KEEP", "Mortgage"), previous[1:]),
+        (("Example Bank", "OLD", "Mortgage"), previous[:1]),
+    ]
+
+    streamed = changes.diff_normalized_product_fact_groups(
+        iter(groups),
+        current,
+        previous_run_date="2026-08-15",
+        current_run_date="2026-08-16",
+    )
+    classic = changes.diff_normalized_product_facts(
+        previous,
+        current,
+        previous_run_date="2026-08-15",
+        current_run_date="2026-08-16",
+    )
+
+    assert streamed == classic
+
+
+def test_streamed_prior_groups_are_consumed_one_product_at_a_time() -> None:
+    class WeakFact(dict):
+        pass
+
+    current = [fact("same", "No change", product_id=f"P{index}") for index in range(3)]
+    first = WeakFact(fact("same", "No change", product_id="P0"))
+    first_ref = weakref.ref(first)
+
+    def prior_groups():
+        nonlocal first
+        yield ("Example Bank", "P0", "Mortgage"), [first]
+        first = None
+        yield ("Example Bank", "P1", "Mortgage"), [WeakFact(fact("same", "No change", product_id="P1"))]
+        gc.collect()
+        assert first_ref() is None, "prior product groups were materialized instead of streamed"
+        yield ("Example Bank", "P2", "Mortgage"), [WeakFact(fact("same", "No change", product_id="P2"))]
+
+    payload = changes.diff_normalized_product_fact_groups(prior_groups(), current)
+
+    assert payload["events"] == []
+    assert payload["products"] == {"previous": 3, "current": 3, "joined": 3}
+
+
+def test_streamed_failure_suppression_matches_flat_legacy_semantics() -> None:
+    previous = [
+        fact("one", "First", product_id="FAILED"),
+        fact("two", "Second", product_id="FAILED"),
+        fact("kept", "Kept", product_id="KEPT"),
+    ]
+    for row in previous:
+        row["product_id"] = row.pop("productId")
+    failures = [{"phase": "product_detail", "bank": "Example Bank", "product_id": "FAILED"}]
+    expected, expected_count = cdr_outputs._exclude_failed_missing_products(previous, [], failures)
+    filtered, result = cdr_outputs._exclude_failed_missing_product_groups(
+        iter([
+            (("Example Bank", "FAILED", "Mortgage"), previous[:2]),
+            (("Example Bank", "KEPT", "Mortgage"), previous[2:]),
+        ]),
+        [],
+        failures,
+    )
+
+    actual = [row for _key, rows in filtered for row in rows]
+
+    assert actual == expected
+    assert result["suppressed"] == expected_count == 1
+
+
 def test_missing_identity_fails_closed_and_ambiguous_duplicates_require_review() -> None:
     missing = fact("x", "Text")
     missing.pop("provider")
@@ -586,3 +668,112 @@ def test_finalized_run_reads_facts_from_sqlite_without_loading_large_json(
     rows = changes.load_run_facts(run)
     assert len(rows) == 1
     assert rows[0]["canonical_key"] == "condition.text"
+
+
+def test_sqlite_fact_groups_close_connection_when_consumer_stops_early(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run = tmp_path / "2026-08-12"
+    export = run / "_exports"
+    export.mkdir(parents=True)
+    database = export / "local-cdr.sqlite"
+    with sqlite3.connect(database) as connection:
+        cdr_outputs.ensure_db(connection)
+        cdr_outputs.insert_rows(connection, "bank_product_facts", [{
+            "run_date": run.name,
+            "dataset": "Mortgage",
+            "provider": "Example Bank",
+            "product_id": "P1",
+            "product_key": "Example Bank|P1",
+            "product_name": "Clear Home Loan",
+            "fact_id": "condition-1",
+            "kind": "condition",
+            "canonical_key": "condition.text",
+            "value_type": "text",
+            "value_text": "Customers may redraw.",
+            "value_json": '"Customers may redraw."',
+            "unit": "",
+            "mapping": "canonical_text",
+            "source_path": "features[0]",
+            "source_pattern": "features[]",
+            "source_value_json": '"Customers may redraw."',
+            "qualifiers_json": "{}",
+        }])
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    real_connect = sqlite3.connect
+    closed: list[bool] = []
+
+    class TrackingConnection:
+        def __init__(self, connection):
+            object.__setattr__(self, "connection", connection)
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def __setattr__(self, name, value):
+            setattr(self.connection, name, value)
+
+        def close(self) -> None:
+            self.connection.close()
+            closed.append(True)
+
+    monkeypatch.setattr(
+        cdr_product_change_runs.sqlite3,
+        "connect",
+        lambda *args, **kwargs: TrackingConnection(real_connect(*args, **kwargs)),
+    )
+    groups = cdr_product_change_runs._iter_sqlite_fact_groups(export)
+
+    assert next(groups)[0] == ("Example Bank", "P1", "Mortgage")
+    groups.close()
+
+    assert closed == [True]
+
+
+def test_sqlite_fact_groups_order_by_normalized_identity(tmp_path: Path) -> None:
+    run = tmp_path / "2026-08-12"
+    export = run / "_exports"
+    export.mkdir(parents=True)
+    database = export / "local-cdr.sqlite"
+
+    def row(product_id: str, fact_id: str) -> dict[str, object]:
+        return {
+            "run_date": run.name,
+            "dataset": "Mortgage",
+            "provider": "Example Bank",
+            "product_id": product_id,
+            "product_key": f"Example Bank|{product_id.strip()}",
+            "product_name": "Clear Home Loan",
+            "fact_id": fact_id,
+            "kind": "condition",
+            "canonical_key": "condition.text",
+            "value_type": "text",
+            "value_text": fact_id,
+            "value_json": json.dumps(fact_id),
+            "unit": "",
+            "mapping": "canonical_text",
+            "source_path": f"features[{fact_id}]",
+            "source_pattern": "features[]",
+            "source_value_json": json.dumps(fact_id),
+            "qualifiers_json": "{}",
+        }
+
+    with sqlite3.connect(database) as connection:
+        cdr_outputs.ensure_db(connection)
+        cdr_outputs.insert_rows(connection, "bank_product_facts", [
+            row(" P", "a"),
+            row(" P0", "b"),
+            row("P", "c"),
+        ])
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    groups = list(cdr_product_change_runs.iter_run_fact_groups(run))
+
+    assert [key for key, _facts in groups] == [
+        ("Example Bank", "P", "Mortgage"),
+        ("Example Bank", "P0", "Mortgage"),
+    ]
+    assert [fact["fact_id"] for fact in groups[0][1]] == ["a", "c"]
