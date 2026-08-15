@@ -98,6 +98,60 @@ def sheet_xml(rows: Sequence[Sequence[Any]]) -> str:
     )
 
 
+def _sheet_columns(rows: Sequence[Mapping[str, Any]]) -> List[str]:
+    columns: List[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for raw_key in row.keys():
+            key = str(raw_key)
+            if key not in seen:
+                columns.append(key)
+                seen.add(key)
+    return columns
+
+
+def _write_xml_part(handle: Any, value: str) -> None:
+    handle.write(value.encode("utf-8"))
+
+
+def _write_sheet(
+    archive: zipfile.ZipFile,
+    path: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
+    columns = _sheet_columns(rows)
+    row_count = len(rows) + 1 if rows else 1
+    column_count = max(len(columns), 1)
+    ref = f"A1:{cell_ref(row_count, column_count)}"
+    widths = "".join(
+        f'<col min="{idx}" max="{idx}" width="18" customWidth="1"/>'
+        for idx in range(1, column_count + 1)
+    )
+    filters = f'<autoFilter ref="{ref}"/>' if rows else ""
+    prefix = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" '
+        'activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        f"<cols>{widths}</cols><sheetData>"
+    )
+    with archive.open(path, "w", force_zip64=True) as handle:
+        _write_xml_part(handle, prefix)
+        if not rows:
+            _write_xml_part(handle, '<row r="1"><c r="A1" t="inlineStr"><is><t>empty</t></is></c></row>')
+        else:
+            header = "".join(cell_xml(1, idx, value) for idx, value in enumerate(columns, 1))
+            _write_xml_part(handle, f'<row r="1">{header}</row>')
+            for row_index, row in enumerate(rows, 2):
+                cells = "".join(
+                    cell_xml(row_index, column_index, row.get(column, ""))
+                    for column_index, column in enumerate(columns, 1)
+                )
+                _write_xml_part(handle, f'<row r="{row_index}">{cells}</row>')
+        _write_xml_part(handle, f"</sheetData>{filters}</worksheet>")
+
+
 def workbook_xml(names: Sequence[str]) -> str:
     sheets = "".join(
         f'<sheet name="{html.escape(name)}" sheetId="{idx}" r:id="rId{idx}"/>'
@@ -174,16 +228,13 @@ def styles_xml() -> str:
 def write_workbook(path: Path, sheets: Mapping[str, Sequence[Mapping[str, Any]]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     used: set[str] = set()
-    named_rows: Dict[str, List[List[Any]]] = {}
-    for raw_name, rows in sheets.items():
-        name = sheet_name(raw_name, used)
-        named_rows[name] = to_rows(rows) or [["empty"]]
-    names = list(named_rows.keys())
+    named_sheets = [(sheet_name(raw_name, used), rows) for raw_name, rows in sheets.items()]
+    names = [name for name, _ in named_sheets]
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml(len(names)))
         zf.writestr("_rels/.rels", root_rels_xml())
         zf.writestr("xl/workbook.xml", workbook_xml(names))
         zf.writestr("xl/_rels/workbook.xml.rels", rels_xml(names))
         zf.writestr("xl/styles.xml", styles_xml())
-        for idx, name in enumerate(names, 1):
-            zf.writestr(f"xl/worksheets/sheet{idx}.xml", sheet_xml(named_rows[name]))
+        for idx, (_, rows) in enumerate(named_sheets, 1):
+            _write_sheet(zf, f"xl/worksheets/sheet{idx}.xml", rows)

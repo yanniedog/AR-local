@@ -105,7 +105,7 @@ sudo systemctl enable --now ar-local-runtime-health.timer
 # apply on the next reboot; systemd's runtime watchdog stays deliberately off.
 sudo sh "$repo_dir/deploy/pi/install-power-resilience.sh" || echo "WARN: power-resilience hardening reported an error; review output above."
 if [ -f "$repo_dir/deploy/pi/install-ingest-notify.sh" ]; then
-  sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir"
+  sh "$repo_dir/deploy/pi/install-ingest-notify.sh" "$repo_dir" "$run_group"
 fi
 if [ -f /etc/avahi/avahi-daemon.conf ]; then
   if sudo grep -q '^host-name=' /etc/avahi/avahi-daemon.conf; then
