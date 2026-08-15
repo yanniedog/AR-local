@@ -12,8 +12,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
+from cdr_attempt_evidence_promotion import (
+    install_tree_create_once as copytree_atomic,
+    promote_attempt_evidence,
+)
 from ar_local_pi_runtime import (
-    copytree_atomic,
     data_runs_root,
     data_state_root,
     default_ram_root,
@@ -22,7 +25,6 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
     load_exports_manifest,
     manifest_banks_rate_count,
-    prepare_empty_dir,
 )
 import cdr_ledger_integrity
 from cdr_ledger_v2 import verify_reachable_generation
@@ -63,18 +65,14 @@ def persistent_export_root(persistent_runs_root: Path, date: str, exports: Optio
     return (persistent_runs_root / date / "_exports").resolve()
 
 
-def persist_ingest_status(run_dir: Path, export_root: Path) -> None:
-    """Copy the ingest status rollup into _exports so it survives RAM staging.
+def persist_ingest_status(run_dir: Path, export_root: Path) -> Optional[dict]:
+    """Persist status and promote any verified raw-attempt journal it names.
 
     The ingest writes ``<run>/banks/ingest-status.json``, but the RAM-staged Pi path
-    copies only ``_exports`` to the persistent run — so place a copy where it lasts,
-    otherwise the status (and the incomplete-run signal) is discarded with the RAM
-    stage (Codex).
+    finalizes only ``_exports``. Promotion rewrites the copied status to a verified,
+    export-root-relative evidence path while leaving the source journal untouched.
     """
-    src = run_dir / "banks" / "ingest-status.json"
-    if src.is_file():
-        export_root.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, export_root / "ingest-status.json")
+    return promote_attempt_evidence(run_dir, export_root)
 
 
 def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
@@ -100,6 +98,19 @@ class LedgerImmutabilityError(RuntimeError):
 
 def _export_root_has_content(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
+
+
+def prepare_ram_stage(path: Path) -> None:
+    """Reserve a stage without deleting evidence from an interrupted run."""
+    path = path.expanduser().resolve()
+    if path.exists():
+        if not path.is_dir() or any(path.iterdir()):
+            raise RuntimeError(
+                f"refusing to delete preserved RAM-stage evidence at {path}; "
+                "archive or clear it explicitly before retrying"
+            )
+        return
+    path.mkdir(parents=True, exist_ok=False)
 
 
 def revision_root_for(primary_root: Path, when: datetime) -> Path:
@@ -337,12 +348,14 @@ def run_once(args: argparse.Namespace) -> int:
 
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
     use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
+    ram_cleanup_paths: Optional[tuple[Path, Path]] = None
+    staged_exports_to_install: Optional[Path] = None
     if use_ram_stage:
         ram_root = args.ram_root.expanduser().resolve()
         staged_runs = ram_root / "runs"
         staged_exports = ram_root / "exports" / date / "_exports"
-        prepare_empty_dir(ram_root / "runs" / date)
-        prepare_empty_dir(staged_exports)
+        prepare_ram_stage(ram_root / "runs" / date)
+        prepare_ram_stage(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(
             staged_runs / date,
@@ -350,14 +363,17 @@ def run_once(args: argparse.Namespace) -> int:
             args.db,
             previous_run_root=previous_run_root,
         )
-        persist_ingest_status(staged_runs / date, staged_exports)
-        copytree_atomic(staged_exports, target_export_root)
+        promotion = persist_ingest_status(staged_runs / date, staged_exports)
+        if promotion is not None:
+            result["attempt_evidence"] = promotion
         result["out_dir"] = str(target_export_root)
         result["ram_staged"] = True
         result["ram_root"] = str(ram_root)
-        if args.clean_ram_stage:
-            shutil.rmtree(ram_root / "runs" / date, ignore_errors=True)
-            shutil.rmtree(ram_root / "exports" / date, ignore_errors=True)
+        staged_exports_to_install = staged_exports
+        ram_cleanup_paths = (
+            ram_root / "runs" / date,
+            ram_root / "exports" / date,
+        )
     else:
         # A revision must not mutate the original day's raw run files either, so
         # isolate the revision's raw ingest under the revision dir (Gemini). The
@@ -371,7 +387,9 @@ def run_once(args: argparse.Namespace) -> int:
             args.db,
             previous_run_root=previous_run_root,
         )
-        persist_ingest_status(run_root / date, target_export_root)
+        promotion = persist_ingest_status(run_root / date, target_export_root)
+        if promotion is not None:
+            result["attempt_evidence"] = promotion
         result["ram_staged"] = False
 
     if banks_result_rate_count(result) <= 0:
@@ -380,6 +398,8 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if staged_exports_to_install is not None:
+        copytree_atomic(staged_exports_to_install, target_export_root)
 
     # Post-ingest sanity check (non-blocking). Flags per-product rate
     # ladders that moved >= LOW_BP vs the previous day's export. See
@@ -432,6 +452,13 @@ def run_once(args: argparse.Namespace) -> int:
         # Emit the legacy v1 integrity manifest after the mandatory ledger-v2
         # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+    if ram_cleanup_paths is not None and args.clean_ram_stage:
+        if not verify_completion_marker(finalized, state_dir, date):
+            raise RuntimeError(
+                "refusing RAM-stage cleanup until the completion marker verifies"
+            )
+        for cleanup_path in ram_cleanup_paths:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
     print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 
