@@ -269,7 +269,9 @@ def _verify_promoted(
     if actual_files != expected_files:
         raise AttemptEvidencePromotionError("promoted evidence files conflict with source")
     try:
-        summary = RawAttemptJournal(destination.parent, session_id).summary()
+        summary = RawAttemptJournal(destination.parent, session_id).summary(
+            recover=False
+        )
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("promoted attempt journal verification failed") from error
     if summary != expected_manifest["journal"]:

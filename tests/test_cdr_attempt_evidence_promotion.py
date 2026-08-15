@@ -334,6 +334,25 @@ def test_source_verification_does_not_recover_or_mutate_missing_current(tmp_path
     assert not export_root.exists()
 
 
+def test_replay_does_not_recover_or_mutate_installed_journal(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    promote_attempt_evidence(run_root, export_root)
+    destination = export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+    current = destination / "current.json"
+    current.unlink()
+    (export_root / "ingest-status.json").unlink()
+    installed_before = _tree_bytes(destination)
+
+    with pytest.raises(AttemptEvidencePromotionError, match="files conflict"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert _tree_bytes(destination) == installed_before
+    assert not current.exists()
+    assert not (export_root / "ingest-status.json").exists()
+
+
 def test_legacy_status_without_attempt_pointer_is_copied_byte_exact(tmp_path):
     run_root = tmp_path / "run"
     export_root = tmp_path / "export"
