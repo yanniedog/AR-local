@@ -316,7 +316,7 @@ def _index(facts: Iterable[Mapping[str, Any]]) -> Dict[Tuple[str, str, str], Lis
     for supplied in facts:
         if not isinstance(supplied, Mapping):
             raise TypeError(f"normalized facts must be mappings, got {type(supplied).__name__}")
-        fact = deepcopy(dict(supplied))
+        fact = supplied if isinstance(supplied, dict) else dict(supplied)
         product_key = _product_key(fact)
         _fact_key(fact)  # Validate before accepting the supplied record.
         products.setdefault(product_key, []).append(fact)
