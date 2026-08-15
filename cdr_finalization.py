@@ -11,6 +11,7 @@ from cdr_atomic import ImmutablePathError, atomic_write_json
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
+    current_head_digest,
     find_contract_event_locked,
     ledger_root,
     verify_event,
@@ -317,83 +318,132 @@ def verified_pointer_marker_for_date(
 def recover_pending_finalization(
     state_dir: Path, observation_date: str
 ) -> Optional[Path]:
-    """Finish a landed ledger event after a crash at head/marker/pointer steps."""
+    """Recover the unique global event chain, returning this date's marker."""
 
     state_dir = state_dir.expanduser().resolve()
     root = ledger_root(state_dir)
-    if not (root / "events" / observation_date).is_dir():
+    if not (root / "events").is_dir():
+        if (root / "head.json").is_file():
+            if _current_head_digest(state_dir) is not None:
+                raise ValueError("ledger head references a missing events directory")
         return None
+    requested_marker: Optional[Path] = None
     with FileLock(root / ".append.lock"):
-        head_digest = _current_head_digest(state_dir)
-        head_candidate: Optional[tuple[dict[str, Any], dict[str, Any], Path]] = None
-        pending: list[tuple[dict[str, Any], dict[str, Any], Path]] = []
-        for event_path in sorted((root / "events" / observation_date).glob("*.json")):
-            event = json.loads(event_path.read_text(encoding="utf-8"))
-            verify_event_artifacts(state_dir, event)
-            contract_path = _safe_state_path(state_dir, event.get("contract_path"))
-            if contract_path is None:
-                raise ValueError("ledger event contract path escapes the state root")
-            contract = load_contract(contract_path)
-            item = (event, contract, contract_path)
-            if event.get("event_digest") == head_digest:
-                head_candidate = item
-            elif event.get("previous_event_digest") == head_digest:
-                pending.append(item)
-        if len(pending) > 1:
-            raise ValueError("multiple ledger events compete for the current head")
-        selected = pending[0] if pending else head_candidate
-        if selected is None:
-            return None
-        event, contract, contract_path = selected
-        marker_path = _safe_state_path(
-            state_dir, contract.get("completion_marker_path")
-        )
-        if marker_path is None:
-            raise ValueError("contract completion marker path escapes the state root")
+        while True:
+            head_digest = _current_head_digest(state_dir)
+            head_candidate, pending = _recovery_candidates(
+                state_dir, root, head_digest
+            )
+            if head_digest is not None and head_candidate is None:
+                raise ValueError("ledger head references a missing event")
+            if len(pending) > 1:
+                raise ValueError("multiple ledger events compete for the current head")
+            if head_candidate is None and not pending:
+                break
+            # Repair the current head before advancing its successor.  A crash
+            # after the next head write must not strand this observation's
+            # complete pointer permanently behind the new head.
+            selected = head_candidate or pending[0]
+            completion, marker_path = _finish_recovery(
+                state_dir, *selected, head_digest
+            )
+            event_date = str(selected[0]["observation_date"])
+            if not repair_observation_pointers(
+                completion, state_dir, event_date, marker_path
+            ):
+                raise ValueError("cannot repair recovered observation pointers")
+            if event_date == observation_date:
+                requested_marker = marker_path
+            if not pending:
+                break
+            if head_candidate is None:
+                continue
+
+            event, contract, contract_path = pending[0]
+            completion, marker_path = _finish_recovery(
+                state_dir, event, contract, contract_path, head_digest
+            )
+            event_date = str(event["observation_date"])
+            if not repair_observation_pointers(
+                completion, state_dir, event_date, marker_path
+            ):
+                raise ValueError("cannot repair recovered observation pointers")
+            if event_date == observation_date:
+                requested_marker = marker_path
+    return requested_marker
+
+
+def _recovery_candidates(
+    state_dir: Path, root: Path, head_digest: Optional[str]
+) -> tuple[
+    Optional[tuple[dict[str, Any], dict[str, Any], Path]],
+    list[tuple[dict[str, Any], dict[str, Any], Path]],
+]:
+    head_candidates = []
+    pending = []
+    for event_path in sorted((root / "events").glob("*/*.json")):
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        if not isinstance(event, Mapping):
+            raise ValueError(f"ledger event must be an object: {event_path}")
+        is_head = event.get("event_digest") == head_digest
+        is_pending = event.get("previous_event_digest") == head_digest
+        if not is_head and not is_pending:
+            continue
+        verify_event_artifacts(state_dir, event)
+        contract_path = _safe_state_path(state_dir, event.get("contract_path"))
+        if contract_path is None:
+            raise ValueError("ledger event contract path escapes the state root")
+        item = (dict(event), load_contract(contract_path), contract_path)
+        (head_candidates if is_head else pending).append(item)
+    if len(head_candidates) > 1:
+        raise ValueError("multiple ledger events claim the current head")
+    return (head_candidates[0] if head_candidates else None), pending
+
+
+def _finish_recovery(
+    state_dir: Path,
+    event: dict[str, Any],
+    contract: dict[str, Any],
+    contract_path: Path,
+    head_digest: Optional[str],
+) -> tuple[dict[str, Any], Path]:
+    marker_path = _safe_state_path(state_dir, contract.get("completion_marker_path"))
+    if marker_path is None:
+        raise ValueError("contract completion marker path escapes the state root")
+    if event.get("event_digest") != head_digest:
         event = append_contract_event_locked(
             state_dir,
             contract_path,
             parent_generation_id=event.get("parent_generation_id"),
         )
-        try:
-            existing_marker = json.loads(marker_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing_marker = None
-        if isinstance(existing_marker, Mapping) and verify_completion_marker(
-            existing_marker, state_dir, observation_date
-        ):
-            completion = dict(existing_marker)
-        else:
-            source_root = _source_root_for_contract(state_dir, contract)
-            manifest = load_exports_manifest(source_root)
-            if (
-                manifest is None
-                or str(manifest.get("run_date") or "") != observation_date
-            ):
-                raise ValueError(
-                    "cannot reconstruct completion marker from export manifest"
-                )
-            completion = {
-                "run_date": observation_date,
-                "banks_counts": dict(manifest.get("banks_counts") or {}),
-                "finalization_schema_version": 2,
-                "generation_id": contract["generation_id"],
-                "observation_state": contract["observation_state"],
-                "ledger_state": "finalized",
-                "export_contract_path": contract_path.relative_to(
-                    state_dir
-                ).as_posix(),
-                "export_contract_digest": contract["contract_digest"],
-                "ledger_event_digest": event["event_digest"],
-            }
-            atomic_write_json(marker_path, completion, create_once=True)
-    return (
-        marker_path
-        if repair_observation_pointers(
-            completion, state_dir, observation_date, marker_path
-        )
-        else None
-    )
+        if _current_head_digest(state_dir) != event.get("event_digest"):
+            raise ValueError("pending ledger event did not advance the head")
+    event_date = str(event["observation_date"])
+    try:
+        existing_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        existing_marker = None
+    if isinstance(existing_marker, Mapping) and verify_completion_marker(
+        existing_marker, state_dir, event_date
+    ):
+        return dict(existing_marker), marker_path
+    source_root = _source_root_for_contract(state_dir, contract)
+    manifest = load_exports_manifest(source_root)
+    if manifest is None or str(manifest.get("run_date") or "") != event_date:
+        raise ValueError("cannot reconstruct completion marker from export manifest")
+    completion = {
+        "run_date": event_date,
+        "banks_counts": dict(manifest.get("banks_counts") or {}),
+        "finalization_schema_version": 2,
+        "generation_id": contract["generation_id"],
+        "observation_state": contract["observation_state"],
+        "ledger_state": "finalized",
+        "export_contract_path": contract_path.relative_to(state_dir).as_posix(),
+        "export_contract_digest": contract["contract_digest"],
+        "ledger_event_digest": event["event_digest"],
+    }
+    atomic_write_json(marker_path, completion, create_once=True)
+    return completion, marker_path
 
 
 def _portable_export_path(export_root: Path, state_dir: Path) -> Optional[str]:
@@ -495,11 +545,7 @@ def _advance_pointer(
 
 
 def _current_head_digest(state_dir: Path) -> Optional[str]:
-    path = ledger_root(state_dir) / "head.json"
-    if not path.is_file():
-        return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return str(payload.get("event_digest") or "") or None
+    return current_head_digest(state_dir)
 
 
 def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: str) -> bool:

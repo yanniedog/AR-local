@@ -40,9 +40,18 @@ def _read_head(root: Path) -> Optional[dict[str, Any]]:
     if not path.is_file():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError("ledger-v2 head must be a JSON object")
     if not _DIGEST.fullmatch(str(payload.get("event_digest") or "")):
         raise ValueError("ledger-v2 head has an invalid digest")
-    return payload
+    return dict(payload)
+
+
+def current_head_digest(state_dir: Path) -> Optional[str]:
+    """Return the validated ledger head digest, failing closed on corruption."""
+
+    head = _read_head(ledger_root(state_dir))
+    return str((head or {}).get("event_digest") or "") or None
 
 
 def _validate_event(

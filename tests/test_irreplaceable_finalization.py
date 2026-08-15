@@ -12,7 +12,6 @@ from cdr_atomic import ImmutablePathError, atomic_write_json
 import cdr_atomic
 import cdr_finalization
 import cdr_ledger_v2
-import cdr_run_journal
 from cdr_export_contract import build_contract, load_contract, validate_contract, write_contract
 from cdr_finalization import (
     finalize_observation,
@@ -20,12 +19,6 @@ from cdr_finalization import (
     verify_completion_marker,
 )
 from cdr_ledger_v2 import verify_ledger
-from cdr_run_journal import (
-    InvalidJournalTransition,
-    RunJournal,
-    RunStage,
-    StageState,
-)
 
 
 DATE = "2026-08-14"
@@ -38,13 +31,15 @@ def schema(name):
     return Draft202012Validator(payload)
 
 
-def make_export(root, *, failures=0, provenance_complete=True):
+def make_export(
+    root, *, failures=0, provenance_complete=True, observation_date=DATE
+):
     cache = root / "dashboard-cache"
     cache.mkdir(parents=True)
     (cache / "latest.json").write_text(
         json.dumps(
             {
-                "run_date": DATE,
+                "run_date": observation_date,
                 "banks_counts": {
                     "products": 4,
                     "rates": 7,
@@ -264,6 +259,143 @@ def test_recovery_repairs_pointers_after_marker_lands(tmp_path, monkeypatch):
     assert recover_pending_finalization(state, DATE) == marker
     assert (state / "observation-pointers-v2" / "latest-observation.json").is_file()
     assert (state / "observation-pointers-v2" / "latest-complete.json").is_file()
+
+
+def test_recovery_advances_the_unique_pending_chain_across_observation_dates(
+    tmp_path,
+):
+    dates = ("2026-08-12", "2026-08-13", DATE)
+    state = tmp_path / "state"
+    completions = []
+    for index, observation_date in enumerate(dates):
+        export = tmp_path / "runs" / observation_date / "_exports"
+        make_export(export, observation_date=observation_date)
+        (export / "banks.json").write_text(
+            json.dumps({"rates": [index]}), encoding="utf-8"
+        )
+        completions.append(
+            finalize_observation(
+                export,
+                state,
+                state / f"{observation_date}.done.json",
+                observation_date=observation_date,
+                result={"run_date": observation_date, "banks_counts": {"rates": 7}},
+            )
+        )
+
+    head_path = state / "ledger-v2" / "head.json"
+    first_event_path = (
+        state
+        / "ledger-v2"
+        / "events"
+        / dates[0]
+        / f"{completions[0]['generation_id']}.json"
+    )
+    first_event = json.loads(first_event_path.read_text(encoding="utf-8"))
+    atomic_write_json(
+        head_path,
+        {
+            "schema_version": 2,
+            "generation_id": first_event["generation_id"],
+            "observation_date": dates[0],
+            "observation_state": first_event["observation_state"],
+            "event_path": first_event_path.relative_to(
+                state / "ledger-v2"
+            ).as_posix(),
+            "event_digest": first_event["event_digest"],
+            "updated_at": "2026-08-12T00:00:00Z",
+        },
+    )
+    immutable_paths = []
+    for observation_date, completion in zip(dates, completions):
+        immutable_paths.extend(
+            [
+                state / f"{observation_date}.done.json",
+                state
+                / "export-contracts-v2"
+                / observation_date
+                / f"{completion['generation_id']}.json",
+                state
+                / "ledger-v2"
+                / "events"
+                / observation_date
+                / f"{completion['generation_id']}.json",
+            ]
+        )
+    immutable_paths = [path for path in immutable_paths if path.is_file()]
+    immutable_bytes = {path: path.read_bytes() for path in immutable_paths}
+
+    assert recover_pending_finalization(state, "2026-08-15") is None
+
+    current_head = json.loads(head_path.read_text(encoding="utf-8"))
+    assert current_head["generation_id"] == completions[-1]["generation_id"]
+    assert verify_ledger(state)["ok"] is True
+    assert {path: path.read_bytes() for path in immutable_paths} == immutable_bytes
+
+
+def test_recovery_repairs_each_pointer_before_advancing_the_next_event(
+    tmp_path, monkeypatch
+):
+    dates = ("2026-08-11", "2026-08-12", DATE)
+    state = tmp_path / "state"
+    completions = []
+    for index, observation_date in enumerate(dates):
+        export = tmp_path / "runs" / observation_date / "_exports"
+        make_export(
+            export,
+            failures=1 if index == 2 else 0,
+            observation_date=observation_date,
+        )
+        completions.append(
+            finalize_observation(
+                export,
+                state,
+                state / f"{observation_date}.done.json",
+                observation_date=observation_date,
+                result={"run_date": observation_date, "banks_counts": {"rates": 7}},
+            )
+        )
+
+    head_path = state / "ledger-v2" / "head.json"
+    first_event_path = (
+        state
+        / "ledger-v2"
+        / "events"
+        / dates[0]
+        / f"{completions[0]['generation_id']}.json"
+    )
+    first_event = json.loads(first_event_path.read_text(encoding="utf-8"))
+    atomic_write_json(
+        head_path,
+        {
+            "schema_version": 2,
+            "generation_id": first_event["generation_id"],
+            "observation_date": dates[0],
+            "observation_state": first_event["observation_state"],
+            "event_path": first_event_path.relative_to(
+                state / "ledger-v2"
+            ).as_posix(),
+            "event_digest": first_event["event_digest"],
+            "updated_at": "2026-08-11T00:00:00Z",
+        },
+    )
+    latest_complete = state / "observation-pointers-v2" / "latest-complete.json"
+    latest_complete.unlink()
+    real_finish = cdr_finalization._finish_recovery
+
+    def crash_after_partial_head(*args, **kwargs):
+        completion, marker_path = real_finish(*args, **kwargs)
+        if args[1]["observation_date"] == DATE:
+            raise RuntimeError("simulated power loss after successor head")
+        return completion, marker_path
+
+    monkeypatch.setattr(cdr_finalization, "_finish_recovery", crash_after_partial_head)
+    with pytest.raises(RuntimeError, match="successor head"):
+        recover_pending_finalization(state, DATE)
+
+    pointer = json.loads(latest_complete.read_text(encoding="utf-8"))
+    assert pointer["observation_date"] == dates[1]
+    assert json.loads(head_path.read_text(encoding="utf-8"))["observation_date"] == DATE
 
 
 def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path):
@@ -596,7 +728,10 @@ def test_ledger_verifier_detects_changed_source_bytes(tmp_path):
     assert verify_completion_marker(completion, state, DATE) is False
 
 
-def test_ledger_verifier_reports_corrupt_head_instead_of_raising(tmp_path):
+@pytest.mark.parametrize("head_bytes", [b"{truncated", b"[]", b"null", b'"head"'])
+def test_ledger_verifier_reports_corrupt_head_instead_of_raising(
+    tmp_path, head_bytes
+):
     export = tmp_path / "runs" / DATE / "_exports"
     make_export(export)
     state = tmp_path / "state"
@@ -607,10 +742,38 @@ def test_ledger_verifier_reports_corrupt_head_instead_of_raising(tmp_path):
         observation_date=DATE,
         result={"run_date": DATE, "banks_counts": {"rates": 7}},
     )
-    (state / "ledger-v2" / "head.json").write_text("{truncated", encoding="utf-8")
+    (state / "ledger-v2" / "head.json").write_bytes(head_bytes)
     report = verify_ledger(state)
     assert report["ok"] is False
     assert any(item["issue"] == "INVALID_HEAD" for item in report["findings"])
+
+
+def test_non_object_ledger_head_blocks_new_finalization(tmp_path):
+    first_export = tmp_path / "runs" / DATE / "_exports"
+    make_export(first_export)
+    state = tmp_path / "state"
+    finalize_observation(
+        first_export,
+        state,
+        state / f"{DATE}.done.json",
+        observation_date=DATE,
+        result={"run_date": DATE, "banks_counts": {"rates": 7}},
+    )
+    (state / "ledger-v2" / "head.json").write_text("[]", encoding="utf-8")
+    next_date = "2026-08-15"
+    next_export = tmp_path / "runs" / next_date / "_exports"
+    make_export(next_export, observation_date=next_date)
+
+    with pytest.raises(ValueError, match="head must be a JSON object"):
+        finalize_observation(
+            next_export,
+            state,
+            state / f"{next_date}.done.json",
+            observation_date=next_date,
+            result={"run_date": next_date, "banks_counts": {"rates": 7}},
+        )
+
+    assert not (state / "ledger-v2" / "events" / next_date).exists()
 
 
 def test_orphan_candidate_rebases_safely_after_another_event_advances_head(tmp_path):
@@ -714,41 +877,3 @@ def test_missing_failure_provenance_can_never_finalize_complete(tmp_path):
         result={"run_date": DATE, "banks_counts": {"rates": 7}},
     )
     assert completion["observation_state"] == "partial"
-
-
-def test_run_journal_is_append_only_and_rejects_terminal_rewrite(tmp_path):
-    journal = RunJournal(tmp_path / "journals", "generation-1")
-    started = journal.transition(RunStage.REGISTER, StageState.RUNNING)
-    finished = journal.transition(
-        RunStage.REGISTER,
-        StageState.COMPLETE,
-        remote_digest="a" * 64,
-    )
-    assert started["sequence"] == 1
-    assert finished["sequence"] == 2
-    assert len(list((journal.events).glob("*.json"))) == 2
-    schema("run-journal-v1.schema.json").validate(journal.read())
-    with pytest.raises(InvalidJournalTransition):
-        journal.transition(RunStage.REGISTER, StageState.RUNNING)
-
-
-def test_run_journal_recovers_event_written_before_current_pointer(
-    tmp_path, monkeypatch
-):
-    journal = RunJournal(tmp_path / "journals", "generation-1")
-    real_write = cdr_run_journal.atomic_write_json
-
-    def crash_before_current(path, value, **kwargs):
-        if path == journal.current_path:
-            raise RuntimeError("simulated power loss")
-        return real_write(path, value, **kwargs)
-
-    monkeypatch.setattr(cdr_run_journal, "atomic_write_json", crash_before_current)
-    with pytest.raises(RuntimeError, match="power loss"):
-        journal.transition(RunStage.REGISTER, StageState.RUNNING)
-    monkeypatch.setattr(cdr_run_journal, "atomic_write_json", real_write)
-
-    recovered = journal.transition(RunStage.REGISTER, StageState.RUNNING)
-    assert recovered["sequence"] == 1
-    assert journal.read()["stages"][RunStage.REGISTER.value]["state"] == "running"
-    assert len(list(journal.events.glob("*.json"))) == 1
