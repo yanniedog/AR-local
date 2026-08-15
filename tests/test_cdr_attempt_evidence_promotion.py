@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -246,6 +247,43 @@ def test_legacy_status_without_attempt_pointer_is_copied_byte_exact(tmp_path):
 
     assert promote_attempt_evidence(run_root, export_root) is None
     assert (export_root / "ingest-status.json").read_bytes() == source_bytes
+
+
+def test_existing_export_status_is_preserved_and_blocks_new_promotion(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    export_root.mkdir()
+    existing = export_root / "ingest-status.json"
+    existing.write_bytes(b"preserve-existing-status")
+
+    with pytest.raises(AttemptEvidencePromotionError, match="existing export"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert existing.read_bytes() == b"preserve-existing-status"
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).exists()
+
+
+def test_promotion_rejects_linked_artifact_namespace_before_copy(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    outside = tmp_path / "outside"
+    _source(run_root)
+    export_root.mkdir()
+    outside.mkdir()
+    try:
+        os.symlink(
+            outside,
+            export_root / ARTIFACT_NAMESPACE.parts[0],
+            target_is_directory=True,
+        )
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    with pytest.raises(AttemptEvidencePromotionError, match="links"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert list(outside.iterdir()) == []
 
 
 def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path):

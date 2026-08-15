@@ -9,7 +9,12 @@ import stat
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Optional
 
-from cdr_atomic import atomic_write_bytes, atomic_write_json, canonical_json_bytes
+from cdr_atomic import (
+    ImmutablePathError,
+    atomic_write_bytes,
+    atomic_write_json,
+    canonical_json_bytes,
+)
 from cdr_file_lock import FileLock
 from cdr_raw_attempt_journal import RawAttemptJournal
 
@@ -50,6 +55,51 @@ def _validate_node(path: Path, *, directory: bool) -> os.stat_result:
     if not expected:
         raise AttemptEvidencePromotionError("attempt evidence contains a special file")
     return details
+
+
+def _ensure_directory(parent: Path, *parts: str) -> Path:
+    """Create path components one at a time and reject links at every level."""
+    current = parent
+    for part in parts:
+        current = current / part
+        try:
+            current.mkdir(exist_ok=True)
+        except OSError as error:
+            raise AttemptEvidencePromotionError(
+                f"attempt evidence directory is not creatable: {current.name}"
+            ) from error
+        _validate_node(current, directory=True)
+    return current
+
+
+def _remove_empty_directory(path: Path) -> None:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise AttemptEvidencePromotionError(
+            "promotion temporary directory is unreadable"
+        ) from error
+    _validate_node(path, directory=True)
+    try:
+        path.rmdir()
+    except OSError as error:
+        raise AttemptEvidencePromotionError(
+            "promotion temporary directory is not empty"
+        ) from error
+
+
+def _write_status(path: Path, payload: bytes | Mapping[str, Any]) -> None:
+    try:
+        if isinstance(payload, bytes):
+            atomic_write_bytes(path, payload, create_once=True)
+        else:
+            atomic_write_json(path, payload, create_once=True)
+    except ImmutablePathError as error:
+        raise AttemptEvidencePromotionError(
+            "refusing to replace an existing export ingest status"
+        ) from error
 
 
 def _hash_file(path: Path) -> tuple[int, str]:
@@ -216,9 +266,7 @@ def _install_journal(
     artifact_path = ARTIFACT_NAMESPACE / source.session_id
     export_root.mkdir(parents=True, exist_ok=True)
     _validate_node(export_root, directory=True)
-    namespace = export_root.joinpath(*ARTIFACT_NAMESPACE.parts)
-    namespace.mkdir(parents=True, exist_ok=True)
-    _validate_node(namespace, directory=True)
+    namespace = _ensure_directory(export_root, *ARTIFACT_NAMESPACE.parts)
     destination = namespace / source.session_id
     manifest = _manifest(
         artifact_path=artifact_path,
@@ -240,10 +288,10 @@ def _install_journal(
                 raise AttemptEvidencePromotionError(
                     "promotion temporary tree remains beside installed evidence"
                 )
-            if temporary_parent.is_dir():
-                temporary_parent.rmdir()
+            _remove_empty_directory(temporary_parent)
             return artifact_path, verified, manifest_digest
-        temporary.mkdir(parents=True, exist_ok=True)
+        _ensure_directory(namespace, temporary_parent.name, source.session_id)
+        _inventory(temporary, exclude=frozenset({PROMOTION_MANIFEST}))
         for index, record in enumerate(records):
             _copy_record_create_once(source.root, temporary, record)
             if index == 0:
@@ -276,7 +324,7 @@ def _install_journal(
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-        temporary_parent.rmdir()
+        _remove_empty_directory(temporary_parent)
         _fault(fault_injector, "after_install")
         return artifact_path, verified, manifest_digest
 
@@ -307,8 +355,8 @@ def install_tree_create_once(
             raise AttemptEvidencePromotionError(
                 "refusing to replace an existing finalized export tree"
             )
-        temporary.mkdir(parents=True, exist_ok=True)
-        _validate_node(temporary, directory=True)
+        _ensure_directory(destination_root.parent, temporary.name)
+        _inventory(temporary)
         for index, record in enumerate(records):
             _copy_record_create_once(source_root, temporary, record)
             if index == 0:
@@ -362,21 +410,29 @@ def promote_attempt_evidence(
         status = json.loads(status_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         export_root.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(export_root / "ingest-status.json", status_bytes)
+        _write_status(export_root / "ingest-status.json", status_bytes)
         return None
     if not isinstance(status, dict):
         export_root.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(export_root / "ingest-status.json", status_bytes)
+        _write_status(export_root / "ingest-status.json", status_bytes)
         return None
     pointer = status.get("raw_attempt_journal")
     if pointer is None:
         export_root.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(export_root / "ingest-status.json", status_bytes)
+        _write_status(export_root / "ingest-status.json", status_bytes)
         return None
     if not isinstance(pointer, Mapping):
         raise AttemptEvidencePromotionError("attempt journal status pointer is invalid")
     source, summary, source_relative = _verified_source(run_root, pointer)
     records = _inventory(source.root)
+    destination = export_root.joinpath(
+        *ARTIFACT_NAMESPACE.parts, source.session_id
+    )
+    export_status = export_root / "ingest-status.json"
+    if export_status.exists() and not destination.exists():
+        raise AttemptEvidencePromotionError(
+            "refusing promotion beside an existing export ingest status"
+        )
     _fault(fault_injector, "after_source_verify")
     artifact_path, verified, manifest_digest = _install_journal(
         export_root=export_root,
@@ -403,6 +459,6 @@ def promote_attempt_evidence(
         }
     )
     status["raw_attempt_journal"] = promoted_pointer
-    atomic_write_json(export_root / "ingest-status.json", status)
+    _write_status(export_status, status)
     _fault(fault_injector, "after_status")
     return promoted_pointer
