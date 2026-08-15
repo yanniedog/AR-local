@@ -102,7 +102,9 @@ class RunJournal:
         if not isinstance(payload, Mapping):
             raise InvalidJournalTransition(f"journal event {path.name} must be an object")
         try:
-            sequence = int(payload["sequence"])
+            sequence = payload["sequence"]
+            if not isinstance(sequence, int) or isinstance(sequence, bool):
+                raise ValueError("sequence must be an integer")
             stage = RunStage(str(payload["stage"]))
             state = StageState(str(payload["state"]))
         except (KeyError, TypeError, ValueError) as error:
