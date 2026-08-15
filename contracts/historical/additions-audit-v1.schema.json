@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yanniedog/AR-local/contracts/historical/additions-audit-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "contract", "changed_dates", "original_population", "addition_population", "legacy_findings_preserved"],
+  "properties": {
+    "schema_version": {"const": 1}, "contract": {"const": "legacy-historical-additions-audit-v1"},
+    "changed_dates": {"type": "integer", "minimum": 1},
+    "original_population": {"$ref": "#/$defs/population"},
+    "addition_population": {"$ref": "#/$defs/population"},
+    "legacy_findings_preserved": {"const": true}
+  },
+  "$defs": {"population": {"type": "object", "additionalProperties": false, "required": ["files", "bytes"], "properties": {"files": {"type": "integer", "minimum": 0}, "bytes": {"type": "integer", "minimum": 0}}}}
+}

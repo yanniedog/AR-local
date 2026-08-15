@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yanniedog/AR-local/contracts/historical/history-index-v1.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "contract", "dates", "gaps", "candidate_count", "updates_operational_latest_complete"],
+  "properties": {
+    "schema_version": {"const": 1}, "contract": {"const": "legacy-historical-index-v1"},
+    "dates": {
+      "type": "array", "minItems": 92, "maxItems": 92,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["date", "candidates"],
+        "properties": {
+          "date": {"type": "string", "format": "date"},
+          "candidates": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["candidate_id", "sha256", "bytes"],
+              "properties": {
+                "candidate_id": {"type": "string"},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "bytes": {"type": "integer", "minimum": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "gaps": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["date", "status", "reason"], "properties": {"date": {"type": "string", "format": "date"}, "status": {"enum": ["known_gap", "unclassified_gap"]}, "reason": {"type": "string", "minLength": 1}}}},
+    "candidate_count": {"type": "integer", "minimum": 95},
+    "updates_operational_latest_complete": {"const": false}
+  }
+}
