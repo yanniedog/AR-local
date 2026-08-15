@@ -161,8 +161,65 @@ artifacts. The remaining contract layers are:
 1. official register IDs and canonical product/rate-tier identities;
 2. the shared classifier and typed financial units;
 3. reconciled `CoverageV2` populations;
-4. immutable candidate generations and `manifest-v3`; and
-5. the AR-app dual-read/cache bridge.
+4. wiring finalized observations into the dormant immutable v3 candidate
+   builder and transactional promoter; and
+5. the AR-app dual-read/cache bridge and an explicitly approved activation.
+
+The dormant promoter now supplies the repository-side publication boundary:
+create-once candidate releases, verify-only shared content, public byte and
+historical tag-target re-verification, complete acyclic ordered ledger-lineage
+enumeration, recoverable append-only owner leases and control history, a
+verified complete-dates index,
+and rolling-pointer compare-and-swap last. Both pointer heads come from the full
+verified release census, including a candidate left public by a prior crash,
+rather than from the invocation candidate alone. Its workflow
+is manual-only, defaults to validation, and requires both an explicit execute
+input and the protected `app-payload-v3-promotion` environment. No Pi service,
+daily producer, deployed v1 release, or AR-app reader invokes it in this slice.
+The allowlisted `.github/workflows/app-payload-v3-candidate.yml` producer is
+intentionally absent pending its own pipeline review, so workflow promotion is
+not activatable yet; an arbitrary Actions artifact cannot substitute for it.
+Activation is independently blocked by an intentionally unset AR-local/AR-app
+contract-parity lock. The currently frozen consumer expects a different v3
+pointer/manifest shape, so the producer and consumer schema sets must first
+converge and their exact reviewed SHA-256 digests must be pinned. Until then,
+`--execute` fails before any repository read or write even if run provenance and
+environment approval are otherwise valid.
+
+A third independent, structured publication-store contract is also unset. The
+current repository cannot enable immutable releases without breaking the mutable
+v1 compatibility channel, leaving an uncloseable publish-between-read-and-write
+race in same-repository draft uploads. Merely assigning this contract remains
+fail-closed until a separately reviewed adapter verifies either a dedicated
+immutable v3 store/repository or a Git content-addressed commit/branch design;
+the execute workflow stops before provenance lookup or candidate download.
+
+The current release adapter is dormant scaffolding, not an activatable
+publication store. Its orchestration validates the prospective published census
+plus the local candidate before creating any tag, draft, asset, or control
+commit. The invoked candidate is staged as an exact resumable draft, its complete
+asset inventory is uploaded and hash-checked, and publication occurs last; a failed draft is preserved and
+never auto-deleted. Published releases are verify-only and cannot receive later
+assets. The current golden builder's shared `app-payload-gen` capability URLs
+therefore must already resolve to exact immutable bytes. A future reviewed
+candidate-artifact builder must emit candidate-owned capability URLs and bundle
+those assets for draft staging before activation; this slice does not repurpose
+the golden builder or append to the shared release.
+
+The two-hour owner lease is renewed by exact-head compare-and-swap before every
+release mutation, prepared control commit, and final ref install; all GitHub
+commands are bounded to 60 seconds and ambiguous write outcomes are reconciled
+against exact remote state. A displaced owner is fenced before its next asset
+or control write and cannot release its successor's lease.
+
+An independent artifact-byte binding is also intentionally absent. Activation
+requires GitHub's archive digest to be reconciled to an exact expanded-tree
+inventory from the canonical candidate workflow; a matching run head alone is
+insufficient. The complete candidate census uses two paginated/batched API
+listings—release metadata/assets and direct matching tag refs—rather than
+re-querying every historical release and tag. Public manifest/capability bytes
+are still re-downloaded, while API request growth remains bounded as retained
+history passes one thousand revisions.
 
 Those layers may consume these records, but they may not weaken create-once
 semantics or make a partial observation appear complete.
