@@ -56,6 +56,23 @@ class GitHubReleaseMixin:
             target_commit=target, direct_tag_target=direct_target,
         )
 
+    def _candidate_draft_missing(
+        self,
+        release: Mapping[str, Any],
+        tag: str,
+        title: str,
+        notes: str,
+        target_commit: str,
+        assets: Mapping[str, bytes],
+    ) -> Sequence[str] | None:
+        self._validate_candidate_release(release, tag, title, notes, target_commit)
+        if release.get("draft") is False:
+            self._verify_published_candidate(
+                release, tag, title, notes, target_commit, assets
+            )
+            return None
+        return validate_candidate_draft_assets(release, assets)
+
     def publish_candidate_release(
         self,
         tag: str,
@@ -88,14 +105,25 @@ class GitHubReleaseMixin:
                 )
         if release is None:
             raise PromotionError(f"candidate draft {tag} is absent after create")
-        self._validate_candidate_release(release, tag, title, notes, target_commit)
-        if release.get("draft") is False:
-            self._verify_published_candidate(release, tag, title, notes, target_commit, assets)
+        missing = self._candidate_draft_missing(
+            release, tag, title, notes, target_commit, assets
+        )
+        if missing is None:
             return
 
-        for name in validate_candidate_draft_assets(release, assets):
+        for name in missing:
             payload = assets[name]
             self.renew_lock(owner_token)
+            release = self._release(tag)
+            if release is None:
+                raise PromotionError(f"candidate draft {tag} disappeared before upload")
+            current_missing = self._candidate_draft_missing(
+                release, tag, title, notes, target_commit, assets
+            )
+            if current_missing is None:
+                return
+            if name not in current_missing:
+                continue
             with tempfile.TemporaryDirectory(prefix="ar-v3-upload-") as temporary:
                 path = Path(temporary) / name
                 path.write_bytes(payload)
@@ -109,10 +137,24 @@ class GitHubReleaseMixin:
                 raise PromotionError(
                     f"candidate draft upload failed: {self._write_error(result)}"
                 )
-            self._validate_candidate_release(release, tag, title, notes, target_commit)
-            if name in validate_candidate_draft_assets(release, assets):
+            current_missing = self._candidate_draft_missing(
+                release, tag, title, notes, target_commit, assets
+            )
+            if current_missing is None:
+                return
+            if name in current_missing:
                 raise PromotionError(f"candidate draft asset verification failed: {tag}/{name}")
         self.renew_lock(owner_token)
+        release = self._release(tag)
+        if release is None:
+            raise PromotionError(f"candidate draft {tag} disappeared before publish")
+        current_missing = self._candidate_draft_missing(
+            release, tag, title, notes, target_commit, assets
+        )
+        if current_missing is None:
+            return
+        if current_missing:
+            raise PromotionError("candidate draft asset set is incomplete before publish")
         result = self._release_write(
             ["gh", "release", "edit", tag, "--repo", self.repo, "--draft=false"]
         )

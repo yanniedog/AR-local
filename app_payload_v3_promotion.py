@@ -373,7 +373,24 @@ def promote_candidate(
         _assert_coordinate_available(
             [release.tag for release in releases_before], candidate
         )
-        _prospective_census(backend, releases_before, candidate, repo)
+        prospective_census = _prospective_census(
+            backend, releases_before, candidate, repo
+        )
+        timestamp = generated_at()
+        prospective_index_bytes = build_dates_index(
+            complete_heads(prospective_census, repo),
+            generated_at=timestamp,
+            previous_bytes=previous_index_bytes,
+        )
+        prospective_pointer_bytes = build_pointer(
+            prospective_census,
+            generated_at=timestamp,
+            previous_bytes=previous_pointer_bytes,
+            previous_pointer=previous_pointer,
+            previous_manifests=manifests,
+            previous_capabilities=capabilities,
+            repo=repo,
+        )
         candidate_assets, published_assets = _candidate_release_assets(candidate)
         for tag, name, payload in published_assets:
             backend.verify_immutable_asset(tag, name, payload)
@@ -407,7 +424,6 @@ def promote_candidate(
             for item in census
         ):
             raise PromotionError("verified census does not contain the local candidate")
-        timestamp = generated_at()
         index_bytes = build_dates_index(
             complete_heads(census, repo),
             generated_at=timestamp,
@@ -422,6 +438,13 @@ def promote_candidate(
             previous_capabilities=capabilities,
             repo=repo,
         )
+        if (
+            index_bytes != prospective_index_bytes
+            or pointer_bytes != prospective_pointer_bytes
+        ):
+            raise ConcurrencyError(
+                "verified candidate census changed after its prospective control preflight"
+            )
         index_changed = index_bytes != previous_index_bytes
         pointer_changed = pointer_bytes != previous_pointer_bytes
         index_commit: str | None = None

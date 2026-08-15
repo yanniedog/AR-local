@@ -226,6 +226,47 @@ def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
     assert release["draft"] is False
 
 
+def test_external_publish_between_assets_blocks_every_later_mutation(monkeypatch):
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    assets = {"first.json": b"first", "second.json": b"second"}
+    release = {
+        "tag_name": tag, "name": "title", "body": "notes", "draft": True,
+        "prerelease": False, "target_commitish": PRODUCER_COMMIT, "assets": [],
+    }
+    stages: list[tuple[str, bool]] = []
+
+    def runner(args, **_kwargs):
+        stage = args[2]
+        stages.append((stage, bool(release["draft"])))
+        if stage == "upload":
+            path = Path(args[4])
+            payload = path.read_bytes()
+            release["assets"].append(
+                {
+                    "name": path.name,
+                    "size": len(payload),
+                    "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}",
+                }
+            )
+            release["draft"] = False
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    backend = GitHubPromotionBackend(runner=runner)
+    monkeypatch.setattr(backend, "_release", lambda _tag: release)
+    monkeypatch.setattr(backend, "_tag_target", lambda _tag, **_kwargs: PRODUCER_COMMIT)
+    monkeypatch.setattr(backend, "renew_lock", lambda _owner: "renewed")
+
+    with pytest.raises(PromotionError, match="asset set differs"):
+        backend.publish_candidate_release(
+            tag, title="title", notes="notes", target_commit=PRODUCER_COMMIT,
+            assets=assets, owner_token="a" * 32,
+        )
+
+    assert stages == [("upload", True)]
+    assert release["draft"] is False
+    assert [asset["name"] for asset in release["assets"]] == ["first.json"]
+
+
 def test_candidate_draft_with_moved_existing_tag_fails_before_mutation(monkeypatch):
     tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
     release = {"tag_name": tag, "name": "title", "body": "notes", "draft": True,

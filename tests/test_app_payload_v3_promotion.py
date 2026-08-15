@@ -529,12 +529,7 @@ def test_listing_uncertainty_retains_the_verified_prior_control_state(tmp_path):
         tmp_path / "second", observation_date="2026-08-15", prior=first
     )
     backend = FakeBackend()
-    promote_candidate(
-        first,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
+    promote_candidate(first, backend, execute=True, expected_producer_commit=PRODUCER_COMMIT)
     prior_head = backend.control_head()
     prior_index = backend.visible(DATES_INDEX_FILENAME)
     prior_pointer = backend.visible(POINTER_FILENAME)
@@ -587,6 +582,49 @@ def test_disconnected_ledger_successor_cannot_advance_control(tmp_path):
         for event in backend.events[event_boundary:]
         if event[0] in {"draft", "asset", "publish", "prepare", "install"}
     ]
+
+
+@pytest.mark.parametrize("prior_index_state", ["malformed", "inconsistent"])
+def test_invalid_prior_dates_index_fails_before_candidate_or_control_mutation(
+    tmp_path, prior_index_state
+):
+    first = _candidate_directory(tmp_path / "first")
+    second = _candidate_directory(
+        tmp_path / "second", observation_date="2026-08-15", prior=first
+    )
+    backend = FakeBackend()
+    promote_candidate(
+        first,
+        backend,
+        execute=True,
+        expected_producer_commit=PRODUCER_COMMIT,
+    )
+    prior_head = backend.control_head()
+    assert prior_head is not None
+    if prior_index_state == "malformed":
+        poisoned = b"{"
+    else:
+        value = _json(backend.visible(DATES_INDEX_FILENAME))
+        entry = value["dates"][0]
+        entry["observation_date"] = "2026-08-13"
+        digest = entry["generation_digest"]
+        entry["generation_id"] = f"gen-2026-08-13-r0001-{digest[:12]}"
+        entry["manifest_url"] = (
+            "https://github.com/yanniedog/AR-local/releases/download/"
+            f"{CANDIDATE_TAG_PREFIX}{entry['generation_id']}/"
+            f"{entry['manifest_sha256']}.json"
+        )
+        poisoned = json.dumps(value, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    backend.commits[prior_head][DATES_INDEX_FILENAME] = poisoned
+    event_boundary = len(backend.events)
+
+    with pytest.raises(PromotionError, match="prior complete dates index|cannot drop"):
+        promote_candidate(second, backend, execute=True,
+                          expected_producer_commit=PRODUCER_COMMIT)
+
+    assert load_candidate(second).candidate_tag not in backend.releases
+    assert all(event[0] not in {"draft", "asset", "publish", "prepare", "install"}
+               for event in backend.events[event_boundary:])
 
 
 def test_displaced_owner_is_fenced_before_next_draft_asset_and_retry_resumes(tmp_path):
