@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -24,6 +25,7 @@ from cdr_raw_attempt_journal import RawAttemptJournal
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T000000000000Z-aabbccddeeff"
+SESSION_TWO = "ingest-20260815T000001000000Z-ffeeddccbbaa"
 
 
 def _hash(path: Path) -> str:
@@ -38,8 +40,14 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
-def _source(run_root: Path) -> tuple[RawAttemptJournal, dict]:
-    journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
+def _source(
+    run_root: Path,
+    *,
+    session_id: str = SESSION,
+) -> tuple[RawAttemptJournal, dict]:
+    journal = RawAttemptJournal(
+        run_root / "_raw-attempt-journals-v1", session_id
+    )
     body = b'{"data":{"products":[]}}'
     journal.record(
         "register:1|nonce|1",
@@ -89,7 +97,7 @@ def _source(run_root: Path) -> tuple[RawAttemptJournal, dict]:
         ],
         "raw_attempt_journal": {
             **summary,
-            "path": f"_raw-attempt-journals-v1/{SESSION}",
+            "path": f"_raw-attempt-journals-v1/{session_id}",
             "path_resolution": "relative_to_ingest_run_root",
             "retention": "follows_ingest_run_root",
         },
@@ -351,6 +359,60 @@ def test_existing_export_status_is_preserved_and_blocks_new_promotion(tmp_path):
 
     assert existing.read_bytes() == b"preserve-existing-status"
     assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).exists()
+
+
+def test_export_lock_serializes_different_sessions_through_status_creation(tmp_path):
+    first_run = tmp_path / "run-one"
+    second_run = tmp_path / "run-two"
+    export_root = tmp_path / "export"
+    _source(first_run)
+    _source(second_run, session_id=SESSION_TWO)
+    first_installed = Event()
+    release_first = Event()
+    second_verified = Event()
+    outcomes = {}
+
+    def first_fault(stage):
+        if stage == "after_install":
+            first_installed.set()
+            assert release_first.wait(5)
+
+    def second_fault(stage):
+        if stage == "after_source_verify":
+            second_verified.set()
+
+    def promote(name, run_root, injector):
+        try:
+            outcomes[name] = promote_attempt_evidence(
+                run_root,
+                export_root,
+                fault_injector=injector,
+            )
+        except BaseException as error:
+            outcomes[name] = error
+
+    first = Thread(target=promote, args=("first", first_run, first_fault))
+    second = Thread(target=promote, args=("second", second_run, second_fault))
+    first.start()
+    assert first_installed.wait(5)
+    second.start()
+    assert second_verified.wait(5)
+    assert second.is_alive()
+    release_first.set()
+    first.join(5)
+    second.join(5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert isinstance(outcomes["first"], dict)
+    assert isinstance(outcomes["second"], AttemptEvidencePromotionError)
+    assert "existing export" in str(outcomes["second"])
+    status = json.loads(
+        (export_root / "ingest-status.json").read_text(encoding="utf-8")
+    )
+    assert status["raw_attempt_journal"]["session_id"] == SESSION
+    assert export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).is_dir()
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION_TWO).exists()
 
 
 def test_promotion_rejects_linked_artifact_namespace_before_copy(tmp_path):
