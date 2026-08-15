@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo": "yanniedog/AR-local",
-  "generated_at": "2026-08-15T02:57:35.950Z",
+  "generated_at": "2026-08-15T03:22:01.024Z",
   "versions": [
     {
       "version": "1.0.0",
@@ -383,6 +383,18 @@
         "align Expo patch with SDK requirements (#452)"
       ],
       "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.39"
+    },
+    {
+      "version": "1.0.40",
+      "date": "2026-08-15",
+      "summaryBullets": [
+        "chore(mobile): auto-release bump to v1.0.39 (after 216c713) (#476)",
+        "chore(mobile): auto-release bump to v1.0.38 (after 2261b7e) (#472)",
+        "Produce the bounded AR-app fallback in AR-local (#459)",
+        "Publish verified mobile insight sidecars (#457)",
+        "revert: rewind main tree to 2026-07-31 02:00 Brisbane (7896bb9) (#455)"
+      ],
+      "releaseUrl": "https://github.com/yanniedog/AR-local/releases/tag/app-v1.0.40"
     }
   ]
 }
