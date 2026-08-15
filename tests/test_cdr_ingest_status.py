@@ -11,6 +11,25 @@ from cdr_ingest_support import FetchResult
 ENDPOINT = "http://holder/products"
 
 
+def _snapshot(*, ok=True, complete=True, brands=None):
+    return cis.RegisterSnapshot(
+        register_ok=ok,
+        register_provenance_complete=complete,
+        register_attempts=[
+            {
+                "source_url": "https://register.example/source",
+                "mode": "plain",
+                "ok": ok,
+                "status": 200 if ok else 599,
+                "bytes": 2 if ok else 0,
+                "sha256": "0" * 64,
+            }
+        ],
+        banking_brands=list(brands or []),
+        banking_count_before_filter=len(brands or []),
+    )
+
+
 def test_summarize_failures_rolls_up_by_phase_and_status(tmp_path):
     recs = [
         {"phase": "product_detail", "status": 503},
@@ -26,6 +45,119 @@ def test_summarize_failures_rolls_up_by_phase_and_status(tmp_path):
     assert s["by_phase"] == {"product_detail": 3, "products_index": 1}
     # circuit_open skips are counted distinctly from HTTP errors.
     assert s["by_status"] == {"503": 2, "circuit_open": 1, "500": 1}
+
+
+def test_register_failure_still_publishes_verified_attempt_journal_status(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        lib,
+        "collect_register_snapshot",
+        lambda **_kwargs: _snapshot(ok=False, complete=False),
+    )
+
+    exit_code = lib.main(
+        [
+            "--out",
+            str(tmp_path),
+            "--date",
+            "2026-08-15",
+            "--workers",
+            "1",
+            "--detail-workers",
+            "1",
+        ]
+    )
+
+    assert exit_code == 2
+    status = json.loads(
+        (tmp_path / "2026-08-15" / "banks" / "ingest-status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    journal = status["raw_attempt_journal"]
+    assert journal["attempts"] == 0
+    assert journal["verified"] is True
+    assert journal["path"].startswith("_raw-attempt-journals-v1/")
+    assert journal["path_resolution"] == "relative_to_ingest_run_root"
+    assert journal["retention"] == "follows_ingest_run_root"
+    assert status["incomplete"] is True
+
+
+def test_successful_run_status_points_to_verified_attempt_journal(tmp_path, monkeypatch):
+    brand = {
+        "endpoint_url": "https://holder.example/products",
+        "brand_name": "Holder",
+        "legal_entity_name": "Holder Ltd",
+    }
+    monkeypatch.setattr(
+        lib,
+        "collect_register_snapshot",
+        lambda **_kwargs: _snapshot(brands=[brand]),
+    )
+    monkeypatch.setattr(lib, "ingest_brand", lambda *_args, **_kwargs: None)
+
+    exit_code = lib.main(
+        [
+            "--out",
+            str(tmp_path),
+            "--date",
+            "2026-08-15",
+            "--workers",
+            "1",
+            "--detail-workers",
+            "1",
+        ]
+    )
+
+    assert exit_code == 0
+    status = json.loads(
+        (tmp_path / "2026-08-15" / "banks" / "ingest-status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert status["raw_attempt_journal"]["verified"] is True
+    assert status["providers_attempted"] == 1
+    assert status["incomplete"] is False
+
+
+def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypatch):
+    failures = []
+    monkeypatch.setattr(
+        lib,
+        "fetch_cdr_json",
+        lambda url, **_kwargs: FetchResult(
+            ok=True,
+            status=200,
+            url=url,
+            text='{"data":{},"links":{"next":"https://evil.example/products?page=2"}}',
+            version=4,
+        ),
+    )
+    monkeypatch.setattr(lib, "extract_products", lambda _parsed: [])
+    monkeypatch.setattr(
+        lib,
+        "append_failure",
+        lambda _root, entry, lock=None: failures.append(entry),
+    )
+
+    lib.ingest_brand(
+        {"endpoint_url": "https://holder.example/products"},
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert [item["status"] for item in failures] == ["pagination_cross_origin"]
 
 
 def test_summarize_failures_complete_run_has_no_failures(tmp_path):
