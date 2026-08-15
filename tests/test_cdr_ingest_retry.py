@@ -40,7 +40,7 @@ def test_persistent_5xx_is_capped_by_default_budget(monkeypatch):
     calls = _count_calls(monkeypatch, 503)
     res = cis.fetch_cdr_json("http://x", timeout=1, max_retries=6, sleep_ms=0)
     assert res.ok is False
-    # Default budget = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2) = 8, not 42.
+    # Default budget remains the locked eight-attempt amplification ceiling.
     assert calls["n"] == 8
     # attempts reflects the cumulative HTTP attempts across the whole logical fetch.
     assert res.attempts == calls["n"]
@@ -195,6 +195,40 @@ def test_zero_total_attempts_makes_no_request(monkeypatch):
     assert res.attempts == 0
 
 
+def test_compact_406_advertisement_is_tried_next(monkeypatch):
+    seen: list[int] = []
+
+    def fake_http(url, headers, *, timeout):
+        seen.append(int(headers["x-v"]))
+        if len(seen) == 1:
+            return 406, '{"detail":"Requested: 6-6 Available: 8"}', None
+        return 200, '{"data": {}}', None
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    result = cis.fetch_cdr_json(
+        "http://x", versions=[6], timeout=1, max_retries=0, sleep_ms=0
+    )
+    assert result.ok is True and result.version == 8
+    assert seen == [6, 8]
+
+
+def test_out_of_range_long_advertisement_cannot_consume_attempt(monkeypatch):
+    seen: list[int] = []
+
+    def fake_http(url, headers, *, timeout):
+        seen.append(int(headers["x-v"]))
+        if len(seen) == 1:
+            return 406, '{"detail":"Versions available: 100, 6"}', None
+        return 200, '{"data": {}}', None
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    result = cis.fetch_cdr_json(
+        "http://x", versions=[5], timeout=1, max_retries=0, sleep_ms=0
+    )
+    assert result.ok is True and result.version == 6
+    assert seen == [5, 6]
+
+
 def test_caller_cannot_expand_attempt_or_retry_caps(monkeypatch):
     calls = _count_calls(monkeypatch, 503)
     res = cis.fetch_cdr_json(
@@ -270,6 +304,6 @@ def test_retry_attempts_are_immutably_journaled_with_version_context(tmp_path, m
         for path in sorted(journal.events.glob("*.json"))
     ]
     assert [event["sequence"] for event in events] == [1, 2]
-    assert [event["context"]["retry_ordinal"] for event in events] == [1, 1]
-    assert [event["context"]["cdr_version"] for event in events] == [4, 6]
+    assert [event["context"]["retry_ordinal"] for event in events] == [1, 2]
+    assert [event["context"]["cdr_version"] for event in events] == [4, 4]
     assert journal.summary()["attempts"] == 2

@@ -392,6 +392,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     str(REPO_ROOT / "cdr_daily.py"),
                     "--workers",
                     str(DAILY_WORKER_COUNT),
+                    "--archive-failed-ram-stage",
                     *sector_args,
                     *force_args,
                     *date_args,
