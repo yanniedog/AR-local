@@ -18,11 +18,6 @@ import {
   isReportsOnlyPath,
 } from './lib/pr-reports-only.mjs';
 import {
-  isAutoReleaseBumpTitle,
-  isAutoReleaseCommitOnly,
-  isAutoReleaseCommitPath,
-} from './lib/pr-mobile-auto-release-commit.mjs';
-import {
   gateExemptReasonFromPrMeta,
   gateExemptReasonFromTitle,
   isBotPrAuthor,
@@ -142,25 +137,11 @@ for (const [name, files, want] of [
   }
 }
 
-for (const [path, want] of [['mobile/app.json', true], ['mobile/changelog/versions/1.0.8.json', true], ['mobile/package.json', false]]) {
-  if (isAutoReleaseCommitPath(path) !== want) failures.push(`isAutoReleaseCommitPath(${path}) !== ${want}`);
-}
 for (const [name, files, want] of [
-  ['auto-release only', ['mobile/app.json', 'mobile/changelog/manifest.json'], true],
-  ['gate exempt auto-release', ['mobile/app.json', 'mobile/changelog/manifest.json'], true],
+  ['reports only', ['reports/pr-bot-matrix.md'], true],
+  ['mixed reports and source', ['reports/pr-bot-matrix.md', 'cdr_daily.py'], false],
 ]) {
-  const fn = name.startsWith('gate exempt') ? isGateExemptFileList : isAutoReleaseCommitOnly;
-  if (fn(files) !== want) failures.push(`${name}: ${fn.name} !== ${want}`);
-}
-
-for (const [title, want] of [
-  ['chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)', true],
-  ['chore(mobile): auto-release bump to v1.0.8 (after b481ace)', true],
-  ['feat(mobile): new screen', false],
-]) {
-  if (isAutoReleaseBumpTitle(title) !== want) {
-    failures.push(`isAutoReleaseBumpTitle(${title}) !== ${want}`);
-  }
+  if (isGateExemptFileList(files) !== want) failures.push(`${name}: isGateExemptFileList !== ${want}`);
 }
 for (const [title, want] of [
   ['chore: update PR bot feedback matrix', true],
@@ -172,9 +153,6 @@ for (const [title, want] of [
 }
 if (!isMatrixCommitTitle('chore: update PR bot feedback matrix')) {
   failures.push('isMatrixCommitTitle(matrix title) !== true');
-}
-if (gateExemptReasonFromTitle('chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)') !== 'mobile-auto-release') {
-  failures.push('gateExemptReasonFromTitle(auto-release) !== mobile-auto-release');
 }
 if (gateExemptReasonFromTitle('chore: update PR bot feedback matrix') !== 'reports') {
   failures.push('gateExemptReasonFromTitle(matrix) !== reports');

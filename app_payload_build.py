@@ -482,27 +482,6 @@ def _package(
     return manifest
 
 
-def seed_from_sample(
-    sample_dir: Path,
-    out_dir: Path,
-    *,
-    repo: str = DEFAULT_REPO,
-    tag: str = DEFAULT_TAG,
-) -> Dict[str, Any]:
-    """Repackage the app's committed sample (core.json/details.json) into a publishable
-    payload. Used by the manual workflow to bootstrap the release before the Pi's first
-    real run, so the app's release URL resolves immediately."""
-    core = _load_json(sample_dir / "core.json")
-    details = _load_json(sample_dir / "details.json")
-    run_date = str(core.get("run_date") or "sample")
-    counts: Dict[str, Any] = {}
-    sample_manifest = sample_dir / "manifest.json"
-    if sample_manifest.exists():
-        counts = _load_json(sample_manifest).get("counts") or {}
-    return _package(core, details, run_date, out_dir, repo=repo, tag=tag, counts=counts)
-
-
-
 def iter_valid_export_dates(
     runs_root: Path,
     *,

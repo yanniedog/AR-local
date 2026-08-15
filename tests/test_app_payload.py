@@ -30,6 +30,13 @@ HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
 # --------------------------------------------------------------------------- #
 # Pure-helper unit tests (always run)
 # --------------------------------------------------------------------------- #
+def test_sample_seed_publisher_is_not_available():
+    assert not hasattr(app_payload, "seed_from_sample")
+    with pytest.raises(SystemExit) as exc:
+        app_payload.main(["seed"])
+    assert exc.value.code == 2
+
+
 def test_section_filter_mortgage_excludes_discount():
     assert app_payload.section_filter("Mortgage", {"rate": "0.05", "rate_family": "lending", "rate_type": "VARIABLE"})
     assert not app_payload.section_filter("Mortgage", {"rate": "0.05", "rate_family": "lending", "rate_type": "DISCOUNT"})

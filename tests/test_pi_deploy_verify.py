@@ -17,9 +17,9 @@ def test_app_payload_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["app_payload.py"])
 
 
-def test_non_pi_mobile_and_docs_changes_do_not_require_pi_deploy():
+def test_docs_changes_do_not_require_pi_deploy():
     assert not pi_deploy_verify.paths_touch_pi_deploy(
-        ["docs/HANDOFF.md", "mobile/src/components/BankAvatar.tsx"]
+        ["docs/HANDOFF.md", "docs/MOBILE_APP.md"]
     )
 
 

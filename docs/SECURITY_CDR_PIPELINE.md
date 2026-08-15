@@ -1,4 +1,9 @@
-# CDR pipeline encryption + tiered auth — architecture
+# CDR pipeline encryption + tiered auth — cross-repository architecture
+
+AR-local owns producer-side payload encryption and key material installation.
+The app decryption, authentication, biometric custody, and consumer UI live in
+[yanniedog/AR-app](https://github.com/yanniedog/AR-app); its current source and
+security documentation are authoritative for those components.
 
 Status: **approved direction, phased rollout pending** (2026-06-11).
 Owner request: encrypt CDR data end-to-end Pi → GitHub → app; auth (Google +
@@ -10,8 +15,8 @@ payments exist; make scraping/extraction hard even for paying users.
 - Pi → GitHub and app → GitHub already run over HTTPS (TLS), so *transport* is
   encrypted today. The gap is **at rest on the public GitHub Release**: anyone
   can download `app-payload-latest` assets and read the full CDR dataset.
-- The app has no accounts. `rateIntelligencePro` is a local stub pref.
-  Firebase (Crashlytics) is already integrated on the app side.
+- Consumer account and entitlement state is an AR-app concern. Revalidate the
+  current AR-app implementation before changing or enabling producer encryption.
 
 ## Constraint to be honest about
 
@@ -69,9 +74,9 @@ standing up new infrastructure; the Pi stays non-public.
 | Phase | Scope | Notes |
 | --- | --- | --- |
 | A | Pi: AES-256-GCM encrypt assets, manifest key ids (`payload_crypto.py`; gated by `AR_LOCAL_PAYLOAD_ENC`, OFF until Phase B ships; key via `deploy/pi/install-payload-enc-key.sh`; windowed history split moves to Phase B) | **implemented, flag off** |
-| B | App: decrypt pipeline in payload fetch (`mobile/src/lib/payloadCrypto.ts`, auto-detects `ARE1` assets in `downloadInflate`); interim key via `app.json` extra `payloadDecKeyHex` (unset by default) | **implemented, dormant**; interim = obfuscation only; windowed history split deferred to Phase D where tiering needs it |
-| C | Firebase Auth Google sign-in (`mobile/src/lib/auth.ts`, enabled by `extra.googleWebClientId` — owner must enable the Google provider in the Firebase console and paste the Web client ID); biometric app lock (`appLock.ts` + `AppLockGate`, pref `appLockEnabled`); SecureStore key custody (`keyVault.ts`, AFTER_FIRST_UNLOCK so background refresh keeps working) | **implemented**; sign-in dormant until `googleWebClientId` is set |
-| D | `issueContentKeys` callable (`firebase/functions/`, secret `PAYLOAD_KEY_FULL`, per-uid 20/day rate limit, custom-claims tiers with `ENFORCE_TIERS=false`) + app client (`mobile/src/lib/keyService.ts` → SecureStore vault), synced on app start/sign-in; deploy runbook `firebase/README.md` | **implemented**; dormant until owner deploys the function and sets `extra.keyServiceUrl` |
+| B | App decrypt pipeline and consumer key configuration in [AR-app](https://github.com/yanniedog/AR-app) | Revalidate current AR-app state before activation |
+| C | Firebase Auth, biometric app lock, and device key custody in [AR-app](https://github.com/yanniedog/AR-app) | Consumer-owned; revalidate before activation |
+| D | `issueContentKeys` callable (`firebase/functions/`, secret `PAYLOAD_KEY_FULL`, per-uid 20/day rate limit, custom-claims tiers with `ENFORCE_TIERS=false`) plus the AR-app client | Service implemented here; consumer integration owned by AR-app; dormant until explicitly deployed and configured |
 | E | Hardening: rotation, rate limits, Play Integrity, scraper telemetry | post-payments |
 
 ## Open items

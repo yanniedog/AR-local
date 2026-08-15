@@ -5,19 +5,14 @@
  * (e.g. yanniedog). Skip for:
  *   - PRs opened by GitHub bots (github-actions[bot], dependabot, …)
  *   - Conventional chore PRs (chore: / chore(scope):)
- *   - Known automated chores (reports matrix, mobile auto-release bumps)
+ *   - Known automated chores (reports matrix)
  */
 import { ghJson } from './gh-pr-review-threads.mjs';
 import {
   isMatrixCommitTitle,
   isReportsOnlyFileList,
 } from './pr-reports-only.mjs';
-import {
-  isAutoReleaseBumpTitle,
-  isAutoReleaseCommitOnly,
-} from './pr-mobile-auto-release-commit.mjs';
-
-export { isAutoReleaseBumpTitle, isMatrixCommitTitle };
+export { isMatrixCommitTitle };
 
 /**
  * @param {{ login?: string, __typename?: string, type?: string }|string} author
@@ -46,7 +41,7 @@ export function isChorePrTitle(title) {
 /**
  * Fast check from PR metadata (no file list). Used in Actions on pull_request opened.
  * @param {{ title?: string, authorLogin?: string, authorType?: string, author?: object }} meta
- * @returns {'bot-authored'|'chore'|'reports'|'mobile-auto-release'|null}
+ * @returns {'bot-authored'|'chore'|'reports'|null}
  */
 export function gateExemptReasonFromPrMeta(meta = {}) {
   const title = String(meta.title || '').trim();
@@ -59,11 +54,9 @@ export function gateExemptReasonFromPrMeta(meta = {}) {
   if (isBotPrAuthor(author)) return 'bot-authored';
   if (isChorePrTitle(title)) {
     if (isMatrixCommitTitle(title)) return 'reports';
-    if (isAutoReleaseBumpTitle(title)) return 'mobile-auto-release';
     return 'chore';
   }
   if (isMatrixCommitTitle(title)) return 'reports';
-  if (isAutoReleaseBumpTitle(title)) return 'mobile-auto-release';
   return null;
 }
 
@@ -77,7 +70,7 @@ export function gateExemptReasonFromTitle(title) {
  * @returns {boolean}
  */
 export function isGateExemptFileList(files) {
-  return isReportsOnlyFileList(files) || isAutoReleaseCommitOnly(files);
+  return isReportsOnlyFileList(files);
 }
 
 /**
@@ -90,7 +83,7 @@ export function isGateExemptPr(prNumber) {
 
 /**
  * @param {number|string} prNumber
- * @returns {'bot-authored'|'chore'|'reports'|'mobile-auto-release'|null}
+ * @returns {'bot-authored'|'chore'|'reports'|null}
  */
 export function gateExemptReason(prNumber) {
   const view = ghJson(['pr', 'view', String(prNumber), '--json', 'title,author,files']);
@@ -100,8 +93,5 @@ export function gateExemptReason(prNumber) {
   const paths = (Array.isArray(view?.files) ? view.files : []).map((f) => f.path);
   if (paths.length === 0) return null;
   if (isReportsOnlyFileList(paths)) return 'reports';
-  if (isAutoReleaseCommitOnly(paths) && isAutoReleaseBumpTitle(view?.title)) {
-    return 'mobile-auto-release';
-  }
   return null;
 }
