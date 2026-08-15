@@ -101,6 +101,17 @@ def _export_root_has_content(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
 
 
+def _archive_source_has_files(root: Path) -> bool:
+    return root.is_dir() and any(path.is_file() for path in root.rglob("*"))
+
+
+def _archive_source_is_directory_only(root: Path) -> bool:
+    return root.is_dir() and all(
+        path.is_dir() and not path.is_symlink()
+        for path in root.rglob("*")
+    )
+
+
 def prepare_ram_stage(path: Path) -> None:
     """Reserve a stage without deleting evidence from an interrupted run."""
     path = path.expanduser().resolve()
@@ -157,7 +168,7 @@ def archive_failed_ram_stage(
         ):
             raise RuntimeError("failed RAM-stage archive transaction is invalid")
     else:
-        source_names = [name for name, path in sources.items() if _export_root_has_content(path)]
+        source_names = [name for name, path in sources.items() if _archive_source_has_files(path)]
         if not source_names:
             return None
         stamp = max(sources[name].stat().st_mtime_ns for name in source_names)
@@ -173,21 +184,35 @@ def archive_failed_ram_stage(
 
     archive = archive_parent / archive_name
     if state == "copying":
+        empty_names = [
+            name
+            for name in source_names
+            if sources[name].exists() and not _archive_source_has_files(sources[name])
+        ]
+        if empty_names:
+            if any(not _archive_source_is_directory_only(sources[name]) for name in empty_names):
+                raise RuntimeError("failed RAM-stage source contains unsupported empty nodes")
+            source_names = [name for name in source_names if name not in empty_names]
+            if not source_names:
+                raise RuntimeError("failed RAM-stage archive transaction lost every source")
+            transaction["source_names"] = source_names
+            atomic_write_json(transaction_path, transaction)
         for name in source_names:
             source = sources[name]
-            if not _export_root_has_content(source):
+            if not _archive_source_has_files(source):
                 raise RuntimeError("failed RAM-stage source disappeared before archive commit")
             copytree_atomic(source, archive / name)
         transaction["state"] = "copied"
         atomic_write_json(transaction_path, transaction)
     else:
         for name in source_names:
-            if not _export_root_has_content(archive / name):
+            if not _archive_source_has_files(archive / name):
                 raise RuntimeError("committed failed RAM-stage archive is incomplete")
 
-    for name in source_names:
-        source = sources[name]
+    for name, source in sources.items():
         if source.exists():
+            if name not in source_names and not _archive_source_is_directory_only(source):
+                raise RuntimeError("refusing to remove unarchived RAM-stage content")
             shutil.rmtree(source)
     transaction_path.unlink()
     return archive
