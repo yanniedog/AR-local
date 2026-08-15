@@ -125,6 +125,11 @@ def prepare_ram_stage(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=False)
 
 
+def persistent_export_stage_root(persistent_runs_root: Path, date: str) -> Path:
+    """Keep large derived exports off tmpfs while raw requests remain RAM-staged."""
+    return persistent_runs_root.parent / ".daily-export-stage" / date / "_exports"
+
+
 def archive_failed_ram_stage(
     staged_run: Path,
     staged_export_date: Path,
@@ -452,15 +457,20 @@ def run_once(args: argparse.Namespace) -> int:
         )
 
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
-    use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
+    automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
+    use_ram_stage = args.ram_stage or automatic_pi_stage
     ram_cleanup_paths: Optional[tuple[Path, Path]] = None
     staged_exports_to_install: Optional[Path] = None
     if use_ram_stage:
         ram_root = args.ram_root.expanduser().resolve()
         staged_runs = ram_root / "runs"
-        staged_exports = ram_root / "exports" / date / "_exports"
+        staged_exports = (
+            persistent_export_stage_root(persistent_runs_root, date)
+            if automatic_pi_stage and not args.ram_stage
+            else ram_root / "exports" / date / "_exports"
+        )
         staged_run = ram_root / "runs" / date
-        staged_export_date = ram_root / "exports" / date
+        staged_export_date = staged_exports.parent
         if args.archive_failed_ram_stage:
             archived = archive_failed_ram_stage(
                 staged_run,
@@ -487,7 +497,7 @@ def run_once(args: argparse.Namespace) -> int:
         staged_exports_to_install = staged_exports
         ram_cleanup_paths = (
             ram_root / "runs" / date,
-            ram_root / "exports" / date,
+            staged_export_date,
         )
     else:
         # A revision must not mutate the original day's raw run files either, so

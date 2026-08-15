@@ -169,6 +169,34 @@ def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     assert not (ram / "exports" / DATE).exists()
 
 
+def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch):
+    args, runs, state, ram = _configure(tmp_path, monkeypatch)
+    args.ram_stage = False
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    expected_stage = runs.parent / ".daily-export-stage" / DATE / "_exports"
+    original_build = cdr_daily.build_outputs
+
+    def build(run_root, export_root, db_path, *, previous_run_root=None):
+        assert export_root == expected_stage
+        assert not str(export_root).startswith(str(ram))
+        return original_build(
+            run_root,
+            export_root,
+            db_path,
+            previous_run_root=previous_run_root,
+        )
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", build)
+
+    assert cdr_daily.run_once(args) == 1
+
+    assert (runs / DATE / "_exports" / "banks.json").is_file()
+    assert not (ram / "runs" / DATE).exists()
+    assert not (ram / "exports").exists()
+    assert not expected_stage.exists()
+    assert (state / f"{DATE}.done.json").is_file()
+
+
 def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(
     tmp_path,
     monkeypatch,
