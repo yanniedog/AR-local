@@ -118,10 +118,42 @@ def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypa
     command = captured[0]
     assert "chown -R" not in command
     assert "mkdir -p" not in command
-    assert "enable --now ar-local-daily.timer ar-local-daily-watchdog.timer ar-local-deploy-watchdog.timer" in command
-    assert "restart ar-local-daily.timer ar-local-daily-watchdog.timer" in command
+    assert "apply-pi-runtime-units.sh" in command
+    assert "sudo sh /srv/ar-local/AR-local/deploy/pi/apply-pi-runtime-units.sh" not in command
+    assert "/srv/ar-local/AR-local /srv/ar-local/australianrates /srv/ar-local/data" in command
     assert "systemctl cat ar-local-deploy-watchdog.service" in command
     assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
+
+
+def test_runtime_unit_activation_is_ingest_locked_and_complete():
+    text = (ROOT / "deploy" / "pi" / "apply-pi-runtime-units.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "daily-ingest.lock" in text
+    assert "ingest/deploy lock is busy" in text
+    assert "ar-local-daily.service" in text
+    assert "ar-local-daily-watchdog.service" in text
+    assert "ar-local-ingest-now.service" in text
+    assert "sudo systemctl daemon-reload" in text
+    assert "sudo systemctl restart ar-local-dashboard.service" in text
+    assert "git fetch" not in text
+    assert "git checkout" not in text
+    assert "apt-get" not in text
+
+
+def test_runtime_unit_activation_preserves_busy_lock_result(monkeypatch, capsys):
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (
+            pi_deploy_verify.EXIT_BUSY,
+            "",
+            "apply-pi-runtime-units: ingest/deploy lock is busy",
+        ),
+    )
+
+    assert pi_deploy_verify.deploy_services() == pi_deploy_verify.EXIT_BUSY
+    assert "ingest/deploy lock is busy" in capsys.readouterr().err
 
 
 def test_on_pi_watchdog_is_verify_only():
@@ -200,6 +232,12 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DAILY_TIMER_ACTIVE": "active",
         "WATCHDOG_TIMER_ENABLED": "enabled",
         "WATCHDOG_TIMER_ACTIVE": "active",
+        "DAILY_KILL_MODE": "control-group",
+        "DAILY_RUNTIME_MAX": "6h 15min",
+        "WATCHDOG_KILL_MODE": "control-group",
+        "WATCHDOG_RUNTIME_MAX": "6h 15min",
+        "MANUAL_KILL_MODE": "control-group",
+        "MANUAL_RUNTIME_MAX": "6h 15min",
     }
     snapshot.update(overrides)
     return snapshot
@@ -269,6 +307,13 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
     assert pi_deploy_verify.pi_ingest_timers_ok(_service_snapshot())
     assert not pi_deploy_verify.pi_ingest_timers_ok(
         _service_snapshot(WATCHDOG_TIMER_ENABLED="disabled")
+    )
+
+
+def test_ingest_fence_verification_rejects_partial_unit_rollout():
+    assert pi_deploy_verify.pi_ingest_service_fences_ok(_service_snapshot())
+    assert not pi_deploy_verify.pi_ingest_service_fences_ok(
+        _service_snapshot(WATCHDOG_RUNTIME_MAX="infinity")
     )
 
 
