@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "algorithm": "sha256-canonical-json-schema-set-v1",
+  "schema_set_sha256": "94ac90e09f1a86c894ac8168bd5d44f8eb50675a37435b3a05f1b8f14d690964",
+  "schemas": [
+    "asset-descriptor-v3.schema.json",
+    "canonical-core-v3.schema.json",
+    "coverage-v2.schema.json",
+    "generation-manifest-v3.schema.json",
+    "generation-pointer-v3.schema.json"
+  ]
+}

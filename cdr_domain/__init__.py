@@ -1,0 +1,76 @@
+"""Canonical, evidence-bound financial domain model for payload v3."""
+
+from .models import (
+    Availability,
+    CanonicalFee,
+    CanonicalIdentity,
+    CanonicalProduct,
+    CanonicalRate,
+    ClassificationStatus,
+    ConsumerSection,
+    DisclosureStatus,
+    EvidenceRef,
+    EvidenceStatus,
+    FeeRateUnit,
+    IdentityStatus,
+    PricingStatus,
+    ProductClassification,
+    ProductEvidence,
+    ProductKind,
+    RateBasis,
+    RateMetric,
+    RateUnit,
+    TypedRate,
+    TypedFeeRate,
+)
+from .normalize import normalize_product
+from .classification import classify_product
+from .identity import provider_uid
+from .contract_validation import (
+    contract_sha256,
+    generation_manifest_digest,
+    validate_asset_descriptor,
+    validate_contract,
+    validate_coverage_v2,
+    validate_generation_manifest,
+    validate_generation_pointer,
+)
+from .serialize import canonical_json_bytes, to_primitive
+from .validate import validate_canonical_product
+
+__all__ = [
+    "Availability",
+    "CanonicalFee",
+    "CanonicalIdentity",
+    "CanonicalProduct",
+    "CanonicalRate",
+    "ClassificationStatus",
+    "ConsumerSection",
+    "DisclosureStatus",
+    "EvidenceRef",
+    "EvidenceStatus",
+    "FeeRateUnit",
+    "IdentityStatus",
+    "PricingStatus",
+    "ProductClassification",
+    "ProductEvidence",
+    "ProductKind",
+    "RateBasis",
+    "RateMetric",
+    "RateUnit",
+    "TypedRate",
+    "TypedFeeRate",
+    "canonical_json_bytes",
+    "classify_product",
+    "contract_sha256",
+    "generation_manifest_digest",
+    "normalize_product",
+    "provider_uid",
+    "to_primitive",
+    "validate_canonical_product",
+    "validate_asset_descriptor",
+    "validate_contract",
+    "validate_coverage_v2",
+    "validate_generation_manifest",
+    "validate_generation_pointer",
+]
