@@ -129,6 +129,22 @@ def _configure(tmp_path, monkeypatch, *, rates=1):
     return args, runs, state, ram
 
 
+def _failed_stage_paths(tmp_path):
+    runs = tmp_path / "data" / "runs"
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    derived = ram / "exports" / DATE
+    (raw / "_raw-attempt-journals-v1" / SESSION).mkdir(parents=True)
+    (derived / "_exports" / "attempt-evidence" / SESSION).mkdir(parents=True)
+    (raw / "_raw-attempt-journals-v1" / SESSION / "attempt.json").write_bytes(
+        b'{"status":406,"wire_sha256":"preserved"}\n'
+    )
+    (derived / "_exports" / "attempt-evidence" / SESSION / "summary.json").write_bytes(
+        b'{"verified":true,"attempts":1}\n'
+    )
+    return runs, ram, raw, derived
+
+
 def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     tmp_path,
     monkeypatch,
@@ -180,10 +196,7 @@ def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(
 
 
 def test_failed_ram_stage_is_archived_create_once_before_retry(tmp_path, monkeypatch):
-    args, runs, _state, ram = _configure(tmp_path, monkeypatch, rates=0)
-    assert cdr_daily.run_once(args) == 2
-    raw = ram / "runs" / DATE
-    derived = ram / "exports" / DATE
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
     raw_before = {
         path.relative_to(raw).as_posix(): path.read_bytes()
         for path in raw.rglob("*") if path.is_file()
@@ -210,10 +223,7 @@ def test_failed_ram_archive_recovers_after_crash_during_source_cleanup(
     tmp_path,
     monkeypatch,
 ):
-    args, runs, _state, ram = _configure(tmp_path, monkeypatch, rates=0)
-    assert cdr_daily.run_once(args) == 2
-    raw = ram / "runs" / DATE
-    derived = ram / "exports" / DATE
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
     original_rmtree = cdr_daily.shutil.rmtree
     crashed = False
 

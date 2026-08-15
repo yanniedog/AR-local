@@ -48,7 +48,9 @@ def _index_version_list(preferred: Optional[int]) -> List[int]:
     """Try a holder's known-good x-v first; fetch_cdr_json still falls back through
     the rest of CDR_VERSION_ORDER if it stops working, so this is a hint not a
     lock-in. None means "negotiate from the top" (version not yet known)."""
-    return [preferred] if preferred is not None else list(PRODUCT_INDEX_VERSION_ORDER)
+    if preferred is None:
+        return list(PRODUCT_INDEX_VERSION_ORDER)
+    return [preferred, *(version for version in PRODUCT_INDEX_VERSION_ORDER if version != preferred)]
 
 
 def _detail_version_list() -> List[int]:

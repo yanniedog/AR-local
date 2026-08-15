@@ -212,6 +212,23 @@ def test_compact_406_advertisement_is_tried_next(monkeypatch):
     assert seen == [6, 8]
 
 
+def test_out_of_range_long_advertisement_cannot_consume_attempt(monkeypatch):
+    seen: list[int] = []
+
+    def fake_http(url, headers, *, timeout):
+        seen.append(int(headers["x-v"]))
+        if len(seen) == 1:
+            return 406, '{"detail":"Versions available: 100, 6"}', None
+        return 200, '{"data": {}}', None
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    result = cis.fetch_cdr_json(
+        "http://x", versions=[5], timeout=1, max_retries=0, sleep_ms=0
+    )
+    assert result.ok is True and result.version == 6
+    assert seen == [5, 6]
+
+
 def test_caller_cannot_expand_attempt_or_retry_caps(monkeypatch):
     calls = _count_calls(monkeypatch, 503)
     res = cis.fetch_cdr_json(
@@ -287,6 +304,6 @@ def test_retry_attempts_are_immutably_journaled_with_version_context(tmp_path, m
         for path in sorted(journal.events.glob("*.json"))
     ]
     assert [event["sequence"] for event in events] == [1, 2]
-    assert [event["context"]["retry_ordinal"] for event in events] == [1, 1]
-    assert [event["context"]["cdr_version"] for event in events] == [4, 7]
+    assert [event["context"]["retry_ordinal"] for event in events] == [1, 2]
+    assert [event["context"]["cdr_version"] for event in events] == [4, 4]
     assert journal.summary()["attempts"] == 2

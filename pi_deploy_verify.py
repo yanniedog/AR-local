@@ -8,6 +8,7 @@ Exit codes:
   1  drift, dirty tree, service down, or HTTP smoke failed
   2  invalid flags or missing configuration
   3  SSH unreachable or remote command failed
+  75 ingest/deploy lock is active; retry without changing the checkout
 
 Environment (optional):
   AR_PI_SSH_HOST       SSH target (default: ar-local-pi5)
@@ -54,6 +55,7 @@ EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
 EXIT_CONFIG = 2
 EXIT_SSH = 3
+EXIT_BUSY = 75
 
 DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
@@ -591,16 +593,29 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
     script = (
         f"set -e; "
         f"lock={shell_quote(ingest_lock)}; "
-        "(set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null || "
-        "{ echo 'pi_deploy_verify: ingest/deploy lock is busy' >&2; exit 75; }; "
-        "trap 'rm -f -- \"$lock\"' EXIT HUP INT TERM; "
+        "acquire_lock() { "
+        "if (set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null; then return 0; fi; "
+        "owner=$(sed -n 's/^pid=//p' \"$lock\" 2>/dev/null | head -n 1); "
+        "case \"$owner\" in ''|*[!0-9]*) owner='';; esac; "
+        "mtime=$(stat -c %Y \"$lock\" 2>/dev/null || printf 0); now=$(date +%s); "
+        "if { test -n \"$owner\" && kill -0 \"$owner\" 2>/dev/null; } || "
+        "{ test -z \"$owner\" && test $((now-mtime)) -le 21600; }; then return 75; fi; "
+        "rm -f -- \"$lock\"; "
+        "(set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null || return 75; "
+        "}; "
+        "acquire_lock || { echo 'pi_deploy_verify: ingest/deploy lock is busy' >&2; exit 75; }; "
+        "cleanup_lock() { rm -f -- \"$lock\"; }; "
+        "trap cleanup_lock EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; "
         f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} main && "
         f"test \"$(git rev-parse {shell_quote(remote)}/main)\" = "
         f"{shell_quote(expected_commit)} && "
         "git checkout main && "
         f"git merge --ff-only {shell_quote(expected_commit)}"
     )
-    code, out, _ = run_ssh(script, dry_run=dry_run)
+    code, out, err = run_ssh(script, dry_run=dry_run)
+    if code == EXIT_BUSY and not dry_run:
+        print(err or "pi_deploy_verify: ingest/deploy lock is busy", file=sys.stderr)
+        return EXIT_BUSY
     if code != 0 and not dry_run:
         return EXIT_SSH
     if out and not dry_run:

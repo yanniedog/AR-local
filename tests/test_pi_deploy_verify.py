@@ -84,7 +84,27 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
     assert "daily-ingest.lock" in captured[0]
     assert "role=deploy" in captured[0]
-    assert "trap 'rm -f" in captured[0]
+    assert "kill -0" in captured[0]
+    assert "trap cleanup_lock EXIT" in captured[0]
+    assert "trap 'exit 143' TERM" in captured[0]
+
+
+def test_exact_commit_install_preserves_busy_lock_result(monkeypatch, capsys):
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (
+            pi_deploy_verify.EXIT_BUSY,
+            "",
+            "pi_deploy_verify: ingest/deploy lock is busy",
+        ),
+    )
+
+    assert (
+        pi_deploy_verify.deploy_pull_all("a" * 40)
+        == pi_deploy_verify.EXIT_BUSY
+    )
+    assert "ingest/deploy lock is busy" in capsys.readouterr().err
 
 
 def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypatch):
