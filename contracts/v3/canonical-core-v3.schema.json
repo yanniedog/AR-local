@@ -215,6 +215,7 @@
         "evidence_ids",
         "observed_at",
         "effective_date",
+        "effective_to",
         "source_updated_at",
         "source_urls"
       ],
@@ -226,6 +227,7 @@
         "evidence_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" }, "uniqueItems": true },
         "observed_at": { "type": "string", "format": "date-time" },
         "effective_date": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "effective_to": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "source_updated_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "source_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" }, "uniqueItems": true }
       }
@@ -300,9 +302,10 @@
     "fee": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fee_uid", "semantic_fee", "disclosure_status", "currency", "fixed_amount", "minimum_amount", "maximum_amount", "rate", "condition", "evidence_ids"],
+      "required": ["fee_uid", "fee_identity_status", "semantic_fee", "disclosure_status", "currency", "fixed_amount", "minimum_amount", "maximum_amount", "rate", "condition", "evidence_ids"],
       "properties": {
         "fee_uid": { "$ref": "#/$defs/digestId" },
+        "fee_identity_status": { "enum": ["confirmed", "ambiguous"] },
         "semantic_fee": { "$ref": "#/$defs/semanticFee" },
         "disclosure_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
         "currency": { "oneOf": [{ "type": "string", "pattern": "^[A-Z]{3}$" }, { "type": "null" }] },
@@ -351,18 +354,19 @@
     "semanticFee": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "fee_type", "method", "cadence"],
+      "required": ["name", "fee_type", "method", "cadence", "additional_info"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "fee_type": { "type": "string", "minLength": 1 },
         "method": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
-        "cadence": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+        "cadence": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "additional_info": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
       }
     },
     "evidenceRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["evidence_id", "source_kind", "source_path", "source_locator", "source_sha256", "source_record_sha256", "observed_at", "effective_date", "source_updated_at", "source_url"],
+      "required": ["evidence_id", "source_kind", "source_path", "source_locator", "source_sha256", "source_record_sha256", "observed_at", "effective_date", "effective_to", "source_updated_at", "source_url"],
       "properties": {
         "evidence_id": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" },
         "source_kind": { "type": "string", "minLength": 1 },
@@ -372,6 +376,7 @@
         "source_record_sha256": { "$ref": "#/$defs/sha256" },
         "observed_at": { "type": "string", "format": "date-time" },
         "effective_date": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "effective_to": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "source_updated_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "source_url": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://" }, { "type": "null" }] }
       }

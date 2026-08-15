@@ -18,6 +18,7 @@ from .identity import (
     rate_identity_statuses,
 )
 from .models import (
+    Availability,
     CanonicalFee,
     CanonicalIdentity,
     CanonicalProduct,
@@ -27,9 +28,13 @@ from .models import (
     EvidenceStatus,
     FeeRateUnit,
     IdentityStatus,
+    ProductClassification,
+    ProductEvidence,
+    ProductKind,
     TypedFeeRate,
 )
 from .rates import decimal_text, rate_from_record
+from .serialize import freeze_semantics
 from .validate import validate_canonical_product
 
 NORMALIZATION_VERSION = "canonical-v3-domain-v1"
@@ -114,10 +119,11 @@ def _fees(
         )
         if status is DisclosureStatus.COMPLETE and monetary_values and currency is None:
             status = DisclosureStatus.PARTIAL
-        semantics = fee_semantics(fee)
+        semantics = freeze_semantics(fee_semantics(fee))
         out.append(
             CanonicalFee(
                 fee_uid=fee_uid_from_semantics(product, semantics),
+                fee_identity_status=IdentityStatus.CONFIRMED,
                 semantic_fee=semantics,
                 disclosure_status=status,
                 currency=currency,
@@ -129,7 +135,22 @@ def _fees(
                 evidence_ids=(evidence_id,),
             )
         )
-    return tuple(out)
+    counts: dict[str, int] = {}
+    for fee in out:
+        counts[fee.fee_uid] = counts.get(fee.fee_uid, 0) + 1
+    return tuple(
+        CanonicalFee(
+            **{
+                **fee.__dict__,
+                "fee_identity_status": (
+                    IdentityStatus.AMBIGUOUS
+                    if counts[fee.fee_uid] > 1
+                    else IdentityStatus.CONFIRMED
+                ),
+            }
+        )
+        for fee in out
+    )
 
 
 def _rates(
@@ -139,13 +160,40 @@ def _rates(
     record: Mapping[str, Any],
     evidence_id: str,
     legacy_aliases: tuple[str, ...],
+    classification: ProductClassification,
+    evidence: ProductEvidence,
 ) -> tuple[CanonicalRate, ...]:
     out: list[CanonicalRate] = []
-    for family, key in (("deposit", "depositRates"), ("lending", "lendingRates")):
-        rows = [item for item in (record.get(key) or []) if isinstance(item, Mapping)]
-        identities = rate_identity_statuses(product, rows, family)
-        for source_index, (raw, identity_data) in enumerate(zip(rows, identities)):
-            uid, status, semantics = identity_data
+    permitted_family = {
+        ProductKind.MORTGAGE: "lending",
+        ProductKind.SAVINGS_ACCOUNT: "deposit",
+        ProductKind.TERM_DEPOSIT: "deposit",
+        ProductKind.TRANSACTION_ACCOUNT: "deposit",
+        ProductKind.MORTGAGE_OFFSET: "deposit",
+    }.get(classification.product_kind)
+    populated_families = {
+        family
+        for family, key in (("deposit", "depositRates"), ("lending", "lendingRates"))
+        if any(isinstance(item, Mapping) for item in (record.get(key) or []))
+    }
+    if permitted_family is not None and populated_families - {permitted_family}:
+        raise ValueError("product publishes a rate family that contradicts its classification")
+    if permitted_family is None and len(populated_families) > 1:
+        raise ValueError("unknown product publishes contradictory rate families")
+    families = (permitted_family,) if permitted_family else tuple(sorted(populated_families))
+    for family in families:
+        key = "depositRates" if family == "deposit" else "lendingRates"
+        indexed_rows = [
+            (source_index, item)
+            for source_index, item in enumerate(record.get(key) or [])
+            if isinstance(item, Mapping)
+        ]
+        identities = rate_identity_statuses(
+            product, (item for _, item in indexed_rows), family
+        )
+        for (source_index, raw), identity_data in zip(indexed_rows, identities):
+            uid, status, raw_semantics = identity_data
+            semantics = freeze_semantics(raw_semantics)
             advertised, comparison = rate_from_record(raw, family, evidence_id)
             identity = CanonicalIdentity(
                 provider_uid=provider,
@@ -166,7 +214,12 @@ def _rates(
                     advertised=advertised,
                     comparison=comparison,
                     semantic_tier=semantics,
-                    exact_alert_eligible=status is IdentityStatus.CONFIRMED,
+                    exact_alert_eligible=(
+                        status is IdentityStatus.CONFIRMED
+                        and classification.classification_status.value == "confirmed"
+                        and evidence.availability is Availability.PUBLIC
+                        and identity.provider_identity_status is IdentityStatus.CONFIRMED
+                    ),
                     source_index=source_index,
                 )
             )
@@ -226,11 +279,17 @@ def normalize_product(
         effective_date=(
             str(record.get("effectiveFrom")) if record.get("effectiveFrom") else None
         ),
+        effective_to=(
+            str(record.get("effectiveTo")) if record.get("effectiveTo") else None
+        ),
         source_updated_at=(
             str(record.get("lastUpdated")) if record.get("lastUpdated") else None
         ),
     )
     classification = classify_product(record, dataset)
+    evidence = product_evidence(
+        record, classification, evidence_id=evidence_id, observed_at=observed_at
+    )
     identity = CanonicalIdentity(
         provider_uid=provider,
         provider_identity_status=provider_status,
@@ -245,10 +304,17 @@ def normalize_product(
         display_name=str(record.get("name") or product_id),
         provider_display_name=provider_display_name,
         classification=classification,
-        evidence=product_evidence(
-            record, classification, evidence_id=evidence_id, observed_at=observed_at
+        evidence=evidence,
+        rates=_rates(
+            product,
+            provider,
+            product_id,
+            record,
+            evidence_id,
+            aliases,
+            classification,
+            evidence,
         ),
-        rates=_rates(product, provider, product_id, record, evidence_id, aliases),
         fees=_fees(product, record, evidence_id),
         evidence_refs=(evidence_ref,),
     )

@@ -83,5 +83,13 @@ It does not redefine or republish the retired v2 sidecar.
 - `generation-pointer-v3.schema.json` is the small rolling `manifest-v3`
   document with independent `latest_observation` and `latest_complete` heads.
 
+Schema validation is necessary but not sufficient at this financial boundary.
+Promotion must call the producer semantic validators with the exact downloaded
+capability bytes. They verify declared byte counts, SHA-256, bounded inflation,
+canonical product/fee/rate identity derivations, cohort membership, typed-rate
+rules, lifecycle evidence, manifest metadata, coverage counts, and pointer CAS
+monotonicity. AR-app must vendor the same cross-record semantic rules alongside
+the generated schema validators; schema-only acceptance is expressly forbidden.
+
 These contracts are dormant until the deterministic v3 builder and dual-read
 AR-app bridge ship. V1 assets and URLs remain unchanged during that migration.

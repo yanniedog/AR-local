@@ -21,6 +21,7 @@
     "register_sources_complete",
     "register_provenance_complete",
     "failure_records",
+    "failure_records_by_provider",
     "corrupt_failure_records",
     "exclusions_by_reason",
     "failure_provenance_complete",
@@ -43,6 +44,13 @@
     "register_sources_complete": { "$ref": "#/$defs/count" },
     "register_provenance_complete": { "type": "boolean" },
     "failure_records": { "$ref": "#/$defs/count" },
+    "failure_records_by_provider": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^provider(?:-fallback)?:v1:[0-9a-f]{64}$"
+      },
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
     "corrupt_failure_records": { "$ref": "#/$defs/count" },
     "exclusions_by_reason": {
       "type": "object",

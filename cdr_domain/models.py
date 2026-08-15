@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 
 class IdentityStatus(str, Enum):
@@ -109,6 +109,7 @@ class EvidenceRef:
     source_record_sha256: str
     observed_at: str
     effective_date: Optional[str] = None
+    effective_to: Optional[str] = None
     source_updated_at: Optional[str] = None
     source_url: Optional[str] = None
 
@@ -157,7 +158,7 @@ class CanonicalRate:
     identity: CanonicalIdentity
     advertised: TypedRate
     comparison: Optional[TypedRate]
-    semantic_tier: dict[str, object]
+    semantic_tier: Mapping[str, object]
     exact_alert_eligible: bool
     source_index: int
 
@@ -165,7 +166,8 @@ class CanonicalRate:
 @dataclass(frozen=True)
 class CanonicalFee:
     fee_uid: str
-    semantic_fee: dict[str, object]
+    fee_identity_status: IdentityStatus
+    semantic_fee: Mapping[str, object]
     disclosure_status: DisclosureStatus
     currency: Optional[str]
     fixed_amount: Optional[str]
@@ -185,6 +187,7 @@ class ProductEvidence:
     evidence_ids: Tuple[str, ...]
     observed_at: str
     effective_date: Optional[str]
+    effective_to: Optional[str]
     source_updated_at: Optional[str]
     source_urls: Tuple[str, ...]
 

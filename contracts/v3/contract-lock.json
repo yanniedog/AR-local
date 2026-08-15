@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "algorithm": "sha256-canonical-json-schema-set-v1",
-  "schema_set_sha256": "601f458cf8c4087d316a13b68805b15df9d1bec52cec6a648a253472ac944f2f",
+  "schema_set_sha256": "94ac90e09f1a86c894ac8168bd5d44f8eb50675a37435b3a05f1b8f14d690964",
   "schemas": [
     "asset-descriptor-v3.schema.json",
     "canonical-core-v3.schema.json",

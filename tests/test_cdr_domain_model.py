@@ -130,6 +130,7 @@ def test_real_mortgage_offset_is_quarantined_from_savings_and_zero_is_not_a_savi
     assert product.classification.quarantine_reason == "mortgage_linked_offset"
     assert product.evidence.availability is Availability.LINKED
     assert product.rates[0].advertised.value == "0"
+    assert not product.rates[0].exact_alert_eligible
 
 
 def test_real_interest_bearing_transaction_account_is_not_relabelled_as_savings():
@@ -213,6 +214,56 @@ def test_real_ambiguous_move_bank_tiers_cannot_power_exact_alerts():
         "0.0629",
         "0.0609",
     }
+
+
+def test_missing_eligibility_never_becomes_public_or_exact_alert_evidence():
+    product = normalized("move_bank_ambiguous_rates")
+
+    assert product.classification.classification_status is ClassificationStatus.CONFIRMED
+    assert product.evidence.eligibility_disclosure_status is DisclosureStatus.UNKNOWN
+    assert product.evidence.availability is Availability.UNKNOWN
+    assert not any(rate.exact_alert_eligible for rate in product.rates)
+
+    public_fallback = normalized("bank_of_melbourne_before_rename")
+    corrupted = replace(
+        public_fallback,
+        rates=(replace(public_fallback.rates[0], exact_alert_eligible=True),),
+    )
+    with pytest.raises(ValueError, match="exact alerts require"):
+        validate_canonical_product(corrupted)
+
+
+def test_classified_product_rejects_a_contradictory_rate_family():
+    record = deepcopy(captured("move_bank_ambiguous_rates")["record"])
+    record["depositRates"] = [
+        {"depositRateType": "VARIABLE", "rate": "0.04"}
+    ]
+    with pytest.raises(ValueError, match="rate family.*contradicts"):
+        normalized("move_bank_ambiguous_rates", record=record)
+
+
+def test_rate_source_index_preserves_the_original_cdr_array_position():
+    record = deepcopy(captured("move_bank_ambiguous_rates")["record"])
+    record["lendingRates"].insert(0, "malformed retained source row")
+    product = normalized("move_bank_ambiguous_rates", record=record)
+
+    assert [rate.source_index for rate in product.rates] == [1, 2, 3]
+
+    duplicate = replace(
+        product,
+        rates=(product.rates[0], replace(product.rates[1], source_index=1), product.rates[2]),
+    )
+    with pytest.raises(ValueError, match="source_index must be unique"):
+        validate_canonical_product(duplicate)
+
+
+def test_inverted_semantic_tier_range_is_rejected():
+    record = deepcopy(captured("afg_mortgage_offset")["record"])
+    record["depositRates"][0]["tiers"] = [
+        {"unitOfMeasure": "DOLLAR", "minimumValue": "500", "maximumValue": "100"}
+    ]
+    with pytest.raises(ValueError, match="tier minimum cannot exceed maximum"):
+        normalized("afg_mortgage_offset", record=record)
 
 
 def test_applicability_text_changes_rate_identity():
@@ -413,6 +464,41 @@ def test_unknown_nested_evidence_and_contradictory_fees_fail_closed():
         normalized("afg_mortgage_offset", record=record)
 
 
+def test_fee_applicability_is_identity_material_and_unresolved_duplicates_are_ambiguous():
+    record = deepcopy(captured("bank_of_melbourne_before_rename")["record"])
+    record["fees"] = [
+        {
+            "name": "Monthly fee",
+            "feeType": "PERIODIC",
+            "amount": "5",
+            "currency": "AUD",
+            "additionalInfo": "Waived for students",
+        },
+        {
+            "name": "Monthly fee",
+            "feeType": "PERIODIC",
+            "amount": "7",
+            "currency": "AUD",
+            "additionalInfo": "Waived for pensioners",
+        },
+    ]
+    distinct = normalized("bank_of_melbourne_before_rename", record=record)
+    assert len({fee.fee_uid for fee in distinct.fees}) == 2
+    assert all(fee.fee_identity_status is IdentityStatus.CONFIRMED for fee in distinct.fees)
+
+    record["fees"][1]["additionalInfo"] = "Waived for students"
+    ambiguous = normalized("bank_of_melbourne_before_rename", record=record)
+    assert len({fee.fee_uid for fee in ambiguous.fees}) == 1
+    assert all(fee.fee_identity_status is IdentityStatus.AMBIGUOUS for fee in ambiguous.fees)
+
+    detached = replace(
+        distinct,
+        fees=(replace(distinct.fees[0], condition="Different condition"), distinct.fees[1]),
+    )
+    with pytest.raises(ValueError, match="condition disagrees"):
+        validate_canonical_product(detached)
+
+
 def test_empty_rates_are_unpriced_and_private_literal_source_urls_are_excluded():
     record = {
         "productId": "empty",
@@ -467,6 +553,30 @@ def test_effective_date_and_source_update_timestamp_remain_distinct():
         validate_canonical_product(invalid)
 
 
+def test_effective_to_is_preserved_and_closes_an_expired_product():
+    record = deepcopy(captured("bank_of_melbourne_before_rename")["record"])
+    record["effectiveTo"] = "2026-05-24T23:59:59+10:00"
+    product = normalized("bank_of_melbourne_before_rename", record=record)
+
+    assert product.evidence.effective_to == "2026-05-24T23:59:59+10:00"
+    assert product.evidence_refs[0].effective_to == product.evidence.effective_to
+    assert product.evidence.availability is Availability.CLOSED
+    assert not any(rate.exact_alert_eligible for rate in product.rates)
+
+
+def test_future_and_reversed_lifecycles_cannot_be_public_or_exact():
+    record = deepcopy(captured("bank_of_melbourne_before_rename")["record"])
+    record["effectiveFrom"] = "2027-01-01T00:00:00+10:00"
+    future = normalized("bank_of_melbourne_before_rename", record=record)
+    assert future.evidence.availability is Availability.UNKNOWN
+    assert not any(rate.exact_alert_eligible for rate in future.rates)
+
+    record["effectiveFrom"] = "2027-02-01T00:00:00+10:00"
+    record["effectiveTo"] = "2027-01-01T00:00:00+10:00"
+    with pytest.raises(ValueError, match="effective_date cannot follow effective_to"):
+        normalized("bank_of_melbourne_before_rename", record=record)
+
+
 def test_nonzero_fixed_fee_without_currency_is_partial_not_complete():
     record = deepcopy(captured("afg_mortgage_offset")["record"])
     record["fees"] = [
@@ -480,7 +590,7 @@ def test_nonzero_fixed_fee_without_currency_is_partial_not_complete():
 
 
 def test_canonical_serialization_is_deterministic_and_float_free():
-    product = normalized("afg_mortgage_offset")
+    product = normalized("amp_transaction_account_with_interest")
 
     first = canonical_json_bytes(product)
     second = canonical_json_bytes(product)
@@ -488,6 +598,43 @@ def test_canonical_serialization_is_deterministic_and_float_free():
     assert json.loads(first)["schema_version"] == 3
     with pytest.raises(TypeError, match="binary floating-point"):
         canonical_json_bytes({"rate": 0.05})
+    invalid = replace(
+        product,
+        evidence=replace(product.evidence, availability=Availability.PUBLIC),
+    )
+    with pytest.raises(ValueError, match="public availability requires"):
+        canonical_json_bytes(invalid)
+
+
+def test_nested_identity_semantics_are_deeply_immutable():
+    product = normalized("amp_transaction_account_with_interest")
+    fee_product = normalized("afg_mortgage_offset")
+
+    with pytest.raises(TypeError):
+        product.rates[0].semantic_tier["family"] = "lending"
+    with pytest.raises(TypeError):
+        product.rates[0].semantic_tier["tiers"][0]["maximum"] = "1"
+    with pytest.raises(TypeError):
+        fee_product.fees[0].semantic_fee["name"] = "mutated"
+    with pytest.raises(TypeError):
+        dict.__setitem__(product.rates[0].semantic_tier, "family", "lending")
+    with pytest.raises(TypeError):
+        product.rates[0].semantic_tier._data["family"] = "lending"
+    with pytest.raises(TypeError, match="storage is immutable"):
+        product.rates[0].semantic_tier._data = dict(
+            product.rates[0].semantic_tier
+        )
+
+
+def test_aggregate_serialization_revalidates_nested_products():
+    product = normalized("amp_transaction_account_with_interest")
+    corrupt = replace(
+        product,
+        rates=(replace(product.rates[0], source_index=-1),),
+    )
+
+    with pytest.raises(ValueError, match="source_index must be a non-negative"):
+        canonical_json_bytes({"products": [corrupt]})
 
 
 def test_real_normalized_products_satisfy_the_canonical_core_schema():

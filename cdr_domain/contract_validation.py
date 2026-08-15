@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import zlib
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
@@ -14,6 +15,9 @@ from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
 from .time import is_rfc3339
+from .deserialize import canonical_product_from_primitive
+from .models import Availability, ClassificationStatus
+from .validate import validate_canonical_product
 
 
 CONTRACT_ROOT = Path(__file__).resolve().parents[1] / "contracts" / "v3"
@@ -33,6 +37,28 @@ SUPPORTED_CAPABILITY_SCHEMAS = {
     "core": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
 }
 FORMAT_CHECKER = FormatChecker()
+
+
+class DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, child in pairs:
+        if key in value:
+            raise DuplicateJsonKeyError(f"duplicate JSON object key: {key}")
+        value[key] = child
+    return value
+
+
+def _strict_json_bytes(supplied: bytes, label: str) -> object:
+    try:
+        return json.loads(
+            supplied.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, DuplicateJsonKeyError) as error:
+        raise ValueError(f"{label} bytes are not unambiguous UTF-8 JSON") from error
 
 
 @FORMAT_CHECKER.checks("date")
@@ -194,8 +220,11 @@ def validate_coverage_v2(coverage: Mapping[str, Any]) -> None:
             raise ValueError("reconciled coverage requires complete failure provenance")
         if coverage["corrupt_failure_records"]:
             raise ValueError("reconciled coverage cannot contain corrupt failure records")
-    if failed and not coverage["failure_records"]:
-        raise ValueError("failed providers require failure records")
+    failure_records_by_provider = coverage["failure_records_by_provider"]
+    if len(failure_records_by_provider) != failed:
+        raise ValueError("each failed provider requires attributable failure evidence")
+    if sum(failure_records_by_provider.values()) != coverage["failure_records"]:
+        raise ValueError("provider-attributed failure evidence must reconcile to failure_records")
     register_attempted = coverage["register_sources_attempted"]
     register_complete = coverage["register_sources_complete"]
     if register_complete > register_attempted:
@@ -213,6 +242,11 @@ def validate_asset_descriptor(descriptor: Mapping[str, Any]) -> None:
         raise ValueError(f"unsupported v3 capability: {descriptor['capability']}")
     if descriptor["schema_id"] != expected_schema:
         raise ValueError("capability schema_id does not match the producer contract")
+    if descriptor["capability"] == "core" and (
+        descriptor["media_type"] != "application/json"
+        or descriptor["cohort"] != "confirmed-consumer-products"
+    ):
+        raise ValueError("core descriptor media type and cohort are fixed by contract")
     _validate_release_url(str(descriptor["url"]), descriptor["sha256"], "asset")
     if (
         descriptor["encoding"] == "identity"
@@ -221,7 +255,78 @@ def validate_asset_descriptor(descriptor: Mapping[str, Any]) -> None:
         raise ValueError("identity-encoded asset byte counts must match")
 
 
-def validate_generation_manifest(manifest: Mapping[str, Any]) -> None:
+def _decode_asset_bytes(descriptor: Mapping[str, Any], supplied: bytes) -> bytes:
+    if not isinstance(supplied, bytes):
+        raise ValueError("capability must be supplied as exact bytes")
+    if len(supplied) != descriptor["compressed_bytes"]:
+        raise ValueError("capability compressed byte count does not match descriptor")
+    if hashlib.sha256(supplied).hexdigest() != descriptor["sha256"]:
+        raise ValueError("capability byte SHA-256 does not match descriptor")
+    if descriptor["encoding"] == "identity":
+        decoded = supplied
+    else:
+        limit = int(descriptor["uncompressed_bytes"])
+        inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            decoded = inflater.decompress(supplied, limit + 1)
+        except zlib.error as error:
+            raise ValueError("capability gzip stream is corrupt") from error
+        if len(decoded) > limit or inflater.unconsumed_tail:
+            raise ValueError("capability exceeds its declared inflated byte count")
+        try:
+            decoded += inflater.flush(limit - len(decoded) + 1)
+        except zlib.error as error:
+            raise ValueError("capability gzip stream is corrupt") from error
+        if not inflater.eof:
+            raise ValueError("capability gzip stream is truncated")
+        if inflater.unused_data:
+            raise ValueError("capability gzip stream contains trailing data")
+    if len(decoded) != descriptor["uncompressed_bytes"]:
+        raise ValueError("capability inflated byte count does not match descriptor")
+    return decoded
+
+
+def _validate_core_capability(
+    decoded: bytes,
+    manifest: Mapping[str, Any],
+) -> None:
+    core = _strict_json_bytes(decoded, "core capability")
+    if not isinstance(core, Mapping):
+        raise ValueError("core capability must be a JSON object")
+    validate_contract("canonical-core-v3.schema.json", core)
+    if core["observation_date"] != manifest["observation_date"]:
+        raise ValueError("core observation_date disagrees with generation manifest")
+    if core["normalization_version"] != manifest["normalization_version"]:
+        raise ValueError("core normalization_version disagrees with generation manifest")
+    products = core["products"]
+    coverage = manifest["coverage"]
+    if len(products) != coverage["products_consumer_eligible"]:
+        raise ValueError("core product count disagrees with consumer-eligible coverage")
+    rate_count = 0
+    product_uids: set[str] = set()
+    for value in products:
+        product = canonical_product_from_primitive(value)
+        validate_canonical_product(product)
+        if product.identity.product_uid in product_uids:
+            raise ValueError("core contains a duplicate product_uid")
+        product_uids.add(product.identity.product_uid)
+        if (
+            product.classification.classification_status
+            is not ClassificationStatus.CONFIRMED
+            or product.evidence.availability is not Availability.PUBLIC
+        ):
+            raise ValueError("core contains a product outside its confirmed-public cohort")
+        if not product.rates:
+            raise ValueError("core contains a consumer product without a visible rate tier")
+        rate_count += len(product.rates)
+    if rate_count != coverage["rate_tiers_eligible"]:
+        raise ValueError("core rate-tier count disagrees with eligible coverage")
+
+
+def validate_generation_manifest(
+    manifest: Mapping[str, Any],
+    capability_bytes: Mapping[str, bytes],
+) -> None:
     validate_contract("generation-manifest-v3.schema.json", manifest)
     validate_coverage_v2(manifest["coverage"])
     coverage = manifest["coverage"]
@@ -252,8 +357,13 @@ def validate_generation_manifest(manifest: Mapping[str, Any]) -> None:
         raise ValueError("generation digest does not match canonical manifest content")
     if digest_prefix != expected_digest[:12]:
         raise ValueError("generation ID digest suffix does not match generation digest")
-    for descriptor in manifest["capabilities"].values():
+    if set(capability_bytes) != set(manifest["capabilities"]):
+        raise ValueError("generation capability bytes must exactly match manifest capabilities")
+    for capability, descriptor in manifest["capabilities"].items():
         validate_asset_descriptor(descriptor)
+        decoded = _decode_asset_bytes(descriptor, capability_bytes[capability])
+        if capability == "core":
+            _validate_core_capability(decoded, manifest)
 
 
 def _pointer_order(head: Mapping[str, Any]) -> tuple[date, int]:
@@ -265,6 +375,7 @@ def _pointer_order(head: Mapping[str, Any]) -> tuple[date, int]:
 def validate_generation_pointer(
     pointer: Mapping[str, Any],
     manifest_bytes_by_generation: Mapping[str, bytes],
+    capability_bytes_by_generation: Mapping[str, Mapping[str, bytes]],
     *,
     previous_pointer_bytes: bytes | None = None,
     expected_previous_pointer_sha256: str | None = None,
@@ -295,13 +406,14 @@ def validate_generation_pointer(
             raise ValueError(f"{label} manifest must be supplied as exact bytes")
         if hashlib.sha256(manifest_bytes).hexdigest() != head["manifest_sha256"]:
             raise ValueError(f"{label} manifest byte SHA-256 does not match its head")
-        try:
-            manifest = json.loads(manifest_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError(f"{label} manifest bytes are not valid UTF-8 JSON") from error
+        manifest = _strict_json_bytes(manifest_bytes, f"{label} manifest")
         if not isinstance(manifest, Mapping):
             raise ValueError(f"{label} manifest must be a JSON object")
-        validate_generation_manifest(manifest)
+        try:
+            capability_bytes = capability_bytes_by_generation[head["generation_id"]]
+        except KeyError as error:
+            raise ValueError(f"{label} capability bytes are required") from error
+        validate_generation_manifest(manifest, capability_bytes)
         for field in (
             "generation_id",
             "generation_revision",
@@ -320,8 +432,8 @@ def validate_generation_pointer(
         and observation["generation_revision"] < complete["generation_revision"]
     ):
         raise ValueError("latest_observation cannot regress the same-date revision")
-    if observation["generation_id"] == complete["generation_id"] and observation != complete:
-        raise ValueError("matching generation heads must be byte-equivalent")
+    if _pointer_order(observation) == _pointer_order(complete) and observation != complete:
+        raise ValueError("equal-coordinate generation heads must be byte-equivalent")
 
     transition_args = (
         previous_pointer_bytes is not None,
@@ -336,10 +448,7 @@ def validate_generation_pointer(
     actual_previous_sha = hashlib.sha256(previous_pointer_bytes).hexdigest()
     if actual_previous_sha != expected_previous_pointer_sha256:
         raise ValueError("prior pointer CAS hash does not match the supplied bytes")
-    try:
-        previous = json.loads(previous_pointer_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("prior pointer bytes are not valid UTF-8 JSON") from error
+    previous = _strict_json_bytes(previous_pointer_bytes, "prior pointer")
     if not isinstance(previous, Mapping):
         raise ValueError("prior pointer must be a JSON object")
     validate_contract("generation-pointer-v3.schema.json", previous)

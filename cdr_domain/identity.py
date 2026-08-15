@@ -14,9 +14,17 @@ from .models import IdentityStatus
 IDENTITY_VERSION = "identity-v1"
 
 
+def _jsonable(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(child) for child in value]
+    return value
+
+
 def _digest(kind: str, value: object) -> str:
     material = json.dumps(
-        [IDENTITY_VERSION, kind, value],
+        [IDENTITY_VERSION, kind, _jsonable(value)],
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -69,6 +77,12 @@ def _decimal_text(value: Any) -> Optional[str]:
 def _semantic_text(value: Any) -> Optional[str]:
     text = unicodedata.normalize("NFKC", _text(value))
     return re.sub(r"\s+", " ", text).casefold() or None
+
+
+def semantic_text(value: Any) -> Optional[str]:
+    """Expose the identity text normalizer for duplicate-field validation."""
+
+    return _semantic_text(value)
 
 
 def provider_uid(
@@ -195,6 +209,7 @@ def fee_semantics(fee: Mapping[str, Any]) -> dict[str, Optional[str]]:
         "fee_type": _text(fee.get("feeType") or "UNKNOWN").upper(),
         "method": _text(fee.get("feeMethodUType")).upper() or None,
         "cadence": _text(fee.get("additionalValue")).upper() or None,
+        "additional_info": _semantic_text(fee.get("additionalInfo")),
     }
 
 

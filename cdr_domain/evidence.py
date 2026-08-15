@@ -15,6 +15,7 @@ from .models import (
     ProductClassification,
     ProductEvidence,
 )
+from .time import parse_rfc3339
 
 
 def published_https_urls(record: Mapping[str, Any]) -> tuple[str, ...]:
@@ -123,7 +124,32 @@ def _pricing_status(record: Mapping[str, Any]) -> PricingStatus:
     return PricingStatus.PARTIAL if invalid else PricingStatus.COMPLETE
 
 
-def _availability(classification: ProductClassification) -> Availability:
+def _availability(
+    record: Mapping[str, Any],
+    classification: ProductClassification,
+    observed_at: str,
+) -> Availability:
+    effective_from = record.get("effectiveFrom")
+    effective_to = record.get("effectiveTo")
+    try:
+        observed = parse_rfc3339(observed_at)
+        starts = (
+            parse_rfc3339(str(effective_from))
+            if effective_from not in (None, "")
+            else None
+        )
+        ends = (
+            parse_rfc3339(str(effective_to))
+            if effective_to not in (None, "")
+            else None
+        )
+        if starts is not None and (starts > observed or (ends is not None and starts > ends)):
+            return Availability.UNKNOWN
+        if ends is not None and ends <= observed:
+            return Availability.CLOSED
+    except ValueError:
+        # Canonical validation reports malformed lifecycle timestamps explicitly.
+        return Availability.UNKNOWN
     reason = classification.quarantine_reason
     if reason == "mortgage_linked_offset":
         return Availability.LINKED
@@ -131,7 +157,10 @@ def _availability(classification: ProductClassification) -> Availability:
         return Availability.BUSINESS
     if reason == "restricted_eligibility":
         return Availability.RESTRICTED
-    if classification.classification_status is ClassificationStatus.CONFIRMED:
+    if (
+        classification.classification_status is ClassificationStatus.CONFIRMED
+        and _eligibility_status(record) is DisclosureStatus.COMPLETE
+    ):
         return Availability.PUBLIC
     return Availability.UNKNOWN
 
@@ -144,15 +173,17 @@ def product_evidence(
     observed_at: str,
 ) -> ProductEvidence:
     effective = record.get("effectiveFrom")
+    effective_to = record.get("effectiveTo")
     source_updated = record.get("lastUpdated")
     return ProductEvidence(
-        availability=_availability(classification),
+        availability=_availability(record, classification, observed_at),
         fee_disclosure_status=_fee_status(record),
         eligibility_disclosure_status=_eligibility_status(record),
         pricing_status=_pricing_status(record),
         evidence_ids=(evidence_id,),
         observed_at=observed_at,
         effective_date=str(effective) if effective not in (None, "") else None,
+        effective_to=str(effective_to) if effective_to not in (None, "") else None,
         source_updated_at=(
             str(source_updated) if source_updated not in (None, "") else None
         ),

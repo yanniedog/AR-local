@@ -47,7 +47,9 @@
                 "capability": { "const": "core" },
                 "schema_id": {
                   "const": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json"
-                }
+                },
+                "cohort": { "const": "confirmed-consumer-products" },
+                "media_type": { "const": "application/json" }
               }
             }
           ]

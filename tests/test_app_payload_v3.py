@@ -7,6 +7,8 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from cdr_domain import (
+    normalize_product,
+    to_primitive,
     contract_sha256,
     generation_manifest_digest,
     validate_asset_descriptor,
@@ -55,6 +57,7 @@ def coverage():
         "register_sources_complete": 1,
         "register_provenance_complete": True,
         "failure_records": 0,
+        "failure_records_by_provider": {},
         "corrupt_failure_records": 0,
         "exclusions_by_reason": {"transaction_account": 2, "mortgage_linked_offset": 2},
         "failure_provenance_complete": True,
@@ -62,7 +65,20 @@ def coverage():
     }
 
 
-def asset(capability="core", compressed=1024, uncompressed=4096):
+def core_bytes(date="2026-08-14"):
+    return manifest_bytes(
+        {
+            "schema_version": 3,
+            "normalization_version": "canonical-v3-domain-v1",
+            "observation_date": date,
+            "products": [],
+        }
+    )
+
+
+def asset(capability="core", compressed=1024, uncompressed=4096, payload=None):
+    if payload is not None:
+        compressed = uncompressed = len(payload)
     suffix = ".json.gz" if compressed != uncompressed else ".json"
     schema_id = (
         "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json"
@@ -75,8 +91,11 @@ def asset(capability="core", compressed=1024, uncompressed=4096):
         "encoding": "gzip" if compressed != uncompressed else "identity",
         "compressed_bytes": compressed,
         "uncompressed_bytes": uncompressed,
-        "sha256": SHA,
-        "url": f"https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/{SHA}{suffix}",
+        "sha256": hashlib.sha256(payload).hexdigest() if payload is not None else SHA,
+        "url": (
+            "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/"
+            f"{hashlib.sha256(payload).hexdigest() if payload is not None else SHA}{suffix}"
+        ),
         "cohort": "confirmed-consumer-products",
         "capability": capability,
     }
@@ -115,7 +134,22 @@ def bind_manifest(value):
     return value
 
 
+def generation_coverage():
+    value = coverage()
+    value.update(
+        {
+            "products_discovered": 0,
+            "products_priced": 0,
+            "products_consumer_eligible": 0,
+            "rate_tiers_eligible": 0,
+            "exclusions_by_reason": {},
+        }
+    )
+    return value
+
+
 def manifest(date="2026-08-14", state="complete", revision=1):
+    payload = core_bytes(date)
     return bind_manifest({
         "schema_version": 3,
         "generation_id": "",
@@ -127,11 +161,57 @@ def manifest(date="2026-08-14", state="complete", revision=1):
         "ledger_state": "finalized",
         "normalization_version": "canonical-v3-domain-v1",
         "producer_commit": "c" * 40,
-        "coverage": coverage(),
+        "coverage": generation_coverage(),
         "prior_ledger_digest": None,
         "ledger_event_digest": "d" * 64,
-        "capabilities": {"core": asset()},
+        "capabilities": {"core": asset(payload=payload)},
     })
+
+
+def manifest_capabilities(value):
+    return {"core": core_bytes(value["observation_date"])}
+
+
+def real_consumer_core_bytes(date="2026-08-14"):
+    fixture_path = ROOT / "tests" / "fixtures" / "canonical_domain_real_observations.json"
+    item = json.loads(fixture_path.read_text(encoding="utf-8"))["observations"][
+        "bank_of_melbourne_before_rename"
+    ]
+    product = normalize_product(
+        item["record"],
+        dataset=item["dataset"],
+        provider_display_name=item["provider"],
+        register_holder_id=None,
+        authority="legacy-export:bank-of-melbourne",
+        observed_at=item["observed_at"],
+        source_path="tests/fixtures/canonical_domain_real_observations.json",
+        source_locator="/observations/bank_of_melbourne_before_rename/record",
+        source_sha256=hashlib.sha256(fixture_path.read_bytes()).hexdigest(),
+        source_kind="preserved_cdr_fixture_projection",
+    )
+    value = {
+        "schema_version": 3,
+        "normalization_version": product.normalization_version,
+        "observation_date": date,
+        "products": [to_primitive(product)],
+    }
+    return manifest_bytes(value)
+
+
+def manifest_for_core(payload, *, date="2026-08-14"):
+    value = manifest(date)
+    core = json.loads(payload)
+    value["coverage"].update(
+        {
+            "products_discovered": len(core["products"]),
+            "products_priced": len(core["products"]),
+            "products_consumer_eligible": len(core["products"]),
+            "rate_tiers_eligible": sum(len(product["rates"]) for product in core["products"]),
+            "exclusions_by_reason": {},
+        }
+    )
+    value["capabilities"]["core"] = asset(payload=payload)
+    return bind_manifest(value)
 
 
 def pointer_bundle(observation_manifest=None, complete_manifest=None):
@@ -148,7 +228,11 @@ def pointer_bundle(observation_manifest=None, complete_manifest=None):
         observation_manifest["generation_id"]: manifest_bytes(observation_manifest),
         complete_manifest["generation_id"]: manifest_bytes(complete_manifest),
     }
-    return pointer, documents
+    capabilities = {
+        observation_manifest["generation_id"]: manifest_capabilities(observation_manifest),
+        complete_manifest["generation_id"]: manifest_capabilities(complete_manifest),
+    }
+    return pointer, documents, capabilities
 
 
 def test_every_contract_is_valid_draft_2020_12_schema():
@@ -172,10 +256,14 @@ def test_checked_in_golden_generation_documents_pass_runtime_validation():
     golden_pointer = json.loads(
         (fixture_root / "valid-generation-pointer-v3.json").read_text(encoding="utf-8")
     )
-    validate_generation_manifest(golden_manifest)
+    golden_core = (fixture_root / "valid-canonical-core-v3.json").read_bytes()
+    golden_capabilities = {"core": golden_core}
+    validate_generation_manifest(golden_manifest, golden_capabilities)
     golden_bytes = manifest_bytes(golden_manifest)
     validate_generation_pointer(
-        golden_pointer, {golden_manifest["generation_id"]: golden_bytes}
+        golden_pointer,
+        {golden_manifest["generation_id"]: golden_bytes},
+        {golden_manifest["generation_id"]: golden_capabilities},
     )
 
 
@@ -222,6 +310,11 @@ def test_runtime_asset_negotiation_rejects_unknown_capabilities_and_schema_ids()
     with pytest.raises(ValueError, match="schema_id"):
         validate_asset_descriptor(descriptor)
 
+    descriptor = asset(payload=core_bytes())
+    descriptor["media_type"] = "application/schema+json"
+    with pytest.raises(ValueError, match="media type"):
+        validate_asset_descriptor(descriptor)
+
 
 def test_coverage_equations_reconcile_named_populations():
     validate_coverage_v2(coverage())
@@ -251,22 +344,137 @@ def test_authoritative_coverage_requires_complete_failure_provenance():
     broken = coverage()
     broken["register_provenance_complete"] = False
     with pytest.raises(ValueError, match="register provenance"):
-        validate_generation_manifest(bind_manifest({**manifest(), "coverage": broken}))
+        candidate = bind_manifest({**manifest(), "coverage": broken})
+        validate_generation_manifest(candidate, manifest_capabilities(candidate))
+
+
+def test_each_failed_provider_requires_attributable_failure_evidence():
+    broken = coverage()
+    broken.update(
+        {
+            "providers_complete": 2,
+            "providers_empty": 1,
+            "providers_failed": 2,
+            "providers_responded": 3,
+            "providers_attempted": 5,
+            "failure_records": 1,
+            "failure_records_by_provider": {
+                "provider:v1:" + "a" * 64: 1,
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="each failed provider"):
+        validate_coverage_v2(broken)
+
+    broken["providers_failed"] = 1
+    broken["providers_attempted"] = 4
+    broken["providers_registered"] = 4
+    broken["failure_records"] = 2
+    with pytest.raises(ValueError, match="reconcile to failure_records"):
+        validate_coverage_v2(broken)
 
 
 def test_generation_manifest_requires_core_and_matching_capability_name():
     valid = manifest()
-    validate_generation_manifest(valid)
+    validate_generation_manifest(valid, manifest_capabilities(valid))
 
     missing = manifest()
     missing["capabilities"] = {"search": asset("search")}
     with pytest.raises(ValueError, match="core"):
-        validate_generation_manifest(missing)
+        validate_generation_manifest(missing, {"search": b"x"})
 
     mismatch = manifest()
     mismatch["capabilities"]["core"] = asset("search")
     with pytest.raises(ValueError, match="core"):
-        validate_generation_manifest(mismatch)
+        validate_generation_manifest(mismatch, {"core": core_bytes()})
+
+
+def test_generation_manifest_binds_and_semantically_validates_exact_core_bytes():
+    payload = real_consumer_core_bytes()
+    valid = manifest_for_core(payload)
+    validate_generation_manifest(valid, {"core": payload})
+
+    tampered = bytearray(payload)
+    tampered[-2] = ord(" ")
+    with pytest.raises(ValueError, match="SHA-256"):
+        validate_generation_manifest(valid, {"core": bytes(tampered)})
+
+    wrong_date = json.loads(payload)
+    wrong_date["observation_date"] = "2026-08-13"
+    wrong_date_bytes = manifest_bytes(wrong_date)
+    wrong_date_manifest = manifest_for_core(wrong_date_bytes)
+    with pytest.raises(ValueError, match="observation_date disagrees"):
+        validate_generation_manifest(wrong_date_manifest, {"core": wrong_date_bytes})
+
+    corrupt = json.loads(payload)
+    corrupt["products"][0]["rates"][0]["semantic_tier"]["family"] = "lending"
+    corrupt_bytes = manifest_bytes(corrupt)
+    corrupt_manifest = manifest_for_core(corrupt_bytes)
+    with pytest.raises(ValueError, match="rate_uid.*canonical derivation|rate family"):
+        validate_generation_manifest(corrupt_manifest, {"core": corrupt_bytes})
+
+    wrong_cohort = deepcopy(valid)
+    wrong_cohort["capabilities"]["core"]["cohort"] = "all-products"
+    bind_manifest(wrong_cohort)
+    with pytest.raises(ValueError, match="cohort"):
+        validate_generation_manifest(wrong_cohort, {"core": payload})
+
+    wrong_media = deepcopy(valid)
+    wrong_media["capabilities"]["core"]["media_type"] = "application/schema+json"
+    bind_manifest(wrong_media)
+    with pytest.raises(ValueError, match="media_type"):
+        validate_generation_manifest(wrong_media, {"core": payload})
+
+
+def test_core_rejects_duplicate_product_identities_even_when_counts_reconcile():
+    core = json.loads(real_consumer_core_bytes())
+    core["products"].append(deepcopy(core["products"][0]))
+    payload = manifest_bytes(core)
+    candidate = manifest_for_core(payload)
+    with pytest.raises(ValueError, match="duplicate product_uid"):
+        validate_generation_manifest(candidate, {"core": payload})
+
+
+def test_exact_boundary_json_rejects_duplicate_object_keys():
+    payload = core_bytes()
+    ambiguous = payload.replace(
+        b'{"normalization_version"',
+        b'{"schema_version":999,"normalization_version"',
+        1,
+    )
+    candidate = manifest_for_core(ambiguous)
+    with pytest.raises(ValueError, match="unambiguous UTF-8 JSON"):
+        validate_generation_manifest(candidate, {"core": ambiguous})
+
+    valid, documents, capabilities = pointer_bundle()
+    generation_id = valid["latest_observation"]["generation_id"]
+    documents[generation_id] = documents[generation_id].replace(
+        b'{"capabilities"', b'{"schema_version":999,"capabilities"', 1
+    )
+    valid["latest_observation"]["manifest_sha256"] = hashlib.sha256(
+        documents[generation_id]
+    ).hexdigest()
+    valid["latest_observation"]["manifest_url"] = (
+        "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/"
+        + valid["latest_observation"]["manifest_sha256"]
+        + ".json"
+    )
+    valid["latest_complete"] = deepcopy(valid["latest_observation"])
+    with pytest.raises(ValueError, match="unambiguous UTF-8 JSON"):
+        validate_generation_pointer(valid, documents, capabilities)
+
+    candidate, candidate_documents, candidate_capabilities = pointer_bundle()
+    previous_bytes = manifest_bytes(candidate).replace(
+        b'{"contract_sha256"', b'{"schema_version":999,"contract_sha256"', 1
+    )
+    with pytest.raises(ValueError, match="unambiguous UTF-8 JSON"):
+        validate_generation_pointer(
+            candidate,
+            candidate_documents,
+            candidate_capabilities,
+            previous_pointer_bytes=previous_bytes,
+            expected_previous_pointer_sha256=hashlib.sha256(previous_bytes).hexdigest(),
+        )
 
 
 def test_complete_generation_rejects_incomplete_provider_states():
@@ -278,62 +486,76 @@ def test_complete_generation_rejects_incomplete_provider_states():
         }
     )
     with pytest.raises(ValueError, match="incomplete provider states"):
-        validate_generation_manifest(invalid)
+        validate_generation_manifest(invalid, manifest_capabilities(invalid))
 
     partial = deepcopy(invalid)
     partial["observation_state"] = "partial"
-    validate_generation_manifest(bind_manifest(partial))
+    partial = bind_manifest(partial)
+    validate_generation_manifest(partial, manifest_capabilities(partial))
 
 
 def test_generation_identity_is_bound_to_date_revision_and_canonical_digest():
     invalid = manifest()
     invalid["generation_id"] = invalid["generation_id"].replace("2026-08-14", "2026-08-13")
     with pytest.raises(ValueError, match="date does not match"):
-        validate_generation_manifest(invalid)
+        validate_generation_manifest(invalid, manifest_capabilities(invalid))
 
     invalid = manifest()
     invalid["generation_id"] = invalid["generation_id"].replace("r0001", "r0002")
     with pytest.raises(ValueError, match="revision does not match"):
-        validate_generation_manifest(invalid)
+        validate_generation_manifest(invalid, manifest_capabilities(invalid))
 
     invalid = manifest()
     invalid["producer_commit"] = "f" * 40
     with pytest.raises(ValueError, match="canonical manifest content"):
-        validate_generation_manifest(invalid)
+        validate_generation_manifest(invalid, manifest_capabilities(invalid))
 
 
 def test_pointer_has_independent_observation_and_complete_heads():
-    valid, documents = pointer_bundle(manifest("2026-08-15", "partial"))
-    validate_generation_pointer(valid, documents)
+    valid, documents, capabilities = pointer_bundle(manifest("2026-08-15", "partial"))
+    validate_generation_pointer(valid, documents, capabilities)
 
-    invalid, documents = pointer_bundle()
+    invalid, documents, capabilities = pointer_bundle()
     invalid["latest_complete"]["observation_state"] = "partial"
     with pytest.raises(ValueError, match="complete"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
 
-    invalid, documents = pointer_bundle(manifest("2026-08-13", "partial"))
+    invalid, documents, capabilities = pointer_bundle(manifest("2026-08-13", "partial"))
     with pytest.raises(ValueError, match="cannot predate"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
 
-    invalid, documents = pointer_bundle(
+    invalid, documents, capabilities = pointer_bundle(
         manifest("2026-08-14", "partial", 1),
         manifest("2026-08-14", "complete", 2),
     )
     with pytest.raises(ValueError, match="same-date revision"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
+
+
+def test_pointer_rejects_different_generations_at_the_same_internal_coordinate():
+    observation_manifest = manifest("2026-08-14", "partial", 1)
+    observation_manifest["producer_commit"] = "f" * 40
+    bind_manifest(observation_manifest)
+    complete_manifest = manifest("2026-08-14", "complete", 1)
+    invalid, documents, capabilities = pointer_bundle(
+        observation_manifest, complete_manifest
+    )
+
+    with pytest.raises(ValueError, match="equal-coordinate"):
+        validate_generation_pointer(invalid, documents, capabilities)
 
 
 def test_pointer_manifest_url_is_bound_to_manifest_byte_hash():
-    invalid, documents = pointer_bundle()
+    invalid, documents, capabilities = pointer_bundle()
     invalid["latest_observation"]["manifest_url"] = (
         "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/"
         + "0" * 64
         + ".json"
     )
     with pytest.raises(ValueError, match="content-addressed"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
 
-    invalid, documents = pointer_bundle()
+    invalid, documents, capabilities = pointer_bundle()
     invalid["latest_observation"]["manifest_sha256"] = "0" * 64
     invalid["latest_observation"]["manifest_url"] = (
         "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/"
@@ -341,11 +563,11 @@ def test_pointer_manifest_url_is_bound_to_manifest_byte_hash():
         + ".json"
     )
     with pytest.raises(ValueError, match="manifest byte SHA-256"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
 
 
 def test_pointer_transition_binds_prior_bytes_and_rejects_revision_regression():
-    previous, _ = pointer_bundle(
+    previous, _, _ = pointer_bundle(
         manifest("2026-08-14", "complete", 2),
         manifest("2026-08-14", "complete", 2),
     )
@@ -353,11 +575,12 @@ def test_pointer_transition_binds_prior_bytes_and_rejects_revision_regression():
         previous, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
     previous_sha = hashlib.sha256(previous_bytes).hexdigest()
-    candidate, documents = pointer_bundle()
+    candidate, documents, capabilities = pointer_bundle()
     with pytest.raises(ValueError, match="regresses latest_observation"):
         validate_generation_pointer(
             candidate,
             documents,
+            capabilities,
             previous_pointer_bytes=previous_bytes,
             expected_previous_pointer_sha256=previous_sha,
         )
@@ -365,6 +588,7 @@ def test_pointer_transition_binds_prior_bytes_and_rejects_revision_regression():
         validate_generation_pointer(
             candidate,
             documents,
+            capabilities,
             previous_pointer_bytes=previous_bytes,
             expected_previous_pointer_sha256="0" * 64,
         )
@@ -372,8 +596,10 @@ def test_pointer_transition_binds_prior_bytes_and_rejects_revision_regression():
     replacement_manifest = manifest()
     replacement_manifest["producer_commit"] = "f" * 40
     bind_manifest(replacement_manifest)
-    replacement, replacement_documents = pointer_bundle(replacement_manifest, replacement_manifest)
-    original, _ = pointer_bundle()
+    replacement, replacement_documents, replacement_capabilities = pointer_bundle(
+        replacement_manifest, replacement_manifest
+    )
+    original, _, _ = pointer_bundle()
     original_bytes = json.dumps(
         original, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
@@ -382,6 +608,7 @@ def test_pointer_transition_binds_prior_bytes_and_rejects_revision_regression():
         validate_generation_pointer(
             replacement,
             replacement_documents,
+            replacement_capabilities,
             previous_pointer_bytes=original_bytes,
             expected_previous_pointer_sha256=original_sha,
         )
@@ -396,14 +623,14 @@ def test_contract_datetime_format_is_strict_rfc3339(timestamp):
     invalid["observed_at"] = timestamp
     bind_manifest(invalid)
     with pytest.raises(ValueError, match="observed_at"):
-        validate_generation_manifest(invalid)
+        validate_generation_manifest(invalid, manifest_capabilities(invalid))
 
 
 def test_pointer_contract_sha_is_a_fail_closed_lock():
-    invalid, documents = pointer_bundle()
+    invalid, documents, capabilities = pointer_bundle()
     invalid["contract_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="contract SHA"):
-        validate_generation_pointer(invalid, documents)
+        validate_generation_pointer(invalid, documents, capabilities)
 
 
 def test_unknown_contract_name_fails_closed():

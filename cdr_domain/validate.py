@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Mapping
 
 from .models import (
+    Availability,
     CanonicalProduct,
     ClassificationStatus,
     ConsumerSection,
@@ -18,7 +19,14 @@ from .models import (
     RateUnit,
     FeeRateUnit,
 )
-from .identity import evidence_uid, fee_uid_from_semantics, product_uid, rate_uid
+from .identity import (
+    evidence_uid,
+    fee_uid_from_semantics,
+    product_uid,
+    rate_uid,
+    semantic_text,
+)
+from .serialize import semantics_are_frozen
 from .time import parse_rfc3339
 
 _DIGEST_ID = re.compile(r"^(?:provider(?:-fallback)?|product|rate|fee):v1:[0-9a-f]{64}$")
@@ -125,6 +133,9 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
         "product effective_date", product.evidence.effective_date, optional=True
     )
     _validate_rfc3339(
+        "product effective_to", product.evidence.effective_to, optional=True
+    )
+    _validate_rfc3339(
         "product source_updated_at", product.evidence.source_updated_at, optional=True
     )
     evidence_ids = {item.evidence_id for item in product.evidence_refs}
@@ -152,11 +163,15 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
             "evidence effective_date", evidence.effective_date, optional=True
         )
         _validate_rfc3339(
+            "evidence effective_to", evidence.effective_to, optional=True
+        )
+        _validate_rfc3339(
             "evidence source_updated_at", evidence.source_updated_at, optional=True
         )
         if (
             evidence.observed_at != product.evidence.observed_at
             or evidence.effective_date != product.evidence.effective_date
+            or evidence.effective_to != product.evidence.effective_to
             or evidence.source_updated_at != product.evidence.source_updated_at
         ):
             raise ValueError("product and evidence-reference lineage timestamps disagree")
@@ -171,7 +186,33 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
             raise ValueError("evidence source path must be safe and relative")
     if not set(product.evidence.evidence_ids).issubset(evidence_ids):
         raise ValueError("product evidence references unknown evidence")
+    if (
+        product.evidence.availability is Availability.PUBLIC
+        and (
+            classification.classification_status is not ClassificationStatus.CONFIRMED
+            or product.evidence.eligibility_disclosure_status is not DisclosureStatus.COMPLETE
+        )
+    ):
+        raise ValueError("public availability requires confirmed classification and eligibility evidence")
+    if product.evidence.effective_to is not None:
+        effective_to = parse_rfc3339(product.evidence.effective_to)
+        is_expired = effective_to <= parse_rfc3339(product.evidence.observed_at)
+        if is_expired != (product.evidence.availability is Availability.CLOSED):
+            raise ValueError("closed availability must match effective_to at observation time")
+        if (
+            product.evidence.effective_date is not None
+            and parse_rfc3339(product.evidence.effective_date) > effective_to
+        ):
+            raise ValueError("effective_date cannot follow effective_to")
+    if (
+        product.evidence.availability is Availability.PUBLIC
+        and product.evidence.effective_date is not None
+        and parse_rfc3339(product.evidence.effective_date)
+        > parse_rfc3339(product.evidence.observed_at)
+    ):
+        raise ValueError("public availability cannot precede effective_date")
     rate_uid_counts: dict[str, int] = {}
+    source_indexes: set[int] = set()
     for rate in product.rates:
         if rate.identity.rate_uid is not None:
             rate_uid_counts[rate.identity.rate_uid] = rate_uid_counts.get(rate.identity.rate_uid, 0) + 1
@@ -180,6 +221,17 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
             raise ValueError("invalid rate_uid")
         if rate.identity.rate_uid != rate_uid(identity.product_uid, rate.semantic_tier):
             raise ValueError("rate_uid does not match its canonical derivation")
+        if not semantics_are_frozen(rate.semantic_tier):
+            raise ValueError("rate semantic identity material must be deeply immutable")
+        if (
+            isinstance(rate.source_index, bool)
+            or not isinstance(rate.source_index, int)
+            or rate.source_index < 0
+        ):
+            raise ValueError("rate source_index must be a non-negative integer")
+        if rate.source_index in source_indexes:
+            raise ValueError("rate source_index must be unique within a product")
+        source_indexes.add(rate.source_index)
         if rate.identity.product_uid != identity.product_uid:
             raise ValueError("rate identity belongs to another product")
         if (
@@ -201,6 +253,43 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
             raise ValueError("duplicate semantic rates must be ambiguous")
         if rate.identity.rate_identity_status is IdentityStatus.AMBIGUOUS and rate.exact_alert_eligible:
             raise ValueError("ambiguous rates cannot power exact alerts")
+        if rate.exact_alert_eligible and not (
+            rate.identity.rate_identity_status is IdentityStatus.CONFIRMED
+            and identity.provider_identity_status is IdentityStatus.CONFIRMED
+            and classification.classification_status is ClassificationStatus.CONFIRMED
+            and product.evidence.availability is Availability.PUBLIC
+        ):
+            raise ValueError("exact alerts require confirmed public product and rate identities")
+        expected_family = {
+            ProductKind.MORTGAGE: "lending",
+            ProductKind.SAVINGS_ACCOUNT: "deposit",
+            ProductKind.TERM_DEPOSIT: "deposit",
+            ProductKind.TRANSACTION_ACCOUNT: "deposit",
+            ProductKind.MORTGAGE_OFFSET: "deposit",
+        }.get(classification.product_kind)
+        if expected_family is not None and rate.semantic_tier.get("family") != expected_family:
+            raise ValueError("rate family contradicts product classification")
+        tiers = rate.semantic_tier.get("tiers")
+        if not isinstance(tiers, (list, tuple)):
+            raise ValueError("semantic tiers must be an array")
+        for tier in tiers:
+            if not isinstance(tier, Mapping):
+                raise ValueError("semantic tier range must be an object")
+            bounds = []
+            for value in (tier.get("minimum"), tier.get("maximum")):
+                if value is None:
+                    bounds.append(None)
+                    continue
+                try:
+                    number = Decimal(str(value))
+                except InvalidOperation as error:
+                    raise ValueError("semantic tier bounds must be decimal strings") from error
+                if not number.is_finite():
+                    raise ValueError("semantic tier bounds must be finite")
+                bounds.append(number)
+            minimum, maximum = bounds
+            if minimum is not None and maximum is not None and minimum > maximum:
+                raise ValueError("semantic tier minimum cannot exceed maximum")
         _validate_rate(rate.advertised)
         if rate.advertised.metric not in _PRODUCT_INTEREST_METRICS:
             raise ValueError("product advertised slot requires a product-interest metric")
@@ -212,11 +301,25 @@ def validate_canonical_product(product: CanonicalProduct) -> None:
                 raise ValueError("comparison rate references unknown evidence")
         if not set(rate.advertised.evidence_ids).issubset(evidence_ids):
             raise ValueError("rate references unknown evidence")
+    fee_uid_counts: dict[str, int] = {}
+    for fee in product.fees:
+        fee_uid_counts[fee.fee_uid] = fee_uid_counts.get(fee.fee_uid, 0) + 1
     for fee in product.fees:
         if not _DIGEST_ID.fullmatch(fee.fee_uid):
             raise ValueError("invalid fee_uid")
         if fee.fee_uid != fee_uid_from_semantics(identity.product_uid, fee.semantic_fee):
             raise ValueError("fee_uid does not match its canonical derivation")
+        if not semantics_are_frozen(fee.semantic_fee):
+            raise ValueError("fee semantic identity material must be deeply immutable")
+        expected_fee_status = (
+            IdentityStatus.AMBIGUOUS
+            if fee_uid_counts[fee.fee_uid] > 1
+            else IdentityStatus.CONFIRMED
+        )
+        if fee.fee_identity_status is not expected_fee_status:
+            raise ValueError("fee identity status does not match semantic uniqueness")
+        if fee.semantic_fee.get("additional_info") != semantic_text(fee.condition):
+            raise ValueError("fee condition disagrees with canonical applicability semantics")
         if fee.rate is not None:
             _validate_fee_rate(fee.rate)
             if not set(fee.rate.evidence_ids).issubset(evidence_ids):

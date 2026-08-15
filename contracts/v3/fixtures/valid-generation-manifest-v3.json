@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "generation_id": "gen-2026-08-14-r0001-3412724b1a58",
+  "generation_id": "gen-2026-08-14-r0001-1b7f0daf6396",
   "generation_revision": 1,
-  "generation_digest": "3412724b1a58ff995bae9a7b7dd7f372c81afc10d4fe104d1556b8b2f7ad2d8c",
+  "generation_digest": "1b7f0daf63968eacf0f11bfdd54ea11a721e53459021454dd99eba292d2b369f",
   "observation_date": "2026-08-14",
   "observed_at": "2026-08-14T09:30:00+10:00",
   "observation_state": "complete",
@@ -10,10 +10,10 @@
   "normalization_version": "canonical-v3-domain-v1",
   "producer_commit": "cccccccccccccccccccccccccccccccccccccccc",
   "coverage": {
-    "products_discovered": 10,
-    "products_priced": 8,
-    "products_consumer_eligible": 6,
-    "rate_tiers_eligible": 12,
+    "products_discovered": 0,
+    "products_priced": 0,
+    "products_consumer_eligible": 0,
+    "rate_tiers_eligible": 0,
     "providers_registered": 5,
     "providers_attempted": 5,
     "providers_responded": 5,
@@ -26,11 +26,9 @@
     "register_sources_complete": 1,
     "register_provenance_complete": true,
     "failure_records": 0,
+    "failure_records_by_provider": {},
     "corrupt_failure_records": 0,
-    "exclusions_by_reason": {
-      "mortgage_linked_offset": 2,
-      "transaction_account": 2
-    },
+    "exclusions_by_reason": {},
     "failure_provenance_complete": true,
     "reconciliation_status": "reconciled"
   },
@@ -40,11 +38,11 @@
     "core": {
       "schema_id": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
       "media_type": "application/json",
-      "encoding": "gzip",
-      "compressed_bytes": 1024,
-      "uncompressed_bytes": 4096,
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json.gz",
+      "encoding": "identity",
+      "compressed_bytes": 116,
+      "uncompressed_bytes": 116,
+      "sha256": "7b283262709d500f8412c57e31ca03f130632b2b4ca36a67f20a7a37a1f1f157",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/7b283262709d500f8412c57e31ca03f130632b2b4ca36a67f20a7a37a1f1f157.json",
       "cohort": "confirmed-consumer-products",
       "capability": "core"
     }
