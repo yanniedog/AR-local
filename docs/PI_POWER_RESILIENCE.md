@@ -139,7 +139,14 @@ Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`)
   2. runs `pi_daily_watchdog.py` to catch up a daily ingest missed while powered off,
   3. emails a "Pi rebooted" alert (`pi_ingest_alert.py --reason boot-recovery`).
 - Existing `ar-local-daily-watchdog.timer` (`Persistent=true`, `OnBootSec=10min`)
-  remains the backstop for any still-missing run.
+  remains the backstop for any still-missing run. Approved deployments re-enable
+  both daily timers rather than assuming their prior state. A failed RAM-staged
+  attempt is copied create-once to that date's `_failed_attempts` evidence area
+  before a retry; it is never deleted to make a retry pass.
+- Code activation and ingest share the same atomic lock. A deploy therefore
+  fails closed while ingest is active, and a timer tick during the short deploy
+  window defers to the next 15-minute watchdog pass instead of executing a
+  partially updated checkout.
 
 ## Manual CDR ingest
 

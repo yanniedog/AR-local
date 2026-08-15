@@ -179,6 +179,33 @@ def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(
     } == source_before
 
 
+def test_failed_ram_stage_is_archived_create_once_before_retry(tmp_path, monkeypatch):
+    args, runs, _state, ram = _configure(tmp_path, monkeypatch, rates=0)
+    assert cdr_daily.run_once(args) == 2
+    raw = ram / "runs" / DATE
+    derived = ram / "exports" / DATE
+    raw_before = {
+        path.relative_to(raw).as_posix(): path.read_bytes()
+        for path in raw.rglob("*") if path.is_file()
+    }
+    derived_before = {
+        path.relative_to(derived).as_posix(): path.read_bytes()
+        for path in derived.rglob("*") if path.is_file()
+    }
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+    assert archive is not None
+    assert not raw.exists() and not derived.exists()
+    assert {
+        path.relative_to(archive / "runs").as_posix(): path.read_bytes()
+        for path in (archive / "runs").rglob("*") if path.is_file()
+    } == raw_before
+    assert {
+        path.relative_to(archive / "exports").as_posix(): path.read_bytes()
+        for path in (archive / "exports").rglob("*") if path.is_file()
+    } == derived_before
+
+
 def test_finalizer_failure_preserves_staged_and_installed_evidence(
     tmp_path,
     monkeypatch,

@@ -58,13 +58,14 @@ def test_ingest_brand_caches_holder_version(tmp_path, monkeypatch):
         log=lambda *_a, **_k: None,
     )
 
-    # First request negotiates from the top (version unknown); after v4 is learned
-    # from the page, the product-detail fetch tries [4] first.
+    # Product-index and detail endpoints version independently. The index caches
+    # v4, while detail starts at its own current v7 contract.
     assert versions_seen, "expected at least the page + a detail fetch"
-    assert versions_seen[0] is None
-    assert [4] in versions_seen[1:]
+    assert versions_seen[0] == lib.PRODUCT_INDEX_VERSION_ORDER
+    assert lib.PRODUCT_DETAIL_VERSION_ORDER in versions_seen[1:]
 
 
 def test_version_list_helper():
-    assert lib._version_list(None) is None
-    assert lib._version_list(4) == [4]
+    assert lib._index_version_list(None) == [6, 5, 4, 3, 2, 1]
+    assert lib._index_version_list(4) == [4]
+    assert lib._detail_version_list() == [7, 6, 5, 4, 3, 2, 1]

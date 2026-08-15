@@ -301,6 +301,10 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
         f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
         f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
+        f"daily_timer_enabled=$(systemctl is-enabled ar-local-daily.timer 2>/dev/null); "
+        f"daily_timer_active=$(systemctl is-active ar-local-daily.timer 2>/dev/null); "
+        f"watchdog_timer_enabled=$(systemctl is-enabled ar-local-daily-watchdog.timer 2>/dev/null); "
+        f"watchdog_timer_active=$(systemctl is-active ar-local-daily-watchdog.timer 2>/dev/null); "
         f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
         f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
@@ -309,6 +313,7 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"printf 'AR_HEAD=%s\\nAR_ORIGIN=%s\\nSITE_HEAD=%s\\nSITE_ORIGIN=%s\\n' \"$ar_h\" \"$ar_o\" \"$site_h\" \"$site_o\"; "
         f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
         f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
+        f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
         f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
     code, stdout, _ = run_ssh(script, dry_run=dry_run)
@@ -325,6 +330,10 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "DASHBOARD_EXEC": "dry",
             "DAILY_WD": "dry",
             "DAILY_EXEC": "dry",
+            "DAILY_TIMER_ENABLED": "enabled",
+            "DAILY_TIMER_ACTIVE": "active",
+            "WATCHDOG_TIMER_ENABLED": "enabled",
+            "WATCHDOG_TIMER_ACTIVE": "active",
             "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DF_AR": "dry",
@@ -417,6 +426,24 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
 
     for label, key in (("repo", "DF_AR"), ("site", "DF_SITE"), ("data", "DF_DATA")):
         print(f"pi_deploy_verify: df {label}: {snap.get(key, '')}")
+    return ok
+
+
+def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
+    expected = {
+        "DAILY_TIMER_ENABLED": "enabled",
+        "DAILY_TIMER_ACTIVE": "active",
+        "WATCHDOG_TIMER_ENABLED": "enabled",
+        "WATCHDOG_TIMER_ACTIVE": "active",
+    }
+    ok = True
+    for field, value in expected.items():
+        actual = snap.get(field, "")
+        print(f"pi_deploy_verify: {field}: {actual}")
+        if actual != value:
+            ok = False
+    if not ok:
+        print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
     return ok
 
 
@@ -517,6 +544,8 @@ def verify_sync(
         return EXIT_VERIFY_FAIL
     if not pi_service_paths_ok(snap):
         return EXIT_VERIFY_FAIL
+    if not pi_ingest_timers_ok(snap):
+        return EXIT_VERIFY_FAIL
     if dry_run:
         print(f"pi_deploy_verify: dry-run local origin/main={local_main[:12]}")
         return EXIT_OK
@@ -558,8 +587,13 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
         return EXIT_CONFIG
     remote = pi_remote()
     ar = pi_ar_repo()
+    ingest_lock = f"{pi_data_root()}/state/daily-ingest.lock"
     script = (
         f"set -e; "
+        f"lock={shell_quote(ingest_lock)}; "
+        "(set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null || "
+        "{ echo 'pi_deploy_verify: ingest/deploy lock is busy' >&2; exit 75; }; "
+        "trap 'rm -f -- \"$lock\"' EXIT HUP INT TERM; "
         f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} main && "
         f"test \"$(git rev-parse {shell_quote(remote)}/main)\" = "
         f"{shell_quote(expected_commit)} && "
@@ -605,9 +639,8 @@ def deploy_services(*, dry_run: bool = False) -> int:
         f"sudo install -m 0644 {shell_quote(watchdog_timer_src)} /etc/systemd/system/ar-local-daily-watchdog.timer && "
         f"sudo install -m 0644 {shell_quote(deploy_watchdog_timer_src)} /etc/systemd/system/ar-local-deploy-watchdog.timer && "
         "sudo systemctl daemon-reload && "
-        "(sudo systemctl restart ar-local-daily.timer || true) && "
-        "(sudo systemctl restart ar-local-daily-watchdog.timer || true) && "
-        "sudo systemctl enable --now ar-local-deploy-watchdog.timer && "
+        "sudo systemctl enable --now ar-local-daily.timer ar-local-daily-watchdog.timer ar-local-deploy-watchdog.timer && "
+        "sudo systemctl restart ar-local-daily.timer ar-local-daily-watchdog.timer && "
         "("
         "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
         "sudo nginx -t && sudo systemctl reload-or-restart nginx; "

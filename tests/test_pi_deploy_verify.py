@@ -82,6 +82,9 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     assert expected in captured[0]
     assert "git merge --ff-only" in captured[0]
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
+    assert "daily-ingest.lock" in captured[0]
+    assert "role=deploy" in captured[0]
+    assert "trap 'rm -f" in captured[0]
 
 
 def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypatch):
@@ -95,8 +98,8 @@ def test_runtime_activation_rearms_only_the_verify_only_deploy_watchdog(monkeypa
     command = captured[0]
     assert "chown -R" not in command
     assert "mkdir -p" not in command
-    assert "restart ar-local-deploy-watchdog.timer" not in command
-    assert "enable --now ar-local-deploy-watchdog.timer" in command
+    assert "enable --now ar-local-daily.timer ar-local-daily-watchdog.timer ar-local-deploy-watchdog.timer" in command
+    assert "restart ar-local-daily.timer ar-local-daily-watchdog.timer" in command
     assert "systemctl cat ar-local-deploy-watchdog.service" in command
     assert "ExecStart=/srv/ar-local/AR-local/deploy/pi/ar-local-deploy-watchdog.sh" in command
 
@@ -111,6 +114,7 @@ def test_on_pi_watchdog_is_verify_only():
 
 def test_ingest_paths_never_activate_code():
     daily_sync = (ROOT / "pi_daily_sync.py").read_text(encoding="utf-8")
+    assert '"--archive-failed-ram-stage"' in daily_sync
     for forbidden in (
         "git fetch",
         "git pull",
@@ -172,6 +176,10 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DF_AR": "/dev/nvme0n1p2|/",
         "DF_SITE": "/dev/nvme0n1p2|/",
         "DF_DATA": "/dev/nvme0n1p2|/",
+        "DAILY_TIMER_ENABLED": "enabled",
+        "DAILY_TIMER_ACTIVE": "active",
+        "WATCHDOG_TIMER_ENABLED": "enabled",
+        "WATCHDOG_TIMER_ACTIVE": "active",
     }
     snapshot.update(overrides)
     return snapshot
@@ -235,6 +243,13 @@ def test_verify_sync_accepts_unset_or_matching_canary_commit(
 
 def test_service_paths_allow_pi_home_and_xdg_environment():
     assert pi_deploy_verify.pi_service_paths_ok(_service_snapshot())
+
+
+def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
+    assert pi_deploy_verify.pi_ingest_timers_ok(_service_snapshot())
+    assert not pi_deploy_verify.pi_ingest_timers_ok(
+        _service_snapshot(WATCHDOG_TIMER_ENABLED="disabled")
+    )
 
 
 def test_service_paths_reject_bootstrap_checkout():

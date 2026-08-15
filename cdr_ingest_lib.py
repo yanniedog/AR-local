@@ -40,11 +40,20 @@ from cdr_raw_attempt_journal import RawAttemptJournal, new_session_id
 
 # ─── Per-holder version cache ─────────────────────────────────────────────────
 
-def _version_list(preferred: Optional[int]) -> Optional[List[int]]:
+PRODUCT_INDEX_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
+PRODUCT_DETAIL_VERSION_ORDER = [7, 6, 5, 4, 3, 2, 1]
+
+
+def _index_version_list(preferred: Optional[int]) -> List[int]:
     """Try a holder's known-good x-v first; fetch_cdr_json still falls back through
     the rest of CDR_VERSION_ORDER if it stops working, so this is a hint not a
     lock-in. None means "negotiate from the top" (version not yet known)."""
-    return [preferred] if preferred is not None else None
+    return [preferred] if preferred is not None else list(PRODUCT_INDEX_VERSION_ORDER)
+
+
+def _detail_version_list() -> List[int]:
+    """Detail capability is independent from the products-index endpoint."""
+    return list(PRODUCT_DETAIL_VERSION_ORDER)
 
 
 # Per-holder circuit breaker: once a holder's product-detail fetches are mostly
@@ -128,7 +137,7 @@ def _fetch_bank_detail(
         time.sleep(sleep_ms / 1000.0)
         url = f"{safe_url(endpoint_url)}/{urllib.parse.quote(pid, safe='')}"
         res = fetch_cdr_json(
-            url, versions=_version_list(preferred_version),
+            url, versions=_detail_version_list(),
             timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
             attempt_journal=attempt_journal,
             attempt_context={
@@ -192,7 +201,7 @@ def classify_product_for_ingest(
     time.sleep(sleep_ms / 1000.0)
     detail_res = fetch_cdr_json(
         detail_url,
-        versions=_version_list(preferred_version),
+        versions=_detail_version_list(),
         timeout=timeout,
         max_retries=max_retries,
         sleep_ms=sleep_ms,
@@ -305,7 +314,7 @@ def ingest_brand(
 
         time.sleep(sleep_ms / 1000.0)
         res = fetch_cdr_json(
-            url, versions=_version_list(preferred_version),
+            url, versions=_index_version_list(preferred_version),
             timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms,
             attempt_journal=attempt_journal,
             attempt_context={

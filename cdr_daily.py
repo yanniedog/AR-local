@@ -113,6 +113,32 @@ def prepare_ram_stage(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=False)
 
 
+def archive_failed_ram_stage(
+    staged_run: Path,
+    staged_export_date: Path,
+    persistent_date_root: Path,
+) -> Optional[Path]:
+    """Preserve a failed RAM attempt create-once, then release its stage.
+
+    The destination name is stable across a crash between copy and cleanup, so a
+    retry verifies the same bytes instead of duplicating or deleting evidence.
+    """
+    sources = [
+        ("runs", staged_run),
+        ("exports", staged_export_date),
+    ]
+    populated = [(name, path) for name, path in sources if _export_root_has_content(path)]
+    if not populated:
+        return None
+    stamp = max(path.stat().st_mtime_ns for _name, path in populated)
+    archive = persistent_date_root / "_failed_attempts" / f"ram-{stamp}"
+    for name, source in populated:
+        copytree_atomic(source, archive / name)
+    for _name, source in populated:
+        shutil.rmtree(source)
+    return archive
+
+
 def revision_root_for(primary_root: Path, when: datetime) -> Path:
     """Append-only revision target beside a finalized day's primary _exports.
 
@@ -354,7 +380,17 @@ def run_once(args: argparse.Namespace) -> int:
         ram_root = args.ram_root.expanduser().resolve()
         staged_runs = ram_root / "runs"
         staged_exports = ram_root / "exports" / date / "_exports"
-        prepare_ram_stage(ram_root / "runs" / date)
+        staged_run = ram_root / "runs" / date
+        staged_export_date = ram_root / "exports" / date
+        if args.archive_failed_ram_stage:
+            archived = archive_failed_ram_stage(
+                staged_run,
+                staged_export_date,
+                persistent_runs_root / date,
+            )
+            if archived is not None:
+                print(f"Archived failed RAM-stage evidence at {archived}")
+        prepare_ram_stage(staged_run)
         prepare_ram_stage(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(
@@ -489,6 +525,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Disable automatic RAM staging on Raspberry Pi.",
     )
     parser.add_argument("--ram-root", type=Path, default=default_ram_root())
+    parser.add_argument(
+        "--archive-failed-ram-stage",
+        action="store_true",
+        help="Create-once archive a prior failed RAM stage before retrying.",
+    )
     parser.add_argument(
         "--keep-ram-stage",
         dest="clean_ram_stage",

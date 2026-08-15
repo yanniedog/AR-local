@@ -41,7 +41,10 @@ REGISTER_URL_BANKING_REGISTER = (
 
 # Bank PRD endpoints often negotiate newer x-v; CDR register currently responds at v2 in practice.
 REGISTER_FETCH_VERSIONS = [2, 1, 6, 5, 4, 3]
-CDR_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
+# Get Product Detail moved to v7 in August 2026. Keep the newest known version
+# first, while still negotiating advertised versions that land after this code.
+CDR_VERSION_ORDER = [7, 6, 5, 4, 3, 2, 1]
+DEFAULT_LOGICAL_FETCH_ATTEMPTS = 8
 
 # WAFs in front of ~40 mutual-bank PRD endpoints reject urllib's default
 # "Python-urllib/x.y" agent with HTML 403 pages (those banks then ingest zero
@@ -145,6 +148,16 @@ def parse_supported_versions(body: str) -> List[int]:
             if p.isdigit():
                 out.append(int(p))
         return out
+
+    # Current data holders also emit the compact form
+    # "Requested: 1-1 Available: 7".
+    compact = re.search(r"\bAvailable:\s*([0-9,\s]+)", body, re.I)
+    if compact:
+        return [
+            int(part)
+            for part in (item.strip() for item in compact.group(1).split(","))
+            if part.isdigit() and 0 < int(part) <= 99
+        ]
 
     range_m = re.search(
         r"Minimum version supported is\s*(\d+)\s*and\s*Maximum version supported is\s*(\d+)",
@@ -620,7 +633,7 @@ def fetch_cdr_json(
     # 5xx AND lets the walk negotiate down through other versions (406, or a holder
     # that 422/500s on one version but serves another) - it just caps the total.
     if max_total_attempts is None:
-        max_total_attempts = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2)
+        max_total_attempts = max(max_retries + 1, DEFAULT_LOGICAL_FETCH_ATTEMPTS)
     # A caller may pass 0 to mean "make no request" (e.g. an exhausted quota); a
     # negative value is clamped to 0. None means "use the default budget" above.
     remaining = min(
@@ -691,9 +704,12 @@ def fetch_cdr_json(
             )
 
         if res.status == 406:
-            for x in parse_supported_versions(res.text):
+            # A holder's advertised capability is stronger evidence than our
+            # baked fallback order. Probe it next, while retaining the shared
+            # request budget and the remaining compatibility fallbacks.
+            for x in reversed(parse_supported_versions(res.text)):
                 if x not in tried and x not in queue:
-                    queue.append(x)
+                    queue.insert(0, x)
 
         # Pace version switches on a retryable failure so the shared-budget walk
         # doesn't burst against a rate-limited / failing holder. Honor the server's
