@@ -518,9 +518,11 @@ class RawAttemptJournal:
             self._fault("after_current")
             return event
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self, *, recover: bool = True) -> dict[str, Any]:
         with self._thread_lock, FileLock(self.lock_path):
-            current = self._recover(self._read_current())
+            current = self._read_current()
+            if recover:
+                current = self._recover(current)
             self._verify_committed(current)
             return {
                 "schema_version": SCHEMA_VERSION,

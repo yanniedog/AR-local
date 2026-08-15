@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -23,6 +25,7 @@ from cdr_raw_attempt_journal import RawAttemptJournal
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T000000000000Z-aabbccddeeff"
+SESSION_TWO = "ingest-20260815T000001000000Z-ffeeddccbbaa"
 
 
 def _hash(path: Path) -> str:
@@ -37,8 +40,14 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
-def _source(run_root: Path) -> tuple[RawAttemptJournal, dict]:
-    journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
+def _source(
+    run_root: Path,
+    *,
+    session_id: str = SESSION,
+) -> tuple[RawAttemptJournal, dict]:
+    journal = RawAttemptJournal(
+        run_root / "_raw-attempt-journals-v1", session_id
+    )
     body = b'{"data":{"products":[]}}'
     journal.record(
         "register:1|nonce|1",
@@ -88,7 +97,7 @@ def _source(run_root: Path) -> tuple[RawAttemptJournal, dict]:
         ],
         "raw_attempt_journal": {
             **summary,
-            "path": f"_raw-attempt-journals-v1/{SESSION}",
+            "path": f"_raw-attempt-journals-v1/{session_id}",
             "path_resolution": "relative_to_ingest_run_root",
             "retention": "follows_ingest_run_root",
         },
@@ -157,6 +166,28 @@ def test_idempotent_replay_preserves_installed_bytes(tmp_path):
 
     assert second == first
     assert _tree_bytes(export_root) == installed_before
+
+
+def test_replay_rejects_bool_for_integer_manifest_field(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    promote_attempt_evidence(run_root, export_root)
+    manifest_path = export_root.joinpath(
+        *ARTIFACT_NAMESPACE.parts, SESSION, PROMOTION_MANIFEST
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = True
+    atomic_write_json(manifest_path, manifest)
+    (export_root / "ingest-status.json").unlink()
+
+    with pytest.raises(AttemptEvidencePromotionError, match="manifest conflicts"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))[
+        "schema_version"
+    ] is True
+    assert not (export_root / "ingest-status.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -236,6 +267,92 @@ def test_source_tamper_blocks_promotion_and_preserves_bytes(tmp_path):
     assert not export_root.exists()
 
 
+def test_missing_zero_attempt_source_is_not_created_by_verification(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    missing = run_root / "_raw-attempt-journals-v1" / SESSION
+    atomic_write_json(
+        run_root / "banks" / "ingest-status.json",
+        {
+            "raw_attempt_journal": {
+                "schema_version": 1,
+                "session_id": SESSION,
+                "attempts": 0,
+                "head_digest": None,
+                "verified": True,
+                "path": f"_raw-attempt-journals-v1/{SESSION}",
+                "path_resolution": "relative_to_ingest_run_root",
+                "retention": "follows_ingest_run_root",
+            }
+        },
+    )
+
+    with pytest.raises(AttemptEvidencePromotionError, match="source verification"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert not missing.exists()
+    assert not export_root.exists()
+
+
+def test_existing_verified_zero_attempt_journal_can_be_promoted(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
+    summary = journal.summary()
+    atomic_write_json(
+        run_root / "banks" / "ingest-status.json",
+        {
+            "raw_attempt_journal": {
+                **summary,
+                "path": f"_raw-attempt-journals-v1/{SESSION}",
+                "path_resolution": "relative_to_ingest_run_root",
+                "retention": "follows_ingest_run_root",
+            }
+        },
+    )
+
+    promoted = promote_attempt_evidence(run_root, export_root)
+
+    assert promoted is not None
+    assert promoted["attempts"] == 0
+    destination = export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+    assert RawAttemptJournal(destination.parent, SESSION).summary()["attempts"] == 0
+
+
+def test_source_verification_does_not_recover_or_mutate_missing_current(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    journal, _status = _source(run_root)
+    journal.current_path.unlink()
+    source_before = _tree_bytes(run_root)
+
+    with pytest.raises(AttemptEvidencePromotionError, match="source verification"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert _tree_bytes(run_root) == source_before
+    assert not journal.current_path.exists()
+    assert not export_root.exists()
+
+
+def test_replay_does_not_recover_or_mutate_installed_journal(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    promote_attempt_evidence(run_root, export_root)
+    destination = export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+    current = destination / "current.json"
+    current.unlink()
+    (export_root / "ingest-status.json").unlink()
+    installed_before = _tree_bytes(destination)
+
+    with pytest.raises(AttemptEvidencePromotionError, match="files conflict"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert _tree_bytes(destination) == installed_before
+    assert not current.exists()
+    assert not (export_root / "ingest-status.json").exists()
+
+
 def test_legacy_status_without_attempt_pointer_is_copied_byte_exact(tmp_path):
     run_root = tmp_path / "run"
     export_root = tmp_path / "export"
@@ -246,6 +363,126 @@ def test_legacy_status_without_attempt_pointer_is_copied_byte_exact(tmp_path):
 
     assert promote_attempt_evidence(run_root, export_root) is None
     assert (export_root / "ingest-status.json").read_bytes() == source_bytes
+
+
+def test_existing_export_status_is_preserved_and_blocks_new_promotion(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    export_root.mkdir()
+    existing = export_root / "ingest-status.json"
+    existing.write_bytes(b"preserve-existing-status")
+
+    with pytest.raises(AttemptEvidencePromotionError, match="existing export"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert existing.read_bytes() == b"preserve-existing-status"
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).exists()
+
+
+def test_export_lock_serializes_different_sessions_through_status_creation(tmp_path):
+    first_run = tmp_path / "run-one"
+    second_run = tmp_path / "run-two"
+    export_root = tmp_path / "export"
+    _source(first_run)
+    _source(second_run, session_id=SESSION_TWO)
+    first_installed = Event()
+    release_first = Event()
+    second_verified = Event()
+    outcomes = {}
+
+    def first_fault(stage):
+        if stage == "after_install":
+            first_installed.set()
+            assert release_first.wait(5)
+
+    def second_fault(stage):
+        if stage == "after_source_verify":
+            second_verified.set()
+
+    def promote(name, run_root, injector):
+        try:
+            outcomes[name] = promote_attempt_evidence(
+                run_root,
+                export_root,
+                fault_injector=injector,
+            )
+        except BaseException as error:
+            outcomes[name] = error
+
+    first = Thread(target=promote, args=("first", first_run, first_fault))
+    second = Thread(target=promote, args=("second", second_run, second_fault))
+    first.start()
+    assert first_installed.wait(5)
+    second.start()
+    assert second_verified.wait(5)
+    assert second.is_alive()
+    release_first.set()
+    first.join(5)
+    second.join(5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert isinstance(outcomes["first"], dict)
+    assert isinstance(outcomes["second"], AttemptEvidencePromotionError)
+    assert "another session" in str(outcomes["second"])
+    status = json.loads(
+        (export_root / "ingest-status.json").read_text(encoding="utf-8")
+    )
+    assert status["raw_attempt_journal"]["session_id"] == SESSION
+    assert export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).is_dir()
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION_TWO).exists()
+
+
+def test_different_session_cannot_orphan_installed_evidence_after_crash(tmp_path):
+    first_run = tmp_path / "run-one"
+    second_run = tmp_path / "run-two"
+    export_root = tmp_path / "export"
+    _source(first_run)
+    _source(second_run, session_id=SESSION_TWO)
+
+    def crash_after_install(stage):
+        if stage == "after_install":
+            raise RuntimeError("simulated crash after install")
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        promote_attempt_evidence(
+            first_run,
+            export_root,
+            fault_injector=crash_after_install,
+        )
+    assert export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION).is_dir()
+    assert not (export_root / "ingest-status.json").exists()
+
+    with pytest.raises(AttemptEvidencePromotionError, match="another session"):
+        promote_attempt_evidence(second_run, export_root)
+
+    assert not export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION_TWO).exists()
+    promoted = promote_attempt_evidence(first_run, export_root)
+    assert promoted is not None
+    assert promoted["session_id"] == SESSION
+
+
+def test_promotion_rejects_linked_artifact_namespace_before_copy(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    outside = tmp_path / "outside"
+    _source(run_root)
+    export_root.mkdir()
+    outside.mkdir()
+    try:
+        os.symlink(
+            outside,
+            export_root / ARTIFACT_NAMESPACE.parts[0],
+            target_is_directory=True,
+        )
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    with pytest.raises(AttemptEvidencePromotionError, match="links"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert list(outside.iterdir()) == []
 
 
 def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path):
