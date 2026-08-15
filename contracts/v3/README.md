@@ -109,5 +109,46 @@ The installed directory is `<output-root>/<generation_id>/`. It contains only
 idempotent, while any existing byte mismatch or symbolic-link target is fatal.
 
 This command never performs network I/O, uploads a release, creates or updates a
-generation pointer, or changes the v1 rolling payload. Candidate publication and
-pointer compare-and-swap remain separate future activation work.
+generation pointer, or changes the v1 rolling payload. Candidate publication is
+a separate, dormant operation implemented by `app_payload_v3_promotion.py`.
+
+## Dormant transactional promotion
+
+The promoter validates a local candidate by default and performs no remote
+writes unless `--execute` is supplied explicitly. The manual-only
+`app-payload-v3-promote.yml` workflow repeats that validation, requires its
+boolean execute input, the protected `app-payload-v3-promotion` environment,
+and a separately configured environment-scoped approval secret before the
+write-capable job can run. The workflow has no push or schedule trigger. This
+repository does not configure or dispatch that environment as part of this
+dormant contract slice.
+
+Activation is also deliberately blocked until a separate candidate-artifact
+producer workflow is reviewed and added at the allowlisted path
+`.github/workflows/app-payload-v3-candidate.yml`. That workflow does not exist
+in this slice. Before downloading any artifact, the promoter requires a
+completed-success run of that exact workflow in `yanniedog/AR-local`, a
+canonical head repository, a currently protected `main` branch, and a run head
+retained in main's history. The verified run head SHA must exactly equal the
+candidate manifest's `producer_commit`; direct `--execute` calls without that
+binding fail before acquiring the promotion lock. Arbitrary same-repository
+workflow artifacts are never accepted as provenance.
+
+An executed promotion uses create-once candidate tags and content-addressed
+release assets. It acquires an owner-token lock on a dedicated append-only Git
+branch, re-downloads and semantically validates every referenced manifest and
+capability byte, and fails closed if the complete candidate-release listing is
+missing, malformed, duplicated, or otherwise uncertain. Same-date revisions
+are append-only: one date/revision coordinate cannot be rebound to different
+generation bytes, and the complete-dates index selects the greatest verified
+complete revision for each date.
+
+Control state lives in append-only commits on `app-payload-v3-control`. The
+`complete-dates-index-v3.json` commit is prepared and publicly re-verified
+first; the `generation-pointer-v3.json` commit is prepared as its child and
+verified last. One non-force ref compare-and-swap then exposes both commits
+atomically from the exact expected parent and prior pointer bytes. Concurrent
+or stale writers fail without exposing a half-published index. A listing or
+pre-CAS verification failure leaves both prior control files intact. The
+promoter never deletes, prunes, force-updates, or overwrites an existing release
+asset, and it does not modify the deployed v1 payload.

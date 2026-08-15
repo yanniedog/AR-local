@@ -161,8 +161,20 @@ artifacts. The remaining contract layers are:
 1. official register IDs and canonical product/rate-tier identities;
 2. the shared classifier and typed financial units;
 3. reconciled `CoverageV2` populations;
-4. immutable candidate generations and `manifest-v3`; and
-5. the AR-app dual-read/cache bridge.
+4. wiring finalized observations into the dormant immutable v3 candidate
+   builder and transactional promoter; and
+5. the AR-app dual-read/cache bridge and an explicitly approved activation.
+
+The dormant promoter now supplies the repository-side publication boundary:
+create-once candidate/content releases, public byte re-verification, complete
+release enumeration, append-only owner locking and control history, a verified
+complete-dates index, and rolling-pointer compare-and-swap last. Its workflow
+is manual-only, defaults to validation, and requires both an explicit execute
+input and the protected `app-payload-v3-promotion` environment. No Pi service,
+daily producer, deployed v1 release, or AR-app reader invokes it in this slice.
+The allowlisted `.github/workflows/app-payload-v3-candidate.yml` producer is
+intentionally absent pending its own pipeline review, so workflow promotion is
+not activatable yet; an arbitrary Actions artifact cannot substitute for it.
 
 Those layers may consume these records, but they may not weaken create-once
 semantics or make a partial observation appear complete.
