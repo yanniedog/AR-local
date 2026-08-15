@@ -21,7 +21,19 @@ export function resolveAnchorIso(anchorIso, fallbackIso) {
 }
 
 const COMMENTS_QUERY =
-  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){createdAt comments(last:100){nodes{author{login}createdAt}}reviews(last:30){nodes{author{login}submittedAt}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}createdAt}}}}}}}';
+  'query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){pullRequest(number:$num){createdAt comments(last:100){nodes{author{login}body createdAt}}reviews(last:30){nodes{author{login}body submittedAt}}reviewThreads(last:100){nodes{comments(last:10){nodes{author{login}body createdAt}}}}}}}';
+
+const GEMINI_ACTION_MARKER = '<!-- gemini-code-review -->';
+
+export function normalizeBotEventLogin(login, body) {
+  if (
+    ['github-actions', 'github-actions[bot]'].includes(String(login || '').toLowerCase()) &&
+    String(body || '').trimStart().startsWith(GEMINI_ACTION_MARKER)
+  ) {
+    return 'google-github-actions-bot[bot]';
+  }
+  return login;
+}
 
 function ghGraphql(owner, name, prNumber) {
   const r = spawnSync(
@@ -54,14 +66,20 @@ export function collectBotEvents(prPayload, knownBots, anchorIso, fallbackIso) {
   const anchorMs = new Date(resolveAnchorIso(anchorIso, fallbackIso)).getTime();
   const events = [];
   for (const c of prPayload.comments?.nodes || []) {
-    if (c.author?.login && c.createdAt) events.push({ login: c.author.login, at: c.createdAt });
+    if (c.author?.login && c.createdAt) {
+      events.push({ login: normalizeBotEventLogin(c.author.login, c.body), at: c.createdAt });
+    }
   }
   for (const rev of prPayload.reviews?.nodes || []) {
-    if (rev.author?.login && rev.submittedAt) events.push({ login: rev.author.login, at: rev.submittedAt });
+    if (rev.author?.login && rev.submittedAt) {
+      events.push({ login: normalizeBotEventLogin(rev.author.login, rev.body), at: rev.submittedAt });
+    }
   }
   for (const t of prPayload.reviewThreads?.nodes || []) {
     for (const c of t.comments?.nodes || []) {
-      if (c.author?.login && c.createdAt) events.push({ login: c.author.login, at: c.createdAt });
+      if (c.author?.login && c.createdAt) {
+        events.push({ login: normalizeBotEventLogin(c.author.login, c.body), at: c.createdAt });
+      }
     }
   }
   events.sort((a, b) => new Date(a.at) - new Date(b.at));

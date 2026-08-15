@@ -1,0 +1,63 @@
+{
+  "captured_from": "runs/2026-05-19/banks product-detail.json",
+  "products": [
+    {
+      "dataset": "Mortgage",
+      "provider": "Up",
+      "record": {
+        "productId": "up-home",
+        "name": "Up Home Loan",
+        "description": "Up Home is a simple loan that works seamlessly with your Up banking. Starting from 10% LVR, it’s first time owner friendly too. Use the Up features you love to own your own home faster.",
+        "brand": "Up",
+        "isTailored": false,
+        "features": [
+          {"featureType": "EXTRA_REPAYMENTS", "additionalInfo": "For fixed rate loans, extra repayments are allowed up to $30,000 in total during the fixed rate period. Extra repayments above this limit may incur a prepayment fee. For variable rate loans, extra repayments are unlimited."},
+          {"featureType": "OFFSET", "additionalInfo": "Use your Up spending account and Savers as offsets."},
+          {"featureType": "REDRAW", "additionalInfo": "Redraws are limited to the total amount prepaid, less one repayment. Other conditions may apply as per Loan Schedule and Home Loan Booklet."}
+        ],
+        "constraints": [
+          {"constraintType": "MAX_LVR", "additionalValue": "0.90", "additionalInfo": "A maximum 90% Loan to Value Ratio applies. A minimum 10% deposit is required."},
+          {"constraintType": "MIN_LIMIT", "additionalValue": "50000.00", "additionalInfo": "A minimum borrowable amount for the loan."}
+        ],
+        "eligibility": [{"eligibilityType": "MIN_AGE", "additionalValue": "18"}],
+        "lendingRates": [
+          {"lendingRateType": "VARIABLE", "rate": "0.057", "comparisonRate": "0.057", "applicationFrequency": "P1M", "repaymentType": "PRINCIPAL_AND_INTEREST", "loanPurpose": "OWNER_OCCUPIED"},
+          {"lendingRateType": "FIXED", "rate": "0.0635", "comparisonRate": "0.0577", "applicationFrequency": "P1M", "repaymentType": "PRINCIPAL_AND_INTEREST", "loanPurpose": "OWNER_OCCUPIED", "additionalValue": "P1Y"}
+        ]
+      }
+    },
+    {
+      "dataset": "Savings",
+      "provider": "Bank Australia",
+      "record": {
+        "productId": "ac8412c5-9a3c-4e4b-8063-7c81b8aa4049",
+        "name": "Basic Access",
+        "fees": [{
+          "name": "Visa emergency card/cash overseas fee",
+          "additionalInfo": "A fee charged when you need an emergency replacement card or cash delivered to you on an urgent basis to an address overseas.",
+          "currency": "USD",
+          "fixedAmount": {"amount": "175.00"},
+          "feeType": "EVENT",
+          "feeMethodUType": "fixedAmount"
+        }]
+      }
+    },
+    {
+      "dataset": "Mortgage",
+      "provider": "BOQ Specialist",
+      "record": {
+        "productId": "8a906e88-5c03-ee11-8f6e-00224814d330",
+        "name": "Basic Home Loan",
+        "description": "The Basic Home Loan offers a low competitive interest rate, an optional One Account to support your everyday banking needs and a redraw facility to manage surplus funds.",
+        "lendingRates": [{
+          "lendingRateType": "VARIABLE",
+          "rate": "0.0639000000000000",
+          "comparisonRate": "0.0644000000000000",
+          "repaymentType": "INTEREST_ONLY",
+          "loanPurpose": "INVESTMENT",
+          "tiers": [{"additionalInfo": "Borrowing over 60% to 70% of the property value", "name": "LVR", "unitOfMeasure": "PERCENT", "rateApplicationMethod": "WHOLE_BALANCE", "minimumValue": "0.6001000000000000", "maximumValue": "0.7000000000000000"}]
+        }]
+      }
+    }
+  ]
+}

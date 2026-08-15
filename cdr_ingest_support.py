@@ -81,6 +81,8 @@ DATASET_TO_FOLDER = {
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
+    register_provenance_complete: bool
+    register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
 
@@ -712,12 +714,17 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     """
     by_phase: Dict[str, int] = {}
     by_status: Dict[str, int] = {}
+    by_provider: Dict[str, int] = {}
     total = 0
+    corrupt_records = 0
+    unattributed_records = 0
+    failure_log_readable = False
     try:
         handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
         handle = None
     if handle is not None:
+        failure_log_readable = True
         with handle:
             # Stream line-by-line so a large failures log stays memory-bounded.
             for line in handle:
@@ -727,21 +734,45 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
+                    corrupt_records += 1
                     continue
                 # A valid-but-non-object JSON line (list/str/number) would crash on
                 # rec.get; skip it rather than fail the whole run at the very end.
                 if not isinstance(rec, dict):
+                    corrupt_records += 1
                     continue
                 total += 1
                 phase = str(rec.get("phase") or "unknown")
                 status = "unknown" if rec.get("status") is None else str(rec.get("status"))
+                provider_value = rec.get("bank")
+                provider = (
+                    str(provider_value).strip() if provider_value is not None else ""
+                )
+                if not provider:
+                    unattributed_records += 1
+                    provider = "unknown"
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
+                by_provider[provider] = by_provider.get(provider, 0) + 1
     return {
         "total": total,
-        "incomplete": total > 0,
+        "corrupt_records": corrupt_records,
+        "unattributed_records": unattributed_records,
+        "failure_log_readable": failure_log_readable,
+        "failure_provenance_complete": (
+            failure_log_readable
+            and corrupt_records == 0
+            and unattributed_records == 0
+        ),
+        "incomplete": (
+            not failure_log_readable
+            or total > 0
+            or corrupt_records > 0
+            or unattributed_records > 0
+        ),
         "by_phase": by_phase,
         "by_status": by_status,
+        "by_provider": by_provider,
     }
 
 
@@ -760,6 +791,7 @@ def collect_register_snapshot(
     """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
+    register_attempts: List[Dict[str, Any]] = []
 
     attempts: List[Tuple[str, str]] = [
         (REGISTER_URL_SUMMARY, "cdr"),
@@ -780,7 +812,18 @@ def collect_register_snapshot(
             else fetch_json_plain(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
         )
         data = res.data
-        if not res.ok or data is None or has_cdr_errors(data):
+        attempt_ok = res.ok and data is not None and not has_cdr_errors(data)
+        register_attempts.append(
+            {
+                "source_url": url,
+                "mode": mode,
+                "ok": attempt_ok,
+                "status": res.status,
+                "bytes": len((res.text or "").encode("utf-8")),
+                "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
+            }
+        )
+        if not attempt_ok:
             continue
         register_payload_ok = True
         for b in iter_banking_brands_from_payload(data):
@@ -815,6 +858,10 @@ def collect_register_snapshot(
     )
     return RegisterSnapshot(
         register_ok=register_payload_ok,
+        register_provenance_complete=all(
+            attempt["ok"] for attempt in register_attempts
+        ),
+        register_attempts=register_attempts,
         banking_brands=banking_brands,
         banking_count_before_filter=count_banking,
     )

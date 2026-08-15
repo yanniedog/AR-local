@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
+import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
@@ -76,6 +77,7 @@ def test_rba_holds_parsed_from_dashboard_js():
     assert all(isinstance(d, str) and len(d) == 10 for d in holds)
     # The known 16 Jun 2026 hold (RBA met, held at 4.35%) must be present.
     assert "2026-06-16" in holds
+    assert "2026-08-11" in holds
     # Holds must not collide with change dates (a hold left the rate unchanged).
     change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT / "dashboard")}
     assert not (set(holds) & change_dates), "hold dates must not also be change dates"
@@ -87,6 +89,12 @@ def test_rba_holds_empty_when_no_holds_block(tmp_path):
         "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
     )
     assert app_payload.load_rba_holds(tmp_path) == []
+
+
+def test_future_effective_rba_change_is_not_yet_prevailing():
+    decision = {"effective": "2026-08-12", "rate": 4.60, "outcome": "hike"}
+    assert not app_payload_build._decision_is_effective(decision, "2026-08-11")
+    assert app_payload_build._decision_is_effective(decision, "2026-08-12")
 
 
 def test_detail_links_extracts_authoritative_uris():
@@ -107,6 +115,85 @@ def test_detail_links_extracts_authoritative_uris():
         "terms": "https://x/terms",
     }
     assert app_payload._detail_links({}) == {}
+
+
+def test_real_greater_bank_fees_keep_amounts_and_do_not_call_variable_placeholder_free():
+    fixture = json.loads(
+        (ROOT / "tests" / "fixtures" / "greater_bank_fee_details_2026-05-19.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    products = [
+        {
+            "product_key": "Greater Bank Limited|3365|Mortgage",
+            "details_json": json.dumps(fixture["record"]),
+        }
+    ]
+
+    detail = app_payload.build_details(products)["Greater Bank Limited|3365|Mortgage"]
+    by_name = {item["name"]: item for item in detail["fees"]}
+
+    assert by_name["Construction Loan Draw Down Fee"]["amount"] == "80.00"
+    assert by_name["Construction Loan Draw Down Fee"]["value"] == "80.00"
+    assert by_name["Administration fee"]["amount"] == "350.00"
+    assert by_name["Discharge administration fee"]["amountStatus"] == "fixed"
+    variable = by_name["Property Exchange Australia (PEXA) transaction fee"]
+    assert variable["amount"] == "0.00"  # retain exactly what the source supplied
+    assert variable["amountStatus"] == "variable"
+    assert "value" not in variable  # but never present the placeholder as a $0 fee
+
+
+def test_fee_method_union_is_preserved_for_fixed_rate_variable_caps_and_discounts():
+    record = {
+        "fees": [
+            {
+                "name": "Multiple Security Fee",
+                "feeType": "UPFRONT",
+                "feeMethodUType": "fixedAmount",
+                "fixedAmount": {"amount": "250"},
+                "feeCap": "500",
+                "feeCapPeriod": "P90D",
+            },
+            {
+                "name": "Currency conversion fee",
+                "feeType": "TRANSACTION",
+                "feeMethodUType": "rateBased",
+                "rateBased": {"rateType": "TRANSACTION", "rate": "0.025"},
+                "discounts": [
+                    {
+                        "description": "Package customer",
+                        "discountType": "ELIGIBILITY_ONLY",
+                        "additionalInfo": "Fee waived",
+                    }
+                ],
+            },
+            {
+                "name": "Valuation fee",
+                "feeType": "EVENT",
+                "feeMethodUType": "variable",
+                "variable": {"feeMinimum": "50", "feeMaximum": "550"},
+            },
+        ]
+    }
+
+    fees = app_payload._fee_items(record)
+
+    assert fees[0]["fixedAmount"] == {"amount": "250"}
+    assert fees[0]["feeCap"] == "500"
+    assert fees[0]["feeCapPeriod"] == "P90D"
+    assert fees[1]["rateBased"] == {"rateType": "TRANSACTION", "rate": "0.025"}
+    assert fees[1]["discounts"][0]["additionalInfo"] == "Fee waived"
+    assert fees[2]["variable"] == {"feeMinimum": "50", "feeMaximum": "550"}
+    assert fees[2]["amountStatus"] == "variable"
+
+
+def test_textual_null_fee_amount_is_unpublished():
+    fee = app_payload._fee_items({
+        "fees": [{"name": "At-cost fee", "feeType": "EVENT", "amount": "null"}],
+    })[0]
+    assert fee["amount"] == "null"
+    assert fee["amountStatus"] == "unpublished"
+    assert "value" not in fee
 
 
 def test_build_brands_shortcodes_and_color():
@@ -424,6 +511,22 @@ def test_optional_assets_are_rolling_only(tmp_path):
 
     assert {"search_index", "history_banks", "bank_history", "rba_calendar"} <= rolling["files"].keys()
     assert set(dated["files"]) == {"core", "details"}
+
+    empty_schedule = dict(kwargs)
+    empty_schedule["rba_calendar"] = {
+        "timezone": "Australia/Sydney",
+        "decisions": [{"date": "2026-12-08", "outcome": "hold"}],
+        "schedule": [],
+    }
+    final_calendar = app_payload._package(
+        {"schema_version": 1},
+        {"schema_version": 1},
+        "2026-12-08",
+        tmp_path / "final-calendar",
+        tag=app_payload.DEFAULT_TAG,
+        **empty_schedule,
+    )
+    assert "rba_calendar" in final_calendar["files"]
 
 
 def test_dated_release_title():

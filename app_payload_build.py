@@ -5,15 +5,24 @@ import gzip
 import hashlib
 import json
 import math
-from datetime import datetime, timezone
+import os
+import shutil
+from copy import deepcopy
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import app_payload_mobile
+import app_payload_bank_spread
 import cdr_brand_logos
 import payload_crypto
 import rba_decisions
+import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
+from cdr_clean_export import app_coverage_aliases, coverage_summary
+
+from app_payload_contracts import validate_coverage
 
 from app_payload_brands import (
     build_brands,
@@ -41,6 +50,7 @@ from app_payload_common import (
     _load_json,
 )
 from app_payload_details import build_details
+from cdr_product_facts import NORMALIZATION_VERSION as PRODUCT_FACTS_NORMALIZATION_VERSION
 from app_payload_publish import publish_payload
 
 def _find_banks_json(exports_dir: Path, run_date: str) -> Path:
@@ -215,11 +225,34 @@ def build_payload(
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
+def _stable_payload_coverage(
+    banks: Dict[str, Any], latest: Dict[str, Any], run_date: str
+) -> Dict[str, Any]:
+    existing = banks.get("coverage")
+    if isinstance(existing, dict):
+        coverage = deepcopy(existing)
+    else:
+        coverage = coverage_summary(banks, run_date)
+        coverage["failure_provenance_complete"] = False
+        counts_hint = latest.get("banks_counts") or {}
+        try:
+            coverage["counts"]["failure_records"] = int(counts_hint.get("failures") or 0)
+        except (TypeError, ValueError):
+            pass
+    # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
+    # is dated by its stable source observation (`observed_on`).
+    coverage.pop("source_generated_at", None)
+    coverage = app_coverage_aliases(coverage)
+    validate_coverage(coverage)
+    return coverage
+
+
 def _compute_payload(
     exports_dir: Path,
     *,
     dashboard_dir: Path = BASE_DIR / "dashboard",
     include_history: bool = True,
+    state_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Parse the run's exports into the (tag-independent) payload data.
 
@@ -235,6 +268,7 @@ def _compute_payload(
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
+    coverage = _stable_payload_coverage(banks, latest, run_date)
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
@@ -256,19 +290,55 @@ def _compute_payload(
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
     # v2: cache name bumped when SVG logoUris started being kept, so a fresh
     # raster-only cache can't suppress SVG entries for up to 7 days.
-    register_logos = cdr_brand_logos.fetch_register_logos(
-        cache_path=exports_dir / "cdr-brand-logos-v2.json"
-    )
+    legacy_logo_cache = exports_dir / "cdr-brand-logos-v2.json"
+    logo_cache = legacy_logo_cache
+    if state_dir is not None:
+        logo_cache = state_dir / "register-logos" / run_date / "cdr-brand-logos-v2.json"
+        if not logo_cache.exists() and legacy_logo_cache.is_file():
+            logo_cache.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_logo_cache, logo_cache)
+    register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
+    rba_calendar = rba_decisions.calendar_payload()
+    fetch_official = os.environ.get(
+        "AR_LOCAL_RBA_OFFICIAL_FETCH",
+        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
+    ).strip().lower() in ("1", "true", "yes", "on")
+    if fetch_official:
+        rba_calendar = rba_official.load_calendar(rba_calendar)
+    rba_decision_models = [
+        rba_decisions.Decision(
+            date.fromisoformat(decision["date"]),
+            date.fromisoformat(decision["effective"]) if decision.get("effective") else None,
+            int(Decimal(str(decision["rate"])) * 100),
+            int(decision["delta_bps"]),
+        )
+        for decision in rba_calendar["decisions"]
+    ]
+
+    rba_series = load_rba_series(dashboard_dir)
+    series_by_date = {str(item.get("date") or ""): item for item in rba_series}
+    rba_holds = set(load_rba_holds(dashboard_dir))
+    for decision in rba_calendar["decisions"]:
+        if decision["outcome"] == "hold":
+            rba_holds.add(decision["date"])
+        elif _decision_is_effective(decision, run_date):
+            series_by_date[decision["effective"]] = {
+                "date": decision["effective"],
+                "rate": decision["rate"],
+            }
+
     core = {
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
         "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
-        "rba": load_rba_series(dashboard_dir),
-        "rba_holds": load_rba_holds(dashboard_dir),
+        "rba": sorted(series_by_date.values(), key=lambda item: item["date"]),
+        "rba_holds": sorted(rba_holds),
+        "coverage": coverage,
     }
     details = {
         "schema_version": SCHEMA_VERSION,
+        "normalization_version": PRODUCT_FACTS_NORMALIZATION_VERSION,
         "run_date": run_date,
         "products": build_details(products),
     }
@@ -276,6 +346,7 @@ def _compute_payload(
     search_index = None
     history_banks = None
     bank_history = None
+    bank_spread_history = None
     if include_history:
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
@@ -290,6 +361,15 @@ def _compute_payload(
             section_filter=section_filter,
             normalized_rate_value=_normalized_rate_value,
             schema_version=SCHEMA_VERSION,
+            rba_calendar=rba_decision_models,
+        )
+        bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
+            exports_dir,
+            run_date=run_date,
+            history_dates=app_payload_mobile._history_dates,
+            banks_path=app_payload_mobile._banks,
+            load_json=_load_json,
+            schema_version=SCHEMA_VERSION,
         )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
@@ -300,8 +380,16 @@ def _compute_payload(
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
-        "rba_calendar": rba_decisions.calendar_payload(),
+        "bank_spread_history": bank_spread_history,
+        "rba_calendar": rba_calendar,
     }
+
+
+def _decision_is_effective(decision: Dict[str, Any], run_date: str) -> bool:
+    """Whether a change belongs in the prevailing core series for this run."""
+    effective = str(decision.get("effective") or "")[:10]
+    as_of = str(run_date or "")[:10]
+    return bool(effective and as_of and effective <= as_of)
 
 
 def _package_payload(
@@ -323,6 +411,7 @@ def _package_payload(
         search_index=data["search_index"],
         history_banks=data["history_banks"],
         bank_history=data["bank_history"],
+        bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
         # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
         # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
@@ -342,6 +431,7 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
+    bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
     enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
@@ -364,7 +454,12 @@ def _package(
         files["bank_history"] = _asset(
             out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
         )
-    if is_rolling_tag(tag) and rba_calendar and rba_calendar.get("schedule"):
+    if is_rolling_tag(tag) and bank_spread_history and bank_spread_history.get("banks"):
+        files["bank_spread_history"] = _asset(
+            out_dir, "bank-spread-history", run_date,
+            _gzip_bytes(bank_spread_history), release_base, enc_key,
+        )
+    if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(
             out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
         )
@@ -455,6 +550,7 @@ def build_and_publish_dual(
     repo: str = DEFAULT_REPO,
     out_dir: Optional[Path] = None,
     update_latest: bool = True,
+    state_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -482,10 +578,14 @@ def build_and_publish_dual(
     # Compute the (tag-independent) payload data ONCE, then package both releases.
     # History/search are rolling-only, so only compute them when the rolling latest
     # will be built. Previously each release rebuilt from scratch every run.
-    data = _app_payload("_compute_payload")(exports_dir, include_history=need_latest)
+    data = _app_payload("_compute_payload")(
+        exports_dir, include_history=need_latest, state_dir=state_dir
+    )
 
     dated = dated_tag(run_date)
-    out_dated = out_dir or (exports_dir / "app-payload")
+    out_dated = out_dir or (
+        state_dir / "v1-dated" if state_dir is not None else exports_dir / "app-payload"
+    )
     manifest = _package_payload(data, out_dated, repo=repo, tag=dated)
     try:
         published_dated = publish_payload(out_dated, repo=repo, tag=dated)
@@ -503,7 +603,11 @@ def build_and_publish_dual(
     published_latest = False
     if update_latest:
         if need_latest:
-            out_latest = exports_dir / "app-payload-latest"
+            out_latest = (
+                state_dir / "v1-latest"
+                if state_dir is not None
+                else exports_dir / "app-payload-latest"
+            )
             _package_payload(data, out_latest, repo=repo, tag=DEFAULT_TAG)
             published_latest = publish_payload(out_latest, repo=repo, tag=DEFAULT_TAG)
             print(

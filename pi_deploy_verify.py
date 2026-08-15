@@ -15,11 +15,12 @@ Environment (optional):
   AR_PI_AR_LOCAL_REPO  Pi checkout (default: /srv/ar-local/AR-local)
   AR_PI_SITE_REPO      Pi shell checkout (default: /srv/ar-local/australianrates)
   AR_PI_GITHUB_REMOTE  Remote name on Pi (default: origin)
+  AR_PI_EXPECTED_COMMIT Exact 40-character AR-local main commit approved by canary
 
 Examples:
   python pi_deploy_verify.py --verify
-  python pi_deploy_verify.py --deploy
-  python pi_deploy_verify.py --deploy --dry-run
+  python pi_deploy_verify.py --deploy --expected-commit <40-char-sha>
+  python pi_deploy_verify.py --deploy --expected-commit <40-char-sha> --dry-run
   python pi_deploy_verify.py --needs-pi --ref origin/main~1
 """
 
@@ -28,9 +29,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -55,6 +58,11 @@ EXIT_SSH = 3
 DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
+SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
+FORBIDDEN_PI_BOOTSTRAP_RE = re.compile(
+    rf"(?<![A-Za-z0-9_./-]){re.escape(FORBIDDEN_PI_BOOTSTRAP_PATH)}(?![A-Za-z0-9_.-])"
+)
+FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
     "app_payload.py",
@@ -131,13 +139,43 @@ def on_pi_host() -> bool:
 
 
 def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
-    """Windows OpenSSH often returns a failure code after successful remote output."""
+    """Accept a Windows client crash only after a proved successful remote command."""
     if sys.platform != "win32" or code == 0:
         return False
-    if not stdout.strip():
+    if not _has_terminal_success_sentinel(stdout):
         return False
     combined = f"{stdout}\n{stderr}"
     return "close - IO is still pending on closed socket" in combined
+
+
+def _remote_command_with_success_sentinel(shell_cmd: str) -> str:
+    sentinel = shell_quote(SSH_SUCCESS_SENTINEL)
+    return (
+        "{\n"
+        f"{shell_cmd}\n"
+        "}\n"
+        "__ar_pi_remote_status=$?\n"
+        "if [ \"$__ar_pi_remote_status\" -ne 0 ]; then\n"
+        "  exit \"$__ar_pi_remote_status\"\n"
+        "fi\n"
+        f"printf '\\n%s\\n' {sentinel}"
+    )
+
+
+def _has_terminal_success_sentinel(stdout: str) -> bool:
+    nonempty_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    return bool(nonempty_lines) and nonempty_lines[-1] == SSH_SUCCESS_SENTINEL
+
+
+def _strip_success_sentinel(stdout: str) -> str:
+    lines = stdout.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if not lines[index].strip():
+            continue
+        if lines[index].strip() == SSH_SUCCESS_SENTINEL:
+            del lines[index]
+        break
+    return "\n".join(lines).strip()
 
 
 def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
@@ -161,7 +199,8 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
         return proc.returncode, out, err
 
     host = ssh_host()
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host, shell_cmd]
+    remote_cmd = _remote_command_with_success_sentinel(shell_cmd)
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host, remote_cmd]
     if dry_run:
         print(f"pi_deploy_verify: dry-run ssh {host} {shell_cmd!r}")
         return 0, "", ""
@@ -173,14 +212,18 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
         check=False,
         timeout=SUBPROCESS_TIMEOUT_SEC,
     )
-    out = (proc.stdout or "").strip()
+    raw_out = (proc.stdout or "").strip()
+    out = _strip_success_sentinel(raw_out)
     err = (proc.stderr or "").strip()
     if proc.returncode != 0:
-        if _windows_openssh_exit_quirk(proc.returncode, out, err):
+        if _windows_openssh_exit_quirk(proc.returncode, raw_out, err):
             if err:
                 print(f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode}", file=sys.stderr)
             return 0, out, err
         print(f"pi_deploy_verify: ssh failed ({proc.returncode}): {err or out}", file=sys.stderr)
+    elif not _has_terminal_success_sentinel(raw_out):
+        print("pi_deploy_verify: ssh completed without the remote success sentinel", file=sys.stderr)
+        return EXIT_SSH, out, err
     return proc.returncode, out, err
 
 
@@ -258,8 +301,8 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"dash_exec=$(systemctl show ar-local-dashboard.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
         f"daily_wd=$(systemctl show ar-local-daily.service -p WorkingDirectory --value 2>/dev/null); "
         f"daily_exec=$(systemctl show ar-local-daily.service -p ExecStart --value 2>/dev/null | tr '\\n' ' '); "
-        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
-        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null | tr ' ' ';'); "
+        f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
+        f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_site=$(df -P {q_site} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
         f"df_data=$(df -P {q_data} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
@@ -324,18 +367,42 @@ def dashboard_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = 
 
 def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     ok = True
-    fields = {
+    path_fields = {
         "dashboard WorkingDirectory": snap.get("DASHBOARD_WD", ""),
         "dashboard ExecStart": snap.get("DASHBOARD_EXEC", ""),
-        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
         "daily WorkingDirectory": snap.get("DAILY_WD", ""),
         "daily ExecStart": snap.get("DAILY_EXEC", ""),
+    }
+    environment_fields = {
+        "dashboard Environment": snap.get("DASHBOARD_ENV", ""),
         "daily Environment": snap.get("DAILY_ENV", ""),
     }
-    for label, value in fields.items():
+    for label, value in {**path_fields, **environment_fields}.items():
         print(f"pi_deploy_verify: {label}: {value}")
-        if FORBIDDEN_PI_BOOTSTRAP_PATH in value:
+    for label, value in path_fields.items():
+        if FORBIDDEN_PI_BOOTSTRAP_RE.search(value):
             print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
+            ok = False
+    for label, value in environment_fields.items():
+        try:
+            assignments = shlex.split(value)
+        except ValueError:
+            assignments = [value]
+        for assignment in assignments:
+            name, separator, path = assignment.partition("=")
+            name = name.strip()
+            path = path.strip()
+            if not separator or not FORBIDDEN_PI_BOOTSTRAP_RE.search(path):
+                continue
+            if (name, path) in {
+                ("HOME", "/home/pi"),
+                ("XDG_CONFIG_HOME", "/home/pi/.config"),
+            }:
+                continue
+            print(
+                f"pi_deploy_verify: forbidden bootstrap path in {label}: {assignment}",
+                file=sys.stderr,
+            )
             ok = False
 
     dash_exec = snap.get("DASHBOARD_EXEC", "")
@@ -353,13 +420,18 @@ def pi_service_paths_ok(snap: dict[str, str]) -> bool:
     return ok
 
 
-def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
+def http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    timeout_seconds: float = 30.0,
+) -> int:
     import urllib.error
     import urllib.request
 
     latest = base_url.rstrip("/") + "/api/latest"
     try:
-        with urllib.request.urlopen(latest, timeout=30.0) as resp:
+        with urllib.request.urlopen(latest, timeout=timeout_seconds) as resp:
             if int(resp.status) != 200:
                 print(f"pi_deploy_verify: {latest} HTTP {resp.status}", file=sys.stderr)
                 return EXIT_VERIFY_FAIL
@@ -383,10 +455,52 @@ def http_smoke(base_url: str, *, require_rates: bool = True) -> int:
     return EXIT_OK
 
 
-def verify_sync(*, dry_run: bool = False) -> int:
+def wait_for_http_smoke(
+    base_url: str,
+    *,
+    require_rates: bool = True,
+    attempts: int = 13,
+    delay_seconds: float = 10.0,
+    budget_seconds: float = 120.0,
+) -> int:
+    """Allow the dashboard's preload phase to finish after a service restart."""
+    deadline = time.monotonic() + max(0.0, budget_seconds)
+    result = EXIT_VERIFY_FAIL
+    for attempt in range(1, attempts + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        result = http_smoke(
+            base_url,
+            require_rates=require_rates,
+            timeout_seconds=min(30.0, remaining),
+        )
+        if result == EXIT_OK:
+            return EXIT_OK
+        remaining = deadline - time.monotonic()
+        if attempt < attempts and remaining > 0:
+            sleep_seconds = min(delay_seconds, remaining)
+            print(
+                f"pi_deploy_verify: dashboard not ready after restart "
+                f"(attempt {attempt}/{attempts}); retrying in {sleep_seconds:g}s"
+            )
+            time.sleep(sleep_seconds)
+    return result
+
+
+def verify_sync(
+    *, dry_run: bool = False, expected_commit: Optional[str] = None
+) -> int:
     local_main = origin_main_sha_local()
     if not local_main:
         print("pi_deploy_verify: could not resolve origin/main locally", file=sys.stderr)
+        return EXIT_CONFIG
+    if expected_commit is not None and local_main != expected_commit:
+        print(
+            "pi_deploy_verify: local origin/main does not match approved commit "
+            f"({local_main[:12]} != {expected_commit[:12]})",
+            file=sys.stderr,
+        )
         return EXIT_CONFIG
 
     snap = pi_remote_snapshot(dry_run=dry_run)
@@ -420,7 +534,8 @@ def verify_sync(*, dry_run: bool = False) -> int:
         )
     if origin_ar != local_main:
         drift.append(
-            f"Pi origin/main ({origin_ar[:12]}) behind local origin/main ({local_main[:12]}) — run --deploy"
+            f"Pi origin/main ({origin_ar[:12]}) differs from local origin/main "
+            f"({local_main[:12]}); retain drift until canary approval"
         )
 
     if drift:
@@ -435,37 +550,27 @@ def verify_sync(*, dry_run: bool = False) -> int:
     return EXIT_OK
 
 
-def deploy_pull(repo_path: str, *, dry_run: bool = False) -> int:
-    remote = pi_remote()
-    cmd = (
-        f"cd {shell_quote(repo_path)} && git fetch {shell_quote(remote)} && "
-        f"git checkout main && git pull --ff-only {shell_quote(remote)} main"
-    )
-    code, out, _ = run_ssh(cmd, dry_run=dry_run)
-    if code != 0 and not dry_run:
-        return EXIT_SSH
-    if out and not dry_run:
-        print(f"pi_deploy_verify: {repo_path}:\n{out}")
-    return EXIT_OK
+def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
+    """Install one exact fetched AR-local main commit without moving the site repo."""
 
-
-def deploy_pull_all(*, dry_run: bool = False) -> int:
-    """One SSH session for both repos (fewer connections; helps Windows OpenSSH)."""
+    if not FULL_COMMIT_RE.fullmatch(expected_commit):
+        print("pi_deploy_verify: invalid expected commit", file=sys.stderr)
+        return EXIT_CONFIG
     remote = pi_remote()
     ar = pi_ar_repo()
-    site = pi_site_repo()
     script = (
         f"set -e; "
-        f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} && git checkout main && "
-        f"git pull --ff-only {shell_quote(remote)} main; "
-        f"cd {shell_quote(site)} && git fetch {shell_quote(remote)} && git checkout main && "
-        f"git pull --ff-only {shell_quote(remote)} main"
+        f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} main && "
+        f"test \"$(git rev-parse {shell_quote(remote)}/main)\" = "
+        f"{shell_quote(expected_commit)} && "
+        "git checkout main && "
+        f"git merge --ff-only {shell_quote(expected_commit)}"
     )
     code, out, _ = run_ssh(script, dry_run=dry_run)
     if code != 0 and not dry_run:
         return EXIT_SSH
     if out and not dry_run:
-        print(f"pi_deploy_verify: pull AR-local + australianrates:\n{out}")
+        print(f"pi_deploy_verify: installed exact AR-local commit:\n{out}")
     return EXIT_OK
 
 
@@ -475,23 +580,34 @@ def deploy_services(*, dry_run: bool = False) -> int:
     install_proxy = f"{ar_repo}/deploy/pi/install-pi-dashboard-proxy.sh"
     daily_timer_src = f"{ar_repo}/deploy/pi/ar-local-daily.timer"
     watchdog_timer_src = f"{ar_repo}/deploy/pi/ar-local-daily-watchdog.timer"
-    deploy_watchdog_timer_src = f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.timer"
+    deploy_watchdog_timer_src = (
+        f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.timer"
+    )
+    deploy_watchdog_script = (
+        f"{ar_repo}/deploy/pi/ar-local-deploy-watchdog.sh"
+    )
     script = (
-        f"sudo mkdir -p {shell_quote(data)}/runs {shell_quote(data)}/state && "
-        f"sudo chown -R $(id -un):$(id -gn) {shell_quote(data)} && "
+        f"test -d {shell_quote(data)}/runs && test -d {shell_quote(data)}/state && "
+        f"test -x {shell_quote(deploy_watchdog_script)} && "
+        "systemctl cat ar-local-deploy-watchdog.service | "
+        f"grep -Fqx {shell_quote(f'WorkingDirectory={ar_repo}')} && "
+        "systemctl cat ar-local-deploy-watchdog.service | "
+        f"grep -Fqx {shell_quote(f'ExecStart={deploy_watchdog_script}')} && "
         "sudo systemctl restart ar-local-dashboard.service && "
         # Sync the verbatim (non-templated) timer units so schedule changes in the
-        # repo (e.g. ar-local-daily.timer OnCalendar, deploy-watchdog poll interval)
-        # actually land on the Pi via --deploy too, not just install-pi-systemd.sh.
+        # repo (e.g. ar-local-daily.timer OnCalendar)
+        # actually land during an approved exact-commit activation too, not just
+        # install-pi-systemd.sh.
         # .service units are templated by install-pi-systemd.sh and are intentionally
-        # not copied here; run that installer for service-unit changes.
+        # not copied here. The existing verify-only deploy-watchdog service is
+        # checked against the exact repo/script paths before its timer is enabled.
         f"sudo install -m 0644 {shell_quote(daily_timer_src)} /etc/systemd/system/ar-local-daily.timer && "
         f"sudo install -m 0644 {shell_quote(watchdog_timer_src)} /etc/systemd/system/ar-local-daily-watchdog.timer && "
         f"sudo install -m 0644 {shell_quote(deploy_watchdog_timer_src)} /etc/systemd/system/ar-local-deploy-watchdog.timer && "
         "sudo systemctl daemon-reload && "
         "(sudo systemctl restart ar-local-daily.timer || true) && "
         "(sudo systemctl restart ar-local-daily-watchdog.timer || true) && "
-        "(sudo systemctl restart ar-local-deploy-watchdog.timer || true) && "
+        "sudo systemctl enable --now ar-local-deploy-watchdog.timer && "
         "("
         "if [ -f /etc/nginx/sites-enabled/ar-local-dashboard ]; then "
         "sudo nginx -t && sudo systemctl reload-or-restart nginx; "
@@ -532,7 +648,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(f"pi_deploy_verify: dry-run would smoke {pi_base_url()}")
         return EXIT_OK
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: verify OK (sync + dashboard + /api/latest)")
@@ -540,25 +656,61 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_deploy(args: argparse.Namespace) -> int:
+    expected_commit = str(args.expected_commit or "").strip().lower()
+    if not FULL_COMMIT_RE.fullmatch(expected_commit):
+        print(
+            "pi_deploy_verify: --deploy requires --expected-commit with an exact "
+            "40-character lowercase SHA",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+    local_main = origin_main_sha_local()
+    if local_main != expected_commit:
+        print(
+            "pi_deploy_verify: approved commit is not the current local origin/main",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+    if args.dry_run:
+        rc = deploy_pull_all(expected_commit, dry_run=True)
+        if rc != EXIT_OK:
+            return rc
+        rc = deploy_services(dry_run=True)
+        if rc != EXIT_OK:
+            return rc
+        print("pi_deploy_verify: dry-run deploy complete (no changes applied)")
+        return EXIT_OK
     snap = pi_remote_snapshot(dry_run=args.dry_run)
     if snap is None:
         print("pi_deploy_verify: could not read Pi state before deploy", file=sys.stderr)
         return EXIT_SSH
     if _snap_has_dirty_repos(snap, context="— resolve before deploy"):
         return EXIT_VERIFY_FAIL
-    rc = deploy_pull_all(dry_run=args.dry_run)
+    if not pi_service_paths_ok(snap):
+        return EXIT_VERIFY_FAIL
+    if snap["AR_ORIGIN"] != expected_commit:
+        print(
+            "pi_deploy_verify: Pi origin/main does not match approved commit",
+            file=sys.stderr,
+        )
+        return EXIT_VERIFY_FAIL
+    if snap["SITE_HEAD"] != snap["SITE_ORIGIN"]:
+        print(
+            "pi_deploy_verify: australianrates checkout is behind origin/main; "
+            "refusing an unrelated site mutation",
+            file=sys.stderr,
+        )
+        return EXIT_VERIFY_FAIL
+    rc = deploy_pull_all(expected_commit, dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc
     rc = deploy_services(dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc
-    if args.dry_run:
-        print("pi_deploy_verify: dry-run deploy complete (no changes applied)")
-        return EXIT_OK
-    sync_rc = verify_sync(dry_run=False)
+    sync_rc = verify_sync(dry_run=False, expected_commit=expected_commit)
     if sync_rc != EXIT_OK:
         return sync_rc
-    smoke = http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
+    smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
     print("pi_deploy_verify: deploy OK")
@@ -596,6 +748,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Pass HTTP smoke when /api/latest has zero banks_counts.rates.",
     )
+    parser.add_argument(
+        "--expected-commit",
+        default=os.environ.get("AR_PI_EXPECTED_COMMIT", ""),
+        help=(
+            "Exact 40-character lowercase AR-local main commit approved by the "
+            "canary gate; required for --deploy."
+        ),
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
         "--verify",
@@ -605,7 +765,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--deploy",
         action="store_true",
-        help="git pull --ff-only on Pi repos, restart dashboard + daily timer, then --verify.",
+        help="Install the exact approved AR-local commit, restart runtime, then verify.",
     )
     mode.add_argument(
         "--needs-pi",

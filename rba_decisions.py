@@ -7,7 +7,9 @@ Recorded fact, never inferred. Every Monetary Policy Board meeting is recorded,
 including HELD meetings (delta_bps == 0), so downstream analytics can distinguish
 "no meeting" from "the Board met and held". Each entry is sourced from the RBA
 cash-rate target table and the RBA monetary-policy decision records (see ``META``).
-Update this file when the Board next decides; that is the whole maintenance burden.
+The checked-in entries are a last-known-good fallback. Payload publication also
+refreshes them from the official cash-rate table so new decisions do not depend on
+a manual source edit.
 
 Coverage: complete meeting-by-meeting from 2025 (the Monetary Policy Board era)
 through the present, plus a single pre-2025 baseline anchor (the Nov 2023 hike to
@@ -66,6 +68,7 @@ _DECISIONS = [
     ("2026-03-17", "2026-03-18", 410, 25),
     ("2026-05-05", "2026-05-06", 435, 25),
     ("2026-06-16", None, 435, 0),            # held
+    ("2026-08-11", None, 435, 0),            # held
 ]
 
 # --- Scheduled future meetings (announcement date = meeting day 2) ------------
@@ -84,7 +87,7 @@ META = {
         "https://www.rba.gov.au/monetary-policy/int-rate-decisions/",
         "https://www.rba.gov.au/schedules-events/board-meeting-schedules.html",
     ],
-    "updated": "2026-06-21",
+    "updated": "2026-08-12",
 }
 
 
@@ -199,7 +202,8 @@ def validate() -> List[str]:
             issues.append(f"effective precedes announcement at {dec.date}")
 
     sched = schedule()
-    if decs and sched and sched[0].date <= decs[-1].date:
+    decision_dates = {dec.date for dec in decs}
+    if decs and any(meeting.date <= decs[-1].date and meeting.date not in decision_dates for meeting in sched):
         issues.append("schedule overlaps recorded decisions")
     for prev, cur in zip(sched, sched[1:]):
         if cur.date <= prev.date:
@@ -252,7 +256,10 @@ def next_meeting(now: Optional[datetime] = None) -> Optional[Meeting]:
     is no longer "upcoming" (its outcome is being announced), so the next meeting is
     returned."""
     now = now or datetime.now(timezone.utc)
+    recorded_dates = {dec.date for dec in decisions()}
     for meeting in schedule():
+        if meeting.date in recorded_dates:
+            continue
         if meeting.announce_utc > now:
             return meeting
     return None
@@ -269,6 +276,8 @@ def calendar_payload() -> dict:
     decision calendar + the forward schedule, with NO wall-clock fields. The client
     computes the live countdown from ``schedule``; stable bytes keep same-day rebuilds
     content-addressable (the published asset is content-hashed)."""
+    decs = decisions()
+    recorded_dates = {dec.date for dec in decs}
     return {
         "timezone": SYDNEY_TZ,
         "decisions": [
@@ -279,11 +288,12 @@ def calendar_payload() -> dict:
                 "delta_bps": dec.delta_bps,
                 "outcome": dec.outcome,
             }
-            for dec in decisions()
+            for dec in decs
         ],
         "schedule": [
             {"date": m.date.isoformat(), "announce_utc": m.announce_utc.isoformat()}
             for m in schedule()
+            if m.date not in recorded_dates
         ],
     }
 

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
+from urllib.parse import urlsplit
 
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
+from cdr_product_facts import clean_fact_rows
+from cdr_rate_normalize import normalized_rate_value, rate_divisor
 NOISE_KEYS = {
     "links",
     "meta",
@@ -24,6 +27,13 @@ NOISE_KEYS = {
 URL_KEY_RE = re.compile(r"(uri|url|href|link)$", re.I)
 URL_TEXT_RE = re.compile(r"https?://\S+", re.I)
 SPACE_RE = re.compile(r"\s+")
+OFFICIAL_PRODUCT_LINK_FIELDS = (
+    "overviewUri",
+    "eligibilityUri",
+    "feesAndPricingUri",
+    "termsUri",
+    "bundleUri",
+)
 
 
 def utc_now() -> str:
@@ -96,33 +106,138 @@ def rate_text(value: Any, divisor: float = 1.0) -> str:
     return f"{number:.6g}"
 
 
-def rate_divisor(items: List[Dict[str, Any]], family: str) -> float:
-    values: List[float] = []
-    for item in items:
-        try:
-            values.append(float(number_text(item.get("rate"))))
-        except ValueError:
-            pass
-    if any(value > 1 for value in values):
-        return 100
-    if family == "lending" and any(0.3 < value <= 1 for value in values):
-        return 10
-    return 1
-
-
 def normalized_rate_text(value: Any, divisor: float, family: str) -> str:
-    raw = rate_text(value, divisor)
+    number = normalized_rate_value(value, divisor, family)
+    return f"{number:.6g}" if number is not None else number_text(value)
+
+
+def _official_https_url(value: Any) -> str:
+    """Return a source-supplied public HTTPS URL, excluding credentials/fragments."""
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 2048:
+        return ""
     try:
-        number = float(raw)
+        parsed = urlsplit(raw)
     except ValueError:
-        return raw
-    if family == "lending" and 0 < number < 0.02:
-        number *= 10
-    return f"{number:.6g}"
+        return ""
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return ""
+    return raw.split("#", 1)[0]
+
+
+def official_product_links(record: Mapping[str, Any]) -> Dict[str, str]:
+    """Allowlisted lender links from CDR ``additionalInformation`` metadata."""
+    info = record.get("additionalInformation")
+    if not isinstance(info, Mapping):
+        return {}
+    return {
+        field: url
+        for field in OFFICIAL_PRODUCT_LINK_FIELDS
+        if (url := _official_https_url(info.get(field)))
+    }
 
 
 def detail_json(record: Mapping[str, Any]) -> str:
-    return json.dumps(clean_value(dict(record)), ensure_ascii=False, sort_keys=True)
+    cleaned = clean_value(dict(record))
+    links = official_product_links(record)
+    if links:
+        # Generic cleaning intentionally removes arbitrary URLs. Restore only the
+        # CDR-defined lender metadata fields that the app can identify and label.
+        cleaned["additionalInformation"] = links
+    return json.dumps(cleaned, ensure_ascii=False, sort_keys=True)
+
+
+def _failure_rollup(failures: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[tuple[str, str, str], int] = {}
+    for item in failures:
+        provider = text(item.get("bank")) or "Unknown"
+        phase = text(item.get("phase")) or "unknown"
+        status = text(item.get("status")) or "unknown"
+        key = (provider, phase, status)
+        grouped[key] = grouped.get(key, 0) + 1
+    return [
+        {"provider": provider, "phase": phase, "status": status, "count": count}
+        for (provider, phase, status), count in sorted(grouped.items())
+    ]
+
+
+def app_coverage_aliases(coverage: Mapping[str, Any]) -> Dict[str, Any]:
+    """Add the legacy app-facing names without replacing the canonical contract."""
+    result = dict(coverage)
+    observed_on = text(result.get("observed_on"))
+    counts = result.get("counts") if isinstance(result.get("counts"), Mapping) else {}
+    provider_failures = (
+        result.get("provider_failures")
+        if isinstance(result.get("provider_failures"), list)
+        else []
+    )
+    succeeded = int(counts.get("providers_succeeded") or counts.get("brands_observed") or 0)
+    attempted = int(
+        counts.get("providers_attempted")
+        or (succeeded + int(counts.get("providers_failed") or 0))
+    )
+    observed_at = ""
+    if observed_on:
+        observed_at = (
+            datetime.strptime(observed_on, "%Y-%m-%d")
+            .replace(tzinfo=timezone(timedelta(hours=10)))
+            .astimezone(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    result.setdefault("observed_at", observed_at)
+    result.setdefault("providers_succeeded", succeeded)
+    result.setdefault("providers_attempted", attempted)
+    result.setdefault("failures", list(provider_failures))
+    return result
+
+
+def coverage_summary(banks: Mapping[str, Any], run_date: str) -> Dict[str, Any]:
+    """Privacy-safe measured coverage and failure provenance for app clients."""
+    rates = [row for row in banks.get("rates", []) if isinstance(row, Mapping)]
+    products = [row for row in banks.get("products", []) if isinstance(row, Mapping)]
+    failures = [row for row in banks.get("failures", []) if isinstance(row, Mapping)]
+    observed = {text(row.get("provider")) for row in [*rates, *products]} - {""}
+    failed = {text(row.get("bank")) for row in failures} - {""}
+    attempted = {
+        text(provider) for provider in banks.get("holder_attempts", []) if text(provider)
+    } | observed | failed
+    succeeded = attempted - (failed - observed)
+    sections: Dict[str, Any] = {}
+    for section in ("Mortgage", "Savings", "TD"):
+        section_rates = [row for row in rates if row.get("dataset") == section]
+        sections[section] = {
+            "rates": len(section_rates),
+            "products": len({text(row.get("product_key")) for row in section_rates} - {""}),
+            "providers": len({text(row.get("provider")) for row in section_rates} - {""}),
+            "standard_rates": sum(row.get("account_class") == "standard" for row in section_rates),
+            "non_standard_rates": sum(
+                row.get("account_class") == "non_standard" for row in section_rates
+            ),
+            "unclassified_rates": sum(
+                row.get("account_class") not in ("standard", "non_standard")
+                for row in section_rates
+            ),
+        }
+    return app_coverage_aliases({
+        "schema_version": 1,
+        "observed_on": run_date,
+        "source": "consumer_data_right_export",
+        "failure_provenance_complete": True,
+        "counts": {
+            "brands_observed": len(observed),
+            "products": len(products),
+            "rates": len(rates),
+            "failure_records": len(failures),
+            "providers_failed": len(failed - observed),
+            "providers_partial": len(failed & observed),
+            "providers_attempted": len(attempted),
+            "providers_succeeded": len(succeeded),
+        },
+        "sections": sections,
+        # Deliberately excludes endpoint URLs and response snippets.
+        "provider_failures": _failure_rollup(failures),
+    })
 
 
 def bank_product_key(row: Mapping[str, str]) -> str:
@@ -159,6 +274,43 @@ def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[
     }
     row["product_key"] = bank_product_key(row)
     return row
+
+
+def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
+    """Choose a useful flat-export value while details_json stays lossless."""
+    def present(raw: Any) -> bool:
+        return raw is not None and not (
+            isinstance(raw, str) and raw.strip().lower() in {"", "null"}
+        )
+
+    value = item.get("additionalValue")
+    if present(value) or sheet != "fees":
+        return value
+    method = text(item.get("feeMethodUType")).lower()
+    fee_type = text(item.get("feeType")).upper()
+    variable = item.get("variable")
+    if method == "variable" or fee_type == "VARIABLE":
+        if isinstance(variable, Mapping):
+            minimum = variable.get("feeMinimum")
+            maximum = variable.get("feeMaximum")
+            low = text(minimum) if present(minimum) else ""
+            high = text(maximum) if present(maximum) else ""
+            if low or high:
+                return f"{low}..{high}"
+        return "VARIABLE"
+    amount = item.get("amount")
+    if present(amount):
+        return amount
+    fixed_amount = item.get("fixedAmount")
+    if isinstance(fixed_amount, Mapping) and present(fixed_amount.get("amount")):
+        return fixed_amount.get("amount")
+    rate_based = item.get("rateBased")
+    if isinstance(rate_based, Mapping) and present(rate_based.get("rate")):
+        return rate_based.get("rate")
+    for key in ("balanceRate", "transactionRate", "accruedRate"):
+        if present(item.get(key)):
+            return item.get(key)
+    return None
 
 
 def append_bank_details(
@@ -211,13 +363,14 @@ def append_bank_details(
     ):
         for idx, item in enumerate(as_items(rec.get(key)), 1):
             cleaned = clean_value(item)
+            item_value = bank_detail_item_value(sheet, item)
             dataset[sheet].append(
                 {
                     **base,
                     "item_index": idx,
                     "item_type": text(item.get(label_key)),
                     "name": text(item.get("name") or item.get("additionalValue")),
-                    "value": text(item.get("additionalValue")),
+                    "value": text(item_value),
                     "details_json": json.dumps(cleaned, ensure_ascii=False, sort_keys=True),
                 }
             )
@@ -235,15 +388,21 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "features": [],
         "eligibility": [],
         "constraints": [],
+        "product_facts": [],
         "failures": read_failures(banks_root),
+        "holder_attempts": [],
     }
     if not banks_root.exists():
         return dataset
+    holders_root = banks_root / "_holders"
+    if holders_root.exists():
+        dataset["holder_attempts"] = [path.name for path in sorted(holders_root.iterdir()) if path.is_dir()]
     for path in sorted(banks_root.rglob("product-detail.json")):
         rec = inner_record(load_json(path))
         base = bank_base_row(path, banks_root, rec)
         dataset["products"].append({**base, "details_json": detail_json(rec)})
         append_bank_details(dataset, base, rec)
+        dataset["product_facts"].extend(clean_fact_rows(rec, base))
     return dataset
 
 

@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import bank_behaviour
 import rba_decisions
+from app_payload_contracts import ALL_PRODUCTS_COHORT
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 _WS = re.compile(r"\s+")
@@ -22,6 +23,28 @@ def _items(items: Any) -> List[str]:
         for key in ("label", "name", "value", "info"):
             raw = item.get(key)
             if raw not in (None, ""): out.append(str(raw))
+    return out
+
+def _fact_terms(items: Any) -> List[str]:
+    """Index only vetted compact fact fields; never evidence paths/raw JSON/URLs."""
+    if not isinstance(items, list):
+        return []
+    out: List[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        search_terms = item.get("searchTerms")
+        if not isinstance(search_terms, list):
+            search_terms = []
+        for raw in search_terms:
+            if isinstance(raw, str) and not raw.lower().startswith(("http://", "https://")):
+                out.append(raw)
+        value = item.get("value")
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool) and not str(value).lower().startswith(("http://", "https://")):
+            out.append(str(value))
+        condition = item.get("condition")
+        if isinstance(condition, str) and not condition.lower().startswith(("http://", "https://")):
+            out.append(condition)
     return out
 
 def build_search_index(core_rows, details_map, *, run_date: str, schema_version: int = 1):
@@ -41,6 +64,7 @@ def build_search_index(core_rows, details_map, *, run_date: str, schema_version:
             if detail.get("description"): chunks.append(str(detail["description"]))
             for field in ("fees", "features", "eligibility", "constraints"):
                 chunks.extend(_items(detail.get(field)))
+            chunks.extend(_fact_terms(detail.get("facts")))
         chunks.append(key)
         products[key] = _norm(" ".join(chunks))
     return {"schema_version": schema_version, "run_date": run_date, "products": products}
@@ -168,7 +192,16 @@ def _provider_events(date, section, prev_best, providers):
     return events
 
 
-def build_history_assets(exports_dir, *, run_date, load_json, section_filter, normalized_rate_value, schema_version=1):
+def build_history_assets(
+    exports_dir,
+    *,
+    run_date,
+    load_json,
+    section_filter,
+    normalized_rate_value,
+    schema_version=1,
+    rba_calendar=None,
+):
     """Single pass over the daily banks.json snapshots producing BOTH mobile history assets:
 
     1. ``history_banks`` — per-section daily aggregate ribbon points (existing asset).
@@ -221,6 +254,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
         "schema_version": schema_version,
         "run_date": run_date,
         "run_dates": dates,
+        "cohort": dict(ALL_PRODUCTS_COHORT),
         "sections": sections,
     }
 
@@ -248,7 +282,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
     # are bounded to the ledger window: a decision predating the first retained run
     # can't have its true first response observed, so it is excluded (Codex). Pure
     # logic + honesty/confidence model live in bank_behaviour.
-    rba_calendar = rba_decisions.decisions()
+    rba_calendar = rba_calendar if rba_calendar is not None else rba_decisions.decisions()
     ledger_start = _date.fromisoformat(dates[0]) if dates else None
     behaviour = {
         section: bank_behaviour.pass_through_summary(
@@ -260,6 +294,7 @@ def build_history_assets(exports_dir, *, run_date, load_json, section_filter, no
         "schema_version": schema_version,
         "run_date": run_date,
         "run_dates": dates,
+        "cohort": dict(ALL_PRODUCTS_COHORT),
         "banks": banks,
         "events": events[-MAX_EVENTS:],
         "behaviour": behaviour,

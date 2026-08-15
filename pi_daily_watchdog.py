@@ -16,16 +16,17 @@ from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
     ensure_runtime_data_writable,
-    load_exports_manifest,
-    manifest_banks_rate_count,
 )
 from cdr_daily import marker_is_trustworthy, marker_path
+from cdr_finalization import verified_pointer_marker_for_date
+from pi_daily_sync import payload_publication_pending
 
 REPO_ROOT = Path(__file__).resolve().parent
 GRACE_MINUTES = 30
 SERVICE_NAME = "ar-local-daily.service"
 SUBPROCESS_STATUS_TIMEOUT_SEC = 10
 SUBPROCESS_INGEST_TIMEOUT_SEC = 2 * 60 * 60
+SUBPROCESS_PAYLOAD_TIMEOUT_SEC = 30 * 60
 
 
 def export_root_for(date_text: str) -> Path:
@@ -34,11 +35,14 @@ def export_root_for(date_text: str) -> Path:
 
 def run_complete(date_text: str) -> bool:
     export_root = export_root_for(date_text)
-    marker = marker_path(data_state_root(REPO_ROOT), date_text)
-    if marker_is_trustworthy(marker, export_root, date_text):
+    state_dir = data_state_root(REPO_ROOT)
+    selected_marker = verified_pointer_marker_for_date(state_dir, date_text)
+    if selected_marker is not None:
         return True
-    manifest = load_exports_manifest(export_root)
-    return bool(manifest and str(manifest.get("run_date") or "") == date_text and manifest_banks_rate_count(manifest) > 0)
+    marker = marker_path(state_dir, date_text)
+    # A markerless export can be a crash remnant copied just before finalization.
+    # Treat only the transactionally verified completion marker as complete.
+    return marker_is_trustworthy(marker, export_root, date_text)
 
 
 def service_active() -> bool:
@@ -58,11 +62,37 @@ def service_active() -> bool:
 
 def run_daily_ingest(date_text: str, dry_run: bool) -> None:
     date_text = str(date_text)
-    cmd = [sys.executable, str(REPO_ROOT / "pi_daily_sync.py"), "--banks-only", "--date", date_text]
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "pi_daily_sync.py"),
+        "--banks-only",
+        "--skip-git-sync",
+        "--date",
+        date_text,
+    ]
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
     subprocess.run(cmd, cwd=REPO_ROOT, check=True, shell=False, timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
+
+
+def run_payload_retry(dry_run: bool) -> None:
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "pi_daily_sync.py"),
+        "--skip-git-sync",
+        "--publish-existing-payload",
+    ]
+    if dry_run:
+        print(f"DRY RUN: would run {shlex.join(cmd)}")
+        return
+    subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        check=True,
+        shell=False,
+        timeout=SUBPROCESS_PAYLOAD_TIMEOUT_SEC,
+    )
 
 
 def send_missed_ingest_alert(run_date: str, details: str) -> None:
@@ -115,7 +145,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     active = service_active()
     current_day_due = run_date == local_today
     should_start = not writable_error and now_utc >= ready_at and not complete and not active
+    payload_pending = not writable_error and payload_publication_pending(REPO_ROOT)
+    should_retry_payload = payload_pending and complete and not active
     catch_up_failed = False
+    payload_retry_failed = False
     if should_start:
         if args.dry_run:
             run_daily_ingest(run_date, args.dry_run)
@@ -133,6 +166,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if not args.json:
                     print(f"pi_daily_watchdog: {detail}", file=sys.stderr)
                 send_missed_ingest_alert(run_date, detail)
+    elif should_retry_payload:
+        try:
+            run_payload_retry(args.dry_run)
+        except subprocess.SubprocessError as exc:
+            payload_retry_failed = True
+            if isinstance(exc, subprocess.TimeoutExpired):
+                detail = f"payload retry timed out after {exc.timeout}s"
+            elif isinstance(exc, subprocess.CalledProcessError):
+                detail = f"payload retry failed exit={exc.returncode}"
+            else:
+                detail = f"payload retry failed: {exc}"
+            if not args.json:
+                print(f"pi_daily_watchdog: {detail}", file=sys.stderr)
     elif (
         not args.dry_run
         and writable_error
@@ -153,15 +199,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         "runtime_writable_error": writable_error,
         "started": should_start and not args.dry_run and not catch_up_failed,
         "catch_up_failed": catch_up_failed,
+        "payload_pending": payload_pending,
+        "payload_retry_attempted": should_retry_payload and not args.dry_run,
+        "payload_retry_failed": payload_retry_failed,
         "dry_run": bool(args.dry_run),
     }
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
         status = "complete" if complete else "missing"
-        action = "started" if payload["started"] else "no action"
+        if payload["started"]:
+            action = "started"
+        elif payload["payload_retry_attempted"]:
+            action = "payload retry attempted"
+        else:
+            action = "no action"
         print(f"pi_daily_watchdog: {run_date} is {status}; service_active={active}; {action}")
-    if catch_up_failed:
+    if catch_up_failed or payload_retry_failed:
         return 1
     return 0
 

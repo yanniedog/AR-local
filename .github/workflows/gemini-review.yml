@@ -1,0 +1,40 @@
+name: "Automated Gemini Code Review"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Fork PRs do not receive GEMINI_API_KEY / write tokens on pull_request.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Run AI Code Review"
+        # Pin v2 tag (ecc2434…) so the secret-backed action cannot drift via a mutable tag.
+        uses: sshnaidm/gemini-code-review-action@ecc2434351ef76b0084b788a3d61ec7d3acf44f9 # v2
+        with:
+          gemini-key: ${{ secrets.GEMINI_API_KEY }}
+          model: "gemini-flash-latest"
+          review-title: |
+            <!-- gemini-code-review -->
+            # Code Review by Gemini
+          prompt: |
+            You are a senior developer reviewing a Pull Request. Check for logic errors, performance issues, and edge cases.
+            If reviewing Pine Script:
+            - Enforce Pine Script v6 syntax exclusively.
+            - Flag any use of ta.sum and suggest math.sum instead.
+            - Ensure any step values used in inputs are 1 or greater.
+            - Flag any attempts to use dashed or dotted styles with plot() (e.g. plot.style_dashed), advising line or hline functions instead.
+            If reviewing Home Assistant YAML:
+            - Check for valid syntax and standard formatting.
+            If reviewing Python:
+            - Check for algorithmic efficiency and clear logical structures.

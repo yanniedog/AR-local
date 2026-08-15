@@ -12,8 +12,8 @@ describe('historySelectors', () => {
     const model = selectBankHistoryChartModel({ core: sample }, 'Mortgage');
     expect(model).not.toBeNull();
     expect(model?.dates).toEqual([sample.run_date]);
-    expect(model?.points[0].min).toBeCloseTo(0.0279, 4);
-    expect(model?.points[0].max).toBeCloseTo(0.1177, 4);
+    expect(model?.points[0].min).toBe(sample.sections.Mortgage.ribbon.range.min);
+    expect(model?.points[0].max).toBe(sample.sections.Mortgage.ribbon.range.max);
   });
 
   it('builds aggregate ribbon from cached history rows', () => {

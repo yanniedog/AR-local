@@ -25,7 +25,17 @@ from ar_local_pi_runtime import (
     prepare_empty_dir,
 )
 import cdr_ledger_integrity
+from cdr_ledger_v2 import verify_reachable_generation
+from cdr_finalization import (
+    finalize_observation,
+    recover_pending_finalization,
+    repair_observation_pointers,
+    validate_finalization_layout,
+    verify_completion_marker,
+    verified_pointer_marker_for_date,
+)
 from cdr_outputs import build_outputs
+from cdr_product_changes import previous_finalized_run
 from cdr_ingest_sanity import write_sanity_report
 
 
@@ -74,6 +84,8 @@ def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
         return False
     if not isinstance(recorded, dict) or banks_result_rate_count(recorded) <= 0:
         return False
+    if recorded.get("finalization_schema_version") == 2:
+        return verify_completion_marker(recorded, marker.parent, date)
     manifest = load_exports_manifest(export_root)
     if manifest is None:
         return False
@@ -106,35 +118,40 @@ def resolve_ledger_target(
     today: str,
     force: bool,
     now: Optional[datetime] = None,
+    marker_evidence: bool = False,
 ) -> tuple[Path, bool]:
     """Enforce append-only history; return ``(target_root, is_revision)``.
 
     Today's partition is still being assembled, so it writes its primary
-    ``_exports`` as before. PAST days are immutable, append-only ledger data:
+    ``_exports`` as before. PAST days are immutable ledger data:
 
-    - An already-finalized partition is NEVER overwritten. ``--force`` appends a
-      timestamped revision beside it, preserving the original bytes (corrections
-      are appended, never destructive).
+    - An existing current-day partition is NEVER overwritten. A retry uses a
+      timestamped sibling, preserving the original bytes.
+    - A past partition is never passed to live ingest, even with ``--force``.
+      Historical revisions are built offline from preserved source hashes.
     - A MISSING past day is NEVER created by the live ingest: live CDR endpoints
       return only current data, so writing it under a historical date would
       fabricate the ledger (e.g. the 2026-05-14 gap must remain a gap).
 
     Dates are ``YYYY-MM-DD`` so lexical comparison is chronological.
     """
-    if date >= today:
-        return primary_root, False
-    if _export_root_has_content(primary_root):
-        if not force:
+    if _export_root_has_content(primary_root) or marker_evidence:
+        if date < today:
             raise LedgerImmutabilityError(
-                f"Refusing to overwrite finalized ledger day {date} at {primary_root}; "
-                f"re-run with --force to append a revision instead of mutating it."
+                f"Refusing live ingest for finalized ledger day {date} at {primary_root}; "
+                "live CDR endpoints cannot reconstruct historical observations."
             )
+        # Preserve even a markerless/partial current-day observation. A retry is a
+        # new revision generation; it never replaces bytes that may be the only
+        # evidence of an interrupted holder response.
         return revision_root_for(primary_root, now or datetime.now()), True
-    raise LedgerImmutabilityError(
-        f"Refusing to ingest past date {date}: live CDR endpoints return only "
-        f"current data, so writing it under a historical date would fabricate the "
-        f"ledger (the {date} gap must remain a gap). Past days are append-only."
-    )
+    if date < today:
+        raise LedgerImmutabilityError(
+            f"Refusing to ingest past date {date}: live CDR endpoints return only "
+            f"current data, so writing it under a historical date would fabricate the "
+            f"ledger (the {date} gap must remain a gap). Past days are append-only."
+        )
+    return primary_root, False
 
 
 def run_ingest(script_dir: Path, out_dir: Path, date: str, extra: List[str]) -> None:
@@ -157,9 +174,10 @@ def sector_ingest_args(args: argparse.Namespace) -> List[str]:
 
 
 def _emit_day_manifest(persistent_runs_root: Path, state_dir: Path, date: str, exports: Optional[Path]) -> None:
-    """Best-effort: emit/refresh the day's ledger integrity manifest.
+    """Best-effort: emit the legacy v1 integrity manifest for compatibility.
 
-    Non-fatal and primary-only (a revision doesn't change the hashed _exports);
+    Ledger-v2 finalization is mandatory and happens before this compatibility
+    write. This legacy writer remains non-fatal and primary-only;
     skipped for a custom --exports layout, since the manifest assumes the default
     <runs>/<date>/_exports paths. Catches broadly on purpose: this runs after the
     completion marker is written, so it must never turn a successful ingest into a
@@ -184,11 +202,48 @@ def run_once(args: argparse.Namespace) -> int:
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
-    state_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
-    if marker.exists() and not args.force:
-        if marker_is_trustworthy(marker, export_root, date):
+    try:
+        validate_finalization_layout(export_root, state_dir)
+    except ValueError as exc:
+        print(f"ERROR: unsafe finalization layout: {exc}", file=sys.stderr)
+        return 2
+    state_dir.mkdir(parents=True, exist_ok=True)
+    if not args.force:
+        selected_marker = verified_pointer_marker_for_date(state_dir, date)
+        if selected_marker is not None:
+            print(
+                f"Already finalized local CDR observation for {date}: "
+                f"{selected_marker}"
+            )
+            if selected_marker == marker and args.exports is None:
+                _emit_day_manifest(
+                    persistent_runs_root, state_dir, date, args.exports
+                )
+            return 0
+        recovered_marker = recover_pending_finalization(state_dir, date)
+        if recovered_marker is not None:
+            print(
+                f"Recovered interrupted local CDR finalization for {date}: "
+                f"{recovered_marker}"
+            )
+            if recovered_marker == marker and args.exports is None:
+                _emit_day_manifest(
+                    persistent_runs_root, state_dir, date, args.exports
+                )
+            return 0
+    previous_run_root = previous_finalized_run(persistent_runs_root / date)
+    marker_exists = marker.exists()
+    marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
+    if marker_exists and not args.force:
+        if marker_trusted:
+            try:
+                recorded = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                recorded = {}
+            if recorded.get("finalization_schema_version") == 2:
+                repair_observation_pointers(recorded, state_dir, date, marker)
             print(f"Already completed local CDR daily run for {date}: {marker}")
             # Self-heal a finalized day whose integrity manifest never landed
             # (e.g. a prior best-effort write failed): the trusted-marker path is
@@ -203,15 +258,76 @@ def run_once(args: argparse.Namespace) -> int:
         )
 
     # Append-only ledger guard: decide where this ingest may write before touching
-    # any persistent bytes. Today writes its primary _exports; past days are
-    # immutable (force => revision; missing gap => refuse).
+    # any persistent bytes. Today writes its primary or a preserved sibling;
+    # every past day is refused because live CDR cannot reconstruct history.
     try:
+        today = local_date()
         target_export_root, is_revision = resolve_ledger_target(
-            export_root, date, local_date(), args.force
+            export_root,
+            date,
+            today,
+            args.force,
+            marker_evidence=marker_exists,
         )
     except LedgerImmutabilityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+
+    revision_parent_generation_id: Optional[str] = None
+    if is_revision and date < today:
+        print(
+            f"ERROR: refusing live CDR revision for historical date {date}; "
+            "historical corrections must be derived offline from preserved source hashes.",
+            file=sys.stderr,
+        )
+        return 2
+    if is_revision:
+        # A revision is valid only when it can name an already verified ledger-v2
+        # generation.  A stale/corrupt marker is evidence that bytes exist (and
+        # therefore keeps the primary immutable), but it is not parent evidence.
+        # Prefer the primary marker when it verifies; otherwise a verified
+        # selected-generation pointer may recover the parent.  Refuse before
+        # run_ingest when neither exists so a crash retry cannot silently create
+        # a second primary event under _revisions.
+        parent_marker = marker if marker_trusted else verified_pointer_marker_for_date(
+            state_dir, date
+        )
+        if parent_marker is None:
+            print(
+                f"ERROR: refusing revision of unverified observation {date} before "
+                "ingest; recover or import a verified ledger-v2 parent first.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            primary_record = json.loads(parent_marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            primary_record = {}
+        revision_parent_generation_id = str(
+            primary_record.get("generation_id") or ""
+        ) or None
+        if (
+            primary_record.get("finalization_schema_version") != 2
+            or revision_parent_generation_id is None
+            or not verify_completion_marker(primary_record, state_dir, date)
+        ):
+            print(
+                f"ERROR: refusing revision of legacy observation {date} before ingest; "
+                "import the preserved primary into ledger-v2 first.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            verify_reachable_generation(
+                state_dir, date, revision_parent_generation_id
+            )
+        except (KeyError, OSError, ValueError, json.JSONDecodeError) as exc:
+            print(
+                f"ERROR: refusing revision of unreachable observation {date} before "
+                f"ingest; recover the ledger head first ({exc}).",
+                file=sys.stderr,
+            )
+            return 2
     if is_revision:
         print(
             f"Ledger append-only: {date} is already finalized; appending a revision at "
@@ -228,7 +344,12 @@ def run_once(args: argparse.Namespace) -> int:
         prepare_empty_dir(ram_root / "runs" / date)
         prepare_empty_dir(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
-        result = build_outputs(staged_runs / date, staged_exports, args.db)
+        result = build_outputs(
+            staged_runs / date,
+            staged_exports,
+            args.db,
+            previous_run_root=previous_run_root,
+        )
         persist_ingest_status(staged_runs / date, staged_exports)
         copytree_atomic(staged_exports, target_export_root)
         result["out_dir"] = str(target_export_root)
@@ -244,7 +365,12 @@ def run_once(args: argparse.Namespace) -> int:
         # --no-ram-stage / dev path.
         run_root = target_export_root.parent if is_revision else persistent_runs_root
         run_ingest(script_dir, run_root, date, extra_args)
-        result = build_outputs(run_root / date, target_export_root, args.db)
+        result = build_outputs(
+            run_root / date,
+            target_export_root,
+            args.db,
+            previous_run_root=previous_run_root,
+        )
         persist_ingest_status(run_root / date, target_export_root)
         result["ram_staged"] = False
 
@@ -284,16 +410,29 @@ def run_once(args: argparse.Namespace) -> int:
                     )
 
     if is_revision:
-        # Preserve the primary day marker; record the revision under its own marker
-        # so the day's original finalization stays authoritative and auditable.
+        # Preserve the primary day marker; record the revision under its own
+        # create-once marker so the original stays authoritative and auditable.
         revision_marker = state_dir / f"{date}.revision.{target_export_root.parent.name}.json"
-        revision_marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        finalized = finalize_observation(
+            target_export_root,
+            state_dir,
+            revision_marker,
+            observation_date=date,
+            result=result,
+            parent_generation_id=revision_parent_generation_id,
+        )
     else:
-        marker.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        # Emit this day's ledger integrity manifest (hash-chain link to the prior
-        # day) so the partition is tamper-evident from finalization.
+        finalized = finalize_observation(
+            target_export_root,
+            state_dir,
+            marker,
+            observation_date=date,
+            result=result,
+        )
+        # Emit the legacy v1 integrity manifest after the mandatory ledger-v2
+        # event and completion marker have landed.
         _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(json.dumps(finalized, indent=2, ensure_ascii=False))
     return 1
 
 
@@ -305,7 +444,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=None, help="SQLite path; default <exports>/local-cdr.sqlite")
     parser.add_argument("--state", type=Path, default=None, help="Daily completion marker folder")
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
-    parser.add_argument("--force", action="store_true", help="Ignore daily completion marker")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Request a same-day revision; historical dates remain unavailable to live ingest",
+    )
     parser.add_argument("--banks-only", action="store_true", help="Accepted for compatibility; banking is the only sector.")
     parser.add_argument("--daemon", action="store_true", help="Keep running and execute after each local midnight")
     parser.add_argument(
