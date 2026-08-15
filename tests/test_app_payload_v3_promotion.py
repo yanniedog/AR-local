@@ -376,6 +376,36 @@ def test_64k_plus_one_remote_manifest_is_rejected_at_the_read_boundary():
         )
 
 
+def test_remote_bundle_rejects_noncanonical_capability_url_before_asset_fetch(tmp_path):
+    candidate = load_candidate(_candidate_directory(tmp_path))
+    manifest = json.loads(candidate.manifest_bytes)
+    descriptor = next(iter(manifest["capabilities"].values()))
+    digest = descriptor["sha256"]
+    descriptor["url"] = descriptor["url"].replace(
+        f"/{digest}.json.gz", f"/prefix-{digest}.json.gz"
+    )
+    manifest_bytes = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")
+    ).encode() + b"\n"
+
+    class NoncanonicalRemote(FakeBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fetches: list[str] = []
+
+        def fetch_url(self, url: str, _max_bytes: int) -> bytes:
+            self.fetches.append(url)
+            if len(self.fetches) != 1:
+                pytest.fail("noncanonical capability URL must not be fetched")
+            return manifest_bytes
+
+    backend = NoncanonicalRemote()
+    with pytest.raises(PromotionError, match="filename is not its exact SHA-256"):
+        _remote_bundle(backend, "https://example.invalid/manifest.json")
+    assert backend.fetches == ["https://example.invalid/manifest.json"]
+    assert backend.events == []
+
+
 def test_64k_plus_one_remote_pointer_is_rejected_before_release_mutation(tmp_path):
     directory = _candidate_directory(tmp_path)
     backend = FakeBackend()

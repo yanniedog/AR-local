@@ -15,7 +15,6 @@ from typing import Any, Protocol
 
 from cdr_domain.contract_validation import (
     contract_sha256,
-    validate_asset_descriptor,
     validate_contract,
     validate_generation_manifest,
     validate_generation_pointer,
@@ -35,6 +34,7 @@ from app_payload_v3_state import (
     CandidateReleaseRecord,
     ConcurrencyError,
     PromotionError,
+    asset_filename,
     build_dates_index,
     build_pointer,
     complete_heads,
@@ -138,7 +138,7 @@ def _remote_bundle(
     validate_contract("generation-manifest-v3.schema.json", manifest)
     capabilities: dict[str, bytes] = {}
     for name, descriptor in manifest["capabilities"].items():
-        validate_asset_descriptor(descriptor)
+        asset_filename(descriptor)
         maximum = int(descriptor["compressed_bytes"])
         payload = backend.fetch_url(str(descriptor["url"]), maximum)
         if len(payload) != maximum or sha256(payload) != descriptor["sha256"]:
