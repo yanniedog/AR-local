@@ -3,10 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 
+import cdr_outputs
 import cdr_product_changes as changes
+import cdr_product_change_runs
 
 
 def fact(
@@ -523,3 +526,63 @@ def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path
     current = tmp_path / "2026-08-13"
     current.mkdir()
     assert changes.previous_finalized_run(current) == compatible
+
+
+def test_finalized_run_reads_facts_from_sqlite_without_loading_large_json(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run = tmp_path / "2026-08-12"
+    export = run / "_exports"
+    export.mkdir(parents=True)
+    banks = export / "banks-2026-08-12.json"
+    banks.write_text(json.dumps({"large_unrelated_payload": "x" * 1_000_000}), encoding="utf-8")
+    (export / "banks-2026-08-12.xlsx").write_bytes(b"complete")
+    database = export / "local-cdr.sqlite"
+    with sqlite3.connect(database) as connection:
+        cdr_outputs.ensure_db(connection)
+        cdr_outputs.insert_rows(connection, "bank_product_facts", [{
+            "run_date": "2026-08-12",
+            "dataset": "Mortgage",
+            "provider": "Example Bank",
+            "product_id": "P1",
+            "product_key": "Example Bank|P1",
+            "product_name": "Clear Home Loan",
+            "fact_id": "condition-1",
+            "kind": "condition",
+            "canonical_key": "condition.text",
+            "value_type": "text",
+            "value_text": "Customers may redraw.",
+            "value_json": '"Customers may redraw."',
+            "unit": "",
+            "mapping": "canonical_text",
+            "source_path": "features[0]",
+            "source_pattern": "features[]",
+            "source_value_json": '"Customers may redraw."',
+            "qualifiers_json": "{}",
+        }])
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    cache = export / "dashboard-cache"
+    cache.mkdir()
+    (cache / "latest.json").write_text(json.dumps({
+        "run_date": run.name,
+        "files": {
+            "banks_json": banks.name,
+            "banks_xlsx": "banks-2026-08-12.xlsx",
+            "db": database.name,
+        },
+    }), encoding="utf-8")
+    original_load_json = cdr_product_change_runs.load_json
+
+    def fail_on_banks_json(path: Path):
+        if path == banks:
+            raise AssertionError("full banks JSON must not be decoded for normalized facts")
+        return original_load_json(path)
+
+    monkeypatch.setattr(cdr_product_change_runs, "load_json", fail_on_banks_json)
+
+    assert changes.previous_finalized_run(tmp_path / "2026-08-13") == run
+    rows = changes.load_run_facts(run)
+    assert len(rows) == 1
+    assert rows[0]["canonical_key"] == "condition.text"

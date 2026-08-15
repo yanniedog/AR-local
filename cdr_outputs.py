@@ -304,6 +304,10 @@ def ensure_db(con: sqlite3.Connection) -> None:
         "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', ?)",
         (SCHEMA_VERSION,),
     )
+    con.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('normalization_version', ?)",
+        (NORMALIZATION_VERSION,),
+    )
 
 
 def needs_schema_reset(con: sqlite3.Connection) -> bool:
@@ -382,6 +386,8 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
             insert_rows(con, "bank_items", with_run_date(add_group(banks[group], group), run_date))
         insert_rows(con, "bank_product_facts", with_run_date(banks["product_facts"], run_date))
         insert_rows(con, "bank_product_changes", banks.get("product_changes", []))
+        con.commit()
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def add_group(rows: List[Mapping[str, Any]], group: str) -> List[Dict[str, Any]]:
