@@ -169,9 +169,18 @@ def _verified_source(
         or pointer.get("verified") is not True
     ):
         raise AttemptEvidencePromotionError("attempt journal source pointer is invalid")
+    source_root = run_root.joinpath(*source_relative.parts)
     try:
+        _validate_node(run_root, directory=True)
+        _validate_node(run_root / SOURCE_NAMESPACE, directory=True)
+        _validate_node(source_root, directory=True)
+        lock_details = _validate_node(source_root / ".lock", directory=False)
+        if lock_details.st_size != 1:
+            raise AttemptEvidencePromotionError(
+                "attempt journal source lock is not initialized"
+            )
         journal = RawAttemptJournal(run_root / SOURCE_NAMESPACE, session_id)
-        summary = journal.summary()
+        summary = journal.summary(recover=False)
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("attempt journal source verification failed") from error
     for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
@@ -233,10 +242,10 @@ def _verify_promoted(
 ) -> tuple[dict[str, Any], str]:
     manifest_path = destination / PROMOTION_MANIFEST
     try:
-        recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        manifest_bytes = manifest_path.read_bytes()
+    except OSError as error:
         raise AttemptEvidencePromotionError("promotion manifest is unreadable") from error
-    if recorded != dict(expected_manifest):
+    if manifest_bytes != canonical_json_bytes(expected_manifest):
         raise AttemptEvidencePromotionError("promoted evidence manifest conflicts with source")
     expected_files = list(expected_manifest["source_files"])
     actual_files = _inventory(

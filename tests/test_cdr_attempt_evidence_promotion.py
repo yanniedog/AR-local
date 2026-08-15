@@ -160,6 +160,28 @@ def test_idempotent_replay_preserves_installed_bytes(tmp_path):
     assert _tree_bytes(export_root) == installed_before
 
 
+def test_replay_rejects_bool_for_integer_manifest_field(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    promote_attempt_evidence(run_root, export_root)
+    manifest_path = export_root.joinpath(
+        *ARTIFACT_NAMESPACE.parts, SESSION, PROMOTION_MANIFEST
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = True
+    atomic_write_json(manifest_path, manifest)
+    (export_root / "ingest-status.json").unlink()
+
+    with pytest.raises(AttemptEvidencePromotionError, match="manifest conflicts"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))[
+        "schema_version"
+    ] is True
+    assert not (export_root / "ingest-status.json").exists()
+
+
 @pytest.mark.parametrize(
     "failure_stage",
     [
@@ -234,6 +256,73 @@ def test_source_tamper_blocks_promotion_and_preserves_bytes(tmp_path):
         promote_attempt_evidence(run_root, export_root)
 
     assert event_path.read_bytes() == tampered
+    assert not export_root.exists()
+
+
+def test_missing_zero_attempt_source_is_not_created_by_verification(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    missing = run_root / "_raw-attempt-journals-v1" / SESSION
+    atomic_write_json(
+        run_root / "banks" / "ingest-status.json",
+        {
+            "raw_attempt_journal": {
+                "schema_version": 1,
+                "session_id": SESSION,
+                "attempts": 0,
+                "head_digest": None,
+                "verified": True,
+                "path": f"_raw-attempt-journals-v1/{SESSION}",
+                "path_resolution": "relative_to_ingest_run_root",
+                "retention": "follows_ingest_run_root",
+            }
+        },
+    )
+
+    with pytest.raises(AttemptEvidencePromotionError, match="source verification"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert not missing.exists()
+    assert not export_root.exists()
+
+
+def test_existing_verified_zero_attempt_journal_can_be_promoted(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
+    summary = journal.summary()
+    atomic_write_json(
+        run_root / "banks" / "ingest-status.json",
+        {
+            "raw_attempt_journal": {
+                **summary,
+                "path": f"_raw-attempt-journals-v1/{SESSION}",
+                "path_resolution": "relative_to_ingest_run_root",
+                "retention": "follows_ingest_run_root",
+            }
+        },
+    )
+
+    promoted = promote_attempt_evidence(run_root, export_root)
+
+    assert promoted is not None
+    assert promoted["attempts"] == 0
+    destination = export_root.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+    assert RawAttemptJournal(destination.parent, SESSION).summary()["attempts"] == 0
+
+
+def test_source_verification_does_not_recover_or_mutate_missing_current(tmp_path):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    journal, _status = _source(run_root)
+    journal.current_path.unlink()
+    source_before = _tree_bytes(run_root)
+
+    with pytest.raises(AttemptEvidencePromotionError, match="source verification"):
+        promote_attempt_evidence(run_root, export_root)
+
+    assert _tree_bytes(run_root) == source_before
+    assert not journal.current_path.exists()
     assert not export_root.exists()
 
 
