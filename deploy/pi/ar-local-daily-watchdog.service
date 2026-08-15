@@ -19,3 +19,6 @@ Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 # Optional mobile-app payload publishing (inherited by the pi_daily_sync subprocess).
 EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_watchdog.py
+# Restore serving even if RuntimeMaxSec kills the catch-up process group before
+# pi_daily_sync can execute its Python finally block.
+ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service
