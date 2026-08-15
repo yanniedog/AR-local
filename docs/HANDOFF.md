@@ -89,17 +89,17 @@ The whole daily path already exists and is enabled. To **verify** it's working:
   `/etc/ar-local/notify.env`). Install: `sh deploy/pi/install-ingest-notify.sh` then
   `sh deploy/pi/install-pi-systemd.sh /srv/ar-local && sudo systemctl daemon-reload`.
   Operator setup: `/etc/ar-local/notify.env` (see `deploy/pi/notify.env.example`).
-- GitHub (no SMTP secrets): `.github/workflows/pi-ingest-watchdog.yml` runs at **03:00
-  Australia/Brisbane** daily (cron `0 16` + `0 17` UTC; hour gate keeps only the 03:00
-  Brisbane run). Expects `app-payload-latest` manifest `run_date` = **today in Brisbane**
-  (2h buffer after **01:00** Pi ingest — requires `deploy/pi/ar-local-daily.timer` at 01:00
+- GitHub (no SMTP secrets): `.github/workflows/pi-ingest-watchdog.yml` runs at **03:17
+  Australia/Brisbane** daily (cron `17 17` UTC). It does not gate on the runner's actual
+  start time, so an Actions queue delay cannot skip the check. Expects `app-payload-latest`
+  manifest `run_date` = **today in Brisbane** (2h17m buffer after **01:00** Pi ingest —
+  requires `deploy/pi/ar-local-daily.timer` at 01:00
   local, PR #195). On stale/missing: opens a deduped `ingest-missed` issue and
   **fails the workflow** so GitHub emails watchers who enable Actions notifications.
 - **GitHub notification setup** (repo watcher): GitHub → Settings → Notifications → enable
   **Actions** and **Issues** for `yanniedog/AR-local` (same channel as other repo events; no
   workflow SMTP).
-- Brisbane is UTC+10 year-round (no DST). `0 17 * * *` UTC = 03:00 Brisbane; `0 16 * * *`
-  UTC hits 02:00 Brisbane and is skipped by the workflow gate.
+- Brisbane is UTC+10 year-round (no DST). `17 17 * * *` UTC = 03:17 Brisbane.
 - Test manifest check locally:
   `python3 scripts/pi_ingest_manifest_check.py --expected-tz Australia/Brisbane`
 - Test Pi SMTP (dry-run): `python3 pi_ingest_alert.py --reason missed-ingest --dry-run`
