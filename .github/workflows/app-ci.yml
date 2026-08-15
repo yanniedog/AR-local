@@ -1,12 +1,10 @@
 name: app-ci
 
-# Typecheck + lint + unit tests + bundle export for the mobile app, plus pytest for
-# app_payload.py. Scoped to relevant paths so it stays out of the way of the banking
-# pipeline. EAS cloud builds are manual via mobile-eas-build.yml (needs EXPO_TOKEN).
+# Run the complete producer-side Python suite for payload, ingest, ledger, dashboard,
+# and Pi safety changes. The installable app and its CI live in yanniedog/AR-app.
 on:
   pull_request:
     paths:
-      - 'mobile/**'
       - 'app_payload*.py'
       - 'app_sample.py'
       - 'contracts/**'
@@ -18,12 +16,9 @@ on:
       - 'requirements.txt'
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
-      - '.github/workflows/mobile-eas-build.yml'
-      - '.github/workflows/mobile-eas-submit.yml'
   push:
     branches: [main]
     paths:
-      - 'mobile/**'
       - 'app_payload*.py'
       - 'app_sample.py'
       - 'contracts/**'
@@ -35,28 +30,8 @@ on:
       - 'requirements.txt'
       - 'tests/**'
       - '.github/workflows/app-ci.yml'
-      - '.github/workflows/mobile-eas-build.yml'
-      - '.github/workflows/mobile-eas-submit.yml'
 
 jobs:
-  mobile:
-    name: mobile (typecheck Â· lint Â· test Â· export)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - name: Install
-        run: npm ci --no-audit --no-fund
-      - name: Mobile CI (doctor Â· typecheck Â· lint Â· test Â· export)
-        run: npm run ci
-
   payload:
     name: payload builder (pytest)
     runs-on: ubuntu-latest

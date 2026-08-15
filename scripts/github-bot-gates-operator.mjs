@@ -41,10 +41,10 @@ Required on merge (human work PRs):
 Skipped automatically (scripts/lib/pr-gate-exempt.mjs):
   - PR author is a GitHub bot (login ends with [bot], e.g. github-actions[bot])
   - Title is conventional chore (chore: or chore(scope):)
-  - Known automation titles (mobile auto-release bump, PR bot matrix)
+  - Known automation titles (PR bot matrix)
 
 Human PR example (bots required):  yanniedog + feat/fix/agent/*
-Chore example (bots skipped):     chore(mobile): auto-release bump to v1.0.13 (after c1f0e31)
+Chore example (bots skipped):      chore: update generated reports
 Bot PR example (bots skipped):      github-actions[bot] opens any title
 `);
 }
@@ -70,7 +70,6 @@ Steps:
 
 Why Actions bypass:
   - pr-bot-spreadsheet commits reports/* directly to main
-  - mobile-auto-release-on-queue-drain pushes version bumps directly to main
 
 API note: POST ruleset with bypass_actors often returns 422 on personal repos — use UI import.
 
@@ -104,7 +103,6 @@ function runLocalVerifiers() {
   const scripts = [
     'scripts/verify-pr-gate-exempt-policy.mjs',
     'scripts/verify-pr-gate-logic.mjs',
-    'scripts/verify-mobile-auto-release-commit.mjs',
     'scripts/verify-pr-bot-matrix-commit.mjs',
   ];
   for (const rel of scripts) {

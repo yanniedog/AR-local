@@ -16,7 +16,6 @@
     "pr:bot-spreadsheet:sync": "node scripts/pr-bot-spreadsheet-sync.mjs",
     "pr:bot-matrix:commit": "node scripts/pr-bot-matrix-commit.mjs",
     "pr:gate-logic:verify": "node scripts/verify-pr-gate-logic.mjs",
-    "mobile:auto-release:verify": "node scripts/verify-mobile-auto-release-commit.mjs",
     "pr:bot-matrix-commit:verify": "node scripts/verify-pr-bot-matrix-commit.mjs",
     "pr:merge:verify": "node scripts/verify-pr-merge.mjs",
     "close-loop:check": "node scripts/close-loop-check.mjs",
@@ -35,7 +34,6 @@
     "github:bot-gates:operator": "node scripts/github-bot-gates-operator.mjs",
     "branch-protection:apply": "node scripts/apply-branch-protection.mjs",
     "repo-merge-settings:apply": "node scripts/apply-repo-merge-settings.mjs",
-    "pr:merge": "node scripts/pr-merge.mjs",
-    "crashlytics:sync-issues": "node scripts/crashlytics-to-github-issues.mjs"
+    "pr:merge": "node scripts/pr-merge.mjs"
   }
 }
