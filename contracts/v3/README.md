@@ -64,3 +64,50 @@ All numeric financial values are canonical decimal strings. Product rates are
 fractions per annum, RBA rates are percentage points, changes are basis points,
 and fee percentages are fractions of the charged amount. Unknown values remain
 null or explicitly unknown; they are never inferred as zero.
+
+## Dormant local candidate builder
+
+`app_payload_v3.py` builds one deterministic, unpublished candidate from a
+local canonical-entity document and local generation metadata:
+
+```sh
+python app_payload_v3.py \
+  --entities <canonical-entities.json> \
+  --metadata <generation-metadata.json> \
+  --output-root <local-candidate-directory>
+```
+
+The builder filters the core to confirmed public products with visible rates,
+requires those entities to match exact per-provider discovery counts, and
+derives CoverageV2 from explicit provider/register states. It emits deterministic
+gzip bytes, binds their exact size and SHA-256 into the immutable generation
+manifest, then atomically installs a create-once local directory. Identical
+inputs produce identical asset, manifest, and generation bytes.
+
+The entity file must validate as `canonical-core-v3.schema.json`; before the
+consumer filter runs it may contain confirmed, quarantined, restricted, closed,
+or unpriced canonical products. The metadata object has these exact fields:
+
+- generation identity: `observation_date`, `observed_at`,
+  `observation_state`, `generation_revision`, `normalization_version`, and the
+  40-hex `producer_commit`;
+- finalized ledger binding: nullable `prior_ledger_digest` and 64-hex
+  `ledger_event_digest`;
+- run coverage: `provider_states`, `products_discovered_by_provider`,
+  `register_source_states`, `failure_records_by_provider`, and optional
+  `corrupt_failure_records` (default zero).
+
+Provider states are `complete`, `empty`, `partial`, `failed`, or
+`not_attempted`; register states are `complete`, `failed`, or `not_attempted`.
+Every registered provider must have an exact non-negative discovery count,
+and failure-record keys must identify every and only failed provider. The
+builder fails closed if entity counts, failure provenance, dates, schemas,
+asset limits, or complete-observation coverage do not reconcile.
+
+The installed directory is `<output-root>/<generation_id>/`. It contains only
+`<core_sha256>.json.gz` and `<manifest_sha256>.json`; an exact rebuild is
+idempotent, while any existing byte mismatch or symbolic-link target is fatal.
+
+This command never performs network I/O, uploads a release, creates or updates a
+generation pointer, or changes the v1 rolling payload. Candidate publication and
+pointer compare-and-swap remain separate future activation work.
