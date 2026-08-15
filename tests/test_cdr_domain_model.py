@@ -2,6 +2,7 @@ import json
 import hashlib
 import os
 import re
+import subprocess
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -32,7 +33,15 @@ from cdr_domain.rates import decimal_text
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canonical_domain_real_observations.json"
-FIXTURE_SHA256 = "d8fecece5e5eedd1c250ee1672f069660236bdbdd12d5b8e68f6977ba5e41f2a"
+FIXTURE_SHA256 = "7b526ea4eda6b3bea6c02282afd323b561c51d3182ad113bade8752723d4067f"
+ROOT = Path(__file__).resolve().parents[1]
+HASH_BOUND_FIXTURES = (
+    (
+        "contracts/v3/fixtures/valid-canonical-core-v3.json",
+        "3a0be274494f71be1739aceb98e349bb74b3ddfac2eaa5bf0a782e1e629650c6",
+    ),
+    ("tests/fixtures/canonical_domain_real_observations.json", FIXTURE_SHA256),
+)
 
 
 def captured(name):
@@ -119,6 +128,52 @@ def test_fixture_slices_are_hash_bound_and_reextract_from_preserved_exports_when
         ).encode("utf-8")
         assert hashlib.sha256(source_record_bytes).hexdigest() == item["source_record_sha256"]
         assert subset(item["record"], source_record)
+
+
+@pytest.mark.parametrize(("relative_path", "expected_sha256"), HASH_BOUND_FIXTURES)
+def test_hash_bound_fixture_checkout_preserves_literal_bytes_across_eol_modes(
+    relative_path, expected_sha256
+):
+    fixture_bytes = (ROOT / relative_path).read_bytes()
+    assert hashlib.sha256(fixture_bytes).hexdigest() == expected_sha256
+
+    attribute = subprocess.run(
+        ["git", "check-attr", "text", "--", relative_path],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert attribute == f"{relative_path}: text: unset"
+
+    index_bytes = subprocess.run(
+        ["git", "cat-file", "blob", f":{relative_path}"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert fixture_bytes == index_bytes
+
+    for autocrlf in ("true", "false", "input"):
+        checkout_bytes = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"core.autocrlf={autocrlf}",
+                "cat-file",
+                "--filters",
+                f"--path={relative_path}",
+                f":{relative_path}",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert checkout_bytes == index_bytes
+
+    crlf_variant = fixture_bytes.replace(b"\n", b"\r\n")
+    if crlf_variant != fixture_bytes:
+        assert hashlib.sha256(crlf_variant).hexdigest() != expected_sha256
 
 
 def test_real_mortgage_offset_is_quarantined_from_savings_and_zero_is_not_a_savings_signal():
