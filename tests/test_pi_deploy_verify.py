@@ -233,11 +233,11 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "WATCHDOG_TIMER_ENABLED": "enabled",
         "WATCHDOG_TIMER_ACTIVE": "active",
         "DAILY_KILL_MODE": "control-group",
-        "DAILY_RUNTIME_MAX": "6h 15min",
+        "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_RUNTIME_MAX": "6h 15min",
+        "WATCHDOG_START_TIMEOUT": "6h 15min",
         "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_RUNTIME_MAX": "6h 15min",
+        "MANUAL_START_TIMEOUT": "6h 15min",
     }
     snapshot.update(overrides)
     return snapshot
@@ -313,7 +313,7 @@ def test_ingest_timer_verification_fails_when_catchup_is_disarmed():
 def test_ingest_fence_verification_rejects_partial_unit_rollout():
     assert pi_deploy_verify.pi_ingest_service_fences_ok(_service_snapshot())
     assert not pi_deploy_verify.pi_ingest_service_fences_ok(
-        _service_snapshot(WATCHDOG_RUNTIME_MAX="infinity")
+        _service_snapshot(WATCHDOG_START_TIMEOUT="infinity")
     )
 
 

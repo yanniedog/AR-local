@@ -211,7 +211,8 @@ def test_ingest_units_kill_the_whole_process_tree(name: str) -> None:
     text = (ROOT / "deploy" / "pi" / name).read_text(encoding="utf-8")
     assert "KillMode=control-group" in text
     assert "TimeoutStopSec=45s" in text
-    assert "RuntimeMaxSec=6h15min" in text
+    assert "TimeoutStartSec=6h15min" in text
+    assert "RuntimeMaxSec=" not in text
     assert "ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service" in text
 
 
