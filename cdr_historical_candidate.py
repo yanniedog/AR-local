@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import threading
 from typing import Any, Callable, Iterable, Mapping
 
 from cdr_atomic import ImmutablePathError, atomic_write_bytes
@@ -40,6 +41,8 @@ TOOL_FILES = (
 UNAVAILABLE_REASON = (
     "the preserved cleaned projection has no complete register/provider/attempt population"
 )
+_PROCESS_LOCKS_GUARD = threading.Lock()
+_PROCESS_LOCKS: dict[str, threading.Lock] = {}
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,12 @@ class BuiltHistory:
     candidates: Mapping[str, bytes]
     index: bytes
     index_sha256: str
+
+
+def _process_lock(path: Path) -> threading.Lock:
+    key = os.path.normcase(str(path.resolve(strict=False)))
+    with _PROCESS_LOCKS_GUARD:
+        return _PROCESS_LOCKS.setdefault(key, threading.Lock())
 
 
 def unavailable_population() -> dict[str, Any]:
@@ -362,7 +371,10 @@ def install_history(
     stage = output_root / ".staging" / bundle_digest
     final = output_root / "bundles" / bundle_digest
     lock = output_root / ".locks" / f"{bundle_digest}.lock"
-    with FileLock(lock):
+    # Windows CRT locks reject a second lock attempt from another thread in the
+    # same process with EDEADLK rather than waiting. Serialize those callers
+    # first; FileLock remains the cross-process fence.
+    with _process_lock(lock), FileLock(lock):
         if final.exists():
             _verify_tree(final, expected)
             return final

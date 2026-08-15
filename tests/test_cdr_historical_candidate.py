@@ -6,10 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 import json
 from pathlib import Path
+import threading
+import time
 from typing import Any
 
 import pytest
 
+import cdr_historical_candidate as candidate_module
 from cdr_historical_candidate import (
     additions_audit,
     build_history,
@@ -147,6 +150,47 @@ def test_concurrent_idempotent_builds_install_one_exact_bundle(tmp_path: Path) -
         paths = list(executor.map(lambda _: install_history(snapshot, output, history), range(2)))
     assert paths[0] == paths[1]
     assert len(list((output / "bundles").iterdir())) == 1
+
+
+def test_same_process_callers_are_serialized_before_cross_process_file_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = FakeSnapshot(tmp_path / "snapshot")
+    history = build_history(snapshot, tool_commit=TOOL_COMMIT)
+    output = tmp_path / "output"
+
+    class RejectConcurrentFileLock:
+        guard = threading.Lock()
+        active = 0
+        max_active = 0
+
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def __enter__(self) -> "RejectConcurrentFileLock":
+            with self.guard:
+                if type(self).active:
+                    raise OSError(36, "Resource deadlock avoided")
+                type(self).active += 1
+                type(self).max_active = max(type(self).max_active, type(self).active)
+            time.sleep(0.05)
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            with self.guard:
+                type(self).active -= 1
+
+    monkeypatch.setattr(candidate_module, "FileLock", RejectConcurrentFileLock)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        paths = list(
+            executor.map(
+                lambda _: install_history(snapshot, output, history),
+                range(2),
+            )
+        )
+    assert paths[0] == paths[1]
+    assert RejectConcurrentFileLock.max_active == 1
 
 
 def test_candidate_artifact_names_are_content_addressed(tmp_path: Path) -> None:
