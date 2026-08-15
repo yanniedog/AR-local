@@ -13,13 +13,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from cdr_domain.serialize import canonical_json_bytes
 
-from app_payload_v3_promotion import (
+from app_payload_v3_state import (
     CANONICAL_REPO,
     CANDIDATE_TAG_PREFIX,
     CONTROL_BRANCH,
@@ -33,9 +33,8 @@ from app_payload_v3_promotion import (
     ConcurrencyError,
     PromotionError,
     RemoteNotFound,
-    _release_url,
-    _strict_object,
-    _utc_now,
+    release_url as _release_url,
+    strict_object as _strict_object,
 )
 
 
@@ -45,6 +44,24 @@ _PRODUCER_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 MAX_PUBLIC_BYTES = 33_554_432  # largest v3 compressed capability descriptor limit
 CANONICAL_CANDIDATE_WORKFLOW = ".github/workflows/app-payload-v3-candidate.yml"
 CANONICAL_CANDIDATE_ARTIFACT = "payload-v3-candidate"
+# Intentionally unset while AR-local and the frozen AR-app consumer expose
+# different v3 schema IDs and field shapes. A later convergence review must pin
+# (producer contract-set SHA-256, consumer contract-set SHA-256) exactly.
+AR_APP_CONSUMER_PARITY_LOCK: tuple[str, str] | None = None
+LOCK_LEASE_SECONDS = 2 * 60 * 60
+
+
+def require_consumer_contract_parity(producer_contract_sha256: str) -> None:
+    lock = AR_APP_CONSUMER_PARITY_LOCK
+    if (
+        lock is None
+        or len(lock) != 2
+        or not all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in lock)
+        or lock[0] != producer_contract_sha256
+    ):
+        raise PromotionError(
+            "AR-app consumer contract parity is not locked; promotion is blocked"
+        )
 
 
 def validate_candidate_run_metadata(
@@ -86,13 +103,27 @@ def validate_candidate_run_metadata(
     return head_sha
 
 
-def _validate_lock(value: Mapping[str, Any]) -> None:
+def _parse_timestamp(value: object, label: str) -> datetime:
+    if not isinstance(value, str):
+        raise ConcurrencyError(f"promotion lock {label} is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ConcurrencyError(f"promotion lock {label} is invalid") from error
+    if parsed.tzinfo is None:
+        raise ConcurrencyError(f"promotion lock {label} requires a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _validate_lock(value: Mapping[str, Any]) -> datetime:
     expected = {
         "schema_version",
         "state",
         "owner_token",
         "target_commit",
         "recorded_at",
+        "lease_expires_at",
+        "recovered_from_owner_token",
     }
     if set(value) != expected or value.get("schema_version") != 1:
         raise ConcurrencyError("promotion lock document is malformed")
@@ -102,15 +133,14 @@ def _validate_lock(value: Mapping[str, Any]) -> None:
         raise ConcurrencyError("promotion lock owner token is invalid")
     if not _PRODUCER_COMMIT.fullmatch(str(value.get("target_commit") or "")):
         raise ConcurrencyError("promotion lock target commit is invalid")
-    recorded_at = value.get("recorded_at")
-    if not isinstance(recorded_at, str):
-        raise ConcurrencyError("promotion lock timestamp is invalid")
-    try:
-        parsed = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ConcurrencyError("promotion lock timestamp is invalid") from error
-    if parsed.tzinfo is None:
-        raise ConcurrencyError("promotion lock timestamp requires a timezone")
+    recovered = value.get("recovered_from_owner_token")
+    if recovered is not None and not _OWNER_TOKEN.fullmatch(str(recovered)):
+        raise ConcurrencyError("promotion lock recovered owner token is invalid")
+    recorded_at = _parse_timestamp(value.get("recorded_at"), "timestamp")
+    expires_at = _parse_timestamp(value.get("lease_expires_at"), "lease expiry")
+    if value.get("state") == "acquired" and expires_at <= recorded_at:
+        raise ConcurrencyError("promotion lock lease is not bounded after acquisition")
+    return expires_at
 
 
 class _SafeRedirect(urllib.request.HTTPRedirectHandler):
@@ -182,6 +212,7 @@ class GitHubPromotionBackend:
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         fetcher: Callable[[str, int], bytes] = public_fetch,
         sleeper: Callable[[float], None] = time.sleep,
+        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if repo != CANONICAL_REPO:
             raise PromotionError("v3 promotion is locked to the canonical repository")
@@ -189,6 +220,13 @@ class GitHubPromotionBackend:
         self._runner = runner
         self._fetcher = fetcher
         self._sleeper = sleeper
+        self._clock = clock
+
+    def _now(self) -> datetime:
+        now = self._clock()
+        if not isinstance(now, datetime) or now.tzinfo is None:
+            raise ConcurrencyError("promotion lock clock must be timezone-aware")
+        return now.astimezone(timezone.utc)
 
     def _run(
         self, args: Sequence[str], *, input_text: str | None = None
@@ -378,22 +416,32 @@ class GitHubPromotionBackend:
             target_commit
         ):
             raise ConcurrencyError("promotion lock identity is invalid")
+        now = self._now()
         head = self._ref_head(LOCK_BRANCH)
+        recovered_owner: str | None = None
         if head is not None:
             current_bytes = self._fetch_raw(head, LOCK_FILENAME)
             if current_bytes is None:
                 raise ConcurrencyError("promotion lock branch has no lock document")
             current = _strict_object(current_bytes, "promotion lock")
-            _validate_lock(current)
+            expires_at = _validate_lock(current)
             if current.get("state") != "released":
-                raise ConcurrencyError("another repository-wide promotion lock is active")
+                if now <= expires_at:
+                    raise ConcurrencyError("another repository-wide promotion lock is active")
+                recovered_owner = str(current["owner_token"])
+        recorded_at = now.isoformat().replace("+00:00", "Z")
+        lease_expires_at = (now + timedelta(seconds=LOCK_LEASE_SECONDS)).isoformat().replace(
+            "+00:00", "Z"
+        )
         payload = canonical_json_bytes(
             {
                 "schema_version": 1,
                 "state": "acquired",
                 "owner_token": owner_token,
                 "target_commit": target_commit,
-                "recorded_at": _utc_now(),
+                "recorded_at": recorded_at,
+                "lease_expires_at": lease_expires_at,
+                "recovered_from_owner_token": recovered_owner,
             }
         )
         return self._append_commit(
@@ -415,7 +463,11 @@ class GitHubPromotionBackend:
         if current.get("state") != "acquired" or current.get("owner_token") != owner_token:
             raise ConcurrencyError("promotion lock owner token changed before release")
         payload = canonical_json_bytes(
-            {**current, "state": "released", "recorded_at": _utc_now()}
+            {
+                **current,
+                "state": "released",
+                "recorded_at": self._now().isoformat().replace("+00:00", "Z"),
+            }
         )
         return self._append_commit(
             LOCK_BRANCH,
@@ -475,16 +527,32 @@ class GitHubPromotionBackend:
         if release is None:
             raise PromotionError(f"release {tag} is absent after create")
         if exact_metadata:
-            if (
-                release.get("tag_name") != tag
-                or release.get("name") != title
-                or (release.get("body") or "") != notes
-                or release.get("draft") is not False
-                or release.get("prerelease") is not False
-            ):
-                raise PromotionError(f"immutable release {tag} metadata differs")
-            if self._tag_target(tag) != target_commit:
-                raise PromotionError(f"immutable release {tag} targets another commit")
+            self.verify_candidate_release(
+                tag,
+                title=title,
+                notes=notes,
+                target_commit=target_commit,
+            )
+
+    def verify_candidate_release(
+        self,
+        tag: str,
+        *,
+        title: str,
+        notes: str,
+        target_commit: str,
+    ) -> None:
+        release = self._release(tag)
+        if release is None or (
+            release.get("tag_name") != tag
+            or release.get("name") != title
+            or (release.get("body") or "") != notes
+            or release.get("draft") is not False
+            or release.get("prerelease") is not False
+        ):
+            raise PromotionError(f"immutable release {tag} metadata differs")
+        if self._tag_target(tag) != target_commit:
+            raise PromotionError(f"immutable release {tag} targets another commit")
 
     def put_immutable_asset(self, tag: str, name: str, payload: bytes) -> None:
         if name in self.list_asset_names(tag):
@@ -630,7 +698,10 @@ if __name__ == "__main__":
 __all__ = [
     "CANONICAL_CANDIDATE_ARTIFACT",
     "CANONICAL_CANDIDATE_WORKFLOW",
+    "AR_APP_CONSUMER_PARITY_LOCK",
     "GitHubPromotionBackend",
+    "LOCK_LEASE_SECONDS",
     "public_fetch",
+    "require_consumer_contract_parity",
     "validate_candidate_run_metadata",
 ]

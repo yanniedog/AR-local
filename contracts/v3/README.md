@@ -36,7 +36,14 @@ enforced by `cdr_domain.contract_validation`:
 
 `contract-lock.json` records that deterministic schema-set digest. Any schema
 change must intentionally update the lock and the vendored AR-app validator
-before activation.
+before activation. Promotion also requires an explicit reviewed producer/app
+contract-parity tuple in `app_payload_v3_github.py`. That tuple is intentionally
+unset: the current AR-local pointer uses `contract_sha256`,
+`generation_revision`, and `observation_date`, while the frozen AR-app v3 reader
+expects its own `schema_id`, `run_date`, and `manifest_bytes` shape. Therefore
+even a correctly authorized `--execute` fails before remote access. Contract
+convergence and exact SHA-256 pins for both reviewed schema sets are separate
+activation prerequisites; this promoter must never publish bytes the app rejects.
 
 Only the `core` capability is negotiable in this first dormant contract slice.
 The descriptor schema reserves the approved size ceilings for later
@@ -135,13 +142,26 @@ binding fail before acquiring the promotion lock. Arbitrary same-repository
 workflow artifacts are never accepted as provenance.
 
 An executed promotion uses create-once candidate tags and content-addressed
-release assets. It acquires an owner-token lock on a dedicated append-only Git
-branch, re-downloads and semantically validates every referenced manifest and
-capability byte, and fails closed if the complete candidate-release listing is
-missing, malformed, duplicated, or otherwise uncertain. Same-date revisions
-are append-only: one date/revision coordinate cannot be rebound to different
+release assets. It acquires a two-hour owner-token lease on a dedicated
+append-only Git branch; the workflow's one-hour timeout cannot outlive it. An
+unexpired owner cannot be displaced. A crashed writer's expired lease can be
+recovered only by non-force compare-and-swap from the exact observed lock head,
+and the successor document records the displaced owner token. A stale owner can
+therefore neither release nor overwrite its successor.
+
+The promoter re-downloads and semantically validates every referenced manifest
+and capability byte, then revalidates every censused release as non-draft,
+non-prerelease, with exact create-once title/notes and a direct tag target equal
+to that manifest's `producer_commit`. It fails closed if the complete
+candidate-release listing or any historical release provenance is missing,
+malformed, duplicated, moved, or otherwise uncertain. The first censused
+generation must have a null ledger prior; every ordered successor must name the
+immediately preceding `ledger_event_digest`. Same-date revisions are
+append-only: one date/revision coordinate cannot be rebound to different
 generation bytes, and the complete-dates index selects the greatest verified
-complete revision for each date.
+complete revision for each date. Both pointer heads are derived from the full
+verified lineage census, not merely the candidate named by the invocation, so a
+retry after an interrupted upload cannot publish an older head.
 
 Control state lives in append-only commits on `app-payload-v3-control`. The
 `complete-dates-index-v3.json` commit is prepared and publicly re-verified

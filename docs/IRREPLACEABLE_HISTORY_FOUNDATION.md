@@ -166,15 +166,24 @@ artifacts. The remaining contract layers are:
 5. the AR-app dual-read/cache bridge and an explicitly approved activation.
 
 The dormant promoter now supplies the repository-side publication boundary:
-create-once candidate/content releases, public byte re-verification, complete
-release enumeration, append-only owner locking and control history, a verified
-complete-dates index, and rolling-pointer compare-and-swap last. Its workflow
+create-once candidate/content releases, public byte and historical tag-target
+re-verification, complete ordered ledger-lineage enumeration, recoverable
+append-only owner leases and control history, a verified complete-dates index,
+and rolling-pointer compare-and-swap last. Both pointer heads come from the full
+verified release census, including a candidate left public by a prior crash,
+rather than from the invocation candidate alone. Its workflow
 is manual-only, defaults to validation, and requires both an explicit execute
 input and the protected `app-payload-v3-promotion` environment. No Pi service,
 daily producer, deployed v1 release, or AR-app reader invokes it in this slice.
 The allowlisted `.github/workflows/app-payload-v3-candidate.yml` producer is
 intentionally absent pending its own pipeline review, so workflow promotion is
 not activatable yet; an arbitrary Actions artifact cannot substitute for it.
+Activation is independently blocked by an intentionally unset AR-local/AR-app
+contract-parity lock. The currently frozen consumer expects a different v3
+pointer/manifest shape, so the producer and consumer schema sets must first
+converge and their exact reviewed SHA-256 digests must be pinned. Until then,
+`--execute` fails before any repository read or write even if run provenance and
+environment approval are otherwise valid.
 
 Those layers may consume these records, but they may not weaken create-once
 semantics or make a partial observation appear complete.
