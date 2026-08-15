@@ -219,6 +219,47 @@ def test_failed_ram_stage_is_archived_create_once_before_retry(tmp_path, monkeyp
     } == derived_before
 
 
+def test_failed_ram_archive_ignores_and_cleans_directory_only_export_stage(tmp_path):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    for path in sorted(derived.rglob("*"), reverse=True):
+        if path.is_file():
+            path.unlink()
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive is not None
+    assert (archive / "runs" / "_raw-attempt-journals-v1" / SESSION / "attempt.json").is_file()
+    assert not (archive / "exports").exists()
+    assert not raw.exists() and not derived.exists()
+
+
+def test_failed_ram_archive_recovers_old_transaction_with_empty_export_stage(tmp_path):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    for path in sorted(derived.rglob("*"), reverse=True):
+        if path.is_file():
+            path.unlink()
+    archive_parent = runs / DATE / "_failed_attempts"
+    transaction = {
+        "schema_version": 1,
+        "archive_name": "ram-123",
+        "source_names": ["runs", "exports"],
+        "state": "copying",
+    }
+    cdr_daily.atomic_write_json(
+        archive_parent / ".ram-stage-archive.json",
+        transaction,
+        create_once=True,
+    )
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive == archive_parent / "ram-123"
+    assert (archive / "runs" / "_raw-attempt-journals-v1" / SESSION / "attempt.json").is_file()
+    assert not (archive / "exports").exists()
+    assert not raw.exists() and not derived.exists()
+    assert not (archive_parent / ".ram-stage-archive.json").exists()
+
+
 def test_failed_ram_archive_recovers_after_crash_during_source_cleanup(
     tmp_path,
     monkeypatch,
