@@ -16,6 +16,7 @@ from cdr_attempt_evidence_promotion import (
     install_tree_create_once as copytree_atomic,
     promote_attempt_evidence,
 )
+from cdr_atomic import atomic_write_json
 from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
@@ -120,22 +121,75 @@ def archive_failed_ram_stage(
 ) -> Optional[Path]:
     """Preserve a failed RAM attempt create-once, then release its stage.
 
-    The destination name is stable across a crash between copy and cleanup, so a
-    retry verifies the same bytes instead of duplicating or deleting evidence.
+    A persistent transaction marker makes cleanup restartable.  In particular,
+    a power loss after an archive is verified but midway through ``rmtree`` must
+    not make the remaining partial source look like a new ingest attempt.
     """
-    sources = [
-        ("runs", staged_run),
-        ("exports", staged_export_date),
-    ]
-    populated = [(name, path) for name, path in sources if _export_root_has_content(path)]
-    if not populated:
-        return None
-    stamp = max(path.stat().st_mtime_ns for _name, path in populated)
-    archive = persistent_date_root / "_failed_attempts" / f"ram-{stamp}"
-    for name, source in populated:
-        copytree_atomic(source, archive / name)
-    for _name, source in populated:
-        shutil.rmtree(source)
+    sources = {"runs": staged_run, "exports": staged_export_date}
+    archive_parent = persistent_date_root / "_failed_attempts"
+    transaction_path = archive_parent / ".ram-stage-archive.json"
+
+    if transaction_path.exists():
+        try:
+            transaction = json.loads(transaction_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("failed RAM-stage archive transaction is corrupt") from error
+        if not isinstance(transaction, dict) or set(transaction) != {
+            "schema_version",
+            "archive_name",
+            "source_names",
+            "state",
+        }:
+            raise RuntimeError("failed RAM-stage archive transaction is invalid")
+        archive_name = transaction.get("archive_name")
+        source_names = transaction.get("source_names")
+        state = transaction.get("state")
+        if (
+            transaction.get("schema_version") != 1
+            or not isinstance(archive_name, str)
+            or not archive_name.startswith("ram-")
+            or not archive_name.removeprefix("ram-").isdigit()
+            or not isinstance(source_names, list)
+            or not source_names
+            or len(source_names) != len(set(source_names))
+            or any(name not in sources for name in source_names)
+            or state not in {"copying", "copied"}
+        ):
+            raise RuntimeError("failed RAM-stage archive transaction is invalid")
+    else:
+        source_names = [name for name, path in sources.items() if _export_root_has_content(path)]
+        if not source_names:
+            return None
+        stamp = max(sources[name].stat().st_mtime_ns for name in source_names)
+        archive_name = f"ram-{stamp}"
+        state = "copying"
+        transaction = {
+            "schema_version": 1,
+            "archive_name": archive_name,
+            "source_names": source_names,
+            "state": state,
+        }
+        atomic_write_json(transaction_path, transaction, create_once=True)
+
+    archive = archive_parent / archive_name
+    if state == "copying":
+        for name in source_names:
+            source = sources[name]
+            if not _export_root_has_content(source):
+                raise RuntimeError("failed RAM-stage source disappeared before archive commit")
+            copytree_atomic(source, archive / name)
+        transaction["state"] = "copied"
+        atomic_write_json(transaction_path, transaction)
+    else:
+        for name in source_names:
+            if not _export_root_has_content(archive / name):
+                raise RuntimeError("committed failed RAM-stage archive is incomplete")
+
+    for name in source_names:
+        source = sources[name]
+        if source.exists():
+            shutil.rmtree(source)
+    transaction_path.unlink()
     return archive
 
 

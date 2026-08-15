@@ -206,6 +206,42 @@ def test_failed_ram_stage_is_archived_create_once_before_retry(tmp_path, monkeyp
     } == derived_before
 
 
+def test_failed_ram_archive_recovers_after_crash_during_source_cleanup(
+    tmp_path,
+    monkeypatch,
+):
+    args, runs, _state, ram = _configure(tmp_path, monkeypatch, rates=0)
+    assert cdr_daily.run_once(args) == 2
+    raw = ram / "runs" / DATE
+    derived = ram / "exports" / DATE
+    original_rmtree = cdr_daily.shutil.rmtree
+    crashed = False
+
+    def crash_mid_cleanup(path):
+        nonlocal crashed
+        if not crashed:
+            crashed = True
+            first_file = next(item for item in path.rglob("*") if item.is_file())
+            first_file.unlink()
+            raise OSError("simulated power loss during cleanup")
+        return original_rmtree(path)
+
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", crash_mid_cleanup)
+    with pytest.raises(OSError, match="power loss"):
+        cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    transaction = runs / DATE / "_failed_attempts" / ".ram-stage-archive.json"
+    assert transaction.is_file()
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", original_rmtree)
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive is not None
+    assert not raw.exists() and not derived.exists()
+    assert not transaction.exists()
+    assert (archive / "runs").is_dir()
+    assert (archive / "exports").is_dir()
+
+
 def test_finalizer_failure_preserves_staged_and_installed_evidence(
     tmp_path,
     monkeypatch,
