@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import gc
 import json
 from pathlib import Path
 import sqlite3
+import weakref
 
 import pytest
 
@@ -317,6 +319,86 @@ def test_product_and_fact_add_remove_records_are_deterministic() -> None:
         [old, retained, removed_fact],
         [new, deepcopy(retained), added_fact],
     )
+
+
+def test_streamed_prior_groups_match_the_classic_diff_exactly() -> None:
+    previous = [
+        fact("old", "Old condition", product_id="OLD"),
+        fact("retained", "Before", product_id="KEEP"),
+        fact("removed", "Removed", product_id="KEEP"),
+    ]
+    current = [
+        fact("new", "New condition", product_id="NEW"),
+        fact("retained", "After", product_id="KEEP"),
+        fact("added", "Added", product_id="KEEP"),
+    ]
+    groups = [
+        (("Example Bank", "KEEP", "Mortgage"), previous[1:]),
+        (("Example Bank", "OLD", "Mortgage"), previous[:1]),
+    ]
+
+    streamed = changes.diff_normalized_product_fact_groups(
+        iter(groups),
+        current,
+        previous_run_date="2026-08-15",
+        current_run_date="2026-08-16",
+    )
+    classic = changes.diff_normalized_product_facts(
+        previous,
+        current,
+        previous_run_date="2026-08-15",
+        current_run_date="2026-08-16",
+    )
+
+    assert streamed == classic
+
+
+def test_streamed_prior_groups_are_consumed_one_product_at_a_time() -> None:
+    class WeakFact(dict):
+        pass
+
+    current = [fact("same", "No change", product_id=f"P{index}") for index in range(3)]
+    first = WeakFact(fact("same", "No change", product_id="P0"))
+    first_ref = weakref.ref(first)
+
+    def prior_groups():
+        nonlocal first
+        yield ("Example Bank", "P0", "Mortgage"), [first]
+        first = None
+        yield ("Example Bank", "P1", "Mortgage"), [WeakFact(fact("same", "No change", product_id="P1"))]
+        gc.collect()
+        assert first_ref() is None, "prior product groups were materialized instead of streamed"
+        yield ("Example Bank", "P2", "Mortgage"), [WeakFact(fact("same", "No change", product_id="P2"))]
+
+    payload = changes.diff_normalized_product_fact_groups(prior_groups(), current)
+
+    assert payload["events"] == []
+    assert payload["products"] == {"previous": 3, "current": 3, "joined": 3}
+
+
+def test_streamed_failure_suppression_matches_flat_legacy_semantics() -> None:
+    previous = [
+        fact("one", "First", product_id="FAILED"),
+        fact("two", "Second", product_id="FAILED"),
+        fact("kept", "Kept", product_id="KEPT"),
+    ]
+    for row in previous:
+        row["product_id"] = row.pop("productId")
+    failures = [{"phase": "product_detail", "bank": "Example Bank", "product_id": "FAILED"}]
+    expected, expected_count = cdr_outputs._exclude_failed_missing_products(previous, [], failures)
+    filtered, result = cdr_outputs._exclude_failed_missing_product_groups(
+        iter([
+            (("Example Bank", "FAILED", "Mortgage"), previous[:2]),
+            (("Example Bank", "KEPT", "Mortgage"), previous[2:]),
+        ]),
+        [],
+        failures,
+    )
+
+    actual = [row for _key, rows in filtered for row in rows]
+
+    assert actual == expected
+    assert result["suppressed"] == expected_count == 1
 
 
 def test_missing_identity_fails_closed_and_ambiguous_duplicates_require_review() -> None:
