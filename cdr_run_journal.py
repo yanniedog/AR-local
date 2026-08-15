@@ -94,6 +94,61 @@ class RunJournal:
             raise ValueError("journal generation_id mismatch")
         return dict(payload)
 
+    def _event_identity(
+        self, payload: Mapping[str, Any], label: str
+    ) -> tuple[int, RunStage, StageState]:
+        try:
+            required = {
+                "schema_version",
+                "generation_id",
+                "sequence",
+                "stage",
+                "previous_state",
+                "state",
+                "attempt",
+                "at",
+                "error",
+                "remote_digest",
+                "retry_at",
+                "metadata",
+            }
+            if not required.issubset(payload):
+                raise ValueError("journal event fields are missing")
+            sequence = payload["sequence"]
+            attempt = payload["attempt"]
+            if (
+                not isinstance(sequence, int)
+                or isinstance(sequence, bool)
+                or sequence < 1
+                or not isinstance(attempt, int)
+                or isinstance(attempt, bool)
+                or attempt < 0
+            ):
+                raise ValueError("sequence must be an integer")
+            stage = RunStage(str(payload["stage"]))
+            state = StageState(str(payload["state"]))
+            StageState(str(payload["previous_state"]))
+            if not isinstance(payload["schema_version"], int) or isinstance(
+                payload["schema_version"], bool
+            ) or payload["schema_version"] != 1:
+                raise ValueError("invalid schema version")
+            if not isinstance(payload["generation_id"], str):
+                raise ValueError("invalid generation id")
+            if not isinstance(payload["at"], str) or not payload["at"]:
+                raise ValueError("invalid event timestamp")
+            if payload["error"] is not None and not isinstance(
+                payload["error"], Mapping
+            ):
+                raise ValueError("invalid error payload")
+            for field in ("remote_digest", "retry_at"):
+                if payload[field] is not None and not isinstance(payload[field], str):
+                    raise ValueError(f"invalid {field}")
+            if not isinstance(payload["metadata"], Mapping):
+                raise ValueError("invalid metadata")
+        except (KeyError, TypeError, ValueError) as error:
+            raise InvalidJournalTransition(f"invalid journal event {label}") from error
+        return sequence, stage, state
+
     def _load_event(self, path: Path) -> dict[str, Any]:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -101,14 +156,7 @@ class RunJournal:
             raise InvalidJournalTransition(f"unreadable journal event {path.name}") from error
         if not isinstance(payload, Mapping):
             raise InvalidJournalTransition(f"journal event {path.name} must be an object")
-        try:
-            sequence = payload["sequence"]
-            if not isinstance(sequence, int) or isinstance(sequence, bool):
-                raise ValueError("sequence must be an integer")
-            stage = RunStage(str(payload["stage"]))
-            state = StageState(str(payload["state"]))
-        except (KeyError, TypeError, ValueError) as error:
-            raise InvalidJournalTransition(f"invalid journal event {path.name}") from error
+        sequence, stage, state = self._event_identity(payload, path.name)
         expected_name = f"{sequence:06d}-{stage.value}-{state.value}.json"
         if path.name != expected_name:
             raise InvalidJournalTransition(
@@ -242,8 +290,9 @@ class RunJournal:
                 "metadata": dict(metadata or {}),
             }
             event_path = self.events / f"{sequence:06d}-{stage.value}-{state.value}.json"
+            self._event_identity(event, event_path.name)
             if event_path.is_file():
-                existing = json.loads(event_path.read_text(encoding="utf-8"))
+                existing = self._load_event(event_path)
                 identity = {
                     "schema_version": 1,
                     "generation_id": self.generation_id,

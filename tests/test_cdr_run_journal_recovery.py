@@ -150,6 +150,30 @@ def test_run_journal_rejects_non_integer_immutable_sequence(tmp_path, sequence):
         journal.transition(RunStage.HOLDERS, StageState.RUNNING)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("error", "oops"),
+        ("remote_digest", 17),
+        ("retry_at", {}),
+        ("at", 7),
+        ("metadata", []),
+    ],
+)
+def test_run_journal_rejects_malformed_immutable_payload(tmp_path, field, value):
+    journal = RunJournal(tmp_path / "journals", "generation-1")
+    event = journal.transition(RunStage.REGISTER, StageState.RUNNING)
+    event[field] = value
+    event_path = journal.events / "000001-register_discovery-running.json"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    journal.current_path.unlink()
+
+    with pytest.raises(InvalidJournalTransition, match="invalid journal event"):
+        journal.transition(RunStage.HOLDERS, StageState.RUNNING)
+
+    assert not journal.current_path.exists()
+
+
 def test_run_journal_concurrent_stage_changes_keep_contiguous_sequences(tmp_path):
     journal = RunJournal(tmp_path / "journals", "generation-1")
 
