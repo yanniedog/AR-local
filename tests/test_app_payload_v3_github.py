@@ -371,4 +371,3 @@ def test_candidate_run_provenance_rejects_forged_run_workflow_and_head(
 
     with pytest.raises(PromotionError, match=message):
         validate_candidate_run_metadata(run, branch, comparison)
-
