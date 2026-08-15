@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import subprocess
 import threading
 from typing import Any, Callable, Iterable, Mapping
 
@@ -15,7 +16,6 @@ from cdr_historical_contract import (
     canonical_json_bytes,
     candidate_identity,
     sha256_bytes,
-    sha256_file,
     validate_candidate,
     validate_history_index,
     validate_schema,
@@ -37,6 +37,14 @@ TOOL_FILES = (
     "cdr_historical_parity.py",
     "cdr_historical_candidate.py",
     "cdr_historical_acceptance.py",
+    "contracts/historical/contract-lock.json",
+    "contracts/historical/corpus-lock-v1.json",
+    "contracts/historical/corpus-lock-v1.schema.json",
+    "contracts/historical/source-manifest-v1.schema.json",
+    "contracts/historical/additions-audit-v1.schema.json",
+    "contracts/historical/candidate-manifest-v1.schema.json",
+    "contracts/historical/history-index-v1.schema.json",
+    "contracts/historical/acceptance-report-v1.schema.json",
 )
 UNAVAILABLE_REASON = (
     "the preserved cleaned projection has no complete register/provider/attempt population"
@@ -190,16 +198,45 @@ def candidate_specs(dates: Iterable[str]) -> tuple[CandidateSpec, ...]:
     return tuple(sorted(specs, key=lambda item: (item.date, item.variant_ordinal, item.revision_ordinal)))
 
 
+def _git_output(*args: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise HistoricalContractError("local Git provenance is unavailable") from error
+    if result.returncode != 0:
+        raise HistoricalContractError(f"local Git provenance failed: git {args[0]}")
+    return result.stdout
+
+
+def _checkout_matches_blob(path: Path, blob: bytes) -> bool:
+    checkout = path.read_bytes()
+    normalized = checkout.replace(b"\r\n", b"\n")
+    return b"\r" not in normalized and normalized == blob
+
+
 def _tool(commit: str) -> dict[str, Any]:
     if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
         raise HistoricalContractError("tool commit must be an exact lowercase Git commit")
+    resolved = _git_output("rev-parse", "--verify", f"{commit}^{{commit}}").decode("ascii").strip()
+    if resolved != commit:
+        raise HistoricalContractError("tool commit does not resolve exactly")
     files = []
     for relative in TOOL_FILES:
         path = ROOT / relative
-        files.append({"path": relative, "bytes": path.stat().st_size, "sha256": sha256_file(path)})
+        blob = _git_output("show", f"{commit}:{relative}")
+        if not _checkout_matches_blob(path, blob):
+            raise HistoricalContractError(f"tool checkout differs from commit: {relative}")
+        files.append({"path": relative, "bytes": len(blob), "sha256": sha256_bytes(blob)})
     return {
         "commit": commit,
-        "python_version": "CPython-3.10+-canonical-json-v1",
+        "python_version": "CPython-3.10-or-3.11/canonical-json-v1",
         "files": files,
     }
 

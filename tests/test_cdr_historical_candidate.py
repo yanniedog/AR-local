@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 import json
 from pathlib import Path
+import subprocess
 import threading
 import time
 from typing import Any
@@ -24,7 +25,12 @@ from cdr_historical_source import InventoryEntry
 
 
 SNAPSHOT_ID = "20260814T202526AEST-pi5-3dc9b4677"
-TOOL_COMMIT = "a" * 40
+TOOL_COMMIT = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    check=True,
+    stdout=subprocess.PIPE,
+    text=True,
+).stdout.strip()
 
 
 def retained_dates() -> tuple[str, ...]:
@@ -90,6 +96,57 @@ def test_candidate_coordinates_are_exact_and_no_semantic_variant_is_truncated(tm
             (1, 1, "root_projection"),
             (1, 2, "legacy_external_correction"),
         ]
+
+
+def test_tool_provenance_uses_commit_blobs_and_rejects_dirty_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commit = "b" * 40
+    blobs = {
+        relative: f"content for {relative}\n".encode("utf-8")
+        for relative in candidate_module.TOOL_FILES
+    }
+    for relative, blob in blobs.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(blob.replace(b"\n", b"\r\n"))
+
+    def fake_git(*args: str) -> bytes:
+        if args[0] == "rev-parse":
+            return (commit + "\n").encode("ascii")
+        assert args[0] == "show"
+        return blobs[args[1].split(":", 1)[1]]
+
+    monkeypatch.setattr(candidate_module, "ROOT", tmp_path)
+    monkeypatch.setattr(candidate_module, "_git_output", fake_git)
+    tool = candidate_module._tool(commit)
+    assert tool["commit"] == commit
+    assert tool["python_version"] == "CPython-3.10-or-3.11/canonical-json-v1"
+    assert tool["files"] == [
+        {
+            "path": relative,
+            "bytes": len(blobs[relative]),
+            "sha256": sha256_bytes(blobs[relative]),
+        }
+        for relative in candidate_module.TOOL_FILES
+    ]
+
+    (tmp_path / candidate_module.TOOL_FILES[0]).write_bytes(b"dirty\n")
+    with pytest.raises(HistoricalContractError, match="checkout differs"):
+        candidate_module._tool(commit)
+
+
+def test_tool_provenance_rejects_a_false_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        candidate_module,
+        "_git_output",
+        lambda *_args: ("c" * 40 + "\n").encode("ascii"),
+    )
+    with pytest.raises(HistoricalContractError, match="does not resolve exactly"):
+        candidate_module._tool("b" * 40)
 
 
 def test_history_is_deterministic_under_reversed_discovery(tmp_path: Path) -> None:

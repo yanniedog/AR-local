@@ -165,9 +165,12 @@ re-verified. Existing identical files make retries idempotent; different bytes
 at any create-once location fail closed. Interrupted staging is retained for
 verified retry. A failed stage is not a completed candidate bundle.
 
-Tool provenance records the exact Git commit, a platform-independent canonical
-runtime contract, and byte/hash descriptors for all five implementation files.
-Discovery order is normalized, giving identical bytes on Windows and Linux.
+Tool provenance requires the exact commit to exist locally and records a
+platform-independent runtime contract plus byte/hash descriptors for every
+historical implementation, schema, and lock blob at that commit. Construction
+rejects a checkout that differs from those blobs. CRLF conversion is normalized
+only for the equality check, so the recorded provenance bytes remain identical
+on Windows and Linux. Discovery order is normalized as well.
 
 ## Verification
 
