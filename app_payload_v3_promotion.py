@@ -67,6 +67,8 @@ class PromotionResult:
 
 
 class PromotionBackend(Protocol):
+    def verify_candidate_run(self, run_id: str) -> str: ...
+
     def acquire_lock(self, owner_token: str, target_commit: str) -> str: ...
 
     def release_lock(self, owner_token: str) -> str: ...
@@ -410,6 +412,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-dir", required=True)
     parser.add_argument("--repo", default=CANONICAL_REPO)
     parser.add_argument(
+        "--candidate-run-id",
+        help="Canonical candidate-workflow run ID; required with --execute.",
+    )
+    parser.add_argument(
         "--expected-producer-commit",
         help="Exact trusted candidate-workflow head SHA; required with --execute.",
     )
@@ -421,10 +427,40 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _verified_execution_backend(
+    repo: str,
+    candidate_run_id: str | None,
+    expected_producer_commit: str | None,
+) -> PromotionBackend:
+    if candidate_run_id is None or expected_producer_commit is None:
+        raise PromotionError(
+            "--execute requires a candidate run ID and expected producer commit"
+        )
+    from app_payload_v3_github import GitHubPromotionBackend
+
+    backend = GitHubPromotionBackend(repo)
+    verified_commit = backend.verify_candidate_run(candidate_run_id)
+    if verified_commit != expected_producer_commit:
+        raise PromotionError(
+            "verified candidate run differs from the expected producer commit"
+        )
+    return backend
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    backend = (
+        _verified_execution_backend(
+            args.repo,
+            args.candidate_run_id,
+            args.expected_producer_commit,
+        )
+        if args.execute
+        else None
+    )
     result = promote_candidate(
         Path(args.candidate_dir),
+        backend,
         repo=args.repo,
         execute=args.execute,
         expected_producer_commit=args.expected_producer_commit,
@@ -453,4 +489,5 @@ __all__ = [
     "load_candidate",
     "load_pointer",
     "promote_candidate",
+    "_verified_execution_backend",
 ]

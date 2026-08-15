@@ -28,6 +28,7 @@ from app_payload_v3_promotion import (
     ConcurrencyError,
     PromotionError,
     _remote_bundle,
+    _verified_execution_backend,
     load_candidate,
     promote_candidate,
 )
@@ -858,11 +859,13 @@ def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
     assert workflow.count("contents: write") == 1
     assert workflow.count("GH_TOKEN: ${{ github.token }}") == 3
     assert workflow.count("persist-credentials: false") == 2
-    assert workflow.count("ref: main") == 2
+    assert workflow.count("ref: ${{ github.sha }}") == 2
+    assert "ref: main" not in workflow
     assert "timeout-minutes: 60" in workflow
     assert "AR_V3_PROMOTION_APPROVED" in workflow
     assert workflow.count("--verify-candidate-run") == 2
     assert workflow.count("--expected-producer-commit") == 2
+    assert workflow.count("--candidate-run-id") == 1
     assert 'test "$CANDIDATE_ARTIFACT_NAME" = "payload-v3-candidate"' in workflow
     assert workflow.find("Verify canonical producer-run provenance") < workflow.find(
         "Download exact canonical candidate artifact"
@@ -873,6 +876,36 @@ def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
     assert "--execute" in workflow
     assert "force" not in workflow.lower()
     assert "delete" not in workflow.lower()
+
+
+def test_direct_execute_backend_reverifies_run_and_exact_expected_sha(monkeypatch):
+    calls: list[str] = []
+
+    class ProvenanceBackend:
+        def __init__(self, repo: str) -> None:
+            assert repo == "yanniedog/AR-local"
+
+        def verify_candidate_run(self, run_id: str) -> str:
+            calls.append(run_id)
+            return PRODUCER_COMMIT
+
+    monkeypatch.setattr(
+        app_payload_v3_github, "GitHubPromotionBackend", ProvenanceBackend
+    )
+
+    backend = _verified_execution_backend(
+        "yanniedog/AR-local", "12345", PRODUCER_COMMIT
+    )
+    assert isinstance(backend, ProvenanceBackend)
+    assert calls == ["12345"]
+    with pytest.raises(PromotionError, match="differs from the expected"):
+        _verified_execution_backend(
+            "yanniedog/AR-local", "12345", "7" * 40
+        )
+    with pytest.raises(PromotionError, match="requires a candidate run ID"):
+        _verified_execution_backend(
+            "yanniedog/AR-local", None, PRODUCER_COMMIT
+        )
 
 
 def test_github_control_install_is_non_force_and_expected_head_bound(monkeypatch):

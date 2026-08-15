@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: main
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -98,7 +98,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: main
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -139,6 +139,7 @@ jobs:
       - name: Execute append-only promotion
         env:
           CANDIDATE_GENERATION_ID: ${{ inputs.generation_id }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           EXPECTED_PRODUCER_COMMIT: ${{ steps.producer.outputs.producer_commit }}
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -150,5 +151,6 @@ jobs:
           fi
           python app_payload_v3_promotion.py \
             --candidate-dir "candidate-root/$CANDIDATE_GENERATION_ID" \
+            --candidate-run-id "$CANDIDATE_RUN_ID" \
             --expected-producer-commit "$EXPECTED_PRODUCER_COMMIT" \
             --execute

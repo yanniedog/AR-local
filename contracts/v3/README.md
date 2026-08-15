@@ -138,8 +138,12 @@ completed-success run of that exact workflow in `yanniedog/AR-local`, a
 canonical head repository, a currently protected `main` branch, and a run head
 retained in main's history. The verified run head SHA must exactly equal the
 candidate manifest's `producer_commit`; direct `--execute` calls without that
-binding fail before acquiring the promotion lock. Arbitrary same-repository
-workflow artifacts are never accepted as provenance.
+binding and the canonical candidate run ID fail before acquiring the promotion
+lock. The CLI independently re-queries that run and requires its verified head
+SHA to equal the explicit expected commit; it does not trust the SHA argument
+alone. Arbitrary same-repository workflow artifacts are never accepted as
+provenance. Both workflow jobs check out the immutable dispatch SHA, so waiting
+for protected-environment approval cannot substitute a later `main` tip.
 
 An executed promotion uses create-once candidate tags and content-addressed
 release assets. It acquires a two-hour owner-token lease on a dedicated
