@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
 import cdr_daily
+import cdr_outputs
 from cdr_atomic import atomic_write_json
 from cdr_finalization import verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
@@ -174,12 +176,38 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
     args.ram_stage = False
     monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
     expected_stage = runs.parent / ".daily-export-stage" / DATE / "_exports"
-    original_build = cdr_daily.build_outputs
+    configured_ingest = cdr_daily.run_ingest
+
+    def ingest(script_dir, out_dir, date, extra):
+        configured_ingest(script_dir, out_dir, date, extra)
+        detail = out_dir / date / "banks" / "Mortgage" / "Example Bank" / "loan-1"
+        detail.mkdir(parents=True)
+        (detail / "product-detail.json").write_text(
+            json.dumps({
+                "data": {
+                    "productId": "loan-1",
+                    "name": "Example variable home loan",
+                    "brand": "Example Bank",
+                    "features": [],
+                    "eligibility": [],
+                    "constraints": [],
+                    "fees": [],
+                    "lendingRates": [{
+                        "lendingRateType": "VARIABLE",
+                        "rate": "5.50",
+                        "comparisonRate": "5.70",
+                    }],
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
 
     def build(run_root, export_root, db_path, *, previous_run_root=None):
         assert export_root == expected_stage
         assert not str(export_root).startswith(str(ram))
-        return original_build(
+        return cdr_outputs.build_outputs(
             run_root,
             export_root,
             db_path,
@@ -190,11 +218,37 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
 
     assert cdr_daily.run_once(args) == 1
 
-    assert (runs / DATE / "_exports" / "banks.json").is_file()
+    exported = json.loads(
+        (runs / DATE / "_exports" / f"banks-{DATE}.json").read_text(encoding="utf-8")
+    )
+    assert len(exported["rates"]) == 1
     assert not (ram / "runs" / DATE).exists()
     assert not (ram / "exports").exists()
     assert not expected_stage.exists()
     assert (state / f"{DATE}.done.json").is_file()
+
+
+def test_completed_pi_run_retries_failed_persistent_stage_cleanup(tmp_path, monkeypatch):
+    args, runs, _state, _ram = _configure(tmp_path, monkeypatch)
+    args.ram_stage = False
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    staged_date = runs.parent / ".daily-export-stage" / DATE
+    real_rmtree = cdr_daily.shutil.rmtree
+    blocked_once = False
+
+    def flaky_rmtree(path, *call_args, **call_kwargs):
+        nonlocal blocked_once
+        if Path(path) == staged_date and not blocked_once:
+            blocked_once = True
+            return None
+        return real_rmtree(path, *call_args, **call_kwargs)
+
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", flaky_rmtree)
+
+    assert cdr_daily.run_once(args) == 1
+    assert staged_date.is_dir()
+    assert cdr_daily.run_once(args) == 0
+    assert not staged_date.exists()
 
 
 def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(

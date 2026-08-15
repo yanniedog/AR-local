@@ -130,6 +130,14 @@ def persistent_export_stage_root(persistent_runs_root: Path, date: str) -> Path:
     return persistent_runs_root.parent / ".daily-export-stage" / date / "_exports"
 
 
+def cleanup_persistent_export_stage(persistent_runs_root: Path, date: str) -> None:
+    """Best-effort cleanup; a finalized retry invokes this again if removal failed."""
+    shutil.rmtree(
+        persistent_export_stage_root(persistent_runs_root, date).parent,
+        ignore_errors=True,
+    )
+
+
 def archive_failed_ram_stage(
     staged_run: Path,
     staged_export_date: Path,
@@ -322,6 +330,8 @@ def run_once(args: argparse.Namespace) -> int:
     ensure_runtime_data_writable(script_dir)
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
+    automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
+    persistent_output_stage = automatic_pi_stage and not args.ram_stage
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
@@ -342,6 +352,8 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(
                     persistent_runs_root, state_dir, date, args.exports
                 )
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
@@ -353,6 +365,8 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(
                     persistent_runs_root, state_dir, date, args.exports
                 )
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
@@ -372,6 +386,8 @@ def run_once(args: argparse.Namespace) -> int:
             # P2). Cheap no-op when the manifest already exists.
             if args.exports is None and not cdr_ledger_integrity.manifest_path(state_dir, date).is_file():
                 _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -457,7 +473,6 @@ def run_once(args: argparse.Namespace) -> int:
         )
 
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
-    automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
     use_ram_stage = args.ram_stage or automatic_pi_stage
     ram_cleanup_paths: Optional[tuple[Path, Path]] = None
     staged_exports_to_install: Optional[Path] = None
@@ -466,7 +481,7 @@ def run_once(args: argparse.Namespace) -> int:
         staged_runs = ram_root / "runs"
         staged_exports = (
             persistent_export_stage_root(persistent_runs_root, date)
-            if automatic_pi_stage and not args.ram_stage
+            if persistent_output_stage
             else ram_root / "exports" / date / "_exports"
         )
         staged_run = ram_root / "runs" / date
