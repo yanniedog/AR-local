@@ -30,10 +30,13 @@ from app_payload_v3_state import (
     V3_DATES_INDEX_LIMIT_BYTES,
     V3_LOCK_LIMIT_BYTES,
     V3_POINTER_LIMIT_BYTES,
+    CandidateBundle,
+    CandidateReleaseRecord,
     ConcurrencyError,
     PromotionError,
     RemoteNotFound,
     release_url as _release_url,
+    require_candidate_artifact_binding,
     strict_object as _strict_object,
 )
 
@@ -578,8 +581,8 @@ class GitHubPromotionBackend:
         if published != payload:
             raise PromotionError("public immutable release verification failed")
 
-    def list_candidate_tags(self) -> Sequence[str]:
-        result = self._run(
+    def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]:
+        release_result = self._run(
             [
                 "gh",
                 "api",
@@ -588,29 +591,101 @@ class GitHubPromotionBackend:
                 f"repos/{self.repo}/releases?per_page=100",
             ]
         )
-        if result.returncode != 0:
+        if release_result.returncode != 0:
             raise PromotionError(
-                f"complete candidate listing failed: {(result.stderr or '').strip()}"
+                "complete candidate listing failed: "
+                f"{(release_result.stderr or '').strip()}"
+            )
+        encoded_prefix = urllib.parse.quote(
+            f"tags/{CANDIDATE_TAG_PREFIX}", safe="/"
+        )
+        ref_result = self._run(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                f"repos/{self.repo}/git/matching-refs/{encoded_prefix}",
+            ]
+        )
+        if ref_result.returncode != 0:
+            raise PromotionError(
+                "complete candidate tag listing failed: "
+                f"{(ref_result.stderr or '').strip()}"
             )
         try:
-            pages = json.loads(result.stdout)
-            if not isinstance(pages, list) or any(
-                not isinstance(page, list) for page in pages
+            release_pages = json.loads(release_result.stdout)
+            ref_pages = json.loads(ref_result.stdout)
+            if not isinstance(release_pages, list) or any(
+                not isinstance(page, list) for page in release_pages
             ):
                 raise TypeError("candidate pages are not arrays")
-            releases = [release for page in pages for release in page]
+            if not isinstance(ref_pages, list) or any(
+                not isinstance(page, list) for page in ref_pages
+            ):
+                raise TypeError("candidate tag pages are not arrays")
+            releases = [release for page in release_pages for release in page]
+            refs = [ref for page in ref_pages for ref in page]
             if any(not isinstance(release, Mapping) for release in releases):
                 raise TypeError("candidate release is not an object")
+            if any(not isinstance(ref, Mapping) for ref in refs):
+                raise TypeError("candidate tag is not an object")
         except (json.JSONDecodeError, TypeError) as error:
             raise PromotionError("complete candidate listing is malformed") from error
-        tags = sorted(
-            str(release.get("tag_name"))
-            for release in releases
-            if str(release.get("tag_name") or "").startswith(CANDIDATE_TAG_PREFIX)
-        )
+        targets: dict[str, str] = {}
+        for ref in refs:
+            full_ref = ref.get("ref")
+            target = ref.get("object")
+            if (
+                not isinstance(full_ref, str)
+                or not full_ref.startswith("refs/tags/")
+                or not isinstance(target, Mapping)
+                or target.get("type") != "commit"
+                or not _GIT_OBJECT_ID.fullmatch(str(target.get("sha") or ""))
+            ):
+                raise PromotionError("candidate tag provenance is malformed")
+            tag = full_ref[len("refs/tags/") :]
+            if not tag.startswith(CANDIDATE_TAG_PREFIX) or tag in targets:
+                raise PromotionError("candidate tag provenance is ambiguous")
+            targets[tag] = str(target["sha"])
+        records: list[CandidateReleaseRecord] = []
+        for release in releases:
+            tag = release.get("tag_name")
+            if not isinstance(tag, str) or not tag.startswith(CANDIDATE_TAG_PREFIX):
+                continue
+            assets = release.get("assets")
+            if not isinstance(assets, list) or any(
+                not isinstance(asset, Mapping) for asset in assets
+            ):
+                raise PromotionError(f"release asset listing is malformed for {tag}")
+            names = [asset.get("name") for asset in assets]
+            if (
+                any(not isinstance(name, str) or not name for name in names)
+                or len(names) != len(set(names))
+                or tag not in targets
+                or not isinstance(release.get("name"), str)
+                or not isinstance(release.get("body"), (str, type(None)))
+                or not isinstance(release.get("draft"), bool)
+                or not isinstance(release.get("prerelease"), bool)
+            ):
+                raise PromotionError(f"candidate release metadata is malformed for {tag}")
+            records.append(
+                CandidateReleaseRecord(
+                    tag=tag,
+                    title=str(release["name"]),
+                    notes=str(release.get("body") or ""),
+                    target_commit=targets[tag],
+                    draft=bool(release["draft"]),
+                    prerelease=bool(release["prerelease"]),
+                    asset_names=tuple(sorted(str(name) for name in names)),
+                )
+            )
+        tags = [record.tag for record in records]
         if len(tags) != len(set(tags)):
             raise PromotionError("candidate listing contains duplicate tags")
-        return tags
+        if set(targets) != set(tags):
+            raise PromotionError("candidate tag and release census disagree")
+        return sorted(records, key=lambda record: record.tag)
 
     def list_asset_names(self, tag: str) -> Sequence[str]:
         release = self._release(tag)
@@ -660,6 +735,16 @@ class GitHubPromotionBackend:
             raise PromotionError("protected-main provenance metadata is malformed")
         return validate_candidate_run_metadata(run, main_branch, comparison)
 
+    def verify_candidate_artifact(
+        self, run_id: str, candidate: CandidateBundle
+    ) -> str:
+        if not re.fullmatch(r"[1-9][0-9]*", run_id):
+            raise PromotionError("candidate run ID must be a positive integer")
+        if not candidate.generation_id:
+            raise PromotionError("candidate artifact generation is invalid")
+        require_candidate_artifact_binding()
+        raise AssertionError("artifact binding guard unexpectedly returned")
+
     def fetch_control_file(self, commit: str, path: str) -> bytes | None:
         return self._fetch_raw(commit, path)
 
@@ -702,6 +787,7 @@ __all__ = [
     "GitHubPromotionBackend",
     "LOCK_LEASE_SECONDS",
     "public_fetch",
+    "require_candidate_artifact_binding",
     "require_consumer_contract_parity",
     "validate_candidate_run_metadata",
 ]

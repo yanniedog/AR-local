@@ -54,6 +54,46 @@ class RemoteNotFound(PromotionError):
     """A required public object does not exist."""
 
 
+@dataclass(frozen=True)
+class CandidateReleaseRecord:
+    """One candidate release and its direct Git tag provenance from one census."""
+
+    tag: str
+    title: str
+    notes: str
+    target_commit: str
+    draft: bool
+    prerelease: bool
+    asset_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CandidateArtifactBindingContract:
+    """Reviewed future contract required to bind a run archive to its tree."""
+
+    workflow_path: str
+    artifact_name: str
+    archive_digest_algorithm: str
+    inventory_contract_sha256: str
+
+
+# A future slice must implement archive-digest verification and an exact
+# archive-to-expanded-tree inventory before setting this reviewed contract.
+# Merely assigning a value cannot enable execution: the verifier below remains
+# fail-closed until that implementation replaces its explicit final rejection.
+CANDIDATE_ARTIFACT_BINDING_CONTRACT: CandidateArtifactBindingContract | None = None
+
+
+def require_candidate_artifact_binding() -> None:
+    if CANDIDATE_ARTIFACT_BINDING_CONTRACT is None:
+        raise PromotionError(
+            "candidate artifact-byte provenance is not locked; execution is blocked"
+        )
+    raise PromotionError(
+        "candidate artifact archive-to-tree verification is not implemented"
+    )
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -398,6 +438,9 @@ __all__ = [
     "V3_LOCK_LIMIT_BYTES",
     "V3_MANIFEST_LIMIT_BYTES",
     "V3_POINTER_LIMIT_BYTES",
+    "CANDIDATE_ARTIFACT_BINDING_CONTRACT",
+    "CandidateArtifactBindingContract",
+    "CandidateReleaseRecord",
     "CandidateBundle",
     "ConcurrencyError",
     "PromotionError",
@@ -410,6 +453,7 @@ __all__ = [
     "load_candidate",
     "ordered_census",
     "release_url",
+    "require_candidate_artifact_binding",
     "sha256",
     "strict_object",
     "validate_dates_index",

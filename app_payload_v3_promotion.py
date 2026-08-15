@@ -32,6 +32,7 @@ from app_payload_v3_state import (
     V3_MANIFEST_LIMIT_BYTES,
     V3_POINTER_LIMIT_BYTES,
     CandidateBundle,
+    CandidateReleaseRecord,
     ConcurrencyError,
     PromotionError,
     build_dates_index,
@@ -69,6 +70,10 @@ class PromotionResult:
 class PromotionBackend(Protocol):
     def verify_candidate_run(self, run_id: str) -> str: ...
 
+    def verify_candidate_artifact(
+        self, run_id: str, candidate: CandidateBundle
+    ) -> str: ...
+
     def acquire_lock(self, owner_token: str, target_commit: str) -> str: ...
 
     def release_lock(self, owner_token: str) -> str: ...
@@ -94,9 +99,7 @@ class PromotionBackend(Protocol):
 
     def put_immutable_asset(self, tag: str, name: str, payload: bytes) -> None: ...
 
-    def list_candidate_tags(self) -> Sequence[str]: ...
-
-    def list_asset_names(self, tag: str) -> Sequence[str]: ...
+    def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]: ...
 
     def fetch_url(self, url: str, max_bytes: int) -> bytes: ...
 
@@ -202,12 +205,18 @@ def _candidate_notes(candidate: CandidateBundle) -> str:
 
 
 def _verified_census(
-    backend: PromotionBackend, tags: Sequence[str], repo: str
+    backend: PromotionBackend,
+    releases: Sequence[CandidateReleaseRecord],
+    repo: str,
 ) -> tuple[CandidateBundle, ...]:
     candidates: list[CandidateBundle] = []
-    for tag in sorted(set(tags)):
+    tags = [release.tag for release in releases]
+    if len(tags) != len(set(tags)):
+        raise PromotionError("candidate census contains duplicate releases")
+    for release in sorted(releases, key=lambda item: item.tag):
+        tag = release.tag
         generation_id = _tag_generation(tag)
-        asset_names = list(backend.list_asset_names(tag))
+        asset_names = list(release.asset_names)
         manifests = [name for name in asset_names if _MANIFEST_NAME.fullmatch(name)]
         if len(manifests) != 1 or asset_names != manifests:
             raise PromotionError(
@@ -219,12 +228,16 @@ def _verified_census(
         )
         if bundle.generation_id != generation_id:
             raise PromotionError("candidate tag and remote generation_id disagree")
-        backend.verify_candidate_release(
-            tag,
-            title=f"AR payload v3 candidate {generation_id}",
-            notes=_candidate_notes(bundle),
-            target_commit=str(bundle.manifest["producer_commit"]),
-        )
+        if (
+            release.title != f"AR payload v3 candidate {generation_id}"
+            or release.notes != _candidate_notes(bundle)
+            or release.target_commit != str(bundle.manifest["producer_commit"])
+            or release.draft
+            or release.prerelease
+        ):
+            raise PromotionError(
+                f"immutable release {tag} metadata or tag target differs"
+            )
         candidates.append(bundle)
     return ordered_census(candidates)
 
@@ -236,6 +249,7 @@ def promote_candidate(
     repo: str = CANONICAL_REPO,
     execute: bool = False,
     expected_producer_commit: str | None = None,
+    candidate_run_id: str | None = None,
     generated_at: Callable[[], str] = _utc_now,
     failure_hook: Callable[[str], None] | None = None,
 ) -> PromotionResult:
@@ -251,6 +265,8 @@ def promote_candidate(
             )
     elif execute:
         raise PromotionError("remote promotion requires a trusted producer commit")
+    if execute and candidate_run_id is None:
+        raise PromotionError("remote promotion requires a candidate run ID")
     if not execute:
         return PromotionResult(candidate.generation_id, candidate.candidate_tag, True)
     from app_payload_v3_github import require_consumer_contract_parity
@@ -258,6 +274,13 @@ def promote_candidate(
     if backend is None:
         from app_payload_v3_github import GitHubPromotionBackend
         backend = GitHubPromotionBackend(repo)
+    artifact_commit = backend.verify_candidate_artifact(
+        candidate_run_id or "", candidate
+    )
+    if artifact_commit != expected_producer_commit:
+        raise PromotionError(
+            "verified candidate artifact differs from the expected producer commit"
+        )
     hook = failure_hook or (lambda _stage: None)
     owner_token = uuid.uuid4().hex
     backend.acquire_lock(owner_token, str(candidate.manifest["producer_commit"]))
@@ -277,8 +300,10 @@ def promote_candidate(
         previous_pointer, manifests, capabilities = load_pointer(
             previous_pointer_bytes, backend
         )
-        tags_before = list(backend.list_candidate_tags())
-        _assert_coordinate_available(tags_before, candidate)
+        releases_before = list(backend.list_candidate_releases())
+        _assert_coordinate_available(
+            [release.tag for release in releases_before], candidate
+        )
         for capability, descriptor in candidate.manifest["capabilities"].items():
             parsed = urllib.parse.urlparse(str(descriptor["url"]))
             parts = PurePosixPath(parsed.path).parts
@@ -318,11 +343,12 @@ def promote_candidate(
         if remote_candidate.manifest_bytes != candidate.manifest_bytes:
             raise PromotionError("public candidate manifest differs from local bytes")
         hook("after_candidate_verified")
-        tags = list(backend.list_candidate_tags())
+        releases = list(backend.list_candidate_releases())
+        tags = [release.tag for release in releases]
         if candidate.candidate_tag not in tags:
             raise PromotionError("candidate listing omitted the newly verified release")
         _assert_coordinate_available(tags, candidate)
-        census = _verified_census(backend, tags, repo)
+        census = _verified_census(backend, releases, repo)
         if not any(
             item.generation_id == candidate.generation_id
             and item.manifest_bytes == candidate.manifest_bytes
@@ -436,8 +462,12 @@ def _verified_execution_backend(
         raise PromotionError(
             "--execute requires a candidate run ID and expected producer commit"
         )
-    from app_payload_v3_github import GitHubPromotionBackend
+    from app_payload_v3_github import (
+        GitHubPromotionBackend,
+        require_candidate_artifact_binding,
+    )
 
+    require_candidate_artifact_binding()
     backend = GitHubPromotionBackend(repo)
     verified_commit = backend.verify_candidate_run(candidate_run_id)
     if verified_commit != expected_producer_commit:
@@ -464,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         repo=args.repo,
         execute=args.execute,
         expected_producer_commit=args.expected_producer_commit,
+        candidate_run_id=args.candidate_run_id,
     )
     print(json.dumps(result.__dict__, sort_keys=True))
     return 0

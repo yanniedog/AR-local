@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import subprocess
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 import app_payload_v3_github
+import app_payload_v3_state
 from app_payload_v3_github import (
     CANONICAL_CANDIDATE_WORKFLOW,
     LOCK_LEASE_SECONDS,
@@ -16,6 +18,10 @@ from app_payload_v3_github import (
     GitHubPromotionBackend,
     public_fetch,
     validate_candidate_run_metadata,
+)
+from app_payload_v3_state import (
+    CANDIDATE_ARTIFACT_BINDING_CONTRACT,
+    CandidateArtifactBindingContract,
 )
 from app_payload_v3_promotion import (
     ConcurrencyError,
@@ -133,7 +139,7 @@ def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
     assert "delete" not in workflow.lower()
 
 
-def test_direct_execute_backend_reverifies_run_and_exact_expected_sha(monkeypatch):
+def test_direct_execute_stays_blocked_without_archive_to_tree_binding(monkeypatch):
     calls: list[str] = []
 
     class ProvenanceBackend:
@@ -148,19 +154,106 @@ def test_direct_execute_backend_reverifies_run_and_exact_expected_sha(monkeypatc
         app_payload_v3_github, "GitHubPromotionBackend", ProvenanceBackend
     )
 
-    backend = _verified_execution_backend(
-        "yanniedog/AR-local", "12345", PRODUCER_COMMIT
-    )
-    assert isinstance(backend, ProvenanceBackend)
-    assert calls == ["12345"]
-    with pytest.raises(PromotionError, match="differs from the expected"):
+    assert CANDIDATE_ARTIFACT_BINDING_CONTRACT is None
+    with pytest.raises(PromotionError, match="artifact-byte provenance"):
         _verified_execution_backend(
-            "yanniedog/AR-local", "12345", "7" * 40
+            "yanniedog/AR-local", "12345", PRODUCER_COMMIT
         )
+    assert calls == []
+    monkeypatch.setattr(
+        app_payload_v3_state,
+        "CANDIDATE_ARTIFACT_BINDING_CONTRACT",
+        CandidateArtifactBindingContract(
+            workflow_path=CANONICAL_CANDIDATE_WORKFLOW,
+            artifact_name="payload-v3-candidate",
+            archive_digest_algorithm="sha256",
+            inventory_contract_sha256="f" * 64,
+        ),
+    )
+    with pytest.raises(PromotionError, match="archive-to-tree verification"):
+        _verified_execution_backend(
+            "yanniedog/AR-local", "12345", PRODUCER_COMMIT
+        )
+    assert calls == []
     with pytest.raises(PromotionError, match="requires a candidate run ID"):
         _verified_execution_backend(
             "yanniedog/AR-local", None, PRODUCER_COMMIT
         )
+
+
+def test_batched_candidate_census_stays_below_api_budget_over_1000_releases(
+    monkeypatch,
+):
+    releases = []
+    refs = []
+    for revision in range(1, 1002):
+        tag = (
+            "app-payload-v3-candidate-gen-2026-08-14-"
+            f"r{revision:04d}-aaaaaaaaaaaa"
+        )
+        releases.append(
+            {
+                "tag_name": tag,
+                "name": f"candidate {revision}",
+                "body": "notes",
+                "draft": False,
+                "prerelease": False,
+                "assets": [{"name": f"{revision:064x}.json"}],
+            }
+        )
+        refs.append(
+            {
+                "ref": f"refs/tags/{tag}",
+                "object": {"type": "commit", "sha": PRODUCER_COMMIT},
+            }
+        )
+    calls: list[list[str]] = []
+    backend = GitHubPromotionBackend()
+
+    def run(args, **_kwargs):
+        calls.append(list(args))
+        payload = refs if "matching-refs" in args[-1] else releases
+        return subprocess.CompletedProcess(args, 0, json.dumps([payload]), "")
+
+    monkeypatch.setattr(backend, "_run", run)
+
+    records = backend.list_candidate_releases()
+
+    assert len(records) == 1001
+    assert len(calls) == 2
+    assert all("--paginate" in call and "--slurp" in call for call in calls)
+    conservative_paginated_requests = sum(
+        (len(items) + 99) // 100 for items in (releases, refs)
+    )
+    assert conservative_paginated_requests == 22
+    assert conservative_paginated_requests < 100
+    assert records[-1].target_commit == PRODUCER_COMMIT
+
+
+def test_batched_candidate_census_rejects_moved_or_missing_tag_provenance(
+    monkeypatch,
+):
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    release = {
+        "tag_name": tag,
+        "name": "candidate",
+        "body": "notes",
+        "draft": False,
+        "prerelease": False,
+        "assets": [{"name": f"{'a' * 64}.json"}],
+    }
+    backend = GitHubPromotionBackend()
+    outputs = iter((json.dumps([[release]]), json.dumps([[]])))
+    monkeypatch.setattr(
+        backend,
+        "_run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(
+            args, 0, next(outputs), ""
+        ),
+    )
+
+    with pytest.raises(PromotionError, match="metadata is malformed"):
+        backend.list_candidate_releases()
 
 
 def test_github_control_install_is_non_force_and_expected_head_bound(monkeypatch):

@@ -145,6 +145,16 @@ alone. Arbitrary same-repository workflow artifacts are never accepted as
 provenance. Both workflow jobs check out the immutable dispatch SHA, so waiting
 for protected-environment approval cannot substitute a later `main` tip.
 
+Direct execution is additionally blocked by the intentionally unset
+`app_payload_v3_state.CANDIDATE_ARTIFACT_BINDING_CONTRACT`. Its future
+activation requires a reviewed
+canonical artifact name/workflow, the GitHub-provided archive SHA-256, and a
+hash-bound inventory contract that proves the expanded candidate tree came from
+those exact archive bytes. The current code deliberately has no boolean escape
+hatch: assigning a contract still fails until archive-to-tree verification is
+implemented. Matching only `producer_commit` to a successful run is not accepted
+as evidence that a caller-supplied candidate directory came from that run.
+
 An executed promotion uses create-once candidate tags and content-addressed
 release assets. It acquires a two-hour owner-token lease on a dedicated
 append-only Git branch; the workflow's one-hour timeout cannot outlive it. An
@@ -166,6 +176,12 @@ generation bytes, and the complete-dates index selects the greatest verified
 complete revision for each date. Both pointer heads are derived from the full
 verified lineage census, not merely the candidate named by the invocation, so a
 retry after an interrupted upload cannot publish an older head.
+
+The complete census reuses the paginated release metadata/assets response and
+one batched matching-tag-ref response. It therefore preserves direct tag-target
+revalidation while keeping authenticated API request count constant rather than
+performing several API calls per retained candidate; the public manifest and
+capability bytes themselves are still re-downloaded and checked.
 
 Control state lives in append-only commits on `app-payload-v3-control`. The
 `complete-dates-index-v3.json` commit is prepared and publicly re-verified

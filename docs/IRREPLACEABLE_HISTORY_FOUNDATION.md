@@ -185,5 +185,14 @@ converge and their exact reviewed SHA-256 digests must be pinned. Until then,
 `--execute` fails before any repository read or write even if run provenance and
 environment approval are otherwise valid.
 
+An independent artifact-byte binding is also intentionally absent. Activation
+requires GitHub's archive digest to be reconciled to an exact expanded-tree
+inventory from the canonical candidate workflow; a matching run head alone is
+insufficient. The complete candidate census uses two paginated/batched API
+listings—release metadata/assets and direct matching tag refs—rather than
+re-querying every historical release and tag. Public manifest/capability bytes
+are still re-downloaded, while API request growth remains bounded as retained
+history passes one thousand revisions.
+
 Those layers may consume these records, but they may not weaken create-once
 semantics or make a partial observation appear complete.

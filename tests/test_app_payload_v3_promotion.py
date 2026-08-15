@@ -4,6 +4,7 @@ import hashlib
 import json
 import urllib.parse
 from collections.abc import Mapping, Sequence
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from app_payload_v3_promotion import (
     load_candidate,
     promote_candidate,
 )
+from app_payload_v3_state import CandidateReleaseRecord
 from cdr_domain.contract_validation import contract_sha256, validate_generation_pointer
 from cdr_domain.generation import (
     GenerationInputs,
@@ -34,6 +36,9 @@ from cdr_domain.serialize import canonical_json_bytes
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "canonical_domain_real_observations.json"
 PRODUCER_COMMIT = "6f696ecc3a61198b90ad58f8b90b086e866a26e4"
+TRUSTED_RUN_ID = "12345"
+_raw_promote_candidate = promote_candidate
+promote_candidate = partial(promote_candidate, candidate_run_id=TRUSTED_RUN_ID)
 
 
 @pytest.fixture(autouse=True)
@@ -121,6 +126,11 @@ class FakeBackend:
         self.corrupt_urls: set[str] = set()
         self.omitted_tags: set[str] = set()
 
+    def verify_candidate_artifact(self, run_id: str, candidate) -> str:
+        if run_id != TRUSTED_RUN_ID:
+            raise PromotionError("unexpected fake candidate run")
+        return str(candidate.manifest["producer_commit"])
+
     def acquire_lock(self, owner_token: str, target_commit: str) -> str:
         if self.lock_owner is not None:
             raise ConcurrencyError("lock active")
@@ -175,14 +185,29 @@ class FakeBackend:
         if self.releases[tag]["metadata"] != expected:
             raise PromotionError("immutable release metadata or tag target differs")
 
-    def list_candidate_tags(self) -> Sequence[str]:
+    def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]:
         if self.fail_list:
             raise PromotionError("injected complete-listing failure")
-        return sorted(
-            tag
-            for tag in self.releases
-            if tag.startswith(CANDIDATE_TAG_PREFIX) and tag not in self.omitted_tags
-        )
+        records = []
+        for tag, release in self.releases.items():
+            if not tag.startswith(CANDIDATE_TAG_PREFIX) or tag in self.omitted_tags:
+                continue
+            metadata = release["metadata"]
+            assets = release["assets"]
+            assert isinstance(metadata, dict)
+            assert isinstance(assets, dict)
+            records.append(
+                CandidateReleaseRecord(
+                    tag=tag,
+                    title=str(metadata["title"]),
+                    notes=str(metadata["notes"]),
+                    target_commit=str(metadata["target"]),
+                    draft=False,
+                    prerelease=False,
+                    asset_names=tuple(sorted(assets)),
+                )
+            )
+        return sorted(records, key=lambda record: record.tag)
 
     def list_asset_names(self, tag: str) -> Sequence[str]:
         assets = self.releases[tag]["assets"]
@@ -315,6 +340,40 @@ def test_execute_requires_exact_trusted_producer_commit_before_backend_use(tmp_p
         )
 
     assert backend.events == []
+
+
+def test_execute_core_requires_artifact_run_binding_before_backend_mutation(tmp_path):
+    directory = _candidate_directory(tmp_path)
+    backend = FakeBackend()
+
+    with pytest.raises(PromotionError, match="requires a candidate run ID"):
+        _raw_promote_candidate(
+            directory,
+            backend,
+            execute=True,
+            expected_producer_commit=PRODUCER_COMMIT,
+        )
+
+    assert backend.events == []
+
+    runner_calls: list[object] = []
+
+    def forbidden_runner(*args, **kwargs):
+        runner_calls.append((args, kwargs))
+        raise AssertionError("artifact guard must fail before GitHub commands")
+
+    github_backend = app_payload_v3_github.GitHubPromotionBackend(
+        runner=forbidden_runner
+    )
+    with pytest.raises(PromotionError, match="artifact-byte provenance"):
+        _raw_promote_candidate(
+            directory,
+            github_backend,
+            execute=True,
+            expected_producer_commit=PRODUCER_COMMIT,
+            candidate_run_id=TRUSTED_RUN_ID,
+        )
+    assert runner_calls == []
 
 
 def test_unset_consumer_contract_parity_blocks_before_backend_use(
