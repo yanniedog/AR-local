@@ -222,6 +222,7 @@ def test_batched_candidate_census_stays_below_api_budget_over_1000_releases(
     assert len(records) == 1001
     assert len(calls) == 2
     assert all("--paginate" in call and "--slurp" in call for call in calls)
+    assert calls[1][-1].endswith("?per_page=100")
     conservative_paginated_requests = sum(
         (len(items) + 99) // 100 for items in (releases, refs)
     )

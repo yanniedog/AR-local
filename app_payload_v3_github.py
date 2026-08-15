@@ -605,7 +605,7 @@ class GitHubPromotionBackend:
                 "api",
                 "--paginate",
                 "--slurp",
-                f"repos/{self.repo}/git/matching-refs/{encoded_prefix}",
+                f"repos/{self.repo}/git/matching-refs/{encoded_prefix}?per_page=100",
             ]
         )
         if ref_result.returncode != 0:

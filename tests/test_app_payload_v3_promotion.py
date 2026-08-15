@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 import app_payload_v3_github
+import app_payload_v3_promotion
+import app_payload_v3_state
 from app_payload_v3_promotion import (
     CANDIDATE_TAG_PREFIX,
     DATES_INDEX_FILENAME,
@@ -47,6 +49,11 @@ def _reviewed_consumer_parity_lock(monkeypatch):
         app_payload_v3_github,
         "AR_APP_CONSUMER_PARITY_LOCK",
         (contract_sha256(), "f" * 64),
+    )
+    monkeypatch.setattr(
+        app_payload_v3_promotion,
+        "require_candidate_artifact_binding",
+        lambda: None,
     )
 
 
@@ -342,7 +349,9 @@ def test_execute_requires_exact_trusted_producer_commit_before_backend_use(tmp_p
     assert backend.events == []
 
 
-def test_execute_core_requires_artifact_run_binding_before_backend_mutation(tmp_path):
+def test_execute_core_requires_artifact_run_binding_before_backend_mutation(
+    monkeypatch, tmp_path
+):
     directory = _candidate_directory(tmp_path)
     backend = FakeBackend()
 
@@ -356,24 +365,21 @@ def test_execute_core_requires_artifact_run_binding_before_backend_mutation(tmp_
 
     assert backend.events == []
 
-    runner_calls: list[object] = []
-
-    def forbidden_runner(*args, **kwargs):
-        runner_calls.append((args, kwargs))
-        raise AssertionError("artifact guard must fail before GitHub commands")
-
-    github_backend = app_payload_v3_github.GitHubPromotionBackend(
-        runner=forbidden_runner
+    monkeypatch.setattr(
+        app_payload_v3_promotion,
+        "require_candidate_artifact_binding",
+        app_payload_v3_state.require_candidate_artifact_binding,
     )
+    generic_backend = FakeBackend()
     with pytest.raises(PromotionError, match="artifact-byte provenance"):
         _raw_promote_candidate(
             directory,
-            github_backend,
+            generic_backend,
             execute=True,
             expected_producer_commit=PRODUCER_COMMIT,
             candidate_run_id=TRUSTED_RUN_ID,
         )
-    assert runner_calls == []
+    assert generic_backend.events == []
 
 
 def test_unset_consumer_contract_parity_blocks_before_backend_use(
