@@ -7,21 +7,18 @@ import base64
 import json
 import re
 import subprocess
-import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from cdr_domain.serialize import canonical_json_bytes
 
 from app_payload_v3_state import (
     CANONICAL_REPO,
-    CANDIDATE_TAG_PREFIX,
     CONTROL_BRANCH,
     LOCK_BRANCH,
     LOCK_FILENAME,
@@ -31,14 +28,13 @@ from app_payload_v3_state import (
     V3_LOCK_LIMIT_BYTES,
     V3_POINTER_LIMIT_BYTES,
     CandidateBundle,
-    CandidateReleaseRecord,
     ConcurrencyError,
     PromotionError,
     RemoteNotFound,
-    release_url as _release_url,
     require_candidate_artifact_binding,
     strict_object as _strict_object,
 )
+from app_payload_v3_github_release import GitHubReleaseMixin
 
 
 _GIT_OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -205,7 +201,7 @@ def public_fetch(url: str, max_bytes: int, timeout: float = 30.0) -> bytes:
     return payload
 
 
-class GitHubPromotionBackend:
+class GitHubPromotionBackend(GitHubReleaseMixin):
     """Create-once releases plus append-only, non-force Git control refs."""
 
     def __init__(
@@ -234,15 +230,13 @@ class GitHubPromotionBackend:
     def _run(
         self, args: Sequence[str], *, input_text: str | None = None
     ) -> subprocess.CompletedProcess[str]:
-        return self._runner(
-            list(args),
-            input=input_text,
-            capture_output=True,
-            text=True,
-            shell=False,
-            timeout=60,
-            check=False,
-        )
+        try:
+            return self._runner(
+                list(args), input=input_text, capture_output=True, text=True,
+                shell=False, timeout=60, check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise PromotionError("GitHub command timed out with an indeterminate outcome") from error
 
     def _api(
         self,
@@ -297,9 +291,14 @@ class GitHubPromotionBackend:
             raise PromotionError(f"GitHub {label} returned an invalid object ID")
         return sha
 
-    def _tag_target(self, tag: str) -> str:
+    def _tag_target(self, tag: str, *, allow_missing: bool = False) -> str | None:
         encoded = urllib.parse.quote(tag, safe="")
-        value = self._api("GET", f"repos/{self.repo}/git/ref/tags/{encoded}")
+        value = self._api(
+            "GET", f"repos/{self.repo}/git/ref/tags/{encoded}",
+            allow_404=allow_missing,
+        )
+        if value is None and allow_missing:
+            return None
         try:
             kind = str(value["object"]["type"])
             sha = str(value["object"]["sha"])
@@ -454,6 +453,34 @@ class GitHubPromotionBackend:
             f"acquire v3 promotion {owner_token}",
         )
 
+    def renew_lock(self, owner_token: str) -> str:
+        head = self._ref_head(LOCK_BRANCH)
+        if head is None:
+            raise ConcurrencyError("promotion lock disappeared before renewal")
+        current_bytes = self._fetch_raw(head, LOCK_FILENAME)
+        if current_bytes is None:
+            raise ConcurrencyError("promotion lock document disappeared before renewal")
+        current = _strict_object(current_bytes, "promotion lock")
+        _validate_lock(current)
+        if current.get("state") != "acquired" or current.get("owner_token") != owner_token:
+            raise ConcurrencyError("promotion lock owner token changed before renewal")
+        now = self._now()
+        payload = canonical_json_bytes(
+            {
+                **current,
+                "recorded_at": now.isoformat().replace("+00:00", "Z"),
+                "lease_expires_at": (
+                    now + timedelta(seconds=LOCK_LEASE_SECONDS)
+                ).isoformat().replace("+00:00", "Z"),
+            }
+        )
+        return self._append_commit(
+            LOCK_BRANCH,
+            head,
+            {LOCK_FILENAME: payload},
+            f"renew v3 promotion {owner_token}",
+        )
+
     def release_lock(self, owner_token: str) -> str:
         head = self._ref_head(LOCK_BRANCH)
         if head is None:
@@ -478,229 +505,6 @@ class GitHubPromotionBackend:
             {LOCK_FILENAME: payload},
             f"release v3 promotion {owner_token}",
         )
-
-    def _release(self, tag: str) -> Mapping[str, Any] | None:
-        encoded = urllib.parse.quote(tag, safe="")
-        value = self._api(
-            "GET", f"repos/{self.repo}/releases/tags/{encoded}", allow_404=True
-        )
-        if value is not None and not isinstance(value, Mapping):
-            raise PromotionError(f"release metadata is malformed for {tag}")
-        return value
-
-    def ensure_release(
-        self,
-        tag: str,
-        *,
-        title: str,
-        notes: str,
-        target_commit: str,
-        exact_metadata: bool,
-    ) -> None:
-        release = self._release(tag)
-        if release is None:
-            result = self._run(
-                [
-                    "gh",
-                    "release",
-                    "create",
-                    tag,
-                    "--repo",
-                    self.repo,
-                    "--target",
-                    target_commit,
-                    "--title",
-                    title,
-                    "--notes",
-                    notes,
-                    "--latest=false",
-                ]
-            )
-            if result.returncode != 0:
-                # A concurrent create may have won. Accept only the exact object
-                # verified below; never update the existing release to recover.
-                release = self._release(tag)
-                if release is None:
-                    raise PromotionError(
-                        f"create-once release {tag} failed: "
-                        f"{(result.stderr or '').strip()}"
-                    )
-            else:
-                release = self._release(tag)
-        if release is None:
-            raise PromotionError(f"release {tag} is absent after create")
-        if exact_metadata:
-            self.verify_candidate_release(
-                tag,
-                title=title,
-                notes=notes,
-                target_commit=target_commit,
-            )
-
-    def verify_candidate_release(
-        self,
-        tag: str,
-        *,
-        title: str,
-        notes: str,
-        target_commit: str,
-    ) -> None:
-        release = self._release(tag)
-        if release is None or (
-            release.get("tag_name") != tag
-            or release.get("name") != title
-            or (release.get("body") or "") != notes
-            or release.get("draft") is not False
-            or release.get("prerelease") is not False
-        ):
-            raise PromotionError(f"immutable release {tag} metadata differs")
-        if self._tag_target(tag) != target_commit:
-            raise PromotionError(f"immutable release {tag} targets another commit")
-
-    def put_immutable_asset(self, tag: str, name: str, payload: bytes) -> None:
-        if name in self.list_asset_names(tag):
-            if self.fetch_url(_release_url(self.repo, tag, name), len(payload)) != payload:
-                raise PromotionError(f"immutable release asset differs: {tag}/{name}")
-            return
-        with tempfile.TemporaryDirectory(prefix="ar-v3-upload-") as temporary:
-            path = Path(temporary) / name
-            path.write_bytes(payload)
-            result = self._run(
-                ["gh", "release", "upload", tag, str(path), "--repo", self.repo]
-            )
-        if result.returncode != 0:
-            try:
-                existing = self.fetch_url(_release_url(self.repo, tag, name), len(payload))
-            except PromotionError as error:
-                raise PromotionError(
-                    f"immutable release upload failed: {(result.stderr or '').strip()}"
-                ) from error
-            if existing != payload:
-                raise PromotionError("concurrent immutable release asset differs")
-        published = self.fetch_url(_release_url(self.repo, tag, name), len(payload))
-        if published != payload:
-            raise PromotionError("public immutable release verification failed")
-
-    def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]:
-        release_result = self._run(
-            [
-                "gh",
-                "api",
-                "--paginate",
-                "--slurp",
-                f"repos/{self.repo}/releases?per_page=100",
-            ]
-        )
-        if release_result.returncode != 0:
-            raise PromotionError(
-                "complete candidate listing failed: "
-                f"{(release_result.stderr or '').strip()}"
-            )
-        encoded_prefix = urllib.parse.quote(
-            f"tags/{CANDIDATE_TAG_PREFIX}", safe="/"
-        )
-        ref_result = self._run(
-            [
-                "gh",
-                "api",
-                "--paginate",
-                "--slurp",
-                f"repos/{self.repo}/git/matching-refs/{encoded_prefix}?per_page=100",
-            ]
-        )
-        if ref_result.returncode != 0:
-            raise PromotionError(
-                "complete candidate tag listing failed: "
-                f"{(ref_result.stderr or '').strip()}"
-            )
-        try:
-            release_pages = json.loads(release_result.stdout)
-            ref_pages = json.loads(ref_result.stdout)
-            if not isinstance(release_pages, list) or any(
-                not isinstance(page, list) for page in release_pages
-            ):
-                raise TypeError("candidate pages are not arrays")
-            if not isinstance(ref_pages, list) or any(
-                not isinstance(page, list) for page in ref_pages
-            ):
-                raise TypeError("candidate tag pages are not arrays")
-            releases = [release for page in release_pages for release in page]
-            refs = [ref for page in ref_pages for ref in page]
-            if any(not isinstance(release, Mapping) for release in releases):
-                raise TypeError("candidate release is not an object")
-            if any(not isinstance(ref, Mapping) for ref in refs):
-                raise TypeError("candidate tag is not an object")
-        except (json.JSONDecodeError, TypeError) as error:
-            raise PromotionError("complete candidate listing is malformed") from error
-        targets: dict[str, str] = {}
-        for ref in refs:
-            full_ref = ref.get("ref")
-            target = ref.get("object")
-            if (
-                not isinstance(full_ref, str)
-                or not full_ref.startswith("refs/tags/")
-                or not isinstance(target, Mapping)
-                or target.get("type") != "commit"
-                or not _GIT_OBJECT_ID.fullmatch(str(target.get("sha") or ""))
-            ):
-                raise PromotionError("candidate tag provenance is malformed")
-            tag = full_ref[len("refs/tags/") :]
-            if not tag.startswith(CANDIDATE_TAG_PREFIX) or tag in targets:
-                raise PromotionError("candidate tag provenance is ambiguous")
-            targets[tag] = str(target["sha"])
-        records: list[CandidateReleaseRecord] = []
-        for release in releases:
-            tag = release.get("tag_name")
-            if not isinstance(tag, str) or not tag.startswith(CANDIDATE_TAG_PREFIX):
-                continue
-            assets = release.get("assets")
-            if not isinstance(assets, list) or any(
-                not isinstance(asset, Mapping) for asset in assets
-            ):
-                raise PromotionError(f"release asset listing is malformed for {tag}")
-            names = [asset.get("name") for asset in assets]
-            if (
-                any(not isinstance(name, str) or not name for name in names)
-                or len(names) != len(set(names))
-                or tag not in targets
-                or not isinstance(release.get("name"), str)
-                or not isinstance(release.get("body"), (str, type(None)))
-                or not isinstance(release.get("draft"), bool)
-                or not isinstance(release.get("prerelease"), bool)
-            ):
-                raise PromotionError(f"candidate release metadata is malformed for {tag}")
-            records.append(
-                CandidateReleaseRecord(
-                    tag=tag,
-                    title=str(release["name"]),
-                    notes=str(release.get("body") or ""),
-                    target_commit=targets[tag],
-                    draft=bool(release["draft"]),
-                    prerelease=bool(release["prerelease"]),
-                    asset_names=tuple(sorted(str(name) for name in names)),
-                )
-            )
-        tags = [record.tag for record in records]
-        if len(tags) != len(set(tags)):
-            raise PromotionError("candidate listing contains duplicate tags")
-        if set(targets) != set(tags):
-            raise PromotionError("candidate tag and release census disagree")
-        return sorted(records, key=lambda record: record.tag)
-
-    def list_asset_names(self, tag: str) -> Sequence[str]:
-        release = self._release(tag)
-        if release is None or not isinstance(release.get("assets"), list):
-            raise PromotionError(f"release asset listing failed for {tag}")
-        assets = release["assets"]
-        if any(not isinstance(asset, Mapping) for asset in assets):
-            raise PromotionError(f"release asset listing is malformed for {tag}")
-        names = [asset.get("name") for asset in assets]
-        if (
-            any(not isinstance(name, str) or not name for name in names)
-            or len(names) != len(set(names))
-        ):
-            raise PromotionError(f"release asset listing is malformed for {tag}")
-        return sorted(str(name) for name in names)
 
     def fetch_url(self, url: str, max_bytes: int) -> bytes:
         last_error: PromotionError | None = None

@@ -67,6 +67,70 @@ class CandidateReleaseRecord:
     asset_names: tuple[str, ...]
 
 
+def validate_candidate_release_identity(
+    release: Mapping[str, Any],
+    tag: str,
+    *,
+    title: str,
+    notes: str,
+    target_commit: str,
+    direct_tag_target: str | None,
+) -> None:
+    body = release.get("body")
+    if (
+        release.get("tag_name") != tag
+        or not isinstance(release.get("name"), str)
+        or release.get("name") != title
+        or not isinstance(body, (str, type(None)))
+        or (body or "") != notes
+        or release.get("prerelease") is not False
+    ):
+        raise PromotionError(f"candidate release {tag} metadata differs")
+    if release.get("draft") is True:
+        if (
+            release.get("target_commitish") != target_commit
+            or direct_tag_target not in {None, target_commit}
+        ):
+            raise PromotionError(f"candidate draft {tag} targets another commit")
+    elif release.get("draft") is not False or direct_tag_target != target_commit:
+        raise PromotionError(f"immutable release {tag} targets another commit")
+
+
+def release_asset_records(
+    release: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    assets = release.get("assets")
+    if not isinstance(assets, list) or any(not isinstance(item, Mapping) for item in assets):
+        raise PromotionError("candidate release asset metadata is malformed")
+    names = [item.get("name") for item in assets]
+    if any(not isinstance(name, str) or not name for name in names):
+        raise PromotionError("candidate release asset names are malformed")
+    records = {str(name): item for name, item in zip(names, assets)}
+    if len(records) != len(assets):
+        raise PromotionError("candidate release asset names are duplicated")
+    return records
+
+
+def validate_candidate_draft_assets(
+    release: Mapping[str, Any], assets: Mapping[str, bytes]
+) -> tuple[str, ...]:
+    records = release_asset_records(release)
+    if not set(records).issubset(assets):
+        raise PromotionError("candidate draft contains unexpected assets")
+    for name, record in records.items():
+        payload = assets[name]
+        expected_digest = f"sha256:{sha256(payload)}"
+        size = record.get("size")
+        if (
+            isinstance(size, bool)
+            or not isinstance(size, int)
+            or size != len(payload)
+            or record.get("digest") != expected_digest
+        ):
+            raise PromotionError(f"candidate draft asset differs: {name}")
+    return tuple(sorted(set(assets) - set(records)))
+
+
 @dataclass(frozen=True)
 class CandidateArtifactBindingContract:
     """Reviewed future contract required to bind a run archive to its tree."""
@@ -251,6 +315,12 @@ def ordered_census(candidates: Sequence[CandidateBundle]) -> tuple[CandidateBund
     ordered = tuple(by_coordinate[key] for key in sorted(by_coordinate))
     if ordered[0].manifest["prior_ledger_digest"] is not None:
         raise PromotionError("first candidate generation must start at a null ledger prior")
+    event_digests: set[str] = set()
+    for candidate in ordered:
+        event_digest = str(candidate.manifest["ledger_event_digest"])
+        if event_digest in event_digests:
+            raise PromotionError("candidate census reuses a ledger event digest")
+        event_digests.add(event_digest)
     for previous, current in zip(ordered, ordered[1:]):
         if current.manifest["prior_ledger_digest"] != previous.manifest["ledger_event_digest"]:
             raise PromotionError("candidate census contains disconnected ledger lineage")
@@ -452,9 +522,12 @@ __all__ = [
     "generation_coordinate",
     "load_candidate",
     "ordered_census",
+    "release_asset_records",
     "release_url",
     "require_candidate_artifact_binding",
     "sha256",
     "strict_object",
+    "validate_candidate_release_identity",
+    "validate_candidate_draft_assets",
     "validate_dates_index",
 ]

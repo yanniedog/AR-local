@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import hashlib
 import json
 import subprocess
 from collections.abc import Mapping
@@ -19,6 +20,7 @@ from app_payload_v3_github import (
     public_fetch,
     validate_candidate_run_metadata,
 )
+from app_payload_v3_github_release import GitHubReleaseMixin
 from app_payload_v3_state import (
     CANDIDATE_ARTIFACT_BINDING_CONTRACT,
     CandidateArtifactBindingContract,
@@ -97,7 +99,9 @@ def test_public_fetch_accepts_exact_largest_declared_cap_and_rejects_larger(
 
 
 def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
-    backend_source = inspect.getsource(GitHubPromotionBackend)
+    backend_source = inspect.getsource(GitHubPromotionBackend) + inspect.getsource(
+        GitHubReleaseMixin
+    )
     assert "--clobber" not in backend_source
     assert '"force": True' not in backend_source
     assert '"force": False' in backend_source
@@ -137,6 +141,106 @@ def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():
     assert "--execute" in workflow
     assert "force" not in workflow.lower()
     assert "delete" not in workflow.lower()
+
+
+@pytest.mark.parametrize("ambiguous_stage", ["create", "upload", "edit"])
+def test_candidate_draft_ambiguous_writes_reconcile_exact_state(
+    monkeypatch, ambiguous_stage
+):
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    payload = b"exact manifest bytes"
+    release = None
+    stages: list[str] = []
+
+    def runner(args, **_kwargs):
+        nonlocal release
+        stage = args[2]
+        stages.append(stage)
+        if stage == "create":
+            release = {
+                "tag_name": tag, "name": "title", "body": "notes", "draft": True,
+                "prerelease": False, "target_commitish": PRODUCER_COMMIT, "assets": [],
+            }
+        elif stage == "upload":
+            uploaded = Path(args[4]).read_bytes()
+            release["assets"] = [{"name": "manifest.json", "size": len(uploaded),
+                                  "digest": f"sha256:{hashlib.sha256(uploaded).hexdigest()}"}]
+        elif stage == "edit":
+            release["draft"] = False
+        return subprocess.CompletedProcess(args, int(stage == ambiguous_stage), "", "ambiguous")
+
+    backend = GitHubPromotionBackend(runner=runner)
+    monkeypatch.setattr(backend, "_release", lambda _tag: release)
+    monkeypatch.setattr(backend, "_tag_target", lambda _tag, **_kwargs: PRODUCER_COMMIT)
+    monkeypatch.setattr(backend, "renew_lock", lambda _owner: "renewed")
+    monkeypatch.setattr(backend, "fetch_url", lambda *_args: payload)
+    backend.publish_candidate_release(
+        tag, title="title", notes="notes", target_commit=PRODUCER_COMMIT,
+        assets={"manifest.json": payload}, owner_token="a" * 32,
+    )
+
+    assert stages == ["create", "upload", "edit"]
+    assert release["draft"] is False
+
+
+def test_failed_draft_upload_is_preserved_and_exact_retry_resumes(monkeypatch):
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    payload = b"exact manifest bytes"
+    release = None
+    fail_upload = True
+    stages: list[str] = []
+
+    def runner(args, **_kwargs):
+        nonlocal release
+        stage = args[2]
+        stages.append(stage)
+        if stage == "create":
+            release = {"tag_name": tag, "name": "title", "body": "notes",
+                       "draft": True, "prerelease": False,
+                       "target_commitish": PRODUCER_COMMIT, "assets": []}
+        elif stage == "upload" and not fail_upload:
+            release["assets"] = [{"name": "manifest.json", "size": len(payload),
+                                  "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}"}]
+        elif stage == "edit":
+            release["draft"] = False
+        failed = stage == "upload" and fail_upload
+        return subprocess.CompletedProcess(args, int(failed), "", "injected")
+
+    backend = GitHubPromotionBackend(runner=runner)
+    monkeypatch.setattr(backend, "_release", lambda _tag: release)
+    monkeypatch.setattr(backend, "_tag_target", lambda _tag, **_kwargs: PRODUCER_COMMIT)
+    monkeypatch.setattr(backend, "renew_lock", lambda _owner: "renewed")
+    monkeypatch.setattr(backend, "fetch_url", lambda *_args: payload)
+    arguments = dict(title="title", notes="notes", target_commit=PRODUCER_COMMIT,
+                     assets={"manifest.json": payload}, owner_token="a" * 32)
+
+    with pytest.raises(PromotionError, match="verification failed"):
+        backend.publish_candidate_release(tag, **arguments)
+    assert release["draft"] is True
+    assert release["assets"] == []
+    assert "delete" not in stages
+
+    fail_upload = False
+    backend.publish_candidate_release(tag, **arguments)
+    assert stages.count("create") == 1
+    assert release["draft"] is False
+
+
+def test_candidate_draft_with_moved_existing_tag_fails_before_mutation(monkeypatch):
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    release = {"tag_name": tag, "name": "title", "body": "notes", "draft": True,
+               "prerelease": False, "target_commitish": PRODUCER_COMMIT, "assets": []}
+    backend = GitHubPromotionBackend(
+        runner=lambda *_args, **_kwargs: pytest.fail("draft must not mutate")
+    )
+    monkeypatch.setattr(backend, "_release", lambda _tag: release)
+    monkeypatch.setattr(backend, "_tag_target", lambda *_args, **_kwargs: "f" * 40)
+
+    with pytest.raises(PromotionError, match="targets another commit"):
+        backend.publish_candidate_release(
+            tag, title="title", notes="notes", target_commit=PRODUCER_COMMIT,
+            assets={"manifest.json": b"bytes"}, owner_token="a" * 32,
+        )
 
 
 def test_direct_execute_stays_blocked_without_archive_to_tree_binding(monkeypatch):
@@ -255,6 +359,23 @@ def test_batched_candidate_census_rejects_moved_or_missing_tag_provenance(
 
     with pytest.raises(PromotionError, match="metadata is malformed"):
         backend.list_candidate_releases()
+
+
+def test_candidate_census_accepts_exact_draft_without_published_tag():
+    tag = "app-payload-v3-candidate-gen-2026-08-14-r0001-aaaaaaaaaaaa"
+    release = {
+        "tag_name": tag, "name": "candidate", "body": "notes",
+        "draft": True, "prerelease": False, "target_commitish": PRODUCER_COMMIT,
+        "assets": [],
+    }
+    outputs = iter((json.dumps([[release]]), json.dumps([[]])))
+    backend = GitHubPromotionBackend(
+        runner=lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, next(outputs), "")
+    )
+    records = backend.list_candidate_releases()
+    assert len(records) == 1
+    assert records[0].draft is True
+    assert records[0].target_commit == PRODUCER_COMMIT
 
 
 def test_github_control_install_is_non_force_and_expected_head_bound(monkeypatch):
@@ -412,6 +533,43 @@ def test_github_owner_lock_recovers_expired_lease_by_head_cas(monkeypatch):
     assert LOCK_LEASE_SECONDS == 7_200
     with pytest.raises(ConcurrencyError, match="owner token changed"):
         backend.release_lock(old_owner)
+
+
+def test_github_owner_lock_renewal_is_exact_head_cas_and_fences_old_owner(monkeypatch):
+    owner = "a" * 32
+    old_head, new_head = "1" * 40, "2" * 40
+    payload = _lock_bytes(
+        owner=owner,
+        recorded_at="2026-08-15T00:00:00Z",
+        lease_expires_at="2026-08-15T02:00:00Z",
+    )
+    backend = GitHubPromotionBackend(
+        clock=lambda: datetime(2026, 8, 15, 1, tzinfo=timezone.utc)
+    )
+    monkeypatch.setattr(backend, "_ref_head", lambda _branch: old_head)
+    monkeypatch.setattr(backend, "_fetch_raw", lambda *_args: payload)
+
+    def append(branch, expected, files, message):
+        assert branch == "app-payload-v3-promotion-lock"
+        assert expected == old_head
+        assert message == f"renew v3 promotion {owner}"
+        renewed = _json(files[LOCK_FILENAME])
+        assert renewed["recorded_at"] == "2026-08-15T01:00:00Z"
+        assert renewed["lease_expires_at"] == "2026-08-15T03:00:00Z"
+        return new_head
+
+    monkeypatch.setattr(backend, "_append_commit", append)
+    assert backend.renew_lock(owner) == new_head
+
+    displaced = _lock_bytes(
+        owner="b" * 32,
+        recorded_at="2026-08-15T01:00:00Z",
+        lease_expires_at="2026-08-15T03:00:00Z",
+        recovered_from=owner,
+    )
+    monkeypatch.setattr(backend, "_fetch_raw", lambda *_args: displaced)
+    with pytest.raises(ConcurrencyError, match="owner token changed"):
+        backend.renew_lock(owner)
 
 
 def _trusted_run_metadata() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:

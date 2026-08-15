@@ -166,9 +166,10 @@ artifacts. The remaining contract layers are:
 5. the AR-app dual-read/cache bridge and an explicitly approved activation.
 
 The dormant promoter now supplies the repository-side publication boundary:
-create-once candidate/content releases, public byte and historical tag-target
-re-verification, complete ordered ledger-lineage enumeration, recoverable
-append-only owner leases and control history, a verified complete-dates index,
+create-once candidate releases, verify-only shared content, public byte and
+historical tag-target re-verification, complete acyclic ordered ledger-lineage
+enumeration, recoverable append-only owner leases and control history, a
+verified complete-dates index,
 and rolling-pointer compare-and-swap last. Both pointer heads come from the full
 verified release census, including a candidate left public by a prior crash,
 rather than from the invocation candidate alone. Its workflow
@@ -184,6 +185,23 @@ pointer/manifest shape, so the producer and consumer schema sets must first
 converge and their exact reviewed SHA-256 digests must be pinned. Until then,
 `--execute` fails before any repository read or write even if run provenance and
 environment approval are otherwise valid.
+
+Publication validates the prospective published census plus the local candidate
+before creating any tag, draft, asset, or control commit. The invoked candidate
+is staged as an exact resumable draft, its complete asset inventory is uploaded
+and hash-checked, and publication occurs last; a failed draft is preserved and
+never auto-deleted. Published releases are verify-only and cannot receive later
+assets. The current golden builder's shared `app-payload-gen` capability URLs
+therefore must already resolve to exact immutable bytes. A future reviewed
+candidate-artifact builder must emit candidate-owned capability URLs and bundle
+those assets for draft staging before activation; this slice does not repurpose
+the golden builder or append to the shared release.
+
+The two-hour owner lease is renewed by exact-head compare-and-swap before every
+release mutation, prepared control commit, and final ref install; all GitHub
+commands are bounded to 60 seconds and ambiguous write outcomes are reconciled
+against exact remote state. A displaced owner is fenced before its next asset
+or control write and cannot release its successor's lease.
 
 An independent artifact-byte binding is also intentionally absent. Activation
 requires GitHub's archive digest to be reconciled to an exact expanded-tree

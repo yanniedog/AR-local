@@ -159,9 +159,30 @@ An executed promotion uses create-once candidate tags and content-addressed
 release assets. It acquires a two-hour owner-token lease on a dedicated
 append-only Git branch; the workflow's one-hour timeout cannot outlive it. An
 unexpired owner cannot be displaced. A crashed writer's expired lease can be
-recovered only by non-force compare-and-swap from the exact observed lock head,
-and the successor document records the displaced owner token. A stale owner can
-therefore neither release nor overwrite its successor.
+ recovered only by non-force compare-and-swap from the exact observed lock head,
+ and the successor document records the displaced owner token. A stale owner can
+ therefore neither release nor overwrite its successor. The owner renews that
+ exact-head lease before draft creation, every asset upload, publication, each
+ prepared control commit, and the final control compare-and-swap. Every GitHub
+ command is bounded to 60 seconds, and indeterminate release-write outcomes are
+ reconciled from exact remote state before retry or failure.
+
+Before creating a tag or draft, the promoter verifies the published census plus
+the local candidate as one prospective ordered ledger. A prior exact invoked
+draft may be resumed; any unrelated or ambiguous draft fails closed. Candidate
+assets are uploaded to that exact draft, checked by size and GitHub SHA-256,
+published last, then publicly re-downloaded. A failed draft is retained for an
+exact retry or operator inspection and is never deleted. An already-published
+candidate must have the exact immutable asset inventory and bytes; the promoter
+never appends to it.
+
+The current golden builder still emits capability URLs under the already-
+published shared `app-payload-gen` tag. Promotion treats those assets as
+verify-only: every referenced name and byte must already exist, and no missing
+asset is appended. Before activation, the separately reviewed candidate builder
+and converged contract must instead bind newly produced capabilities to the
+candidate-owned release so they can be staged in its draft and published
+together. The current golden builder is not silently repurposed by this slice.
 
 The promoter re-downloads and semantically validates every referenced manifest
 and capability byte, then revalidates every censused release as non-draft,
@@ -169,8 +190,9 @@ non-prerelease, with exact create-once title/notes and a direct tag target equal
 to that manifest's `producer_commit`. It fails closed if the complete
 candidate-release listing or any historical release provenance is missing,
 malformed, duplicated, moved, or otherwise uncertain. The first censused
-generation must have a null ledger prior; every ordered successor must name the
-immediately preceding `ledger_event_digest`. Same-date revisions are
+ generation must have a null ledger prior; every ordered successor must name the
+ immediately preceding `ledger_event_digest`, and no event digest may repeat or
+ form a self-loop/cycle. Same-date revisions are
 append-only: one date/revision coordinate cannot be rebound to different
 generation bytes, and the complete-dates index selects the greatest verified
 complete revision for each date. Both pointer heads are derived from the full

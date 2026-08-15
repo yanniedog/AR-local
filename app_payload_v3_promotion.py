@@ -77,16 +77,19 @@ class PromotionBackend(Protocol):
 
     def acquire_lock(self, owner_token: str, target_commit: str) -> str: ...
 
+    def renew_lock(self, owner_token: str) -> str: ...
+
     def release_lock(self, owner_token: str) -> str: ...
 
-    def ensure_release(
+    def publish_candidate_release(
         self,
         tag: str,
         *,
         title: str,
         notes: str,
         target_commit: str,
-        exact_metadata: bool,
+        assets: Mapping[str, bytes],
+        owner_token: str,
     ) -> None: ...
 
     def verify_candidate_release(
@@ -98,7 +101,7 @@ class PromotionBackend(Protocol):
         target_commit: str,
     ) -> None: ...
 
-    def put_immutable_asset(self, tag: str, name: str, payload: bytes) -> None: ...
+    def verify_immutable_asset(self, tag: str, name: str, payload: bytes) -> None: ...
 
     def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]: ...
 
@@ -205,6 +208,30 @@ def _candidate_notes(candidate: CandidateBundle) -> str:
     ).decode("utf-8")
 
 
+def _candidate_release_assets(
+    candidate: CandidateBundle,
+) -> tuple[dict[str, bytes], list[tuple[str, str, bytes]]]:
+    candidate_assets = {candidate.manifest_filename: candidate.manifest_bytes}
+    published_assets: list[tuple[str, str, bytes]] = []
+    for capability, descriptor in candidate.manifest["capabilities"].items():
+        parsed = urllib.parse.urlparse(str(descriptor["url"]))
+        parts = PurePosixPath(parsed.path).parts
+        try:
+            tag = parts[parts.index("download") + 1]
+        except (ValueError, IndexError) as error:
+            raise PromotionError("capability URL has no release tag") from error
+        name = f"{descriptor['sha256']}.json.gz"
+        payload = candidate.capability_bytes[capability]
+        if tag == candidate.candidate_tag:
+            existing = candidate_assets.get(name)
+            if existing is not None and existing != payload:
+                raise PromotionError("candidate assets reuse a filename with different bytes")
+            candidate_assets[name] = payload
+        else:
+            published_assets.append((tag, name, payload))
+    return candidate_assets, published_assets
+
+
 def _verified_census(
     backend: PromotionBackend,
     releases: Sequence[CandidateReleaseRecord],
@@ -218,15 +245,22 @@ def _verified_census(
         tag = release.tag
         generation_id = _tag_generation(tag)
         asset_names = list(release.asset_names)
+        if len(asset_names) != len(set(asset_names)):
+            raise PromotionError(f"candidate release {tag} repeats an asset name")
         manifests = [name for name in asset_names if _MANIFEST_NAME.fullmatch(name)]
-        if len(manifests) != 1 or asset_names != manifests:
+        if len(manifests) != 1:
             raise PromotionError(
-                f"candidate release {tag} must contain only its unique manifest"
+                f"candidate release {tag} must contain its unique manifest"
             )
         manifest_name = manifests[0]
         bundle = _remote_bundle(
             backend, release_url(repo, tag, manifest_name), manifest_name[:-5]
         )
+        expected_assets, _ = _candidate_release_assets(bundle)
+        if set(asset_names) != set(expected_assets):
+            raise PromotionError(
+                f"candidate release {tag} has an unexpected immutable asset set"
+            )
         if bundle.generation_id != generation_id:
             raise PromotionError("candidate tag and remote generation_id disagree")
         if (
@@ -241,6 +275,39 @@ def _verified_census(
             )
         candidates.append(bundle)
     return ordered_census(candidates)
+
+
+def _prospective_census(
+    backend: PromotionBackend,
+    releases: Sequence[CandidateReleaseRecord],
+    candidate: CandidateBundle,
+    repo: str,
+) -> tuple[CandidateBundle, ...]:
+    drafts = [release for release in releases if release.draft]
+    if any(release.tag != candidate.candidate_tag for release in drafts):
+        raise PromotionError("candidate census contains an unrelated draft release")
+    if len(drafts) > 1:
+        raise PromotionError("candidate census contains ambiguous draft releases")
+    if drafts:
+        draft = drafts[0]
+        expected_assets, _ = _candidate_release_assets(candidate)
+        if (
+            len(draft.asset_names) != len(set(draft.asset_names))
+            or draft.title != f"AR payload v3 candidate {candidate.generation_id}"
+            or draft.notes != _candidate_notes(candidate)
+            or draft.target_commit != str(candidate.manifest["producer_commit"])
+            or draft.prerelease
+            or not set(draft.asset_names).issubset(expected_assets)
+        ):
+            raise PromotionError("invoked candidate draft is not an exact resumable draft")
+    published = [release for release in releases if not release.draft]
+    verified = _verified_census(backend, published, repo) if published else ()
+    matching = [item for item in verified if item.candidate_tag == candidate.candidate_tag]
+    if matching:
+        if len(matching) != 1 or matching[0].manifest_bytes != candidate.manifest_bytes:
+            raise PromotionError("published candidate differs from the local candidate")
+        return verified
+    return ordered_census((*verified, candidate))
 
 
 def promote_candidate(
@@ -306,35 +373,18 @@ def promote_candidate(
         _assert_coordinate_available(
             [release.tag for release in releases_before], candidate
         )
-        for capability, descriptor in candidate.manifest["capabilities"].items():
-            parsed = urllib.parse.urlparse(str(descriptor["url"]))
-            parts = PurePosixPath(parsed.path).parts
-            try:
-                tag = parts[parts.index("download") + 1]
-            except (ValueError, IndexError) as error:
-                raise PromotionError("capability URL has no release tag") from error
-            backend.ensure_release(
-                tag,
-                title="AR payload v3 content-addressed assets",
-                notes="Append-only content-addressed payload-v3 capability assets.",
-                target_commit=str(candidate.manifest["producer_commit"]),
-                exact_metadata=False,
-            )
-            backend.put_immutable_asset(
-                tag, f"{descriptor['sha256']}.json.gz", candidate.capability_bytes[capability]
-            )
+        _prospective_census(backend, releases_before, candidate, repo)
+        candidate_assets, published_assets = _candidate_release_assets(candidate)
+        for tag, name, payload in published_assets:
+            backend.verify_immutable_asset(tag, name, payload)
         hook("after_content_uploaded")
-        backend.ensure_release(
+        backend.publish_candidate_release(
             candidate.candidate_tag,
             title=f"AR payload v3 candidate {candidate.generation_id}",
             notes=_candidate_notes(candidate),
             target_commit=str(candidate.manifest["producer_commit"]),
-            exact_metadata=True,
-        )
-        backend.put_immutable_asset(
-            candidate.candidate_tag,
-            candidate.manifest_filename,
-            candidate.manifest_bytes,
+            assets=candidate_assets,
+            owner_token=owner_token,
         )
         hook("after_candidate_uploaded")
         remote_candidate = _remote_bundle(
@@ -378,6 +428,7 @@ def promote_candidate(
         pointer_commit: str | None = None
         prepared_head = control_head
         if index_changed:
+            backend.renew_lock(owner_token)
             index_commit = backend.prepare_control_commit(
                 prepared_head,
                 {DATES_INDEX_FILENAME: index_bytes},
@@ -400,6 +451,7 @@ def promote_candidate(
             if current_pointer != previous_pointer_bytes:
                 raise ConcurrencyError("rolling pointer changed before its CAS commit")
             hook("before_pointer_cas")
+            backend.renew_lock(owner_token)
             pointer_commit = backend.prepare_control_commit(
                 prepared_head,
                 {POINTER_FILENAME: pointer_bytes},
@@ -418,6 +470,9 @@ def promote_candidate(
             )
             if backend.control_head() != control_head:
                 raise ConcurrencyError("control branch changed before its final CAS")
+            backend.renew_lock(owner_token)
+            if backend.control_head() != control_head:
+                raise ConcurrencyError("control branch changed during final lock renewal")
             backend.install_control_head(control_head, pointer_commit)
             if backend.control_head() != pointer_commit:
                 raise ConcurrencyError("control branch did not install the prepared head")

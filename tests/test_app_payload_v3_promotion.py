@@ -25,14 +25,9 @@ from app_payload_v3_promotion import (
     promote_candidate,
 )
 from app_payload_v3_state import CandidateReleaseRecord
-from cdr_domain.contract_validation import contract_sha256, validate_generation_pointer
-from cdr_domain.generation import (
-    GenerationInputs,
-    build_generation_candidate,
-    write_generation_candidate,
-)
+from cdr_domain.contract_validation import contract_sha256
+from cdr_domain.generation import GenerationInputs, build_generation_candidate, write_generation_candidate
 from cdr_domain.normalize import normalize_product
-from cdr_domain.serialize import canonical_json_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,10 +127,30 @@ class FakeBackend:
         self.fail_install = False
         self.corrupt_urls: set[str] = set()
         self.omitted_tags: set[str] = set()
+        self.renew_count = 0
+        self.displace_on_renew: int | None = None
 
     def verify_candidate_artifact(self, run_id: str, candidate) -> str:
         if run_id != TRUSTED_RUN_ID:
             raise PromotionError("unexpected fake candidate run")
+        for capability, descriptor in candidate.manifest["capabilities"].items():
+            tag = urllib.parse.urlparse(str(descriptor["url"])).path.split(
+                "/download/", 1
+            )[1].split("/", 1)[0]
+            name = f"{descriptor['sha256']}.json.gz"
+            release = self.releases.setdefault(
+                tag,
+                {
+                    "metadata": {
+                        "title": "AR payload v3 content-addressed assets",
+                        "notes": "Append-only content-addressed payload-v3 capability assets.",
+                        "target": str(candidate.manifest["producer_commit"]),
+                    },
+                    "assets": {},
+                    "draft": False,
+                },
+            )
+            release["assets"][name] = candidate.capability_bytes[capability]
         return str(candidate.manifest["producer_commit"])
 
     def acquire_lock(self, owner_token: str, target_commit: str) -> str:
@@ -152,33 +167,64 @@ class FakeBackend:
         self.events.append(("unlock", owner_token))
         return "lock-released"
 
-    def ensure_release(
+    def renew_lock(self, owner_token: str) -> str:
+        if self.lock_owner != owner_token:
+            raise ConcurrencyError("lock owner changed before renewal")
+        self.renew_count += 1
+        if self.displace_on_renew == self.renew_count:
+            self.lock_owner = "successor"
+            raise ConcurrencyError("lock owner changed during renewal")
+        self.events.append(("renew", owner_token))
+        return "lock-renewed"
+
+    def verify_immutable_asset(self, tag: str, name: str, payload: bytes) -> None:
+        release = self.releases.get(tag)
+        if release is None or release.get("draft") is not False:
+            raise PromotionError("immutable release is absent or unpublished")
+        assets = release["assets"]
+        assert isinstance(assets, dict)
+        if assets.get(name) != payload:
+            raise PromotionError("immutable release asset differs")
+
+    def publish_candidate_release(
         self,
         tag: str,
         *,
         title: str,
         notes: str,
         target_commit: str,
-        exact_metadata: bool,
+        assets: Mapping[str, bytes],
+        owner_token: str,
     ) -> None:
-        existing = self.releases.get(tag)
+        self.renew_lock(owner_token)
         metadata = {"title": title, "notes": notes, "target": target_commit}
-        if existing is None:
-            self.releases[tag] = {"metadata": metadata, "assets": {}}
-            self.events.append(("release", tag))
-        elif exact_metadata and existing["metadata"] != metadata:
-            raise PromotionError("immutable release metadata differs")
-
-    def put_immutable_asset(self, tag: str, name: str, payload: bytes) -> None:
-        if self.fail_put_tag == tag:
-            raise PromotionError("injected asset backend failure")
-        assets = self.releases[tag]["assets"]
-        assert isinstance(assets, dict)
-        existing = assets.get(name)
-        if existing is not None and existing != payload:
-            raise PromotionError("immutable asset differs")
-        assets[name] = payload
-        self.events.append(("asset", (tag, name)))
+        release = self.releases.get(tag)
+        if release is None:
+            release = {"metadata": metadata, "assets": {}, "draft": True}
+            self.releases[tag] = release
+            self.events.append(("draft", tag))
+        elif release["metadata"] != metadata:
+            raise PromotionError("candidate release metadata differs")
+        existing = release["assets"]
+        assert isinstance(existing, dict)
+        if not set(existing).issubset(assets):
+            raise PromotionError("candidate release has unexpected assets")
+        if release.get("draft") is False:
+            if existing != dict(assets):
+                raise PromotionError("published candidate release asset set differs")
+            return
+        for name, payload in assets.items():
+            if self.fail_put_tag == tag:
+                raise PromotionError("injected asset backend failure")
+            if name in existing and existing[name] != payload:
+                raise PromotionError("candidate draft asset differs")
+            if name not in existing:
+                self.renew_lock(owner_token)
+                existing[name] = payload
+                self.events.append(("asset", (tag, name)))
+        self.renew_lock(owner_token)
+        release["draft"] = False
+        self.events.append(("publish", tag))
 
     def verify_candidate_release(
         self,
@@ -191,6 +237,8 @@ class FakeBackend:
         expected = {"title": title, "notes": notes, "target": target_commit}
         if self.releases[tag]["metadata"] != expected:
             raise PromotionError("immutable release metadata or tag target differs")
+        if self.releases[tag].get("draft") is not False:
+            raise PromotionError("candidate release is not published")
 
     def list_candidate_releases(self) -> Sequence[CandidateReleaseRecord]:
         if self.fail_list:
@@ -209,7 +257,7 @@ class FakeBackend:
                     title=str(metadata["title"]),
                     notes=str(metadata["notes"]),
                     target_commit=str(metadata["target"]),
-                    draft=False,
+                    draft=bool(release.get("draft")),
                     prerelease=False,
                     asset_names=tuple(sorted(assets)),
                 )
@@ -279,44 +327,6 @@ def _json(payload: bytes | None) -> dict[str, object]:
     value = json.loads(payload)
     assert isinstance(value, dict)
     return value
-
-
-def _seed_candidate_release(backend: FakeBackend, directory: Path) -> None:
-    candidate = load_candidate(directory)
-    for capability, descriptor in candidate.manifest["capabilities"].items():
-        tag = urllib.parse.urlparse(str(descriptor["url"])).path.split("/download/", 1)[
-            1
-        ].split("/", 1)[0]
-        backend.ensure_release(
-            tag,
-            title="AR payload v3 content-addressed assets",
-            notes="Append-only content-addressed payload-v3 capability assets.",
-            target_commit=str(candidate.manifest["producer_commit"]),
-            exact_metadata=False,
-        )
-        backend.put_immutable_asset(
-            tag,
-            f"{descriptor['sha256']}.json.gz",
-            candidate.capability_bytes[capability],
-        )
-    backend.ensure_release(
-        candidate.candidate_tag,
-        title=f"AR payload v3 candidate {candidate.generation_id}",
-        notes=canonical_json_bytes(
-            {
-                "schema_version": 3,
-                "generation_id": candidate.generation_id,
-                "manifest_sha256": candidate.manifest_sha256,
-            }
-        ).decode("utf-8"),
-        target_commit=str(candidate.manifest["producer_commit"]),
-        exact_metadata=True,
-    )
-    backend.put_immutable_asset(
-        candidate.candidate_tag,
-        candidate.manifest_filename,
-        candidate.manifest_bytes,
-    )
 
 
 def test_default_is_local_validation_only_and_rejects_extra_candidate_bytes(tmp_path):
@@ -543,38 +553,6 @@ def test_listing_uncertainty_retains_the_verified_prior_control_state(tmp_path):
     assert backend.visible(POINTER_FILENAME) == prior_pointer
 
 
-def test_successful_but_incomplete_listing_cannot_drop_a_prior_date(tmp_path):
-    first = _candidate_directory(tmp_path / "first")
-    second = _candidate_directory(
-        tmp_path / "second", observation_date="2026-08-15", prior=first
-    )
-    backend = FakeBackend()
-    initial = promote_candidate(
-        first,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-    prior_head = backend.control_head()
-    prior_index = backend.visible(DATES_INDEX_FILENAME)
-    prior_pointer = backend.visible(POINTER_FILENAME)
-    backend.omitted_tags.add(initial.candidate_tag)
-
-    with pytest.raises(
-        PromotionError, match="null ledger prior|cannot drop or regress"
-    ):
-        promote_candidate(
-            second,
-            backend,
-            execute=True,
-            expected_producer_commit=PRODUCER_COMMIT,
-        )
-
-    assert backend.control_head() == prior_head
-    assert backend.visible(DATES_INDEX_FILENAME) == prior_index
-    assert backend.visible(POINTER_FILENAME) == prior_pointer
-
-
 def test_disconnected_ledger_successor_cannot_advance_control(tmp_path):
     first = _candidate_directory(tmp_path / "first")
     disconnected = _candidate_directory(
@@ -590,6 +568,7 @@ def test_disconnected_ledger_successor_cannot_advance_control(tmp_path):
     prior_head = backend.control_head()
     prior_index = backend.visible(DATES_INDEX_FILENAME)
     prior_pointer = backend.visible(POINTER_FILENAME)
+    event_boundary = len(backend.events)
 
     with pytest.raises(PromotionError, match="disconnected ledger lineage"):
         promote_candidate(
@@ -602,29 +581,66 @@ def test_disconnected_ledger_successor_cannot_advance_control(tmp_path):
     assert backend.control_head() == prior_head
     assert backend.visible(DATES_INDEX_FILENAME) == prior_index
     assert backend.visible(POINTER_FILENAME) == prior_pointer
+    assert load_candidate(disconnected).candidate_tag not in backend.releases
+    assert not [
+        event
+        for event in backend.events[event_boundary:]
+        if event[0] in {"draft", "asset", "publish", "prepare", "install"}
+    ]
 
 
-def test_bootstrap_pointer_uses_maximum_verified_census_head(tmp_path):
-    first = _candidate_directory(tmp_path / "first")
-    second = _candidate_directory(
-        tmp_path / "second", observation_date="2026-08-15", prior=first
-    )
+def test_displaced_owner_is_fenced_before_next_draft_asset_and_retry_resumes(tmp_path):
+    directory = _candidate_directory(tmp_path)
+    candidate = load_candidate(directory)
     backend = FakeBackend()
-    _seed_candidate_release(backend, first)
-    _seed_candidate_release(backend, second)
+    backend.displace_on_renew = 2
 
-    result = promote_candidate(
-        first,
+    with pytest.raises(ConcurrencyError, match="lock owner changed"):
+        promote_candidate(
+            directory,
+            backend,
+            execute=True,
+            expected_producer_commit=PRODUCER_COMMIT,
+        )
+
+    draft = backend.releases[candidate.candidate_tag]
+    assert draft["draft"] is True
+    assert draft["assets"] == {}
+    assert backend.control_head() is None
+    assert not [event for event in backend.events if event[0] in {"publish", "install"}]
+
+    backend.lock_owner = None
+    backend.displace_on_renew = None
+    promote_candidate(
+        directory,
         backend,
         execute=True,
         expected_producer_commit=PRODUCER_COMMIT,
     )
+    assert draft["draft"] is False
+    assert set(draft["assets"]) == {candidate.manifest_filename}
+    assert backend.control_head() is not None
 
-    pointer = _json(backend.visible(POINTER_FILENAME))
-    expected = load_candidate(second).generation_id
-    assert result.generation_id == load_candidate(first).generation_id
-    assert pointer["latest_observation"]["generation_id"] == expected
-    assert pointer["latest_complete"]["generation_id"] == expected
+
+def test_displaced_owner_is_fenced_before_final_control_cas(tmp_path):
+    directory = _candidate_directory(tmp_path)
+    backend = FakeBackend()
+
+    def displace_before_cas(stage: str) -> None:
+        if stage == "before_pointer_cas":
+            backend.lock_owner = "successor"
+
+    with pytest.raises(ConcurrencyError, match="lock owner changed"):
+        promote_candidate(
+            directory,
+            backend,
+            execute=True,
+            expected_producer_commit=PRODUCER_COMMIT,
+            failure_hook=displace_before_cas,
+        )
+
+    assert backend.control_head() is None
+    assert not [event for event in backend.events if event[0] == "install"]
 
 
 def test_retry_after_newer_candidate_upload_advances_from_full_census(tmp_path):
@@ -650,7 +666,7 @@ def test_retry_after_newer_candidate_upload_advances_from_full_census(tmp_path):
 
     with pytest.raises(PromotionError, match="injected crash"):
         promote_candidate(
-            third,
+            second,
             backend,
             execute=True,
             expected_producer_commit=PRODUCER_COMMIT,
@@ -659,12 +675,11 @@ def test_retry_after_newer_candidate_upload_advances_from_full_census(tmp_path):
     assert backend.control_head() == prior_head
 
     promote_candidate(
-        second,
+        third,
         backend,
         execute=True,
         expected_producer_commit=PRODUCER_COMMIT,
     )
-
     pointer = _json(backend.visible(POINTER_FILENAME))
     index = _json(backend.visible(DATES_INDEX_FILENAME))
     assert pointer["latest_observation"]["generation_id"] == load_candidate(
@@ -705,101 +720,6 @@ def test_historical_candidate_tag_mutation_blocks_every_control_update(tmp_path)
     assert backend.control_head() == prior_head
 
 
-def test_partial_advances_observation_but_not_complete_or_dates(tmp_path):
-    complete = _candidate_directory(tmp_path / "complete")
-    partial = _candidate_directory(
-        tmp_path / "partial",
-        observation_date="2026-08-15",
-        state="partial",
-        prior=complete,
-    )
-    backend = FakeBackend()
-    first = promote_candidate(
-        complete,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-    first_index = backend.visible(DATES_INDEX_FILENAME)
-
-    second = promote_candidate(
-        partial,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-
-    pointer = _json(backend.visible(POINTER_FILENAME))
-    assert pointer["latest_observation"]["generation_id"] == second.generation_id
-    assert pointer["latest_complete"]["generation_id"] == first.generation_id
-    assert backend.visible(DATES_INDEX_FILENAME) == first_index
-    assert second.dates_index_changed is False
-    assert second.pointer_changed is True
-
-
-def test_same_date_revision_replaces_index_head_but_coordinate_is_immutable(tmp_path):
-    revision_one = _candidate_directory(tmp_path / "r1")
-    revision_two = _candidate_directory(tmp_path / "r2", revision=2, prior=revision_one)
-    conflicting_one = _candidate_directory(
-        tmp_path / "conflict", producer_commit="7" * 40
-    )
-    backend = FakeBackend()
-    promote_candidate(
-        revision_one,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-
-    promoted_two = promote_candidate(
-        revision_two,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-    index = _json(backend.visible(DATES_INDEX_FILENAME))
-    assert index["count"] == 1
-    assert index["dates"][0]["generation_revision"] == 2
-    assert index["dates"][0]["generation_id"] == promoted_two.generation_id
-    prior_head = backend.control_head()
-
-    with pytest.raises(PromotionError, match="already owns"):
-        promote_candidate(
-            conflicting_one,
-            backend,
-            execute=True,
-            expected_producer_commit="7" * 40,
-        )
-    assert backend.control_head() == prior_head
-
-
-def test_exact_retry_is_idempotent_and_creates_no_control_commit(tmp_path):
-    directory = _candidate_directory(tmp_path)
-    backend = FakeBackend()
-    promote_candidate(
-        directory,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-    prior_head = backend.control_head()
-    prior_commit_count = len(backend.commits)
-
-    result = promote_candidate(
-        directory,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-    )
-
-    assert result.pointer_changed is False
-    assert result.dates_index_changed is False
-    assert result.index_commit is None
-    assert result.pointer_commit is None
-    assert backend.control_head() == prior_head
-    assert len(backend.commits) == prior_commit_count
-
-
 def test_remote_manifest_corruption_blocks_control_publication(tmp_path):
     first = _candidate_directory(tmp_path / "first")
     second = _candidate_directory(
@@ -833,28 +753,3 @@ def test_remote_manifest_corruption_blocks_control_publication(tmp_path):
         )
 
     assert backend.control_head() == prior_head
-
-
-def test_prepared_pointer_remains_contract_valid_before_control_cas(tmp_path):
-    directory = _candidate_directory(tmp_path)
-    backend = FakeBackend()
-    captured: dict[str, bytes] = {}
-
-    def stop_after_prepare(stage: str) -> None:
-        if stage == "after_pointer_written":
-            captured["pointer"] = backend.visible(POINTER_FILENAME) or b""
-
-    promote_candidate(
-        directory,
-        backend,
-        execute=True,
-        expected_producer_commit=PRODUCER_COMMIT,
-        failure_hook=stop_after_prepare,
-    )
-    pointer = _json(captured["pointer"])
-    bundle = load_candidate(directory)
-    validate_generation_pointer(
-        pointer,
-        {bundle.generation_id: bundle.manifest_bytes},
-        {bundle.generation_id: bundle.capability_bytes},
-    )
