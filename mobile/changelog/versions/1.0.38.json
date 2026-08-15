@@ -1,0 +1,62 @@
+{
+  "version": "1.0.38",
+  "date": "2026-08-15",
+  "summaryBullets": [
+    "Produce the bounded AR-app fallback in AR-local (#459)",
+    "Publish verified mobile insight sidecars (#457)",
+    "revert: rewind main tree to 2026-07-31 02:00 Brisbane (7896bb9) (#455)",
+    "align Expo patch with SDK requirements (#452)",
+    "feat(mobile): log suitability exclusion counts on bootstrap (#442)"
+  ],
+  "sections": [
+    {
+      "title": "Changes",
+      "bullets": [
+        {
+          "text": "Produce the bounded AR-app fallback in AR-local (#459)"
+        },
+        {
+          "text": "Publish verified mobile insight sidecars (#457)"
+        },
+        {
+          "text": "revert: rewind main tree to 2026-07-31 02:00 Brisbane (7896bb9) (#455)"
+        },
+        {
+          "text": "align Expo patch with SDK requirements (#452)"
+        },
+        {
+          "text": "feat(mobile): log suitability exclusion counts on bootstrap (#442)"
+        },
+        {
+          "text": "fix(mobile): honour depositRankMetric in Trends, onboarding, alerts (#441)"
+        },
+        {
+          "text": "fix(mobile): honour depositRankMetric on Banks A-Z best rates (#440)"
+        },
+        {
+          "text": "fix(mobile): honour depositRankMetric on bank product lists (#438)"
+        },
+        {
+          "text": "fix(mobile): honour depositRankMetric in Browse hierarchy leaf lists (#437)"
+        },
+        {
+          "text": "fix(mobile): honour depositRankMetric on product sibling rates (#439)"
+        }
+      ]
+    },
+    {
+      "title": "Release metadata",
+      "bullets": [
+        {
+          "text": "Repository: yanniedog/AR-local"
+        },
+        {
+          "text": "Version tag: app-v1.0.38"
+        },
+        {
+          "text": "Since tag: app-v1.0.37"
+        }
+      ]
+    }
+  ]
+}
