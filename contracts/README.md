@@ -62,3 +62,26 @@ These contracts are additive. Existing clients continue to use `manifest.json`,
 Exact `product_key + rate_index/cohort` history, normalized deposit conditions,
 and client-side negotiation briefs remain later contracts. They must not be
 inferred from the aggregated `product_history` series.
+
+## Payload v3 domain contracts
+
+`contracts/v3/` is the additive, Draft 2020-12 boundary for the new producer.
+It does not redefine or republish the retired v2 sidecar.
+
+- `canonical-core-v3.schema.json` defines typed, evidence-bound products,
+  classifications, rates, fees, and stable identities. Binary floats are not
+  permitted in canonical serialization.
+- `coverage-v2.schema.json` names reconcilable product, tier, provider, failure,
+  and exclusion populations. Producer validation must additionally enforce the
+  count equations; schema validity alone never means coverage is reconciled.
+- `asset-descriptor-v3.schema.json` declares schema/media/encoding, compressed
+  and inflated sizes, SHA-256, cohort, capability, and HTTPS URL. The approved
+  per-capability size ceilings are encoded in the schema.
+- `generation-manifest-v3.schema.json` binds one immutable finalized generation
+  to coverage, ledger ancestry, producer/normalizer versions, and
+  content-addressed capability assets.
+- `generation-pointer-v3.schema.json` is the small rolling `manifest-v3`
+  document with independent `latest_observation` and `latest_complete` heads.
+
+These contracts are dormant until the deterministic v3 builder and dual-read
+AR-app bridge ship. V1 assets and URLs remain unchanged during that migration.

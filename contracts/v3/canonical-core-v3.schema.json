@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
+  "title": "AustralianRates canonical visible-rate core v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "normalization_version", "observation_date", "products"],
+  "properties": {
+    "schema_version": { "const": 3 },
+    "normalization_version": { "type": "string", "minLength": 1 },
+    "observation_date": { "type": "string", "format": "date" },
+    "products": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/product" }
+    }
+  },
+  "$defs": {
+    "digestId": {
+      "type": "string",
+      "pattern": "^(?:provider(?:-fallback)?|product|rate|fee):v1:[0-9a-f]{64}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "decimalString": {
+      "type": "string",
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "nonnegativeDecimalString": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "fractionString": {
+      "type": "string",
+      "pattern": "^(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_uid",
+        "provider_identity_status",
+        "product_uid",
+        "product_id",
+        "rate_uid",
+        "rate_identity_status",
+        "legacy_aliases"
+      ],
+      "properties": {
+        "provider_uid": { "$ref": "#/$defs/digestId" },
+        "provider_identity_status": { "enum": ["confirmed", "fallback", "ambiguous"] },
+        "product_uid": { "$ref": "#/$defs/digestId" },
+        "product_id": { "type": "string", "minLength": 1 },
+        "rate_uid": { "oneOf": [{ "$ref": "#/$defs/digestId" }, { "type": "null" }] },
+        "rate_identity_status": {
+          "oneOf": [
+            { "enum": ["confirmed", "fallback", "ambiguous"] },
+            { "type": "null" }
+          ]
+        },
+        "legacy_aliases": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "productIdentity": {
+      "allOf": [
+        { "$ref": "#/$defs/identity" },
+        {
+          "properties": {
+            "provider_identity_status": { "enum": ["confirmed", "fallback"] },
+            "rate_uid": { "type": "null" },
+            "rate_identity_status": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "rateIdentity": {
+      "allOf": [
+        { "$ref": "#/$defs/identity" },
+        {
+          "properties": {
+            "provider_identity_status": { "enum": ["confirmed", "fallback"] },
+            "rate_uid": { "$ref": "#/$defs/digestId" },
+            "rate_identity_status": { "enum": ["confirmed", "ambiguous"] }
+          }
+        }
+      ]
+    },
+    "typedRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "metric", "basis", "evidence_status", "evidence_ids"],
+      "properties": {
+        "value": { "$ref": "#/$defs/decimalString" },
+        "unit": { "enum": ["fraction_per_annum", "percentage_points", "basis_points"] },
+        "metric": {
+          "enum": [
+            "advertised_interest",
+            "comparison_interest",
+            "base_interest",
+            "conditional_interest",
+            "introductory_interest",
+            "published_reversion_interest",
+            "rba_cash_rate",
+            "rate_change",
+            "catalogue_gap"
+          ]
+        },
+        "basis": {
+          "enum": ["advertised", "comparison", "base", "conditional", "introductory", "published_reversion", "official", "observed"]
+        },
+        "evidence_status": { "enum": ["verified", "published", "observed", "partial", "unknown"] },
+        "evidence_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" }, "uniqueItems": true }
+      },
+      "allOf": [
+        { "if": { "properties": { "metric": { "const": "advertised_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "advertised" } } } },
+        { "if": { "properties": { "metric": { "const": "comparison_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "comparison" } } } },
+        { "if": { "properties": { "metric": { "const": "base_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "base" } } } },
+        { "if": { "properties": { "metric": { "const": "conditional_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "conditional" } } } },
+        { "if": { "properties": { "metric": { "const": "introductory_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "introductory" } } } },
+        { "if": { "properties": { "metric": { "const": "published_reversion_interest" } } }, "then": { "properties": { "value": { "$ref": "#/$defs/fractionString" }, "unit": { "const": "fraction_per_annum" }, "basis": { "const": "published_reversion" } } } },
+        { "if": { "properties": { "metric": { "const": "rba_cash_rate" } } }, "then": { "properties": { "unit": { "const": "percentage_points" }, "basis": { "const": "official" } } } },
+        { "if": { "properties": { "metric": { "const": "rate_change" } } }, "then": { "properties": { "unit": { "const": "basis_points" }, "basis": { "const": "observed" } } } },
+        { "if": { "properties": { "metric": { "const": "catalogue_gap" } } }, "then": { "properties": { "unit": { "const": "percentage_points" }, "basis": { "const": "observed" } } } }
+      ]
+    },
+    "typedFeeRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "evidence_status", "evidence_ids"],
+      "properties": {
+        "value": { "$ref": "#/$defs/fractionString" },
+        "unit": { "const": "fraction_of_amount" },
+        "evidence_status": { "enum": ["verified", "published", "observed", "partial", "unknown"] },
+        "evidence_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" }, "uniqueItems": true }
+      }
+    },
+    "productInterestRate": {
+      "allOf": [
+        { "$ref": "#/$defs/typedRate" },
+        {
+          "properties": {
+            "metric": {
+              "enum": [
+                "advertised_interest",
+                "base_interest",
+                "conditional_interest",
+                "introductory_interest",
+                "published_reversion_interest"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "comparisonRate": {
+      "allOf": [
+        { "$ref": "#/$defs/typedRate" },
+        { "properties": { "metric": { "const": "comparison_interest" } } }
+      ]
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_kind",
+        "consumer_section",
+        "classification_status",
+        "classification_basis",
+        "classification_version",
+        "quarantine_reason"
+      ],
+      "properties": {
+        "product_kind": { "enum": ["mortgage", "savings_account", "transaction_account", "mortgage_offset", "term_deposit", "other", "unknown"] },
+        "consumer_section": { "oneOf": [{ "enum": ["mortgage", "savings", "term_deposit"] }, { "type": "null" }] },
+        "classification_status": { "enum": ["confirmed", "quarantined", "unknown"] },
+        "classification_basis": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "classification_version": { "type": "string", "minLength": 1 },
+        "quarantine_reason": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "classification_status": { "const": "confirmed" } } },
+          "then": {
+            "properties": {
+              "product_kind": { "enum": ["mortgage", "savings_account", "term_deposit"] },
+              "consumer_section": { "enum": ["mortgage", "savings", "term_deposit"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "classification_status": { "const": "confirmed" } } },
+          "then": { "properties": { "quarantine_reason": { "type": "null" } } },
+          "else": { "properties": { "consumer_section": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "product_kind": { "const": "mortgage" }, "classification_status": { "const": "confirmed" } } },
+          "then": { "properties": { "consumer_section": { "const": "mortgage" } } }
+        },
+        {
+          "if": { "properties": { "product_kind": { "const": "savings_account" }, "classification_status": { "const": "confirmed" } } },
+          "then": { "properties": { "consumer_section": { "const": "savings" } } }
+        },
+        {
+          "if": { "properties": { "product_kind": { "const": "term_deposit" }, "classification_status": { "const": "confirmed" } } },
+          "then": { "properties": { "consumer_section": { "const": "term_deposit" } } }
+        }
+      ]
+    },
+    "productEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability",
+        "fee_disclosure_status",
+        "eligibility_disclosure_status",
+        "pricing_status",
+        "evidence_ids",
+        "observed_at",
+        "effective_date",
+        "source_updated_at",
+        "source_urls"
+      ],
+      "properties": {
+        "availability": { "enum": ["public", "restricted", "business", "linked", "closed", "unknown"] },
+        "fee_disclosure_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "eligibility_disclosure_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "pricing_status": { "enum": ["complete", "partial", "unpriced", "unknown"] },
+        "evidence_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" }, "uniqueItems": true },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "effective_date": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "source_updated_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "source_urls": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^https://" }, "uniqueItems": true }
+      }
+    },
+    "semanticCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value", "additional_info"],
+      "properties": {
+        "type": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "value": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "additional_info": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "semanticTierRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "method", "minimum", "maximum", "additional_info", "conditions"],
+      "properties": {
+        "unit": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "method": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "minimum": { "oneOf": [{ "$ref": "#/$defs/decimalString" }, { "type": "null" }] },
+        "maximum": { "oneOf": [{ "$ref": "#/$defs/decimalString" }, { "type": "null" }] },
+        "additional_info": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/semanticCondition" } }
+      }
+    },
+    "semanticTier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "rate_type", "application_type", "application_frequency", "calculation_frequency", "repayment_type", "loan_purpose", "interest_payment_due", "duration", "additional_info", "tiers", "conditions"],
+      "properties": {
+        "family": { "enum": ["deposit", "lending"] },
+        "rate_type": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "application_type": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "application_frequency": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "calculation_frequency": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "repayment_type": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "loan_purpose": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "interest_payment_due": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "duration": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "additional_info": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "tiers": { "type": "array", "items": { "$ref": "#/$defs/semanticTierRange" } },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/semanticCondition" } }
+      }
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "advertised", "comparison", "semantic_tier", "exact_alert_eligible", "source_index"],
+      "properties": {
+        "identity": { "$ref": "#/$defs/rateIdentity" },
+        "advertised": { "$ref": "#/$defs/productInterestRate" },
+        "comparison": { "oneOf": [{ "$ref": "#/$defs/comparisonRate" }, { "type": "null" }] },
+        "semantic_tier": { "$ref": "#/$defs/semanticTier" },
+        "exact_alert_eligible": { "type": "boolean" },
+        "source_index": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identity": {
+                "properties": { "rate_identity_status": { "const": "ambiguous" } }
+              }
+            }
+          },
+          "then": { "properties": { "exact_alert_eligible": { "const": false } } }
+        }
+      ]
+    },
+    "fee": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fee_uid", "semantic_fee", "disclosure_status", "currency", "fixed_amount", "minimum_amount", "maximum_amount", "rate", "condition", "evidence_ids"],
+      "properties": {
+        "fee_uid": { "$ref": "#/$defs/digestId" },
+        "semantic_fee": { "$ref": "#/$defs/semanticFee" },
+        "disclosure_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "currency": { "oneOf": [{ "type": "string", "pattern": "^[A-Z]{3}$" }, { "type": "null" }] },
+        "fixed_amount": { "oneOf": [{ "$ref": "#/$defs/nonnegativeDecimalString" }, { "type": "null" }] },
+        "minimum_amount": { "oneOf": [{ "$ref": "#/$defs/nonnegativeDecimalString" }, { "type": "null" }] },
+        "maximum_amount": { "oneOf": [{ "$ref": "#/$defs/nonnegativeDecimalString" }, { "type": "null" }] },
+        "rate": { "oneOf": [{ "$ref": "#/$defs/typedFeeRate" }, { "type": "null" }] },
+        "condition": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "evidence_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" }, "uniqueItems": true }
+      },
+      "allOf": [
+        { "not": { "properties": { "fixed_amount": { "type": "string" }, "minimum_amount": { "type": "string" } } } },
+        { "not": { "properties": { "fixed_amount": { "type": "string" }, "maximum_amount": { "type": "string" } } } },
+        { "not": { "properties": { "fixed_amount": { "type": "string" }, "rate": { "type": "object" } } } },
+        { "not": { "properties": { "minimum_amount": { "type": "string" }, "rate": { "type": "object" } } } },
+        { "not": { "properties": { "maximum_amount": { "type": "string" }, "rate": { "type": "object" } } } },
+        {
+          "if": {
+            "properties": {
+              "disclosure_status": { "const": "complete" },
+              "fixed_amount": { "type": "string" }
+            }
+          },
+          "then": { "properties": { "currency": { "type": "string" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "disclosure_status": { "const": "complete" },
+              "minimum_amount": { "type": "string" }
+            }
+          },
+          "then": { "properties": { "currency": { "type": "string" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "disclosure_status": { "const": "complete" },
+              "maximum_amount": { "type": "string" }
+            }
+          },
+          "then": { "properties": { "currency": { "type": "string" } } }
+        }
+      ]
+    },
+    "semanticFee": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fee_type", "method", "cadence"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "fee_type": { "type": "string", "minLength": 1 },
+        "method": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "cadence": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "source_kind", "source_path", "source_locator", "source_sha256", "source_record_sha256", "observed_at", "effective_date", "source_updated_at", "source_url"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^evidence:v1:[0-9a-f]{64}$" },
+        "source_kind": { "type": "string", "minLength": 1 },
+        "source_path": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\\\)(?!.*:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+        "source_locator": { "type": "string", "minLength": 1 },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "source_record_sha256": { "$ref": "#/$defs/sha256" },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "effective_date": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "source_updated_at": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "source_url": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://" }, { "type": "null" }] }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "normalization_version", "identity", "display_name", "provider_display_name", "classification", "evidence", "rates", "fees", "evidence_refs"],
+      "properties": {
+        "schema_version": { "const": 3 },
+        "normalization_version": { "type": "string", "minLength": 1 },
+        "identity": { "$ref": "#/$defs/productIdentity" },
+        "display_name": { "type": "string", "minLength": 1 },
+        "provider_display_name": { "type": "string", "minLength": 1 },
+        "classification": { "$ref": "#/$defs/classification" },
+        "evidence": { "$ref": "#/$defs/productEvidence" },
+        "rates": { "type": "array", "items": { "$ref": "#/$defs/rate" } },
+        "fees": { "type": "array", "items": { "$ref": "#/$defs/fee" } },
+        "evidence_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    }
+  }
+}

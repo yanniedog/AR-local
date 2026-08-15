@@ -1,0 +1,52 @@
+{
+  "schema_version": 3,
+  "generation_id": "gen-2026-08-14-r0001-3412724b1a58",
+  "generation_revision": 1,
+  "generation_digest": "3412724b1a58ff995bae9a7b7dd7f372c81afc10d4fe104d1556b8b2f7ad2d8c",
+  "observation_date": "2026-08-14",
+  "observed_at": "2026-08-14T09:30:00+10:00",
+  "observation_state": "complete",
+  "ledger_state": "finalized",
+  "normalization_version": "canonical-v3-domain-v1",
+  "producer_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "coverage": {
+    "products_discovered": 10,
+    "products_priced": 8,
+    "products_consumer_eligible": 6,
+    "rate_tiers_eligible": 12,
+    "providers_registered": 5,
+    "providers_attempted": 5,
+    "providers_responded": 5,
+    "providers_complete": 4,
+    "providers_empty": 1,
+    "providers_partial": 0,
+    "providers_failed": 0,
+    "providers_not_attempted": 0,
+    "register_sources_attempted": 1,
+    "register_sources_complete": 1,
+    "register_provenance_complete": true,
+    "failure_records": 0,
+    "corrupt_failure_records": 0,
+    "exclusions_by_reason": {
+      "mortgage_linked_offset": 2,
+      "transaction_account": 2
+    },
+    "failure_provenance_complete": true,
+    "reconciliation_status": "reconciled"
+  },
+  "prior_ledger_digest": null,
+  "ledger_event_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "capabilities": {
+    "core": {
+      "schema_id": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
+      "media_type": "application/json",
+      "encoding": "gzip",
+      "compressed_bytes": 1024,
+      "uncompressed_bytes": 4096,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json.gz",
+      "cohort": "confirmed-consumer-products",
+      "capability": "core"
+    }
+  }
+}
