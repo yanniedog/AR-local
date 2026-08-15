@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
+import signal
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -25,8 +27,11 @@ REPO_ROOT = Path(__file__).resolve().parent
 GRACE_MINUTES = 30
 SERVICE_NAME = "ar-local-daily.service"
 SUBPROCESS_STATUS_TIMEOUT_SEC = 10
-SUBPROCESS_INGEST_TIMEOUT_SEC = 2 * 60 * 60
+SUBPROCESS_INGEST_TIMEOUT_SEC = 6 * 60 * 60
 SUBPROCESS_PAYLOAD_TIMEOUT_SEC = 30 * 60
+SUBPROCESS_TERMINATE_GRACE_SEC = 30
+PROCESS_GROUPS_SUPPORTED = os.name != "nt"
+FORCE_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
 def export_root_for(date_text: str) -> Path:
@@ -60,6 +65,48 @@ def service_active() -> bool:
     return (result.stdout or "").strip() in ("active", "activating")
 
 
+def run_ingest_process_group(cmd: list[str]) -> None:
+    """Fence and reap the entire catch-up tree if its long timeout expires."""
+    grouped = PROCESS_GROUPS_SUPPORTED
+    process = subprocess.Popen(
+        cmd,
+        cwd=REPO_ROOT,
+        shell=False,
+        start_new_session=grouped,
+    )
+    try:
+        return_code = process.wait(timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        try:
+            if grouped:
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=SUBPROCESS_TERMINATE_GRACE_SEC)
+        except subprocess.TimeoutExpired:
+            try:
+                if grouped:
+                    os.killpg(process.pid, FORCE_KILL_SIGNAL)
+                else:
+                    process.kill()
+            except ProcessLookupError:
+                pass
+            process.wait()
+        else:
+            if grouped:
+                try:
+                    os.killpg(process.pid, 0)
+                    os.killpg(process.pid, FORCE_KILL_SIGNAL)
+                except ProcessLookupError:
+                    pass
+        raise
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, cmd)
+
+
 def run_daily_ingest(date_text: str, dry_run: bool) -> None:
     date_text = str(date_text)
     cmd = [
@@ -73,7 +120,7 @@ def run_daily_ingest(date_text: str, dry_run: bool) -> None:
     if dry_run:
         print(f"DRY RUN: would run {shlex.join(cmd)}")
         return
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, shell=False, timeout=SUBPROCESS_INGEST_TIMEOUT_SEC)
+    run_ingest_process_group(cmd)
 
 
 def run_payload_retry(dry_run: bool) -> None:

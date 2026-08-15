@@ -6,6 +6,9 @@ OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
+KillMode=control-group
+TimeoutStopSec=45s
+RuntimeMaxSec=6h15min
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}

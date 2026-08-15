@@ -26,6 +26,7 @@ SERVICE_TEMPLATES = (
     "ar-local-ingest-now.service",
     "ar-local-boot-recovery.service",
 )
+INGEST_PROCESS_TEMPLATES = SERVICE_TEMPLATES[:3]
 
 
 def test_watchdog_never_accepts_markerless_nonzero_export(
@@ -203,6 +204,49 @@ def test_ingest_units_preserve_service_user_home(name: str) -> None:
     text = (ROOT / "deploy" / "pi" / name).read_text(encoding="utf-8")
     assert "Environment=HOME={{AR_LOCAL_HOME}}" in text
     assert "Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config" in text
+
+
+@pytest.mark.parametrize("name", INGEST_PROCESS_TEMPLATES)
+def test_ingest_units_kill_the_whole_process_tree(name: str) -> None:
+    text = (ROOT / "deploy" / "pi" / name).read_text(encoding="utf-8")
+    assert "KillMode=control-group" in text
+    assert "TimeoutStopSec=45s" in text
+    assert "RuntimeMaxSec=6h15min" in text
+
+
+def test_watchdog_timeout_terminates_the_catch_up_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = ["python3", "pi_daily_sync.py"]
+    process = mock.Mock(pid=4321)
+    process.wait.side_effect = [
+        subprocess.TimeoutExpired(command, pi_daily_watchdog.SUBPROCESS_INGEST_TIMEOUT_SEC),
+        0,
+    ]
+    monkeypatch.setattr(pi_daily_watchdog, "PROCESS_GROUPS_SUPPORTED", True)
+    popen = mock.Mock(return_value=process)
+    monkeypatch.setattr(pi_daily_watchdog.subprocess, "Popen", popen)
+    killpg = mock.Mock()
+    monkeypatch.setattr(pi_daily_watchdog.os, "killpg", killpg, raising=False)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        pi_daily_watchdog.run_ingest_process_group(command)
+
+    popen.assert_called_once_with(
+        command,
+        cwd=pi_daily_watchdog.REPO_ROOT,
+        shell=False,
+        start_new_session=True,
+    )
+    assert killpg.call_args_list == [
+        mock.call(4321, pi_daily_watchdog.signal.SIGTERM),
+        mock.call(4321, 0),
+        mock.call(4321, pi_daily_watchdog.FORCE_KILL_SIGNAL),
+    ]
+    assert process.wait.call_args_list == [
+        mock.call(timeout=pi_daily_watchdog.SUBPROCESS_INGEST_TIMEOUT_SEC),
+        mock.call(timeout=pi_daily_watchdog.SUBPROCESS_TERMINATE_GRACE_SEC),
+    ]
 
 
 def test_systemd_installer_resolves_service_user_home_from_passwd() -> None:
