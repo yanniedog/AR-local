@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import json
 import shutil
+import subprocess
 from pathlib import Path
 from unittest import mock
 
@@ -237,6 +238,68 @@ def test_daily_ingest_never_inspects_or_changes_checkout(
     with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
         with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload"):
             assert pi_daily_sync.main(["--banks-only"]) == 0
+    ingest.assert_called_once()
+
+
+def test_pi_daily_ingest_pauses_and_resumes_dashboard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
+    events: list[str] = []
+
+    def control(command, **_kwargs):
+        events.append(command[2])
+        return subprocess.CompletedProcess(command, 0)
+
+    def ingest(*_args, **_kwargs):
+        events.append("ingest")
+
+    monkeypatch.setattr(pi_daily_sync.subprocess, "run", control)
+    monkeypatch.setattr(pi_daily_sync, "run_checked", ingest)
+
+    assert pi_daily_sync.main(["--banks-only"]) == 0
+    assert events == ["stop", "ingest", "start"]
+
+
+def test_pi_daily_ingest_resumes_dashboard_after_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
+    events: list[str] = []
+
+    def control(command, **_kwargs):
+        events.append(command[2])
+        return subprocess.CompletedProcess(command, 0)
+
+    def fail_ingest(*_args, **_kwargs):
+        events.append("ingest")
+        raise subprocess.CalledProcessError(1, ["cdr_daily.py"])
+
+    monkeypatch.setattr(pi_daily_sync.subprocess, "run", control)
+    monkeypatch.setattr(pi_daily_sync, "run_checked", fail_ingest)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        pi_daily_sync.main(["--banks-only"])
+    assert events == ["stop", "ingest", "start"]
+
+
+def test_dashboard_pause_failure_never_blocks_daily_ingest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
+    monkeypatch.setattr(
+        pi_daily_sync.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 1),
+    )
+    with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
+        assert pi_daily_sync.main(["--banks-only"]) == 0
     ingest.assert_called_once()
 
 
