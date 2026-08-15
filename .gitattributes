@@ -1,2 +1,6 @@
 deploy/pi/*.sh text eol=lf
 deploy/pi/*.sudoers text eol=lf
+
+# These fixtures are literal, hash-bound evidence. Never apply checkout EOL conversion.
+contracts/v3/fixtures/valid-canonical-core-v3.json -text
+tests/fixtures/canonical_domain_real_observations.json -text

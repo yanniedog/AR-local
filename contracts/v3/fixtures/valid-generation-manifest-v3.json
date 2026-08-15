@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "generation_id": "gen-2026-08-14-r0001-1b7f0daf6396",
+  "generation_id": "gen-2026-08-14-r0001-4debad48f7d3",
   "generation_revision": 1,
-  "generation_digest": "1b7f0daf63968eacf0f11bfdd54ea11a721e53459021454dd99eba292d2b369f",
+  "generation_digest": "4debad48f7d37bb5a4f97000315530f57e05829b6c31435411f05692fca3bd17",
   "observation_date": "2026-08-14",
   "observed_at": "2026-08-14T09:30:00+10:00",
   "observation_state": "complete",
@@ -39,10 +39,10 @@
       "schema_id": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
       "media_type": "application/json",
       "encoding": "identity",
-      "compressed_bytes": 116,
-      "uncompressed_bytes": 116,
-      "sha256": "7b283262709d500f8412c57e31ca03f130632b2b4ca36a67f20a7a37a1f1f157",
-      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/7b283262709d500f8412c57e31ca03f130632b2b4ca36a67f20a7a37a1f1f157.json",
+      "compressed_bytes": 115,
+      "uncompressed_bytes": 115,
+      "sha256": "3a0be274494f71be1739aceb98e349bb74b3ddfac2eaa5bf0a782e1e629650c6",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/3a0be274494f71be1739aceb98e349bb74b3ddfac2eaa5bf0a782e1e629650c6.json",
       "cohort": "confirmed-consumer-products",
       "capability": "core"
     }
