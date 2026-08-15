@@ -1,6 +1,7 @@
 """Run loading and safe baseline selection for normalized product changes."""
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
@@ -114,14 +115,13 @@ def _iter_sqlite_fact_groups(
     export_root: Path,
 ) -> Iterator[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
     database = export_root / "local-cdr.sqlite"
-    if not _sqlite_facts_compatible(database, run_date(export_root)):
-        return
     selected = ", ".join(f'"{column}"' for column in _FACT_COLUMNS)
-    with sqlite3.connect(_sqlite_uri(database), uri=True) as connection:
+    with closing(sqlite3.connect(_sqlite_uri(database), uri=True)) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            f"SELECT {selected} FROM bank_product_facts "
-            "ORDER BY provider COLLATE NOCASE, provider, product_id, dataset, fact_id"
+            f"SELECT {selected} FROM bank_product_facts "  # noqa: S608 - trusted constant columns
+            "ORDER BY TRIM(provider) COLLATE NOCASE, TRIM(provider), "
+            "TRIM(product_id), TRIM(dataset), fact_id"
         )
         current_key: Optional[Tuple[str, str, str]] = None
         current_facts: List[Dict[str, Any]] = []
@@ -200,7 +200,7 @@ def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
 def iter_run_fact_groups(
     run_root: Path,
 ) -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
-    """Yield one prior product at a time from immutable normalized evidence."""
+    """Stream SQLite facts by product; legacy JSON/raw fallback materializes products."""
     export_root = _export_root(run_root)
     database = export_root / "local-cdr.sqlite"
     if _sqlite_facts_compatible(database, run_date(run_root)):

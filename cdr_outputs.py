@@ -509,6 +509,7 @@ def _exclude_failed_missing_product_groups(
     current_facts: List[Dict[str, Any]],
     failures: List[Dict[str, Any]],
 ) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, int]]:
+    """Return filtered groups; the count is final after the iterable is exhausted."""
     current_keys = {
         (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
         for row in current_facts
