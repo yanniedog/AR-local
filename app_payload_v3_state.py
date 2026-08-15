@@ -233,12 +233,28 @@ def asset_filename(descriptor: Mapping[str, Any]) -> str:
     validate_asset_descriptor(descriptor)
     parsed = urllib.parse.urlparse(str(descriptor["url"]))
     filename = PurePosixPath(parsed.path).name
-    if filename != f"{descriptor['sha256']}.json.gz":
+    suffix = ".json.gz" if descriptor["encoding"] == "gzip" else ".json"
+    if filename != f"{descriptor['sha256']}{suffix}":
         raise PromotionError("capability URL filename is not its exact SHA-256")
     expected_url = release_url(CANONICAL_REPO, CONTENT_RELEASE_TAG, filename)
     if str(descriptor["url"]) != expected_url:
         raise PromotionError("capability URL is outside the v3 content release")
     return filename
+
+
+def validate_manifest_head_url(
+    head: Mapping[str, Any], repo: str = CANONICAL_REPO
+) -> str:
+    expected = release_url(
+        repo,
+        CANDIDATE_TAG_PREFIX + str(head["generation_id"]),
+        f"{head['manifest_sha256']}.json",
+    )
+    if head.get("manifest_url") != expected:
+        raise PromotionError(
+            "generation head manifest URL is not hash-bound to its candidate"
+        )
+    return expected
 
 
 @dataclass(frozen=True)
@@ -498,13 +514,7 @@ def validate_dates_index(value: Mapping[str, Any]) -> None:
             raise PromotionError("complete dates index generation digest is invalid")
         if not _SHA256.fullmatch(manifest_sha256):
             raise PromotionError("complete dates index manifest hash is invalid")
-        expected_url = release_url(
-            CANONICAL_REPO,
-            CANDIDATE_TAG_PREFIX + generation_id,
-            f"{manifest_sha256}.json",
-        )
-        if entry["manifest_url"] != expected_url:
-            raise PromotionError("complete dates index manifest URL is not hash-bound")
+        validate_manifest_head_url(entry)
         if observation_date <= previous_date:
             raise PromotionError("complete dates index entries are not strictly ordered")
         previous_date = observation_date
@@ -584,4 +594,5 @@ __all__ = [
     "validate_candidate_release_identity",
     "validate_candidate_draft_assets",
     "validate_dates_index",
+    "validate_manifest_head_url",
 ]

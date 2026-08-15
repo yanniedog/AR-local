@@ -29,8 +29,11 @@ enforced by `cdr_domain.contract_validation`:
   `generation_digest`;
 - pointer heads separately bind the SHA-256 of the serialized generation
   manifest bytes as `manifest_sha256`;
-- every asset and manifest URL uses the canonical AR-local GitHub release
-  origin and contains its declared byte SHA-256;
+- every identity capability URL is exactly `app-payload-gen/<sha256>.json`, every
+  gzip capability URL is exactly `app-payload-gen/<sha256>.json.gz`, and every
+  pointer/index manifest URL is exactly
+  `app-payload-v3-candidate-<generation_id>/<manifest_sha256>.json` on the
+  canonical AR-local GitHub release origin;
 - identity-encoded assets have identical compressed and uncompressed byte counts;
 - the rolling pointer carries the exact producer contract-set SHA-256.
 

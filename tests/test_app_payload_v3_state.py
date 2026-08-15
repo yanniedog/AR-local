@@ -10,6 +10,7 @@ from app_payload_v3_state import (
     CANONICAL_REPO,
     CandidateBundle,
     PromotionError,
+    asset_filename,
     build_dates_index,
     build_pointer,
     complete_heads,
@@ -218,3 +219,31 @@ def test_ordered_census_rejects_branches_and_cycles(tmp_path):
     )
     with pytest.raises(PromotionError, match="disconnected ledger lineage"):
         ordered_census((cycled_root, child))
+
+
+def test_asset_filename_accepts_canonical_identity_descriptor():
+    manifest = json.loads(
+        (ROOT / "contracts/v3/fixtures/valid-generation-manifest-v3.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    descriptor = manifest["capabilities"]["core"]
+    assert descriptor["encoding"] == "identity"
+    assert asset_filename(descriptor) == f"{descriptor['sha256']}.json"
+
+
+@pytest.mark.parametrize("mutation", ["prefix", "gzip-suffix"])
+def test_asset_filename_rejects_noncanonical_identity_location(mutation):
+    manifest = json.loads(
+        (ROOT / "contracts/v3/fixtures/valid-generation-manifest-v3.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    descriptor = dict(manifest["capabilities"]["core"])
+    digest = descriptor["sha256"]
+    replacement = (
+        f"prefix-{digest}.json" if mutation == "prefix" else f"{digest}.json.gz"
+    )
+    descriptor["url"] = descriptor["url"].replace(f"{digest}.json", replacement)
+    with pytest.raises(PromotionError, match="filename is not its exact SHA-256"):
+        asset_filename(descriptor)

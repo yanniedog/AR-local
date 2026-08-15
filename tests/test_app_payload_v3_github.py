@@ -29,9 +29,12 @@ from app_payload_v3_state import (
 from app_payload_v3_promotion import (
     ConcurrencyError,
     PromotionError,
+    _remote_bundle,
     _verified_execution_backend,
+    load_pointer,
 )
 from app_payload_v3_state import LOCK_FILENAME
+from cdr_domain.contract_validation import contract_sha256
 from cdr_domain.serialize import canonical_json_bytes
 
 
@@ -97,6 +100,57 @@ def test_public_fetch_accepts_exact_largest_declared_cap_and_rejects_larger(
             "https://github.com/yanniedog/AR-local/releases/download/tag/asset",
             MAX_PUBLIC_BYTES + 1,
         )
+
+
+def test_remote_bundle_rejects_noncanonical_capability_url_before_asset_fetch():
+    manifest = json.loads(
+        (ROOT / "contracts/v3/fixtures/valid-generation-manifest-v3.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    descriptor = manifest["capabilities"]["core"]
+    digest = descriptor["sha256"]
+    descriptor["url"] = descriptor["url"].replace(
+        f"/{digest}.json", f"/prefix-{digest}.json"
+    )
+    manifest_bytes = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")
+    ).encode() + b"\n"
+    fetches: list[str] = []
+
+    class NoncanonicalRemote:
+        def fetch_url(self, url: str, _max_bytes: int) -> bytes:
+            fetches.append(url)
+            if len(fetches) != 1:
+                pytest.fail("noncanonical capability URL must not be fetched")
+            return manifest_bytes
+
+    with pytest.raises(PromotionError, match="filename is not its exact SHA-256"):
+        _remote_bundle(NoncanonicalRemote(), "https://example.invalid/manifest.json")
+    assert fetches == ["https://example.invalid/manifest.json"]
+
+
+def test_pointer_rejects_noncanonical_manifest_url_before_remote_fetch():
+    head = {
+        "generation_id": "gen-2026-08-14-r0001-aaaaaaaaaaaa",
+        "generation_revision": 1, "generation_digest": "a" * 64,
+        "manifest_sha256": "b" * 64, "observation_date": "2026-08-14",
+        "observation_state": "complete",
+        "manifest_url": "https://github.com/yanniedog/AR-local/releases/download/"
+        f"another-tag/prefix-{'b' * 64}.json",
+    }
+    pointer = {
+        "schema_version": 3, "generated_at": "2026-08-15T00:00:00Z",
+        "contract_sha256": contract_sha256(),
+        "latest_observation": dict(head), "latest_complete": dict(head),
+    }
+
+    class NoFetchBackend:
+        def fetch_url(self, _url: str, _max_bytes: int) -> bytes:
+            pytest.fail("noncanonical pointer manifest URL must not be fetched")
+
+    with pytest.raises(PromotionError, match="not hash-bound to its candidate"):
+        load_pointer(canonical_json_bytes(pointer), NoFetchBackend())
 
 
 def test_backend_and_workflow_have_only_append_only_safe_write_surfaces():

@@ -47,6 +47,7 @@ from app_payload_v3_state import (
     sha256,
     strict_object,
     validate_dates_index,
+    validate_manifest_head_url,
 )
 
 
@@ -157,8 +158,9 @@ def _pointer_resources(
         generation_id = str(head["generation_id"])
         if generation_id in manifests:
             continue
+        manifest_url = validate_manifest_head_url(head)
         bundle = _remote_bundle(
-            backend, str(head["manifest_url"]), str(head["manifest_sha256"])
+            backend, manifest_url, str(head["manifest_sha256"])
         )
         if bundle.generation_id != generation_id:
             raise PromotionError("remote pointer head resolves to another generation")
@@ -221,7 +223,7 @@ def _candidate_release_assets(
             tag = parts[parts.index("download") + 1]
         except (ValueError, IndexError) as error:
             raise PromotionError("capability URL has no release tag") from error
-        name = f"{descriptor['sha256']}.json.gz"
+        name = asset_filename(descriptor)
         payload = candidate.capability_bytes[capability]
         if tag == candidate.candidate_tag:
             existing = candidate_assets.get(name)
