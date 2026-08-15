@@ -174,6 +174,16 @@ class RunJournal:
             stored = self.read()
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
             stored = None
+        if stored is not None:
+            stored_sequence = stored.get("sequence")
+            if (
+                isinstance(stored_sequence, int)
+                and not isinstance(stored_sequence, bool)
+                and stored_sequence > int(replayed["sequence"])
+            ):
+                raise InvalidJournalTransition(
+                    "journal current snapshot is ahead of immutable event replay"
+                )
         recovered = stored != replayed
         return replayed, (events[-1] if recovered and events else None)
 

@@ -341,6 +341,71 @@ def test_recovery_advances_the_unique_pending_chain_across_observation_dates(
     assert {path: path.read_bytes() for path in immutable_paths} == immutable_bytes
 
 
+def test_recovery_repairs_each_pointer_before_advancing_the_next_event(
+    tmp_path, monkeypatch
+):
+    dates = ("2026-08-11", "2026-08-12", DATE)
+    state = tmp_path / "state"
+    completions = []
+    for index, observation_date in enumerate(dates):
+        export = tmp_path / "runs" / observation_date / "_exports"
+        make_export(
+            export,
+            failures=1 if index == 2 else 0,
+            observation_date=observation_date,
+        )
+        completions.append(
+            finalize_observation(
+                export,
+                state,
+                state / f"{observation_date}.done.json",
+                observation_date=observation_date,
+                result={"run_date": observation_date, "banks_counts": {"rates": 7}},
+            )
+        )
+
+    head_path = state / "ledger-v2" / "head.json"
+    first_event_path = (
+        state
+        / "ledger-v2"
+        / "events"
+        / dates[0]
+        / f"{completions[0]['generation_id']}.json"
+    )
+    first_event = json.loads(first_event_path.read_text(encoding="utf-8"))
+    atomic_write_json(
+        head_path,
+        {
+            "schema_version": 2,
+            "generation_id": first_event["generation_id"],
+            "observation_date": dates[0],
+            "observation_state": first_event["observation_state"],
+            "event_path": first_event_path.relative_to(
+                state / "ledger-v2"
+            ).as_posix(),
+            "event_digest": first_event["event_digest"],
+            "updated_at": "2026-08-11T00:00:00Z",
+        },
+    )
+    latest_complete = state / "observation-pointers-v2" / "latest-complete.json"
+    latest_complete.unlink()
+    real_finish = cdr_finalization._finish_recovery
+
+    def crash_after_partial_head(*args, **kwargs):
+        completion, marker_path = real_finish(*args, **kwargs)
+        if args[1]["observation_date"] == DATE:
+            raise RuntimeError("simulated power loss after successor head")
+        return completion, marker_path
+
+    monkeypatch.setattr(cdr_finalization, "_finish_recovery", crash_after_partial_head)
+    with pytest.raises(RuntimeError, match="successor head"):
+        recover_pending_finalization(state, DATE)
+
+    pointer = json.loads(latest_complete.read_text(encoding="utf-8"))
+    assert pointer["observation_date"] == dates[1]
+    assert json.loads(head_path.read_text(encoding="utf-8"))["observation_date"] == DATE
+
+
 def test_delayed_older_same_day_finalizer_cannot_replace_newer_pointer(tmp_path):
     primary = tmp_path / "runs" / DATE / "_exports"
     revision = tmp_path / "runs" / DATE / "_revisions" / "later" / "_exports"
@@ -900,6 +965,21 @@ def test_run_journal_rebuilds_corrupt_current_from_immutable_events(
     assert event["sequence"] == 2
     assert journal.read()["sequence"] == 2
     assert len(list(journal.events.glob("*.json"))) == 2
+
+
+def test_run_journal_rejects_current_ahead_of_immutable_events(tmp_path):
+    journal = RunJournal(tmp_path / "journals", "generation-1")
+    journal.transition(RunStage.REGISTER, StageState.RUNNING)
+    journal.transition(RunStage.REGISTER, StageState.COMPLETE)
+    missing_event = journal.events / "000002-register_discovery-complete.json"
+    missing_event.unlink()
+    current_bytes = journal.current_path.read_bytes()
+
+    with pytest.raises(InvalidJournalTransition, match="ahead of immutable event"):
+        journal.transition(RunStage.HOLDERS, StageState.RUNNING)
+
+    assert journal.current_path.read_bytes() == current_bytes
+    assert not (journal.events / "000002-holders-running.json").exists()
 
 
 def test_run_journal_rejects_multiple_immutable_events_for_one_sequence(tmp_path):

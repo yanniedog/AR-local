@@ -327,7 +327,7 @@ def recover_pending_finalization(
             if _current_head_digest(state_dir) is not None:
                 raise ValueError("ledger head references a missing events directory")
         return None
-    repaired: list[tuple[dict[str, Any], str, Path]] = []
+    requested_marker: Optional[Path] = None
     with FileLock(root / ".append.lock"):
         while True:
             head_digest = _current_head_digest(state_dir)
@@ -338,24 +338,38 @@ def recover_pending_finalization(
                 raise ValueError("ledger head references a missing event")
             if len(pending) > 1:
                 raise ValueError("multiple ledger events compete for the current head")
-            selected = pending[0] if pending else head_candidate
-            if selected is None:
+            if head_candidate is None and not pending:
                 break
-            event, contract, contract_path = selected
+            # Repair the current head before advancing its successor.  A crash
+            # after the next head write must not strand this observation's
+            # complete pointer permanently behind the new head.
+            selected = head_candidate or pending[0]
+            completion, marker_path = _finish_recovery(
+                state_dir, *selected, head_digest
+            )
+            event_date = str(selected[0]["observation_date"])
+            if not repair_observation_pointers(
+                completion, state_dir, event_date, marker_path
+            ):
+                raise ValueError("cannot repair recovered observation pointers")
+            if event_date == observation_date:
+                requested_marker = marker_path
+            if not pending:
+                break
+            if head_candidate is None:
+                continue
+
+            event, contract, contract_path = pending[0]
             completion, marker_path = _finish_recovery(
                 state_dir, event, contract, contract_path, head_digest
             )
             event_date = str(event["observation_date"])
-            repaired.append((completion, event_date, marker_path))
-            if not pending:
-                break
-
-    requested_marker: Optional[Path] = None
-    for completion, event_date, marker_path in repaired:
-        if repair_observation_pointers(
-            completion, state_dir, event_date, marker_path
-        ) and event_date == observation_date:
-            requested_marker = marker_path
+            if not repair_observation_pointers(
+                completion, state_dir, event_date, marker_path
+            ):
+                raise ValueError("cannot repair recovered observation pointers")
+            if event_date == observation_date:
+                requested_marker = marker_path
     return requested_marker
 
 
