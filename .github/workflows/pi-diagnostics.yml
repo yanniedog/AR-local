@@ -41,11 +41,17 @@ jobs:
 
       - name: Export and revision layout
         run: |
+          # set +e throughout: this is a diagnostic sweep, so a missing path or a
+          # failing probe must not stop the remaining steps from reporting.
           set +e
-          echo "--- _exports ---"
-          ls -d "$DATA"/runs/2026-08-1*/_exports 2>/dev/null
-          echo "--- _revisions (the check that matters for an Aug 12 rollback) ---"
-          ls -d "$DATA"/runs/2026-08-1*/_revisions 2>/dev/null || echo "none"
+          echo "--- 12 most recent run directories ---"
+          printf '%-12s %-14s %s\n' "run_date" "_exports" "_revisions"
+          for d in $(ls -1d "$DATA"/runs/*/ 2>/dev/null | sort | tail -12); do
+            e=no; r=no
+            [ -d "$d/_exports" ] && e=yes
+            [ -d "$d/_revisions" ] && r=yes
+            printf '%-12s %-14s %s\n' "$(basename "$d")" "$e" "$r"
+          done
           echo "--- observation pointers ---"
           for f in latest-observation.json latest-complete.json; do
             echo "== $f =="
@@ -59,33 +65,56 @@ jobs:
           cd "$REPO" && python3 pi_daily_watchdog.py --json 2>&1 | head -40
 
       - name: Why is the observation partial
+        # The dispatch input is passed through the environment, never interpolated
+        # into the shell: ${{ }} expansion inside run: is a command-injection vector,
+        # and this job executes on a self-hosted runner.
+        env:
+          INPUT_RUN_DATE: ${{ inputs.run_date }}
         run: |
           set +e
           cd "$REPO"
-          D="${{ inputs.run_date }}"
+          D="$INPUT_RUN_DATE"
           [ -z "$D" ] && D="$(date +%F)"
+          case "$D" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+            *) echo "refusing run_date that is not YYYY-MM-DD: $D"; exit 0 ;;
+          esac
           echo "inspecting run_date=$D"
           python3 - "$D" <<'PY'
           import json, sys
+          from collections import Counter
           from pathlib import Path
           date = sys.argv[1]
-          root = Path("/srv/ar-local/data/runs") / date / "_exports"
+          run_dir = Path("/srv/ar-local/data/runs") / date
+          root = run_dir / "_exports"
+          if not run_dir.is_dir():
+              print(f"  no run directory for {date}: {run_dir}")
+              raise SystemExit(0)
+          if not root.is_dir():
+              print(f"  run directory exists but has no _exports: {root}")
+              print(f"  contents: {sorted(p.name for p in run_dir.iterdir())[:20]}")
+              raise SystemExit(0)
           # The finalization gate reads ingest status; surface the same numbers.
           for name in ("ingest-status.json", "dashboard-cache/latest.json"):
               p = root / name
               print(f"== {p} ==")
+              if not p.is_file():
+                  print("  absent")
+                  continue
               try:
                   d = json.loads(p.read_text(encoding="utf-8"))
               except Exception as exc:
                   print(f"  unreadable: {exc!r}")
+                  continue
+              if not isinstance(d, dict):
+                  print(f"  unexpected top-level type: {type(d).__name__}")
                   continue
               if name.endswith("ingest-status.json"):
                   for k in ("total", "corrupt_records", "unattributed_records",
                             "incomplete", "providers_registered", "providers_attempted",
                             "register_provenance_complete", "failure_provenance_complete"):
                       print(f"  {k}: {d.get(k)!r}")
-                  states = d.get("provider_states") or []
-                  from collections import Counter
+                  states = [s for s in (d.get("provider_states") or []) if isinstance(s, dict)]
                   print(f"  provider_states: {len(states)} -> {dict(Counter(s.get('state') for s in states))}")
                   bad = [s.get("id") or s.get("brand") for s in states
                          if s.get("state") in {"partial", "failed"}][:15]
