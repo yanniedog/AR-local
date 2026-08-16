@@ -1,6 +1,7 @@
 """Mobile payload assets: search index + pre-aggregated history."""
 from __future__ import annotations
 import re
+import sys
 from datetime import date as _date  # aliased: a `for date in dates` loop below shadows the name
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -70,17 +71,42 @@ def build_search_index(core_rows, details_map, *, run_date: str, schema_version:
     return {"schema_version": schema_version, "run_date": run_date, "products": products}
 
 def _runs_root(exports_dir: Path):
-    r = exports_dir.resolve()
-    return r.parent.parent if r.name == "_exports" and r.parent.parent.name == "runs" else None
+    """Locate the runs root above an export directory.
+
+    A day's exports live either at ``runs/<date>/_exports`` or, once that day has
+    been revised, at ``runs/<date>/_revisions/<stamp>/_exports``. Matching only the
+    first shape returns None for a revised day, which silently skips the sibling
+    scan below and collapses the history window to the single date held inside the
+    current export — so walk the ancestors rather than assume a fixed depth.
+    """
+    resolved = exports_dir.resolve()
+    if resolved.name != "_exports":
+        return None
+    for ancestor in resolved.parents:
+        if ancestor.name == "runs":
+            return ancestor
+    return None
+
+def _banks_for_date(root: Path, run_date: str):
+    """Return a day's ``banks.json`` under either the plain or revised layout."""
+    day = root / run_date
+    direct = day / "_exports" / "dashboard-cache" / run_date / "banks.json"
+    if direct.is_file():
+        return direct
+    revisions = day / "_revisions"
+    if revisions.is_dir():
+        # Newest stamp wins, so a revised day contributes its latest observation.
+        for stamp in sorted((p for p in revisions.iterdir() if p.is_dir()), reverse=True):
+            candidate = stamp / "_exports" / "dashboard-cache" / run_date / "banks.json"
+            if candidate.is_file():
+                return candidate
+    return None
 
 def _banks(exports_dir: Path, run_date: str):
     direct = exports_dir / "dashboard-cache" / run_date / "banks.json"
     if direct.is_file(): return direct
     root = _runs_root(exports_dir)
-    if root:
-        s = root / run_date / "_exports" / "dashboard-cache" / run_date / "banks.json"
-        if s.is_file(): return s
-    return None
+    return _banks_for_date(root, run_date) if root else None
 
 def _history_dates(exports_dir: Path, run_date: str) -> List[str]:
     dates = set()
@@ -98,7 +124,7 @@ def _history_dates(exports_dir: Path, run_date: str) -> List[str]:
             for child in root.iterdir()
             if child.is_dir()
             and child.name <= run_date
-            and (child / "_exports" / "dashboard-cache" / child.name / "banks.json").is_file()
+            and _banks_for_date(root, child.name) is not None
         )
     return sorted(dates)
 
@@ -209,6 +235,18 @@ def build_history_assets(
        precomputed provider rate-move events (the historical-series "bank behavior" moat).
     """
     dates = _history_dates(exports_dir, run_date)
+    if len(dates) < 2:
+        # Provider rate-move events come from diffing consecutive days, so a
+        # single-date window yields zero events by construction and the app shows
+        # "no rate changes" for every section. That is indistinguishable from a
+        # genuinely quiet day unless it is said out loud.
+        print(
+            "[app_payload] history window collapsed "
+            f"run_date={run_date} dates={len(dates)} "
+            f"exports={exports_dir} runs_root={_runs_root(exports_dir)} "
+            "reason=no_prior_day_to_diff (bank rate-move events will be empty)",
+            file=sys.stderr,
+        )
     points_by_section = {section: [] for section in VALID_SECTIONS}
     # day_stats[i][section][provider] -> (median, best, count), positionally aligned to dates.
     day_stats: List[Dict[str, Dict[str, Tuple[float, float, int]]]] = []

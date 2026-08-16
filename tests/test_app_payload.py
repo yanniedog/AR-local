@@ -1136,3 +1136,78 @@ def test_history_index_key_matches_dashboard_contract():
     assert srv.history_index_key({**row, "rate": "9.9"}) == key
     # A different product key is a different identity (current-catalogue filtering).
     assert srv.history_index_key({**row, "product_key": "P2"}) != key
+
+
+def _write_revised_history_day(runs, date, rows, *, stamp="stamp0001"):
+    """A day whose exports live under the revision layout, not runs/<date>/_exports."""
+    exports = runs / date / "_revisions" / stamp / "_exports"
+    cache = exports / "dashboard-cache" / date
+    cache.mkdir(parents=True)
+    (cache / "banks.json").write_text(json.dumps({"rates": rows}), encoding="utf-8")
+    return exports
+
+
+def _savings_row(provider, key, rate):
+    return {
+        "dataset": "Savings",
+        "provider": provider,
+        "product_key": key,
+        "rate": rate,
+        "rate_family": "deposit",
+    }
+
+
+def test_runs_root_resolves_the_revision_export_layout(tmp_path):
+    runs = tmp_path / "runs"
+    plain = runs / "2026-08-16" / "_exports"
+    revised = runs / "2026-08-16" / "_revisions" / "stamp0001" / "_exports"
+    plain.mkdir(parents=True)
+    revised.mkdir(parents=True)
+
+    assert app_payload_mobile._runs_root(plain) == runs.resolve()
+    # Regression: matching only runs/<date>/_exports returned None here, which
+    # skipped the sibling scan and collapsed history to a single date.
+    assert app_payload_mobile._runs_root(revised) == runs.resolve()
+    assert app_payload_mobile._runs_root(tmp_path / "not-an-export") is None
+
+
+def test_history_from_a_revised_export_still_sees_prior_days(tmp_path):
+    """A revised current day must not lose the sibling history window.
+
+    Reproduces the production failure where bank_history collapsed from 92
+    run_dates to 1 and every section reported zero rate-move events.
+    """
+    runs = tmp_path / "runs"
+    _write_history_day(runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0400")])
+    revised = _write_revised_history_day(
+        runs, "2026-08-16", [_savings_row("Bank", "Bank|1", "0.0500")]
+    )
+
+    _history, bank_history = _history_assets_from(revised, "2026-08-16")
+
+    assert bank_history["run_dates"] == ["2026-08-15", "2026-08-16"]
+    assert bank_history["events"], "a 100 bps move across two days must raise an event"
+    assert bank_history["events"][-1]["provider"] == "Bank"
+
+
+def test_history_includes_prior_days_that_exist_only_as_revisions(tmp_path):
+    runs = tmp_path / "runs"
+    _write_revised_history_day(runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0400")])
+    current = _write_history_day(runs, "2026-08-16", [_savings_row("Bank", "Bank|1", "0.0500")])
+
+    _history, bank_history = _history_assets_from(current, "2026-08-16")
+
+    assert bank_history["run_dates"] == ["2026-08-15", "2026-08-16"]
+    assert bank_history["events"]
+
+
+def test_collapsed_history_window_is_reported(tmp_path, capsys):
+    runs = tmp_path / "runs"
+    only = _write_history_day(runs, "2026-08-16", [_savings_row("Bank", "Bank|1", "0.0500")])
+
+    _history, bank_history = _history_assets_from(only, "2026-08-16")
+
+    assert bank_history["run_dates"] == ["2026-08-16"]
+    assert bank_history["events"] == []
+    # A one-day window silently produces "no rate changes" in the app; say so.
+    assert "history window collapsed" in capsys.readouterr().err
