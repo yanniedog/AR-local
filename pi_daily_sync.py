@@ -19,6 +19,7 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
 )
 from ar_local_subprocess import run_checked
+from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 
@@ -34,6 +35,13 @@ DASHBOARD_CONTROL_TIMEOUT_SEC = 120
 PUBLISH_PUBLISHED = "published"
 PUBLISH_WITHHELD = "withheld"
 PUBLISH_FAILED = "failed"
+
+# Compatibility v1 is allowed to advance from a fully-audited partial
+# observation only inside these deliberately narrow bounds.  The append-only
+# ledger and v3 promotion contract remain complete-only.
+PARTIAL_V1_MAX_FAILURE_RECORDS = 25
+PARTIAL_V1_MAX_FAILURE_RATIO = 0.01
+PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = 0.10
 
 
 def pause_dashboard_for_ingest() -> bool:
@@ -239,6 +247,43 @@ def _exports_from_pointer(state_dir: Path, pointer: dict) -> Optional[Path]:
     return candidate if candidate.is_dir() else None
 
 
+def _bounded_partial_v1_allowed(contract: dict) -> bool:
+    """Allow a current v1 payload without mislabelling the observation complete."""
+    if contract.get("observation_state") != "partial":
+        return False
+    coverage = contract.get("coverage")
+    if not isinstance(coverage, dict):
+        return False
+    try:
+        failures = int(coverage.get("failure_records") or 0)
+        corrupt = int(coverage.get("corrupt_failure_records") or 0)
+        unattributed = int(coverage.get("unattributed_failure_records") or 0)
+        products = int(coverage.get("products_discovered") or 0)
+        registered = int(coverage.get("providers_registered") or 0)
+        attempted = int(coverage.get("providers_attempted") or 0)
+        partial = int(coverage.get("providers_partial") or 0)
+        failed = int(coverage.get("providers_failed") or 0)
+        register_attempted = int(coverage.get("register_sources_attempted") or 0)
+        register_complete = int(coverage.get("register_sources_complete") or 0)
+    except (TypeError, ValueError):
+        return False
+    return (
+        coverage.get("failure_provenance_complete") is True
+        and coverage.get("register_provenance_complete") is True
+        and corrupt == 0
+        and unattributed == 0
+        and products > 0
+        and registered > 0
+        and attempted == registered
+        and register_attempted > 0
+        and register_complete == register_attempted
+        and failed == 0
+        and 0 < failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
+        and failures / products <= PARTIAL_V1_MAX_FAILURE_RATIO
+        and partial / registered <= PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
+    )
+
+
 def maybe_publish_app_payload(repo_root: Path) -> str:
     """Build + publish the mobile-app payload after a successful ingest.
 
@@ -261,33 +306,31 @@ def maybe_publish_app_payload(repo_root: Path) -> str:
         latest_observation = _read_observation_pointer(
             runtime_state, "latest-observation.json"
         )
-        if latest_observation.get("observation_state") == "partial":
-            print(
-                "[pi_daily_sync] app_payload promotion withheld "
-                f"run_date={latest_observation.get('observation_date', 'unknown')} "
-                "observation_state=partial"
-            )
-            return PUBLISH_WITHHELD
-        latest_complete = _read_observation_pointer(runtime_state, "latest-complete.json")
-        exports = _exports_from_pointer(runtime_state, latest_complete)
+        bounded_partial = latest_observation.get("observation_state") == "partial"
+        pointer = (
+            latest_observation
+            if bounded_partial
+            else _read_observation_pointer(runtime_state, "latest-complete.json")
+        )
+        exports = _exports_from_pointer(runtime_state, pointer)
         if exports is None:
             print(
                 "[pi_daily_sync] app_payload promotion withheld "
-                "reason=missing_or_invalid_latest_complete_pointer"
+                "reason=missing_or_invalid_observation_pointer"
             )
             return PUBLISH_WITHHELD
-        observation_date = str(latest_complete.get("observation_date") or "")
-        marker_relative = str(latest_complete.get("marker_path") or "")
+        observation_date = str(pointer.get("observation_date") or "")
+        marker_relative = str(pointer.get("marker_path") or "")
         marker_part = Path(marker_relative)
         if (
-            latest_complete.get("observation_state") != "complete"
+            pointer.get("observation_state") not in {"complete", "partial"}
             or not marker_relative
             or marker_part.is_absolute()
             or ".." in marker_part.parts
         ):
             print(
                 "[pi_daily_sync] app_payload promotion withheld "
-                "reason=invalid_latest_complete_pointer"
+                "reason=invalid_observation_pointer"
             )
             return PUBLISH_WITHHELD
         completion_marker = runtime_state / marker_part
@@ -302,7 +345,32 @@ def maybe_publish_app_payload(repo_root: Path) -> str:
                 "reason=unverified_completion_marker"
             )
             return PUBLISH_WITHHELD
-        if (
+        if bounded_partial:
+            contract_relative = str(completion.get("export_contract_path") or "")
+            contract_part = Path(contract_relative)
+            if (
+                not contract_relative
+                or contract_part.is_absolute()
+                or ".." in contract_part.parts
+            ):
+                contract = {}
+            else:
+                try:
+                    contract = load_contract(runtime_state / contract_part)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    contract = {}
+            if not _bounded_partial_v1_allowed(contract):
+                print(
+                    "[pi_daily_sync] app_payload promotion withheld "
+                    f"run_date={observation_date} observation_state=partial "
+                    "reason=outside_bounded_v1_policy"
+                )
+                return PUBLISH_WITHHELD
+            print(
+                "[pi_daily_sync] app_payload bounded partial v1 promotion "
+                f"run_date={observation_date}"
+            )
+        elif (
             completion.get("finalization_schema_version") == 2
             and completion.get("observation_state") != "complete"
         ):

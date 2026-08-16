@@ -68,8 +68,10 @@ revision. A genuinely different same-day source generation creates a revision.
 | `observation_state` | `complete`, `partial`, `failed` | Whether the observed market population and failure provenance reconcile |
 
 A partial observation is finalized and retained. It advances
-`latest-observation`, never `latest-complete`, and is withheld from compatibility
-v1 publication. Missing or malformed failure evidence cannot serialize a
+`latest-observation`, never `latest-complete`, and is normally withheld from
+compatibility v1 publication. A narrowly bounded, fully reconciled partial may
+advance v1 while remaining explicitly partial; v3 and `latest-complete` remain
+complete-only. Missing or malformed failure evidence cannot serialize a
 complete observation. Each ingest creates an explicit empty failure journal
 before holder work; a missing or unreadable journal is incomplete provenance,
 not authoritative evidence of zero failures.

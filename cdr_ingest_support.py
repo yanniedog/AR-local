@@ -910,11 +910,12 @@ def collect_register_snapshot(
     register_payload_ok = False
     register_attempts: List[Dict[str, Any]] = []
 
-    attempts: List[Tuple[str, str]] = [
-        (REGISTER_URL_SUMMARY, "cdr"),
-        (REGISTER_URL_BANKING_BRANDS, "plain"),
-        (REGISTER_URL_BANKING_REGISTER, "plain"),
-    ]
+    # The all-industries summary is the current public discovery endpoint and
+    # already contains the complete banking population.  The two legacy
+    # banking URLs formerly configured here now return
+    # permanent 404s; continuing to probe them makes an otherwise authoritative
+    # register snapshot fail provenance reconciliation every day.
+    attempts: List[Tuple[str, str]] = [(REGISTER_URL_SUMMARY, "cdr")]
 
     for source_index, (url, mode) in enumerate(attempts, start=1):
         attempt_context = {

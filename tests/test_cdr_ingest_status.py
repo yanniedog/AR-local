@@ -303,18 +303,16 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
     assert [item["status"] for item in failures] == ["max_pages_reached"]
 
 
-def test_partial_register_discovery_retains_rows_but_is_not_complete(
-    monkeypatch,
-):
+def test_canonical_register_discovery_is_complete(monkeypatch):
     success = FetchResult(
         ok=True, status=200, url="https://register.example/ok", text="{}"
     )
-    failure = FetchResult(
-        ok=False, status=503, url="https://register.example/fail", text="unavailable"
-    )
-    plain_results = iter((failure, success))
     monkeypatch.setattr(cis, "fetch_cdr_json", lambda *a, **k: success)
-    monkeypatch.setattr(cis, "fetch_json_plain", lambda *a, **k: next(plain_results))
+    monkeypatch.setattr(
+        cis,
+        "fetch_json_plain",
+        lambda *a, **k: pytest.fail("legacy register endpoints must not be requested"),
+    )
     monkeypatch.setattr(
         cis,
         "iter_banking_brands_from_payload",
@@ -334,9 +332,33 @@ def test_partial_register_discovery_retains_rows_but_is_not_complete(
         holders_filter=None,
     )
     assert snapshot.register_ok is True
+    assert snapshot.register_provenance_complete is True
+    assert len(snapshot.register_attempts) == 1
+    assert snapshot.register_attempts[0]["ok"] is True
+
+
+def test_canonical_register_failure_is_incomplete(monkeypatch):
+    failure = FetchResult(
+        ok=False, status=503, url="https://register.example/fail", text="unavailable"
+    )
+    monkeypatch.setattr(cis, "fetch_cdr_json", lambda *a, **k: failure)
+    monkeypatch.setattr(
+        cis,
+        "fetch_json_plain",
+        lambda *a, **k: pytest.fail("legacy register endpoints must not be requested"),
+    )
+
+    snapshot = cis.collect_register_snapshot(
+        timeout=1,
+        max_retries=0,
+        sleep_ms=0,
+        holders_filter=None,
+    )
+
+    assert snapshot.register_ok is False
     assert snapshot.register_provenance_complete is False
-    assert len(snapshot.register_attempts) == 3
-    assert sum(item["ok"] is True for item in snapshot.register_attempts) == 2
+    assert len(snapshot.register_attempts) == 1
+    assert snapshot.banking_brands == []
 
 
 def test_persist_ingest_status_copies_into_exports(tmp_path):
