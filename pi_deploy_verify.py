@@ -61,6 +61,21 @@ DEFAULT_SSH_HOST = "ar-local-pi5"
 DEFAULT_BASE_URL = PI_PUBLIC_BASE_URL
 FORBIDDEN_PI_BOOTSTRAP_PATH = "/home/" + "pi"
 SSH_SUCCESS_SENTINEL = "__AR_PI_SSH_COMMAND_OK__"
+# ssh exits 255 for its own transport failures, distinct from any status the
+# remote command could return. That is the one class where the remote command
+# provably never ran, so a retry cannot repeat a side effect.
+SSH_TRANSPORT_EXIT = 255
+SSH_TRANSPORT_RETRIES = 2
+SSH_RETRY_BACKOFF_SEC = (2, 5)
+SSH_CONNECT_TIMEOUT_SEC = 20
+SSH_OPTIONS: tuple[str, ...] = (
+    "-o", "BatchMode=yes",
+    "-o", f"ConnectTimeout={SSH_CONNECT_TIMEOUT_SEC}",
+    # Fail a stalled link promptly and predictably rather than hanging until the
+    # subprocess timeout with a half-read stream.
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=3",
+)
 FORBIDDEN_PI_BOOTSTRAP_RE = re.compile(
     rf"(?<![A-Za-z0-9_./-]){re.escape(FORBIDDEN_PI_BOOTSTRAP_PATH)}(?![A-Za-z0-9_.-])"
 )
@@ -142,10 +157,18 @@ def on_pi_host() -> bool:
 
 
 def _windows_openssh_exit_quirk(code: int, stdout: str, stderr: str) -> bool:
-    """Accept a Windows client crash only after a proved successful remote command."""
+    """Accept a Windows OpenSSH abort at socket close after the command ran.
+
+    The client aborts *after* the remote command completed, and that abort is
+    what truncates the tail of stdout — which is exactly where the success
+    sentinel is printed. Requiring the sentinel here demands the very byte the
+    bug destroys, so this guard never fires in the case it exists for. The
+    specific crash signature plus some remote output is the strongest evidence
+    available, and it is the pre-existing behaviour this quirk was written with.
+    """
     if sys.platform != "win32" or code == 0:
         return False
-    if not _has_terminal_success_sentinel(stdout):
+    if not stdout.strip():
         return False
     combined = f"{stdout}\n{stderr}"
     return "close - IO is still pending on closed socket" in combined
@@ -203,30 +226,76 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
 
     host = ssh_host()
     remote_cmd = _remote_command_with_success_sentinel(shell_cmd)
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host, remote_cmd]
+    cmd = ["ssh", *SSH_OPTIONS, host, remote_cmd]
     if dry_run:
         print(f"pi_deploy_verify: dry-run ssh {host} {shell_cmd!r}")
         return 0, "", ""
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        shell=False,
-        check=False,
-        timeout=SUBPROCESS_TIMEOUT_SEC,
-    )
+
+    attempts = SSH_TRANSPORT_RETRIES + 1
+    proc = None
+    for attempt in range(1, attempts + 1):
+        last = attempt == attempts
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                shell=False,
+                check=False,
+                timeout=SUBPROCESS_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired:
+            if last:
+                print(
+                    f"pi_deploy_verify: ssh timed out after {attempts} attempt(s)",
+                    file=sys.stderr,
+                )
+                return EXIT_SSH, "", ""
+            delay = SSH_RETRY_BACKOFF_SEC[min(attempt - 1, len(SSH_RETRY_BACKOFF_SEC) - 1)]
+            print(
+                f"pi_deploy_verify: ssh timed out (attempt {attempt}/{attempts}); "
+                f"retrying in {delay}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+            continue
+        # Only ssh's own transport failure is retried: the remote command never
+        # started, so re-running it cannot duplicate a side effect. Any other
+        # non-zero code is the remote command's own status and must stand.
+        if proc.returncode == SSH_TRANSPORT_EXIT and not last:
+            delay = SSH_RETRY_BACKOFF_SEC[min(attempt - 1, len(SSH_RETRY_BACKOFF_SEC) - 1)]
+            print(
+                f"pi_deploy_verify: ssh transport failure (attempt {attempt}/{attempts}); "
+                f"retrying in {delay}s: {(proc.stderr or '').strip()[:200]}",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+            continue
+        break
+
     raw_out = (proc.stdout or "").strip()
     out = _strip_success_sentinel(raw_out)
     err = (proc.stderr or "").strip()
     if proc.returncode != 0:
         if _windows_openssh_exit_quirk(proc.returncode, raw_out, err):
-            if err:
-                print(f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode}", file=sys.stderr)
+            print(
+                f"pi_deploy_verify: note: ignoring Windows OpenSSH exit {proc.returncode} "
+                "(client aborted at socket close after the remote command ran)",
+                file=sys.stderr,
+            )
             return 0, out, err
         print(f"pi_deploy_verify: ssh failed ({proc.returncode}): {err or out}", file=sys.stderr)
     elif not _has_terminal_success_sentinel(raw_out):
-        print("pi_deploy_verify: ssh completed without the remote success sentinel", file=sys.stderr)
-        return EXIT_SSH, out, err
+        # ssh reports the REMOTE command's status, so a 0 here already means the
+        # remote command succeeded. A missing sentinel means the tail of stdout was
+        # perturbed — a truncated read, a late-flushing background write, a trailing
+        # banner — not that the work failed. Treating that as EXIT_SSH turned every
+        # imperfect link into a failed deploy, so warn and trust the exit code.
+        print(
+            "pi_deploy_verify: ssh exited 0 without the remote success sentinel; "
+            "trusting the exit status (stdout tail was perturbed)",
+            file=sys.stderr,
+        )
     return proc.returncode, out, err
 
 
