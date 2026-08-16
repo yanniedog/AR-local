@@ -74,7 +74,10 @@ def test_partial_finalized_observation_is_withheld_from_app_promotion(
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
     monkeypatch.setattr(ar_local_pi_runtime, "data_runs_root", lambda _repo: tmp_path / "runs")
     with mock.patch("app_payload.build_and_publish_dual") as publish:
-        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
+        assert (
+            pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+            == pi_daily_sync.PUBLISH_WITHHELD
+        )
     publish.assert_not_called()
     assert "missing_or_invalid_latest_complete_pointer" in capsys.readouterr().out
 
@@ -115,7 +118,10 @@ def test_revision_pointer_requires_its_exact_verified_marker(
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
     with mock.patch("app_payload.build_and_publish_dual") as publish:
-        assert pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT) is True
+        assert (
+            pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+            == pi_daily_sync.PUBLISH_WITHHELD
+        )
     publish.assert_not_called()
     assert "unverified_completion_marker" in capsys.readouterr().out
 
@@ -410,7 +416,9 @@ def test_pending_payload_retry_publishes_without_ingesting(
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     pi_daily_sync.mark_payload_publication_pending(pi_daily_sync.REPO_ROOT, "test")
     with mock.patch.object(
-        pi_daily_sync, "maybe_publish_app_payload", return_value=True
+        pi_daily_sync,
+        "maybe_publish_app_payload",
+        return_value=pi_daily_sync.PUBLISH_PUBLISHED,
     ) as publish:
         with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
             assert (
@@ -432,7 +440,9 @@ def test_failed_payload_retry_keeps_pending_marker(
     monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
     pi_daily_sync.mark_payload_publication_pending(pi_daily_sync.REPO_ROOT, "test")
     with mock.patch.object(
-        pi_daily_sync, "maybe_publish_app_payload", return_value=False
+        pi_daily_sync,
+        "maybe_publish_app_payload",
+        return_value=pi_daily_sync.PUBLISH_FAILED,
     ):
         assert (
             pi_daily_sync.main(["--skip-git-sync", "--publish-existing-payload"])
@@ -457,3 +467,151 @@ def test_daily_watchdog_retries_payload_without_reingesting(
             assert pi_daily_watchdog.main([]) == 0
     retry.assert_called_once_with(False)
     ingest.assert_not_called()
+
+
+def _stage_complete_payload_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, date: str) -> Path:
+    """Stage a verified-complete observation so publication is not withheld."""
+    state = tmp_path / "data" / "state"
+    pointers = state / "observation-pointers-v2"
+    pointers.mkdir(parents=True)
+    (tmp_path / "data" / "runs" / date / "_exports").mkdir(parents=True)
+    (pointers / "latest-observation.json").write_text(
+        json.dumps({"observation_state": "complete", "observation_date": date}),
+        encoding="utf-8",
+    )
+    (pointers / "latest-complete.json").write_text(
+        json.dumps(
+            {
+                "observation_state": "complete",
+                "observation_date": date,
+                "export_path": f"runs/{date}/_exports",
+                "marker_path": f"{date}.done.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / f"{date}.done.json").write_text(
+        json.dumps(
+            {
+                "run_date": date,
+                "finalization_schema_version": 2,
+                "observation_state": "complete",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.delenv("AR_LOCAL_PAYLOAD_ENC", raising=False)
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
+    monkeypatch.setattr(pi_daily_sync, "data_runs_root", lambda _repo: tmp_path / "data" / "runs")
+    monkeypatch.setattr(pi_daily_sync, "verify_completion_marker", lambda *_a, **_k: True)
+    return state
+
+
+def _payload_manifest(date: str) -> dict:
+    return {
+        "run_date": date,
+        "files": {
+            "core": {"name": f"core-{date}.json.gz", "sha256": "core-digest"},
+            "details": {"name": f"details-{date}.json.gz", "sha256": "details-digest"},
+        },
+    }
+
+
+def test_unuploaded_payload_is_reported_failed_not_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A build that never reached the release must not be recorded as published.
+
+    publish_payload returns False (it does not raise) when gh auth is missing, and
+    build_and_publish_dual swallows a failed dated upload, so the old bool contract
+    reported a silently-skipped upload as success and cleared the retry marker.
+    """
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    manifest = _payload_manifest(date)
+    with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, False, False)):
+        with mock.patch("app_payload._live_manifest_status", return_value=("missing", None)):
+            with mock.patch("app_payload.refresh_dates_index") as refresh:
+                outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+    assert outcome == pi_daily_sync.PUBLISH_FAILED
+    refresh.assert_not_called()
+
+
+def test_live_rolling_manifest_match_counts_as_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    manifest = _payload_manifest(date)
+    with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, False, False)):
+        with mock.patch("app_payload._live_manifest_status", return_value=("present", manifest)):
+            with mock.patch("app_payload.build_and_publish_v2", return_value=({}, True)):
+                outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+    assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
+
+
+def test_newer_live_rolling_manifest_is_not_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backfill holding a newer run_date on the rolling tag is a correct skip."""
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    newer = _payload_manifest("2026-08-17")
+    with mock.patch(
+        "app_payload.build_and_publish_dual", return_value=(_payload_manifest(date), False, False)
+    ):
+        with mock.patch("app_payload._live_manifest_status", return_value=("present", newer)):
+            outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+    assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
+
+
+def test_successful_publish_refreshes_dates_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression: data_runs_root was never imported, so this always raised NameError."""
+    date = "2026-08-16"
+    _stage_complete_payload_run(tmp_path, monkeypatch, date)
+    manifest = _payload_manifest(date)
+    with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, True, True)):
+        with mock.patch("app_payload.build_and_publish_v2", return_value=({}, True)):
+            with mock.patch("app_payload.refresh_dates_index") as refresh:
+                outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+    assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
+    refresh.assert_called_once()
+    assert refresh.call_args.args[0] == tmp_path / "data" / "runs"
+    assert "dates-index refresh failed" not in capsys.readouterr().out
+
+
+def test_withheld_run_preserves_earlier_pending_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A day withheld by policy must not erase an outstanding upload from an earlier day."""
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    pi_daily_sync.mark_payload_publication_pending(pi_daily_sync.REPO_ROOT, "earlier_failure")
+    with mock.patch.object(
+        pi_daily_sync,
+        "maybe_publish_app_payload",
+        return_value=pi_daily_sync.PUBLISH_WITHHELD,
+    ):
+        with mock.patch.object(pi_daily_sync, "run_checked"):
+            assert pi_daily_sync.main(["--banks-only", "--skip-git-sync"]) == 0
+    assert pi_daily_sync.payload_publication_pending(pi_daily_sync.REPO_ROOT)
+
+
+def test_withheld_retry_keeps_pending_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    pi_daily_sync.mark_payload_publication_pending(pi_daily_sync.REPO_ROOT, "test")
+    with mock.patch.object(
+        pi_daily_sync,
+        "maybe_publish_app_payload",
+        return_value=pi_daily_sync.PUBLISH_WITHHELD,
+    ):
+        assert pi_daily_sync.main(["--skip-git-sync", "--publish-existing-payload"]) == 0
+    assert pi_daily_sync.payload_publication_pending(pi_daily_sync.REPO_ROOT)
