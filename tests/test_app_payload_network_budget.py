@@ -6,6 +6,7 @@ from app_payload_network_budget import (
     CORE_MAX_BYTES,
     DETAILS_MAX_BYTES,
     validate_payload_network_budget,
+    validate_v2_network_budget,
 )
 
 
@@ -44,3 +45,11 @@ def test_requires_declared_bytes_to_match_local_release_assets(tmp_path: Path) -
     (tmp_path / "search.gz").write_bytes(b"search")
     with pytest.raises(ValueError, match="details local bytes"):
         validate_payload_network_budget(manifest, manifest_bytes=2_000, asset_root=tmp_path)
+
+
+def test_v2_history_is_on_demand_but_still_has_a_transfer_time_budget() -> None:
+    report = validate_v2_network_budget(
+        {"files": {"product_history": {"name": "history.gz", "bytes": 125_000}}},
+        manifest_bytes=1_200,
+    )
+    assert report["capabilities"]["product_history"]["seconds"]["1_mbps"] == 1.0

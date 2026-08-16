@@ -28,6 +28,8 @@ Budgets are enforced against the compressed/encrypted bytes declared in `manifes
 | Search index (on demand) | 2 MiB |
 | Other individual asset | 1 MiB |
 | All rolling assets | 8 MiB |
+| Product history sidecar (on demand) | 8 MiB |
+| Economic sidecar (on demand) | 1 MiB |
 
 Measured 2026-08-16 against the live 2026-08-14 complete manifest:
 

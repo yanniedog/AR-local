@@ -40,6 +40,7 @@ from app_payload_contracts import (
     validate_v2_manifest,
 )
 from app_payload_publish import _gh_authed, _gh_available, _live_manifest_status
+from app_payload_network_budget import validate_v2_network_budget
 from cdr_public_api_shims import connect_readonly
 
 V2_SCHEMA_VERSION = 2
@@ -391,6 +392,12 @@ def build_v2_sidecar(
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     if len(manifest_text.encode("utf-8")) > MAX_V2_MANIFEST_BYTES:
         raise ValueError("manifest-v2 exceeds the size limit")
+    transfer_report = validate_v2_network_budget(
+        manifest,
+        manifest_bytes=len(manifest_text.encode("utf-8")),
+        asset_root=out_dir,
+    )
+    print(f"[app_payload_v2] transfer budget {transfer_report}")
     (out_dir / V2_MANIFEST_FILENAME).write_text(manifest_text, encoding="utf-8")
     return manifest
 

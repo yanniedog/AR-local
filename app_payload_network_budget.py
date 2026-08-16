@@ -19,6 +19,9 @@ DETAILS_MAX_BYTES = 4 * MIB
 SEARCH_INDEX_MAX_BYTES = 2 * MIB
 OTHER_ASSET_MAX_BYTES = 1 * MIB
 ROLLING_TOTAL_MAX_BYTES = 8 * MIB
+V2_PRODUCT_HISTORY_MAX_BYTES = 8 * MIB
+V2_ECONOMIC_OUTLOOK_MAX_BYTES = 1 * MIB
+V2_TOTAL_MAX_BYTES = 9 * MIB
 TRANSFER_SPEEDS_MBPS = (0.5, 1.0, 5.0, 20.0)
 
 
@@ -102,4 +105,51 @@ def validate_payload_network_budget(
             }
             for name, byte_count in journeys.items()
         },
+    }
+
+
+def validate_v2_network_budget(
+    manifest: Mapping[str, Any],
+    *,
+    manifest_bytes: int,
+    asset_root: Path | None = None,
+) -> dict[str, Any]:
+    if manifest_bytes <= 0 or manifest_bytes > MANIFEST_MAX_BYTES:
+        raise ValueError("manifest-v2 exceeds the network budget")
+    files = manifest.get("files")
+    if not isinstance(files, Mapping) or not files:
+        raise ValueError("manifest-v2 must declare at least one capability")
+    caps = {
+        "product_history": V2_PRODUCT_HISTORY_MAX_BYTES,
+        "economic_outlook": V2_ECONOMIC_OUTLOOK_MAX_BYTES,
+    }
+    sizes: dict[str, int] = {}
+    for key, entry in files.items():
+        key = str(key)
+        if key not in caps:
+            raise ValueError(f"manifest-v2 capability {key!r} has no network budget")
+        size = _declared_bytes(key, entry)
+        if size > caps[key]:
+            raise ValueError(f"payload {key} bytes {size} exceed {caps[key]}")
+        if asset_root is not None:
+            path = asset_root / str(entry.get("name") or "")
+            if not path.is_file() or path.stat().st_size != size:
+                raise ValueError(f"payload {key} local bytes do not match the manifest")
+        sizes[key] = size
+    total = sum(sizes.values())
+    if total > V2_TOTAL_MAX_BYTES:
+        raise ValueError(f"payload v2 total bytes {total} exceed {V2_TOTAL_MAX_BYTES}")
+    return {
+        "schema_version": 1,
+        "capabilities": {
+            key: {
+                "bytes": size,
+                "seconds": {
+                    f"{speed:g}_mbps": round(transfer_seconds(size, speed), 3)
+                    for speed in TRANSFER_SPEEDS_MBPS
+                },
+            }
+            for key, size in sizes.items()
+        },
+        "total_bytes": total,
     }
