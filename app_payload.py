@@ -66,6 +66,7 @@ from app_payload_build import (
     build_payload,
     core_section_summary,
     iter_valid_export_dates,
+    seed_from_sample,
 )
 from app_payload_common import (
     APP_MIN_VERSION,
@@ -95,7 +96,7 @@ from app_payload_common import (
     section_filter,
     utc_now_iso,
 )
-from app_payload_details import _detail_items, _detail_links, _fee_items, build_details
+from app_payload_details import _detail_items, _detail_links, build_details
 from app_payload_publish import (
     _gh_authed,
     _gh_available,
@@ -149,7 +150,6 @@ __all__ = [
     "_brand_lookup_keys",
     "_compute_payload",
     "_detail_items",
-    "_fee_items",
     "_detail_links",
     "_find_banks_json",
     "_get_brand_lookup",
@@ -208,6 +208,7 @@ __all__ = [
     "release_title",
     "retitle_payload_releases",
     "section_filter",
+    "seed_from_sample",
     "subprocess",
     "utc_now_iso",
 ]
@@ -243,6 +244,16 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_seed(args: argparse.Namespace) -> int:
+    sample_dir = Path(args.sample).resolve()
+    out_dir = Path(args.out).resolve()
+    manifest = seed_from_sample(sample_dir, out_dir, repo=args.repo, tag=args.tag)
+    print(f"[app_payload] seeded payload from sample run_date={manifest['run_date']} -> {out_dir}")
+    if args.publish:
+        publish_payload(out_dir, repo=args.repo, tag=args.tag, dry_run=args.dry_run)
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Build/publish the AR-local mobile app payload.")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo (default: %(default)s)")
@@ -266,6 +277,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--require-token", action="store_true", help="Fail (non-zero) if no gh/token.")
     p.add_argument("--force", action="store_true", help="Overwrite even a newer live manifest.")
     p.set_defaults(func=_cmd_publish)
+
+    s = sub.add_parser("seed", help="Repackage the committed app sample into a publishable payload.")
+    s.add_argument("--sample", default="mobile/assets/sample", help="Dir with core.json/details.json (default: %(default)s).")
+    s.add_argument("--out", required=True, help="Output payload dir.")
+    s.add_argument("--publish", action="store_true", help="Publish after seeding.")
+    s.add_argument("--dry-run", action="store_true", help="With --publish, only print intended uploads.")
+    s.set_defaults(func=_cmd_seed)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -21,10 +21,7 @@ cd functions && npm install && npm test && cd ..
 firebase deploy --only functions
 ```
 
-Then configure the key-service URL in the consumer owned by
-[yanniedog/AR-app](https://github.com/yanniedog/AR-app). Follow that repository's
-current configuration instructions; do not add app configuration back to
-AR-local. The expected value is:
+Then point the app at it in `mobile/app.json`:
 
 ```json
 "extra": { "keyServiceUrl": "https://australia-southeast1-<project-id>.cloudfunctions.net/issueContentKeys" }
@@ -38,11 +35,11 @@ AR-local. The expected value is:
   watch in logs.
 - Tier from custom claims (`tier: full|free`) once `ENFORCE_TIERS` flips;
   free will then receive only the `current` scope when windowed assets ship.
-- Response: `{ tier, keys: [{ scope, alg, key_id, key_hex }] }`. Secure device
-  custody and use of the response are implemented and tested in AR-app.
+- Response: `{ tier, keys: [{ scope, alg, key_id, key_hex }] }`. The app stores
+  the key in SecureStore (`mobile/src/lib/keyService.ts` → `keyVault.ts`).
 
 ## Tests
 
 `cd functions && npm test` — pure logic (`core.js`): tier/scope resolution,
 rate-limit window, and the cross-language `key_id` vector shared with
-`payload_crypto.py` and the AR-app payload decryption implementation.
+`payload_crypto.py` and `payloadCrypto.ts`.

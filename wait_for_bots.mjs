@@ -16,7 +16,6 @@ import {
 } from './scripts/lib/bot-wait-config.mjs';
 import { readBotWaitStateFile, writeBotWaitStateFile } from './scripts/lib/bot-wait-state.mjs';
 import { isGithubRateLimitError, repoSlugFromEnv } from './scripts/lib/gh-pr-review-threads.mjs';
-import { normalizeBotEventLogin } from './scripts/lib/bot-wait-presence.mjs';
 import { isBotNoise } from './scripts/lib/bot-noise.mjs';
 import { gateExemptReason } from './scripts/lib/pr-gate-exempt.mjs';
 
@@ -150,7 +149,7 @@ function fetchBotActivity(owner, name, prNumber) {
   const events = [];
   const pushEvent = (login, at, body) => {
     if (!login || !at) return;
-    events.push({ login: normalizeBotEventLogin(login, body), at, noise: isBotNoise(body) });
+    events.push({ login, at, noise: isBotNoise(body) });
   };
   for (const c of pr.comments?.nodes || []) {
     pushEvent(c.author?.login, c.createdAt, c.body);

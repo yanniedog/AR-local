@@ -111,8 +111,8 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 | Mechanism | File | Effect |
 |---|---|---|
 | **fsck auto-repair** | `cmdline.txt` `fsck.mode=force fsck.repair=yes` | Boot self-repairs an unclean filesystem instead of halting at a prompt. |
-| **Dormant hardware watchdog** | `config.txt` `dtparam=watchdog=on` | Makes the BCM watchdog device available, but does not arm a reboot countdown. |
-| **Stable recovery policy** | `RuntimeWatchdogSec=off`, `RebootWatchdogSec=off`, `ShutdownWatchdogSec=off` | Avoids reboot loops during normal boot, ingest recovery, or shutdown; bounded network and service timers perform self-healing instead. |
+| **Hardware watchdog** | `config.txt` `dtparam=watchdog=on` + `RuntimeWatchdogSec=20` | A hung kernel/boot auto-reboots. |
+| **Bounded reboot** | `RebootWatchdogSec=2min` | A hung shutdown is force-completed. |
 | **Persistent, capped logs** | journald `Storage=persistent`, `SystemMaxUse=200M` | Boot logs survive for diagnosis; logs can't fill the disk. |
 | **Tailscale auto-start + tailnet SSH** | `enable --now tailscaled`, `tailscale set --ssh` | Remote access returns automatically after a reboot; tailnet SSH is a key-independent recovery path. |
 | **Wi-Fi autoconnect forever** | NM `autoconnect-retries=0`, `priority=100`, `powersave=2` | **The actual fix:** re-joins the AP indefinitely even if the router is slow to return after an outage; no power-save dropouts. |
@@ -139,14 +139,7 @@ Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`)
   2. runs `pi_daily_watchdog.py` to catch up a daily ingest missed while powered off,
   3. emails a "Pi rebooted" alert (`pi_ingest_alert.py --reason boot-recovery`).
 - Existing `ar-local-daily-watchdog.timer` (`Persistent=true`, `OnBootSec=10min`)
-  remains the backstop for any still-missing run. Approved deployments re-enable
-  both daily timers rather than assuming their prior state. A failed RAM-staged
-  attempt is copied create-once to that date's `_failed_attempts` evidence area
-  before a retry; it is never deleted to make a retry pass.
-- Code activation and ingest share the same atomic lock. A deploy therefore
-  fails closed while ingest is active, and a timer tick during the short deploy
-  window defers to the next 15-minute watchdog pass instead of executing a
-  partially updated checkout.
+  remains the backstop for any still-missing run.
 
 ## Manual CDR ingest
 

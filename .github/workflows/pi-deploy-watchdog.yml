@@ -1,7 +1,6 @@
-# Scheduled Pi deploy verification. Drift is reported but never repaired here;
-# production activation is owned by the canary-gated manual deploy workflow.
-# Secrets: PI_SSH_PRIVATE_KEY, PI_SSH_HOST, PI_SSH_KNOWN_HOSTS;
-# TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (for hosted runners).
+# Scheduled Pi deploy verification (and optional auto-deploy on drift).
+# Secrets: PI_SSH_PRIVATE_KEY, PI_SSH_HOST; TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (for hosted runners).
+# Variable AR_PI_AUTO_DEPLOY=1 runs --deploy when verify fails.
 
 name: pi-deploy-watchdog
 
@@ -9,6 +8,15 @@ on:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
+    inputs:
+      deploy_on_drift:
+        description: "Run --deploy when verify fails"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: read
@@ -27,12 +35,8 @@ jobs:
 
       - name: Detect Pi SSH secrets
         id: secrets
-        env:
-          PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
-          PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
-          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
         run: |
-          if [ -n "$PI_SSH_PRIVATE_KEY" ] && [ -n "$PI_SSH_HOST" ] && [ -n "$PI_SSH_KNOWN_HOSTS" ]; then
+          if [ -n "${{ secrets.PI_SSH_PRIVATE_KEY }}" ] && [ -n "${{ secrets.PI_SSH_HOST }}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -49,11 +53,8 @@ jobs:
 
       - name: Detect Tailscale OAuth
         id: tailscale
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
-          if [ -n "$TS_OAUTH_CLIENT_ID" ] && [ -n "$TS_OAUTH_SECRET" ]; then
+          if [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_SECRET }}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -76,7 +77,6 @@ jobs:
         if: steps.secrets.outputs.configured == 'true'
         env:
           PI_SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
-          PI_SSH_KNOWN_HOSTS: ${{ secrets.PI_SSH_KNOWN_HOSTS }}
           PI_SSH_HOST: ${{ secrets.PI_SSH_HOST }}
           PI_SSH_USER: ${{ secrets.PI_SSH_USER }}
         run: |
@@ -85,8 +85,7 @@ jobs:
           printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/pi_deploy_key
           chmod 600 ~/.ssh/pi_deploy_key
           USER="${PI_SSH_USER:-pi}"
-          printf '%s\n' "$PI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          ssh-keyscan -H "$PI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           cat >> ~/.ssh/config <<EOF
           Host ar-local-pi5
             HostName ${PI_SSH_HOST}
@@ -100,8 +99,8 @@ jobs:
       - name: Skip (Pi SSH not configured)
         if: steps.secrets.outputs.configured != 'true'
         run: |
-          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY, PI_SSH_HOST, and PI_SSH_KNOWN_HOSTS"
-          echo "Automatic deployment is intentionally disabled."
+          echo "pi-deploy-watchdog: skipped — set PI_SSH_PRIVATE_KEY and PI_SSH_HOST"
+          echo "On-Pi ar-local-deploy-watchdog.timer handles drift when GitHub cannot reach the Pi."
 
       - name: Skip verify (Tailscale OAuth missing for hosted runner)
         if: >-
@@ -110,7 +109,7 @@ jobs:
           steps.tailscale.outputs.configured != 'true'
         run: |
           echo "::warning::PI_SSH_* set but TS_OAUTH_* missing — cloud runner cannot reach Tailscale-only Pi."
-          echo "Automatic deployment is intentionally disabled."
+          echo "On-Pi ar-local-deploy-watchdog.timer still syncs within ~15 minutes."
 
       - name: Verify Pi deploy
         id: verify
@@ -131,7 +130,26 @@ jobs:
           echo "exit=$?" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
-      - name: Fail on drift or unhealthy runtime
+      - name: Deploy on drift (optional)
+        if: >-
+          steps.secrets.outputs.configured == 'true' &&
+          (
+            steps.runner_env.outputs.requires_tailscale != 'true' ||
+            steps.tailscale.outputs.configured == 'true'
+          ) &&
+          steps.verify.outputs.exit != '0' &&
+          (
+            vars.AR_PI_AUTO_DEPLOY == '1' ||
+            github.event.inputs.deploy_on_drift == 'true'
+          )
+        env:
+          AR_PI_SSH_HOST: ar-local-pi5
+          AR_PI_BASE_URL: ${{ vars.AR_PI_BASE_URL }}
+          AR_PI_AR_LOCAL_REPO: /srv/ar-local/AR-local
+          AR_PI_SITE_REPO: /srv/ar-local/australianrates
+        run: python pi_deploy_verify.py --deploy
+
+      - name: Fail if still unhealthy
         if: >-
           steps.secrets.outputs.configured == 'true' &&
           (
@@ -140,10 +158,15 @@ jobs:
           )
         env:
           VERIFY_EXIT: ${{ steps.verify.outputs.exit }}
+          AR_PI_AUTO_DEPLOY: ${{ vars.AR_PI_AUTO_DEPLOY }}
+          DEPLOY_INPUT: ${{ github.event.inputs.deploy_on_drift }}
         run: |
           if [ "$VERIFY_EXIT" = "0" ]; then
             exit 0
           fi
+          if [ "$AR_PI_AUTO_DEPLOY" = "1" ] || [ "$DEPLOY_INPUT" = "true" ]; then
+            python pi_deploy_verify.py --verify
+            exit $?
+          fi
           echo "pi-deploy-watchdog: verify failed (exit $VERIFY_EXIT)"
-          echo "Use the canary-gated pi-deploy-canary workflow after investigation."
           exit 1

@@ -28,8 +28,7 @@ This section is intentionally practical. It should let a future LLM or human ope
 
 ### Public, non-secret access facts
 
-- Pi hostname: `pi5` (Tailscale node: `ar-local-pi5`)
-- Pi LAN IP: `192.168.20.19` (DHCP; rediscover before assuming it is permanent)
+- Pi LAN IP: `10.0.0.92`
 - Pi Tailscale IP: `100.78.28.10`
 - Pi SSH user: `pi`
 - Local private key path on the Windows development machine: `%USERPROFILE%\.ssh\pi5`
@@ -45,43 +44,41 @@ Do not commit private keys, tokens, passwords, `.env` secrets, or the sudo passw
 
 ### Rediscovering current addresses
 
-The addresses above were verified on 2026-08-14. They are operational facts, not permanent infrastructure guarantees.
+The addresses above are the known-good deployment facts at the time this roadmap was written. They are operational facts, not permanent infrastructure guarantees.
 
-- LAN IP drift: run `tailscale ping ar-local-pi5` from Windows. Its `via <ip>:41641` result identifies the current direct LAN endpoint when both machines are onsite. The router DHCP table for host `pi5` is the fallback. After rediscovery, replace `HostName` in the `ar-local-pi5-lan` entry below and update the recorded LAN address in this section; a router DHCP reservation is preferable.
-- Tailscale IP drift: run `& 'C:\Program Files\Tailscale\tailscale.exe' status` or check the Tailscale admin console for node `ar-local-pi5`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
+- LAN IP drift: check the home router DHCP client/reservation table for host `ar`, then update this file if the reserved address changes.
+- Tailscale IP drift: check the Tailscale admin console or local Tailscale client for the Pi node named `ar`, then update `HostName` in `%USERPROFILE%\.ssh\config` if needed.
 - Once SSH works, confirm both addresses from the Pi itself:
 
 ```sh
 hostname -I
 ```
 
-The Pi currently advertises `192.168.20.19` on the LAN and `100.78.28.10` on Tailscale. Expect the LAN address to change unless it receives a DHCP reservation.
+The Pi should continue to advertise `10.0.0.92` on the LAN and `100.78.28.10` on Tailscale unless the router or Tailscale node identity changes.
 
 ### SSH from the Windows development machine
 
-Current LAN command when on the home network:
+LAN command when on the home network:
 
 ```powershell
-ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@192.168.20.19
+ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@10.0.0.92
 ```
 
-The `HostKeyAlias` retains the trusted host key that was originally recorded when this same Pi used `10.0.0.92`; that address itself is obsolete.
+Remote command over Tailscale:
 
-Port 22 on `100.78.28.10` currently uses Tailscale SSH. It is useful as a recovery route, but its tailnet policy can require interactive browser authentication and therefore must not be assumed to work for unattended deploys. Use the LAN alias below for unattended work while onsite. The dashboard itself remains reachable over Tailscale.
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\pi5" -o HostKeyAlias=10.0.0.92 pi@100.78.28.10
+```
 
 Recommended `%USERPROFILE%\.ssh\config` entries:
 
 ```sshconfig
-Host ar-local-pi5-lan
-  HostName 192.168.20.19
+Host ar-local-pi5
+  HostName 100.78.28.10
   User pi
   IdentityFile ~/.ssh/pi5
   IdentitiesOnly yes
   HostKeyAlias 10.0.0.92
-
-Host ar-local-pi5
-  HostName 100.78.28.10
-  User pi
 
 Host ar-local-pi5-dashboard
   HostName 100.78.28.10
@@ -94,7 +91,7 @@ Host ar-local-pi5-dashboard
   LocalForward 127.0.0.1:18808 127.0.0.1:8808
 ```
 
-Use `HostKeyAlias=10.0.0.92` for the current LAN address because the same Pi host identity was originally recorded under that address. Set `AR_PI_SSH_HOST=ar-local-pi5-lan` before `npm run pi:deploy` or `npm run pi:deploy:verify` when using the unattended LAN route.
+Use `HostKeyAlias=10.0.0.92` for the Tailscale address because the known host identity was originally established for the LAN address.
 
 ### Remote dashboard access while travelling
 
@@ -132,7 +129,7 @@ Netdata runs on the Pi as `netdata.service`, bound to **localhost** on port **19
 | --- | --- |
 | **Primary (local metrics UI)** | `http://100.78.28.10/netdata/v3/` |
 | Short redirect (same UI) | `http://100.78.28.10/netdata/` |
-| LAN IP equivalent | `http://192.168.20.19/netdata/v3/` (update after DHCP changes) |
+| LAN IP equivalent | `http://10.0.0.92/netdata/v3/` |
 | Agent loopback (SSH on Pi only) | `http://127.0.0.1:19999/v3/` |
 
 No Netdata Cloud account is required for **metrics** (overview charts, nodes, alerts). Cloud is disabled; `cloud base url` points at the nginx `/netdata/` path so the bundled v3 UI loads from the agent instead of `app.netdata.cloud`.
@@ -287,24 +284,21 @@ For any repo change, follow `WORKFLOW.md` end to end:
 5. Run `npm run wait-for-bots` and do feedback synthesis.
 6. Reply to/close substantive review threads.
 7. Squash merge.
-8. Keep production unchanged until the exact commit passes the shadow canary;
-   activate only through the manual canary-gated workflow.
+8. Update/restart the local/Pi dashboard from merged `main`.
 9. Run `npm run verify:local`.
 
 The Pi runtime must end on GitHub `main`. Never leave `/srv/ar-local/AR-local` deployed on an unmerged topic branch.
 
-### Pi deployment and drift monitoring
+### Pi deploy watchdog (continuous)
 
-Drift automation smokes real `/api/latest` without changing the checkout,
-services, or runtime data; verification may refresh remote refs. Production
-activation is a separate exact-commit, canary-approved manual action.
+Automation keeps the Pi aligned with `origin/main` and smokes real `/api/latest` (no mock data).
 
 | Layer | Mechanism |
 |-------|-----------|
-| Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:needs-deploy`; direct deploy requires `--expected-commit` and remains subject to the canary gate |
-| GitHub Actions (deployment) | `.github/workflows/pi-deploy-on-main.yml` — manual only; exact approved commit plus canary-manifest digest |
-| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` — cron every 6h UTC / manual; verify-only |
-| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` — loopback verify and drift alert only; never deploys |
+| Dev / orchestrator | `npm run pi:deploy:verify`, `npm run pi:deploy`, `npm run pi:needs-deploy` (`pi_deploy_verify.py`) |
+| GitHub Actions (auto-deploy) | `.github/workflows/pi-deploy-on-main.yml` ? every push to `main`; `workflow_dispatch` |
+| GitHub Actions (drift watch) | `.github/workflows/pi-deploy-watchdog.yml` ? cron every 6h UTC, `workflow_dispatch`; optional `AR_PI_AUTO_DEPLOY=1` on drift |
+| On-Pi | `deploy/pi/ar-local-deploy-watchdog.timer` ? every 15m: `ar-local-deploy-watchdog.sh` runs loopback verify then `--deploy` on drift |
 | On-Pi ingest catch-up | `deploy/pi/ar-local-daily-watchdog.timer` ? every 15m: runs `pi_daily_sync.py --banks-only` as catch-up if the scheduled daily banking export is missing after the grace period |
 | On-Pi runtime self-heal | `deploy/pi/ar-local-runtime-health.timer` ? every ~2m: `pi_runtime_health.py --heal` probes loopback `:80` and `:8808` `/api/latest`; restarts dashboard + nginx after consecutive failures; restarts `tailscaled` on tailnet/journal wedge with cooldown |
 
@@ -326,33 +320,22 @@ State file: `/srv/ar-local/data/state/runtime_health.json`.
 |-------------------|---------|
 | `PI_SSH_PRIVATE_KEY`, `PI_SSH_HOST` | SSH deploy target (same key as `ar-local-pi5`, e.g. `~/.ssh/pi5`, host `100.78.28.10`) |
 | `PI_SSH_USER` | Optional (default `pi`) |
-| `PI_SSH_KNOWN_HOSTS` | Required OpenSSH known-host entry with a pinned host key for the Pi; deployment never trusts `ssh-keyscan` output |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Tailscale OAuth client ? **required** for GitHub-hosted runners to join the tailnet and reach the Pi |
 | `AR_PI_BASE_URL` (variable) | Smoke URL (default `http://100.78.28.10/` on port 80) |
-| `AR_PI_CANARY_APPROVED_COMMIT` (variable) | Exact 40-character commit permitted for the next production activation |
-| `AR_PI_CANARY_MANIFEST_SHA256` (variable) | SHA-256 of the reviewed `canary-acceptance.json` for that commit |
-| `AR_PI_CANARY_RELEASE_TAG` (variable) | Published immutable release containing the sole `canary-acceptance.json`; its Git tag must resolve to the approved commit |
+| `AR_PI_AUTO_DEPLOY` (variable) | Set to `1` so scheduled `pi-deploy-watchdog` runs `--deploy` when verify fails |
 
-The acceptance file must satisfy
-`contracts/canary-acceptance-v1.schema.json`. The deploy workflow additionally
-re-hashes its bytes and binds `repository` and `target_commit` to the current
-repository and requested protected commit before any Pi connection is configured.
+Without Tailscale OAuth secrets, cloud workflows skip SSH and print a warning; the on-Pi timer still syncs within ~15 minutes. Windows dev: `npm run pi:deploy:verify` may log a harmless OpenSSH socket message after successful output.
 
-Without Tailscale OAuth secrets, hosted deployment stops before SSH.
-No fallback path deploys automatically. Windows verification may log a harmless
-OpenSSH socket message after successful output.
-
-**Verify the Pi timers after approved activation:**
-
-Do not pull moving `main` to install the watchdog. The manual `pi-deploy-canary`
-workflow validates the immutable acceptance manifest, installs the exact approved
-commit, and enables the verify-only deploy watchdog. Confirm the resulting state:
+**Install Pi timer (on the Pi):**
 
 ```bash
-git -C /srv/ar-local/AR-local rev-parse HEAD
-systemctl is-enabled ar-local-deploy-watchdog.timer
-systemctl is-active ar-local-deploy-watchdog.timer
-systemctl cat ar-local-deploy-watchdog.service
+cd /srv/ar-local/AR-local
+git pull origin main
+chmod +x deploy/pi/ar-local-deploy-watchdog.sh
+sudo AR_LOCAL_REPO=/srv/ar-local/AR-local bash deploy/pi/install-pi-systemd.sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now ar-local-deploy-watchdog.timer
+sudo systemctl enable --now ar-local-runtime-health.timer
 ```
 
 Skill: `.cursor/skills/pi-deploy-watchdog/SKILL.md` ? invoke **run pi deploy watchdog**.
@@ -472,8 +455,7 @@ One interactive SSH session (sudo password once; enables passwordless `npm run p
 ssh -t ar-local-pi5 'bash /srv/ar-local/AR-local/deploy/pi/bootstrap-pi-port80.sh'
 ```
 
-Or step by step after the exact approved commit has been activated through
-`pi-deploy-canary`:
+Or step by step after `git pull origin main`:
 
 ```bash
 cd /srv/ar-local/AR-local
@@ -666,12 +648,12 @@ Every agent should leave the next agent with:
 
 Snapshot of operational facts the next agent can trust without re-running every probe. **Treat as stale** unless `Last verified` is within **48 hours** of the current work. Re-verify and overwrite this section whenever the underlying state changes. Use the `Live Pi Observability` probes; do not invent fresh commands here.
 
-Last full service/data snapshot: **2026-05-15** (UTC ~13:24). Hostname and address rows were refreshed separately on **2026-08-14 AEST**; re-run every probe before relying on the other dated rows.
+Last verified: **2026-05-15** (UTC ~13:24).
 
 | Fact | Value |
 | --- | --- |
-| Pi hostname | `pi5` |
-| Pi LAN IP | `192.168.20.19` (DHCP; verified 2026-08-14) |
+| Pi hostname | `ar` |
+| Pi LAN IP | `10.0.0.92` |
 | Pi Tailscale IP | `100.78.28.10` |
 | `ar-local-dashboard.service` state | active, enabled |
 | `ar-local-dashboard.service` `WorkingDirectory` | `/srv/ar-local/AR-local` |

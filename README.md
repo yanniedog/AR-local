@@ -1,8 +1,7 @@
-# AR-local — Australian rates data producer and dashboard
+# Australian Rates — local dashboard and mobile app
 
 Compare Australian home loan, savings, and term-deposit rates on a Pi-hosted web
-dashboard. This repository owns CDR ingest, data integrity, payload publication,
-and the local dashboard.
+dashboard and offline mobile app.
 
 Agent workflow (Git/PR/bots/Pi verify — aligned with AustralianRates, no Cloudflare):
 **`WORKFLOW.md`** and **`AGENTS.md`**.
@@ -13,21 +12,41 @@ Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banking-only scope, and the
 AustralianRates dashboard parity contract.
 
-## Installable app
+## Mobile app
 
-The Expo app, APK builds, updater, and app releases are owned by
-**[yanniedog/AR-app](https://github.com/yanniedog/AR-app)**. Install the current
-Android build from the **[AR-app install release](https://github.com/yanniedog/AR-app/releases/tag/app-apk-latest)**
-or review the **[AR-app setup and release instructions](https://github.com/yanniedog/AR-app#readme)**.
+Expo / React Native app in **`mobile/`** (SDK 54). Data flow: Pi publishes daily rate
+payloads via **`app_payload.py`** to **`app-payload-latest`** (dated
+**`app-payload-<date>`** tags for history); the app fetches the manifest and renders locally
+(no Pi/LAN required at runtime).
 
-AR-local publishes production data payloads via **`app_payload.py`** to this
-repository's **`app-payload-latest`** rolling release and immutable
-**`app-payload-<date>`** history releases. See **`docs/MOBILE_APP.md`** for the
-cross-repository contract and **`docs/HANDOFF.md`** for producer operations.
+Preview Android APKs are built on **`main`** by **`mobile-android-apk`** (GitHub Actions,
+local Gradle) and published to **`app-apk-latest`**; semver snapshots use **`app-v*`** tags.
+When the last open PR squashes to **`main`**, **`mobile-auto-release-on-queue-drain`**
+auto-bumps **`expo.version`** (direct push to **`main`**, gate-exempt PR fallback) and triggers a new APK build.
+
+See **`docs/MOBILE_APP.md`** (payload contract), **`docs/HANDOFF.md`** (ops + verify), and
+**`mobile/scripts/publish-readme-app-install.mjs`** (refresh the install table from
+**`app-apk-latest.json`** after each APK publish; PR fallback when `main` is protected).
+
+<!-- app-android-install:start -->
+### Android preview install
+
+Scan with **Android Chrome** to install the latest preview APK. Asset path is stable (`app-apk-latest/app-preview-qr.png`); the README embed adds `?v=<build>` so the image refreshes after each APK publish.
+
+| | |
+|---|---|
+| Version | **1.0.37** (build 145) |
+| QR | ![Install QR](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview-qr.png?v=145) |
+| APK | [app-preview.apk](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/app-preview.apk) |
+| Install page | [install.html](https://github.com/yanniedog/AR-local/releases/download/app-apk-latest/install.html) |
+| Version history | [app-v* releases](https://github.com/yanniedog/AR-local/releases?q=app-v&expanded=true) |
+
+In-app self-update uses the rolling manifest `app-apk-latest.json` on tag `app-apk-latest`.
+<!-- app-android-install:end -->
 
 > **Picking up this work (any LLM/agent)?** Start with **`docs/HANDOFF.md`** — a
-> self-contained guide to the Pi→GitHub payload flow, daily verification,
-> producer file layout, secrets, and operational gotchas.
+> self-contained guide to the Pi→GitHub→app data flow, how to verify the daily
+> upload, how the app maps to the web dashboard, file layout, secrets, and gotchas.
 
 ## Easiest Start
 

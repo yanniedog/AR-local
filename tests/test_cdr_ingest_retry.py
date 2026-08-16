@@ -6,12 +6,7 @@ for one logical fetch on a persistent outage. These lock in the cap while keepin
 version negotiation (and per-version reserve) working.
 """
 
-import hashlib
-import json
-
 import cdr_ingest_support as cis
-from cdr_http_policy import PolicyResponse
-from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 def _count_calls(monkeypatch, status, body=""):
@@ -40,7 +35,7 @@ def test_persistent_5xx_is_capped_by_default_budget(monkeypatch):
     calls = _count_calls(monkeypatch, 503)
     res = cis.fetch_cdr_json("http://x", timeout=1, max_retries=6, sleep_ms=0)
     assert res.ok is False
-    # Default budget remains the locked eight-attempt amplification ceiling.
+    # Default budget = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2) = 8, not 42.
     assert calls["n"] == 8
     # attempts reflects the cumulative HTTP attempts across the whole logical fetch.
     assert res.attempts == calls["n"]
@@ -193,117 +188,3 @@ def test_zero_total_attempts_makes_no_request(monkeypatch):
     assert res.ok is False
     assert calls["n"] == 0
     assert res.attempts == 0
-
-
-def test_compact_406_advertisement_is_tried_next(monkeypatch):
-    seen: list[int] = []
-
-    def fake_http(url, headers, *, timeout):
-        seen.append(int(headers["x-v"]))
-        if len(seen) == 1:
-            return 406, '{"detail":"Requested: 6-6 Available: 8"}', None
-        return 200, '{"data": {}}', None
-
-    monkeypatch.setattr(cis, "http_request", fake_http)
-    result = cis.fetch_cdr_json(
-        "http://x", versions=[6], timeout=1, max_retries=0, sleep_ms=0
-    )
-    assert result.ok is True and result.version == 8
-    assert seen == [6, 8]
-
-
-def test_out_of_range_long_advertisement_cannot_consume_attempt(monkeypatch):
-    seen: list[int] = []
-
-    def fake_http(url, headers, *, timeout):
-        seen.append(int(headers["x-v"]))
-        if len(seen) == 1:
-            return 406, '{"detail":"Versions available: 100, 6"}', None
-        return 200, '{"data": {}}', None
-
-    monkeypatch.setattr(cis, "http_request", fake_http)
-    result = cis.fetch_cdr_json(
-        "http://x", versions=[5], timeout=1, max_retries=0, sleep_ms=0
-    )
-    assert result.ok is True and result.version == 6
-    assert seen == [5, 6]
-
-
-def test_caller_cannot_expand_attempt_or_retry_caps(monkeypatch):
-    calls = _count_calls(monkeypatch, 503)
-    res = cis.fetch_cdr_json(
-        "https://holder.example/products",
-        timeout=999,
-        max_retries=999,
-        sleep_ms=0,
-        max_total_attempts=999,
-    )
-    assert res.ok is False
-    assert calls["n"] == cis.DEFAULT_HTTP_POLICY.max_total_attempts
-
-
-def test_upstream_5xx_retries_but_deterministic_policy_failures_do_not(monkeypatch):
-    upstream_calls = _count_calls(monkeypatch, 501)
-    cis.fetch_with_retries(
-        "https://holder.example/products",
-        {},
-        timeout=1,
-        max_retries=1,
-        sleep_ms=0,
-        retry_on=cis.retryable_status,
-    )
-    assert upstream_calls["n"] == 2
-
-    policy_calls = _count_calls(monkeypatch, 596)
-    cis.fetch_with_retries(
-        "https://holder.example/products",
-        {},
-        timeout=1,
-        max_retries=6,
-        sleep_ms=0,
-        retry_on=cis.retryable_status,
-    )
-    assert policy_calls["n"] == 1
-
-
-def test_retry_attempts_are_immutably_journaled_with_version_context(tmp_path, monkeypatch):
-    replies = iter((503, 200))
-
-    def fake_request(url, headers, *, timeout):
-        status = next(replies)
-        body = b'{"data":{}}' if status == 200 else b"unavailable"
-        return PolicyResponse(
-            status=status,
-            url=url,
-            headers={"content-type": "application/json"},
-            body=body,
-            wire_bytes=len(body),
-            inflated_bytes=len(body),
-            wire_sha256=hashlib.sha256(body).hexdigest(),
-            peer_ip="8.8.8.8",
-            redirects=(),
-        )
-
-    monkeypatch.setattr(cis, "request_https", fake_request)
-    monkeypatch.setattr(cis.time, "sleep", lambda *_args: None)
-    journal = RawAttemptJournal(tmp_path, "session-1")
-    result = cis.fetch_cdr_json(
-        "https://holder.example/products",
-        versions=[4],
-        timeout=5,
-        max_retries=6,
-        sleep_ms=0,
-        max_total_attempts=2,
-        attempt_journal=journal,
-        attempt_context={"phase": "products_index", "request_id": "holder:page:1"},
-    )
-
-    assert result.ok is True and result.attempts == 2
-    events = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(journal.events.glob("*.json"))
-    ]
-    assert [event["sequence"] for event in events] == [1, 2]
-    assert [event["context"]["retry_ordinal"] for event in events] == [1, 2]
-    assert [event["context"]["cdr_version"] for event in events] == [4, 4]
-    assert journal.summary()["attempts"] == 2

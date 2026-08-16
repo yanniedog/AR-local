@@ -30,13 +30,6 @@ HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
 # --------------------------------------------------------------------------- #
 # Pure-helper unit tests (always run)
 # --------------------------------------------------------------------------- #
-def test_sample_seed_publisher_is_not_available():
-    assert not hasattr(app_payload, "seed_from_sample")
-    with pytest.raises(SystemExit) as exc:
-        app_payload.main(["seed"])
-    assert exc.value.code == 2
-
-
 def test_section_filter_mortgage_excludes_discount():
     assert app_payload.section_filter("Mortgage", {"rate": "0.05", "rate_family": "lending", "rate_type": "VARIABLE"})
     assert not app_payload.section_filter("Mortgage", {"rate": "0.05", "rate_family": "lending", "rate_type": "DISCOUNT"})
@@ -122,85 +115,6 @@ def test_detail_links_extracts_authoritative_uris():
         "terms": "https://x/terms",
     }
     assert app_payload._detail_links({}) == {}
-
-
-def test_real_greater_bank_fees_keep_amounts_and_do_not_call_variable_placeholder_free():
-    fixture = json.loads(
-        (ROOT / "tests" / "fixtures" / "greater_bank_fee_details_2026-05-19.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    products = [
-        {
-            "product_key": "Greater Bank Limited|3365|Mortgage",
-            "details_json": json.dumps(fixture["record"]),
-        }
-    ]
-
-    detail = app_payload.build_details(products)["Greater Bank Limited|3365|Mortgage"]
-    by_name = {item["name"]: item for item in detail["fees"]}
-
-    assert by_name["Construction Loan Draw Down Fee"]["amount"] == "80.00"
-    assert by_name["Construction Loan Draw Down Fee"]["value"] == "80.00"
-    assert by_name["Administration fee"]["amount"] == "350.00"
-    assert by_name["Discharge administration fee"]["amountStatus"] == "fixed"
-    variable = by_name["Property Exchange Australia (PEXA) transaction fee"]
-    assert variable["amount"] == "0.00"  # retain exactly what the source supplied
-    assert variable["amountStatus"] == "variable"
-    assert "value" not in variable  # but never present the placeholder as a $0 fee
-
-
-def test_fee_method_union_is_preserved_for_fixed_rate_variable_caps_and_discounts():
-    record = {
-        "fees": [
-            {
-                "name": "Multiple Security Fee",
-                "feeType": "UPFRONT",
-                "feeMethodUType": "fixedAmount",
-                "fixedAmount": {"amount": "250"},
-                "feeCap": "500",
-                "feeCapPeriod": "P90D",
-            },
-            {
-                "name": "Currency conversion fee",
-                "feeType": "TRANSACTION",
-                "feeMethodUType": "rateBased",
-                "rateBased": {"rateType": "TRANSACTION", "rate": "0.025"},
-                "discounts": [
-                    {
-                        "description": "Package customer",
-                        "discountType": "ELIGIBILITY_ONLY",
-                        "additionalInfo": "Fee waived",
-                    }
-                ],
-            },
-            {
-                "name": "Valuation fee",
-                "feeType": "EVENT",
-                "feeMethodUType": "variable",
-                "variable": {"feeMinimum": "50", "feeMaximum": "550"},
-            },
-        ]
-    }
-
-    fees = app_payload._fee_items(record)
-
-    assert fees[0]["fixedAmount"] == {"amount": "250"}
-    assert fees[0]["feeCap"] == "500"
-    assert fees[0]["feeCapPeriod"] == "P90D"
-    assert fees[1]["rateBased"] == {"rateType": "TRANSACTION", "rate": "0.025"}
-    assert fees[1]["discounts"][0]["additionalInfo"] == "Fee waived"
-    assert fees[2]["variable"] == {"feeMinimum": "50", "feeMaximum": "550"}
-    assert fees[2]["amountStatus"] == "variable"
-
-
-def test_textual_null_fee_amount_is_unpublished():
-    fee = app_payload._fee_items({
-        "fees": [{"name": "At-cost fee", "feeType": "EVENT", "amount": "null"}],
-    })[0]
-    assert fee["amount"] == "null"
-    assert fee["amountStatus"] == "unpublished"
-    assert "value" not in fee
 
 
 def test_build_brands_shortcodes_and_color():

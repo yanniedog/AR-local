@@ -10,8 +10,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 from urllib.parse import urlsplit
 
 from cdr_ribbon_normalize import extract_product_lvr_constraints, ribbon_columns_for_bank_rate_row
-from cdr_product_facts import clean_fact_rows
-from cdr_rate_normalize import normalized_rate_value, rate_divisor
 NOISE_KEYS = {
     "links",
     "meta",
@@ -106,9 +104,29 @@ def rate_text(value: Any, divisor: float = 1.0) -> str:
     return f"{number:.6g}"
 
 
+def rate_divisor(items: List[Dict[str, Any]], family: str) -> float:
+    values: List[float] = []
+    for item in items:
+        try:
+            values.append(float(number_text(item.get("rate"))))
+        except ValueError:
+            pass
+    if any(value > 1 for value in values):
+        return 100
+    if family == "lending" and any(0.3 < value <= 1 for value in values):
+        return 10
+    return 1
+
+
 def normalized_rate_text(value: Any, divisor: float, family: str) -> str:
-    number = normalized_rate_value(value, divisor, family)
-    return f"{number:.6g}" if number is not None else number_text(value)
+    raw = rate_text(value, divisor)
+    try:
+        number = float(raw)
+    except ValueError:
+        return raw
+    if family == "lending" and 0 < number < 0.02:
+        number *= 10
+    return f"{number:.6g}"
 
 
 def _official_https_url(value: Any) -> str:
@@ -276,43 +294,6 @@ def bank_base_row(path: Path, banks_root: Path, rec: Mapping[str, Any]) -> Dict[
     return row
 
 
-def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
-    """Choose a useful flat-export value while details_json stays lossless."""
-    def present(raw: Any) -> bool:
-        return raw is not None and not (
-            isinstance(raw, str) and raw.strip().lower() in {"", "null"}
-        )
-
-    value = item.get("additionalValue")
-    if present(value) or sheet != "fees":
-        return value
-    method = text(item.get("feeMethodUType")).lower()
-    fee_type = text(item.get("feeType")).upper()
-    variable = item.get("variable")
-    if method == "variable" or fee_type == "VARIABLE":
-        if isinstance(variable, Mapping):
-            minimum = variable.get("feeMinimum")
-            maximum = variable.get("feeMaximum")
-            low = text(minimum) if present(minimum) else ""
-            high = text(maximum) if present(maximum) else ""
-            if low or high:
-                return f"{low}..{high}"
-        return "VARIABLE"
-    amount = item.get("amount")
-    if present(amount):
-        return amount
-    fixed_amount = item.get("fixedAmount")
-    if isinstance(fixed_amount, Mapping) and present(fixed_amount.get("amount")):
-        return fixed_amount.get("amount")
-    rate_based = item.get("rateBased")
-    if isinstance(rate_based, Mapping) and present(rate_based.get("rate")):
-        return rate_based.get("rate")
-    for key in ("balanceRate", "transactionRate", "accruedRate"):
-        if present(item.get(key)):
-            return item.get(key)
-    return None
-
-
 def append_bank_details(
     dataset: Dict[str, List[Dict[str, Any]]],
     base: Mapping[str, str],
@@ -363,14 +344,13 @@ def append_bank_details(
     ):
         for idx, item in enumerate(as_items(rec.get(key)), 1):
             cleaned = clean_value(item)
-            item_value = bank_detail_item_value(sheet, item)
             dataset[sheet].append(
                 {
                     **base,
                     "item_index": idx,
                     "item_type": text(item.get(label_key)),
                     "name": text(item.get("name") or item.get("additionalValue")),
-                    "value": text(item_value),
+                    "value": text(item.get("additionalValue")),
                     "details_json": json.dumps(cleaned, ensure_ascii=False, sort_keys=True),
                 }
             )
@@ -388,7 +368,6 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         "features": [],
         "eligibility": [],
         "constraints": [],
-        "product_facts": [],
         "failures": read_failures(banks_root),
         "holder_attempts": [],
     }
@@ -402,7 +381,6 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
         base = bank_base_row(path, banks_root, rec)
         dataset["products"].append({**base, "details_json": detail_json(rec)})
         append_bank_details(dataset, base, rec)
-        dataset["product_facts"].extend(clean_fact_rows(rec, base))
     return dataset
 
 

@@ -1,39 +1,5 @@
 # Australian Rates app insight contracts
 
-## Observation finalization contracts
-
-Producer-side source preservation now uses three Draft 2020-12 contracts:
-
-- `export-contract-v2.schema.json` binds one immutable observation generation to
-  relative source provenance, provider states, coverage, exclusions, and every
-  artifact hash.
-- `ledger-event-v2.schema.json` appends finalized primary/revision events into a
-  hash-linked ledger without rewriting legacy manifests. Revisions bind an
-  existing same-date parent by both stable generation ID and event SHA-256;
-  primary events must carry null parent fields. Pre-hardening immutable
-  revisions that omit the digest remain readable as explicitly unbound legacy
-  events, while the producer append path requires it for every new revision.
-- `run-journal-v1.schema.json` defines independent stage states and retry evidence.
-- `preservation-evidence-v1.schema.json` defines the portable, fail-closed
-  locator for the operator-held snapshot and its hash-bound manifest set; it
-  contains no source data or machine-specific root.
-
-`ExportContractV2` also binds the exact state-relative completion marker and the
-evidence for every configured register-discovery attempt. An incomplete register
-population cannot reconcile as a complete observation merely because one
-fallback source returned holders. Finalization recovery is suffix-only: it may
-advance an already-written event to the ledger head, create the verified marker,
-or repair the two observation pointers, but it never replaces an existing event,
-contract, marker, or source artifact.
-
-These are producer integrity contracts, not the legacy mobile `manifest-v2`
-sidecar. That dormant sidecar is scheduled for removal rather than reuse. The
-future app boundary is named `manifest-v3` and will be added without redefining
-v2. See `docs/IRREPLACEABLE_HISTORY_FOUNDATION.md` and the read-only
-`docs/HISTORICAL_REPAIRABILITY_REPORT.md` before implementing any legacy import.
-
-## Legacy app contracts
-
 These contracts are additive. Existing clients continue to use `manifest.json`,
 `core`, and `details` without understanding any new field.
 
@@ -62,34 +28,3 @@ These contracts are additive. Existing clients continue to use `manifest.json`,
 Exact `product_key + rate_index/cohort` history, normalized deposit conditions,
 and client-side negotiation briefs remain later contracts. They must not be
 inferred from the aggregated `product_history` series.
-
-## Payload v3 domain contracts
-
-`contracts/v3/` is the additive, Draft 2020-12 boundary for the new producer.
-It does not redefine or republish the retired v2 sidecar.
-
-- `canonical-core-v3.schema.json` defines typed, evidence-bound products,
-  classifications, rates, fees, and stable identities. Binary floats are not
-  permitted in canonical serialization.
-- `coverage-v2.schema.json` names reconcilable product, tier, provider, failure,
-  and exclusion populations. Producer validation must additionally enforce the
-  count equations; schema validity alone never means coverage is reconciled.
-- `asset-descriptor-v3.schema.json` declares schema/media/encoding, compressed
-  and inflated sizes, SHA-256, cohort, capability, and HTTPS URL. The approved
-  per-capability size ceilings are encoded in the schema.
-- `generation-manifest-v3.schema.json` binds one immutable finalized generation
-  to coverage, ledger ancestry, producer/normalizer versions, and
-  content-addressed capability assets.
-- `generation-pointer-v3.schema.json` is the small rolling `manifest-v3`
-  document with independent `latest_observation` and `latest_complete` heads.
-
-Schema validation is necessary but not sufficient at this financial boundary.
-Promotion must call the producer semantic validators with the exact downloaded
-capability bytes. They verify declared byte counts, SHA-256, bounded inflation,
-canonical product/fee/rate identity derivations, cohort membership, typed-rate
-rules, lifecycle evidence, manifest metadata, coverage counts, and pointer CAS
-monotonicity. AR-app must vendor the same cross-record semantic rules alongside
-the generated schema validators; schema-only acceptance is expressly forbidden.
-
-These contracts are dormant until the deterministic v3 builder and dual-read
-AR-app bridge ship. V1 assets and URLs remain unchanged during that migration.

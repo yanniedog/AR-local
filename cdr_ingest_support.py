@@ -6,24 +6,18 @@ import hashlib
 import json
 import random
 import re
-import secrets
+import ssl
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
-
-from cdr_http_policy import (
-    DEFAULT_HTTP_POLICY,
-    HttpPolicyError,
-    pagination_next_url,
-    request_https,
-)
-from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
 
 # -----------------------------------------------------------------------------
 # Constants (mirror workers/api/src/ingest/cdr/discovery.ts + http.ts order)
@@ -41,10 +35,7 @@ REGISTER_URL_BANKING_REGISTER = (
 
 # Bank PRD endpoints often negotiate newer x-v; CDR register currently responds at v2 in practice.
 REGISTER_FETCH_VERSIONS = [2, 1, 6, 5, 4, 3]
-# Get Product Detail moved to v7 in August 2026. Keep the newest known version
-# first, while still negotiating advertised versions that land after this code.
-CDR_VERSION_ORDER = [7, 6, 5, 4, 3, 2, 1]
-DEFAULT_LOGICAL_FETCH_ATTEMPTS = 8
+CDR_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
 
 # WAFs in front of ~40 mutual-bank PRD endpoints reject urllib's default
 # "Python-urllib/x.y" agent with HTML 403 pages (those banks then ingest zero
@@ -90,8 +81,6 @@ DATASET_TO_FOLDER = {
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
-    register_provenance_complete: bool
-    register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
 
@@ -140,22 +129,14 @@ def has_cdr_errors(data: Any) -> bool:
 
 
 def parse_supported_versions(body: str) -> List[int]:
-    def bounded(parts: Iterable[str]) -> List[int]:
-        return [
-            int(part)
-            for part in (item.strip() for item in parts)
-            if part.isdigit() and 0 < int(part) <= 99
-        ]
-
     available = re.search(r"Versions available:\s*([0-9,\s]+)", body, re.I)
     if available:
-        return bounded(available.group(1).split(","))
-
-    # Current data holders also emit the compact form
-    # "Requested: 1-1 Available: 7".
-    compact = re.search(r"\bAvailable:\s*([0-9,\s]+)", body, re.I)
-    if compact:
-        return bounded(compact.group(1).split(","))
+        parts = [x.strip() for x in available.group(1).split(",")]
+        out: List[int] = []
+        for p in parts:
+            if p.isdigit():
+                out.append(int(p))
+        return out
 
     range_m = re.search(
         r"Minimum version supported is\s*(\d+)\s*and\s*Maximum version supported is\s*(\d+)",
@@ -165,7 +146,7 @@ def parse_supported_versions(body: str) -> List[int]:
     if not range_m:
         return []
     lo, hi = int(range_m.group(1)), int(range_m.group(2))
-    if lo > hi or lo < 1 or hi > 99:
+    if lo > hi:
         return []
     return list(range(hi, lo - 1, -1))
 
@@ -370,7 +351,7 @@ def next_link(payload: Any, current_url: str) -> Optional[str]:
     nxt = str(links.get("next") or "").strip()
     if not nxt:
         return None
-    return pagination_next_url(current_url, nxt)
+    return urllib.parse.urljoin(current_url + "/", nxt)
 
 
 # -----------------------------------------------------------------------------
@@ -405,7 +386,7 @@ class FetchResult:
 
 # Cap a server-requested Retry-After: an absurd or malicious value must not be
 # able to park an ingest worker thread (and starve the pool) for a long time.
-MAX_RETRY_AFTER_SECONDS = DEFAULT_HTTP_POLICY.max_retry_after_seconds
+MAX_RETRY_AFTER_SECONDS = 60.0
 
 
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
@@ -437,71 +418,28 @@ def http_request(
     headers: Dict[str, str],
     *,
     timeout: float,
-    attempt_journal: Optional[RawAttemptJournal] = None,
-    attempt_key: Optional[str] = None,
-    attempt_context: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[int, str, Optional[float]]:
     """GET ``url``; return (status, body, retry_after_seconds). retry_after is the
     parsed Retry-After header (None when absent), surfaced so the caller can honor
     a server-requested backoff on 429/503."""
-    request_headers = {"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}
-    started_at = attempt_utc_now()
-    response_headers: Mapping[str, str] = {}
-    body = b""
-    wire_bytes = 0
-    inflated_bytes = 0
-    wire_sha256 = hashlib.sha256(b"").hexdigest()
-    peer_ip: Optional[str] = None
-    redirects: Iterable[Any] = ()
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
+    req = urllib.request.Request(
+        url, headers={"User-Agent": DEFAULT_USER_AGENT, **(headers or {})}, method="GET"
+    )
+    ctx = ssl.create_default_context()
     try:
-        response = request_https(url, request_headers, timeout=timeout)
-        status = response.status
-        response_headers = response.headers
-        body = response.body
-        wire_bytes = response.wire_bytes
-        inflated_bytes = response.inflated_bytes
-        wire_sha256 = response.wire_sha256
-        peer_ip = response.peer_ip
-        redirects = response.redirects
-        retry_after = _parse_retry_after(response.headers.get("retry-after"))
-        text = body.decode("utf-8", errors="replace")
-        outcome = "success" if status < 400 else "http_error"
-    except HttpPolicyError as error:
-        status = error.status
-        retry_after = None
-        text = f"{error.code}: {error.public_message}"
-        error_code = error.code
-        error_message = error.public_message
-        outcome = "transport_error" if status == 599 else "policy_rejected"
-
-    completed_at = attempt_utc_now()
-    if attempt_journal is not None:
-        key = attempt_key or hashlib.sha256(
-            f"{started_at}\0{url}".encode("utf-8")
-        ).hexdigest()
-        attempt_journal.record(
-            key,
-            request_url=url,
-            request_headers=request_headers,
-            started_at=started_at,
-            completed_at=completed_at,
-            status=status,
-            outcome=outcome,
-            response_headers=response_headers,
-            body=body,
-            wire_bytes=wire_bytes,
-            inflated_bytes=inflated_bytes,
-            wire_sha256=wire_sha256,
-            peer_ip=peer_ip,
-            redirects=redirects,
-            retry_after_seconds=retry_after,
-            error_code=error_code,
-            error_message=error_message,
-            context=attempt_context,
-        )
-    return status, text, retry_after
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.getcode(), body, _parse_retry_after(resp.headers.get("Retry-After"))
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(e)
+        headers_obj = getattr(e, "headers", None)
+        retry_after = _parse_retry_after(headers_obj.get("Retry-After")) if headers_obj else None
+        return int(e.code), body, retry_after
+    except Exception as e:
+        return 599, str(e), None
 
 
 def fetch_with_retries(
@@ -513,18 +451,11 @@ def fetch_with_retries(
     sleep_ms: int,
     retry_on: Callable[[int], bool],
     deadline: Optional[float] = None,
-    attempt_journal: Optional[RawAttemptJournal] = None,
-    attempt_context: Optional[Mapping[str, Any]] = None,
 ) -> FetchResult:
     attempt = 0
     last_status = 0
     last_text = ""
     last_retry_after: Optional[float] = None
-    max_retries = max(0, min(int(max_retries), DEFAULT_HTTP_POLICY.max_retries))
-    timeout = max(0.001, min(float(timeout), DEFAULT_HTTP_POLICY.max_request_seconds))
-    if deadline is None:
-        deadline = time.monotonic() + DEFAULT_HTTP_POLICY.max_logical_fetch_seconds
-    fetch_nonce = secrets.token_hex(8) if attempt_journal is not None else ""
     # Check the shared deadline before every request, so a logical fetch never
     # issues an upstream call (nor sleeps) past its wall-clock budget.
     while attempt <= max_retries and (deadline is None or time.monotonic() < deadline):
@@ -536,31 +467,11 @@ def fetch_with_retries(
             if req_timeout <= 0:
                 break
         attempt += 1
-        if attempt_journal is None:
-            status, text, retry_after = http_request(url, headers, timeout=req_timeout)
-        else:
-            context = dict(attempt_context or {})
-            context["retry_ordinal"] = attempt
-            request_key = str(context.get("request_id") or url)
-            status, text, retry_after = http_request(
-                url,
-                headers,
-                timeout=req_timeout,
-                attempt_journal=attempt_journal,
-                attempt_key=f"{request_key}|{fetch_nonce}|{attempt}",
-                attempt_context=context,
-            )
+        status, text, retry_after = http_request(url, headers, timeout=req_timeout)
         last_status, last_text = status, text
         last_retry_after = retry_after
         if status < 400 or not retry_on(status):
-            return FetchResult(
-                ok=status < 400,
-                status=status,
-                url=url,
-                text=text,
-                attempts=attempt,
-                retry_after=retry_after,
-            )
+            return FetchResult(ok=status < 400, status=status, url=url, text=text, attempts=attempt)
         if attempt > max_retries:
             break
         # backoff + jitter, capped so a sleep never overshoots the deadline.
@@ -582,11 +493,7 @@ def fetch_with_retries(
 
 
 def retryable_status(status: int) -> bool:
-    if status in {408, 425, 429, 599}:
-        return True
-    # Preserve retry coverage for upstream 5xx responses. Locally generated
-    # 596-598 policy failures are deterministic and must fail closed immediately.
-    return 500 <= status <= 595
+    return status == 429 or status >= 500
 
 
 def fetch_json_plain(
@@ -595,8 +502,6 @@ def fetch_json_plain(
     timeout: float,
     max_retries: int,
     sleep_ms: int,
-    attempt_journal: Optional[RawAttemptJournal] = None,
-    attempt_context: Optional[Mapping[str, Any]] = None,
 ) -> FetchResult:
     headers = {"Accept": "application/json"}
     return fetch_with_retries(
@@ -606,8 +511,6 @@ def fetch_json_plain(
         max_retries=max_retries,
         sleep_ms=sleep_ms,
         retry_on=retryable_status,
-        attempt_journal=attempt_journal,
-        attempt_context=attempt_context,
     )
 
 
@@ -620,10 +523,8 @@ def fetch_cdr_json(
     sleep_ms: int,
     max_total_attempts: Optional[int] = None,
     max_total_seconds: Optional[float] = None,
-    attempt_journal: Optional[RawAttemptJournal] = None,
-    attempt_context: Optional[Mapping[str, Any]] = None,
 ) -> FetchResult:
-    order = list(CDR_VERSION_ORDER if versions is None else versions)
+    order = list(versions or CDR_VERSION_ORDER)
     # ONE shared budget for the whole logical fetch. The old code gave every
     # version its own full retry budget and then walked them all a second time, so
     # a persistent outage produced len(versions) * (max_retries + 1) upstream hits
@@ -631,31 +532,20 @@ def fetch_cdr_json(
     # 5xx AND lets the walk negotiate down through other versions (406, or a holder
     # that 422/500s on one version but serves another) - it just caps the total.
     if max_total_attempts is None:
-        max_total_attempts = max(max_retries + 1, DEFAULT_LOGICAL_FETCH_ATTEMPTS)
+        max_total_attempts = max(max_retries + 1, len(CDR_VERSION_ORDER) + 2)
     # A caller may pass 0 to mean "make no request" (e.g. an exhausted quota); a
     # negative value is clamped to 0. None means "use the default budget" above.
-    remaining = min(
-        max(0, int(max_total_attempts)),
-        DEFAULT_HTTP_POLICY.max_total_attempts,
+    remaining = max(0, max_total_attempts)
+    deadline = (
+        time.monotonic() + max_total_seconds if max_total_seconds is not None else None
     )
-    total_seconds = (
-        DEFAULT_HTTP_POLICY.max_logical_fetch_seconds
-        if max_total_seconds is None
-        else min(
-            max(0.0, float(max_total_seconds)),
-            DEFAULT_HTTP_POLICY.max_logical_fetch_seconds,
-        )
-    )
-    deadline = time.monotonic() + total_seconds
 
-    # An explicit caller order is an endpoint capability boundary. Only the
-    # default call may add the global CDR fallbacks; 406-advertised versions can
-    # still be negotiated next within the same bounded request budget.
+    # Requested order first, then any remaining known versions as a fallback
+    # (preserving the old two-pass coverage), then 406-advertised ones.
     queue: List[int] = list(order)
-    if versions is None:
-        for fallback in CDR_VERSION_ORDER:
-            if fallback not in queue:
-                queue.append(fallback)
+    for fb in CDR_VERSION_ORDER:
+        if fb not in queue:
+            queue.append(fb)
     tried: Set[int] = set()
     total_attempts = 0
 
@@ -687,11 +577,6 @@ def fetch_cdr_json(
             sleep_ms=sleep_ms,
             retry_on=retryable_status,
             deadline=deadline,
-            attempt_journal=attempt_journal,
-            attempt_context={
-                **dict(attempt_context or {}),
-                "cdr_version": v,
-            },
         )
         remaining -= res.attempts
         total_attempts += res.attempts
@@ -704,12 +589,9 @@ def fetch_cdr_json(
             )
 
         if res.status == 406:
-            # A holder's advertised capability is stronger evidence than our
-            # baked fallback order. Probe it next, while retaining the shared
-            # request budget and the remaining compatibility fallbacks.
-            for x in reversed(parse_supported_versions(res.text)):
+            for x in parse_supported_versions(res.text):
                 if x not in tried and x not in queue:
-                    queue.insert(0, x)
+                    queue.append(x)
 
         # Pace version switches on a retryable failure so the shared-budget walk
         # doesn't burst against a rate-limited / failing holder. Honor the server's
@@ -830,17 +712,12 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
     """
     by_phase: Dict[str, int] = {}
     by_status: Dict[str, int] = {}
-    by_provider: Dict[str, int] = {}
     total = 0
-    corrupt_records = 0
-    unattributed_records = 0
-    failure_log_readable = False
     try:
         handle = (date_root / "failures.jsonl").open(encoding="utf-8")
     except OSError:
         handle = None
     if handle is not None:
-        failure_log_readable = True
         with handle:
             # Stream line-by-line so a large failures log stays memory-bounded.
             for line in handle:
@@ -850,45 +727,21 @@ def summarize_failures(date_root: Path) -> Dict[str, Any]:
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
-                    corrupt_records += 1
                     continue
                 # A valid-but-non-object JSON line (list/str/number) would crash on
                 # rec.get; skip it rather than fail the whole run at the very end.
                 if not isinstance(rec, dict):
-                    corrupt_records += 1
                     continue
                 total += 1
                 phase = str(rec.get("phase") or "unknown")
                 status = "unknown" if rec.get("status") is None else str(rec.get("status"))
-                provider_value = rec.get("bank")
-                provider = (
-                    str(provider_value).strip() if provider_value is not None else ""
-                )
-                if not provider:
-                    unattributed_records += 1
-                    provider = "unknown"
                 by_phase[phase] = by_phase.get(phase, 0) + 1
                 by_status[status] = by_status.get(status, 0) + 1
-                by_provider[provider] = by_provider.get(provider, 0) + 1
     return {
         "total": total,
-        "corrupt_records": corrupt_records,
-        "unattributed_records": unattributed_records,
-        "failure_log_readable": failure_log_readable,
-        "failure_provenance_complete": (
-            failure_log_readable
-            and corrupt_records == 0
-            and unattributed_records == 0
-        ),
-        "incomplete": (
-            not failure_log_readable
-            or total > 0
-            or corrupt_records > 0
-            or unattributed_records > 0
-        ),
+        "incomplete": total > 0,
         "by_phase": by_phase,
         "by_status": by_status,
-        "by_provider": by_provider,
     }
 
 
@@ -903,12 +756,10 @@ def collect_register_snapshot(
     max_retries: int,
     sleep_ms: int,
     holders_filter: Optional[str],
-    attempt_journal: Optional[RawAttemptJournal] = None,
 ) -> RegisterSnapshot:
     """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
     register_payload_ok = False
-    register_attempts: List[Dict[str, Any]] = []
 
     attempts: List[Tuple[str, str]] = [
         (REGISTER_URL_SUMMARY, "cdr"),
@@ -916,13 +767,7 @@ def collect_register_snapshot(
         (REGISTER_URL_BANKING_REGISTER, "plain"),
     ]
 
-    for source_index, (url, mode) in enumerate(attempts, start=1):
-        attempt_context = {
-            "phase": "register_discovery",
-            "source_index": source_index,
-            "mode": mode,
-            "request_id": f"register:{source_index}:{mode}",
-        }
+    for url, mode in attempts:
         res = (
             fetch_cdr_json(
                 url,
@@ -930,32 +775,12 @@ def collect_register_snapshot(
                 timeout=timeout,
                 max_retries=max_retries,
                 sleep_ms=sleep_ms,
-                attempt_journal=attempt_journal,
-                attempt_context=attempt_context,
             )
             if mode == "cdr"
-            else fetch_json_plain(
-                url,
-                timeout=timeout,
-                max_retries=max_retries,
-                sleep_ms=sleep_ms,
-                attempt_journal=attempt_journal,
-                attempt_context=attempt_context,
-            )
+            else fetch_json_plain(url, timeout=timeout, max_retries=max_retries, sleep_ms=sleep_ms)
         )
         data = res.data
-        attempt_ok = res.ok and data is not None and not has_cdr_errors(data)
-        register_attempts.append(
-            {
-                "source_url": url,
-                "mode": mode,
-                "ok": attempt_ok,
-                "status": res.status,
-                "bytes": len((res.text or "").encode("utf-8")),
-                "sha256": hashlib.sha256((res.text or "").encode("utf-8")).hexdigest(),
-            }
-        )
-        if not attempt_ok:
+        if not res.ok or data is None or has_cdr_errors(data):
             continue
         register_payload_ok = True
         for b in iter_banking_brands_from_payload(data):
@@ -990,10 +815,6 @@ def collect_register_snapshot(
     )
     return RegisterSnapshot(
         register_ok=register_payload_ok,
-        register_provenance_complete=all(
-            attempt["ok"] for attempt in register_attempts
-        ),
-        register_attempts=register_attempts,
         banking_brands=banking_brands,
         banking_count_before_filter=count_banking,
     )
