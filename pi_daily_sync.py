@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
-from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable, is_raspberry_pi
+from ar_local_pi_runtime import (
+    data_runs_root,
+    data_state_root,
+    ensure_runtime_data_writable,
+    is_raspberry_pi,
+)
 from ar_local_subprocess import run_checked
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
@@ -22,6 +27,13 @@ LOCK_STALE_SECONDS = 6 * 60 * 60
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
 DASHBOARD_UNIT = "ar-local-dashboard.service"
 DASHBOARD_CONTROL_TIMEOUT_SEC = 120
+
+# Outcomes of maybe_publish_app_payload. "withheld" is a deliberate policy no-op
+# (nothing was eligible to publish), so it neither raises a pending retry nor
+# clears one an earlier day left behind; only a confirmed upload clears it.
+PUBLISH_PUBLISHED = "published"
+PUBLISH_WITHHELD = "withheld"
+PUBLISH_FAILED = "failed"
 
 
 def pause_dashboard_for_ingest() -> bool:
@@ -227,15 +239,21 @@ def _exports_from_pointer(state_dir: Path, pointer: dict) -> Optional[Path]:
     return candidate if candidate.is_dir() else None
 
 
-def maybe_publish_app_payload(repo_root: Path) -> bool:
+def maybe_publish_app_payload(repo_root: Path) -> str:
     """Build + publish the mobile-app payload after a successful ingest.
 
     Opt-in (AR_LOCAL_APP_PAYLOAD=1) and strictly non-fatal: a publish failure must
     never fail the daily ingest. Publishing itself is token-gated inside
     app_payload (no GH_TOKEN -> builds locally and skips the upload).
+
+    Returns one of PUBLISH_PUBLISHED / PUBLISH_WITHHELD / PUBLISH_FAILED. A build
+    that never reached the release (no gh auth, a swallowed upload error, a live
+    manifest that still does not match this revision) is PUBLISH_FAILED so the
+    pending marker survives and the watchdog retries it, rather than being
+    reported as success because no exception escaped.
     """
     if not _app_payload_enabled():
-        return True
+        return PUBLISH_WITHHELD
     try:
         import app_payload
 
@@ -249,7 +267,7 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
                 f"run_date={latest_observation.get('observation_date', 'unknown')} "
                 "observation_state=partial"
             )
-            return True
+            return PUBLISH_WITHHELD
         latest_complete = _read_observation_pointer(runtime_state, "latest-complete.json")
         exports = _exports_from_pointer(runtime_state, latest_complete)
         if exports is None:
@@ -257,7 +275,7 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
                 "[pi_daily_sync] app_payload promotion withheld "
                 "reason=missing_or_invalid_latest_complete_pointer"
             )
-            return True
+            return PUBLISH_WITHHELD
         observation_date = str(latest_complete.get("observation_date") or "")
         marker_relative = str(latest_complete.get("marker_path") or "")
         marker_part = Path(marker_relative)
@@ -271,7 +289,7 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
                 "[pi_daily_sync] app_payload promotion withheld "
                 "reason=invalid_latest_complete_pointer"
             )
-            return True
+            return PUBLISH_WITHHELD
         completion_marker = runtime_state / marker_part
         try:
             completion = json.loads(completion_marker.read_text(encoding="utf-8"))
@@ -283,7 +301,7 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
                 f"run_date={observation_date or 'unknown'} "
                 "reason=unverified_completion_marker"
             )
-            return True
+            return PUBLISH_WITHHELD
         if (
             completion.get("finalization_schema_version") == 2
             and completion.get("observation_state") != "complete"
@@ -295,7 +313,7 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
             )
             # Withholding an incomplete candidate is a successful policy outcome,
             # not a publication failure that the watchdog should retry forever.
-            return True
+            return PUBLISH_WITHHELD
         payload_state = runtime_state / "app-payload"
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
@@ -317,22 +335,37 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
             f"core={core_name} details={details_name} exit=0"
             f" pruned_local_assets={pruned_v1}"
         )
+        # Neither published_dated nor published_latest is a reliable success signal on
+        # its own: publish_payload returns False (never raises) when gh auth is
+        # missing or the live manifest check errors, and build_and_publish_dual
+        # swallows a failed dated upload. The rolling app-payload-latest manifest is
+        # what the mobile app actually polls, so confirm against it.
         v2_eligible = published_latest
+        rolling_superseded = False
+        rolling_confirmed = published_latest
         if not v2_eligible:
             try:
                 live_status, live_v1 = app_payload._live_manifest_status(
                     app_payload.DEFAULT_REPO, app_payload.DEFAULT_TAG
                 )
-                v2_eligible = (
-                    live_status == "present"
-                    and live_v1 is not None
-                    and _same_payload_revision(manifest, live_v1)
-                )
+                if live_status == "present" and live_v1 is not None:
+                    v2_eligible = _same_payload_revision(manifest, live_v1)
+                    rolling_confirmed = v2_eligible
+                    # A backfill may legitimately hold a newer run_date on the
+                    # rolling tag; that is a correct skip, not a lost upload.
+                    rolling_superseded = not v2_eligible and (
+                        str(live_v1.get("run_date") or "") > run_date
+                    )
             except Exception as live_exc:  # noqa: BLE001 - optional sidecar check
                 print(
                     "[pi_daily_sync] app_payload v2 skipped "
                     f"reason=v1_revision_check_failed error={live_exc!r}"
                 )
+        outcome = (
+            PUBLISH_PUBLISHED
+            if (rolling_confirmed or rolling_superseded)
+            else PUBLISH_FAILED
+        )
         if v2_eligible and not v2_publication_allowed():
             print(
                 "[pi_daily_sync] app_payload v2 skipped "
@@ -371,10 +404,18 @@ def maybe_publish_app_payload(repo_root: Path) -> bool:
                     f"[pi_daily_sync] app_payload dates-index refresh failed "
                     f"(non-fatal) error={idx_exc!r}"
                 )
-        return True
+        if outcome != PUBLISH_PUBLISHED:
+            print(
+                "[pi_daily_sync] app_payload publication incomplete "
+                f"run_date={run_date} published_dated={published_dated} "
+                f"published_latest={published_latest} "
+                "reason=rolling_manifest_not_confirmed (retry pending)",
+                file=sys.stderr,
+            )
+        return outcome
     except Exception as exc:  # noqa: BLE001 - never fail the ingest on payload errors
         print(f"[pi_daily_sync] app_payload publish failed (non-fatal) error={exc!r} exit=0")
-        return False
+        return PUBLISH_FAILED
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -420,14 +461,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "reason=publication_disabled",
                         file=sys.stderr,
                     )
-                elif maybe_publish_app_payload(REPO_ROOT):
-                    clear_payload_publication_pending(REPO_ROOT)
-                    print("[pi_daily_sync] app_payload retry completed")
                 else:
-                    print(
-                        "[pi_daily_sync] app_payload retry remains pending reason=publish_failed",
-                        file=sys.stderr,
-                    )
+                    outcome = maybe_publish_app_payload(REPO_ROOT)
+                    if outcome == PUBLISH_PUBLISHED:
+                        clear_payload_publication_pending(REPO_ROOT)
+                        print("[pi_daily_sync] app_payload retry completed")
+                    else:
+                        # Withheld keeps the marker too: nothing reached the release,
+                        # so the upload is still outstanding for the next attempt.
+                        print(
+                            "[pi_daily_sync] app_payload retry remains pending "
+                            f"reason={outcome}",
+                            file=sys.stderr,
+                        )
                 return 0
             sector_args: list[str] = []
             if args.banks_only:
@@ -453,10 +499,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if dashboard_paused:
                     resume_dashboard_after_ingest()
             if _app_payload_enabled():
-                if maybe_publish_app_payload(REPO_ROOT):
+                outcome = maybe_publish_app_payload(REPO_ROOT)
+                if outcome == PUBLISH_PUBLISHED:
                     clear_payload_publication_pending(REPO_ROOT)
-                else:
+                elif outcome == PUBLISH_FAILED:
                     mark_payload_publication_pending(REPO_ROOT, "publish_failed")
+                elif payload_publication_pending(REPO_ROOT):
+                    # Today withheld by policy, but an earlier day's upload never
+                    # landed. Keep that marker so the watchdog keeps retrying.
+                    print(
+                        "[pi_daily_sync] app_payload remains pending "
+                        "reason=withheld_this_run",
+                        file=sys.stderr,
+                    )
             elif payload_publication_pending(REPO_ROOT):
                 print(
                     "[pi_daily_sync] app_payload remains pending "
