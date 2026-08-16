@@ -79,7 +79,123 @@ def test_partial_finalized_observation_is_withheld_from_app_promotion(
             == pi_daily_sync.PUBLISH_WITHHELD
         )
     publish.assert_not_called()
-    assert "missing_or_invalid_latest_complete_pointer" in capsys.readouterr().out
+    assert "missing_or_invalid_observation_pointer" in capsys.readouterr().out
+
+
+def _partial_contract(*, failures: int, products: int = 3027, partial: int = 7) -> dict:
+    return {
+        "observation_state": "partial",
+        "coverage": {
+            "failure_records": failures,
+            "corrupt_failure_records": 0,
+            "unattributed_failure_records": 0,
+            "products_discovered": products,
+            "providers_registered": 118,
+            "providers_attempted": 118,
+            "providers_partial": partial,
+            "providers_failed": 0,
+            "register_sources_attempted": 1,
+            "register_sources_complete": 1,
+            "register_provenance_complete": True,
+            "failure_provenance_complete": True,
+        },
+    }
+
+
+def test_bounded_partial_v1_policy_accepts_live_scale_but_pins_limits() -> None:
+    assert pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=17))
+    assert not pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=26))
+    assert not pi_daily_sync._bounded_partial_v1_allowed(
+        _partial_contract(failures=17, products=1600)
+    )
+    assert not pi_daily_sync._bounded_partial_v1_allowed(
+        _partial_contract(failures=17, partial=12)
+    )
+
+
+def test_bounded_partial_v1_policy_requires_complete_provenance() -> None:
+    contract = _partial_contract(failures=17)
+    contract["coverage"]["register_provenance_complete"] = False
+    assert not pi_daily_sync._bounded_partial_v1_allowed(contract)
+
+
+def test_verified_bounded_partial_reaches_v1_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    date = "2026-08-16"
+    exports = tmp_path / "runs" / date / "_exports"
+    cache = exports / "dashboard-cache"
+    cache.mkdir(parents=True)
+    (cache / "latest.json").write_text(
+        json.dumps(
+            {
+                "run_date": date,
+                "banks_counts": {
+                    "products": 100,
+                    "rates": 10,
+                    "fees": 0,
+                    "features": 0,
+                    "eligibility": 0,
+                    "constraints": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (exports / "banks.json").write_text('{"rates":[]}', encoding="utf-8")
+    provider_states = [
+        {
+            "provider_uid": f"provider-{index}",
+            "state": "partial" if index == 0 else "complete",
+            "failure_records": 1 if index == 0 else 0,
+        }
+        for index in range(10)
+    ]
+    (exports / "ingest-status.json").write_text(
+        json.dumps(
+            {
+                "total": 1,
+                "corrupt_records": 0,
+                "unattributed_records": 0,
+                "failure_provenance_complete": True,
+                "incomplete": True,
+                "register_provenance_complete": True,
+                "register_attempts": [
+                    {
+                        "source_url": "https://register.example/summary",
+                        "mode": "cdr",
+                        "ok": True,
+                        "status": 200,
+                        "bytes": 2,
+                        "sha256": "a" * 64,
+                    }
+                ],
+                "providers_registered": 10,
+                "providers_attempted": 10,
+                "provider_states": provider_states,
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    finalize_observation(
+        exports,
+        state,
+        state / f"{date}.done.json",
+        observation_date=date,
+        result={"run_date": date, "banks_counts": {"rates": 10}},
+    )
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: state)
+    with mock.patch(
+        "app_payload.build_and_publish_dual", side_effect=RuntimeError("builder reached")
+    ) as publish:
+        assert (
+            pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+            == pi_daily_sync.PUBLISH_FAILED
+        )
+    publish.assert_called_once()
+    assert "bounded partial v1 promotion" in capsys.readouterr().out
 
 
 def test_revision_pointer_requires_its_exact_verified_marker(
