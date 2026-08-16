@@ -103,4 +103,3 @@ def validate_payload_network_budget(
             for name, byte_count in journeys.items()
         },
     }
-

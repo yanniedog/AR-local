@@ -9,4 +9,3 @@ Unit=ar-local-capacity-monitor.service
 
 [Install]
 WantedBy=timers.target
-

@@ -44,4 +44,3 @@ def test_requires_declared_bytes_to_match_local_release_assets(tmp_path: Path) -
     (tmp_path / "search.gz").write_bytes(b"search")
     with pytest.raises(ValueError, match="details local bytes"):
         validate_payload_network_budget(manifest, manifest_bytes=2_000, asset_root=tmp_path)
-
