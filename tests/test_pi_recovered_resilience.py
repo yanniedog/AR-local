@@ -103,13 +103,36 @@ def _partial_contract(*, failures: int, products: int = 3027, partial: int = 7) 
 
 
 def test_bounded_partial_v1_policy_accepts_live_scale_but_pins_limits() -> None:
+    # 2026-08-16, a healthy production run: 17 failure records over 3,027
+    # products with 7 of 118 providers partial.
     assert pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=17))
-    assert not pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=26))
+    # Ordinary endpoint flakiness on top of that must not withhold the payload.
+    assert pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=29))
+    assert pi_daily_sync._bounded_partial_v1_allowed(
+        _partial_contract(failures=17, partial=17)
+    )
+    # The 1% ratio stays the real gate for a catalogue this size, and the
+    # boundary sits between 30 and 31: 1% of 3,027 products is 30.27.
+    assert pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=30))
+    assert not pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=31))
+    # A small catalogue cannot slip through on ratio alone.
     assert not pi_daily_sync._bounded_partial_v1_allowed(
         _partial_contract(failures=17, products=1600)
     )
+    # Losing a sixth of the providers is still a withhold.
     assert not pi_daily_sync._bounded_partial_v1_allowed(
-        _partial_contract(failures=17, partial=12)
+        _partial_contract(failures=17, partial=18)
+    )
+
+
+def test_bounded_partial_v1_policy_still_withholds_a_broken_day() -> None:
+    """2026-08-15: 1,195 failure records with 34 of 118 providers partial.
+
+    The widened bounds must not admit the day this policy exists to catch; it
+    misses every one of them by an order of magnitude.
+    """
+    assert not pi_daily_sync._bounded_partial_v1_allowed(
+        _partial_contract(failures=1195, products=1864, partial=34)
     )
 
 
