@@ -50,7 +50,6 @@ from app_payload_common import (
     _load_json,
 )
 from app_payload_details import build_details
-from cdr_product_facts import NORMALIZATION_VERSION as PRODUCT_FACTS_NORMALIZATION_VERSION
 from app_payload_publish import publish_payload
 
 def _find_banks_json(exports_dir: Path, run_date: str) -> Path:
@@ -338,7 +337,6 @@ def _compute_payload(
     }
     details = {
         "schema_version": SCHEMA_VERSION,
-        "normalization_version": PRODUCT_FACTS_NORMALIZATION_VERSION,
         "run_date": run_date,
         "products": build_details(products),
     }
