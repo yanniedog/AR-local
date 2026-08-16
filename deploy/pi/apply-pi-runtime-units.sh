@@ -97,6 +97,7 @@ for name in \
   ar-local-daily-watchdog.service \
   ar-local-ingest-alert.service \
   ar-local-runtime-health.service \
+  ar-local-capacity-monitor.service \
   ar-local-boot-recovery.service \
   ar-local-ingest-now.service \
   ar-local-deploy-watchdog.service
@@ -109,7 +110,8 @@ for name in \
   ar-local-daily.timer \
   ar-local-daily-watchdog.timer \
   ar-local-deploy-watchdog.timer \
-  ar-local-runtime-health.timer
+  ar-local-runtime-health.timer \
+  ar-local-capacity-monitor.timer
 do
   sudo install -m 0644 "$repo_dir/deploy/pi/$name" "/etc/systemd/system/$name"
 done
@@ -121,6 +123,7 @@ sudo systemctl enable --now \
   ar-local-daily.timer \
   ar-local-daily-watchdog.timer \
   ar-local-deploy-watchdog.timer \
-  ar-local-runtime-health.timer
+  ar-local-runtime-health.timer \
+  ar-local-capacity-monitor.timer
 sudo systemctl restart ar-local-dashboard.service
 sudo systemctl restart ar-local-daily.timer ar-local-daily-watchdog.timer

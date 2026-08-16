@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically sample AR-local storage runway
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=ar-local-capacity-monitor.service
+
+[Install]
+WantedBy=timers.target
+
