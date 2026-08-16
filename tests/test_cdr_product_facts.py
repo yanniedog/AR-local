@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import tracemalloc
 from copy import deepcopy
 from pathlib import Path
 
@@ -15,6 +16,39 @@ FIXTURE = Path(__file__).parent / "fixtures" / "product_facts_real_2026-05-19.js
 
 def captured():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))["products"]
+
+
+def test_large_json_output_streams_without_building_a_second_full_copy(tmp_path: Path) -> None:
+    output = tmp_path / "large.json"
+    repeated = "x" * 1_000
+    payload = {"rows": [repeated] * 8_000}
+
+    tracemalloc.start()
+    cdr_outputs.write_json(output, payload)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert peak < 4_000_000
+    assert output.stat().st_size > 8_000_000
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert not (tmp_path / ".large.json.tmp").exists()
+
+
+def test_json_output_failure_preserves_the_existing_file(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "stable.json"
+    output.write_text('{"stable":true}', encoding="utf-8")
+
+    def fail_after_partial_write(_data, stream, **_kwargs) -> None:
+        stream.write("partial")
+        raise RuntimeError("injected JSON serialization failure")
+
+    monkeypatch.setattr(cdr_outputs.json, "dump", fail_after_partial_write)
+
+    with pytest.raises(RuntimeError, match="injected JSON serialization failure"):
+        cdr_outputs.write_json(output, {"replacement": True})
+
+    assert output.read_text(encoding="utf-8") == '{"stable":true}'
+    assert not (tmp_path / ".stable.json.tmp").exists()
 
 
 def test_real_cdr_facts_are_typed_unique_grouped_and_currency_safe():

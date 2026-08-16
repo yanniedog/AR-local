@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
-from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable
+from ar_local_pi_runtime import data_state_root, ensure_runtime_data_writable, is_raspberry_pi
 from ar_local_subprocess import run_checked
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
@@ -19,6 +20,53 @@ from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
 REPO_ROOT = Path(__file__).resolve().parent
 LOCK_STALE_SECONDS = 6 * 60 * 60
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
+DASHBOARD_UNIT = "ar-local-dashboard.service"
+DASHBOARD_CONTROL_TIMEOUT_SEC = 120
+
+
+def pause_dashboard_for_ingest() -> bool:
+    """Reserve dashboard preload memory for the mandatory Pi ingest."""
+    if not is_raspberry_pi():
+        return False
+    try:
+        result = subprocess.run(
+            ["sudo", "systemctl", "stop", DASHBOARD_UNIT],
+            check=False,
+            shell=False,
+            timeout=DASHBOARD_CONTROL_TIMEOUT_SEC,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        print(f"[pi_daily_sync] dashboard pause failed (non-fatal): {exc}", file=sys.stderr)
+        return False
+    if result.returncode != 0:
+        print(
+            f"[pi_daily_sync] dashboard pause failed (non-fatal) exit={result.returncode}",
+            file=sys.stderr,
+        )
+        return False
+    print("[pi_daily_sync] dashboard paused for daily ingest")
+    return True
+
+
+def resume_dashboard_after_ingest() -> None:
+    """Best-effort dashboard recovery without changing ingest outcome."""
+    try:
+        result = subprocess.run(
+            ["sudo", "systemctl", "start", DASHBOARD_UNIT],
+            check=False,
+            shell=False,
+            timeout=DASHBOARD_CONTROL_TIMEOUT_SEC,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        print(f"[pi_daily_sync] dashboard resume failed (non-fatal): {exc}", file=sys.stderr)
+        return
+    if result.returncode != 0:
+        print(
+            f"[pi_daily_sync] dashboard resume failed (non-fatal) exit={result.returncode}",
+            file=sys.stderr,
+        )
+        return
+    print("[pi_daily_sync] dashboard resumed after daily ingest")
 
 
 def v2_publication_allowed() -> bool:
@@ -386,18 +434,24 @@ def main(argv: Optional[list[str]] = None) -> int:
                 sector_args = ["--banks-only"]
             force_args = ["--force"] if args.force else []
             date_args = ["--date", args.date] if args.date else []
-            run_checked(
-                [
-                    sys.executable,
-                    str(REPO_ROOT / "cdr_daily.py"),
-                    "--workers",
-                    str(DAILY_WORKER_COUNT),
-                    *sector_args,
-                    *force_args,
-                    *date_args,
-                ],
-                cwd=REPO_ROOT,
-            )
+            dashboard_paused = pause_dashboard_for_ingest()
+            try:
+                run_checked(
+                    [
+                        sys.executable,
+                        str(REPO_ROOT / "cdr_daily.py"),
+                        "--workers",
+                        str(DAILY_WORKER_COUNT),
+                        "--archive-failed-ram-stage",
+                        *sector_args,
+                        *force_args,
+                        *date_args,
+                    ],
+                    cwd=REPO_ROOT,
+                )
+            finally:
+                if dashboard_paused:
+                    resume_dashboard_after_ingest()
             if _app_payload_enabled():
                 if maybe_publish_app_payload(REPO_ROOT):
                     clear_payload_publication_pending(REPO_ROOT)

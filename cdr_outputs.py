@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cdr_clean_export import coverage_summary, parse_banks_run, summary_counts, utc_now
-from cdr_product_changes import diff_normalized_product_facts, load_run_facts, previous_finalized_run
+from cdr_product_change_runs import iter_run_fact_groups, previous_finalized_run
+from cdr_product_changes import diff_normalized_product_fact_groups
 from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_taxonomy import build_taxonomy_summary
 from cdr_xlsx import write_workbook
@@ -110,7 +112,15 @@ REMOVED_SECTOR_DROP_SQL = (
 
 def write_json(path: Path, data: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary = path.parent / f".{path.name}.tmp"
+    try:
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=2, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def row_for_columns(row: Mapping[str, Any], columns: List[str]) -> List[Any]:
@@ -304,6 +314,10 @@ def ensure_db(con: sqlite3.Connection) -> None:
         "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', ?)",
         (SCHEMA_VERSION,),
     )
+    con.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('normalization_version', ?)",
+        (NORMALIZATION_VERSION,),
+    )
 
 
 def needs_schema_reset(con: sqlite3.Connection) -> bool:
@@ -382,6 +396,8 @@ def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> No
             insert_rows(con, "bank_items", with_run_date(add_group(banks[group], group), run_date))
         insert_rows(con, "bank_product_facts", with_run_date(banks["product_facts"], run_date))
         insert_rows(con, "bank_product_changes", banks.get("product_changes", []))
+        con.commit()
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def add_group(rows: List[Mapping[str, Any]], group: str) -> List[Dict[str, Any]]:
@@ -497,6 +513,40 @@ def _exclude_failed_missing_products(
     return output, len(suppressed)
 
 
+def _exclude_failed_missing_product_groups(
+    previous_groups: Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]],
+    current_facts: List[Dict[str, Any]],
+    failures: List[Dict[str, Any]],
+) -> tuple[Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]], Dict[str, int]]:
+    """Return filtered groups; the count is final after the iterable is exhausted."""
+    current_keys = {
+        (str(row.get("provider") or "").casefold(), str(row.get("product_id") or ""), str(row.get("dataset") or ""))
+        for row in current_facts
+    }
+    failed_providers = {
+        str(row.get("bank") or "").casefold()
+        for row in failures
+        if str(row.get("phase") or "") in {"products_index", "holder"}
+    }
+    failed_products = {
+        (str(row.get("bank") or "").casefold(), str(row.get("product_id") or ""))
+        for row in failures
+        if str(row.get("phase") or "") == "product_detail" and row.get("product_id") not in (None, "")
+    }
+    result = {"suppressed": 0}
+
+    def filtered() -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
+        for product_key, facts in previous_groups:
+            key = (product_key[0].casefold(), product_key[1], product_key[2])
+            failed = key[0] in failed_providers or (key[0], key[1]) in failed_products
+            if failed and key not in current_keys:
+                result["suppressed"] += 1
+                continue
+            yield product_key, facts
+
+    return filtered(), result
+
+
 def build_outputs(
     run_root: Path,
     out_dir: Optional[Path] = None,
@@ -507,23 +557,27 @@ def build_outputs(
     run_date = run_root.name
     banks = parse_banks_run(run_root)
     previous = previous_run_root or previous_finalized_run(run_root)
-    previous_facts = load_run_facts(previous) if previous else []
-    previous_facts, suppressed_incomplete_products = _exclude_failed_missing_products(
-        previous_facts,
-        banks["product_facts"],
-        banks["failures"],
-    )
-    changes = diff_normalized_product_facts(
-        previous_facts,
-        banks["product_facts"],
-        previous_run_date=previous.name,
-        current_run_date=run_date,
-    ) if previous else {
-        "schema_version": 1, "normalization_version": NORMALIZATION_VERSION,
-        "previous_run_date": None, "run_date": run_date, "change_count": 0,
-        "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
-        "events": [],
-    }
+    if previous:
+        previous_groups, suppression = _exclude_failed_missing_product_groups(
+            iter_run_fact_groups(previous),
+            banks["product_facts"],
+            banks["failures"],
+        )
+        changes = diff_normalized_product_fact_groups(
+            previous_groups,
+            banks["product_facts"],
+            previous_run_date=previous.name,
+            current_run_date=run_date,
+        )
+        suppressed_incomplete_products = suppression["suppressed"]
+    else:
+        suppressed_incomplete_products = 0
+        changes = {
+            "schema_version": 1, "normalization_version": NORMALIZATION_VERSION,
+            "previous_run_date": None, "run_date": run_date, "change_count": 0,
+            "products": {"previous": 0, "current": len(banks["products"]), "joined": 0},
+            "events": [],
+        }
     changes["suppressed_incomplete_products"] = suppressed_incomplete_products
     banks["product_changes"] = product_change_rows(changes)
     banks["product_change_summary"] = {

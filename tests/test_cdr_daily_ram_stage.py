@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
 import cdr_daily
+import cdr_outputs
 from cdr_atomic import atomic_write_json
 from cdr_finalization import verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
@@ -129,6 +131,22 @@ def _configure(tmp_path, monkeypatch, *, rates=1):
     return args, runs, state, ram
 
 
+def _failed_stage_paths(tmp_path):
+    runs = tmp_path / "data" / "runs"
+    ram = tmp_path / "ram"
+    raw = ram / "runs" / DATE
+    derived = ram / "exports" / DATE
+    (raw / "_raw-attempt-journals-v1" / SESSION).mkdir(parents=True)
+    (derived / "_exports" / "attempt-evidence" / SESSION).mkdir(parents=True)
+    (raw / "_raw-attempt-journals-v1" / SESSION / "attempt.json").write_bytes(
+        b'{"status":406,"wire_sha256":"preserved"}\n'
+    )
+    (derived / "_exports" / "attempt-evidence" / SESSION / "summary.json").write_bytes(
+        b'{"verified":true,"attempts":1}\n'
+    )
+    return runs, ram, raw, derived
+
+
 def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     tmp_path,
     monkeypatch,
@@ -151,6 +169,86 @@ def test_successful_ram_stage_finalizes_evidence_before_source_cleanup(
     assert verify_completion_marker(marker, state, DATE) is True
     assert not (ram / "runs" / DATE).exists()
     assert not (ram / "exports" / DATE).exists()
+
+
+def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch):
+    args, runs, state, ram = _configure(tmp_path, monkeypatch)
+    args.ram_stage = False
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    expected_stage = runs.parent / ".daily-export-stage" / DATE / "_exports"
+    configured_ingest = cdr_daily.run_ingest
+
+    def ingest(script_dir, out_dir, date, extra):
+        configured_ingest(script_dir, out_dir, date, extra)
+        detail = out_dir / date / "banks" / "Mortgage" / "Example Bank" / "loan-1"
+        detail.mkdir(parents=True)
+        (detail / "product-detail.json").write_text(
+            json.dumps({
+                "data": {
+                    "productId": "loan-1",
+                    "name": "Example variable home loan",
+                    "brand": "Example Bank",
+                    "features": [],
+                    "eligibility": [],
+                    "constraints": [],
+                    "fees": [],
+                    "lendingRates": [{
+                        "lendingRateType": "VARIABLE",
+                        "rate": "5.50",
+                        "comparisonRate": "5.70",
+                    }],
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
+
+    def build(run_root, export_root, db_path, *, previous_run_root=None):
+        assert export_root == expected_stage
+        assert not str(export_root).startswith(str(ram))
+        return cdr_outputs.build_outputs(
+            run_root,
+            export_root,
+            db_path,
+            previous_run_root=previous_run_root,
+        )
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", build)
+
+    assert cdr_daily.run_once(args) == 1
+
+    exported = json.loads(
+        (runs / DATE / "_exports" / f"banks-{DATE}.json").read_text(encoding="utf-8")
+    )
+    assert len(exported["rates"]) == 1
+    assert not (ram / "runs" / DATE).exists()
+    assert not (ram / "exports").exists()
+    assert not expected_stage.exists()
+    assert (state / f"{DATE}.done.json").is_file()
+
+
+def test_completed_pi_run_retries_failed_persistent_stage_cleanup(tmp_path, monkeypatch):
+    args, runs, _state, _ram = _configure(tmp_path, monkeypatch)
+    args.ram_stage = False
+    monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
+    staged_date = runs.parent / ".daily-export-stage" / DATE
+    real_rmtree = cdr_daily.shutil.rmtree
+    blocked_once = False
+
+    def flaky_rmtree(path, *call_args, **call_kwargs):
+        nonlocal blocked_once
+        if Path(path) == staged_date and not blocked_once:
+            blocked_once = True
+            return None
+        return real_rmtree(path, *call_args, **call_kwargs)
+
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", flaky_rmtree)
+
+    assert cdr_daily.run_once(args) == 1
+    assert staged_date.is_dir()
+    assert cdr_daily.run_once(args) == 0
+    assert not staged_date.exists()
 
 
 def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(
@@ -177,6 +275,104 @@ def test_zero_rate_ram_stage_preserves_source_and_never_installs_target(
         for path in ram.rglob("*")
         if path.is_file()
     } == source_before
+
+
+def test_failed_ram_stage_is_archived_create_once_before_retry(tmp_path, monkeypatch):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    raw_before = {
+        path.relative_to(raw).as_posix(): path.read_bytes()
+        for path in raw.rglob("*") if path.is_file()
+    }
+    derived_before = {
+        path.relative_to(derived).as_posix(): path.read_bytes()
+        for path in derived.rglob("*") if path.is_file()
+    }
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+    assert archive is not None
+    assert not raw.exists() and not derived.exists()
+    assert {
+        path.relative_to(archive / "runs").as_posix(): path.read_bytes()
+        for path in (archive / "runs").rglob("*") if path.is_file()
+    } == raw_before
+    assert {
+        path.relative_to(archive / "exports").as_posix(): path.read_bytes()
+        for path in (archive / "exports").rglob("*") if path.is_file()
+    } == derived_before
+
+
+def test_failed_ram_archive_ignores_and_cleans_directory_only_export_stage(tmp_path):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    for path in sorted(derived.rglob("*"), reverse=True):
+        if path.is_file():
+            path.unlink()
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive is not None
+    assert (archive / "runs" / "_raw-attempt-journals-v1" / SESSION / "attempt.json").is_file()
+    assert not (archive / "exports").exists()
+    assert not raw.exists() and not derived.exists()
+
+
+def test_failed_ram_archive_recovers_old_transaction_with_empty_export_stage(tmp_path):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    for path in sorted(derived.rglob("*"), reverse=True):
+        if path.is_file():
+            path.unlink()
+    archive_parent = runs / DATE / "_failed_attempts"
+    transaction = {
+        "schema_version": 1,
+        "archive_name": "ram-123",
+        "source_names": ["runs", "exports"],
+        "state": "copying",
+    }
+    cdr_daily.atomic_write_json(
+        archive_parent / ".ram-stage-archive.json",
+        transaction,
+        create_once=True,
+    )
+
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive == archive_parent / "ram-123"
+    assert (archive / "runs" / "_raw-attempt-journals-v1" / SESSION / "attempt.json").is_file()
+    assert not (archive / "exports").exists()
+    assert not raw.exists() and not derived.exists()
+    assert not (archive_parent / ".ram-stage-archive.json").exists()
+
+
+def test_failed_ram_archive_recovers_after_crash_during_source_cleanup(
+    tmp_path,
+    monkeypatch,
+):
+    runs, _ram, raw, derived = _failed_stage_paths(tmp_path)
+    original_rmtree = cdr_daily.shutil.rmtree
+    crashed = False
+
+    def crash_mid_cleanup(path):
+        nonlocal crashed
+        if not crashed:
+            crashed = True
+            first_file = next(item for item in path.rglob("*") if item.is_file())
+            first_file.unlink()
+            raise OSError("simulated power loss during cleanup")
+        return original_rmtree(path)
+
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", crash_mid_cleanup)
+    with pytest.raises(OSError, match="power loss"):
+        cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    transaction = runs / DATE / "_failed_attempts" / ".ram-stage-archive.json"
+    assert transaction.is_file()
+    monkeypatch.setattr(cdr_daily.shutil, "rmtree", original_rmtree)
+    archive = cdr_daily.archive_failed_ram_stage(raw, derived, runs / DATE)
+
+    assert archive is not None
+    assert not raw.exists() and not derived.exists()
+    assert not transaction.exists()
+    assert (archive / "runs").is_dir()
+    assert (archive / "exports").is_dir()
 
 
 def test_finalizer_failure_preserves_staged_and_installed_evidence(

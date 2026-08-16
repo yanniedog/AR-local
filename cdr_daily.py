@@ -16,6 +16,7 @@ from cdr_attempt_evidence_promotion import (
     install_tree_create_once as copytree_atomic,
     promote_attempt_evidence,
 )
+from cdr_atomic import atomic_write_json
 from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
@@ -100,6 +101,17 @@ def _export_root_has_content(root: Path) -> bool:
     return root.is_dir() and any(root.iterdir())
 
 
+def _archive_source_has_files(root: Path) -> bool:
+    return root.is_dir() and any(path.is_file() for path in root.rglob("*"))
+
+
+def _archive_source_is_directory_only(root: Path) -> bool:
+    return root.is_dir() and all(
+        path.is_dir() and not path.is_symlink()
+        for path in root.rglob("*")
+    )
+
+
 def prepare_ram_stage(path: Path) -> None:
     """Reserve a stage without deleting evidence from an interrupted run."""
     path = path.expanduser().resolve()
@@ -111,6 +123,112 @@ def prepare_ram_stage(path: Path) -> None:
             )
         return
     path.mkdir(parents=True, exist_ok=False)
+
+
+def persistent_export_stage_root(persistent_runs_root: Path, date: str) -> Path:
+    """Keep large derived exports off tmpfs while raw requests remain RAM-staged."""
+    return persistent_runs_root.parent / ".daily-export-stage" / date / "_exports"
+
+
+def cleanup_persistent_export_stage(persistent_runs_root: Path, date: str) -> None:
+    """Best-effort cleanup; a finalized retry invokes this again if removal failed."""
+    shutil.rmtree(
+        persistent_export_stage_root(persistent_runs_root, date).parent,
+        ignore_errors=True,
+    )
+
+
+def archive_failed_ram_stage(
+    staged_run: Path,
+    staged_export_date: Path,
+    persistent_date_root: Path,
+) -> Optional[Path]:
+    """Preserve a failed RAM attempt create-once, then release its stage.
+
+    A persistent transaction marker makes cleanup restartable.  In particular,
+    a power loss after an archive is verified but midway through ``rmtree`` must
+    not make the remaining partial source look like a new ingest attempt.
+    """
+    sources = {"runs": staged_run, "exports": staged_export_date}
+    archive_parent = persistent_date_root / "_failed_attempts"
+    transaction_path = archive_parent / ".ram-stage-archive.json"
+
+    if transaction_path.exists():
+        try:
+            transaction = json.loads(transaction_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("failed RAM-stage archive transaction is corrupt") from error
+        if not isinstance(transaction, dict) or set(transaction) != {
+            "schema_version",
+            "archive_name",
+            "source_names",
+            "state",
+        }:
+            raise RuntimeError("failed RAM-stage archive transaction is invalid")
+        archive_name = transaction.get("archive_name")
+        source_names = transaction.get("source_names")
+        state = transaction.get("state")
+        if (
+            transaction.get("schema_version") != 1
+            or not isinstance(archive_name, str)
+            or not archive_name.startswith("ram-")
+            or not archive_name.removeprefix("ram-").isdigit()
+            or not isinstance(source_names, list)
+            or not source_names
+            or len(source_names) != len(set(source_names))
+            or any(name not in sources for name in source_names)
+            or state not in {"copying", "copied"}
+        ):
+            raise RuntimeError("failed RAM-stage archive transaction is invalid")
+    else:
+        source_names = [name for name, path in sources.items() if _archive_source_has_files(path)]
+        if not source_names:
+            return None
+        stamp = max(sources[name].stat().st_mtime_ns for name in source_names)
+        archive_name = f"ram-{stamp}"
+        state = "copying"
+        transaction = {
+            "schema_version": 1,
+            "archive_name": archive_name,
+            "source_names": source_names,
+            "state": state,
+        }
+        atomic_write_json(transaction_path, transaction, create_once=True)
+
+    archive = archive_parent / archive_name
+    if state == "copying":
+        empty_names = [
+            name
+            for name in source_names
+            if sources[name].exists() and not _archive_source_has_files(sources[name])
+        ]
+        if empty_names:
+            if any(not _archive_source_is_directory_only(sources[name]) for name in empty_names):
+                raise RuntimeError("failed RAM-stage source contains unsupported empty nodes")
+            source_names = [name for name in source_names if name not in empty_names]
+            if not source_names:
+                raise RuntimeError("failed RAM-stage archive transaction lost every source")
+            transaction["source_names"] = source_names
+            atomic_write_json(transaction_path, transaction)
+        for name in source_names:
+            source = sources[name]
+            if not _archive_source_has_files(source):
+                raise RuntimeError("failed RAM-stage source disappeared before archive commit")
+            copytree_atomic(source, archive / name)
+        transaction["state"] = "copied"
+        atomic_write_json(transaction_path, transaction)
+    else:
+        for name in source_names:
+            if not _archive_source_has_files(archive / name):
+                raise RuntimeError("committed failed RAM-stage archive is incomplete")
+
+    for name, source in sources.items():
+        if source.exists():
+            if name not in source_names and not _archive_source_is_directory_only(source):
+                raise RuntimeError("refusing to remove unarchived RAM-stage content")
+            shutil.rmtree(source)
+    transaction_path.unlink()
+    return archive
 
 
 def revision_root_for(primary_root: Path, when: datetime) -> Path:
@@ -212,6 +330,8 @@ def run_once(args: argparse.Namespace) -> int:
     ensure_runtime_data_writable(script_dir)
     persistent_runs_root = args.runs.expanduser().resolve()
     date = args.date or local_date()
+    automatic_pi_stage = is_raspberry_pi() and not args.no_ram_stage
+    persistent_output_stage = automatic_pi_stage and not args.ram_stage
     state_dir = (args.state.expanduser().resolve() if args.state else data_state_root(script_dir))
     marker = marker_path(state_dir, date)
     export_root = persistent_export_root(persistent_runs_root, date, args.exports)
@@ -232,6 +352,8 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(
                     persistent_runs_root, state_dir, date, args.exports
                 )
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
         recovered_marker = recover_pending_finalization(state_dir, date)
         if recovered_marker is not None:
@@ -243,6 +365,8 @@ def run_once(args: argparse.Namespace) -> int:
                 _emit_day_manifest(
                     persistent_runs_root, state_dir, date, args.exports
                 )
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
     previous_run_root = previous_finalized_run(persistent_runs_root / date)
     marker_exists = marker.exists()
@@ -262,6 +386,8 @@ def run_once(args: argparse.Namespace) -> int:
             # P2). Cheap no-op when the manifest already exists.
             if args.exports is None and not cdr_ledger_integrity.manifest_path(state_dir, date).is_file():
                 _emit_day_manifest(persistent_runs_root, state_dir, date, args.exports)
+            if persistent_output_stage:
+                cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
         print(
             f"Stale or empty daily marker for {date} ({marker}); re-running ingest.",
@@ -347,14 +473,28 @@ def run_once(args: argparse.Namespace) -> int:
         )
 
     extra_args = [*sector_ingest_args(args), *args.ingest_arg]
-    use_ram_stage = args.ram_stage or (is_raspberry_pi() and not args.no_ram_stage)
+    use_ram_stage = args.ram_stage or automatic_pi_stage
     ram_cleanup_paths: Optional[tuple[Path, Path]] = None
     staged_exports_to_install: Optional[Path] = None
     if use_ram_stage:
         ram_root = args.ram_root.expanduser().resolve()
         staged_runs = ram_root / "runs"
-        staged_exports = ram_root / "exports" / date / "_exports"
-        prepare_ram_stage(ram_root / "runs" / date)
+        staged_exports = (
+            persistent_export_stage_root(persistent_runs_root, date)
+            if persistent_output_stage
+            else ram_root / "exports" / date / "_exports"
+        )
+        staged_run = ram_root / "runs" / date
+        staged_export_date = staged_exports.parent
+        if args.archive_failed_ram_stage:
+            archived = archive_failed_ram_stage(
+                staged_run,
+                staged_export_date,
+                persistent_runs_root / date,
+            )
+            if archived is not None:
+                print(f"Archived failed RAM-stage evidence at {archived}")
+        prepare_ram_stage(staged_run)
         prepare_ram_stage(staged_exports)
         run_ingest(script_dir, staged_runs, date, extra_args)
         result = build_outputs(
@@ -372,7 +512,7 @@ def run_once(args: argparse.Namespace) -> int:
         staged_exports_to_install = staged_exports
         ram_cleanup_paths = (
             ram_root / "runs" / date,
-            ram_root / "exports" / date,
+            staged_export_date,
         )
     else:
         # A revision must not mutate the original day's raw run files either, so
@@ -489,6 +629,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Disable automatic RAM staging on Raspberry Pi.",
     )
     parser.add_argument("--ram-root", type=Path, default=default_ram_root())
+    parser.add_argument(
+        "--archive-failed-ram-stage",
+        action="store_true",
+        help="Create-once archive a prior failed RAM stage before retrying.",
+    )
     parser.add_argument(
         "--keep-ram-stage",
         dest="clean_ram_stage",

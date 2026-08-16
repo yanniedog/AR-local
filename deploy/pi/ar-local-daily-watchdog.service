@@ -6,6 +6,9 @@ OnFailure=ar-local-ingest-alert.service
 
 [Service]
 Type=oneshot
+KillMode=control-group
+TimeoutStopSec=45s
+TimeoutStartSec=6h15min
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}
@@ -16,3 +19,6 @@ Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 # Optional mobile-app payload publishing (inherited by the pi_daily_sync subprocess).
 EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_watchdog.py
+# Restore serving even if the start timeout kills the catch-up process group before
+# pi_daily_sync can execute its Python finally block.
+ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service

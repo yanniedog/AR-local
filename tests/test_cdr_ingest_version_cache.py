@@ -58,13 +58,33 @@ def test_ingest_brand_caches_holder_version(tmp_path, monkeypatch):
         log=lambda *_a, **_k: None,
     )
 
-    # First request negotiates from the top (version unknown); after v4 is learned
-    # from the page, the product-detail fetch tries [4] first.
+    # Product-index and detail endpoints version independently. The index caches
+    # v4, while detail starts at its own current v7 contract.
     assert versions_seen, "expected at least the page + a detail fetch"
-    assert versions_seen[0] is None
-    assert [4] in versions_seen[1:]
+    assert versions_seen[0] == lib.PRODUCT_INDEX_VERSION_ORDER
+    assert lib.PRODUCT_DETAIL_VERSION_ORDER in versions_seen[1:]
 
 
 def test_version_list_helper():
-    assert lib._version_list(None) is None
-    assert lib._version_list(4) == [4]
+    assert lib._index_version_list(None) == [6, 5, 4, 3, 2, 1]
+    assert lib._index_version_list(4) == [4, 6, 5, 3, 2, 1]
+    assert lib._detail_version_list() == [7, 6, 5, 4, 3, 2, 1]
+
+
+def test_product_index_fallback_never_spends_attempt_on_detail_v7(monkeypatch):
+    seen: list[int] = []
+
+    def fake_http(url, headers, *, timeout):
+        seen.append(int(headers["x-v"]))
+        return 422, '{"errors":[{"detail":"unsupported"}]}', None
+
+    monkeypatch.setattr(cis, "http_request", fake_http)
+    cis.fetch_cdr_json(
+        "http://holder/products",
+        versions=lib._index_version_list(4),
+        timeout=1,
+        max_retries=0,
+        sleep_ms=0,
+    )
+    assert seen == [4, 6, 5, 3, 2, 1]
+    assert 7 not in seen
