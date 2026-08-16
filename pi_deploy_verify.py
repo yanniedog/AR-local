@@ -308,11 +308,11 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"watchdog_timer_enabled=$(systemctl is-enabled ar-local-daily-watchdog.timer 2>/dev/null); "
         f"watchdog_timer_active=$(systemctl is-active ar-local-daily-watchdog.timer 2>/dev/null); "
         f"daily_kill_mode=$(systemctl show ar-local-daily.service -p KillMode --value 2>/dev/null); "
-        f"daily_runtime_max=$(systemctl show ar-local-daily.service -p RuntimeMaxUSec --value 2>/dev/null); "
+        f"daily_start_timeout=$(systemctl show ar-local-daily.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"watchdog_kill_mode=$(systemctl show ar-local-daily-watchdog.service -p KillMode --value 2>/dev/null); "
-        f"watchdog_runtime_max=$(systemctl show ar-local-daily-watchdog.service -p RuntimeMaxUSec --value 2>/dev/null); "
+        f"watchdog_start_timeout=$(systemctl show ar-local-daily-watchdog.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"manual_kill_mode=$(systemctl show ar-local-ingest-now.service -p KillMode --value 2>/dev/null); "
-        f"manual_runtime_max=$(systemctl show ar-local-ingest-now.service -p RuntimeMaxUSec --value 2>/dev/null); "
+        f"manual_start_timeout=$(systemctl show ar-local-ingest-now.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"dash_env=$(systemctl show ar-local-dashboard.service -p Environment --value 2>/dev/null); "
         f"daily_env=$(systemctl show ar-local-daily.service -p Environment --value 2>/dev/null); "
         f"df_ar=$(df -P {q_ar} 2>/dev/null | awk 'NR==2{{print $1\"|\"$6}}'); "
@@ -322,7 +322,7 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"printf 'AR_DIRTY=%s\\nSITE_DIRTY=%s\\nDASHBOARD=%s\\n' \"$ar_d\" \"$site_d\" \"$dash\"; "
         f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
         f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
-        f"printf 'DAILY_KILL_MODE=%s\\nDAILY_RUNTIME_MAX=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_RUNTIME_MAX=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_RUNTIME_MAX=%s\\n' \"$daily_kill_mode\" \"$daily_runtime_max\" \"$watchdog_kill_mode\" \"$watchdog_runtime_max\" \"$manual_kill_mode\" \"$manual_runtime_max\"; "
+        f"printf 'DAILY_KILL_MODE=%s\\nDAILY_START_TIMEOUT=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_START_TIMEOUT=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_START_TIMEOUT=%s\\n' \"$daily_kill_mode\" \"$daily_start_timeout\" \"$watchdog_kill_mode\" \"$watchdog_start_timeout\" \"$manual_kill_mode\" \"$manual_start_timeout\"; "
         f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
     code, stdout, _ = run_ssh(script, dry_run=dry_run)
@@ -344,11 +344,11 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "WATCHDOG_TIMER_ENABLED": "enabled",
             "WATCHDOG_TIMER_ACTIVE": "active",
             "DAILY_KILL_MODE": "control-group",
-            "DAILY_RUNTIME_MAX": "6h 15min",
+            "DAILY_START_TIMEOUT": "6h 15min",
             "WATCHDOG_KILL_MODE": "control-group",
-            "WATCHDOG_RUNTIME_MAX": "6h 15min",
+            "WATCHDOG_START_TIMEOUT": "6h 15min",
             "MANUAL_KILL_MODE": "control-group",
-            "MANUAL_RUNTIME_MAX": "6h 15min",
+            "MANUAL_START_TIMEOUT": "6h 15min",
             "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/dry/data",
             "DF_AR": "dry",
@@ -465,11 +465,11 @@ def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
 def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
     expected = {
         "DAILY_KILL_MODE": "control-group",
-        "DAILY_RUNTIME_MAX": "6h 15min",
+        "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_RUNTIME_MAX": "6h 15min",
+        "WATCHDOG_START_TIMEOUT": "6h 15min",
         "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_RUNTIME_MAX": "6h 15min",
+        "MANUAL_START_TIMEOUT": "6h 15min",
     }
     ok = True
     for field, value in expected.items():

@@ -8,7 +8,7 @@ OnFailure=ar-local-ingest-alert.service
 Type=oneshot
 KillMode=control-group
 TimeoutStopSec=45s
-RuntimeMaxSec=6h15min
+TimeoutStartSec=6h15min
 User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}
@@ -21,7 +21,7 @@ Environment=XDG_CONFIG_HOME={{AR_LOCAL_HOME}}/.config
 # The leading '-' makes the file optional, so the unit is fine without it.
 EnvironmentFile=-/etc/ar-local/app-payload.env
 ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_daily_sync.py --banks-only --skip-git-sync
-# Runs after success, failure, or RuntimeMaxSec termination; a hard kill cannot
+# Runs after success, failure, or start-timeout termination; a hard kill cannot
 # execute pi_daily_sync's Python finally block.
 ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service
 ExecStartPost=+/usr/bin/systemctl try-restart ar-local-dashboard.service
