@@ -138,6 +138,10 @@ def test_real_greater_bank_fees_keep_amounts_and_do_not_call_variable_placeholde
     ]
 
     detail = app_payload.build_details(products)["Greater Bank Limited|3365|Mortgage"]
+    # The compatibility details contract contains only fields consumed by the
+    # mobile app. Canonical normalized facts stay in retained exports and v3;
+    # duplicating them here pushes the on-demand v1 asset over its 4 MiB budget.
+    assert "facts" not in detail
     by_name = {item["name"]: item for item in detail["fees"]}
 
     assert by_name["Construction Loan Draw Down Fee"]["amount"] == "80.00"
@@ -721,9 +725,11 @@ def test_build_payload_end_to_end(tmp_path):
     assert core["rba"], "RBA series should be embedded"
 
     details = json.loads(gzip.decompress((tmp_path / manifest["files"]["details"]["name"]).read_bytes()))
+    assert "normalization_version" not in details
     assert details["products"], "details should be keyed by product_key"
     sample_key = next(iter(details["products"]))
     entry = details["products"][sample_key]
+    assert "facts" not in entry
     assert any(k in entry for k in ("fees", "features", "eligibility", "constraints", "description"))
 
 

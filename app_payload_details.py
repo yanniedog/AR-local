@@ -6,7 +6,6 @@ from typing import Any, Dict, List
 
 from app_payload_common import compact
 from cdr_clean_export import official_product_links
-from cdr_product_facts import compact_facts
 
 def _detail_items(record: Dict[str, Any], key: str, type_key: str) -> List[Dict[str, Any]]:
     items = record.get(key)
@@ -160,10 +159,6 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
                 "eligibility": _detail_items(record, "eligibility", "eligibilityType"),
                 "constraints": _detail_items(record, "constraints", "constraintType"),
                 "links": _detail_links(record),
-                "facts": compact_facts(
-                    record,
-                    "|".join(str(product.get(field) or "") for field in ("dataset", "provider", "product_id")),
-                ),
             }
         )
         details[key] = entry

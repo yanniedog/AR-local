@@ -20,6 +20,12 @@ No retained CDR evidence may be retired until a byte-verified, independently res
 
 Budgets are enforced against the compressed/encrypted bytes declared in `manifest.json` and rechecked against local release assets before publication:
 
+The compatibility-v1 details asset contains only the presentation and
+suitability fields consumed by current mobile clients. Normalized product facts
+remain losslessly retained in the daily exports and canonical v3 assets; they
+must not be duplicated into v1 because that adds several compressed MiB without
+adding a v1 consumer capability.
+
 | Asset/journey | Budget |
 | --- | ---: |
 | Manifest | 64 KiB |
