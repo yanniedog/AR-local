@@ -140,10 +140,22 @@ def capacity_report(
 
 
 def _maybe_notify(report: dict[str, Any], state: dict[str, Any], now: datetime) -> None:
+    last_value = state.get("last_alert_at")
+    last_status = state.get("last_alert_status")
+    last = (
+        float(last_value)
+        if isinstance(last_value, (int, float))
+        and not isinstance(last_value, bool)
+        and last_value >= 0
+        else 0.0
+    )
+    if last:
+        report["last_alert_at"] = last
+    if last_status in ("warning", "critical"):
+        report["last_alert_status"] = last_status
     if report["status"] == "healthy" or not email_configured():
         return
-    last = float(state.get("last_alert_at") or 0)
-    if now.timestamp() - last < ALERT_COOLDOWN_SECONDS and state.get("last_alert_status") == report["status"]:
+    if now.timestamp() - last < ALERT_COOLDOWN_SECONDS and last_status == report["status"]:
         return
     fs = report["filesystem"]
     body = (
