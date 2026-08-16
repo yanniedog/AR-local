@@ -1,0 +1,119 @@
+name: pi-diagnostics
+
+# Read-only diagnostics executed ON the Pi via a self-hosted runner.
+#
+# workflow_dispatch ONLY — deliberately no pull_request/push trigger, so an
+# outside pull request can never cause this to execute on the runner. Every
+# step is read-only: nothing here writes to the repo, the data root, or any
+# systemd unit. The runner is expected to be started by hand (./run.sh) for
+# the duration of a debugging session and stopped afterwards, rather than
+# installed as a service.
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: Observation date to inspect (YYYY-MM-DD)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: on-Pi diagnostics
+    runs-on: [self-hosted, ar-local-pi5]
+    timeout-minutes: 10
+    env:
+      REPO: /srv/ar-local/AR-local
+      DATA: /srv/ar-local/data
+    steps:
+      - name: Deployed checkout
+        run: |
+          set +e
+          cd "$REPO" || { echo "MISSING: $REPO"; exit 0; }
+          echo "HEAD:    $(git rev-parse HEAD)"
+          echo "branch:  $(git rev-parse --abbrev-ref HEAD)"
+          echo "subject: $(git log -1 --pretty=%s)"
+          echo "date:    $(git log -1 --date=iso --pretty=%ad)"
+          echo "--- dirty files (should be empty) ---"
+          git status --porcelain | head -20
+
+      - name: Export and revision layout
+        run: |
+          set +e
+          echo "--- _exports ---"
+          ls -d "$DATA"/runs/2026-08-1*/_exports 2>/dev/null
+          echo "--- _revisions (the check that matters for an Aug 12 rollback) ---"
+          ls -d "$DATA"/runs/2026-08-1*/_revisions 2>/dev/null || echo "none"
+          echo "--- observation pointers ---"
+          for f in latest-observation.json latest-complete.json; do
+            echo "== $f =="
+            cat "$DATA/state/observation-pointers-v2/$f" 2>/dev/null || echo "absent"
+            echo
+          done
+
+      - name: Watchdog status
+        run: |
+          set +e
+          cd "$REPO" && python3 pi_daily_watchdog.py --json 2>&1 | head -40
+
+      - name: Why is the observation partial
+        run: |
+          set +e
+          cd "$REPO"
+          D="${{ inputs.run_date }}"
+          [ -z "$D" ] && D="$(date +%F)"
+          echo "inspecting run_date=$D"
+          python3 - "$D" <<'PY'
+          import json, sys
+          from pathlib import Path
+          date = sys.argv[1]
+          root = Path("/srv/ar-local/data/runs") / date / "_exports"
+          # The finalization gate reads ingest status; surface the same numbers.
+          for name in ("ingest-status.json", "dashboard-cache/latest.json"):
+              p = root / name
+              print(f"== {p} ==")
+              try:
+                  d = json.loads(p.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  print(f"  unreadable: {exc!r}")
+                  continue
+              if name.endswith("ingest-status.json"):
+                  for k in ("total", "corrupt_records", "unattributed_records",
+                            "incomplete", "providers_registered", "providers_attempted",
+                            "register_provenance_complete", "failure_provenance_complete"):
+                      print(f"  {k}: {d.get(k)!r}")
+                  states = d.get("provider_states") or []
+                  from collections import Counter
+                  print(f"  provider_states: {len(states)} -> {dict(Counter(s.get('state') for s in states))}")
+                  bad = [s.get("id") or s.get("brand") for s in states
+                         if s.get("state") in {"partial", "failed"}][:15]
+                  print(f"  first failing providers: {bad}")
+              else:
+                  print(f"  run_date: {d.get('run_date')!r}")
+                  print(f"  banks_counts: {d.get('banks_counts')!r}")
+          PY
+
+      - name: Payload publication journal
+        run: |
+          set +e
+          echo "--- app_payload lines, last 24h ---"
+          journalctl -u ar-local-daily.service -u ar-local-ingest-now.service \
+            --since "24 hours ago" --no-pager -o cat 2>/dev/null \
+            | grep -E "app_payload|promotion withheld|publish (starting|finished|skipped|failed)" \
+            | tail -40
+          echo "--- pending payload marker ---"
+          cat "$DATA/state/app-payload-publication-pending.json" 2>/dev/null || echo "no pending marker"
+
+      - name: Unit and timer health
+        run: |
+          set +e
+          for u in ar-local-daily.timer ar-local-daily-watchdog.timer \
+                   ar-local-dashboard.service ar-local-runtime-health.timer tailscaled.service; do
+            printf '%-38s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null)"
+          done
+          echo "--- last daily run ---"
+          systemctl show ar-local-daily.service -p ExecMainStartTimestamp -p Result 2>/dev/null
+          echo "--- disk ---"
+          df -h "$DATA" /dev/shm 2>/dev/null | sed -n '1,5p'
