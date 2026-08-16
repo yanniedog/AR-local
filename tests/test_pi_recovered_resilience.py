@@ -111,7 +111,9 @@ def test_bounded_partial_v1_policy_accepts_live_scale_but_pins_limits() -> None:
     assert pi_daily_sync._bounded_partial_v1_allowed(
         _partial_contract(failures=17, partial=17)
     )
-    # The 1% ratio stays the real gate for a catalogue this size.
+    # The 1% ratio stays the real gate for a catalogue this size, and the
+    # boundary sits between 30 and 31: 1% of 3,027 products is 30.27.
+    assert pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=30))
     assert not pi_daily_sync._bounded_partial_v1_allowed(_partial_contract(failures=31))
     # A small catalogue cannot slip through on ratio alone.
     assert not pi_daily_sync._bounded_partial_v1_allowed(
