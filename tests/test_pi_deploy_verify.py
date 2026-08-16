@@ -353,7 +353,14 @@ def test_service_paths_allow_paths_outside_pi_home_boundary(sibling):
     )
 
 
-def test_windows_openssh_quirk_requires_remote_success_sentinel(monkeypatch):
+def test_windows_openssh_quirk_tolerates_the_truncated_sentinel(monkeypatch):
+    """The crash this guard exists for is what destroys the sentinel.
+
+    Windows OpenSSH aborts at socket close *after* the remote command has run,
+    and that abort truncates the tail of stdout — where the sentinel is printed.
+    Requiring the sentinel therefore made the guard dead code in its own case, so
+    a deploy that had actually succeeded was reported as EXIT_SSH.
+    """
     monkeypatch.setattr(pi_deploy_verify.sys, "platform", "win32")
     marker = "close - IO is still pending on closed socket"
     assert pi_deploy_verify._windows_openssh_exit_quirk(
@@ -361,12 +368,21 @@ def test_windows_openssh_quirk_requires_remote_success_sentinel(monkeypatch):
         f"nginx ok\n{pi_deploy_verify.SSH_SUCCESS_SENTINEL}",
         marker,
     )
+    # Sentinel lost to the crash: still the documented quirk, still accepted.
+    assert pi_deploy_verify._windows_openssh_exit_quirk(3221225477, "nginx ok", marker)
+
+
+def test_windows_openssh_quirk_still_requires_its_evidence(monkeypatch):
+    """Loosening the sentinel must not turn the quirk into a blanket amnesty."""
+    monkeypatch.setattr(pi_deploy_verify.sys, "platform", "win32")
+    marker = "close - IO is still pending on closed socket"
+    # No remote output at all -> nothing suggests the command ran.
+    assert not pi_deploy_verify._windows_openssh_exit_quirk(3221225477, "", marker)
+    # A non-zero exit without the crash signature is a real remote failure.
+    assert not pi_deploy_verify._windows_openssh_exit_quirk(1, "nginx ok", "permission denied")
+    # The quirk is Windows-only.
+    monkeypatch.setattr(pi_deploy_verify.sys, "platform", "linux")
     assert not pi_deploy_verify._windows_openssh_exit_quirk(3221225477, "nginx ok", marker)
-    assert not pi_deploy_verify._windows_openssh_exit_quirk(
-        3221225477,
-        f"{pi_deploy_verify.SSH_SUCCESS_SENTINEL}\nremote failure",
-        marker,
-    )
 
 
 @pytest.mark.parametrize(
@@ -483,3 +499,99 @@ def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
     )
     assert timeouts == [20.0]
     assert sleeps == []
+
+
+class _FakeProc:
+    def __init__(self, returncode, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _remote_run_shell(monkeypatch, results, *, sleeps=None):
+    """Drive run_shell down its ssh branch with a scripted sequence of results."""
+    monkeypatch.setattr(pi_deploy_verify, "on_pi_host", lambda: False)
+    monkeypatch.setattr(pi_deploy_verify, "ssh_host", lambda: "ar-local-pi5")
+    # Bind the list itself: `sleeps or []` would swap in a throwaway list while
+    # the recorder is still empty, and silently drop every backoff.
+    recorded = sleeps if sleeps is not None else []
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", recorded.append)
+    calls = []
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(cmd)
+        outcome = results[min(len(calls) - 1, len(results) - 1)]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(pi_deploy_verify.subprocess, "run", fake_run)
+    return calls
+
+
+def test_ssh_exit_zero_without_sentinel_is_trusted(monkeypatch, capsys):
+    """A perturbed stdout tail must not fail a command that ssh reported as OK.
+
+    ssh exits with the remote command's status, so 0 already means success. The
+    sentinel is corroboration; demanding it turned every imperfect link into a
+    failed deploy.
+    """
+    calls = _remote_run_shell(monkeypatch, [_FakeProc(0, "nginx ok")])
+    code, out, _err = pi_deploy_verify.run_shell("systemctl is-active nginx")
+    assert code == 0
+    assert out == "nginx ok"
+    assert len(calls) == 1, "a successful command must not be re-run"
+    assert "trusting the exit status" in capsys.readouterr().err
+
+
+def test_ssh_transport_failure_is_retried(monkeypatch, capsys):
+    sleeps = []
+    calls = _remote_run_shell(
+        monkeypatch,
+        [
+            _FakeProc(pi_deploy_verify.SSH_TRANSPORT_EXIT, "", "kex_exchange_identification"),
+            _FakeProc(0, f"ok\n{pi_deploy_verify.SSH_SUCCESS_SENTINEL}"),
+        ],
+        sleeps=sleeps,
+    )
+    code, out, _err = pi_deploy_verify.run_shell("uptime")
+    assert code == 0
+    assert out == "ok"
+    assert len(calls) == 2
+    assert sleeps == [pi_deploy_verify.SSH_RETRY_BACKOFF_SEC[0]]
+    assert "transport failure" in capsys.readouterr().err
+
+
+def test_remote_command_failure_is_never_retried(monkeypatch):
+    """Only ssh's own 255 is safe to repeat; a remote status may have side effects."""
+    calls = _remote_run_shell(monkeypatch, [_FakeProc(1, "", "boom")])
+    code, _out, _err = pi_deploy_verify.run_shell("false")
+    assert code == 1
+    assert len(calls) == 1
+
+
+def test_ssh_transport_failure_gives_up_after_the_retry_budget(monkeypatch):
+    calls = _remote_run_shell(
+        monkeypatch,
+        [_FakeProc(pi_deploy_verify.SSH_TRANSPORT_EXIT, "", "unreachable")],
+    )
+    code, _out, _err = pi_deploy_verify.run_shell("uptime")
+    assert code == pi_deploy_verify.SSH_TRANSPORT_EXIT
+    assert len(calls) == pi_deploy_verify.SSH_TRANSPORT_RETRIES + 1
+
+
+def test_ssh_timeout_is_retried_then_reported(monkeypatch, capsys):
+    calls = _remote_run_shell(
+        monkeypatch,
+        [pi_deploy_verify.subprocess.TimeoutExpired(cmd="ssh", timeout=120)],
+    )
+    code, _out, _err = pi_deploy_verify.run_shell("uptime")
+    assert code == pi_deploy_verify.EXIT_SSH
+    assert len(calls) == pi_deploy_verify.SSH_TRANSPORT_RETRIES + 1
+    assert "timed out after" in capsys.readouterr().err
+
+
+def test_ssh_invocation_carries_keepalives():
+    assert "ServerAliveInterval=15" in pi_deploy_verify.SSH_OPTIONS
+    assert "ServerAliveCountMax=3" in pi_deploy_verify.SSH_OPTIONS
+    assert "BatchMode=yes" in pi_deploy_verify.SSH_OPTIONS
