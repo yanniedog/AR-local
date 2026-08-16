@@ -217,6 +217,10 @@ def test_pi_runtime_health_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_runtime_health.py"])
 
 
+def test_pi_capacity_monitor_changes_require_pi_deploy():
+    assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
+
+
 def _service_snapshot(**overrides: str) -> dict[str, str]:
     snapshot = {
         "DASHBOARD_WD": "/srv/ar-local/AR-local",
@@ -232,6 +236,8 @@ def _service_snapshot(**overrides: str) -> dict[str, str]:
         "DAILY_TIMER_ACTIVE": "active",
         "WATCHDOG_TIMER_ENABLED": "enabled",
         "WATCHDOG_TIMER_ACTIVE": "active",
+        "CAPACITY_TIMER_ENABLED": "enabled",
+        "CAPACITY_TIMER_ACTIVE": "active",
         "DAILY_KILL_MODE": "control-group",
         "DAILY_START_TIMEOUT": "6h 15min",
         "WATCHDOG_KILL_MODE": "control-group",

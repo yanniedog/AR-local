@@ -476,9 +476,20 @@ def _package(
     }
     if enc_key:
         manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
+    from app_payload_network_budget import validate_payload_network_budget
+
+    transfer_report = validate_payload_network_budget(
+        manifest,
+        manifest_bytes=len(manifest_text.encode("utf-8")),
+        asset_root=out_dir,
     )
+    print(
+        "[app_payload] transfer budget "
+        f"critical_core={transfer_report['journeys']['critical_core']} "
+        f"current_standard_home={transfer_report['journeys']['current_standard_home']}"
+    )
+    (out_dir / "manifest.json").write_text(manifest_text, encoding="utf-8")
     return manifest
 
 

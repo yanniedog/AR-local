@@ -67,13 +67,14 @@ FORBIDDEN_PI_BOOTSTRAP_RE = re.compile(
 FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 PI_PATH_PREFIXES: tuple[str, ...] = (
-    "app_payload.py",
+    "app_payload",
     "dashboard/",
     "cdr_",
     "deploy/pi/",
     "pi_daily_sync.py",
     "pi_deploy_verify.py",
     "pi_runtime_health.py",
+    "pi_capacity_monitor.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "verify_local.py",
@@ -307,6 +308,8 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"daily_timer_active=$(systemctl is-active ar-local-daily.timer 2>/dev/null); "
         f"watchdog_timer_enabled=$(systemctl is-enabled ar-local-daily-watchdog.timer 2>/dev/null); "
         f"watchdog_timer_active=$(systemctl is-active ar-local-daily-watchdog.timer 2>/dev/null); "
+        f"capacity_timer_enabled=$(systemctl is-enabled ar-local-capacity-monitor.timer 2>/dev/null); "
+        f"capacity_timer_active=$(systemctl is-active ar-local-capacity-monitor.timer 2>/dev/null); "
         f"daily_kill_mode=$(systemctl show ar-local-daily.service -p KillMode --value 2>/dev/null); "
         f"daily_start_timeout=$(systemctl show ar-local-daily.service -p TimeoutStartUSec --value 2>/dev/null); "
         f"watchdog_kill_mode=$(systemctl show ar-local-daily-watchdog.service -p KillMode --value 2>/dev/null); "
@@ -323,6 +326,7 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
         f"printf 'DASHBOARD_WD=%s\\nDASHBOARD_EXEC=%s\\nDAILY_WD=%s\\nDAILY_EXEC=%s\\n' \"$dash_wd\" \"$dash_exec\" \"$daily_wd\" \"$daily_exec\"; "
         f"printf 'DAILY_TIMER_ENABLED=%s\\nDAILY_TIMER_ACTIVE=%s\\nWATCHDOG_TIMER_ENABLED=%s\\nWATCHDOG_TIMER_ACTIVE=%s\\n' \"$daily_timer_enabled\" \"$daily_timer_active\" \"$watchdog_timer_enabled\" \"$watchdog_timer_active\"; "
         f"printf 'DAILY_KILL_MODE=%s\\nDAILY_START_TIMEOUT=%s\\nWATCHDOG_KILL_MODE=%s\\nWATCHDOG_START_TIMEOUT=%s\\nMANUAL_KILL_MODE=%s\\nMANUAL_START_TIMEOUT=%s\\n' \"$daily_kill_mode\" \"$daily_start_timeout\" \"$watchdog_kill_mode\" \"$watchdog_start_timeout\" \"$manual_kill_mode\" \"$manual_start_timeout\"; "
+        f"printf 'CAPACITY_TIMER_ENABLED=%s\\nCAPACITY_TIMER_ACTIVE=%s\\n' \"$capacity_timer_enabled\" \"$capacity_timer_active\"; "
         f"printf 'DASHBOARD_ENV=%s\\nDAILY_ENV=%s\\nDF_AR=%s\\nDF_SITE=%s\\nDF_DATA=%s\\n' \"$dash_env\" \"$daily_env\" \"$df_ar\" \"$df_site\" \"$df_data\""
     )
     code, stdout, _ = run_ssh(script, dry_run=dry_run)
@@ -343,6 +347,8 @@ def pi_remote_snapshot(*, dry_run: bool = False) -> Optional[dict[str, str]]:
             "DAILY_TIMER_ACTIVE": "active",
             "WATCHDOG_TIMER_ENABLED": "enabled",
             "WATCHDOG_TIMER_ACTIVE": "active",
+            "CAPACITY_TIMER_ENABLED": "enabled",
+            "CAPACITY_TIMER_ACTIVE": "active",
             "DAILY_KILL_MODE": "control-group",
             "DAILY_START_TIMEOUT": "6h 15min",
             "WATCHDOG_KILL_MODE": "control-group",
@@ -450,6 +456,8 @@ def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
         "DAILY_TIMER_ACTIVE": "active",
         "WATCHDOG_TIMER_ENABLED": "enabled",
         "WATCHDOG_TIMER_ACTIVE": "active",
+        "CAPACITY_TIMER_ENABLED": "enabled",
+        "CAPACITY_TIMER_ACTIVE": "active",
     }
     ok = True
     for field, value in expected.items():
