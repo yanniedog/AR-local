@@ -31,12 +31,36 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app_payload  # noqa: E402
+import app_payload_observation_gate as gate  # noqa: E402
 from ar_local_pi_runtime import data_runs_root  # noqa: E402
 
 DEFAULT_FROM = app_payload.HISTORY_MIN_DATE
 
 
 iter_valid_export_dates = app_payload.iter_valid_export_dates
+
+
+def resolve_state_root(runs_root: Path) -> Path:
+    """The state tree beside ``runs`` — where export contracts v2 are written."""
+    return runs_root.parent / "state"
+
+
+def observation_gate(
+    state_root: Path, run_date: str, *, force: bool
+) -> Tuple[bool, str, Optional[dict]]:
+    """Apply the daily path's publication policy to a backfill candidate.
+
+    This script used to publish any date with parseable dashboard data, with no
+    reference to the observation's contract at all — which is how the broken
+    2026-08-15 run (1,195 failure records against 1,856 products) became a public
+    dated release while ``pi_daily_sync`` was correctly refusing it. ``--force``
+    still overrides, so an operator can deliberately republish a known-bad day.
+    """
+    contract = gate.contract_for_run_date(state_root, run_date)
+    allowed, reason = gate.publication_allowed(contract)
+    if not allowed and force:
+        return True, f"forced_over_{reason}", contract
+    return allowed, reason, contract
 
 
 def dated_release_already_published(repo: str, run_date: str) -> bool:
@@ -61,14 +85,29 @@ def refresh_rolling_latest(
         print("[backfill_app_payload] rolling latest skipped: no valid exports")
         return False
     run_date, exports = dates[-1]
+    allowed, gate_reason, contract = observation_gate(
+        resolve_state_root(runs_root), run_date, force=force
+    )
     print(
         f"[backfill_app_payload] rolling latest refresh run_date={run_date} "
-        f"exports={exports} dry_run={dry_run}"
+        f"exports={exports} dry_run={dry_run} gate={gate_reason}"
     )
+    if not allowed:
+        print(
+            f"[backfill_app_payload] rolling latest withheld run_date={run_date} "
+            f"reason={gate_reason}"
+        )
+        return False
     if dry_run:
         return False
     out_dir = exports / "app-payload-latest"
-    manifest = app_payload.build_payload(exports, out_dir, repo=repo, tag=app_payload.DEFAULT_TAG)
+    manifest = app_payload.build_payload(
+        exports,
+        out_dir,
+        repo=repo,
+        tag=app_payload.DEFAULT_TAG,
+        contract_coverage=gate.contract_coverage(contract),
+    )
     our_gen = str(manifest.get("generated_at") or "")
     published = app_payload.publish_payload(out_dir, repo=repo, tag=app_payload.DEFAULT_TAG, force=force)
     print(
@@ -107,6 +146,7 @@ def backfill(
     skip_latest: bool = False,
 ) -> Tuple[List[dict], Optional[bool]]:
     """Publish dated releases for each export date; optionally refresh rolling latest."""
+    state_root = resolve_state_root(runs_root)
     results: List[dict] = []
     dates = list(iter_valid_export_dates(runs_root, from_date=from_date, to_date=to_date))
     print(
@@ -126,6 +166,18 @@ def backfill(
             "error": None,
         }
         try:
+            allowed, gate_reason, contract = observation_gate(
+                state_root, run_date, force=force
+            )
+            row["gate"] = gate_reason
+            if not allowed:
+                row["skipped"] = True
+                print(
+                    f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                    f"skipped=withheld reason={gate_reason}"
+                )
+                results.append(row)
+                continue
             if not force and not dry_run and dated_release_already_published(repo, run_date):
                 row["skipped"] = True
                 print(f"[backfill_app_payload] run_date={run_date} tag={tag} skipped=already_published")
@@ -136,7 +188,13 @@ def backfill(
                 if manifest_path.exists():
                     manifest = app_payload._load_json(manifest_path)
                 else:
-                    manifest = app_payload.build_payload(exports, out_dir, repo=repo, tag=tag)
+                    manifest = app_payload.build_payload(
+                        exports,
+                        out_dir,
+                        repo=repo,
+                        tag=tag,
+                        contract_coverage=gate.contract_coverage(contract),
+                    )
                 row["core"] = manifest["files"]["core"]["name"]
                 row["details"] = manifest["files"]["details"]["name"]
                 print(
@@ -144,7 +202,13 @@ def backfill(
                     f"core={row['core']} details={row['details']}"
                 )
             else:
-                manifest = app_payload.build_payload(exports, out_dir, repo=repo, tag=tag)
+                manifest = app_payload.build_payload(
+                    exports,
+                    out_dir,
+                    repo=repo,
+                    tag=tag,
+                    contract_coverage=gate.contract_coverage(contract),
+                )
                 row["core"] = manifest["files"]["core"]["name"]
                 row["details"] = manifest["files"]["details"]["name"]
                 row["published"] = app_payload.publish_payload(

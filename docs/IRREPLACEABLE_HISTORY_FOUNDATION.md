@@ -76,6 +76,36 @@ complete observation. Each ingest creates an explicit empty failure journal
 before holder work; a missing or unreadable journal is incomplete provenance,
 not authoritative evidence of zero failures.
 
+### One gate, one provider accounting
+
+`app_payload_observation_gate` holds the whole v1 publication policy, and every
+path that can reach a GitHub release goes through it: the daily
+`pi_daily_sync` run and `scripts/backfill_app_payload.py` alike. The backfill
+previously published any date with parseable dashboard data and no reference to
+its contract, which is how the broken 2026-08-15 observation — 1,195 failure
+records against 1,856 products — became a public dated release while the daily
+path was correctly refusing it. A date with no contract is refused, not
+defaulted open; `--force` remains available for a deliberate operator
+republish.
+
+The contract's `coverage` block is also the only provider accounting a payload
+may advertise. `cdr_clean_export.coverage_summary` re-derives provider health
+from the exported rows (`providers_failed` = "has a failure record and produced
+no rows"), while `cdr_finalization` derives it from the per-provider attempt
+state machine. They answer different questions and they disagree: the live
+2026-08-17 payload told the app 2 providers failed for a run whose contract had
+to report 0 failed for publication to be permitted at all. The audited,
+ledger-bound contract wins, and the payload marks the substitution with
+`coverage.counts.provider_counts_source = "export_contract_v2"`. Row-derived
+totals that genuinely describe the export — products, rates, failure records,
+brands observed — are left as they are.
+
+The pending-publication marker records which observation failed. Without that,
+a retry re-read `latest-observation.json` and republished whatever was current,
+so a later withheld day stalled the retry indefinitely — the rolling
+`app-payload-latest` tag sat two ingest cycles behind the dated releases on
+2026-08-15 for exactly this reason.
+
 ## Field lineage for the foundation
 
 | Published field | Source | Transform / unit | Null or unavailable meaning | Consumer / permitted claim |

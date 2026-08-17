@@ -19,6 +19,7 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
 )
 from ar_local_subprocess import run_checked
+import app_payload_observation_gate as gate
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
@@ -36,19 +37,12 @@ PUBLISH_PUBLISHED = "published"
 PUBLISH_WITHHELD = "withheld"
 PUBLISH_FAILED = "failed"
 
-# Compatibility v1 is allowed to advance from a fully-audited partial
-# observation only inside these deliberately narrow bounds.  The append-only
-# ledger and v3 promotion contract remain complete-only.
-# Sized against observed production days rather than a round number. On
-# 2026-08-16 a healthy run recorded 17 failure records across 3,035 products with
-# 7 of 118 providers partial; a broken run the day before recorded 1,195 records
-# with 34 of 118 partial. The absolute floor exists only to stop a tiny catalogue
-# slipping through on ratio alone — for a catalogue this size the 1% ratio is the
-# real gate, and a genuinely broken day misses every bound by an order of
-# magnitude.
-PARTIAL_V1_MAX_FAILURE_RECORDS = 50
-PARTIAL_V1_MAX_FAILURE_RATIO = 0.01
-PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = 0.15
+# The publication policy itself lives in app_payload_observation_gate so the
+# backfill path cannot drift away from it. Re-exported here because operators and
+# tests have long referred to these names through pi_daily_sync.
+PARTIAL_V1_MAX_FAILURE_RECORDS = gate.PARTIAL_V1_MAX_FAILURE_RECORDS
+PARTIAL_V1_MAX_FAILURE_RATIO = gate.PARTIAL_V1_MAX_FAILURE_RATIO
+PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO = gate.PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
 
 
 def pause_dashboard_for_ingest() -> bool:
@@ -210,22 +204,50 @@ def payload_publication_pending(repo_root: Path) -> bool:
     return payload_publication_pending_path(repo_root).is_file()
 
 
-def mark_payload_publication_pending(repo_root: Path, reason: str) -> None:
+def mark_payload_publication_pending(
+    repo_root: Path, reason: str, pointer: Optional[dict] = None
+) -> None:
+    """Record an outstanding upload, including *which* observation it was.
+
+    The marker used to carry only a reason and a timestamp, so the retry could not
+    tell which day had failed: it re-read ``latest-observation.json`` and
+    republished whatever was current. When a later day was withheld by policy the
+    retry returned "withheld" forever and the failed day never landed — that is how
+    app-payload-latest sat two ingest cycles behind the dated releases on
+    2026-08-15. Keeping the pointer lets the retry go back for the right day.
+    """
     path = payload_publication_pending_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "reason": str(reason),
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    if isinstance(pointer, dict) and pointer:
+        record["run_date"] = str(pointer.get("observation_date") or "")
+        record["pointer"] = pointer
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(
-        json.dumps(
-            {
-                "reason": str(reason),
-                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            },
-            sort_keys=True,
-        )
-        + "\n",
+        json.dumps(record, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def read_payload_publication_pending(repo_root: Path) -> dict:
+    """The pending marker's contents ({} when absent or unreadable)."""
+    try:
+        payload = json.loads(
+            payload_publication_pending_path(repo_root).read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def pending_publication_pointer(repo_root: Path) -> Optional[dict]:
+    """The observation pointer a pending retry should republish, when recorded."""
+    pointer = read_payload_publication_pending(repo_root).get("pointer")
+    return pointer if isinstance(pointer, dict) and pointer else None
 
 
 def clear_payload_publication_pending(repo_root: Path) -> None:
@@ -256,42 +278,33 @@ def _exports_from_pointer(state_dir: Path, pointer: dict) -> Optional[Path]:
 
 def _bounded_partial_v1_allowed(contract: dict) -> bool:
     """Allow a current v1 payload without mislabelling the observation complete."""
-    if contract.get("observation_state") != "partial":
-        return False
-    coverage = contract.get("coverage")
-    if not isinstance(coverage, dict):
-        return False
-    try:
-        failures = int(coverage.get("failure_records") or 0)
-        corrupt = int(coverage.get("corrupt_failure_records") or 0)
-        unattributed = int(coverage.get("unattributed_failure_records") or 0)
-        products = int(coverage.get("products_discovered") or 0)
-        registered = int(coverage.get("providers_registered") or 0)
-        attempted = int(coverage.get("providers_attempted") or 0)
-        partial = int(coverage.get("providers_partial") or 0)
-        failed = int(coverage.get("providers_failed") or 0)
-        register_attempted = int(coverage.get("register_sources_attempted") or 0)
-        register_complete = int(coverage.get("register_sources_complete") or 0)
-    except (TypeError, ValueError):
-        return False
-    return (
-        coverage.get("failure_provenance_complete") is True
-        and coverage.get("register_provenance_complete") is True
-        and corrupt == 0
-        and unattributed == 0
-        and products > 0
-        and registered > 0
-        and attempted == registered
-        and register_attempted > 0
-        and register_complete == register_attempted
-        and failed == 0
-        and 0 < failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
-        and failures / products <= PARTIAL_V1_MAX_FAILURE_RATIO
-        and partial / registered <= PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
+    return gate.bounded_partial_v1_allowed(contract)
+
+
+def current_publication_pointer(repo_root: Path) -> dict:
+    """The observation this run would publish: today's partial, else latest complete."""
+    runtime_state = data_state_root(repo_root)
+    latest_observation = _read_observation_pointer(
+        runtime_state, "latest-observation.json"
     )
+    if latest_observation.get("observation_state") == "partial":
+        return latest_observation
+    return _read_observation_pointer(runtime_state, "latest-complete.json")
 
 
-def maybe_publish_app_payload(repo_root: Path) -> str:
+def _contract_from_completion(runtime_state: Path, completion: dict) -> dict:
+    """Load the export contract a completion marker points at ({} when unusable)."""
+    relative = str(completion.get("export_contract_path") or "")
+    part = Path(relative)
+    if not relative or part.is_absolute() or ".." in part.parts:
+        return {}
+    try:
+        return load_contract(runtime_state / part)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def maybe_publish_app_payload(repo_root: Path, pointer: Optional[dict] = None) -> str:
     """Build + publish the mobile-app payload after a successful ingest.
 
     Opt-in (AR_LOCAL_APP_PAYLOAD=1) and strictly non-fatal: a publish failure must
@@ -310,15 +323,9 @@ def maybe_publish_app_payload(repo_root: Path) -> str:
         import app_payload
 
         runtime_state = data_state_root(repo_root)
-        latest_observation = _read_observation_pointer(
-            runtime_state, "latest-observation.json"
-        )
-        bounded_partial = latest_observation.get("observation_state") == "partial"
-        pointer = (
-            latest_observation
-            if bounded_partial
-            else _read_observation_pointer(runtime_state, "latest-complete.json")
-        )
+        if pointer is None:
+            pointer = current_publication_pointer(repo_root)
+        bounded_partial = pointer.get("observation_state") == "partial"
         exports = _exports_from_pointer(runtime_state, pointer)
         if exports is None:
             print(
@@ -352,20 +359,10 @@ def maybe_publish_app_payload(repo_root: Path) -> str:
                 "reason=unverified_completion_marker"
             )
             return PUBLISH_WITHHELD
+        # Loaded for every path, not just the partial one: its coverage block is the
+        # audited provider accounting the payload must advertise.
+        contract = _contract_from_completion(runtime_state, completion)
         if bounded_partial:
-            contract_relative = str(completion.get("export_contract_path") or "")
-            contract_part = Path(contract_relative)
-            if (
-                not contract_relative
-                or contract_part.is_absolute()
-                or ".." in contract_part.parts
-            ):
-                contract = {}
-            else:
-                try:
-                    contract = load_contract(runtime_state / contract_part)
-                except (OSError, ValueError, json.JSONDecodeError):
-                    contract = {}
             if not _bounded_partial_v1_allowed(contract):
                 print(
                     "[pi_daily_sync] app_payload promotion withheld "
@@ -392,7 +389,9 @@ def maybe_publish_app_payload(repo_root: Path) -> str:
         payload_state = runtime_state / "app-payload"
         print(f"[pi_daily_sync] app_payload publish starting exports={exports}")
         manifest, published_dated, published_latest = app_payload.build_and_publish_dual(
-            exports, state_dir=payload_state / "v1"
+            exports,
+            state_dir=payload_state / "v1",
+            contract_coverage=gate.contract_coverage(contract),
         )
         pruned_v1 = sum(
             prune_payload_staging(payload_state / "v1" / folder, "manifest.json")
@@ -537,7 +536,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                         file=sys.stderr,
                     )
                 else:
-                    outcome = maybe_publish_app_payload(REPO_ROOT)
+                    # Retry the observation that actually failed, when the marker
+                    # names one; only an unrecorded (pre-upgrade) marker falls back
+                    # to whatever is current.
+                    pending_pointer = pending_publication_pointer(REPO_ROOT)
+                    outcome = maybe_publish_app_payload(REPO_ROOT, pending_pointer)
                     if outcome == PUBLISH_PUBLISHED:
                         clear_payload_publication_pending(REPO_ROOT)
                         print("[pi_daily_sync] app_payload retry completed")
@@ -574,11 +577,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if dashboard_paused:
                     resume_dashboard_after_ingest()
             if _app_payload_enabled():
-                outcome = maybe_publish_app_payload(REPO_ROOT)
+                pointer = current_publication_pointer(REPO_ROOT)
+                outcome = maybe_publish_app_payload(REPO_ROOT, pointer or None)
                 if outcome == PUBLISH_PUBLISHED:
                     clear_payload_publication_pending(REPO_ROOT)
                 elif outcome == PUBLISH_FAILED:
-                    mark_payload_publication_pending(REPO_ROOT, "publish_failed")
+                    mark_payload_publication_pending(
+                        REPO_ROOT, "publish_failed", pointer
+                    )
                 elif payload_publication_pending(REPO_ROOT):
                     # Today withheld by policy, but an earlier day's upload never
                     # landed. Keep that marker so the watchdog keeps retrying.
