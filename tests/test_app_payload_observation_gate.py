@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -168,6 +170,32 @@ def test_pending_marker_without_a_pointer_falls_back(tmp_path: Path, monkeypatch
     monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
     pi_daily_sync.mark_payload_publication_pending(ROOT, "publish_failed")
     assert pi_daily_sync.payload_publication_pending(ROOT)
+    assert pi_daily_sync.pending_publication_pointer(ROOT) is None
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "this is not valid json {",
+        json.dumps(["not", "a", "dict"]),
+        json.dumps("not-a-dict"),
+        "",
+    ],
+)
+def test_corrupt_pending_marker_does_not_break_the_retry(
+    tmp_path: Path, monkeypatch, contents: str
+) -> None:
+    """A hand-edited or truncated marker must degrade to the fallback, not raise.
+
+    The marker is written on the Pi during a failed publish, so a power loss can
+    truncate it — and an operator may well open it while diagnosing a stall.
+    """
+    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
+    pi_daily_sync.payload_publication_pending_path(ROOT).write_text(
+        contents, encoding="utf-8"
+    )
+    assert pi_daily_sync.payload_publication_pending(ROOT)
+    assert pi_daily_sync.read_payload_publication_pending(ROOT) == {}
     assert pi_daily_sync.pending_publication_pointer(ROOT) is None
 
 
