@@ -505,7 +505,7 @@ def test_daily_ingest_does_not_invoke_sync_path(
         with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload") as publish:
             assert pi_daily_sync.main(["--banks-only"]) == 0
     ingest.assert_called_once()
-    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT)
+    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT, None)
 
 
 def test_compatibility_skip_git_sync_flag_is_a_no_op(
@@ -517,7 +517,7 @@ def test_compatibility_skip_git_sync_flag_is_a_no_op(
     with mock.patch.object(pi_daily_sync, "run_checked"):
         with mock.patch.object(pi_daily_sync, "maybe_publish_app_payload") as publish:
             assert pi_daily_sync.main(["--banks-only", "--skip-git-sync"]) == 0
-    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT)
+    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT, None)
 
 
 @pytest.mark.parametrize(
@@ -566,7 +566,7 @@ def test_pending_payload_retry_publishes_without_ingesting(
                 )
                 == 0
             )
-    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT)
+    publish.assert_called_once_with(pi_daily_sync.REPO_ROOT, None)
     ingest.assert_not_called()
     assert not pi_daily_sync.payload_publication_pending(pi_daily_sync.REPO_ROOT)
 

@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
 import app_payload_bank_spread
@@ -214,18 +214,65 @@ def build_payload(
     repo: str = DEFAULT_REPO,
     tag: str = DEFAULT_TAG,
     dashboard_dir: Path = BASE_DIR / "dashboard",
+    contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
     # Only the rolling release ships search-index + history assets (see _package's
     # is_rolling_tag gate), so a dated build needn't compute them at all.
     data = _compute_payload(
-        exports_dir, dashboard_dir=dashboard_dir, include_history=is_rolling_tag(tag)
+        exports_dir,
+        dashboard_dir=dashboard_dir,
+        include_history=is_rolling_tag(tag),
+        contract_coverage=contract_coverage,
     )
     return _package_payload(data, out_dir, repo=repo, tag=tag)
 
 
+def _apply_contract_provider_counts(
+    coverage: Dict[str, Any], contract_coverage: Mapping[str, Any]
+) -> None:
+    """Make the ingest's audited provider accounting the one the app is told.
+
+    ``coverage_summary`` re-derives provider health from the exported rows:
+    ``providers_failed`` is "has a failure record and produced no rows".
+    ``cdr_finalization`` derives it from the per-provider attempt state machine in
+    ``ingest-status.json``. Those are different questions, and they disagree — the
+    live 2026-08-17 payload advertised 2 failed providers for a run whose contract
+    had to report 0 for publication to be allowed at all. The contract is the
+    audited, ledger-bound side and the side that gates publication, so it wins;
+    row-derived totals (products, rates, failure records, brands) stay as they are,
+    because those genuinely describe the export.
+    """
+    counts = coverage.get("counts")
+    if not isinstance(counts, dict):
+        return
+    try:
+        attempted = int(contract_coverage["providers_attempted"])
+        partial = int(contract_coverage["providers_partial"])
+        failed = int(contract_coverage["providers_failed"])
+        registered = int(contract_coverage["providers_registered"])
+    except (KeyError, TypeError, ValueError):
+        return
+    counts["providers_registered"] = registered
+    counts["providers_attempted"] = attempted
+    counts["providers_partial"] = partial
+    counts["providers_failed"] = failed
+    # "Succeeded" in the app's sense has always meant "yielded usable data", which
+    # includes a partially-observed provider — so it is attempted minus failed,
+    # not the contract's stricter providers_complete.
+    counts["providers_succeeded"] = max(0, attempted - failed)
+    counts["provider_counts_source"] = "export_contract_v2"
+    # app_coverage_aliases only setdefaults these, and clean_export may already
+    # have written the row-derived values at export time.
+    coverage["providers_attempted"] = counts["providers_attempted"]
+    coverage["providers_succeeded"] = counts["providers_succeeded"]
+
+
 def _stable_payload_coverage(
-    banks: Dict[str, Any], latest: Dict[str, Any], run_date: str
+    banks: Dict[str, Any],
+    latest: Dict[str, Any],
+    run_date: str,
+    contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     existing = banks.get("coverage")
     if isinstance(existing, dict):
@@ -238,6 +285,8 @@ def _stable_payload_coverage(
             coverage["counts"]["failure_records"] = int(counts_hint.get("failures") or 0)
         except (TypeError, ValueError):
             pass
+    if contract_coverage:
+        _apply_contract_provider_counts(coverage, contract_coverage)
     # Keep rebuild wall-clock metadata out of the content-hashed core. Coverage
     # is dated by its stable source observation (`observed_on`).
     coverage.pop("source_generated_at", None)
@@ -252,6 +301,7 @@ def _compute_payload(
     dashboard_dir: Path = BASE_DIR / "dashboard",
     include_history: bool = True,
     state_dir: Optional[Path] = None,
+    contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Parse the run's exports into the (tag-independent) payload data.
 
@@ -267,7 +317,9 @@ def _compute_payload(
     banks = _load_json(_find_banks_json(exports_dir, run_date))
     rates: List[Dict[str, Any]] = banks.get("rates") or []
     products: List[Dict[str, Any]] = banks.get("products") or []
-    coverage = _stable_payload_coverage(banks, latest, run_date)
+    coverage = _stable_payload_coverage(
+        banks, latest, run_date, contract_coverage=contract_coverage
+    )
 
     sections: Dict[str, Any] = {}
     providers_seen: set[str] = set()
@@ -539,6 +591,7 @@ def build_and_publish_dual(
     out_dir: Optional[Path] = None,
     update_latest: bool = True,
     state_dir: Optional[Path] = None,
+    contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """Build + publish immutable dated snapshot and rolling latest (when allowed).
 
@@ -567,7 +620,10 @@ def build_and_publish_dual(
     # History/search are rolling-only, so only compute them when the rolling latest
     # will be built. Previously each release rebuilt from scratch every run.
     data = _app_payload("_compute_payload")(
-        exports_dir, include_history=need_latest, state_dir=state_dir
+        exports_dir,
+        include_history=need_latest,
+        state_dir=state_dir,
+        contract_coverage=contract_coverage,
     )
 
     dated = dated_tag(run_date)

@@ -71,6 +71,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # The label has never existed in this repo, so `gh issue create --label`
+          # exited 1 ("could not add label: 'ingest-missed' not found") every time
+          # the watchdog fired — 2026-08-14 and 2026-08-15 both detected a stale
+          # payload and then failed to file anything. Create it on demand so the
+          # alarm cannot be silenced by repository state again.
+          gh label create ingest-missed \
+            --color B60205 \
+            --description "Pi daily ingest did not publish a current app-payload manifest" \
+            2>/dev/null || true
           expected="${{ steps.check.outputs.expected }}"
           manifest="${{ steps.check.outputs.manifest }}"
           title="Pi ingest missed: ${expected}"
