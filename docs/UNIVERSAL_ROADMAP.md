@@ -96,6 +96,39 @@ Host ar-local-pi5-dashboard
 
 Use `HostKeyAlias=10.0.0.92` for the current LAN address because the same Pi host identity was originally recorded under that address. Set `AR_PI_SSH_HOST=ar-local-pi5-lan` before `npm run pi:deploy` or `npm run pi:deploy:verify` when using the unattended LAN route.
 
+#### One-command SSH setup (`ssh ar-local-pi5-lan`)
+
+`ar_local_pi_ssh.py` installs the three Host entries above into `~/.ssh/config`
+(`%USERPROFILE%\.ssh\config` on Windows) so `ssh ar-local-pi5-lan` works from any
+machine that holds the `pi5` private key. It reads the entries from **this
+section's `sshconfig` block** — so this file stays the single source of truth and
+address drift is fixed here, not in a script.
+
+```powershell
+npm run pi:ssh:setup     # merge the Host entries into ~/.ssh/config (idempotent)
+npm run pi:ssh:print     # show what would be installed
+npm run pi:ssh:check     # BatchMode smoke test: hostname; hostname -I; date
+npm run pi:ssh           # interactive session (same as: ssh ar-local-pi5-lan)
+ssh ar-local-pi5-lan     # after setup
+```
+
+- The entries are written inside a marked managed block; unrelated `~/.ssh/config`
+  content is preserved and re-running only refreshes the block.
+- Install aborts if `ar-local-pi5*` is already declared **outside** the block
+  (ssh's first-match-wins would shadow the managed entries) — remove the duplicate
+  or pass `--force`.
+- The private key is **not** in git. Copy `~/.ssh/pi5` (mode `600`) onto the
+  machine yourself; `--install` warns when it is missing.
+- Non-default target: `--host ar-local-pi5` (Tailscale) or
+  `--host ar-local-pi5-dashboard` (tunnel). Alternate config file:
+  `AR_PI_SSH_CONFIG`.
+- Exit codes: `0` OK, `1` remote command failed, `2` bad flags / roadmap or config
+  problem, `3` SSH unreachable (host down, wrong LAN address, missing key).
+
+Cloud or CI agents without tailnet membership and the key cannot reach the Pi at
+all; run these from the operator's development machine or the self-hosted Pi
+runner.
+
 ### Remote dashboard access while travelling
 
 Direct Tailscale URL (default HTTP port 80; no `:8808` in the address bar):

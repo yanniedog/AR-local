@@ -52,6 +52,7 @@ Exemptions (do not refactor purely for size): `requirements.txt`, generated outp
 | Closeout: open PR check | `npm run ship:closeout:strict` (includes bot-feedback gate) |
 | Pi dashboard smoke HTTP (default acceptance) | `npm run verify:pi` or `npm run verify:local -- --base-url=http://100.78.28.10/` |
 | Local dev smoke (explicit local server only) | `npm run verify:local -- --base-url=http://127.0.0.1:<port>/` |
+| Pi SSH setup (`ssh ar-local-pi5-lan`) | `npm run pi:ssh:setup` (then `npm run pi:ssh:check`) — entries come from `docs/UNIVERSAL_ROADMAP.md` |
 | Pi deploy verify / apply | `npm run pi:deploy:verify` / `npm run pi:deploy -- --expected-commit <approved-40-char-sha>`; deploy only through the canary-gated manual workflow |
 | Pi deploy needed (post-merge gate) | `npm run pi:needs-deploy -- --ref origin/main~1` |
 | Prune remote refs | `npm run git:graph-hygiene` |

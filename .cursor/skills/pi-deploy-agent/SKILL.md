@@ -62,7 +62,13 @@ resolves to that commit. Never infer approval from a merge.
 ssh -o BatchMode=yes ar-local-pi5 "hostname; date"
 ```
 
-If SSH fails, stop with evidence — do not claim deploy complete.
+If the alias is not configured yet, install it from the roadmap first:
+
+```powershell
+npm run pi:ssh:setup && npm run pi:ssh:check
+```
+
+If SSH still fails, stop with evidence — do not claim deploy complete.
 
 ## Deploy sequence
 
