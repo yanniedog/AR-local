@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -454,3 +455,63 @@ def test_same_day_revision_gets_its_own_hash_bound_evidence_without_mutating_pri
         for path in primary.rglob("*")
         if path.is_file()
     } == primary_before
+
+
+def _staged_evidence(ram: Path) -> Path:
+    return (
+        ram
+        / "exports"
+        / DATE
+        / "_exports"
+        / "attempt-evidence"
+        / "raw-attempt-journals-v1"
+        / SESSION
+    )
+
+
+def test_export_build_failure_still_preserves_captured_attempt_evidence(
+    tmp_path, monkeypatch
+):
+    """A crash after the last fetch must not take the night's wire evidence with it."""
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+
+    def exploding_build(*_args, **_kwargs):
+        raise MemoryError("export build ran out of memory")
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", exploding_build)
+
+    with pytest.raises(MemoryError):
+        cdr_daily.run_once(args)
+
+    assert _staged_evidence(ram).is_dir()
+
+
+def test_nonzero_ingest_exit_still_preserves_captured_attempt_evidence(
+    tmp_path, monkeypatch
+):
+    """cdr_full_ingest publishes its status on early exits; keep that evidence."""
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+
+    def failing_ingest(_script_dir, out_dir, date, _extra):
+        _write_ingest(out_dir / date)
+        raise subprocess.CalledProcessError(2, "cdr_full_ingest.py")
+
+    monkeypatch.setattr(cdr_daily, "run_ingest", failing_ingest)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        cdr_daily.run_once(args)
+
+    assert _staged_evidence(ram).is_dir()
+
+
+def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
+    """Best-effort by design: preservation must never be why an ingest fails."""
+
+    def exploding_promotion(_run_dir, _export_root):
+        raise RuntimeError("promotion unavailable")
+
+    monkeypatch.setattr(cdr_daily, "persist_ingest_status", exploding_promotion)
+
+    cdr_daily.preserve_attempt_evidence(tmp_path / "run", tmp_path / "_exports")
+
+    assert "could not preserve raw attempt evidence" in capsys.readouterr().err

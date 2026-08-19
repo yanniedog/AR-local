@@ -76,6 +76,33 @@ def persist_ingest_status(run_dir: Path, export_root: Path) -> Optional[dict]:
     return promote_attempt_evidence(run_dir, export_root)
 
 
+def preserve_attempt_evidence(run_dir: Path, export_root: Path) -> None:
+    """Land captured wire evidence on disk as soon as ingest stops writing it.
+
+    The RAM-staged Pi path keeps the raw run tree — including
+    ``_raw-attempt-journals-v1``, the only retained record of what each holder
+    actually sent — in tmpfs for the whole run. Until 2026-08-19 the sole
+    promotion happened after ``build_outputs``, so anything that ended the run
+    between the last fetch and the end of the export build (a non-zero ingest
+    exit, an OOM or disk error while building exports, the unit's
+    ``TimeoutStartSec`` SIGKILL, a power cut) destroyed every response body for
+    that night. Those bytes are unrepeatable: live CDR endpoints serve only
+    current state, and ``run_once`` refuses live re-ingest of a finalized day.
+
+    Promotion is create-once and its replay is byte-identical, so the
+    authoritative post-build call still runs and still reports the record. This
+    one is best-effort by design: preserving evidence must never be the reason
+    an otherwise healthy ingest fails.
+    """
+    try:
+        persist_ingest_status(run_dir, export_root)
+    except Exception as exc:  # noqa: BLE001 - never fail ingest to preserve evidence
+        print(
+            f"WARNING: could not preserve raw attempt evidence early: {exc!r}",
+            file=sys.stderr,
+        )
+
+
 def marker_is_trustworthy(marker: Path, export_root: Path, date: str) -> bool:
     try:
         recorded = json.loads(marker.read_text(encoding="utf-8"))
@@ -496,7 +523,12 @@ def run_once(args: argparse.Namespace) -> int:
                 print(f"Archived failed RAM-stage evidence at {archived}")
         prepare_ram_stage(staged_run)
         prepare_ram_stage(staged_exports)
-        run_ingest(script_dir, staged_runs, date, extra_args)
+        try:
+            run_ingest(script_dir, staged_runs, date, extra_args)
+        finally:
+            # staged_exports is the persistent .daily-export-stage on the Pi
+            # (--ram-stage on a dev box keeps it in RAM, where nothing can help).
+            preserve_attempt_evidence(staged_runs / date, staged_exports)
         result = build_outputs(
             staged_runs / date,
             staged_exports,
