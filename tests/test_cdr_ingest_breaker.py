@@ -60,6 +60,9 @@ def test_failing_holder_trips_and_reports_circuit_open(tmp_path, monkeypatch):
     # Everything the open circuit deferred except the probe, which recorded its own
     # failure rather than being written off twice.
     assert statuses.count("circuit_open") == n - lib.BREAKER_MIN_SAMPLE - 1
+    # The relapse status is reserved for a holder that answered the probe and then
+    # failed again; a holder that never recovered must never produce it.
+    assert statuses.count("circuit_open_after_recovery") == 0
     assert len(failures) == n
 
 
