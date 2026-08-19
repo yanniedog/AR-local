@@ -12,17 +12,19 @@ import pytest
 import cdr_daily
 import cdr_outputs
 from cdr_atomic import atomic_write_json
+from cdr_attempt_evidence_promotion import ARTIFACT_NAMESPACE
 from cdr_finalization import verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T010000000000Z-112233445566"
+EVIDENCE_BODY = b'{"data":{"products":[]}}'
 
 
 def _write_ingest(run_root):
     journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
-    body = b'{"data":{"products":[]}}'
+    body = EVIDENCE_BODY
     journal.record(
         "register:1|nonce|1",
         request_url="https://register.example/holders",
@@ -458,15 +460,27 @@ def test_same_day_revision_gets_its_own_hash_bound_evidence_without_mutating_pri
 
 
 def _staged_evidence(ram: Path) -> Path:
-    return (
-        ram
-        / "exports"
-        / DATE
-        / "_exports"
-        / "attempt-evidence"
-        / "raw-attempt-journals-v1"
-        / SESSION
-    )
+    """The promoted journal for SESSION, addressed the way promotion addresses it."""
+    staged_exports = ram / "exports" / DATE / "_exports"
+    return staged_exports.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+
+
+def _assert_evidence_preserved(ram: Path) -> None:
+    """A directory is not evidence: require a verified journal and the body bytes.
+
+    Asserting only that the destination exists would pass for an empty or
+    half-copied promotion, which is precisely the outcome this fix exists to
+    prevent. Verify through the production reader, then confirm the recorded
+    response body survived byte-identical — those bytes are the unrepeatable
+    part.
+    """
+    promoted = _staged_evidence(ram)
+    assert promoted.is_dir()
+    summary = RawAttemptJournal(promoted.parent, SESSION).summary()
+    assert summary["verified"] is True
+    assert summary["attempts"] == 1
+    digest = hashlib.sha256(EVIDENCE_BODY).hexdigest()
+    assert (promoted / "bodies" / f"{digest}.body").read_bytes() == EVIDENCE_BODY
 
 
 def test_export_build_failure_still_preserves_captured_attempt_evidence(
@@ -483,7 +497,7 @@ def test_export_build_failure_still_preserves_captured_attempt_evidence(
     with pytest.raises(MemoryError):
         cdr_daily.run_once(args)
 
-    assert _staged_evidence(ram).is_dir()
+    _assert_evidence_preserved(ram)
 
 
 def test_nonzero_ingest_exit_still_preserves_captured_attempt_evidence(
@@ -501,7 +515,7 @@ def test_nonzero_ingest_exit_still_preserves_captured_attempt_evidence(
     with pytest.raises(subprocess.CalledProcessError):
         cdr_daily.run_once(args)
 
-    assert _staged_evidence(ram).is_dir()
+    _assert_evidence_preserved(ram)
 
 
 def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
