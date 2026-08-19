@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,17 +12,19 @@ import pytest
 import cdr_daily
 import cdr_outputs
 from cdr_atomic import atomic_write_json
+from cdr_attempt_evidence_promotion import ARTIFACT_NAMESPACE
 from cdr_finalization import verify_completion_marker
 from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T010000000000Z-112233445566"
+EVIDENCE_BODY = b'{"data":{"products":[]}}'
 
 
 def _write_ingest(run_root):
     journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
-    body = b'{"data":{"products":[]}}'
+    body = EVIDENCE_BODY
     journal.record(
         "register:1|nonce|1",
         request_url="https://register.example/holders",
@@ -454,3 +457,75 @@ def test_same_day_revision_gets_its_own_hash_bound_evidence_without_mutating_pri
         for path in primary.rglob("*")
         if path.is_file()
     } == primary_before
+
+
+def _staged_evidence(ram: Path) -> Path:
+    """The promoted journal for SESSION, addressed the way promotion addresses it."""
+    staged_exports = ram / "exports" / DATE / "_exports"
+    return staged_exports.joinpath(*ARTIFACT_NAMESPACE.parts, SESSION)
+
+
+def _assert_evidence_preserved(ram: Path) -> None:
+    """A directory is not evidence: require a verified journal and the body bytes.
+
+    Asserting only that the destination exists would pass for an empty or
+    half-copied promotion, which is precisely the outcome this fix exists to
+    prevent. Verify through the production reader, then confirm the recorded
+    response body survived byte-identical — those bytes are the unrepeatable
+    part.
+    """
+    promoted = _staged_evidence(ram)
+    assert promoted.is_dir()
+    summary = RawAttemptJournal(promoted.parent, SESSION).summary()
+    assert summary["verified"] is True
+    assert summary["attempts"] == 1
+    digest = hashlib.sha256(EVIDENCE_BODY).hexdigest()
+    assert (promoted / "bodies" / f"{digest}.body").read_bytes() == EVIDENCE_BODY
+
+
+def test_export_build_failure_still_preserves_captured_attempt_evidence(
+    tmp_path, monkeypatch
+):
+    """A crash after the last fetch must not take the night's wire evidence with it."""
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+
+    def exploding_build(*_args, **_kwargs):
+        raise MemoryError("export build ran out of memory")
+
+    monkeypatch.setattr(cdr_daily, "build_outputs", exploding_build)
+
+    with pytest.raises(MemoryError):
+        cdr_daily.run_once(args)
+
+    _assert_evidence_preserved(ram)
+
+
+def test_nonzero_ingest_exit_still_preserves_captured_attempt_evidence(
+    tmp_path, monkeypatch
+):
+    """cdr_full_ingest publishes its status on early exits; keep that evidence."""
+    args, _runs, _state, ram = _configure(tmp_path, monkeypatch)
+
+    def failing_ingest(_script_dir, out_dir, date, _extra):
+        _write_ingest(out_dir / date)
+        raise subprocess.CalledProcessError(2, "cdr_full_ingest.py")
+
+    monkeypatch.setattr(cdr_daily, "run_ingest", failing_ingest)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        cdr_daily.run_once(args)
+
+    _assert_evidence_preserved(ram)
+
+
+def test_preserving_evidence_never_raises(tmp_path, monkeypatch, capsys):
+    """Best-effort by design: preservation must never be why an ingest fails."""
+
+    def exploding_promotion(_run_dir, _export_root):
+        raise RuntimeError("promotion unavailable")
+
+    monkeypatch.setattr(cdr_daily, "persist_ingest_status", exploding_promotion)
+
+    cdr_daily.preserve_attempt_evidence(tmp_path / "run", tmp_path / "_exports")
+
+    assert "could not preserve raw attempt evidence" in capsys.readouterr().err
