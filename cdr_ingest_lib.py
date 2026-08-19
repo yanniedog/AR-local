@@ -63,6 +63,15 @@ def _detail_version_list() -> List[int]:
 # that holder and fail them fast — bounding the wasted work + load on a down holder.
 BREAKER_MIN_SAMPLE = 20    # require this many attempts before the breaker can trip
 BREAKER_FAIL_RATIO = 0.8   # trip when >= this fraction of attempts have failed
+# An open circuit used to end a holder for the whole run: every remaining product
+# was recorded "circuit_open" and never requested again. A holder that was briefly
+# unreachable therefore lost its entire remaining catalogue for that day, and a
+# day cannot be re-observed (live CDR endpoints serve only current state). The
+# 2026-08-11 run recorded 537 circuit_open products on top of 532 HTTP 406s.
+# Deferred products now get one bounded second chance, gated behind a single
+# probe so a genuinely down holder still costs one request rather than a retry
+# storm.
+BREAKER_RECOVERY_DELAY_SECONDS = 30.0
 
 
 class _HolderBreaker:
@@ -102,6 +111,13 @@ class _HolderBreaker:
     def snapshot(self) -> Tuple[int, int]:
         with self._lock:
             return self._failures, self._attempts
+
+    def reset(self) -> None:
+        """Close the circuit and forget the failed window after a good probe."""
+        with self._lock:
+            self._attempts = 0
+            self._failures = 0
+            self._open = False
 
 
 # ─── Banking detail work unit ─────────────────────────────────────────────────
@@ -424,31 +440,8 @@ def ingest_brand(
     if not pending:
         return
 
-    n_workers = min(detail_workers, len(pending))
-    log(
-        f"[banks] {bank_dir_name}: fetching {len(pending)} product details "
-        f"({n_workers} concurrent)",
-    )
-
-    def _do(work: _BankWork) -> None:
-        # A product whose detail was already prefetched in Phase 1 is written even
-        # when the breaker is open — don't discard an already-successful fetch
-        # (Codex). The open-circuit skip applies only to work that still needs a
-        # network fetch. File I/O stays OUTSIDE the breaker lock (Gemini).
-        needs_fetch = work.prefetched is None
-        if needs_fetch and breaker.is_open():
-            append_failure(
-                date_root,
-                {
-                    "phase": "product_detail",
-                    "bank": bank_dir_name,
-                    "product_id": work.pid,
-                    "status": "circuit_open",
-                },
-                lock=failure_lock,
-            )
-            return
-        ok = _fetch_bank_detail(
+    def _fetch_one(work: _BankWork) -> bool:
+        return _fetch_bank_detail(
             work,
             endpoint_url,
             timeout=timeout,
@@ -460,44 +453,106 @@ def ingest_brand(
             preferred_version=preferred_version,
             attempt_journal=attempt_journal,
         )
-        # Only true network fetches feed the breaker; a Phase-1 prefetched result
-        # was already counted in classify_product_for_ingest.
-        if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
-            failures, attempts = breaker.snapshot()
-            log(
-                f"[banks] {bank_dir_name}: circuit opened "
-                f"({failures}/{attempts} detail fetches failed) — skipping remaining details"
+
+    def _detail_pass(items: List[_BankWork]) -> List[_BankWork]:
+        """Fetch ``items``; return the work an open circuit deferred, unfetched.
+
+        Deferred work is returned rather than recorded, so the caller can decide
+        whether the holder deserves another attempt. Nothing is written off here.
+        """
+        deferred: List[_BankWork] = []
+        deferred_lock = threading.Lock()
+        n_workers = min(detail_workers, len(items))
+        log(
+            f"[banks] {bank_dir_name}: fetching {len(items)} product details "
+            f"({n_workers} concurrent)",
+        )
+
+        def _do(work: _BankWork) -> None:
+            # A product whose detail was already prefetched in Phase 1 is written even
+            # when the breaker is open — don't discard an already-successful fetch
+            # (Codex). The open-circuit skip applies only to work that still needs a
+            # network fetch. File I/O stays OUTSIDE the breaker lock (Gemini).
+            needs_fetch = work.prefetched is None
+            if needs_fetch and breaker.is_open():
+                with deferred_lock:
+                    deferred.append(work)
+                return
+            ok = _fetch_one(work)
+            # Only true network fetches feed the breaker; a Phase-1 prefetched result
+            # was already counted in classify_product_for_ingest.
+            if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
+                failures, attempts = breaker.snapshot()
+                log(
+                    f"[banks] {bank_dir_name}: circuit opened "
+                    f"({failures}/{attempts} detail fetches failed) — deferring remaining details"
+                )
+
+        if n_workers <= 1:
+            for w in items:
+                _do(w)
+        else:
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                futures = {pool.submit(_do, w): w.pid for w in items}
+                done = 0
+                for fut in as_completed(futures):
+                    done += 1
+                    try:
+                        fut.result()
+                    except Exception as exc:
+                        # An unexpected detail-worker crash (not a normal fetch failure,
+                        # which _fetch_bank_detail already records) is otherwise only
+                        # logged; record it so the status rollup counts it (Codex).
+                        log(f"[banks] {bank_dir_name}: detail error for {futures[fut]}: {exc}")
+                        append_failure(
+                            date_root,
+                            {
+                                "phase": "product_detail",
+                                "bank": bank_dir_name,
+                                "product_id": futures[fut],
+                                "status": "worker_crash",
+                                "error": str(exc)[:500],
+                            },
+                            lock=failure_lock,
+                        )
+                    if done % 50 == 0:
+                        log(f"[banks] {bank_dir_name}: {done}/{len(items)} details done")
+        return deferred
+
+    def _write_off(items: List[_BankWork], status: str) -> None:
+        for work in items:
+            append_failure(
+                date_root,
+                {
+                    "phase": "product_detail",
+                    "bank": bank_dir_name,
+                    "product_id": work.pid,
+                    "status": status,
+                },
+                lock=failure_lock,
             )
 
-    if n_workers <= 1:
-        for w in pending:
-            _do(w)
-    else:
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futures = {pool.submit(_do, w): w.pid for w in pending}
-            done = 0
-            for fut in as_completed(futures):
-                done += 1
-                try:
-                    fut.result()
-                except Exception as exc:
-                    # An unexpected detail-worker crash (not a normal fetch failure,
-                    # which _fetch_bank_detail already records) is otherwise only
-                    # logged; record it so the status rollup counts it (Codex).
-                    log(f"[banks] {bank_dir_name}: detail error for {futures[fut]}: {exc}")
-                    append_failure(
-                        date_root,
-                        {
-                            "phase": "product_detail",
-                            "bank": bank_dir_name,
-                            "product_id": futures[fut],
-                            "status": "worker_crash",
-                            "error": str(exc)[:500],
-                        },
-                        lock=failure_lock,
-                    )
-                if done % 50 == 0:
-                    log(f"[banks] {bank_dir_name}: {done}/{len(pending)} details done")
+    deferred = _detail_pass(pending)
+    if deferred:
+        # One bounded recovery attempt. A single probe decides it: a holder that
+        # is still down costs one request, while a holder whose outage has passed
+        # gets its whole deferred catalogue back instead of losing the day.
+        log(
+            f"[banks] {bank_dir_name}: {len(deferred)} details deferred by an open "
+            f"circuit; probing once in {BREAKER_RECOVERY_DELAY_SECONDS:g}s"
+        )
+        time.sleep(BREAKER_RECOVERY_DELAY_SECONDS)
+        probe, rest = deferred[0], deferred[1:]
+        # The probe records its own failure evidence via _fetch_bank_detail, so a
+        # failed probe is never also written off as circuit_open.
+        if not _fetch_one(probe):
+            log(f"[banks] {bank_dir_name}: recovery probe failed — holder still unhealthy")
+            _write_off(rest, "circuit_open")
+        else:
+            breaker.reset()
+            log(f"[banks] {bank_dir_name}: recovery probe succeeded — retrying deferred details")
+            if rest:
+                _write_off(_detail_pass(rest), "circuit_open_after_recovery")
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
