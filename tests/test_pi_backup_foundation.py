@@ -7,6 +7,8 @@ import os
 import sqlite3
 import subprocess
 import sys
+import shutil
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -451,13 +453,21 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
 
 
 def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> None:
-    policy = make_policy(tmp_path)
-    object.__setattr__(policy, "plan_git_commit", "4a3af1ccbdc24deefe3d12da2f7152946984f459")
-    object.__setattr__(policy, "plan_sha256", "510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc")
-    object.__setattr__(
-        policy,
-        "plan_raw_sha256",
-        policy_module.sha256_file(ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"),
+    repo = tmp_path / "plan-repo"
+    _git_repo(repo)
+    document = repo / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
+    document.parent.mkdir()
+    shutil.copy2(ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md", document)
+    subprocess.run(("git", "add", "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"), cwd=repo, check=True)
+    subprocess.run(("git", "commit", "-q", "-m", "controlled plan"), cwd=repo, check=True)
+    commit = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=repo, text=True, capture_output=True, check=True
+    ).stdout.strip()
+    policy = replace(
+        make_policy(tmp_path),
+        plan_git_commit=commit,
+        plan_sha256="510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc",
+        plan_raw_sha256=policy_module.sha256_file(document),
     )
-    report = backup.verify_plan_document(policy, ROOT)
+    report = backup.verify_plan_document(policy, repo)
     assert report["ok"], report["findings"]
