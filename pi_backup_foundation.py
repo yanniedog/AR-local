@@ -113,6 +113,21 @@ def _copy_regular_tree(source: Path, destination: Path, *, exclude: set[Path] | 
             raise RuntimeError(f"snapshot copy hash mismatch: {item}")
 
 
+def _tree_metadata(source: Path, exclude: set[Path]) -> dict[str, tuple[int, int]]:
+    excluded = {path.resolve() for path in exclude}
+    result: dict[str, tuple[int, int]] = {}
+    for item in sorted(source.rglob("*")):
+        if item.is_symlink():
+            raise ValueError(f"snapshot source contains symlink: {item}")
+        if item.is_dir() or item.resolve() in excluded:
+            continue
+        if not item.is_file() or item.stat().st_nlink != 1:
+            raise ValueError(f"snapshot source is not a unique regular file: {item}")
+        info = item.stat()
+        result[item.relative_to(source).as_posix()] = (info.st_size, info.st_mtime_ns)
+    return result
+
+
 def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_uri = f"file:{source.as_posix()}?mode=ro"
@@ -141,6 +156,33 @@ def _manifest_entries(root: Path) -> list[dict[str, object]]:
         if path.is_file() and path.name != "manifest.json":
             entries.append({"path": path.relative_to(root).as_posix(), "size": path.stat().st_size, "sha256": sha256_file(path)})
     return entries
+
+
+def _category_summary(entries: list[dict[str, object]]) -> dict[str, dict[str, int]]:
+    categories: dict[str, dict[str, int]] = {}
+    for entry in entries:
+        path = str(entry["path"])
+        if path.startswith("data/runs/"):
+            if "raw-attempt" in path or "/_failed_attempts/" in path:
+                category = "raw_attempt_evidence"
+            elif path.endswith("/local-cdr.sqlite"):
+                category = "daily_sqlite"
+            else:
+                category = "run_exports_and_state"
+        elif path.startswith("data/state/export-contracts-v2/"):
+            category = "export_contracts"
+        elif path.startswith("data/state/ledger-v2/"):
+            category = "ledger"
+        elif path.startswith("data/state/observation-pointers-v2/"):
+            category = "observation_pointers"
+        elif "app-payload" in path:
+            category = "publication_state"
+        else:
+            category = path.split("/", 1)[0]
+        summary = categories.setdefault(category, {"files": 0, "bytes": 0})
+        summary["files"] += 1
+        summary["bytes"] += int(entry["size"])
+    return categories
 
 
 def _secret_metadata() -> list[dict[str, object]]:
@@ -184,10 +226,17 @@ def create_snapshot(
     try:
         with production_lock(lock, "backup"):
             macro = macro_db.resolve()
-            macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
-            _copy_regular_tree(data_root, staging / "data", exclude=macro_exclusions | {lock.resolve()})
             if not macro.is_file():
                 raise ValueError(f"macro database is missing: {macro}")
+            macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
+            exclusions = macro_exclusions | {lock.resolve()}
+            before = _tree_metadata(data_root, exclusions)
+            required_free = max(policy.min_free_bytes, sum(size for size, _mtime in before.values()) + macro.stat().st_size + 1024**3)
+            if shutil.disk_usage(policy.backup_dir).free < required_free:
+                raise RuntimeError(f"backup target lacks source-size headroom: required={required_free}")
+            _copy_regular_tree(data_root, staging / "data", exclude=exclusions)
+            if _tree_metadata(data_root, exclusions) != before:
+                raise RuntimeError("production data changed during snapshot")
             macro_report = _sqlite_backup(macro, staging / "macro/local-macro.sqlite")
             system_root = staging / "system"
             for source in (Path("/etc/fstab"), Path("/etc/nginx/sites-available/ar-local-dashboard")):
@@ -202,6 +251,8 @@ def create_snapshot(
                         target = system_root / source.relative_to("/")
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(source, target)
+                    elif source.is_dir() and not source.is_symlink():
+                        _copy_regular_tree(source, system_root / source.relative_to("/"))
             bundles = staging / "code"
             bundles.mkdir()
             for name, source in (("AR-local", repo), ("australianrates", site_repo)):
@@ -209,6 +260,7 @@ def create_snapshot(
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    entries = _manifest_entries(staging)
     manifest: dict[str, object] = {
         "schema_version": 1,
         "snapshot_id": snapshot_id,
@@ -226,7 +278,9 @@ def create_snapshot(
         "secret_locations": _secret_metadata(),
         "exclusions": [{"path": str(lock), "reason": "transient backup lock"}],
         "macro_backup": macro_report,
-        "files": _manifest_entries(staging),
+        "source_data_bytes": sum(size for size, _mtime in before.values()),
+        "category_summary": _category_summary(entries),
+        "files": entries,
         "result": "PASS",
     }
     manifest_path = staging / "manifest.json"
