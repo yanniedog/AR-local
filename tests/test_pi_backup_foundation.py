@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 import subprocess
@@ -25,6 +26,7 @@ import ar_local_operation_lock as operation_lock  # noqa: E402
 import ar_local_rollback_record as rollback_record  # noqa: E402
 import pi_backup_foundation as backup  # noqa: E402
 import cdr_outputs  # noqa: E402
+import cdr_finalization  # noqa: E402
 
 COMMIT = "a" * 40
 DIGEST = "b" * 64
@@ -69,7 +71,9 @@ def valid_snapshot_manifest(files: list[dict[str, object]]) -> dict[str, object]
         },
         "system_configuration": [],
         "systemd_enablement": [],
-        "macro_backup": {},
+        "macro_backup": {
+            "table_counts": {"ingest_runs": 0, "series_observations": 0}
+        },
         "source_data_bytes": 0,
         "capacity_plan": {
             "snapshot_payload_bytes": 0,
@@ -282,6 +286,30 @@ def test_snapshot_verification_detects_same_size_tamper(tmp_path: Path) -> None:
     report = backup.verify_snapshot(snapshot)
     assert not report["ok"]
     assert report["findings"] == ["changed:artifact.bin"]
+
+
+def test_snapshot_verification_hashes_nested_manifest_files(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    nested = snapshot / "data/runs/2026-08-24/_exports/dashboard-cache"
+    nested.mkdir(parents=True)
+    artifact = nested / "manifest.json"
+    artifact.write_bytes(b"good")
+    relative = artifact.relative_to(snapshot).as_posix()
+    manifest = valid_snapshot_manifest(
+        [
+            {
+                "path": relative,
+                "size": artifact.stat().st_size,
+                "sha256": policy_module.sha256_file(artifact),
+            }
+        ]
+    )
+    (snapshot / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    assert backup.verify_snapshot(snapshot)["ok"]
+    artifact.write_bytes(b"evil")
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert f"changed:{relative}" in report["findings"]
 
 
 def test_snapshot_verification_rejects_malformed_and_extra_entries(tmp_path: Path) -> None:
@@ -556,7 +584,10 @@ def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path:
         "eligibility": [], "constraints": [], "product_facts": [],
         "product_changes": [], "failures": [],
     }
-    cdr_outputs.rebuild_run_db(exports / "local-cdr.sqlite", run_date, banks)
+    database = exports / "local-cdr.sqlite"
+    cdr_outputs.rebuild_run_db(database, run_date, banks)
+    assert not Path(f"{database}-wal").exists()
+    assert not Path(f"{database}-shm").exists()
     (exports / f"banks-{run_date}.json").write_text(json.dumps(banks), encoding="utf-8")
     cache = exports / "dashboard-cache"
     cache.mkdir()
@@ -570,6 +601,315 @@ def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path:
     (exports / f"banks-{run_date}.json").write_text(json.dumps(banks), encoding="utf-8")
     with pytest.raises(ValueError, match="runs metadata"):
         backup._daily_export_reconciliation(exports / "local-cdr.sqlite")
+
+
+def _write_finalized_observation(data_root: Path, run_date: str = "2026-08-24") -> None:
+    exports = data_root / "runs" / run_date / "_exports"
+    exports.mkdir(parents=True)
+    product = {
+        "dataset": "banking",
+        "provider": "provider-a",
+        "product_id": "product-a",
+        "product_key": "provider-a:product-a",
+        "product_name": "Product A",
+        "source_file": "fixture.json",
+        "details_json": "{}",
+    }
+    rate = {
+        **product,
+        "rate_family": "variable",
+        "rate": "5.00",
+        "comparison_rate": "5.10",
+    }
+    banks = {
+        "products": [product],
+        "rates": [rate],
+        "fees": [],
+        "features": [],
+        "eligibility": [],
+        "constraints": [],
+        "product_facts": [],
+        "product_changes": [],
+        "failures": [],
+    }
+    cdr_outputs.rebuild_run_db(exports / "local-cdr.sqlite", run_date, banks)
+    (exports / f"banks-{run_date}.json").write_text(
+        json.dumps(banks), encoding="utf-8"
+    )
+    counts = {key: len(value) for key, value in banks.items()}
+    dashboard = exports / "dashboard-cache"
+    dashboard.mkdir()
+    (dashboard / "latest.json").write_text(
+        json.dumps({"run_date": run_date, "banks_counts": counts}),
+        encoding="utf-8",
+    )
+    (exports / "ingest-status.json").write_text(
+        json.dumps(
+            {
+                "total": 0,
+                "corrupt_records": 0,
+                "failure_provenance_complete": True,
+                "incomplete": False,
+                "by_phase": {},
+                "by_status": {},
+                "by_provider": {},
+                "register_provenance_complete": True,
+                "register_attempts": [
+                    {
+                        "source_url": "https://register.example/holders",
+                        "mode": "plain",
+                        "ok": True,
+                        "status": 200,
+                        "bytes": 2,
+                        "sha256": "a" * 64,
+                    }
+                ],
+                "providers_registered": 1,
+                "providers_attempted": 1,
+                "provider_states": [
+                    {
+                        "provider_uid": "provider-a",
+                        "state": "complete",
+                        "failure_records": 0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = data_root / "state"
+    cdr_finalization.finalize_observation(
+        exports,
+        state,
+        state / f"{run_date}.done.json",
+        observation_date=run_date,
+        result={"run_date": run_date, "banks_counts": counts},
+    )
+
+
+def write_acceptance_snapshot(
+    snapshot: Path, snapshot_id: str, candidate_code_sha: str = COMMIT
+) -> tuple[dict[str, object], dict[str, object]]:
+    artifacts = {
+        "data/runs/2026-08-24/_exports/local-cdr.sqlite": b"database",
+        "data/state/2026-08-24.done.json": b"marker",
+        "data/state/export-contracts-v2/2026-08-24/fixture.json": b"contract",
+        "data/state/ledger-v2/events/2026-08-24/obs-2026-08-24-fixture.json": b"event",
+        "macro/local-macro.sqlite": b"macro",
+    }
+    for relative, content in artifacts.items():
+        path = snapshot / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    entries = [
+        {
+            "path": relative,
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+        for relative, content in sorted(artifacts.items())
+    ]
+    hashes = {relative: hashlib.sha256(content).hexdigest() for relative, content in artifacts.items()}
+    manifest = valid_snapshot_manifest(entries)
+    manifest["snapshot_id"] = snapshot_id
+    manifest["candidate_code_sha"] = candidate_code_sha
+    file_set_sha256 = hashlib.sha256(
+        policy_module.canonical_json_bytes(entries)
+    ).hexdigest()
+    checks = {
+        "ok": True,
+        "findings": [],
+        "selected_observation": {
+            "observation_date": "2026-08-24",
+            "generation_id": "obs-2026-08-24-fixture",
+            "observation_state": "complete",
+            "ledger_event_digest": "1" * 64,
+            "export_contract_digest": "2" * 64,
+            "export_contract_path": "export-contracts-v2/2026-08-24/fixture.json",
+            "export_contract_sha256": hashes[
+                "data/state/export-contracts-v2/2026-08-24/fixture.json"
+            ],
+            "marker_path": "2026-08-24.done.json",
+            "marker_sha256": hashes["data/state/2026-08-24.done.json"],
+            "export_path": "runs/2026-08-24/_exports",
+            "database_path": "runs/2026-08-24/_exports/local-cdr.sqlite",
+            "database_sha256": hashes[
+                "data/runs/2026-08-24/_exports/local-cdr.sqlite"
+            ],
+            "ledger_event_path": "ledger-v2/events/2026-08-24/obs-2026-08-24-fixture.json",
+            "ledger_event_sha256": hashes[
+                "data/state/ledger-v2/events/2026-08-24/obs-2026-08-24-fixture.json"
+            ],
+        },
+        "restored_files": {
+            "ok": True,
+            "findings": [],
+            "file_count": len(entries),
+            "total_bytes": sum(int(entry["size"]) for entry in entries),
+            "source_file_set_sha256": file_set_sha256,
+            "restored_file_set_sha256": file_set_sha256,
+        },
+        "macro": {
+            "quick_check": "ok",
+            "tables": ["ingest_runs", "series_observations"],
+            "counts": {"ingest_runs": 1, "series_observations": 2},
+        },
+    }
+    return manifest, checks
+
+
+def test_restored_state_rejects_empty_observation_store(tmp_path: Path) -> None:
+    (tmp_path / "runs").mkdir()
+    (tmp_path / "state/ledger-v2").mkdir(parents=True)
+    report = backup._verify_restored_state(tmp_path)
+    assert not report["ok"]
+    assert "daily_database_missing" in report["findings"]
+    assert "export_contract_missing" in report["findings"]
+    assert "observation_pointer_missing" in report["findings"]
+    assert "latest_observation_pointer_missing" in report["findings"]
+
+
+def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -> None:
+    _write_finalized_observation(tmp_path)
+    database = tmp_path / "runs/2026-08-24/_exports/local-cdr.sqlite"
+    database_sha256 = policy_module.sha256_file(database)
+    files_before = {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    report = backup._verify_restored_state(tmp_path)
+    assert report["ok"], report["findings"]
+    assert policy_module.sha256_file(database) == database_sha256
+    assert {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    } == files_before
+    assert report["selected_observation"]["observation_date"] == "2026-08-24"
+    assert report["selected_observation"]["database_path"].endswith(
+        "_exports/local-cdr.sqlite"
+    )
+
+
+def test_restored_state_preserves_older_schema_without_current_reconciliation(
+    tmp_path: Path,
+) -> None:
+    historical = tmp_path / "runs/2026-08-23/_exports"
+    historical.mkdir(parents=True)
+    with sqlite3.connect(historical / "local-cdr.sqlite") as connection:
+        connection.execute("CREATE TABLE schema_meta(key TEXT, value TEXT)")
+        connection.execute("INSERT INTO schema_meta VALUES ('version', '7')")
+        connection.commit()
+    _write_finalized_observation(tmp_path)
+    from cdr_ledger_v2 import verify_ledger
+
+    ledger_report = verify_ledger(tmp_path / "state")
+    assert ledger_report["ok"], ledger_report
+    report = backup._verify_restored_state(tmp_path)
+    assert report["ok"], report["findings"]
+    historical_record = next(
+        item
+        for item in report["sqlite"]
+        if item["path"].startswith("runs/2026-08-23/")
+    )
+    assert historical_record["schema_version"] == "7"
+    assert "export_reconciliation" not in historical_record
+
+
+def test_restored_state_rejects_contract_marker_rebinding(tmp_path: Path) -> None:
+    _write_finalized_observation(tmp_path)
+    pointer_path = tmp_path / "state/observation-pointers-v2/latest-observation.json"
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    original_marker = tmp_path / "state" / pointer["marker_path"]
+    rebound_marker = tmp_path / "state/rebound.done.json"
+    rebound_marker.write_bytes(original_marker.read_bytes())
+    pointer["marker_path"] = "rebound.done.json"
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+    report = backup._verify_restored_state(tmp_path)
+    assert not report["ok"]
+    assert "pointer_marker_invalid:latest-observation.json" in report["findings"]
+
+
+def test_restored_manifest_files_detect_same_size_corruption_and_extra(tmp_path: Path) -> None:
+    destination = tmp_path / "restore"
+    (destination / "data/runs").mkdir(parents=True)
+    restored = destination / "data/runs/evidence.bin"
+    restored.write_bytes(b"bad!")
+    (destination / "data/extra.bin").write_bytes(b"extra")
+    expected_sha = hashlib.sha256(b"good").hexdigest()
+    manifest = {
+        "files": [
+            {"path": "data/runs/evidence.bin", "size": 4, "sha256": expected_sha}
+        ]
+    }
+    report = backup._verify_restored_manifest_files(manifest, destination)
+    assert not report["ok"]
+    assert "restored_file_changed:data/runs/evidence.bin" in report["findings"]
+    assert "restored_file_extra:data/extra.bin" in report["findings"]
+
+
+@pytest.mark.parametrize(
+    ("relative", "finding"),
+    (
+        ("state/2026-08-24.done.json", "pointer_target_missing:latest-observation.json"),
+        ("state/observation-pointers-v2/latest-observation.json", "latest_observation_pointer_missing"),
+    ),
+)
+def test_restored_state_rejects_missing_selected_evidence(
+    tmp_path: Path, relative: str, finding: str
+) -> None:
+    _write_finalized_observation(tmp_path)
+    (tmp_path / relative).unlink()
+    report = backup._verify_restored_state(tmp_path)
+    assert not report["ok"]
+    assert finding in report["findings"]
+
+
+def test_restore_drill_rejects_post_copy_data_corruption(
+    monkeypatch, tmp_path: Path
+) -> None:
+    policy = make_policy(tmp_path)
+    snapshot_id = "snapshot-corrupt-copy"
+    snapshot = policy.backup_dir / "snapshots" / snapshot_id
+    (snapshot / "data").mkdir(parents=True)
+    (snapshot / "data/evidence.bin").write_bytes(b"good")
+    macro = snapshot / "macro/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    files = [
+        {
+            "path": path.relative_to(snapshot).as_posix(),
+            "size": path.stat().st_size,
+            "sha256": policy_module.sha256_file(path),
+        }
+        for path in sorted(snapshot.rglob("*"))
+        if path.is_file()
+    ]
+    (snapshot / "manifest.json").write_text(
+        json.dumps(valid_snapshot_manifest(files)), encoding="utf-8"
+    )
+    original_copytree = backup.shutil.copytree
+
+    def corrupt_copy(source, destination, *args, **kwargs):
+        result = original_copytree(source, destination, *args, **kwargs)
+        (Path(destination) / "evidence.bin").write_bytes(b"bad!")
+        return result
+
+    monkeypatch.setattr(backup.shutil, "copytree", corrupt_copy)
+    monkeypatch.setattr(
+        backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []}
+    )
+    receipt = backup.restore_drill(
+        policy, snapshot_id, tmp_path / "scratch", "pytest", ["restore-drill"]
+    )
+    assert receipt["result"] == "FAIL"
+    assert (
+        "restored_file_changed:data/evidence.bin"
+        in receipt["checks"]["findings"]
+    )
 
 
 def boot_proof(policy: policy_module.BackupPolicy, created_at: str) -> dict[str, object]:
@@ -683,10 +1023,20 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
     )
     monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
     scratch = tmp_path / "missing-parent/scratch"
-    receipt = backup.restore_drill(policy, snapshot_id, scratch, "pytest")
+    receipt = backup.restore_drill(
+        policy, snapshot_id, scratch, "pytest", ["restore-drill"]
+    )
     assert receipt["result"] == "PASS", receipt["checks"]
     assert receipt["scratch_retained"] is False
     assert list(scratch.iterdir()) == []
+
+
+def test_restore_drill_requires_exact_command_evidence(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    with pytest.raises(ValueError, match="requires at least one exact command"):
+        backup.restore_drill(
+            policy, "snapshot", tmp_path / "scratch", "pytest"
+        )
 
 
 def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch, tmp_path: Path) -> None:
@@ -886,7 +1236,10 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     snapshot.mkdir(parents=True)
     manifest = snapshot / "manifest.json"
-    manifest.write_text(json.dumps(valid_snapshot_manifest([])), encoding="utf-8")
+    manifest_payload, restore_checks = write_acceptance_snapshot(
+        snapshot, snapshot_id
+    )
+    manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
     manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
     manifest_archive.parent.mkdir()
     manifest_archive.write_bytes(manifest.read_bytes())
@@ -904,7 +1257,17 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
     receipts.mkdir()
     (policy.backup_dir / "latest-backup.json").write_text(json.dumps(receipt), encoding="utf-8")
     (receipts / f"{snapshot_id}.backup.json").write_text(json.dumps(receipt), encoding="utf-8")
-    restore = {**receipt, "checks": {"ok": True}}
+    restore = {
+        **receipt,
+        "restore_acceptance_version": 1,
+        "started_at": created_at,
+        "completed_at": created_at,
+        "operator": "pytest",
+        "exact_commands": ["restore-drill"],
+        "deviations": [],
+        "deviation_authorization": None,
+        "checks": restore_checks,
+    }
     restore_name = f"{snapshot_id}.restore.attempt.json"
     (receipts / restore_name).write_text(json.dumps(restore), encoding="utf-8")
     (policy.backup_dir / "latest-restore.json").write_text(
@@ -912,12 +1275,95 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
     )
     proof = tmp_path / "boot.json"
     proof.write_text(json.dumps(boot_proof(policy, created_at)), encoding="utf-8")
+    monkeypatch.setattr(
+        backup,
+        "_verify_restored_state",
+        lambda _root: {
+            "ok": True,
+            "findings": [],
+            "selected_observation": restore_checks["selected_observation"],
+        },
+    )
     roots = [tmp_path / name for name in ("repo", "site", "data")]
     for root in roots:
         root.mkdir()
     report = backup.gate(policy, *roots, COMMIT, COMMIT, proof)
     assert report["ok"], report["findings"]
     assert report["result"] == "PASS"
+
+
+def test_gate_rejects_legacy_restore_receipt_without_acceptance_proof(
+    monkeypatch, tmp_path: Path
+) -> None:
+    policy = make_policy(tmp_path)
+    monkeypatch.setattr(
+        backup,
+        "mount_preflight",
+        lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}},
+    )
+    monkeypatch.setattr(
+        backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []}
+    )
+    snapshot_id = "legacy-restore"
+    snapshot = policy.backup_dir / "snapshots" / snapshot_id
+    snapshot.mkdir(parents=True)
+    manifest = snapshot / "manifest.json"
+    manifest_payload, restore_checks = write_acceptance_snapshot(
+        snapshot, snapshot_id
+    )
+    manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
+    manifests = policy.backup_dir / "manifests"
+    manifests.mkdir()
+    (manifests / f"{snapshot_id}.json").write_bytes(manifest.read_bytes())
+    created_at = datetime.now(timezone.utc).isoformat()
+    receipt = {
+        "schema_version": 1,
+        "snapshot_id": snapshot_id,
+        "created_at": created_at,
+        **policy.plan_identity(),
+        "candidate_code_sha": COMMIT,
+        "manifest_sha256": policy_module.sha256_file(manifest),
+        "result": "PASS",
+    }
+    receipts = policy.backup_dir / "receipts"
+    receipts.mkdir()
+    (receipts / f"{snapshot_id}.backup.json").write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+    (policy.backup_dir / "latest-backup.json").write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+    restore_name = f"{snapshot_id}.restore.legacy.json"
+    legacy_restore = {**receipt, "checks": {"ok": True}}
+    (receipts / restore_name).write_text(
+        json.dumps(legacy_restore), encoding="utf-8"
+    )
+    (policy.backup_dir / "latest-restore.json").write_text(
+        json.dumps(
+            {**legacy_restore, "receipt_path": f"receipts/{restore_name}"}
+        ),
+        encoding="utf-8",
+    )
+    proof = tmp_path / "boot.json"
+    proof.write_text(json.dumps(boot_proof(policy, created_at)), encoding="utf-8")
+    monkeypatch.setattr(
+        backup,
+        "_verify_restored_state",
+        lambda _root: {
+            "ok": True,
+            "findings": [],
+            "selected_observation": restore_checks["selected_observation"],
+        },
+    )
+    roots = [tmp_path / name for name in ("repo", "site", "data")]
+    for root in roots:
+        root.mkdir()
+    report = backup.gate(policy, *roots, COMMIT, COMMIT, proof)
+    assert not report["ok"]
+    assert any(
+        finding.startswith("restore_schema_invalid:")
+        for finding in report["findings"]
+    )
 
 
 def test_gate_blocks_candidate_not_named_by_receipt(monkeypatch, tmp_path: Path) -> None:
@@ -939,10 +1385,14 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     snapshot_id = "snapshot-deploy"
     manifest = policy.backup_dir / "snapshots" / snapshot_id / "manifest.json"
     manifest.parent.mkdir(parents=True)
-    manifest.write_text("{}\n", encoding="utf-8")
+    protected_code_sha = "d" * 40
+    manifest_payload, restore_checks = write_acceptance_snapshot(
+        manifest.parent, snapshot_id, protected_code_sha
+    )
+    manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
     manifests = policy.backup_dir / "manifests"
     manifests.mkdir()
-    (manifests / f"{snapshot_id}.json").write_text("{}\n", encoding="utf-8")
+    (manifests / f"{snapshot_id}.json").write_bytes(manifest.read_bytes())
     receipts = policy.backup_dir / "receipts"
     receipts.mkdir()
     backup_receipt = {
@@ -959,12 +1409,24 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     )
     restore_name = f"{snapshot_id}.restore.test.json"
     restore_receipt = {
+        "schema_version": 1,
+        "restore_acceptance_version": 1,
         "snapshot_id": snapshot_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "operator": "pytest",
         "manifest_sha256": backup_receipt["manifest_sha256"],
         **policy.plan_identity(),
+        "candidate_code_sha": protected_code_sha,
+        "exact_commands": ["restore-drill"],
+        "deviations": [],
+        "deviation_authorization": None,
+        "checks": restore_checks,
         "result": "PASS",
     }
-    (receipts / restore_name).write_text(json.dumps(restore_receipt), encoding="utf-8")
+    restore_path = receipts / restore_name
+    restore_path.write_text(json.dumps(restore_receipt), encoding="utf-8")
     (policy.backup_dir / "latest-restore.json").write_text(
         json.dumps({"receipt_path": f"receipts/{restore_name}"}), encoding="utf-8"
     )
@@ -979,6 +1441,7 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
         "restore_receipt_path": f"receipts/{restore_name}",
         "manifest_archive_path": f"manifests/{snapshot_id}.json",
         "manifest_sha256": backup_receipt["manifest_sha256"],
+        "restore_receipt_sha256": policy_module.sha256_file(restore_path),
         "boot_proof_sha256": policy_module.sha256_file(proof),
     }
     monkeypatch.setattr(
@@ -999,7 +1462,7 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     for root in roots:
         root.mkdir()
     first = backup.record_deployment_acceptance(
-        policy, *roots, "d" * 40, COMMIT, proof, "pytest", ["deploy command"],
+        policy, *roots, protected_code_sha, COMMIT, proof, "pytest", ["deploy command"],
         dashboard_verified=True, services_verified=True,
     )
     first_path = Path(str(first["record_path"]))
@@ -1012,7 +1475,7 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
         json.dumps({"snapshot_id": "newer-snapshot"}), encoding="utf-8"
     )
     second = backup.record_deployment_acceptance(
-        policy, *roots, "d" * 40, COMMIT, proof, "pytest", ["deploy command"],
+        policy, *roots, protected_code_sha, COMMIT, proof, "pytest", ["deploy command"],
         dashboard_verified=True, services_verified=True,
     )
     second_record = json.loads(Path(str(second["record_path"])).read_text())

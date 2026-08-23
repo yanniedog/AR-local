@@ -46,6 +46,13 @@ from ar_local_backup_scope import (
 from ar_local_checkout import git_command, git_state, install_candidate, rollback_candidate
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
+from ar_local_restore_verification import (
+    _daily_export_reconciliation,
+    _pointer_matches_marker,
+    validate_restore_acceptance,
+    verify_restored_manifest_files,
+    verify_restored_state,
+)
 from ar_local_rollback_record import record_rollback_acceptance
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
@@ -55,25 +62,7 @@ SECRET_PATHS = (
     Path("/etc/ar-local/notify.env"),
     Path("/etc/ar-local/payload.key"),
 )
-REQUIRED_DAILY_TABLES = {
-    "schema_meta",
-    "runs",
-    "bank_products",
-    "bank_rates",
-    "bank_items",
-    "bank_product_facts",
-    "bank_product_changes",
-}
 REQUIRED_MACRO_TABLES = {"series_observations", "ingest_runs"}
-DAILY_SCHEMA_VERSION = "8"
-REQUIRED_DAILY_COLUMNS = {
-    "runs": {"run_date", "generated_at", "banks_counts_json"},
-    "bank_products": {"run_date", "provider", "product_id", "product_key"},
-    "bank_rates": {"run_date", "product_key", "rate", "comparison_rate"},
-    "bank_items": {"run_date", "item_group", "product_key"},
-    "bank_product_facts": {"run_date", "product_key", "fact_id", "canonical_key"},
-    "bank_product_changes": {"run_date", "event_id", "product_id", "event_type"},
-}
 MACRO_COUNT_QUERIES = {
     "series_observations": "SELECT COUNT(*) FROM series_observations",
     "ingest_runs": "SELECT COUNT(*) FROM ingest_runs",
@@ -164,7 +153,7 @@ def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
 def _manifest_entries(root: Path) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     for path in sorted(root.rglob("*")):
-        if path.is_file() and path.name != "manifest.json":
+        if path.is_file() and path != root / "manifest.json":
             entries.append({"path": path.relative_to(root).as_posix(), "size": path.stat().st_size, "sha256": sha256_file(path)})
     return entries
 
@@ -447,194 +436,23 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
     actual_paths = {
         path.relative_to(snapshot).as_posix()
         for path in snapshot_paths
-        if path.is_file() and not path.is_symlink() and path.name != "manifest.json"
+        if path.is_file()
+        and not path.is_symlink()
+        and path.relative_to(snapshot).as_posix() != "manifest.json"
     }
     for extra in sorted(actual_paths - expected_paths):
         findings.append(f"unmanifested:{extra}")
     return {"ok": not findings, "findings": findings, "manifest": manifest}
 
 
-def _daily_export_reconciliation(database: Path) -> dict[str, object]:
-    banks_files = sorted(database.parent.glob("banks-*.json"))
-    if len(banks_files) != 1:
-        raise ValueError("daily export must contain exactly one banks JSON")
-    banks = _json(banks_files[0])
-    run_date = banks_files[0].stem.removeprefix("banks-")
-    expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with closing(
-        sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
-    ) as connection:
-        run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
-        actual = {
-            "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
-            "rates": connection.execute("SELECT COUNT(*) FROM bank_rates").fetchone()[0],
-            "product_facts": connection.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0],
-            "product_changes": connection.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0],
-        }
-        for group in ("fees", "features", "eligibility", "constraints"):
-            actual[group] = connection.execute(
-                "SELECT COUNT(*) FROM bank_items WHERE item_group = ?", (group,)
-            ).fetchone()[0]
-    if len(run) != 1 or run[0][0] != run_date or json.loads(run[0][1]) != expected:
-        raise ValueError("runs metadata does not match banks export")
-    for key, count in actual.items():
-        if count != expected.get(key, 0):
-            raise ValueError(f"database count mismatch for {key}")
-    dashboard = _json(database.parent / "dashboard-cache/latest.json")
-    if dashboard.get("run_date") != run_date or dashboard.get("banks_counts") != expected:
-        raise ValueError("dashboard manifest does not match banks export")
-    return {"run_date": run_date, "counts": actual, "banks_json": banks_files[0].name}
-
-
-def _completion_marker_valid(
-    marker: Mapping[str, object], state_dir: Path, observation_date: str
-) -> bool:
-    from cdr_export_contract import load_contract
-    from cdr_ledger_v2 import ledger_root, verify_event_artifacts
-
-    try:
-        if marker.get("finalization_schema_version") != 2 or marker.get("ledger_state") != "finalized":
-            return False
-        if marker.get("run_date") != observation_date:
-            return False
-        counts = marker.get("banks_counts") or marker.get("banks") or {}
-        if not isinstance(counts, Mapping) or int(counts.get("rates") or 0) <= 0:
-            return False
-        relative = Path(str(marker.get("export_contract_path") or ""))
-        if relative.is_absolute() or ".." in relative.parts:
-            return False
-        contract_path = (state_dir / relative).resolve()
-        if not contract_path.is_relative_to(state_dir.resolve()):
-            return False
-        contract = load_contract(contract_path)
-        if contract.get("generation_id") != marker.get("generation_id"):
-            return False
-        if contract.get("observation_date") != observation_date:
-            return False
-        if contract.get("observation_state") != marker.get("observation_state"):
-            return False
-        if contract.get("contract_digest") != marker.get("export_contract_digest"):
-            return False
-        event_path = ledger_root(state_dir) / "events" / observation_date / f"{contract['generation_id']}.json"
-        event = _json(event_path)
-        verify_event_artifacts(state_dir, event)
-        return event.get("event_digest") == marker.get("ledger_event_digest")
-    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
-        return False
-
-
-def _pointer_matches_marker(
-    pointer: Mapping[str, object], marker: Mapping[str, object], state_dir: Path
-) -> bool:
-    """Bind every publication-consumed pointer field to verified source evidence."""
-
-    from cdr_export_contract import load_contract
-
-    try:
-        relative = Path(str(marker["export_contract_path"]))
-        contract_path = (state_dir / relative).resolve()
-        if relative.is_absolute() or ".." in relative.parts or not contract_path.is_relative_to(state_dir.resolve()):
-            return False
-        contract = load_contract(contract_path)
-        expected = {
-            "schema_version": 2,
-            "observation_date": marker["run_date"],
-            "generation_id": marker["generation_id"],
-            "observation_state": marker["observation_state"],
-            "ledger_event_digest": marker["ledger_event_digest"],
-            "marker_path": str(pointer["marker_path"]),
-            "export_path": contract["source_path"],
-        }
-        return dict(pointer) == expected
-    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
-        return False
-
-
 def _verify_restored_state(data_root: Path) -> dict[str, object]:
-    from cdr_export_contract import load_contract
-    from cdr_ledger_v2 import verify_ledger
+    return verify_restored_state(data_root)
 
-    findings: list[str] = []
-    sqlite_results: list[dict[str, object]] = []
-    for path in sorted(data_root.rglob("*.sqlite")):
-        try:
-            with closing(
-                sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-            ) as connection:
-                result = connection.execute("PRAGMA quick_check").fetchone()[0]
-            sqlite_record: dict[str, object] = {
-                "path": path.relative_to(data_root).as_posix(),
-                "quick_check": result,
-            }
-            sqlite_results.append(sqlite_record)
-            if result != "ok":
-                findings.append(f"sqlite_quick_check:{path}")
-            if path.name == "local-cdr.sqlite":
-                with closing(
-                    sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-                ) as connection:
-                    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                missing = sorted(REQUIRED_DAILY_TABLES - tables)
-                if missing:
-                    findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
-                else:
-                    with closing(
-                        sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-                    ) as connection:
-                        schema_version = connection.execute(
-                            "SELECT value FROM schema_meta WHERE key = 'version'"
-                        ).fetchone()
-                        if not schema_version or schema_version[0] != DAILY_SCHEMA_VERSION:
-                            findings.append(f"daily_schema_version_mismatch:{path}")
-                        for table, columns in REQUIRED_DAILY_COLUMNS.items():
-                            actual_columns = {
-                                row[0]
-                                for row in connection.execute(
-                                    "SELECT name FROM pragma_table_info(?)", (table,)
-                                )
-                            }
-                            if not set(columns).issubset(actual_columns):
-                                findings.append(f"daily_columns_missing:{path}:{table}")
-                    try:
-                        sqlite_record["export_reconciliation"] = _daily_export_reconciliation(path)
-                    except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
-                        findings.append(f"daily_export_mismatch:{path}:{exc}")
-        except sqlite3.Error:
-            findings.append(f"sqlite_unreadable:{path}")
-    state = data_root / "state"
-    for path in sorted((state / "export-contracts-v2").glob("*/*.json")):
-        try:
-            load_contract(path)
-        except (OSError, ValueError, json.JSONDecodeError):
-            findings.append(f"invalid_contract:{path.relative_to(data_root)}")
-    if (state / "ledger-v2").exists():
-        try:
-            ledger = verify_ledger(state)
-            if not ledger.get("ok"):
-                findings.append("ledger_verification_failed")
-        except (OSError, ValueError, json.JSONDecodeError):
-            ledger = {"ok": False}
-            findings.append("ledger_unreadable")
-    else:
-        ledger = {"ok": False, "reason": "missing"}
-        findings.append("ledger_missing")
-    for pointer in sorted((state / "observation-pointers-v2").glob("*.json")):
-        try:
-            value = _json(pointer)
-            relative = Path(str(value.get("marker_path") or ""))
-            if relative.is_absolute() or ".." in relative.parts or not (state / relative).resolve().is_relative_to(state.resolve()):
-                findings.append(f"pointer_escape:{pointer.name}")
-            elif not (state / relative).is_file():
-                findings.append(f"pointer_target_missing:{pointer.name}")
-            else:
-                marker = _json(state / relative)
-                if not _completion_marker_valid(marker, state, str(value.get("observation_date") or "")):
-                    findings.append(f"pointer_marker_invalid:{pointer.name}")
-                elif not _pointer_matches_marker(value, marker, state):
-                    findings.append(f"pointer_fields_mismatch:{pointer.name}")
-        except (OSError, ValueError, json.JSONDecodeError):
-            findings.append(f"pointer_invalid:{pointer.name}")
-    return {"ok": not findings, "findings": findings, "sqlite": sqlite_results, "ledger": ledger}
+
+def _verify_restored_manifest_files(
+    manifest: Mapping[str, object], destination: Path
+) -> dict[str, object]:
+    return verify_restored_manifest_files(manifest, destination)
 
 
 def restore_drill(
@@ -644,6 +462,11 @@ def restore_drill(
     operator: str,
     exact_commands: list[str] | None = None,
 ) -> dict[str, object]:
+    if not exact_commands or any(
+        not isinstance(command, str) or not command.strip()
+        for command in exact_commands
+    ):
+        raise ValueError("restore drill requires at least one exact command")
     started_at = utc_now()
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     verified = verify_snapshot(snapshot)
@@ -675,6 +498,13 @@ def restore_drill(
         macro_target = destination / "macro/local-macro.sqlite"
         macro_target.parent.mkdir(parents=True)
         shutil.copy2(macro_source, macro_target)
+        restored_files = _verify_restored_manifest_files(
+            verified["manifest"], destination
+        )
+        result["restored_files"] = restored_files
+        if not restored_files["ok"]:
+            result["ok"] = False
+            result["findings"].extend(restored_files["findings"])
         with closing(
             sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
         ) as connection:
@@ -686,9 +516,14 @@ def restore_drill(
             }
         result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
         missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
-        if macro_quick != "ok" or missing_macro:
+        expected_macro_counts = verified["manifest"].get("macro_backup", {}).get(
+            "table_counts"
+        )
+        if macro_quick != "ok" or missing_macro or macro_counts != expected_macro_counts:
             result["ok"] = False
-            result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+            result["findings"].append(
+                f"macro_validation_failed:{','.join(missing_macro)}"
+            )
     except Exception as exc:
         failure = exc
         result = {"ok": False, "findings": [f"restore_exception:{type(exc).__name__}"]}
@@ -699,7 +534,7 @@ def restore_drill(
             result["ok"] = False
             result["findings"].append(f"scratch_cleanup_failed:{type(exc).__name__}")
     manifest_sha = sha256_file(snapshot / "manifest.json")
-    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt = {**policy.plan_identity(), "schema_version": 1, "restore_acceptance_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands, "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)
@@ -758,6 +593,24 @@ def gate(
             findings.append("restore_pointer_mismatch")
         if restore.get("snapshot_id") != snapshot_id or restore.get("result") != "PASS" or restore.get("manifest_sha256") != receipt.get("manifest_sha256"):
             findings.append("restore_receipt_mismatch")
+        restore_acceptance = validate_restore_acceptance(
+            restore, snapshot_report["manifest"], protected_code_sha
+        )
+        if not restore_acceptance["ok"]:
+            findings.extend(restore_acceptance["findings"])
+        snapshot_state = _verify_restored_state(manifest.parent / "data")
+        restore_checks = restore.get("checks")
+        selected_receipt_observation = (
+            restore_checks.get("selected_observation")
+            if isinstance(restore_checks, Mapping)
+            else None
+        )
+        if not snapshot_state["ok"]:
+            findings.append("snapshot_observation_state_invalid")
+        elif selected_receipt_observation != snapshot_state.get(
+            "selected_observation"
+        ):
+            findings.append("restore_selected_observation_mismatch")
         if not validate_plan_identity(restore, policy) or not record_is_fresh(restore, policy.max_restore_age_hours, now):
             findings.append("restore_receipt_stale_or_wrong_plan")
         evidence_binding = {
@@ -766,6 +619,7 @@ def gate(
             "restore_receipt_path": restore_path.relative_to(policy.backup_dir).as_posix(),
             "manifest_archive_path": manifest_archive.relative_to(policy.backup_dir).as_posix(),
             "manifest_sha256": receipt.get("manifest_sha256"),
+            "restore_receipt_sha256": sha256_file(restore_path),
         }
     except (OSError, KeyError, ValueError, json.JSONDecodeError):
         findings.append("backup_or_restore_receipt_missing_or_invalid")
@@ -829,6 +683,10 @@ def record_deployment_acceptance(
     manifest_archive = bound_paths["manifest_archive_path"]
     backup = _json(backup_receipt)
     restore = _json(restore_receipt)
+    manifest_payload = _json(manifest_archive)
+    restore_acceptance = validate_restore_acceptance(
+        restore, manifest_payload, protected_code_sha
+    )
     if (
         backup.get("snapshot_id") != snapshot_id
         or restore.get("snapshot_id") != snapshot_id
@@ -838,6 +696,8 @@ def record_deployment_acceptance(
         or not validate_plan_identity(restore, policy)
         or backup.get("manifest_sha256") != binding.get("manifest_sha256")
         or restore.get("manifest_sha256") != binding.get("manifest_sha256")
+        or not restore_acceptance["ok"]
+        or sha256_file(restore_receipt) != binding.get("restore_receipt_sha256")
         or sha256_file(manifest_archive) != binding.get("manifest_sha256")
         or sha256_file(boot_proof) != binding.get("boot_proof_sha256")
     ):

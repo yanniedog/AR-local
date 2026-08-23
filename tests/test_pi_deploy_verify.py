@@ -327,11 +327,13 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
         "ar_local_deployment_chain.py",
         "ar_local_operation_lock.py",
         "ar_local_rollback_record.py",
+        "ar_local_restore_verification.py",
         "pi_ingest_terminal.py",
         "contracts/export-contract-v2.schema.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
         "contracts/pi-deployment-acceptance-v1.schema.json",
         "contracts/pi-preservation-snapshot-v1.schema.json",
+        "contracts/pi-restore-acceptance-v1.schema.json",
         "contracts/pi-rollback-acceptance-v1.schema.json",
     ),
 )
