@@ -14,10 +14,10 @@ import stat
 import subprocess
 import sys
 import uuid
-from contextlib import closing, contextmanager
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from ar_local_backup_policy import (
     BackupPolicy,
@@ -33,6 +33,7 @@ from ar_local_backup_policy import (
     utc_now,
     validate_plan_identity,
 )
+from ar_local_operation_lock import production_lock
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SECRET_PATHS = (
@@ -133,27 +134,6 @@ def verify_plan_document(policy: BackupPolicy, repo: Path) -> dict[str, object]:
     except (OSError, UnicodeError, RuntimeError, ValueError) as exc:
         findings.append(f"plan_verification_error:{type(exc).__name__}")
     return {"ok": not findings, "findings": findings, "path": str(path)}
-
-
-@contextmanager
-def production_lock(lock_path: Path, role: str) -> Iterator[None]:
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = f"pid={os.getpid()}\nrole={role}\n"
-    try:
-        descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    except FileExistsError as exc:
-        raise RuntimeError(f"production lock is active: {lock_path}") from exc
-    try:
-        os.write(descriptor, payload.encode())
-        os.fsync(descriptor)
-        os.close(descriptor)
-        yield
-    finally:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        lock_path.unlink(missing_ok=True)
 
 
 def _copy_regular_tree(source: Path, destination: Path, *, exclude: set[Path] | None = None) -> None:
@@ -399,8 +379,13 @@ def create_snapshot(
 
 def verify_snapshot(snapshot: Path) -> dict[str, object]:
     findings: list[str] = []
+    if snapshot.is_symlink() or not snapshot.is_dir():
+        return {"ok": False, "findings": ["invalid_snapshot_root"], "manifest": {}}
+    manifest_path = snapshot / "manifest.json"
+    if manifest_path.is_symlink():
+        return {"ok": False, "findings": ["invalid_manifest_symlink"], "manifest": {}}
     try:
-        manifest = _json(snapshot / "manifest.json")
+        manifest = _json(manifest_path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {"ok": False, "findings": [f"invalid_manifest:{exc}"], "manifest": {}}
     entries = manifest.get("files")
@@ -436,10 +421,14 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
             findings.append(f"missing:{relative.as_posix()}")
         elif path.stat().st_size != size or sha256_file(path) != digest:
             findings.append(f"changed:{relative.as_posix()}")
+    snapshot_paths = list(snapshot.rglob("*"))
+    for path in snapshot_paths:
+        if path.is_symlink():
+            findings.append(f"symlink:{path.relative_to(snapshot).as_posix()}")
     actual_paths = {
         path.relative_to(snapshot).as_posix()
-        for path in snapshot.rglob("*")
-        if path.is_file() and path.name != "manifest.json"
+        for path in snapshot_paths
+        if path.is_file() and not path.is_symlink() and path.name != "manifest.json"
     }
     for extra in sorted(actual_paths - expected_paths):
         findings.append(f"unmanifested:{extra}")
@@ -641,10 +630,18 @@ def restore_drill(
     verified = verify_snapshot(snapshot)
     if not verified["ok"]:
         raise ValueError(f"snapshot verification failed: {verified['findings']}")
-    scratch_root = scratch_root.resolve()
+    configured_scratch = scratch_root.expanduser()
+    if not configured_scratch.is_absolute():
+        raise ValueError("scratch restore root must be absolute")
+    scratch_root = configured_scratch.resolve(strict=False)
+    if configured_scratch != scratch_root or configured_scratch.is_symlink():
+        raise ValueError("scratch restore root must be a canonical non-symlink path")
     for forbidden in (policy.mountpoint.resolve(), policy.backup_dir.resolve()):
         if scratch_root == forbidden or forbidden in scratch_root.parents or scratch_root in forbidden.parents:
             raise ValueError("scratch restore must be outside backup storage")
+    scratch_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not scratch_root.is_dir() or scratch_root.is_symlink():
+        raise ValueError("scratch restore root is not a real directory")
     destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
     destination.mkdir(parents=True)
     snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])

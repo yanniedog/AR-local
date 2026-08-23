@@ -21,6 +21,7 @@ service_identity="$(id -u "$run_user"):$(id -g "$run_user")"
   exit 1
 }
 python3 "$repo/pi_backup_foundation.py" preflight --config "$config" --repo "$repo" --site-repo "$site" --data-root "$data"
+sudo install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 render() {
@@ -36,6 +37,7 @@ trusted="/usr/local/lib/ar-local-backup"
 sudo install -d -o root -g root -m 0755 "$trusted"
 for name in \
   ar_local_backup_policy.py \
+  ar_local_operation_lock.py \
   pi_backup_foundation.py \
   cdr_atomic.py \
   cdr_export_contract.py \
@@ -50,6 +52,7 @@ sudo install -o root -g root -m 0644 "$repo/contracts/export-contract-v2.schema.
   cd "$repo"
   sha256sum \
     ar_local_backup_policy.py \
+    ar_local_operation_lock.py \
     pi_backup_foundation.py \
     cdr_atomic.py \
     cdr_export_contract.py \

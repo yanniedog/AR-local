@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ar_local_backup_policy as policy_module  # noqa: E402
+import ar_local_operation_lock as operation_lock  # noqa: E402
 import pi_backup_foundation as backup  # noqa: E402
 import cdr_outputs  # noqa: E402
 
@@ -224,6 +225,56 @@ def test_snapshot_verification_rejects_path_escape(tmp_path: Path) -> None:
     assert report["findings"] == ["invalid_entry:0"]
 
 
+def test_snapshot_verification_rejects_symlinked_directory(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "secret.txt").write_text("outside\n", encoding="utf-8")
+    try:
+        (snapshot / "linked").symlink_to(external, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+    (snapshot / "manifest.json").write_text('{"files":[]}\n', encoding="utf-8")
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert "symlink:linked" in report["findings"]
+
+
+def test_backup_lock_recovers_dead_owner_and_removes_own_lock(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "daily-ingest.lock"
+    lock.write_text("pid=999999\nrole=backup\nboot_id=current\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
+    monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: False)
+    with operation_lock.production_lock(lock, "backup"):
+        assert "role=backup" in lock.read_text(encoding="utf-8")
+    assert not lock.exists()
+
+
+def test_backup_lock_never_replaces_live_owner(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "daily-ingest.lock"
+    lock.write_text("pid=1234\nrole=ingest\nboot_id=current\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
+    monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: True)
+    with pytest.raises(RuntimeError, match="production lock is active"):
+        with operation_lock.production_lock(lock, "backup"):
+            pass
+    assert "role=ingest" in lock.read_text(encoding="utf-8")
+
+
+def test_backup_lock_recovers_prior_boot_even_if_pid_was_reused(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "daily-ingest.lock"
+    lock.write_text("pid=1234\nrole=backup\nboot_id=prior\n", encoding="utf-8")
+    monkeypatch.setattr(operation_lock, "_current_boot_id", lambda: "current")
+    monkeypatch.setattr(operation_lock, "_boot_epoch", lambda: None)
+    monkeypatch.setattr(operation_lock, "_pid_is_alive", lambda _pid: True)
+    with operation_lock.production_lock(lock, "backup"):
+        assert "boot_id=current" in lock.read_text(encoding="utf-8")
+    assert not lock.exists()
+
+
 def _git_repo(path: Path) -> None:
     path.mkdir()
     subprocess.run(("git", "init", "-q", "-b", "main"), cwd=path, check=True)
@@ -369,8 +420,7 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
         json.dumps({"candidate_code_sha": COMMIT, "files": files}), encoding="utf-8"
     )
     monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
+    scratch = tmp_path / "missing-parent/scratch"
     receipt = backup.restore_drill(policy, snapshot_id, scratch, "pytest")
     assert receipt["result"] == "PASS", receipt["checks"]
     assert receipt["scratch_retained"] is False
