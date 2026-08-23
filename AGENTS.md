@@ -1,5 +1,10 @@
 # AR-local ? Agent configuration
 
+> **Mandatory Pi operations runbook:** Before any Pi ingest, payload, database,
+> backup, canary, deployment, or rollback work, read
+> **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full** and follow its
+> controlled gates and append-only evidence requirements.
+
 Local CDR ingest, exports, and dashboard. Workflow matches **Australian Rates** for Git/PR/CI/bot/thread closure; **hosting and verification target the Pi dashboard** (no Cloudflare, no www.australianrates.com.au as the acceptance environment). **Do not default to `127.0.0.1`** — see **`.cursor/rules/pi-host-not-localhost.mdc`**.
 
 ## Ship bar
