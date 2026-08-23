@@ -65,6 +65,11 @@ def test_timers_run_outside_the_ingest_window() -> None:
     guard = read("ar-local-backup-run.sh")
     assert "00:30-03:30 ingest window" in guard
     assert "systemctl is-active --quiet ar-local-daily.service" in guard
+    assert '"$data/state/$today.done.json"' in guard
+    assert "blocked until today's scheduled ingest has finalized" in guard
+    assert "After=local-fs.target ar-local-daily.service ar-local-ingest-now.service" in read(
+        "ar-local-backup.service"
+    )
 
 
 def test_trusted_gate_is_hash_verified_and_used_by_services() -> None:

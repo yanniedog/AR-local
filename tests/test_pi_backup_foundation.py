@@ -159,6 +159,16 @@ def test_mount_preflight_rejects_same_physical_device(tmp_path: Path) -> None:
     assert any(str(item).startswith("backup_not_physically_separate") for item in report["findings"])
 
 
+def test_physical_device_identity_supports_nvme_partition_paths(tmp_path: Path) -> None:
+    disk = tmp_path / "devices/pci0000_00/nvme/nvme0/nvme0n1"
+    partition = disk / "nvme0n1p2"
+    partition.mkdir(parents=True)
+    (disk / "dev").write_text("259:0\n", encoding="ascii")
+    (partition / "dev").write_text("259:2\n", encoding="ascii")
+    (partition / "partition").write_text("2\n", encoding="ascii")
+    assert policy_module._root_block_device(partition) == "nvme0n1@259:0"
+
+
 def test_immutable_json_record_cannot_be_rewritten(tmp_path: Path) -> None:
     target = tmp_path / "receipt.json"
     policy_module.atomic_create_json(target, {"result": "PASS"})
@@ -290,6 +300,18 @@ def test_backup_lock_recovers_prior_boot_even_if_pid_was_reused(monkeypatch, tmp
     assert not lock.exists()
 
 
+def test_stale_lock_recovery_rechecks_under_recovery_mutex(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "daily-ingest.lock"
+    live_payload = "pid=1234\nrole=ingest\nboot_id=current\n"
+    lock.write_text(live_payload, encoding="utf-8")
+    stale_checks = iter((True, False))
+    monkeypatch.setattr(operation_lock, "_existing_lock_is_stale", lambda _path: next(stale_checks))
+    with pytest.raises(RuntimeError, match="changed during stale recovery"):
+        with operation_lock.production_lock(lock, "backup"):
+            pass
+    assert lock.read_text(encoding="utf-8") == live_payload
+
+
 def _git_repo(path: Path) -> None:
     path.mkdir()
     subprocess.run(("git", "init", "-q", "-b", "main"), cwd=path, check=True)
@@ -330,6 +352,7 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     assert (snapshot / "data/runs/2026-08-24/_exports/evidence.json").is_file()
     assert (snapshot / "macro/local-macro.sqlite").is_file()
     assert not (snapshot / "data/state/daily-ingest.lock").exists()
+    assert not (snapshot / "data/state/.daily-ingest.lock.recovery-lock").exists()
 
 
 def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path: Path) -> None:

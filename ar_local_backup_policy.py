@@ -142,12 +142,12 @@ def parse_mountinfo(lines: Iterable[str]) -> list[dict[str, str]]:
 
 
 def _root_block_device(node: Path) -> str:
-    parts = node.resolve(strict=True).parts
-    try:
-        index = parts.index("block")
-        return parts[index + 1]
-    except (ValueError, IndexError) as exc:
-        raise ValueError(f"cannot resolve physical block device for {node}") from exc
+    resolved = node.resolve(strict=True)
+    disk = resolved.parent if (resolved / "partition").is_file() else resolved
+    device_number = (disk / "dev").read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"\d+:\d+", device_number):
+        raise ValueError(f"cannot resolve physical block device for {node}")
+    return f"{disk.name}@{device_number}"
 
 
 def physical_block_devices(

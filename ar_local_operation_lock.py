@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterator
 
 from ar_local_backup_policy import fsync_directory
+from cdr_file_lock import FileLock
 
 LOCK_STALE_SECONDS = 6 * 60 * 60
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
@@ -92,6 +93,10 @@ def _open_exclusive(path: Path, role: str) -> int:
     return descriptor
 
 
+def recovery_lock_path(lock_path: Path) -> Path:
+    return lock_path.with_name(f".{lock_path.name}.recovery-lock")
+
+
 @contextmanager
 def production_lock(lock_path: Path, role: str) -> Iterator[None]:
     """Hold an O_EXCL lock and recover only a provably stale predecessor."""
@@ -102,15 +107,18 @@ def production_lock(lock_path: Path, role: str) -> Iterator[None]:
     except FileExistsError as exc:
         if not _existing_lock_is_stale(lock_path):
             raise RuntimeError(f"production lock is active: {lock_path}") from exc
-        stale = lock_path.with_name(f".{lock_path.name}.stale-{uuid.uuid4().hex}")
-        try:
-            lock_path.replace(stale)
-            fsync_directory(lock_path.parent)
-            stale.unlink()
-            fsync_directory(lock_path.parent)
-            descriptor = _open_exclusive(lock_path, role)
-        except FileExistsError as retry_exc:
-            raise RuntimeError(f"production lock was acquired concurrently: {lock_path}") from retry_exc
+        with FileLock(recovery_lock_path(lock_path)):
+            if not _existing_lock_is_stale(lock_path):
+                raise RuntimeError(f"production lock changed during stale recovery: {lock_path}")
+            stale = lock_path.with_name(f".{lock_path.name}.stale-{uuid.uuid4().hex}")
+            try:
+                lock_path.replace(stale)
+                fsync_directory(lock_path.parent)
+                stale.unlink()
+                fsync_directory(lock_path.parent)
+                descriptor = _open_exclusive(lock_path, role)
+            except FileExistsError as retry_exc:
+                raise RuntimeError(f"production lock was acquired concurrently: {lock_path}") from retry_exc
     try:
         yield
     finally:

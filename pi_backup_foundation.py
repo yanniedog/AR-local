@@ -35,7 +35,7 @@ from ar_local_backup_policy import (
 )
 from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
 from ar_local_deployment_chain import reconcile_deployment_chain
-from ar_local_operation_lock import production_lock
+from ar_local_operation_lock import production_lock, recovery_lock_path
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SECRET_PATHS = (
@@ -300,7 +300,7 @@ def create_snapshot(
             if not macro.is_file():
                 raise ValueError(f"macro database is missing: {macro}")
             macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
-            exclusions = macro_exclusions | {lock.resolve()}
+            exclusions = macro_exclusions | {lock.resolve(), recovery_lock_path(lock).resolve()}
             before = _tree_metadata(data_root, exclusions)
             required_free = max(policy.min_free_bytes, sum(size for size, _mtime in before.values()) + macro.stat().st_size + 1024**3)
             if shutil.disk_usage(policy.backup_dir).free < required_free:
@@ -355,7 +355,10 @@ def create_snapshot(
         "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
         "secret_locations": _secret_metadata(),
         "systemd_enablement": systemd_enablement,
-        "exclusions": [{"path": str(lock), "reason": "transient backup lock"}],
+        "exclusions": [
+            {"path": str(lock), "reason": "transient backup lock"},
+            {"path": str(recovery_lock_path(lock)), "reason": "persistent stale-recovery mutex"},
+        ],
         "macro_backup": macro_report,
         "source_data_bytes": sum(size for size, _mtime in before.values()),
         "category_summary": _category_summary(entries),
