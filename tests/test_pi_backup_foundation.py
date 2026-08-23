@@ -786,6 +786,10 @@ def test_restored_state_preserves_older_schema_without_current_reconciliation(
         connection.execute("INSERT INTO schema_meta VALUES ('version', '7')")
         connection.commit()
     _write_finalized_observation(tmp_path)
+    from cdr_ledger_v2 import verify_ledger
+
+    ledger_report = verify_ledger(tmp_path / "state")
+    assert ledger_report["ok"], ledger_report
     report = backup._verify_restored_state(tmp_path)
     assert report["ok"], report["findings"]
     historical_record = next(
