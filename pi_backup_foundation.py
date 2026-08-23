@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""Create, restore-test, and gate AR-local off-device preservation snapshots."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import shlex
+import sqlite3
+import subprocess
+import sys
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterator, Mapping, Sequence
+
+from ar_local_backup_policy import (
+    BackupPolicy,
+    COMMIT_RE,
+    SHA256_RE,
+    atomic_create_json,
+    canonical_json_bytes,
+    mount_preflight,
+    record_is_fresh,
+    sha256_file,
+    utc_now,
+    validate_plan_identity,
+)
+DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
+DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
+SECRET_PATHS = (
+    Path("/etc/ar-local/app-payload.env"),
+    Path("/etc/ar-local/ingest-notify.env"),
+    Path("/etc/ar-local/payload.key"),
+)
+REQUIRED_DAILY_TABLES = {
+    "schema_meta",
+    "runs",
+    "bank_products",
+    "bank_rates",
+    "bank_items",
+    "bank_product_facts",
+    "bank_product_changes",
+}
+REQUIRED_MACRO_TABLES = {"series_observations", "ingest_runs"}
+
+
+def _json(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return payload
+
+
+def _run(command: Sequence[str], cwd: Path | None = None) -> str:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, timeout=300)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or f"command failed: {command[0]}")
+    return result.stdout.strip()
+
+
+def git_state(repo: Path) -> dict[str, object]:
+    sha = _run(("git", "rev-parse", "HEAD"), repo)
+    status = _run(("git", "status", "--porcelain"), repo)
+    return {"path": str(repo.resolve()), "commit": sha, "clean": not status, "status": status.splitlines()}
+
+
+@contextmanager
+def production_lock(lock_path: Path, role: str) -> Iterator[None]:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = f"pid={os.getpid()}\nrole={role}\n"
+    try:
+        descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError as exc:
+        raise RuntimeError(f"production lock is active: {lock_path}") from exc
+    try:
+        os.write(descriptor, payload.encode())
+        os.fsync(descriptor)
+        os.close(descriptor)
+        yield
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        lock_path.unlink(missing_ok=True)
+
+
+def _copy_regular_tree(source: Path, destination: Path, *, exclude: set[Path] | None = None) -> None:
+    excluded = {path.resolve() for path in (exclude or set())}
+    for item in sorted(source.rglob("*")):
+        if item.is_symlink():
+            raise ValueError(f"snapshot source contains symlink: {item}")
+        if item.is_dir():
+            continue
+        if not item.is_file():
+            raise ValueError(f"snapshot source contains non-regular file: {item}")
+        if item.stat().st_nlink != 1:
+            raise ValueError(f"snapshot source contains hardlink: {item}")
+        if item.resolve() in excluded:
+            continue
+        before = item.stat()
+        target = destination / item.relative_to(source)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+        after = item.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise RuntimeError(f"snapshot source changed during copy: {item}")
+        if sha256_file(item) != sha256_file(target):
+            raise RuntimeError(f"snapshot copy hash mismatch: {item}")
+
+
+def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_uri = f"file:{source.as_posix()}?mode=ro"
+    with sqlite3.connect(source_uri, uri=True, timeout=30) as src, sqlite3.connect(destination, timeout=30) as dst:
+        source_quick = src.execute("PRAGMA quick_check").fetchone()[0]
+        source_tables = {row[0] for row in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = sorted(REQUIRED_MACRO_TABLES - source_tables)
+        if source_quick != "ok" or missing:
+            raise ValueError(f"macro source validation failed: quick_check={source_quick}, missing={missing}")
+        source_counts = {name: src.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES)}
+        src.backup(dst)
+        quick_check = dst.execute("PRAGMA quick_check").fetchone()[0]
+        user_version = dst.execute("PRAGMA user_version").fetchone()[0]
+        page_count = dst.execute("PRAGMA page_count").fetchone()[0]
+        target_counts = {name: dst.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES)}
+    if quick_check != "ok":
+        raise ValueError(f"SQLite backup failed quick_check: {source}")
+    if source_counts != target_counts:
+        raise ValueError("macro backup row counts changed")
+    return {"source": str(source), "path": str(destination), "source_quick_check": source_quick, "quick_check": quick_check, "user_version": user_version, "page_count": page_count, "table_counts": target_counts}
+
+
+def _manifest_entries(root: Path) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.name != "manifest.json":
+            entries.append({"path": path.relative_to(root).as_posix(), "size": path.stat().st_size, "sha256": sha256_file(path)})
+    return entries
+
+
+def _secret_metadata() -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for path in SECRET_PATHS:
+        record: dict[str, object] = {"path": str(path), "exists": path.exists()}
+        if path.exists():
+            info = path.stat()
+            record.update({"uid": info.st_uid, "gid": info.st_gid, "mode": oct(info.st_mode & 0o777)})
+        records.append(record)
+    return records
+
+
+def preflight(policy: BackupPolicy, repo: Path, site_repo: Path, data_root: Path, *, probe: bool = True) -> dict[str, object]:
+    report = mount_preflight(policy, (repo, site_repo, data_root), perform_probe=probe)
+    report.update({"created_at": utc_now(), **policy.plan_identity(), "repo": str(repo), "site_repo": str(site_repo), "data_root": str(data_root)})
+    return report
+
+
+def create_snapshot(
+    policy: BackupPolicy,
+    repo: Path,
+    site_repo: Path,
+    data_root: Path,
+    macro_db: Path,
+    operator: str,
+    exact_commands: list[str] | None = None,
+) -> dict[str, object]:
+    check = preflight(policy, repo, site_repo, data_root)
+    if not check["ok"]:
+        raise RuntimeError(f"backup preflight failed: {check['findings']}")
+    repos = {"ar_local": git_state(repo), "site": git_state(site_repo)}
+    if not all(state["clean"] for state in repos.values()):
+        raise RuntimeError("production checkout is dirty")
+    created_at = utc_now()
+    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:12]
+    staging = policy.backup_dir / f".partial-{snapshot_id}"
+    final = policy.backup_dir / "snapshots" / snapshot_id
+    staging.mkdir(parents=True, mode=0o700)
+    lock = data_root / "state" / "daily-ingest.lock"
+    try:
+        with production_lock(lock, "backup"):
+            macro = macro_db.resolve()
+            macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
+            _copy_regular_tree(data_root, staging / "data", exclude=macro_exclusions | {lock.resolve()})
+            if not macro.is_file():
+                raise ValueError(f"macro database is missing: {macro}")
+            macro_report = _sqlite_backup(macro, staging / "macro/local-macro.sqlite")
+            system_root = staging / "system"
+            for source in (Path("/etc/fstab"), Path("/etc/nginx/sites-available/ar-local-dashboard")):
+                if source.is_file():
+                    target = system_root / source.relative_to("/")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+            unit_root = Path("/etc/systemd/system")
+            if unit_root.is_dir():
+                for source in sorted(unit_root.glob("ar-local*")):
+                    if source.is_file() and not source.is_symlink():
+                        target = system_root / source.relative_to("/")
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, target)
+            bundles = staging / "code"
+            bundles.mkdir()
+            for name, source in (("AR-local", repo), ("australianrates", site_repo)):
+                _run(("git", "bundle", "create", str((bundles / f"{name}.bundle").resolve()), "HEAD"), source)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "snapshot_id": snapshot_id,
+        "created_at": created_at,
+        "operator": operator,
+        "started_at": created_at,
+        "completed_at": utc_now(),
+        "exact_commands": exact_commands or [],
+        "deviations": [],
+        "deviation_authorization": None,
+        **policy.plan_identity(),
+        "candidate_code_sha": repos["ar_local"]["commit"],
+        "repositories": repos,
+        "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
+        "secret_locations": _secret_metadata(),
+        "exclusions": [{"path": str(lock), "reason": "transient backup lock"}],
+        "macro_backup": macro_report,
+        "files": _manifest_entries(staging),
+        "result": "PASS",
+    }
+    manifest_path = staging / "manifest.json"
+    with manifest_path.open("wb") as stream:
+        stream.write(canonical_json_bytes(manifest))
+        stream.flush()
+        os.fsync(stream.fileno())
+    final.parent.mkdir(parents=True, exist_ok=True)
+    staging.replace(final)
+    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": created_at, "started_at": created_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": repos["ar_local"]["commit"], "exact_commands": exact_commands or [], "evidence": [{"path": str(final / "manifest.json"), "sha256": sha256_file(final / "manifest.json")}], "deviations": [], "deviation_authorization": None, "manifest_sha256": sha256_file(final / "manifest.json"), "result": "PASS"}
+    atomic_create_json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json", receipt)
+    latest = policy.backup_dir / "latest-backup.json"
+    temporary = latest.with_name(f".{latest.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(canonical_json_bytes(receipt))
+    temporary.replace(latest)
+    return receipt
+
+
+def verify_snapshot(snapshot: Path) -> dict[str, object]:
+    manifest = _json(snapshot / "manifest.json")
+    findings: list[str] = []
+    for entry in manifest.get("files", []):
+        path = snapshot / str(entry["path"])
+        if not path.is_file():
+            findings.append(f"missing:{entry['path']}")
+        elif path.stat().st_size != entry["size"] or sha256_file(path) != entry["sha256"]:
+            findings.append(f"changed:{entry['path']}")
+    return {"ok": not findings, "findings": findings, "manifest": manifest}
+
+
+def _daily_export_reconciliation(database: Path) -> dict[str, object]:
+    banks_files = sorted(database.parent.glob("banks-*.json"))
+    if len(banks_files) != 1:
+        raise ValueError("daily export must contain exactly one banks JSON")
+    banks = _json(banks_files[0])
+    run_date = banks_files[0].stem.removeprefix("banks-")
+    expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
+    with sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True) as connection:
+        run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
+        actual = {
+            "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
+            "rates": connection.execute("SELECT COUNT(*) FROM bank_rates").fetchone()[0],
+            "product_facts": connection.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0],
+            "product_changes": connection.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0],
+        }
+        for group in ("fees", "features", "eligibility", "constraints"):
+            actual[group] = connection.execute(
+                "SELECT COUNT(*) FROM bank_items WHERE item_group = ?", (group,)
+            ).fetchone()[0]
+    if len(run) != 1 or run[0][0] != run_date or json.loads(run[0][1]) != expected:
+        raise ValueError("runs metadata does not match banks export")
+    for key, count in actual.items():
+        if count != expected.get(key, 0):
+            raise ValueError(f"database count mismatch for {key}")
+    dashboard = _json(database.parent / "dashboard-cache/latest.json")
+    if dashboard.get("run_date") != run_date or dashboard.get("banks_counts") != expected:
+        raise ValueError("dashboard manifest does not match banks export")
+    return {"run_date": run_date, "counts": actual, "banks_json": banks_files[0].name}
+
+
+def _verify_restored_state(data_root: Path) -> dict[str, object]:
+    from cdr_export_contract import load_contract
+    from cdr_finalization import verify_completion_marker
+    from cdr_ledger_v2 import verify_ledger
+    from cdr_outputs import TABLE_COLUMNS
+
+    findings: list[str] = []
+    sqlite_results: list[dict[str, object]] = []
+    for path in sorted(data_root.rglob("*.sqlite")):
+        try:
+            with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+                result = connection.execute("PRAGMA quick_check").fetchone()[0]
+            sqlite_record: dict[str, object] = {
+                "path": path.relative_to(data_root).as_posix(),
+                "quick_check": result,
+            }
+            sqlite_results.append(sqlite_record)
+            if result != "ok":
+                findings.append(f"sqlite_quick_check:{path}")
+            if path.name == "local-cdr.sqlite":
+                with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+                    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                missing = sorted(REQUIRED_DAILY_TABLES - tables)
+                if missing:
+                    findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
+                else:
+                    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+                        for table, columns in TABLE_COLUMNS.items():
+                            actual_columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                            if not set(columns).issubset(actual_columns):
+                                findings.append(f"daily_columns_missing:{path}:{table}")
+                    try:
+                        sqlite_record["export_reconciliation"] = _daily_export_reconciliation(path)
+                    except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
+                        findings.append(f"daily_export_mismatch:{path}:{exc}")
+        except sqlite3.Error:
+            findings.append(f"sqlite_unreadable:{path}")
+    state = data_root / "state"
+    for path in sorted((state / "export-contracts-v2").glob("*/*.json")):
+        try:
+            load_contract(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            findings.append(f"invalid_contract:{path.relative_to(data_root)}")
+    if (state / "ledger-v2").exists():
+        try:
+            ledger = verify_ledger(state)
+            if not ledger.get("ok"):
+                findings.append("ledger_verification_failed")
+        except (OSError, ValueError, json.JSONDecodeError):
+            ledger = {"ok": False}
+            findings.append("ledger_unreadable")
+    else:
+        ledger = {"ok": False, "reason": "missing"}
+        findings.append("ledger_missing")
+    for pointer in sorted((state / "observation-pointers-v2").glob("*.json")):
+        try:
+            value = _json(pointer)
+            relative = Path(str(value.get("marker_path") or ""))
+            if relative.is_absolute() or ".." in relative.parts or not (state / relative).resolve().is_relative_to(state.resolve()):
+                findings.append(f"pointer_escape:{pointer.name}")
+            elif not (state / relative).is_file():
+                findings.append(f"pointer_target_missing:{pointer.name}")
+            else:
+                marker = _json(state / relative)
+                if not verify_completion_marker(marker, state, str(value.get("observation_date") or "")):
+                    findings.append(f"pointer_marker_invalid:{pointer.name}")
+        except (OSError, ValueError, json.JSONDecodeError):
+            findings.append(f"pointer_invalid:{pointer.name}")
+    return {"ok": not findings, "findings": findings, "sqlite": sqlite_results, "ledger": ledger}
+
+
+def restore_drill(
+    policy: BackupPolicy,
+    snapshot_id: str,
+    scratch_root: Path,
+    operator: str,
+    exact_commands: list[str] | None = None,
+) -> dict[str, object]:
+    snapshot = policy.backup_dir / "snapshots" / snapshot_id
+    verified = verify_snapshot(snapshot)
+    if not verified["ok"]:
+        raise ValueError(f"snapshot verification failed: {verified['findings']}")
+    scratch_root = scratch_root.resolve()
+    for forbidden in (policy.mountpoint.resolve(), policy.backup_dir.resolve()):
+        if scratch_root == forbidden or forbidden in scratch_root.parents or scratch_root in forbidden.parents:
+            raise ValueError("scratch restore must be outside backup storage")
+    destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
+    destination.mkdir(parents=True)
+    shutil.copytree(snapshot / "data", destination / "data")
+    result = _verify_restored_state(destination / "data")
+    macro_source = snapshot / "macro/local-macro.sqlite"
+    macro_target = destination / "macro/local-macro.sqlite"
+    macro_target.parent.mkdir(parents=True)
+    shutil.copy2(macro_source, macro_target)
+    with sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True) as connection:
+        macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+        macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        macro_counts = {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)}
+    result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
+    missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
+    if macro_quick != "ok" or missing_macro:
+        result["ok"] = False
+        result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+    manifest_sha = sha256_file(snapshot / "manifest.json")
+    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
+    receipt_path = policy.backup_dir / "receipts" / receipt_name
+    atomic_create_json(receipt_path, receipt)
+    latest_restore = policy.backup_dir / "latest-restore.json"
+    latest_restore_tmp = latest_restore.with_name(f".{latest_restore.name}.{uuid.uuid4().hex}.tmp")
+    latest_restore_tmp.write_bytes(canonical_json_bytes({**receipt, "receipt_path": receipt_path.relative_to(policy.backup_dir).as_posix()}))
+    latest_restore_tmp.replace(latest_restore)
+    return receipt
+
+
+def validate_boot_proof(path: Path, policy: BackupPolicy, now: datetime, candidate_sha: str | None = None) -> dict[str, object]:
+    proof = _json(path)
+    required = ("boot_id", "backup_device_id", "network", "dashboard", "ingest_timers", "storage_identity", "evidence", "created_at", "candidate_code_sha", "operator", "exact_commands", "deviations", "result")
+    findings = [f"missing:{key}" for key in required if key not in proof or proof[key] is None]
+    if proof.get("result") != "PASS":
+        findings.append("boot_result_not_pass")
+    if not validate_plan_identity(proof, policy):
+        findings.append("plan_identity_mismatch")
+    if candidate_sha is not None and proof.get("candidate_code_sha") != candidate_sha:
+        findings.append("boot_candidate_sha_mismatch")
+    if not COMMIT_RE.fullmatch(str(proof.get("candidate_code_sha") or "")):
+        findings.append("boot_candidate_sha_invalid")
+    if not record_is_fresh(proof, policy.max_boot_proof_age_hours, now):
+        findings.append("boot_proof_stale_or_future")
+    evidence = proof.get("evidence")
+    if not isinstance(evidence, list) or not evidence or any(not isinstance(item, dict) or not item.get("path") or not SHA256_RE.fullmatch(str(item.get("sha256") or "")) for item in evidence):
+        findings.append("boot_evidence_invalid")
+    else:
+        for item in evidence:
+            evidence_path = Path(str(item["path"]))
+            if not evidence_path.is_absolute() or not evidence_path.is_file():
+                findings.append(f"boot_evidence_missing:{evidence_path}")
+            elif sha256_file(evidence_path) != item["sha256"]:
+                findings.append(f"boot_evidence_hash_mismatch:{evidence_path}")
+    for field in ("network", "dashboard", "ingest_timers", "storage_identity"):
+        value = proof.get(field)
+        if not isinstance(value, Mapping) or value.get("ok") is not True:
+            findings.append(f"boot_{field}_not_verified")
+    storage = proof.get("storage_identity")
+    if isinstance(storage, Mapping) and storage.get("expected_source") != policy.expected_source:
+        findings.append("boot_storage_identity_mismatch")
+    if not isinstance(proof.get("exact_commands"), list) or not proof.get("exact_commands"):
+        findings.append("boot_commands_missing")
+    if not isinstance(proof.get("deviations"), list):
+        findings.append("boot_deviations_invalid")
+    return {"ok": not findings, "findings": findings, "proof": proof}
+
+
+def gate(
+    policy: BackupPolicy,
+    repo: Path,
+    site_repo: Path,
+    data_root: Path,
+    protected_code_sha: str,
+    candidate_sha: str,
+    boot_proof: Path,
+    operator: str = "unknown",
+    exact_commands: list[str] | None = None,
+) -> dict[str, object]:
+    now = datetime.now(timezone.utc)
+    if not COMMIT_RE.fullmatch(protected_code_sha) or not COMMIT_RE.fullmatch(candidate_sha):
+        return {"ok": False, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "findings": ["invalid_code_sha"], "result": "BLOCKED"}
+    mount = preflight(policy, repo, site_repo, data_root)
+    findings = list(mount["findings"])
+    try:
+        backup = _json(policy.backup_dir / "latest-backup.json")
+        snapshot_id = str(backup["snapshot_id"])
+        receipt = _json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json")
+        restore_pointer = _json(policy.backup_dir / "latest-restore.json")
+        restore_path = (policy.backup_dir / str(restore_pointer["receipt_path"])).resolve()
+        if not restore_path.is_relative_to((policy.backup_dir / "receipts").resolve()):
+            raise ValueError("restore receipt path escapes receipt directory")
+        restore = _json(restore_path)
+        manifest = policy.backup_dir / "snapshots" / snapshot_id / "manifest.json"
+        if backup != receipt or not validate_plan_identity(receipt, policy):
+            findings.append("backup_receipt_mismatch")
+        if receipt.get("candidate_code_sha") != protected_code_sha:
+            findings.append("current_production_sha_not_backed_up")
+        if receipt.get("manifest_sha256") != sha256_file(manifest):
+            findings.append("snapshot_manifest_digest_mismatch")
+        if not record_is_fresh(receipt, policy.max_backup_age_hours, now):
+            findings.append("backup_stale_or_future")
+        pointer_material = dict(restore_pointer)
+        pointer_material.pop("receipt_path", None)
+        if restore != pointer_material:
+            findings.append("restore_pointer_mismatch")
+        if restore.get("snapshot_id") != snapshot_id or restore.get("result") != "PASS" or restore.get("manifest_sha256") != receipt.get("manifest_sha256"):
+            findings.append("restore_receipt_mismatch")
+        if not validate_plan_identity(restore, policy) or not record_is_fresh(restore, policy.max_restore_age_hours, now):
+            findings.append("restore_receipt_stale_or_wrong_plan")
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        findings.append("backup_or_restore_receipt_missing_or_invalid")
+    try:
+        boot = validate_boot_proof(boot_proof, policy, now, candidate_sha)
+        findings.extend(boot["findings"])
+    except (OSError, ValueError, json.JSONDecodeError):
+        findings.append("boot_proof_missing_or_invalid")
+    return {"ok": not findings, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "findings": findings, "result": "PASS" if not findings else "BLOCKED"}
+
+
+def _paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    return args.repo.resolve(), args.site_repo.resolve(), args.data_root.resolve()
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof"))
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--repo", type=Path, default=Path("/srv/ar-local/AR-local"))
+    parser.add_argument("--site-repo", type=Path, default=Path("/srv/ar-local/australianrates"))
+    parser.add_argument("--data-root", type=Path, default=Path("/srv/ar-local/data"))
+    parser.add_argument("--macro-db", type=Path, default=None)
+    parser.add_argument("--snapshot-id")
+    parser.add_argument("--scratch-root", type=Path, default=Path("/srv/ar-local/restore-drills"))
+    parser.add_argument("--operator", default=os.environ.get("USER", "unknown"))
+    parser.add_argument("--candidate-sha")
+    parser.add_argument("--protected-code-sha")
+    parser.add_argument("--boot-proof", type=Path, default=DEFAULT_BOOT_PROOF)
+    args = parser.parse_args(argv)
+    try:
+        policy = BackupPolicy.from_env_file(args.config)
+        repo, site_repo, data_root = _paths(args)
+        if args.command == "preflight":
+            report = preflight(policy, repo, site_repo, data_root)
+        elif args.command == "snapshot":
+            macro_db = (args.macro_db or (repo / "state/local-macro.sqlite")).resolve()
+            report = create_snapshot(policy, repo, site_repo, data_root, macro_db, args.operator, [exact_command])
+        elif args.command == "verify":
+            if not args.snapshot_id:
+                raise ValueError("--snapshot-id is required")
+            report = verify_snapshot(policy.backup_dir / "snapshots" / args.snapshot_id)
+        elif args.command == "restore-drill":
+            if not args.snapshot_id:
+                raise ValueError("--snapshot-id is required")
+            report = restore_drill(policy, args.snapshot_id, args.scratch_root, args.operator, [exact_command])
+        elif args.command == "verify-boot-proof":
+            report = validate_boot_proof(args.boot_proof, policy, datetime.now(timezone.utc))
+        else:
+            if not args.candidate_sha or not args.protected_code_sha:
+                raise ValueError("--candidate-sha and --protected-code-sha are required")
+            report = gate(policy, repo, site_repo, data_root, args.protected_code_sha, args.candidate_sha, args.boot_proof, args.operator, [exact_command])
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report.get("ok", report.get("result") == "PASS") else 1
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"ok": False, "result": "BLOCKED", "error": str(exc)}), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

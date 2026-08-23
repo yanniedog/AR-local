@@ -1,0 +1,43 @@
+# Pi backup foundation operator notes
+
+This component implements Phase A of [ARL-OPS-001](PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md). Read that controlled runbook completely before using any command here. The runbook and its stop conditions remain authoritative.
+
+## Safety boundary
+
+The backup destination must be a physically separate filesystem mounted exactly at `/mnt/ar-local-backup`. The code rejects an unmounted directory, a bind-back to production storage, an unexpected device or filesystem, a symlinked destination, incorrect ownership or mode, low free space, and failed write/read/rename verification. There is no `--allow-unmounted` or force bypass.
+
+Do not infer the correct device from `/dev/sdX` names. Establish and record its stable UUID and prove that it is the intended backup device before writing a filesystem, mount configuration, or data. The current unassigned Pi disks are not authorized backup targets.
+
+## Configuration and installation
+
+1. Copy `deploy/pi/backup.env.example` to `/etc/ar-local/backup.env` only after the mount identity has been established.
+2. Replace the source with the verified stable device identity. Keep the controlled plan commit and SHA-256 unchanged unless a new runbook version is formally issued.
+3. Create `/mnt/ar-local-backup/ar-local` as the ingest service user and group with mode `0700`.
+4. Make the configuration readable by the service user; recommended mode is `0640`, owned by `root:<service-group>`.
+5. Run the read/write preflight before installing timers:
+
+   ```sh
+   python3 pi_backup_foundation.py preflight --config /etc/ar-local/backup.env
+   ```
+
+6. Install the disabled-until-configured services only after preflight passes:
+
+   ```sh
+   sh deploy/pi/install-backup-foundation.sh
+   ```
+
+The installer performs the same preflight before installing and enabling the 04:00 daily backup and Sunday 08:00 restore-drill timers. It must not be called on the production Pi until the physical target has been approved.
+
+## Evidence and acceptance
+
+Snapshots are staged under a create-once `.partial-*` directory, hashed, then atomically renamed. The manifest is written last. Backup and restore receipts are append-only; mutable `latest-*.json` files are pointers, not evidence. The snapshot includes the entire production data root, Git bundles for both code repositories, installed AR-local systemd units, relevant nginx and storage configuration, and metadata for secret locations without reading or copying secret contents. The mutable macro SQLite database is copied through SQLite's online backup API and checked semantically.
+
+A restore drill copies the snapshot to scratch storage and checks every recorded hash, every SQLite database, required daily and macro schemas, export contracts, ledger reachability, and observation pointer/marker confinement. A deployment is blocked unless all of the following are independently current and bound to the exact identities:
+
+- a backup receipt for the current production SHA;
+- a passing restore receipt for that same snapshot and manifest hash;
+- a physical boot proof for the proposed candidate SHA;
+- the controlled plan identity and checksum;
+- the exact expected mount, filesystem, ownership, mode, capacity, and write/read probe.
+
+The software can validate a boot-proof record but cannot manufacture one. The clone must actually be booted and its network, dashboard, timers, storage identity, code SHA, and evidence hashes recorded. Until the external mount, restore drill, and physical boot test pass, Phase A remains `BLOCKED` and production deployment remains prohibited.

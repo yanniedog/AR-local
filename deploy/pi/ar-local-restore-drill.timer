@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly AR-local off-device restore drill
+
+[Timer]
+OnCalendar=Sun *-*-* 08:00:00 Australia/Hobart
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ar-local-restore-drill.service
+
+[Install]
+WantedBy=timers.target

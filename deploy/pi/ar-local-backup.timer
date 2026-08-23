@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AR-local off-device backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Australia/Hobart
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ar-local-backup.service
+
+[Install]
+WantedBy=timers.target

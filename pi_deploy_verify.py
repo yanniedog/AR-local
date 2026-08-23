@@ -90,12 +90,18 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_deploy_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
+    "pi_backup_foundation.py",
+    "ar_local_backup_policy.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "verify_local.py",
     "cdr_dashboard_server.py",
     "package.json",
 )
+
+
+def pi_backup_config() -> str:
+    return posix_repo_path(_env("AR_PI_BACKUP_CONFIG", "/etc/ar-local/backup.env"))
 
 
 def _env(name: str, default: str) -> str:
@@ -735,6 +741,41 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
     return EXIT_OK
 
 
+def deployment_backup_gate(
+    expected_commit: str,
+    protected_commit: str,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Run the candidate's backup gate before changing the production checkout."""
+
+    if not FULL_COMMIT_RE.fullmatch(expected_commit) or not FULL_COMMIT_RE.fullmatch(protected_commit):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    site = pi_site_repo()
+    data = pi_data_root()
+    script = (
+        "set -e; tmp=$(mktemp -d); trap 'rm -rf -- \"$tmp\"' EXIT; "
+        f"git -C {shell_quote(ar)} show {shell_quote(expected_commit + ':ar_local_backup_policy.py')} > \"$tmp/ar_local_backup_policy.py\"; "
+        f"git -C {shell_quote(ar)} show {shell_quote(expected_commit + ':pi_backup_foundation.py')} > \"$tmp/pi_backup_foundation.py\"; "
+        f"PYTHONPATH=\"$tmp\" /usr/bin/python3 \"$tmp/pi_backup_foundation.py\" gate "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(site)} --data-root {shell_quote(data)} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(expected_commit)}"
+    )
+    code, out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        print("pi_deploy_verify: dry-run would require a fresh verified backup, restore drill, and boot proof")
+        return EXIT_OK
+    if code != 0:
+        print(err or out or "pi_deploy_verify: backup gate blocked deployment", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: backup gate PASS:\n{out}")
+    return EXIT_OK
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
     ar_repo = pi_ar_repo()
     site_repo = pi_site_repo()
@@ -824,6 +865,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         )
         return EXIT_CONFIG
     if args.dry_run:
+        rc = deployment_backup_gate(expected_commit, expected_commit, dry_run=True)
+        if rc != EXIT_OK:
+            return rc
         rc = deploy_pull_all(expected_commit, dry_run=True)
         if rc != EXIT_OK:
             return rc
@@ -853,6 +897,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_VERIFY_FAIL
+    rc = deployment_backup_gate(expected_commit, snap["AR_HEAD"], dry_run=False)
+    if rc != EXIT_OK:
+        return rc
     rc = deploy_pull_all(expected_commit, dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc

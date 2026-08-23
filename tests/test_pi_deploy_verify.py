@@ -51,6 +51,12 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: expected)
     monkeypatch.setattr(
         pi_deploy_verify,
+        "deployment_backup_gate",
+        lambda commit, protected, dry_run=False: calls.append(("gate", commit, protected, dry_run))
+        or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
         "deploy_pull_all",
         lambda commit, dry_run=False: calls.append(("pull", commit, dry_run))
         or pi_deploy_verify.EXIT_OK,
@@ -67,7 +73,34 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
         lambda **_kwargs: pytest.fail("dry-run must not contact the Pi"),
     )
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
-    assert calls == [("pull", expected, True), ("services", True)]
+    assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
+
+
+def test_backup_gate_executes_candidate_without_switching_checkout(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+    )
+    assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
+    command = captured[0]
+    assert "git -C /srv/ar-local/AR-local show" in command
+    assert "pi_backup_foundation.py" in command
+    assert "--candidate-sha" in command
+    assert "--protected-code-sha" in command
+    assert "git checkout" not in command
+    assert "git merge" not in command
+
+
+def test_backup_gate_failure_blocks_deployment(monkeypatch, capsys):
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (1, "", "backup proof is stale"),
+    )
+    assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert "stale" in capsys.readouterr().err
 
 
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
