@@ -1,7 +1,7 @@
 [Unit]
 Description=AR-local off-device restore verification
 Documentation=file://{{AR_LOCAL_REPO}}/docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md
-After=local-fs.target
+After=local-fs.target ar-local-daily.service ar-local-ingest-now.service
 RequiresMountsFor=/mnt/ar-local-backup
 ConditionPathExists=/etc/ar-local/backup.env
 
