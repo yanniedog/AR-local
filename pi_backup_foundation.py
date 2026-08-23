@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 from ar_local_backup_policy import (
     BackupPolicy,
     COMMIT_RE,
@@ -33,12 +35,19 @@ from ar_local_backup_policy import (
     validate_plan_identity,
 )
 from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
+from ar_local_backup_scope import (
+    build_data_scope,
+    copy_regular_tree as _copy_regular_tree,
+    copy_scoped_data,
+    scoped_tree_metadata,
+)
 from ar_local_checkout import git_command, git_state, install_candidate, rollback_candidate
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
 from ar_local_rollback_record import record_rollback_acceptance
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
+SNAPSHOT_SCHEMA_PATH = Path(__file__).resolve().parent / "contracts/pi-preservation-snapshot-v1.schema.json"
 SECRET_PATHS = (
     Path("/etc/ar-local/app-payload.env"),
     Path("/etc/ar-local/notify.env"),
@@ -120,45 +129,6 @@ def verify_plan_document(policy: BackupPolicy, repo: Path) -> dict[str, object]:
     return {"ok": not findings, "findings": findings, "path": str(path)}
 
 
-def _copy_regular_tree(source: Path, destination: Path, *, exclude: set[Path] | None = None) -> None:
-    excluded = {path.resolve() for path in (exclude or set())}
-    for item in sorted(source.rglob("*")):
-        if item.is_symlink():
-            raise ValueError(f"snapshot source contains symlink: {item}")
-        if item.is_dir():
-            continue
-        if not item.is_file():
-            raise ValueError(f"snapshot source contains non-regular file: {item}")
-        if item.stat().st_nlink != 1:
-            raise ValueError(f"snapshot source contains hardlink: {item}")
-        if item.resolve() in excluded:
-            continue
-        before = item.stat()
-        target = destination / item.relative_to(source)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, target)
-        after = item.stat()
-        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-            raise RuntimeError(f"snapshot source changed during copy: {item}")
-        if sha256_file(item) != sha256_file(target):
-            raise RuntimeError(f"snapshot copy hash mismatch: {item}")
-
-
-def _tree_metadata(source: Path, exclude: set[Path]) -> dict[str, tuple[int, int]]:
-    excluded = {path.resolve() for path in exclude}
-    result: dict[str, tuple[int, int]] = {}
-    for item in sorted(source.rglob("*")):
-        if item.is_symlink():
-            raise ValueError(f"snapshot source contains symlink: {item}")
-        if item.is_dir() or item.resolve() in excluded:
-            continue
-        if not item.is_file() or item.stat().st_nlink != 1:
-            raise ValueError(f"snapshot source is not a unique regular file: {item}")
-        info = item.stat()
-        result[item.relative_to(source).as_posix()] = (info.st_size, info.st_mtime_ns)
-    return result
-
-
 def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_uri = f"file:{source.as_posix()}?mode=ro"
@@ -224,9 +194,9 @@ def _category_summary(entries: list[dict[str, object]]) -> dict[str, dict[str, i
     return categories
 
 
-def _secret_metadata() -> list[dict[str, object]]:
+def _secret_metadata(extra_paths: Sequence[Path] = ()) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
-    for path in SECRET_PATHS:
+    for path in (*SECRET_PATHS, *extra_paths):
         record: dict[str, object] = {"path": str(path), "exists": path.exists()}
         if path.exists():
             info = path.stat()
@@ -288,14 +258,22 @@ def create_snapshot(
             macro = macro_db.resolve()
             if not macro.is_file():
                 raise ValueError(f"macro database is missing: {macro}")
+            data_scope = build_data_scope(data_root)
             macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
             exclusions = macro_exclusions | {lock.resolve(), recovery_lock_path(lock).resolve()}
-            before = _tree_metadata(data_root, exclusions)
-            required_free = max(policy.min_free_bytes, sum(size for size, _mtime in before.values()) + macro.stat().st_size + 1024**3)
-            if shutil.disk_usage(policy.backup_dir).free < required_free:
-                raise RuntimeError(f"backup target lacks source-size headroom: required={required_free}")
-            _copy_regular_tree(data_root, staging / "data", exclude=exclusions)
-            if _tree_metadata(data_root, exclusions) != before:
+            before = scoped_tree_metadata(data_scope, exclusions)
+            snapshot_payload_bytes = sum(size for size, _mtime in before.values()) + macro.stat().st_size
+            remaining_slots = policy.retention_count - len(retained_snapshots)
+            required_free = max(
+                policy.min_free_bytes,
+                snapshot_payload_bytes * remaining_slots + 1024**3,
+            )
+            available_free = shutil.disk_usage(policy.backup_dir).free
+            if available_free < required_free:
+                raise RuntimeError(f"backup target lacks retention reserve: required={required_free}")
+            copy_scoped_data(data_scope, staging / "data", exclude=exclusions)
+            after_scope = build_data_scope(data_root)
+            if after_scope.manifest() != data_scope.manifest() or scoped_tree_metadata(after_scope, exclusions) != before:
                 raise RuntimeError("production data changed during snapshot")
             macro_report = _sqlite_backup(macro, staging / "macro/local-macro.sqlite")
             system_root = staging / "system"
@@ -360,7 +338,8 @@ def create_snapshot(
         "candidate_code_sha": repos["ar_local"]["commit"],
         "repositories": repos,
         "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
-        "secret_locations": _secret_metadata(),
+        "secret_locations": _secret_metadata(data_scope.secret_locations),
+        "data_scope": data_scope.manifest(),
         "system_configuration": system_configuration,
         "systemd_enablement": systemd_enablement,
         "exclusions": [
@@ -369,6 +348,13 @@ def create_snapshot(
         ],
         "macro_backup": macro_report,
         "source_data_bytes": sum(size for size, _mtime in before.values()),
+        "capacity_plan": {
+            "snapshot_payload_bytes": snapshot_payload_bytes,
+            "retained_snapshots": len(retained_snapshots),
+            "remaining_slots": remaining_slots,
+            "required_free_bytes": required_free,
+            "available_free_bytes": available_free,
+        },
         "category_summary": _category_summary(entries),
         "files": entries,
         "result": "PASS",
@@ -420,6 +406,14 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
         manifest = _json(manifest_path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {"ok": False, "findings": [f"invalid_manifest:{exc}"], "manifest": {}}
+    try:
+        schema = _json(SNAPSHOT_SCHEMA_PATH)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        for error in sorted(validator.iter_errors(manifest), key=lambda item: list(item.path)):
+            location = ".".join(str(part) for part in error.path) or "$"
+            findings.append(f"manifest_schema_invalid:{location}:{error.message}")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        findings.append(f"manifest_schema_unavailable:{exc}")
     entries = manifest.get("files")
     if not isinstance(entries, list):
         return {"ok": False, "findings": ["invalid_manifest_files"], "manifest": manifest}

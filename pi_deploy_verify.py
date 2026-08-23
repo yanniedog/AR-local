@@ -93,6 +93,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_backup_foundation.py",
     "pi_ingest_terminal.py",
     "ar_local_backup_policy.py",
+    "ar_local_backup_scope.py",
     "ar_local_boot_proof.py",
     "ar_local_checkout.py",
     "ar_local_deployment_chain.py",

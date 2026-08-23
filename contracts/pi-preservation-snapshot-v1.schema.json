@@ -6,8 +6,8 @@
   "required": [
     "schema_version", "snapshot_id", "created_at", "started_at", "completed_at", "operator",
     "plan_document_id", "plan_version", "plan_git_commit", "plan_sha256", "plan_raw_sha256",
-    "candidate_code_sha", "repositories", "source_paths", "secret_locations", "system_configuration", "systemd_enablement",
-    "macro_backup", "source_data_bytes", "category_summary", "files", "exact_commands", "deviations", "result"
+    "candidate_code_sha", "repositories", "source_paths", "secret_locations", "data_scope", "system_configuration", "systemd_enablement",
+    "macro_backup", "source_data_bytes", "capacity_plan", "category_summary", "files", "exact_commands", "deviations", "result"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -25,6 +25,44 @@
     "repositories": {"type": "object"},
     "source_paths": {"type": "object"},
     "secret_locations": {"type": "array"},
+    "data_scope": {
+      "type": "object",
+      "required": ["policy_version", "included", "excluded", "unknown_roots_allowed"],
+      "properties": {
+        "policy_version": {"const": 1},
+        "included": {
+          "type": "array", "minItems": 2, "maxItems": 5, "uniqueItems": true,
+          "items": {"enum": ["runs", "state", "logs", "predeploy", "runs-archive"]},
+          "allOf": [
+            {"contains": {"const": "runs"}},
+            {"contains": {"const": "state"}}
+          ]
+        },
+        "excluded": {
+          "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["path", "exists", "contents_copied", "reason"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "exists": {"type": "boolean"},
+              "contents_copied": {"const": false},
+              "reason": {"type": "string", "minLength": 1},
+              "uid": {"type": "integer", "minimum": 0},
+              "gid": {"type": "integer", "minimum": 0},
+              "mode": {"type": "string", "pattern": "^0o[0-7]{3,4}$"}
+            },
+            "additionalProperties": false
+          },
+          "allOf": [
+            {"contains": {"type": "object", "properties": {"path": {"const": ".daily-export-stage"}}, "required": ["path"]}},
+            {"contains": {"type": "object", "properties": {"path": {"const": "netdata"}}, "required": ["path"]}}
+          ]
+        },
+        "unknown_roots_allowed": {"const": false}
+      },
+      "additionalProperties": false
+    },
     "system_configuration": {
       "type": "array",
       "items": {
@@ -44,6 +82,18 @@
     "systemd_enablement": {"type": "array"},
     "macro_backup": {"type": "object"},
     "source_data_bytes": {"type": "integer", "minimum": 0},
+    "capacity_plan": {
+      "type": "object",
+      "required": ["snapshot_payload_bytes", "retained_snapshots", "remaining_slots", "required_free_bytes", "available_free_bytes"],
+      "properties": {
+        "snapshot_payload_bytes": {"type": "integer", "minimum": 0},
+        "retained_snapshots": {"type": "integer", "minimum": 0},
+        "remaining_slots": {"type": "integer", "minimum": 1},
+        "required_free_bytes": {"type": "integer", "minimum": 1},
+        "available_free_bytes": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
     "category_summary": {"type": "object"},
     "files": {
       "type": "array",
