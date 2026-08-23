@@ -119,6 +119,27 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
     assert "pi_deploy_verify.py --deploy --expected-commit" in command
 
 
+def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
+    protected = "b" * 40
+    commands = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: commands.append(command) or (0, "", ""),
+    )
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: {"AR_HEAD": protected},
+    )
+    monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    assert pi_deploy_verify.rollback_to_protected_commit(protected) == pi_deploy_verify.EXIT_OK
+    assert "role=rollback" in commands[0]
+    assert f"git checkout --detach {protected}" in commands[0]
+    assert "git status --porcelain" in commands[0]
+
+
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     captured = []
     monkeypatch.setattr(
@@ -310,6 +331,36 @@ def _verified_sync_snapshot(ar_commit: str) -> dict[str, str]:
         "SITE_DIRTY": "",
         "DASHBOARD": "active",
     }
+
+
+def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(pi_deploy_verify, "deployment_backup_gate", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_pull_all", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "verify_sync", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "record_deployment_acceptance",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    rolled_back = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "rollback_to_protected_commit",
+        lambda commit, **_kwargs: rolled_back.append(commit) or pi_deploy_verify.EXIT_OK,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", candidate]
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert rolled_back == [protected]
 
 
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(

@@ -42,6 +42,18 @@ def canonical_json_bytes(value: Mapping[str, object]) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
 
+def fsync_directory(path: Path) -> None:
+    """Make a completed create, replace, or unlink durable on POSIX filesystems."""
+
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def atomic_create_json(path: Path, value: Mapping[str, object]) -> None:
     """Create an immutable record; an existing path is never replaced."""
 
@@ -56,6 +68,23 @@ def atomic_create_json(path: Path, value: Mapping[str, object]) -> None:
     finally:
         os.close(descriptor)
     os.chmod(path, 0o444)
+    fsync_directory(path.parent)
+
+
+def atomic_replace_json(path: Path, value: Mapping[str, object]) -> None:
+    """Durably replace a mutable pointer without exposing partial JSON."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{os.urandom(6).hex()}.tmp")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(canonical_json_bytes(value))
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        fsync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _decode_mount_field(value: str) -> str:
@@ -152,6 +181,7 @@ class BackupPolicy:
     max_restore_age_hours: int
     max_boot_proof_age_hours: int
     min_free_bytes: int
+    retention_count: int
     plan_git_commit: str
     plan_sha256: str
     plan_raw_sha256: str
@@ -197,8 +227,11 @@ class BackupPolicy:
         max_restore_age_hours = int(values.get("AR_BACKUP_RESTORE_MAX_AGE_HOURS", "192"))
         max_boot_proof_age_hours = int(values.get("AR_BACKUP_BOOT_PROOF_MAX_AGE_HOURS", "2160"))
         min_free_bytes = int(values.get("AR_BACKUP_MIN_FREE_BYTES", "10737418240"))
+        retention_count = int(values.get("AR_BACKUP_RETENTION_COUNT", "14"))
         if min(max_backup_age_hours, max_restore_age_hours, max_boot_proof_age_hours, min_free_bytes) <= 0:
             raise ValueError("backup ages and minimum free bytes must be positive")
+        if retention_count < 2:
+            raise ValueError("backup retention count must be at least two")
         return cls(
             mountpoint=mountpoint,
             expected_source=values["AR_BACKUP_EXPECTED_SOURCE"],
@@ -210,6 +243,7 @@ class BackupPolicy:
             max_restore_age_hours=max_restore_age_hours,
             max_boot_proof_age_hours=max_boot_proof_age_hours,
             min_free_bytes=min_free_bytes,
+            retention_count=retention_count,
             plan_git_commit=commit,
             plan_sha256=digest,
             plan_raw_sha256=raw_digest,

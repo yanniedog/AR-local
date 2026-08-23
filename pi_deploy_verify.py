@@ -808,6 +808,42 @@ def record_deployment_acceptance(
     return EXIT_OK
 
 
+def rollback_to_protected_commit(protected_commit: str, *, dry_run: bool = False) -> int:
+    """Restore the exact pre-deploy SHA when post-activation acceptance fails."""
+
+    if not FULL_COMMIT_RE.fullmatch(protected_commit):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    ingest_lock = f"{pi_data_root()}/state/daily-ingest.lock"
+    script = (
+        "set -e; "
+        f"lock={shell_quote(ingest_lock)}; "
+        "(set -o noclobber; printf 'pid=%s\\nrole=rollback\\n' \"$$\" > \"$lock\") 2>/dev/null || exit 75; "
+        "cleanup_lock() { rm -f -- \"$lock\"; }; trap cleanup_lock EXIT; "
+        f"cd {shell_quote(ar)}; test -z \"$(git status --porcelain)\"; "
+        f"git cat-file -e {shell_quote(protected_commit + '^{commit}')}; "
+        f"git checkout --detach {shell_quote(protected_commit)}"
+    )
+    code, _out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        return EXIT_OK
+    if code != 0:
+        print(err or "pi_deploy_verify: rollback checkout failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if deploy_services(dry_run=False) != EXIT_OK:
+        print("pi_deploy_verify: rollback service restoration failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    snap = pi_remote_snapshot(dry_run=False)
+    if snap is None or snap.get("AR_HEAD") != protected_commit:
+        print("pi_deploy_verify: rollback SHA verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if wait_for_http_smoke(pi_base_url()) != EXIT_OK:
+        print("pi_deploy_verify: rollback dashboard verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    print(f"pi_deploy_verify: ROLLED_BACK to protected commit {protected_commit}")
+    return EXIT_OK
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
     ar_repo = pi_ar_repo()
     site_repo = pi_site_repo()
@@ -950,6 +986,12 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         dry_run=False,
     )
     if acceptance != EXIT_OK:
+        rollback = rollback_to_protected_commit(snap["AR_HEAD"], dry_run=False)
+        if rollback != EXIT_OK:
+            print(
+                "pi_deploy_verify: CRITICAL acceptance failed and rollback was not verified",
+                file=sys.stderr,
+            )
         return acceptance
     print("pi_deploy_verify: deploy OK")
     return EXIT_OK

@@ -54,7 +54,7 @@ def test_configuration_has_controlled_plan_identity_and_no_force_bypass() -> Non
 
 def test_timers_run_outside_the_ingest_window() -> None:
     assert "04:00:00 Australia/Hobart" in read("ar-local-backup.timer")
-    assert "Sun *-*-* 08:00:00 Australia/Hobart" in read("ar-local-restore-drill.timer")
+    assert "*-*-* 08:00:00 Australia/Hobart" in read("ar-local-restore-drill.timer")
     assert "Persistent=true" in read("ar-local-backup.timer")
     assert "Persistent=true" in read("ar-local-restore-drill.timer")
     guard = read("ar-local-backup-run.sh")

@@ -7,10 +7,11 @@
     "schema_version", "plan_document_id", "plan_version", "plan_git_commit",
     "plan_sha256", "plan_raw_sha256", "protected_code_sha", "candidate_code_sha",
     "operator", "started_at", "completed_at", "exact_commands", "evidence",
-    "previous_record_sha256", "checks", "deviations", "deviation_authorization", "result"
+    "sequence", "previous_record_sha256", "checks", "deviations", "deviation_authorization", "result"
   ],
   "properties": {
     "schema_version": {"const": 1},
+    "sequence": {"type": "integer", "minimum": 1},
     "plan_document_id": {"const": "ARL-OPS-001"},
     "plan_version": {"const": "1.0"},
     "plan_git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},

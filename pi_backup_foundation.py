@@ -24,7 +24,9 @@ from ar_local_backup_policy import (
     COMMIT_RE,
     SHA256_RE,
     atomic_create_json,
+    atomic_replace_json,
     canonical_json_bytes,
+    fsync_directory,
     mount_preflight,
     record_is_fresh,
     sha256_file,
@@ -89,6 +91,21 @@ def _remove_tree(path: Path) -> None:
         function(failing_path)
 
     shutil.rmtree(path, onerror=clear_readonly)
+
+
+def _fsync_tree(root: Path) -> None:
+    """Flush copied payload bytes and directory entries before publication."""
+
+    if os.name == "nt":
+        return
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                os.fsync(stream.fileno())
+    directories = [path for path in root.rglob("*") if path.is_dir()]
+    for directory in sorted(directories, key=lambda item: len(item.parts), reverse=True):
+        fsync_directory(directory)
+    fsync_directory(root)
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -279,6 +296,16 @@ def create_snapshot(
     repos = {"ar_local": git_state(repo), "site": git_state(site_repo)}
     if not all(state["clean"] for state in repos.values()):
         raise RuntimeError("production checkout is dirty")
+    snapshots_root = policy.backup_dir / "snapshots"
+    retained_snapshots = (
+        [path for path in snapshots_root.iterdir() if path.is_dir() and not path.is_symlink()]
+        if snapshots_root.is_dir()
+        else []
+    )
+    if len(retained_snapshots) >= policy.retention_count:
+        raise RuntimeError(
+            "snapshot retention ceiling reached; archive/removal requires a separately authorized decision"
+        )
     created_at = utc_now()
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:12]
     staging = policy.backup_dir / f".partial-{snapshot_id}"
@@ -358,14 +385,15 @@ def create_snapshot(
         stream.write(canonical_json_bytes(manifest))
         stream.flush()
         os.fsync(stream.fileno())
+    _fsync_tree(staging)
     final.parent.mkdir(parents=True, exist_ok=True)
     staging.replace(final)
-    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": created_at, "started_at": created_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": repos["ar_local"]["commit"], "exact_commands": exact_commands or [], "evidence": [{"path": str(final / "manifest.json"), "sha256": sha256_file(final / "manifest.json")}], "deviations": [], "deviation_authorization": None, "manifest_sha256": sha256_file(final / "manifest.json"), "result": "PASS"}
+    fsync_directory(final.parent)
+    manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
+    atomic_create_json(manifest_archive, manifest)
+    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": created_at, "started_at": created_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": repos["ar_local"]["commit"], "exact_commands": exact_commands or [], "evidence": [{"path": str(manifest_archive), "sha256": sha256_file(manifest_archive)}], "deviations": [], "deviation_authorization": None, "manifest_sha256": sha256_file(final / "manifest.json"), "result": "PASS"}
     atomic_create_json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json", receipt)
-    latest = policy.backup_dir / "latest-backup.json"
-    temporary = latest.with_name(f".{latest.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_bytes(canonical_json_bytes(receipt))
-    temporary.replace(latest)
+    atomic_replace_json(policy.backup_dir / "latest-backup.json", receipt)
     return receipt
 
 
@@ -487,6 +515,33 @@ def _completion_marker_valid(
         return False
 
 
+def _pointer_matches_marker(
+    pointer: Mapping[str, object], marker: Mapping[str, object], state_dir: Path
+) -> bool:
+    """Bind every publication-consumed pointer field to verified source evidence."""
+
+    from cdr_export_contract import load_contract
+
+    try:
+        relative = Path(str(marker["export_contract_path"]))
+        contract_path = (state_dir / relative).resolve()
+        if relative.is_absolute() or ".." in relative.parts or not contract_path.is_relative_to(state_dir.resolve()):
+            return False
+        contract = load_contract(contract_path)
+        expected = {
+            "schema_version": 2,
+            "observation_date": marker["run_date"],
+            "generation_id": marker["generation_id"],
+            "observation_state": marker["observation_state"],
+            "ledger_event_digest": marker["ledger_event_digest"],
+            "marker_path": str(pointer["marker_path"]),
+            "export_path": contract["source_path"],
+        }
+        return dict(pointer) == expected
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def _verify_restored_state(data_root: Path) -> dict[str, object]:
     from cdr_export_contract import load_contract
     from cdr_ledger_v2 import verify_ledger
@@ -567,6 +622,8 @@ def _verify_restored_state(data_root: Path) -> dict[str, object]:
                 marker = _json(state / relative)
                 if not _completion_marker_valid(marker, state, str(value.get("observation_date") or "")):
                     findings.append(f"pointer_marker_invalid:{pointer.name}")
+                elif not _pointer_matches_marker(value, marker, state):
+                    findings.append(f"pointer_fields_mismatch:{pointer.name}")
         except (OSError, ValueError, json.JSONDecodeError):
             findings.append(f"pointer_invalid:{pointer.name}")
     return {"ok": not findings, "findings": findings, "sqlite": sqlite_results, "ledger": ledger}
@@ -628,10 +685,10 @@ def restore_drill(
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)
-    latest_restore = policy.backup_dir / "latest-restore.json"
-    latest_restore_tmp = latest_restore.with_name(f".{latest_restore.name}.{uuid.uuid4().hex}.tmp")
-    latest_restore_tmp.write_bytes(canonical_json_bytes({**receipt, "receipt_path": receipt_path.relative_to(policy.backup_dir).as_posix()}))
-    latest_restore_tmp.replace(latest_restore)
+    atomic_replace_json(
+        policy.backup_dir / "latest-restore.json",
+        {**receipt, "receipt_path": receipt_path.relative_to(policy.backup_dir).as_posix()},
+    )
     return receipt
 
 
@@ -676,8 +733,11 @@ def validate_boot_proof(path: Path, policy: BackupPolicy, now: datetime, candida
             findings.append("boot_storage_identity_mismatch")
     if not isinstance(proof.get("exact_commands"), list) or not proof.get("exact_commands"):
         findings.append("boot_commands_missing")
-    if not isinstance(proof.get("deviations"), list):
+    deviations = proof.get("deviations")
+    if not isinstance(deviations, list):
         findings.append("boot_deviations_invalid")
+    elif deviations or proof.get("deviation_authorization") is not None:
+        findings.append("boot_deviation_not_authorized_by_gate")
     return {"ok": not findings, "findings": findings, "proof": proof}
 
 
@@ -769,45 +829,79 @@ def record_deployment_acceptance(
         raise ValueError("deployed checkout is not the exact clean candidate")
     if not dashboard_verified or not services_verified:
         raise ValueError("dashboard and service verification must precede acceptance")
-    backup_pointer = policy.backup_dir / "latest-backup.json"
-    restore_pointer = policy.backup_dir / "latest-restore.json"
-    backup = _json(backup_pointer)
-    snapshot_manifest = (
-        policy.backup_dir / "snapshots" / str(backup["snapshot_id"]) / "manifest.json"
-    )
-    evidence_paths = (backup_pointer, restore_pointer, snapshot_manifest, boot_proof)
-    evidence = [
-        {"path": str(path.resolve()), "sha256": sha256_file(path)} for path in evidence_paths
-    ]
+    backup = _json(policy.backup_dir / "latest-backup.json")
+    snapshot_id = str(backup["snapshot_id"])
+    backup_receipt = policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json"
+    restore_pointer = _json(policy.backup_dir / "latest-restore.json")
+    restore_receipt = (policy.backup_dir / str(restore_pointer["receipt_path"])).resolve()
+    receipts_root = (policy.backup_dir / "receipts").resolve()
+    if not restore_receipt.is_relative_to(receipts_root):
+        raise ValueError("restore receipt path escapes immutable receipt storage")
+    manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
+    if backup != _json(backup_receipt) or backup.get("manifest_sha256") != sha256_file(manifest_archive):
+        raise ValueError("immutable backup evidence does not match the accepted snapshot")
     completed_at = utc_now()
     records_root = policy.backup_dir / "deployment-records"
-    previous_records = sorted(records_root.glob("*.json")) if records_root.is_dir() else []
-    previous_record_sha256 = sha256_file(previous_records[-1]) if previous_records else None
-    record: dict[str, object] = {
-        "schema_version": 1,
-        **policy.plan_identity(),
-        "protected_code_sha": protected_code_sha,
-        "candidate_code_sha": candidate_sha,
-        "operator": operator,
-        "started_at": started_at,
-        "completed_at": completed_at,
-        "exact_commands": exact_commands,
-        "evidence": evidence,
-        "previous_record_sha256": previous_record_sha256,
-        "checks": {
-            "backup_gate": "PASS",
-            "clean_candidate_checkout": "PASS",
-            "services": "PASS",
-            "dashboard": "PASS",
-        },
-        "deviations": [],
-        "deviation_authorization": None,
-        "result": "PASS",
-    }
-    record_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex
-    record_path = records_root / f"{record_id}-{candidate_sha}.json"
-    atomic_create_json(record_path, record)
-    return {**record, "record_path": str(record_path), "record_sha256": sha256_file(record_path)}
+    records_root.mkdir(parents=True, exist_ok=True)
+    fsync_directory(records_root.parent)
+    with production_lock(records_root / ".chain.lock", "deployment-record"):
+        head_path = records_root / "head.json"
+        if head_path.is_file():
+            head = _json(head_path)
+            previous_path = (records_root / str(head["record_path"])).resolve()
+            if not previous_path.is_relative_to(records_root.resolve()) or not previous_path.is_file():
+                raise ValueError("deployment chain head target is invalid")
+            if sha256_file(previous_path) != head.get("record_sha256"):
+                raise ValueError("deployment chain head digest mismatch")
+            previous_record_sha256 = str(head["record_sha256"])
+            sequence = int(head["sequence"]) + 1
+        else:
+            if any(records_root.glob("*.record.json")):
+                raise ValueError("deployment records exist without a chain head")
+            previous_record_sha256 = None
+            sequence = 1
+        record_id = f"{sequence:020d}-{uuid.uuid4().hex}-{candidate_sha}"
+        boot_archive = policy.backup_dir / "deployment-evidence" / record_id / "boot-proof.json"
+        atomic_create_json(boot_archive, _json(boot_proof))
+        evidence_paths = (backup_receipt, restore_receipt, manifest_archive, boot_archive)
+        evidence = [
+            {"path": str(path.resolve()), "sha256": sha256_file(path)} for path in evidence_paths
+        ]
+        record: dict[str, object] = {
+            "schema_version": 1,
+            "sequence": sequence,
+            **policy.plan_identity(),
+            "protected_code_sha": protected_code_sha,
+            "candidate_code_sha": candidate_sha,
+            "operator": operator,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "exact_commands": exact_commands,
+            "evidence": evidence,
+            "previous_record_sha256": previous_record_sha256,
+            "checks": {
+                "backup_gate": "PASS",
+                "clean_candidate_checkout": "PASS",
+                "services": "PASS",
+                "dashboard": "PASS",
+            },
+            "deviations": [],
+            "deviation_authorization": None,
+            "result": "PASS",
+        }
+        record_path = records_root / f"{record_id}.record.json"
+        atomic_create_json(record_path, record)
+        record_sha256 = sha256_file(record_path)
+        atomic_replace_json(
+            head_path,
+            {
+                "schema_version": 1,
+                "sequence": sequence,
+                "record_path": record_path.relative_to(records_root).as_posix(),
+                "record_sha256": record_sha256,
+            },
+        )
+    return {**record, "record_path": str(record_path), "record_sha256": record_sha256}
 
 
 def _paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:

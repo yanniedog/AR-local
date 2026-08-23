@@ -42,6 +42,7 @@ def make_policy(tmp_path: Path) -> policy_module.BackupPolicy:
         max_restore_age_hours=192,
         max_boot_proof_age_hours=2160,
         min_free_bytes=1,
+        retention_count=30,
         plan_git_commit=COMMIT,
         plan_sha256=DIGEST,
         plan_raw_sha256="e" * 64,
@@ -105,6 +106,22 @@ def test_policy_rejects_nonpositive_capacity(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="must be positive"):
+        policy_module.BackupPolicy.from_env_file(config)
+
+
+def test_policy_rejects_retention_below_two(tmp_path: Path) -> None:
+    (tmp_path / "mount/ar-local").mkdir(parents=True)
+    config = tmp_path / "backup.env"
+    config.write_text(
+        f"AR_BACKUP_MOUNTPOINT={tmp_path / 'mount'}\n"
+        "AR_BACKUP_EXPECTED_SOURCE=/dev/test\nAR_BACKUP_EXPECTED_FSTYPE=ext4\n"
+        f"AR_BACKUP_DIRECTORY={tmp_path / 'mount/ar-local'}\n"
+        "AR_BACKUP_EXPECTED_UID=1\nAR_BACKUP_EXPECTED_GID=1\nAR_BACKUP_RETENTION_COUNT=1\n"
+        f"AR_BACKUP_PLAN_GIT_COMMIT={COMMIT}\nAR_BACKUP_PLAN_SHA256={DIGEST}\n"
+        f"AR_BACKUP_PLAN_RAW_SHA256={'e' * 64}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="retention count"):
         policy_module.BackupPolicy.from_env_file(config)
 
 
@@ -360,6 +377,67 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
     assert list(scratch.iterdir()) == []
 
 
+def test_snapshot_creation_stops_at_retention_ceiling(monkeypatch, tmp_path: Path) -> None:
+    policy = replace(make_policy(tmp_path), retention_count=2)
+    snapshots = policy.backup_dir / "snapshots"
+    (snapshots / "one").mkdir(parents=True)
+    (snapshots / "two").mkdir()
+    monkeypatch.setattr(backup, "preflight", lambda *_args: {"ok": True, "findings": []})
+    monkeypatch.setattr(
+        backup,
+        "git_state",
+        lambda path: {"path": str(path), "commit": COMMIT, "clean": True, "status": []},
+    )
+    roots = [tmp_path / name for name in ("repo", "site", "data")]
+    for root in roots:
+        root.mkdir()
+    with pytest.raises(RuntimeError, match="retention ceiling"):
+        backup.create_snapshot(policy, *roots, tmp_path / "macro.sqlite", "pytest")
+
+
+def test_pointer_fields_are_bound_to_marker_and_contract(monkeypatch, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    contract_path = state / "export-contracts-v2/2026-08-24/generation.json"
+    contract_path.parent.mkdir(parents=True)
+    contract_path.write_text("{}\n", encoding="utf-8")
+    marker = {
+        "run_date": "2026-08-24",
+        "generation_id": "generation",
+        "observation_state": "complete",
+        "ledger_event_digest": "d" * 64,
+        "export_contract_path": contract_path.relative_to(state).as_posix(),
+    }
+    monkeypatch.setattr(
+        __import__("cdr_export_contract"),
+        "load_contract",
+        lambda _path: {"source_path": "runs/2026-08-24/_exports"},
+    )
+    pointer = {
+        "schema_version": 2,
+        "observation_date": "2026-08-24",
+        "generation_id": "generation",
+        "observation_state": "complete",
+        "ledger_event_digest": "d" * 64,
+        "marker_path": "2026-08-24.done.json",
+        "export_path": "runs/2026-08-24/_exports",
+    }
+    assert backup._pointer_matches_marker(pointer, marker, state)
+    assert not backup._pointer_matches_marker({**pointer, "export_path": "runs/wrong"}, marker, state)
+
+
+def test_boot_proof_rejects_any_deviation(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    created_at = datetime.now(timezone.utc).isoformat()
+    proof = boot_proof(policy, created_at)
+    proof["deviations"] = ["skipped storage identity"]
+    proof["deviation_authorization"] = {"decision": "conversation"}
+    path = tmp_path / "boot-deviation.json"
+    path.write_text(json.dumps(proof), encoding="utf-8")
+    report = backup.validate_boot_proof(path, policy, datetime.now(timezone.utc))
+    assert not report["ok"]
+    assert "boot_deviation_not_authorized_by_gate" in report["findings"]
+
+
 def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_path: Path) -> None:
     policy = make_policy(tmp_path)
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
@@ -419,10 +497,26 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     manifest = policy.backup_dir / "snapshots" / snapshot_id / "manifest.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}\n", encoding="utf-8")
-    (policy.backup_dir / "latest-backup.json").write_text(
-        json.dumps({"snapshot_id": snapshot_id}), encoding="utf-8"
+    manifests = policy.backup_dir / "manifests"
+    manifests.mkdir()
+    (manifests / f"{snapshot_id}.json").write_text("{}\n", encoding="utf-8")
+    receipts = policy.backup_dir / "receipts"
+    receipts.mkdir()
+    backup_receipt = {
+        "snapshot_id": snapshot_id,
+        "manifest_sha256": policy_module.sha256_file(manifest),
+    }
+    (receipts / f"{snapshot_id}.backup.json").write_text(
+        json.dumps(backup_receipt), encoding="utf-8"
     )
-    (policy.backup_dir / "latest-restore.json").write_text("{}\n", encoding="utf-8")
+    (policy.backup_dir / "latest-backup.json").write_text(
+        json.dumps(backup_receipt), encoding="utf-8"
+    )
+    restore_name = f"{snapshot_id}.restore.test.json"
+    (receipts / restore_name).write_text("{}\n", encoding="utf-8")
+    (policy.backup_dir / "latest-restore.json").write_text(
+        json.dumps({"receipt_path": f"receipts/{restore_name}"}), encoding="utf-8"
+    )
     proof = policy.backup_dir / "boot.json"
     proof.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(backup, "gate", lambda *_args, **_kwargs: {"ok": True, "findings": []})
@@ -449,7 +543,12 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     )
     second_record = json.loads(Path(str(second["record_path"])).read_text())
     assert second_record["previous_record_sha256"] == policy_module.sha256_file(first_path)
-    assert len(list((policy.backup_dir / "deployment-records").glob("*.json"))) == 2
+    assert second_record["sequence"] == 2
+    assert len(list((policy.backup_dir / "deployment-records").glob("*.record.json"))) == 2
+    assert all(
+        "latest-" not in item["path"]
+        for item in second_record["evidence"]
+    )
 
 
 def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> None:
