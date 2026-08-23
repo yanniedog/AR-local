@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://australianrates.local/contracts/pi-restore-acceptance-v1.schema.json",
+  "title": "AR-local Pi restore acceptance v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "restore_acceptance_version",
+    "snapshot_id",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "operator",
+    "plan_document_id",
+    "plan_version",
+    "plan_git_commit",
+    "plan_sha256",
+    "candidate_code_sha",
+    "manifest_sha256",
+    "exact_commands",
+    "deviations",
+    "deviation_authorization",
+    "checks",
+    "result"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "restore_acceptance_version": { "const": 1 },
+    "snapshot_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "operator": { "type": "string", "minLength": 1 },
+    "plan_document_id": { "const": "ARL-OPS-001" },
+    "plan_version": { "type": "string", "minLength": 1 },
+    "plan_git_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidate_code_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "exact_commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "deviations": { "type": "array", "maxItems": 0 },
+    "deviation_authorization": { "type": "null" },
+    "checks": {
+      "type": "object",
+      "required": ["ok", "selected_observation", "restored_files", "macro"],
+      "properties": {
+        "ok": { "const": true },
+        "selected_observation": {
+          "type": "object",
+          "required": [
+            "observation_date",
+            "generation_id",
+            "observation_state",
+            "ledger_event_digest",
+            "export_contract_digest",
+            "export_contract_path",
+            "export_contract_sha256",
+            "marker_path",
+            "marker_sha256",
+            "export_path",
+            "database_path",
+            "database_sha256",
+            "ledger_event_path",
+            "ledger_event_sha256"
+          ],
+          "properties": {
+            "observation_date": { "type": "string", "format": "date" },
+            "generation_id": { "type": "string", "minLength": 1 },
+            "observation_state": { "enum": ["complete", "partial"] },
+            "ledger_event_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "export_contract_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "export_contract_path": { "type": "string", "minLength": 1 },
+            "export_contract_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "marker_path": { "type": "string", "minLength": 1 },
+            "marker_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "export_path": { "type": "string", "minLength": 1 },
+            "database_path": { "type": "string", "minLength": 1 },
+            "database_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "ledger_event_path": { "type": "string", "minLength": 1 },
+            "ledger_event_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "additionalProperties": true
+        },
+        "restored_files": {
+          "type": "object",
+          "required": [
+            "ok",
+            "file_count",
+            "total_bytes",
+            "source_file_set_sha256",
+            "restored_file_set_sha256"
+          ],
+          "properties": {
+            "ok": { "const": true },
+            "file_count": { "type": "integer", "minimum": 1 },
+            "total_bytes": { "type": "integer", "minimum": 1 },
+            "source_file_set_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "restored_file_set_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "additionalProperties": true
+        },
+        "macro": {
+          "type": "object",
+          "required": ["quick_check", "tables", "counts"],
+          "properties": {
+            "quick_check": { "const": "ok" },
+            "tables": {
+              "type": "array",
+              "allOf": [
+                { "contains": { "const": "series_observations" } },
+                { "contains": { "const": "ingest_runs" } }
+              ]
+            },
+            "counts": {
+              "type": "object",
+              "required": ["series_observations", "ingest_runs"],
+              "properties": {
+                "series_observations": { "type": "integer", "minimum": 0 },
+                "ingest_runs": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "result": { "const": "PASS" }
+  },
+  "additionalProperties": true
+}
