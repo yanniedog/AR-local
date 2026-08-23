@@ -11,7 +11,7 @@ User={{AR_LOCAL_USER}}
 Group={{AR_LOCAL_GROUP}}
 WorkingDirectory={{AR_LOCAL_REPO}}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 {{AR_LOCAL_REPO}}/pi_backup_foundation.py snapshot --config /etc/ar-local/backup.env --repo {{AR_LOCAL_REPO}} --site-repo {{AR_SITE_ROOT}}/.. --data-root {{AR_LOCAL_DATA_ROOT}} --operator systemd-backup
+ExecStart=/usr/local/bin/ar-local-backup-run snapshot {{AR_LOCAL_REPO}} {{AR_SITE_ROOT}}/.. {{AR_LOCAL_DATA_ROOT}}
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

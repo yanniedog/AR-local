@@ -755,10 +755,8 @@ def deployment_backup_gate(
     site = pi_site_repo()
     data = pi_data_root()
     script = (
-        "set -e; tmp=$(mktemp -d); trap 'rm -rf -- \"$tmp\"' EXIT; "
-        f"git -C {shell_quote(ar)} show {shell_quote(expected_commit + ':ar_local_backup_policy.py')} > \"$tmp/ar_local_backup_policy.py\"; "
-        f"git -C {shell_quote(ar)} show {shell_quote(expected_commit + ':pi_backup_foundation.py')} > \"$tmp/pi_backup_foundation.py\"; "
-        f"PYTHONPATH=\"$tmp\" /usr/bin/python3 \"$tmp/pi_backup_foundation.py\" gate "
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate gate "
         f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
         f"--site-repo {shell_quote(site)} --data-root {shell_quote(data)} "
         f"--protected-code-sha {shell_quote(protected_commit)} "
@@ -791,7 +789,7 @@ def record_deployment_acceptance(
         "python pi_deploy_verify.py --deploy --expected-commit " + expected_commit
     )
     script = (
-        f"cd {shell_quote(ar)} && /usr/bin/python3 pi_backup_foundation.py record-deployment "
+        f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-deployment "
         f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
         f"--site-repo {shell_quote(pi_site_repo())} --data-root {shell_quote(pi_data_root())} "
         f"--protected-code-sha {shell_quote(protected_commit)} "

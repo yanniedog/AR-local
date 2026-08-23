@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -34,7 +35,7 @@ DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SECRET_PATHS = (
     Path("/etc/ar-local/app-payload.env"),
-    Path("/etc/ar-local/ingest-notify.env"),
+    Path("/etc/ar-local/notify.env"),
     Path("/etc/ar-local/payload.key"),
 )
 REQUIRED_DAILY_TABLES = {
@@ -47,6 +48,15 @@ REQUIRED_DAILY_TABLES = {
     "bank_product_changes",
 }
 REQUIRED_MACRO_TABLES = {"series_observations", "ingest_runs"}
+DAILY_SCHEMA_VERSION = "8"
+REQUIRED_DAILY_COLUMNS = {
+    "runs": {"run_date", "generated_at", "banks_counts_json"},
+    "bank_products": {"run_date", "provider", "product_id", "product_key"},
+    "bank_rates": {"run_date", "product_key", "rate", "comparison_rate"},
+    "bank_items": {"run_date", "item_group", "product_key"},
+    "bank_product_facts": {"run_date", "product_key", "fact_id", "canonical_key"},
+    "bank_product_changes": {"run_date", "event_id", "product_id", "event_type"},
+}
 MACRO_COUNT_QUERIES = {
     "series_observations": "SELECT COUNT(*) FROM series_observations",
     "ingest_runs": "SELECT COUNT(*) FROM ingest_runs",
@@ -85,6 +95,27 @@ def git_state(repo: Path) -> dict[str, object]:
     sha = _run(("git", "rev-parse", "HEAD"), repo)
     status = _run(("git", "status", "--porcelain"), repo)
     return {"path": str(repo.resolve()), "commit": sha, "clean": not status, "status": status.splitlines()}
+
+
+def verify_plan_document(policy: BackupPolicy, repo: Path) -> dict[str, object]:
+    path = repo / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
+    findings: list[str] = []
+    try:
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != policy.plan_raw_sha256:
+            findings.append("plan_raw_sha256_mismatch")
+        text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        if text.count(policy.plan_sha256) != 2:
+            findings.append("plan_controlled_digest_occurrence_mismatch")
+        canonical = text.replace(policy.plan_sha256, "PLAN_SHA256_PENDING").encode("utf-8")
+        if hashlib.sha256(canonical).hexdigest() != policy.plan_sha256:
+            findings.append("plan_controlled_sha256_mismatch")
+        commit = _run(("git", "log", "-1", "--format=%H", "--", path.relative_to(repo).as_posix()), repo)
+        if commit != policy.plan_git_commit:
+            findings.append("plan_git_commit_mismatch")
+    except (OSError, UnicodeError, RuntimeError, ValueError) as exc:
+        findings.append(f"plan_verification_error:{type(exc).__name__}")
+    return {"ok": not findings, "findings": findings, "path": str(path)}
 
 
 @contextmanager
@@ -225,6 +256,10 @@ def _secret_metadata() -> list[dict[str, object]]:
 
 def preflight(policy: BackupPolicy, repo: Path, site_repo: Path, data_root: Path, *, probe: bool = True) -> dict[str, object]:
     report = mount_preflight(policy, (repo, site_repo, data_root), perform_probe=probe)
+    plan = verify_plan_document(policy, repo)
+    report["findings"].extend(plan["findings"])
+    report["ok"] = not report["findings"]
+    report["plan_document"] = plan
     report.update({"created_at": utc_now(), **policy.plan_identity(), "repo": str(repo), "site_repo": str(site_repo), "data_root": str(data_root)})
     return report
 
@@ -272,6 +307,7 @@ def create_snapshot(
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
             unit_root = Path("/etc/systemd/system")
+            systemd_enablement: list[dict[str, str]] = []
             if unit_root.is_dir():
                 for source in sorted(unit_root.glob("ar-local*")):
                     if source.is_file() and not source.is_symlink():
@@ -280,6 +316,12 @@ def create_snapshot(
                         shutil.copy2(source, target)
                     elif source.is_dir() and not source.is_symlink():
                         _copy_regular_tree(source, system_root / source.relative_to("/"))
+                for wants in sorted(unit_root.glob("*.wants")):
+                    for link in sorted(wants.glob("ar-local*")):
+                        if link.is_symlink():
+                            systemd_enablement.append(
+                                {"path": str(link), "target": os.readlink(link)}
+                            )
             bundles = staging / "code"
             bundles.mkdir()
             for name, source in (("AR-local", repo), ("australianrates", site_repo)):
@@ -303,6 +345,7 @@ def create_snapshot(
         "repositories": repos,
         "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
         "secret_locations": _secret_metadata(),
+        "systemd_enablement": systemd_enablement,
         "exclusions": [{"path": str(lock), "reason": "transient backup lock"}],
         "macro_backup": macro_report,
         "source_data_bytes": sum(size for size, _mtime in before.values()),
@@ -407,11 +450,46 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     return {"run_date": run_date, "counts": actual, "banks_json": banks_files[0].name}
 
 
+def _completion_marker_valid(
+    marker: Mapping[str, object], state_dir: Path, observation_date: str
+) -> bool:
+    from cdr_export_contract import load_contract
+    from cdr_ledger_v2 import ledger_root, verify_event_artifacts
+
+    try:
+        if marker.get("finalization_schema_version") != 2 or marker.get("ledger_state") != "finalized":
+            return False
+        if marker.get("run_date") != observation_date:
+            return False
+        counts = marker.get("banks_counts") or marker.get("banks") or {}
+        if not isinstance(counts, Mapping) or int(counts.get("rates") or 0) <= 0:
+            return False
+        relative = Path(str(marker.get("export_contract_path") or ""))
+        if relative.is_absolute() or ".." in relative.parts:
+            return False
+        contract_path = (state_dir / relative).resolve()
+        if not contract_path.is_relative_to(state_dir.resolve()):
+            return False
+        contract = load_contract(contract_path)
+        if contract.get("generation_id") != marker.get("generation_id"):
+            return False
+        if contract.get("observation_date") != observation_date:
+            return False
+        if contract.get("observation_state") != marker.get("observation_state"):
+            return False
+        if contract.get("contract_digest") != marker.get("export_contract_digest"):
+            return False
+        event_path = ledger_root(state_dir) / "events" / observation_date / f"{contract['generation_id']}.json"
+        event = _json(event_path)
+        verify_event_artifacts(state_dir, event)
+        return event.get("event_digest") == marker.get("ledger_event_digest")
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def _verify_restored_state(data_root: Path) -> dict[str, object]:
     from cdr_export_contract import load_contract
-    from cdr_finalization import verify_completion_marker
     from cdr_ledger_v2 import verify_ledger
-    from cdr_outputs import TABLE_COLUMNS
 
     findings: list[str] = []
     sqlite_results: list[dict[str, object]] = []
@@ -440,7 +518,12 @@ def _verify_restored_state(data_root: Path) -> dict[str, object]:
                     with closing(
                         sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
                     ) as connection:
-                        for table, columns in TABLE_COLUMNS.items():
+                        schema_version = connection.execute(
+                            "SELECT value FROM schema_meta WHERE key = 'version'"
+                        ).fetchone()
+                        if not schema_version or schema_version[0] != DAILY_SCHEMA_VERSION:
+                            findings.append(f"daily_schema_version_mismatch:{path}")
+                        for table, columns in REQUIRED_DAILY_COLUMNS.items():
                             actual_columns = {
                                 row[0]
                                 for row in connection.execute(
@@ -482,7 +565,7 @@ def _verify_restored_state(data_root: Path) -> dict[str, object]:
                 findings.append(f"pointer_target_missing:{pointer.name}")
             else:
                 marker = _json(state / relative)
-                if not verify_completion_marker(marker, state, str(value.get("observation_date") or "")):
+                if not _completion_marker_valid(marker, state, str(value.get("observation_date") or "")):
                     findings.append(f"pointer_marker_invalid:{pointer.name}")
         except (OSError, ValueError, json.JSONDecodeError):
             findings.append(f"pointer_invalid:{pointer.name}")
@@ -630,6 +713,9 @@ def gate(
             findings.append("current_production_sha_not_backed_up")
         if receipt.get("manifest_sha256") != sha256_file(manifest):
             findings.append("snapshot_manifest_digest_mismatch")
+        snapshot_report = verify_snapshot(manifest.parent)
+        if not snapshot_report["ok"]:
+            findings.append("snapshot_contents_failed_verification")
         if not record_is_fresh(receipt, policy.max_backup_age_hours, now):
             findings.append("backup_stale_or_future")
         pointer_material = dict(restore_pointer)

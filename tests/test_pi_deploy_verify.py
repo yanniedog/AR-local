@@ -76,7 +76,7 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
 
 
-def test_backup_gate_executes_candidate_without_switching_checkout(monkeypatch):
+def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
     captured = []
     monkeypatch.setattr(
         pi_deploy_verify,
@@ -85,12 +85,12 @@ def test_backup_gate_executes_candidate_without_switching_checkout(monkeypatch):
     )
     assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
     command = captured[0]
-    assert "git -C /srv/ar-local/AR-local show" in command
-    assert "pi_backup_foundation.py" in command
+    assert "/usr/local/bin/ar-local-backup-gate gate" in command
     assert "--candidate-sha" in command
     assert "--protected-code-sha" in command
     assert "git checkout" not in command
     assert "git merge" not in command
+    assert "git show" not in command
 
 
 def test_backup_gate_failure_blocks_deployment(monkeypatch, capsys):

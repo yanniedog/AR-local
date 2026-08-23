@@ -233,6 +233,7 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
         connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
         connection.execute("INSERT INTO series_observations VALUES (1)")
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
     receipt = backup.create_snapshot(policy, repo, site, data, macro, "pytest")
     snapshot = policy.backup_dir / "snapshots" / str(receipt["snapshot_id"])
     assert backup.verify_snapshot(snapshot)["ok"]
@@ -360,11 +361,12 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
 def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_path: Path) -> None:
     policy = make_policy(tmp_path)
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
     snapshot_id = "snapshot-1"
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     snapshot.mkdir(parents=True)
     manifest = snapshot / "manifest.json"
-    manifest.write_text("{}\n", encoding="utf-8")
+    manifest.write_text('{"files":[]}\n', encoding="utf-8")
     created_at = datetime.now(timezone.utc).isoformat()
     receipt = {
         "schema_version": 1,
@@ -398,6 +400,7 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
 def test_gate_blocks_candidate_not_named_by_receipt(monkeypatch, tmp_path: Path) -> None:
     policy = make_policy(tmp_path)
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
     proof = tmp_path / "boot.json"
     proof.write_text(json.dumps(boot_proof(policy, datetime.now(timezone.utc).isoformat())), encoding="utf-8")
     roots = [tmp_path / name for name in ("repo", "site", "data")]
@@ -445,3 +448,16 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     second_record = json.loads(Path(str(second["record_path"])).read_text())
     assert second_record["previous_record_sha256"] == policy_module.sha256_file(first_path)
     assert len(list((policy.backup_dir / "deployment-records").glob("*.json"))) == 2
+
+
+def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    object.__setattr__(policy, "plan_git_commit", "4a3af1ccbdc24deefe3d12da2f7152946984f459")
+    object.__setattr__(policy, "plan_sha256", "510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc")
+    object.__setattr__(
+        policy,
+        "plan_raw_sha256",
+        policy_module.sha256_file(ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"),
+    )
+    report = backup.verify_plan_document(policy, ROOT)
+    assert report["ok"], report["findings"]

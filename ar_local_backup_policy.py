@@ -86,6 +86,47 @@ def parse_mountinfo(lines: Iterable[str]) -> list[dict[str, str]]:
     return mounts
 
 
+def _root_block_device(node: Path) -> str:
+    parts = node.resolve(strict=True).parts
+    try:
+        index = parts.index("block")
+        return parts[index + 1]
+    except (ValueError, IndexError) as exc:
+        raise ValueError(f"cannot resolve physical block device for {node}") from exc
+
+
+def physical_block_devices(
+    device: str,
+    *,
+    sys_dev_block: Path = Path("/sys/dev/block"),
+    _seen: set[str] | None = None,
+) -> set[str]:
+    """Resolve a major:minor filesystem device to its leaf physical disks."""
+
+    if not re.fullmatch(r"\d+:\d+", device):
+        raise ValueError(f"invalid block device number: {device}")
+    seen = _seen or set()
+    if device in seen:
+        raise ValueError("block device ancestry loop")
+    seen.add(device)
+    node = (sys_dev_block / device).resolve(strict=True)
+    slaves = node / "slaves"
+    children = sorted(slaves.iterdir()) if slaves.is_dir() else []
+    if not children:
+        return {_root_block_device(node)}
+    leaves: set[str] = set()
+    for child in children:
+        info = child.resolve(strict=True) / "dev"
+        leaves.update(
+            physical_block_devices(
+                info.read_text(encoding="ascii").strip(),
+                sys_dev_block=sys_dev_block,
+                _seen=set(seen),
+            )
+        )
+    return leaves
+
+
 def load_env(path: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -190,6 +231,7 @@ def mount_preflight(
     *,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     perform_probe: bool = True,
+    sys_dev_block: Path = Path("/sys/dev/block"),
 ) -> dict[str, object]:
     findings: list[str] = []
     mountpoint = policy.mountpoint.resolve(strict=True)
@@ -210,12 +252,25 @@ def mount_preflight(
         if "rw" not in mount["options"].split(","):
             findings.append("mount_not_read_write")
     mount_device = mountpoint.stat().st_dev
+    backup_physical: set[str] = set()
+    if mount is not None:
+        try:
+            backup_physical = physical_block_devices(mount["device"], sys_dev_block=sys_dev_block)
+        except (OSError, ValueError):
+            findings.append("backup_physical_device_unresolved")
     for root in protected_roots:
         resolved = root.resolve(strict=True)
         if resolved == mountpoint or mountpoint in resolved.parents:
             findings.append(f"protected_root_on_backup_mount:{resolved}")
         if resolved.stat().st_dev == mount_device:
             findings.append(f"backup_not_physically_separate:{resolved}")
+        try:
+            source_number = f"{os.major(resolved.stat().st_dev)}:{os.minor(resolved.stat().st_dev)}"
+            source_physical = physical_block_devices(source_number, sys_dev_block=sys_dev_block)
+            if backup_physical & source_physical:
+                findings.append(f"backup_shares_physical_device:{resolved}")
+        except (AttributeError, OSError, ValueError):
+            findings.append(f"source_physical_device_unresolved:{resolved}")
     backup_dir = policy.backup_dir
     if not backup_dir.is_dir() or backup_dir.is_symlink():
         findings.append("backup_directory_missing_or_symlink")

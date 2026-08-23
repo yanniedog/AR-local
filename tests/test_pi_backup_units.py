@@ -27,6 +27,10 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert preflight < enable
     assert "sudo -u \"$run_user\" test -r \"$config\"" in installer
     assert "ar-local-backup.timer ar-local-restore-drill.timer" in installer
+    assert "configured_identity" in installer
+    assert "service_identity" in installer
+    assert "/usr/local/lib/ar-local-backup" in installer
+    assert "backup-gate.sha256" in installer
     runtime_apply = read("apply-pi-runtime-units.sh")
     assert "ar-local-backup.timer" not in runtime_apply
     assert "ar-local-restore-drill.timer" not in runtime_apply
@@ -53,3 +57,24 @@ def test_timers_run_outside_the_ingest_window() -> None:
     assert "Sun *-*-* 08:00:00 Australia/Hobart" in read("ar-local-restore-drill.timer")
     assert "Persistent=true" in read("ar-local-backup.timer")
     assert "Persistent=true" in read("ar-local-restore-drill.timer")
+    guard = read("ar-local-backup-run.sh")
+    assert "00:30-03:30 ingest window" in guard
+    assert "systemctl is-active --quiet ar-local-daily.service" in guard
+
+
+def test_trusted_gate_is_hash_verified_and_used_by_services() -> None:
+    gate = read("ar-local-backup-gate.sh")
+    assert 'sha256sum -c "$manifest"' in gate
+    assert 'PYTHONPATH="$trusted"' in gate
+    assert "/usr/local/lib/ar-local-backup" in gate
+    assert "/usr/local/bin/ar-local-backup-run" in read("ar-local-backup.service")
+    assert "/usr/local/bin/ar-local-backup-run" in read("ar-local-restore-drill.service")
+    restore = read("ar-local-restore-latest.sh")
+    assert "BackupPolicy.from_env_file" in restore
+    assert "sed -n" not in restore
+
+
+def test_actual_notification_secret_location_is_inventory_only() -> None:
+    implementation = (ROOT / "pi_backup_foundation.py").read_text(encoding="utf-8")
+    assert 'Path("/etc/ar-local/notify.env")' in implementation
+    assert "ingest-notify.env" not in implementation
