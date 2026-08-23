@@ -132,17 +132,32 @@ class BackupPolicy:
         missing = sorted(required - values.keys())
         if missing:
             raise ValueError(f"missing backup configuration: {', '.join(missing)}")
-        mountpoint = Path(values["AR_BACKUP_MOUNTPOINT"])
-        backup_dir = Path(values["AR_BACKUP_DIRECTORY"])
-        if not mountpoint.is_absolute() or not backup_dir.is_absolute():
+        configured_mountpoint = Path(values["AR_BACKUP_MOUNTPOINT"])
+        configured_backup_dir = Path(values["AR_BACKUP_DIRECTORY"])
+        if not configured_mountpoint.is_absolute() or not configured_backup_dir.is_absolute():
             raise ValueError("backup paths must be absolute")
-        if mountpoint not in backup_dir.parents:
-            raise ValueError("backup directory must be a child of the mountpoint")
+        mountpoint = configured_mountpoint.resolve(strict=True)
+        backup_dir = configured_backup_dir.resolve(strict=True)
+        if (
+            configured_mountpoint != mountpoint
+            or configured_backup_dir != backup_dir
+            or configured_mountpoint.is_symlink()
+            or configured_backup_dir.is_symlink()
+            or not backup_dir.is_dir()
+            or mountpoint not in backup_dir.parents
+        ):
+            raise ValueError("backup paths must be canonical real directories with the backup below the mountpoint")
         commit = values["AR_BACKUP_PLAN_GIT_COMMIT"].lower()
         digest = values["AR_BACKUP_PLAN_SHA256"].lower()
         raw_digest = values["AR_BACKUP_PLAN_RAW_SHA256"].lower()
         if not COMMIT_RE.fullmatch(commit) or not SHA256_RE.fullmatch(digest) or not SHA256_RE.fullmatch(raw_digest):
             raise ValueError("plan commit or SHA-256 is invalid")
+        max_backup_age_hours = int(values.get("AR_BACKUP_MAX_AGE_HOURS", "36"))
+        max_restore_age_hours = int(values.get("AR_BACKUP_RESTORE_MAX_AGE_HOURS", "192"))
+        max_boot_proof_age_hours = int(values.get("AR_BACKUP_BOOT_PROOF_MAX_AGE_HOURS", "2160"))
+        min_free_bytes = int(values.get("AR_BACKUP_MIN_FREE_BYTES", "10737418240"))
+        if min(max_backup_age_hours, max_restore_age_hours, max_boot_proof_age_hours, min_free_bytes) <= 0:
+            raise ValueError("backup ages and minimum free bytes must be positive")
         return cls(
             mountpoint=mountpoint,
             expected_source=values["AR_BACKUP_EXPECTED_SOURCE"],
@@ -150,10 +165,10 @@ class BackupPolicy:
             backup_dir=backup_dir,
             expected_uid=int(values["AR_BACKUP_EXPECTED_UID"]),
             expected_gid=int(values["AR_BACKUP_EXPECTED_GID"]),
-            max_backup_age_hours=int(values.get("AR_BACKUP_MAX_AGE_HOURS", "36")),
-            max_restore_age_hours=int(values.get("AR_BACKUP_RESTORE_MAX_AGE_HOURS", "192")),
-            max_boot_proof_age_hours=int(values.get("AR_BACKUP_BOOT_PROOF_MAX_AGE_HOURS", "2160")),
-            min_free_bytes=int(values.get("AR_BACKUP_MIN_FREE_BYTES", "10737418240")),
+            max_backup_age_hours=max_backup_age_hours,
+            max_restore_age_hours=max_restore_age_hours,
+            max_boot_proof_age_hours=max_boot_proof_age_hours,
+            min_free_bytes=min_free_bytes,
             plan_git_commit=commit,
             plan_sha256=digest,
             plan_raw_sha256=raw_digest,

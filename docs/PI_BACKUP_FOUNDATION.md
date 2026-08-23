@@ -32,7 +32,7 @@ The installer performs the same preflight before installing and enabling the 04:
 
 Snapshots are staged under a create-once `.partial-*` directory, hashed, then atomically renamed. The manifest is written last. Backup and restore receipts are append-only; mutable `latest-*.json` files are pointers, not evidence. The snapshot includes the entire production data root, Git bundles for both code repositories, installed AR-local systemd units, relevant nginx and storage configuration, and metadata for secret locations without reading or copying secret contents. The mutable macro SQLite database is copied through SQLite's online backup API and checked semantically.
 
-A restore drill copies the snapshot to scratch storage and checks every recorded hash, every SQLite database, required daily and macro schemas, export contracts, ledger reachability, and observation pointer/marker confinement. A deployment is blocked unless all of the following are independently current and bound to the exact identities:
+A restore drill first requires source-sized free-space headroom, copies the snapshot to a unique scratch directory, and checks every recorded hash, every SQLite database, required daily and macro schemas, export contracts, ledger reachability, and observation pointer/marker confinement. The unique scratch copy is removed before a passing receipt is written; cleanup failure makes the drill fail. A deployment is blocked unless all of the following are independently current and bound to the exact identities:
 
 - a backup receipt for the current production SHA;
 - a passing restore receipt for that same snapshot and manifest hash;
@@ -40,4 +40,4 @@ A restore drill copies the snapshot to scratch storage and checks every recorded
 - the controlled plan identity and checksum;
 - the exact expected mount, filesystem, ownership, mode, capacity, and write/read probe.
 
-The software can validate a boot-proof record but cannot manufacture one. The clone must actually be booted and its network, dashboard, timers, storage identity, code SHA, and evidence hashes recorded. Until the external mount, restore drill, and physical boot test pass, Phase A remains `BLOCKED` and production deployment remains prohibited.
+The software can validate a boot-proof record but cannot manufacture one. The clone must actually be booted and its network, dashboard, timers, configured device identity, mountpoint, filesystem, code SHA, and evidence hashes recorded. The referenced evidence files must remain present and hash-identical when the deployment gate runs. Until the external mount, restore drill, and physical boot test pass, Phase A remains `BLOCKED` and production deployment remains prohibited.

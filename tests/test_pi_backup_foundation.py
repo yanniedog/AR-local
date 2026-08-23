@@ -47,6 +47,7 @@ def make_policy(tmp_path: Path) -> policy_module.BackupPolicy:
 
 
 def test_policy_loads_only_absolute_child_destination(tmp_path: Path) -> None:
+    (tmp_path / "mount/ar-local").mkdir(parents=True)
     config = tmp_path / "backup.env"
     config.write_text(
         "\n".join(
@@ -70,6 +71,8 @@ def test_policy_loads_only_absolute_child_destination(tmp_path: Path) -> None:
 
 
 def test_policy_rejects_destination_outside_mount(tmp_path: Path) -> None:
+    (tmp_path / "mount").mkdir()
+    (tmp_path / "elsewhere").mkdir()
     config = tmp_path / "backup.env"
     config.write_text(
         f"AR_BACKUP_MOUNTPOINT={tmp_path / 'mount'}\n"
@@ -83,7 +86,40 @@ def test_policy_rejects_destination_outside_mount(tmp_path: Path) -> None:
         config.read_text(encoding="utf-8") + f"AR_BACKUP_PLAN_RAW_SHA256={'e' * 64}\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="child"):
+    with pytest.raises(ValueError, match="below the mountpoint"):
+        policy_module.BackupPolicy.from_env_file(config)
+
+
+def test_policy_rejects_nonpositive_capacity(tmp_path: Path) -> None:
+    (tmp_path / "mount/ar-local").mkdir(parents=True)
+    config = tmp_path / "backup.env"
+    config.write_text(
+        f"AR_BACKUP_MOUNTPOINT={tmp_path / 'mount'}\n"
+        "AR_BACKUP_EXPECTED_SOURCE=/dev/test\nAR_BACKUP_EXPECTED_FSTYPE=ext4\n"
+        f"AR_BACKUP_DIRECTORY={tmp_path / 'mount/ar-local'}\n"
+        "AR_BACKUP_EXPECTED_UID=1\nAR_BACKUP_EXPECTED_GID=1\nAR_BACKUP_MIN_FREE_BYTES=-1\n"
+        f"AR_BACKUP_PLAN_GIT_COMMIT={COMMIT}\nAR_BACKUP_PLAN_SHA256={DIGEST}\n"
+        f"AR_BACKUP_PLAN_RAW_SHA256={'e' * 64}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be positive"):
+        policy_module.BackupPolicy.from_env_file(config)
+
+
+def test_policy_rejects_lexical_traversal_even_when_target_is_inside_mount(tmp_path: Path) -> None:
+    (tmp_path / "mount/ar-local").mkdir(parents=True)
+    (tmp_path / "mount/unused").mkdir()
+    config = tmp_path / "backup.env"
+    config.write_text(
+        f"AR_BACKUP_MOUNTPOINT={tmp_path / 'mount'}\n"
+        "AR_BACKUP_EXPECTED_SOURCE=/dev/test\nAR_BACKUP_EXPECTED_FSTYPE=ext4\n"
+        f"AR_BACKUP_DIRECTORY={tmp_path / 'mount/unused/../ar-local'}\n"
+        "AR_BACKUP_EXPECTED_UID=1\nAR_BACKUP_EXPECTED_GID=1\n"
+        f"AR_BACKUP_PLAN_GIT_COMMIT={COMMIT}\nAR_BACKUP_PLAN_SHA256={DIGEST}\n"
+        f"AR_BACKUP_PLAN_RAW_SHA256={'e' * 64}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="canonical"):
         policy_module.BackupPolicy.from_env_file(config)
 
 
@@ -143,6 +179,30 @@ def test_snapshot_verification_detects_same_size_tamper(tmp_path: Path) -> None:
     report = backup.verify_snapshot(snapshot)
     assert not report["ok"]
     assert report["findings"] == ["changed:artifact.bin"]
+
+
+def test_snapshot_verification_rejects_malformed_and_extra_entries(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "extra.bin").write_bytes(b"extra")
+    (snapshot / "manifest.json").write_text(json.dumps({"files": [{"path": "missing-size"}, "bad"]}), encoding="utf-8")
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert "invalid_entry:0" in report["findings"]
+    assert "invalid_entry:1" in report["findings"]
+    assert "unmanifested:extra.bin" in report["findings"]
+
+
+def test_snapshot_verification_rejects_path_escape(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "manifest.json").write_text(
+        json.dumps({"files": [{"path": "../escape", "size": 0, "sha256": "a" * 64}]}),
+        encoding="utf-8",
+    )
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert report["findings"] == ["invalid_entry:0"]
 
 
 def _git_repo(path: Path) -> None:
@@ -223,11 +283,16 @@ def boot_proof(policy: policy_module.BackupPolicy, created_at: str) -> dict[str,
         "exact_commands": ["boot-clone-verify"],
         "deviations": [],
         "boot_id": "boot-1",
-        "backup_device_id": "uuid-1",
+        "backup_device_id": policy.expected_source,
         "network": {"ok": True},
         "dashboard": {"ok": True},
         "ingest_timers": {"ok": True},
-        "storage_identity": {"ok": True, "expected_source": policy.expected_source},
+        "storage_identity": {
+            "ok": True,
+            "source": policy.expected_source,
+            "mountpoint": str(policy.mountpoint),
+            "fstype": policy.expected_fstype,
+        },
         "evidence": [{"path": str(evidence.resolve()), "sha256": policy_module.sha256_file(evidence)}],
         "result": "PASS",
     }
@@ -248,6 +313,48 @@ def test_boot_proof_contract_accepts_complete_record(tmp_path: Path) -> None:
     proof = boot_proof(policy, datetime.now(timezone.utc).isoformat())
     schema = json.loads((ROOT / "contracts/pi-backup-boot-proof-v1.schema.json").read_text())
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(proof)
+
+
+def test_boot_proof_rejects_wrong_device_identity(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    proof = boot_proof(policy, datetime.now(timezone.utc).isoformat())
+    proof["backup_device_id"] = "/dev/wrong"
+    path = tmp_path / "boot.json"
+    path.write_text(json.dumps(proof), encoding="utf-8")
+    report = backup.validate_boot_proof(path, policy, datetime.now(timezone.utc))
+    assert "boot_device_id_mismatch" in report["findings"]
+
+
+def test_internal_runner_rejects_non_git_commands(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="only internal git"):
+        backup._run(("powershell", "Get-ChildItem"), tmp_path)
+
+
+def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    snapshot_id = "snapshot-cleanup"
+    snapshot = policy.backup_dir / "snapshots" / snapshot_id
+    (snapshot / "data").mkdir(parents=True)
+    (snapshot / "data/evidence.txt").write_text("evidence\n", encoding="utf-8")
+    macro = snapshot / "macro/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    files = []
+    for path in sorted(snapshot.rglob("*")):
+        if path.is_file():
+            files.append({"path": path.relative_to(snapshot).as_posix(), "size": path.stat().st_size, "sha256": policy_module.sha256_file(path)})
+    (snapshot / "manifest.json").write_text(
+        json.dumps({"candidate_code_sha": COMMIT, "files": files}), encoding="utf-8"
+    )
+    monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    receipt = backup.restore_drill(policy, snapshot_id, scratch, "pytest")
+    assert receipt["result"] == "PASS", receipt["checks"]
+    assert receipt["scratch_retained"] is False
+    assert list(scratch.iterdir()) == []
 
 
 def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_path: Path) -> None:

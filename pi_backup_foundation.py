@@ -9,10 +9,11 @@ import os
 import shutil
 import shlex
 import sqlite3
+import stat
 import subprocess
 import sys
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping, Sequence
@@ -46,6 +47,10 @@ REQUIRED_DAILY_TABLES = {
     "bank_product_changes",
 }
 REQUIRED_MACRO_TABLES = {"series_observations", "ingest_runs"}
+MACRO_COUNT_QUERIES = {
+    "series_observations": "SELECT COUNT(*) FROM series_observations",
+    "ingest_runs": "SELECT COUNT(*) FROM ingest_runs",
+}
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -56,10 +61,24 @@ def _json(path: Path) -> dict[str, object]:
 
 
 def _run(command: Sequence[str], cwd: Path | None = None) -> str:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, timeout=300)
+    """Run an argv-only internal command; callers provide fixed git verbs, never shell text."""
+
+    if not command or command[0] != "git":
+        raise ValueError("only internal git argv commands are allowed")
+    result = subprocess.run(
+        tuple(command), cwd=cwd, text=True, capture_output=True, timeout=300, shell=False
+    )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or f"command failed: {command[0]}")
     return result.stdout.strip()
+
+
+def _remove_tree(path: Path) -> None:
+    def clear_readonly(function, failing_path, _error) -> None:
+        os.chmod(failing_path, stat.S_IWRITE)
+        function(failing_path)
+
+    shutil.rmtree(path, onerror=clear_readonly)
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -131,18 +150,26 @@ def _tree_metadata(source: Path, exclude: set[Path]) -> dict[str, tuple[int, int
 def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_uri = f"file:{source.as_posix()}?mode=ro"
-    with sqlite3.connect(source_uri, uri=True, timeout=30) as src, sqlite3.connect(destination, timeout=30) as dst:
+    with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src, closing(
+        sqlite3.connect(destination, timeout=30)
+    ) as dst:
         source_quick = src.execute("PRAGMA quick_check").fetchone()[0]
         source_tables = {row[0] for row in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         missing = sorted(REQUIRED_MACRO_TABLES - source_tables)
         if source_quick != "ok" or missing:
             raise ValueError(f"macro source validation failed: quick_check={source_quick}, missing={missing}")
-        source_counts = {name: src.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES)}
+        source_counts = {
+            name: src.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
+            for name in sorted(REQUIRED_MACRO_TABLES)
+        }
         src.backup(dst)
         quick_check = dst.execute("PRAGMA quick_check").fetchone()[0]
         user_version = dst.execute("PRAGMA user_version").fetchone()[0]
         page_count = dst.execute("PRAGMA page_count").fetchone()[0]
-        target_counts = {name: dst.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES)}
+        target_counts = {
+            name: dst.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
+            for name in sorted(REQUIRED_MACRO_TABLES)
+        }
     if quick_check != "ok":
         raise ValueError(f"SQLite backup failed quick_check: {source}")
     if source_counts != target_counts:
@@ -300,14 +327,51 @@ def create_snapshot(
 
 
 def verify_snapshot(snapshot: Path) -> dict[str, object]:
-    manifest = _json(snapshot / "manifest.json")
     findings: list[str] = []
-    for entry in manifest.get("files", []):
-        path = snapshot / str(entry["path"])
-        if not path.is_file():
-            findings.append(f"missing:{entry['path']}")
-        elif path.stat().st_size != entry["size"] or sha256_file(path) != entry["sha256"]:
-            findings.append(f"changed:{entry['path']}")
+    try:
+        manifest = _json(snapshot / "manifest.json")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return {"ok": False, "findings": [f"invalid_manifest:{exc}"], "manifest": {}}
+    entries = manifest.get("files")
+    if not isinstance(entries, list):
+        return {"ok": False, "findings": ["invalid_manifest_files"], "manifest": manifest}
+    expected_paths: set[str] = set()
+    root = snapshot.resolve()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            findings.append(f"invalid_entry:{index}")
+            continue
+        relative_text = entry.get("path")
+        relative = Path(str(relative_text or ""))
+        size = entry.get("size")
+        digest = str(entry.get("sha256") or "")
+        if (
+            not relative_text
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or not isinstance(size, int)
+            or size < 0
+            or not SHA256_RE.fullmatch(digest)
+            or relative.as_posix() in expected_paths
+        ):
+            findings.append(f"invalid_entry:{index}")
+            continue
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root):
+            findings.append(f"path_escape:{relative.as_posix()}")
+            continue
+        expected_paths.add(relative.as_posix())
+        if not path.is_file() or path.is_symlink():
+            findings.append(f"missing:{relative.as_posix()}")
+        elif path.stat().st_size != size or sha256_file(path) != digest:
+            findings.append(f"changed:{relative.as_posix()}")
+    actual_paths = {
+        path.relative_to(snapshot).as_posix()
+        for path in snapshot.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
+    }
+    for extra in sorted(actual_paths - expected_paths):
+        findings.append(f"unmanifested:{extra}")
     return {"ok": not findings, "findings": findings, "manifest": manifest}
 
 
@@ -318,7 +382,9 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     banks = _json(banks_files[0])
     run_date = banks_files[0].stem.removeprefix("banks-")
     expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True) as connection:
+    with closing(
+        sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
+    ) as connection:
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
@@ -351,7 +417,9 @@ def _verify_restored_state(data_root: Path) -> dict[str, object]:
     sqlite_results: list[dict[str, object]] = []
     for path in sorted(data_root.rglob("*.sqlite")):
         try:
-            with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+            with closing(
+                sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+            ) as connection:
                 result = connection.execute("PRAGMA quick_check").fetchone()[0]
             sqlite_record: dict[str, object] = {
                 "path": path.relative_to(data_root).as_posix(),
@@ -361,15 +429,24 @@ def _verify_restored_state(data_root: Path) -> dict[str, object]:
             if result != "ok":
                 findings.append(f"sqlite_quick_check:{path}")
             if path.name == "local-cdr.sqlite":
-                with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+                with closing(
+                    sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+                ) as connection:
                     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 missing = sorted(REQUIRED_DAILY_TABLES - tables)
                 if missing:
                     findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
                 else:
-                    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+                    with closing(
+                        sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+                    ) as connection:
                         for table, columns in TABLE_COLUMNS.items():
-                            actual_columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                            actual_columns = {
+                                row[0]
+                                for row in connection.execute(
+                                    "SELECT name FROM pragma_table_info(?)", (table,)
+                                )
+                            }
                             if not set(columns).issubset(actual_columns):
                                 findings.append(f"daily_columns_missing:{path}:{table}")
                     try:
@@ -419,6 +496,7 @@ def restore_drill(
     operator: str,
     exact_commands: list[str] | None = None,
 ) -> dict[str, object]:
+    started_at = utc_now()
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     verified = verify_snapshot(snapshot)
     if not verified["ok"]:
@@ -429,23 +507,41 @@ def restore_drill(
             raise ValueError("scratch restore must be outside backup storage")
     destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
     destination.mkdir(parents=True)
-    shutil.copytree(snapshot / "data", destination / "data")
-    result = _verify_restored_state(destination / "data")
-    macro_source = snapshot / "macro/local-macro.sqlite"
-    macro_target = destination / "macro/local-macro.sqlite"
-    macro_target.parent.mkdir(parents=True)
-    shutil.copy2(macro_source, macro_target)
-    with sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True) as connection:
-        macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
-        macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        macro_counts = {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)}
-    result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
-    missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
-    if macro_quick != "ok" or missing_macro:
-        result["ok"] = False
-        result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+    snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
+    if shutil.disk_usage(scratch_root).free < snapshot_bytes + 1024**3:
+        destination.rmdir()
+        raise ValueError("scratch storage lacks restore headroom")
+    try:
+        shutil.copytree(snapshot / "data", destination / "data")
+        result = _verify_restored_state(destination / "data")
+        macro_source = snapshot / "macro/local-macro.sqlite"
+        macro_target = destination / "macro/local-macro.sqlite"
+        macro_target.parent.mkdir(parents=True)
+        shutil.copy2(macro_source, macro_target)
+        with closing(
+            sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
+        ) as connection:
+            macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+            macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            macro_counts = {
+                name: connection.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
+                for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)
+            }
+        result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
+        missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
+        if macro_quick != "ok" or missing_macro:
+            result["ok"] = False
+            result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+    finally:
+        try:
+            _remove_tree(destination)
+        except OSError as exc:
+            if "result" not in locals():
+                raise
+            result["ok"] = False
+            result["findings"].append(f"scratch_cleanup_failed:{type(exc).__name__}")
     manifest_sha = sha256_file(snapshot / "manifest.json")
-    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": False, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)
@@ -468,6 +564,8 @@ def validate_boot_proof(path: Path, policy: BackupPolicy, now: datetime, candida
         findings.append("boot_candidate_sha_mismatch")
     if not COMMIT_RE.fullmatch(str(proof.get("candidate_code_sha") or "")):
         findings.append("boot_candidate_sha_invalid")
+    if proof.get("backup_device_id") != policy.expected_source:
+        findings.append("boot_device_id_mismatch")
     if not record_is_fresh(proof, policy.max_boot_proof_age_hours, now):
         findings.append("boot_proof_stale_or_future")
     evidence = proof.get("evidence")
@@ -485,8 +583,14 @@ def validate_boot_proof(path: Path, policy: BackupPolicy, now: datetime, candida
         if not isinstance(value, Mapping) or value.get("ok") is not True:
             findings.append(f"boot_{field}_not_verified")
     storage = proof.get("storage_identity")
-    if isinstance(storage, Mapping) and storage.get("expected_source") != policy.expected_source:
-        findings.append("boot_storage_identity_mismatch")
+    if isinstance(storage, Mapping):
+        expected_storage = {
+            "source": policy.expected_source,
+            "mountpoint": str(policy.mountpoint),
+            "fstype": policy.expected_fstype,
+        }
+        if any(storage.get(key) != value for key, value in expected_storage.items()):
+            findings.append("boot_storage_identity_mismatch")
     if not isinstance(proof.get("exact_commands"), list) or not proof.get("exact_commands"):
         findings.append("boot_commands_missing")
     if not isinstance(proof.get("deviations"), list):
