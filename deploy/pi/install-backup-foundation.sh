@@ -49,6 +49,7 @@ trusted="/usr/local/lib/ar-local-backup"
 sudo install -d -o root -g root -m 0755 "$trusted"
 for name in \
   ar_local_backup_policy.py \
+  ar_local_backup_scope.py \
   ar_local_boot_proof.py \
   ar_local_checkout.py \
   ar_local_deployment_chain.py \
@@ -71,6 +72,7 @@ done
   cd "$repo"
   sha256sum \
     ar_local_backup_policy.py \
+    ar_local_backup_scope.py \
     ar_local_boot_proof.py \
     ar_local_checkout.py \
     ar_local_deployment_chain.py \

@@ -35,6 +35,7 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "/usr/local/lib/ar-local-backup" in installer
     assert "ar_local_operation_lock.py" in installer
     assert "ar_local_boot_proof.py" in installer
+    assert "ar_local_backup_scope.py" in installer
     assert "ar_local_checkout.py" in installer
     assert "ar_local_deployment_chain.py" in installer
     assert "ar_local_rollback_record.py" in installer

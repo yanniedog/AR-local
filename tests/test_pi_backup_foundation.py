@@ -30,6 +30,66 @@ COMMIT = "a" * 40
 DIGEST = "b" * 64
 
 
+def valid_snapshot_manifest(files: list[dict[str, object]]) -> dict[str, object]:
+    timestamp = "2026-08-24T00:00:00+00:00"
+    return {
+        "schema_version": 1,
+        "snapshot_id": "pytest-snapshot",
+        "created_at": timestamp,
+        "started_at": timestamp,
+        "completed_at": timestamp,
+        "operator": "pytest",
+        "plan_document_id": "ARL-OPS-001",
+        "plan_version": "1.0",
+        "plan_git_commit": COMMIT,
+        "plan_sha256": DIGEST,
+        "plan_raw_sha256": "e" * 64,
+        "candidate_code_sha": COMMIT,
+        "repositories": {},
+        "source_paths": {},
+        "secret_locations": [],
+        "data_scope": {
+            "policy_version": 1,
+            "included": ["runs", "state"],
+            "excluded": [
+                {
+                    "path": ".daily-export-stage",
+                    "exists": False,
+                    "contents_copied": False,
+                    "reason": "transient staging",
+                },
+                {
+                    "path": "netdata",
+                    "exists": False,
+                    "contents_copied": False,
+                    "reason": "telemetry state",
+                },
+            ],
+            "unknown_roots_allowed": False,
+        },
+        "system_configuration": [],
+        "systemd_enablement": [],
+        "macro_backup": {},
+        "source_data_bytes": 0,
+        "capacity_plan": {
+            "snapshot_payload_bytes": 0,
+            "staged_payload_bytes": 0,
+            "per_snapshot_metadata_reserve_bytes": 1,
+            "retained_snapshots": 0,
+            "remaining_slots": 1,
+            "required_free_bytes": 1,
+            "required_after_staging_bytes": 1,
+            "available_free_bytes": 1,
+            "available_after_staging_bytes": 1,
+        },
+        "category_summary": {},
+        "files": files,
+        "exact_commands": [],
+        "deviations": [],
+        "result": "PASS",
+    }
+
+
 def make_policy(tmp_path: Path) -> policy_module.BackupPolicy:
     mount = tmp_path / "mount"
     destination = mount / "ar-local"
@@ -213,9 +273,9 @@ def test_snapshot_verification_detects_same_size_tamper(tmp_path: Path) -> None:
     snapshot.mkdir()
     artifact = snapshot / "artifact.bin"
     artifact.write_bytes(b"good")
-    manifest = {
-        "files": [{"path": "artifact.bin", "size": 4, "sha256": policy_module.sha256_file(artifact)}]
-    }
+    manifest = valid_snapshot_manifest(
+        [{"path": "artifact.bin", "size": 4, "sha256": policy_module.sha256_file(artifact)}]
+    )
     (snapshot / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert backup.verify_snapshot(snapshot)["ok"]
     artifact.write_bytes(b"evil")
@@ -245,7 +305,19 @@ def test_snapshot_verification_rejects_path_escape(tmp_path: Path) -> None:
     )
     report = backup.verify_snapshot(snapshot)
     assert not report["ok"]
-    assert report["findings"] == ["invalid_entry:0"]
+    assert "invalid_entry:0" in report["findings"]
+
+
+def test_snapshot_verification_rejects_manifest_without_scope_contract(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "manifest.json").write_text('{"files":[]}\n', encoding="utf-8")
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert any(
+        item.startswith("manifest_schema_invalid:$:") and "data_scope" in item
+        for item in report["findings"]
+    )
 
 
 def test_snapshot_verification_rejects_symlinked_directory(tmp_path: Path) -> None:
@@ -346,6 +418,10 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     (data / "runs/2026-08-24/_exports").mkdir(parents=True)
     (data / "runs/2026-08-24/_exports/evidence.json").write_text("{}\n", encoding="utf-8")
     (data / "state").mkdir()
+    (data / ".daily-export-stage").mkdir()
+    (data / "netdata/lib/bearer_tokens").mkdir(parents=True)
+    netdata_secret = data / "netdata/lib/mcp_dev_preview_api_key"
+    netdata_secret.write_text("never copy this secret", encoding="utf-8")
     macro = repo / "state/local-macro.sqlite"
     macro.parent.mkdir()
     with sqlite3.connect(macro) as connection:
@@ -370,7 +446,19 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     assert (snapshot / "macro/local-macro.sqlite").is_file()
     assert not (snapshot / "data/state/daily-ingest.lock").exists()
     assert not (snapshot / "data/state/.daily-ingest.lock.recovery-lock").exists()
+    assert not (snapshot / "data/netdata").exists()
+    assert not (snapshot / "data/.daily-export-stage").exists()
     manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["data_scope"]["included"] == ["runs", "state"]
+    assert next(
+        item for item in manifest["data_scope"]["excluded"] if item["path"] == "netdata"
+    )["contents_copied"] is False
+    secret_record = next(
+        item for item in manifest["secret_locations"] if item["path"] == str(netdata_secret)
+    )
+    assert "sha256" not in secret_record
+    assert secret_record["metadata_status"] == "AVAILABLE"
+    assert manifest["capacity_plan"]["remaining_slots"] == policy.retention_count
     policy_entry = next(
         item for item in manifest["system_configuration"] if item["path"] == str(config)
     )
@@ -396,6 +484,66 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
         )
     assert (policy.backup_dir / "latest-backup.json").read_bytes() == latest_before
     assert len(list((policy.backup_dir / "snapshots").iterdir())) == 1
+    assert not list(policy.backup_dir.glob(".partial-*"))
+
+
+def test_snapshot_reserves_capacity_for_every_remaining_retention_slot(monkeypatch, tmp_path: Path) -> None:
+    policy = replace(make_policy(tmp_path), retention_count=3, min_free_bytes=1)
+    repo = tmp_path / "repo"
+    site = tmp_path / "site"
+    _git_repo(repo)
+    _git_repo(site)
+    data = tmp_path / "data"
+    (data / "runs").mkdir(parents=True)
+    (data / "runs/evidence.bin").write_bytes(b"x" * 1024)
+    (data / "state").mkdir()
+    macro = repo / "state/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    monkeypatch.setattr(
+        backup,
+        "mount_preflight",
+        lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}},
+    )
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
+    one_generation_only = type("Usage", (), {"free": 1024**3 + 1024 + macro.stat().st_size})()
+    monkeypatch.setattr(backup.shutil, "disk_usage", lambda _path: one_generation_only)
+    with pytest.raises(RuntimeError, match="retention reserve"):
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+    assert not list(policy.backup_dir.glob(".partial-*"))
+
+
+def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp_path: Path) -> None:
+    policy = replace(make_policy(tmp_path), retention_count=2, min_free_bytes=1)
+    repo = tmp_path / "repo"
+    site = tmp_path / "site"
+    _git_repo(repo)
+    _git_repo(site)
+    for source in (repo, site):
+        (source / "bundle-payload.bin").write_bytes(os.urandom(256 * 1024))
+        subprocess.run(("git", "add", "bundle-payload.bin"), cwd=source, check=True)
+        subprocess.run(("git", "commit", "-q", "-m", "payload"), cwd=source, check=True)
+    data = tmp_path / "data"
+    (data / "runs").mkdir(parents=True)
+    (data / "runs/evidence.bin").write_bytes(b"x")
+    (data / "state").mkdir()
+    macro = repo / "state/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    monkeypatch.setattr(
+        backup,
+        "mount_preflight",
+        lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}},
+    )
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
+    incomplete_only = type("Usage", (), {"free": 1024**3 + 64 * 1024})()
+    monkeypatch.setattr(backup.shutil, "disk_usage", lambda _path: incomplete_only)
+    with pytest.raises(RuntimeError, match="complete-snapshot retention reserve"):
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
     assert not list(policy.backup_dir.glob(".partial-*"))
 
 
@@ -531,7 +679,7 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
         if path.is_file():
             files.append({"path": path.relative_to(snapshot).as_posix(), "size": path.stat().st_size, "sha256": policy_module.sha256_file(path)})
     (snapshot / "manifest.json").write_text(
-        json.dumps({"candidate_code_sha": COMMIT, "files": files}), encoding="utf-8"
+        json.dumps(valid_snapshot_manifest(files)), encoding="utf-8"
     )
     monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
     scratch = tmp_path / "missing-parent/scratch"
@@ -558,7 +706,7 @@ def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch
         if path.is_file()
     ]
     (snapshot / "manifest.json").write_text(
-        json.dumps({"candidate_code_sha": COMMIT, "files": files}), encoding="utf-8"
+        json.dumps(valid_snapshot_manifest(files)), encoding="utf-8"
     )
     latest = policy.backup_dir / "latest-restore.json"
     latest.write_text('{"result":"PASS","receipt_path":"receipts/previous.json"}\n', encoding="utf-8")
@@ -639,7 +787,8 @@ def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, t
     repo, site, data = (tmp_path / name for name in ("repo", "site", "data"))
     _git_repo(repo)
     _git_repo(site)
-    data.mkdir()
+    (data / "runs").mkdir(parents=True)
+    (data / "state").mkdir()
     macro = tmp_path / "macro.sqlite"
     with sqlite3.connect(macro) as connection:
         connection.execute("CREATE TABLE series_observations(id INTEGER)")
@@ -737,7 +886,7 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     snapshot.mkdir(parents=True)
     manifest = snapshot / "manifest.json"
-    manifest.write_text('{"files":[]}\n', encoding="utf-8")
+    manifest.write_text(json.dumps(valid_snapshot_manifest([])), encoding="utf-8")
     manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
     manifest_archive.parent.mkdir()
     manifest_archive.write_bytes(manifest.read_bytes())

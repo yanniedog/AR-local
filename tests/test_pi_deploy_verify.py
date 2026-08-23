@@ -321,6 +321,7 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
 @pytest.mark.parametrize(
     "path",
     (
+        "ar_local_backup_scope.py",
         "ar_local_boot_proof.py",
         "ar_local_checkout.py",
         "ar_local_deployment_chain.py",
