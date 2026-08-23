@@ -37,9 +37,11 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "ar_local_boot_proof.py" in installer
     assert "ar_local_checkout.py" in installer
     assert "ar_local_deployment_chain.py" in installer
+    assert "ar_local_rollback_record.py" in installer
     assert "pi-backup-boot-proof-v1.schema.json" in installer
     assert "pi-deployment-acceptance-v1.schema.json" in installer
     assert "pi-preservation-snapshot-v1.schema.json" in installer
+    assert "pi-rollback-acceptance-v1.schema.json" in installer
     assert "pi_ingest_terminal.py" in installer
     assert "backup-gate.sha256" in installer
     assert 'install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills' in installer

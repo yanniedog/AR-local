@@ -22,6 +22,7 @@ import ar_local_backup_policy as policy_module  # noqa: E402
 import ar_local_checkout  # noqa: E402
 import ar_local_deployment_chain as deployment_chain  # noqa: E402
 import ar_local_operation_lock as operation_lock  # noqa: E402
+import ar_local_rollback_record as rollback_record  # noqa: E402
 import pi_backup_foundation as backup  # noqa: E402
 import cdr_outputs  # noqa: E402
 
@@ -607,18 +608,31 @@ def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, t
     )
 
     lock_entries = 0
+    lock_active = False
 
     class AddSnapshotWhileAcquiring:
         def __enter__(self):
-            nonlocal lock_entries
+            nonlocal lock_active, lock_entries
             lock_entries += 1
+            lock_active = True
             if lock_entries == 2:
                 (snapshots / "two").mkdir()
 
         def __exit__(self, *_args):
+            nonlocal lock_active
+            lock_active = False
             return None
 
     monkeypatch.setattr(backup, "production_lock", lambda *_args: AddSnapshotWhileAcquiring())
+    monkeypatch.setattr(
+        backup,
+        "git_state",
+        lambda path: (
+            {"path": str(path), "commit": COMMIT, "clean": True, "status": []}
+            if lock_active
+            else pytest.fail("repository identity sampled outside production lock")
+        ),
+    )
     monkeypatch.setattr(
         backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}}
     )
@@ -633,6 +647,43 @@ def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, t
     with pytest.raises(RuntimeError, match="retention ceiling reached before publication"):
         backup.create_snapshot(policy, repo, site, data, macro, "pytest")
     assert lock_entries == 2
+
+
+def test_verified_rollback_writes_immutable_record_and_evidence(monkeypatch, tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    monkeypatch.setattr(
+        rollback_record,
+        "mount_preflight",
+        lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}},
+    )
+    repo = tmp_path / "repo"
+    data = tmp_path / "data"
+    _git_repo(repo)
+    data.mkdir()
+    protected = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    record = rollback_record.record_rollback_acceptance(
+        policy,
+        repo,
+        repo,
+        data,
+        protected,
+        "b" * 40,
+        "pytest",
+        ["deploy candidate", "rollback checkout"],
+        services_verified=True,
+        dashboard_verified=True,
+    )
+    record_path = Path(record["record_path"])
+    stored = json.loads(record_path.read_text(encoding="utf-8"))
+    assert stored["result"] == "ROLLED_BACK"
+    assert stored["candidate_code_sha"] == "b" * 40
+    assert stored["protected_code_sha"] == protected
+    evidence = Path(stored["evidence"][0]["path"])
+    assert policy_module.sha256_file(evidence) == stored["evidence"][0]["sha256"]
+    schema = json.loads((ROOT / "contracts/pi-rollback-acceptance-v1.schema.json").read_text())
+    assert not list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(stored))
 
 
 def test_pointer_fields_are_bound_to_marker_and_contract(monkeypatch, tmp_path: Path) -> None:

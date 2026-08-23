@@ -97,12 +97,14 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "ar_local_checkout.py",
     "ar_local_deployment_chain.py",
     "ar_local_operation_lock.py",
+    "ar_local_rollback_record.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "contracts/export-contract-v2.schema.json",
     "contracts/pi-backup-boot-proof-v1.schema.json",
     "contracts/pi-deployment-acceptance-v1.schema.json",
     "contracts/pi-preservation-snapshot-v1.schema.json",
+    "contracts/pi-rollback-acceptance-v1.schema.json",
     "verify_local.py",
     "cdr_dashboard_server.py",
     "package.json",
@@ -800,10 +802,16 @@ def record_deployment_acceptance(
     return EXIT_OK
 
 
-def rollback_to_protected_commit(protected_commit: str, *, dry_run: bool = False) -> int:
+def rollback_to_protected_commit(
+    protected_commit: str,
+    failed_candidate: str,
+    parent_command: str,
+    *,
+    dry_run: bool = False,
+) -> int:
     """Restore the exact pre-deploy SHA when post-activation acceptance fails."""
 
-    if not FULL_COMMIT_RE.fullmatch(protected_commit):
+    if not FULL_COMMIT_RE.fullmatch(protected_commit) or not FULL_COMMIT_RE.fullmatch(failed_candidate):
         return EXIT_CONFIG
     ar = pi_ar_repo()
     script = (
@@ -829,6 +837,21 @@ def rollback_to_protected_commit(protected_commit: str, *, dry_run: bool = False
     if wait_for_http_smoke(pi_base_url()) != EXIT_OK:
         print("pi_deploy_verify: rollback dashboard verification failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
+    record_script = (
+        f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-rollback "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(pi_site_repo())} --data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(failed_candidate)} "
+        f"--parent-command {shell_quote(parent_command)} "
+        f"--parent-command {shell_quote(script)} --dashboard-verified --services-verified"
+    )
+    code, out, err = run_ssh(record_script, dry_run=False)
+    if code != 0:
+        print(err or out or "pi_deploy_verify: rollback acceptance record failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: rollback acceptance recorded:\n{out}")
     print(f"pi_deploy_verify: ROLLED_BACK to protected commit {protected_commit}")
     return EXIT_OK
 
@@ -979,7 +1002,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         dry_run=False,
     )
     if acceptance != EXIT_OK:
-        rollback = rollback_to_protected_commit(snap["AR_HEAD"], dry_run=False)
+        rollback = rollback_to_protected_commit(
+            snap["AR_HEAD"], expected_commit, args.effective_command, dry_run=False
+        )
         if rollback != EXIT_OK:
             print(
                 "pi_deploy_verify: CRITICAL acceptance failed and rollback was not verified",

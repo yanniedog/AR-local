@@ -36,6 +36,7 @@ from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
 from ar_local_checkout import git_command, git_state, install_candidate, rollback_candidate
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
+from ar_local_rollback_record import record_rollback_acceptance
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SECRET_PATHS = (
@@ -258,9 +259,6 @@ def create_snapshot(
     check = preflight(policy, repo, site_repo, data_root)
     if not check["ok"]:
         raise RuntimeError(f"backup preflight failed: {check['findings']}")
-    repos = {"ar_local": git_state(repo), "site": git_state(site_repo)}
-    if not all(state["clean"] for state in repos.values()):
-        raise RuntimeError("production checkout is dirty")
     created_at = utc_now()
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:12]
     staging = policy.backup_dir / f".partial-{snapshot_id}"
@@ -269,6 +267,9 @@ def create_snapshot(
     lock = data_root / "state" / "daily-ingest.lock"
     try:
         with production_lock(lock, "backup"):
+            repos = {"ar_local": git_state(repo), "site": git_state(site_repo)}
+            if not all(state["clean"] for state in repos.values()):
+                raise RuntimeError("production checkout is dirty")
             snapshots_root = policy.backup_dir / "snapshots"
             if snapshots_root.is_symlink() or (
                 snapshots_root.exists() and not snapshots_root.is_dir()
@@ -924,7 +925,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "install-checkout", "rollback-checkout", "record-deployment"))
+    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "install-checkout", "rollback-checkout", "record-deployment", "record-rollback"))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repo", type=Path, default=Path("/srv/ar-local/AR-local"))
     parser.add_argument("--site-repo", type=Path, default=Path("/srv/ar-local/australianrates"))
@@ -970,6 +971,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not args.protected_code_sha:
                 raise ValueError("--protected-code-sha is required")
             report = rollback_candidate(repo, data_root, args.protected_code_sha)
+        elif args.command == "record-rollback":
+            if not args.candidate_sha or not args.protected_code_sha:
+                raise ValueError("--candidate-sha and --protected-code-sha are required")
+            report = record_rollback_acceptance(policy, repo, site_repo, data_root, args.protected_code_sha, args.candidate_sha, args.operator, [*args.parent_command, exact_command], services_verified=args.services_verified, dashboard_verified=args.dashboard_verified)
         else:
             if not args.candidate_sha or not args.protected_code_sha:
                 raise ValueError("--candidate-sha and --protected-code-sha are required")
@@ -987,10 +992,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 services_verified=args.services_verified,
             )
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 0 if report.get("ok", report.get("result") == "PASS") else 1
+        return 0 if report.get("ok", report.get("result") in {"PASS", "ROLLED_BACK"}) else 1
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "result": "BLOCKED", "error": str(exc)}), file=sys.stderr)
-        lock_busy = args.command in {"install-checkout", "rollback-checkout"} and str(exc).startswith(
+        lock_busy = args.command in {"install-checkout", "rollback-checkout", "record-rollback"} and str(exc).startswith(
             "production lock"
         )
         return 75 if lock_busy else 1

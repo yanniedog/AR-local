@@ -145,6 +145,7 @@ def test_main_preserves_actual_deploy_argv_for_acceptance(monkeypatch):
 
 def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
     protected = "b" * 40
+    candidate = "a" * 40
     commands = []
     monkeypatch.setattr(
         pi_deploy_verify,
@@ -158,10 +159,16 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
         lambda **_kwargs: {"AR_HEAD": protected},
     )
     monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
-    assert pi_deploy_verify.rollback_to_protected_commit(protected) == pi_deploy_verify.EXIT_OK
+    assert (
+        pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
+        == pi_deploy_verify.EXIT_OK
+    )
     assert "ar-local-backup-gate rollback-checkout" in commands[0]
     assert f"--protected-code-sha {protected}" in commands[0]
     assert "rm -f" not in commands[0]
+    assert "ar-local-backup-gate record-rollback" in commands[1]
+    assert f"--candidate-sha {candidate}" in commands[1]
+    assert "--dashboard-verified --services-verified" in commands[1]
 
 
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
@@ -318,11 +325,13 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
         "ar_local_checkout.py",
         "ar_local_deployment_chain.py",
         "ar_local_operation_lock.py",
+        "ar_local_rollback_record.py",
         "pi_ingest_terminal.py",
         "contracts/export-contract-v2.schema.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
         "contracts/pi-deployment-acceptance-v1.schema.json",
         "contracts/pi-preservation-snapshot-v1.schema.json",
+        "contracts/pi-rollback-acceptance-v1.schema.json",
     ),
 )
 def test_every_trusted_backup_gate_input_requires_pi_deploy(path):
@@ -392,14 +401,14 @@ def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
     monkeypatch.setattr(
         pi_deploy_verify,
         "rollback_to_protected_commit",
-        lambda commit, **_kwargs: rolled_back.append(commit) or pi_deploy_verify.EXIT_OK,
+        lambda *values, **_kwargs: rolled_back.append(values) or pi_deploy_verify.EXIT_OK,
     )
     args = pi_deploy_verify.build_parser().parse_args(
         ["--deploy", "--expected-commit", candidate]
     )
     args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
-    assert rolled_back == [protected]
+    assert rolled_back == [(protected, candidate, args.effective_command)]
 
 
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
