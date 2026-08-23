@@ -31,6 +31,9 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "service_identity" in installer
     assert "/usr/local/lib/ar-local-backup" in installer
     assert "ar_local_operation_lock.py" in installer
+    assert "ar_local_boot_proof.py" in installer
+    assert "ar_local_deployment_chain.py" in installer
+    assert "pi-backup-boot-proof-v1.schema.json" in installer
     assert "backup-gate.sha256" in installer
     assert 'install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills' in installer
     runtime_apply = read("apply-pi-runtime-units.sh")

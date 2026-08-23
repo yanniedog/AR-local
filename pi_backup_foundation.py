@@ -33,6 +33,8 @@ from ar_local_backup_policy import (
     utc_now,
     validate_plan_identity,
 )
+from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
+from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
@@ -425,6 +427,8 @@ def verify_snapshot(snapshot: Path) -> dict[str, object]:
     for path in snapshot_paths:
         if path.is_symlink():
             findings.append(f"symlink:{path.relative_to(snapshot).as_posix()}")
+        elif not path.is_dir() and not path.is_file():
+            findings.append(f"special:{path.relative_to(snapshot).as_posix()}")
     actual_paths = {
         path.relative_to(snapshot).as_posix()
         for path in snapshot_paths
@@ -689,55 +693,6 @@ def restore_drill(
     return receipt
 
 
-def validate_boot_proof(path: Path, policy: BackupPolicy, now: datetime, candidate_sha: str | None = None) -> dict[str, object]:
-    proof = _json(path)
-    required = ("boot_id", "backup_device_id", "network", "dashboard", "ingest_timers", "storage_identity", "evidence", "created_at", "candidate_code_sha", "operator", "exact_commands", "deviations", "result")
-    findings = [f"missing:{key}" for key in required if key not in proof or proof[key] is None]
-    if proof.get("result") != "PASS":
-        findings.append("boot_result_not_pass")
-    if not validate_plan_identity(proof, policy):
-        findings.append("plan_identity_mismatch")
-    if candidate_sha is not None and proof.get("candidate_code_sha") != candidate_sha:
-        findings.append("boot_candidate_sha_mismatch")
-    if not COMMIT_RE.fullmatch(str(proof.get("candidate_code_sha") or "")):
-        findings.append("boot_candidate_sha_invalid")
-    if proof.get("backup_device_id") != policy.expected_source:
-        findings.append("boot_device_id_mismatch")
-    if not record_is_fresh(proof, policy.max_boot_proof_age_hours, now):
-        findings.append("boot_proof_stale_or_future")
-    evidence = proof.get("evidence")
-    if not isinstance(evidence, list) or not evidence or any(not isinstance(item, dict) or not item.get("path") or not SHA256_RE.fullmatch(str(item.get("sha256") or "")) for item in evidence):
-        findings.append("boot_evidence_invalid")
-    else:
-        for item in evidence:
-            evidence_path = Path(str(item["path"]))
-            if not evidence_path.is_absolute() or not evidence_path.is_file():
-                findings.append(f"boot_evidence_missing:{evidence_path}")
-            elif sha256_file(evidence_path) != item["sha256"]:
-                findings.append(f"boot_evidence_hash_mismatch:{evidence_path}")
-    for field in ("network", "dashboard", "ingest_timers", "storage_identity"):
-        value = proof.get(field)
-        if not isinstance(value, Mapping) or value.get("ok") is not True:
-            findings.append(f"boot_{field}_not_verified")
-    storage = proof.get("storage_identity")
-    if isinstance(storage, Mapping):
-        expected_storage = {
-            "source": policy.expected_source,
-            "mountpoint": str(policy.mountpoint),
-            "fstype": policy.expected_fstype,
-        }
-        if any(storage.get(key) != value for key, value in expected_storage.items()):
-            findings.append("boot_storage_identity_mismatch")
-    if not isinstance(proof.get("exact_commands"), list) or not proof.get("exact_commands"):
-        findings.append("boot_commands_missing")
-    deviations = proof.get("deviations")
-    if not isinstance(deviations, list):
-        findings.append("boot_deviations_invalid")
-    elif deviations or proof.get("deviation_authorization") is not None:
-        findings.append("boot_deviation_not_authorized_by_gate")
-    return {"ok": not findings, "findings": findings, "proof": proof}
-
-
 def gate(
     policy: BackupPolicy,
     repo: Path,
@@ -754,22 +709,27 @@ def gate(
         return {"ok": False, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "findings": ["invalid_code_sha"], "result": "BLOCKED"}
     mount = preflight(policy, repo, site_repo, data_root)
     findings = list(mount["findings"])
+    evidence_binding: dict[str, object] | None = None
     try:
         backup = _json(policy.backup_dir / "latest-backup.json")
         snapshot_id = str(backup["snapshot_id"])
-        receipt = _json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json")
+        backup_receipt_path = policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json"
+        receipt = _json(backup_receipt_path)
         restore_pointer = _json(policy.backup_dir / "latest-restore.json")
         restore_path = (policy.backup_dir / str(restore_pointer["receipt_path"])).resolve()
         if not restore_path.is_relative_to((policy.backup_dir / "receipts").resolve()):
             raise ValueError("restore receipt path escapes receipt directory")
         restore = _json(restore_path)
         manifest = policy.backup_dir / "snapshots" / snapshot_id / "manifest.json"
+        manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
         if backup != receipt or not validate_plan_identity(receipt, policy):
             findings.append("backup_receipt_mismatch")
         if receipt.get("candidate_code_sha") != protected_code_sha:
             findings.append("current_production_sha_not_backed_up")
         if receipt.get("manifest_sha256") != sha256_file(manifest):
             findings.append("snapshot_manifest_digest_mismatch")
+        if receipt.get("manifest_sha256") != sha256_file(manifest_archive):
+            findings.append("snapshot_manifest_archive_digest_mismatch")
         snapshot_report = verify_snapshot(manifest.parent)
         if not snapshot_report["ok"]:
             findings.append("snapshot_contents_failed_verification")
@@ -783,14 +743,23 @@ def gate(
             findings.append("restore_receipt_mismatch")
         if not validate_plan_identity(restore, policy) or not record_is_fresh(restore, policy.max_restore_age_hours, now):
             findings.append("restore_receipt_stale_or_wrong_plan")
+        evidence_binding = {
+            "snapshot_id": snapshot_id,
+            "backup_receipt_path": backup_receipt_path.relative_to(policy.backup_dir).as_posix(),
+            "restore_receipt_path": restore_path.relative_to(policy.backup_dir).as_posix(),
+            "manifest_archive_path": manifest_archive.relative_to(policy.backup_dir).as_posix(),
+            "manifest_sha256": receipt.get("manifest_sha256"),
+        }
     except (OSError, KeyError, ValueError, json.JSONDecodeError):
         findings.append("backup_or_restore_receipt_missing_or_invalid")
     try:
         boot = validate_boot_proof(boot_proof, policy, now, candidate_sha)
         findings.extend(boot["findings"])
+        if evidence_binding is not None:
+            evidence_binding["boot_proof_sha256"] = sha256_file(boot_proof)
     except (OSError, ValueError, json.JSONDecodeError):
         findings.append("boot_proof_missing_or_invalid")
-    return {"ok": not findings, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "findings": findings, "result": "PASS" if not findings else "BLOCKED"}
+    return {"ok": not findings, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "evidence_binding": evidence_binding if not findings else None, "findings": findings, "result": "PASS" if not findings else "BLOCKED"}
 
 
 def record_deployment_acceptance(
@@ -826,41 +795,54 @@ def record_deployment_acceptance(
         raise ValueError("deployed checkout is not the exact clean candidate")
     if not dashboard_verified or not services_verified:
         raise ValueError("dashboard and service verification must precede acceptance")
-    backup = _json(policy.backup_dir / "latest-backup.json")
-    snapshot_id = str(backup["snapshot_id"])
-    backup_receipt = policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json"
-    restore_pointer = _json(policy.backup_dir / "latest-restore.json")
-    restore_receipt = (policy.backup_dir / str(restore_pointer["receipt_path"])).resolve()
-    receipts_root = (policy.backup_dir / "receipts").resolve()
-    if not restore_receipt.is_relative_to(receipts_root):
-        raise ValueError("restore receipt path escapes immutable receipt storage")
-    manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
-    if backup != _json(backup_receipt) or backup.get("manifest_sha256") != sha256_file(manifest_archive):
-        raise ValueError("immutable backup evidence does not match the accepted snapshot")
+    binding = gate_report.get("evidence_binding")
+    if not isinstance(binding, Mapping):
+        raise ValueError("deployment gate did not return immutable evidence identities")
+    backup_root = policy.backup_dir.resolve()
+    bound_paths: dict[str, Path] = {}
+    for key in ("backup_receipt_path", "restore_receipt_path", "manifest_archive_path"):
+        relative = Path(str(binding.get(key) or ""))
+        resolved = (backup_root / relative).resolve()
+        if relative.is_absolute() or ".." in relative.parts or not resolved.is_relative_to(backup_root):
+            raise ValueError(f"bound deployment evidence escapes backup storage: {key}")
+        bound_paths[key] = resolved
+    snapshot_id = str(binding.get("snapshot_id") or "")
+    backup_receipt = bound_paths["backup_receipt_path"]
+    restore_receipt = bound_paths["restore_receipt_path"]
+    manifest_archive = bound_paths["manifest_archive_path"]
+    backup = _json(backup_receipt)
+    restore = _json(restore_receipt)
+    if (
+        backup.get("snapshot_id") != snapshot_id
+        or restore.get("snapshot_id") != snapshot_id
+        or backup.get("result") != "PASS"
+        or restore.get("result") != "PASS"
+        or not validate_plan_identity(backup, policy)
+        or not validate_plan_identity(restore, policy)
+        or backup.get("manifest_sha256") != binding.get("manifest_sha256")
+        or restore.get("manifest_sha256") != binding.get("manifest_sha256")
+        or sha256_file(manifest_archive) != binding.get("manifest_sha256")
+        or sha256_file(boot_proof) != binding.get("boot_proof_sha256")
+    ):
+        raise ValueError("immutable evidence no longer matches the snapshot accepted by the gate")
     completed_at = utc_now()
     records_root = policy.backup_dir / "deployment-records"
     records_root.mkdir(parents=True, exist_ok=True)
+    if records_root.is_symlink() or not records_root.resolve().is_relative_to(backup_root):
+        raise ValueError("deployment record root is not confined to backup storage")
     fsync_directory(records_root.parent)
     with production_lock(records_root / ".chain.lock", "deployment-record"):
         head_path = records_root / "head.json"
-        if head_path.is_file():
-            head = _json(head_path)
-            previous_path = (records_root / str(head["record_path"])).resolve()
-            if not previous_path.is_relative_to(records_root.resolve()) or not previous_path.is_file():
-                raise ValueError("deployment chain head target is invalid")
-            if sha256_file(previous_path) != head.get("record_sha256"):
-                raise ValueError("deployment chain head digest mismatch")
-            previous_record_sha256 = str(head["record_sha256"])
-            sequence = int(head["sequence"]) + 1
-        else:
-            if any(records_root.glob("*.record.json")):
-                raise ValueError("deployment records exist without a chain head")
-            previous_record_sha256 = None
-            sequence = 1
+        sequence, previous_record_sha256 = reconcile_deployment_chain(records_root, policy)
         record_id = f"{sequence:020d}-{uuid.uuid4().hex}-{candidate_sha}"
-        boot_archive = policy.backup_dir / "deployment-evidence" / record_id / "boot-proof.json"
-        atomic_create_json(boot_archive, _json(boot_proof))
-        evidence_paths = (backup_receipt, restore_receipt, manifest_archive, boot_archive)
+        deployment_evidence_root = policy.backup_dir / "deployment-evidence"
+        deployment_evidence_root.mkdir(parents=True, exist_ok=True)
+        if deployment_evidence_root.is_symlink() or not deployment_evidence_root.resolve().is_relative_to(backup_root):
+            raise ValueError("deployment evidence root is not confined to backup storage")
+        boot_evidence = archive_boot_evidence(
+            boot_proof, deployment_evidence_root / record_id
+        )
+        evidence_paths = (backup_receipt, restore_receipt, manifest_archive, *boot_evidence)
         evidence = [
             {"path": str(path.resolve()), "sha256": sha256_file(path)} for path in evidence_paths
         ]

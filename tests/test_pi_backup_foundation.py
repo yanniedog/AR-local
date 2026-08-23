@@ -241,6 +241,21 @@ def test_snapshot_verification_rejects_symlinked_directory(tmp_path: Path) -> No
     assert "symlink:linked" in report["findings"]
 
 
+def test_snapshot_verification_rejects_special_file(tmp_path: Path) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation is unavailable")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    try:
+        os.mkfifo(snapshot / "pipe")
+    except OSError as exc:
+        pytest.skip(f"FIFO creation unavailable: {exc}")
+    (snapshot / "manifest.json").write_text('{"files":[]}\n', encoding="utf-8")
+    report = backup.verify_snapshot(snapshot)
+    assert not report["ok"]
+    assert "special:pipe" in report["findings"]
+
+
 def test_backup_lock_recovers_dead_owner_and_removes_own_lock(monkeypatch, tmp_path: Path) -> None:
     lock = tmp_path / "daily-ingest.lock"
     lock.write_text("pid=999999\nrole=backup\nboot_id=current\n", encoding="utf-8")
@@ -386,6 +401,24 @@ def test_boot_proof_contract_accepts_complete_record(tmp_path: Path) -> None:
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(proof)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("schema_version", None), ("boot_id", ""), ("operator", "")),
+)
+def test_boot_proof_validator_enforces_checked_in_schema(tmp_path: Path, field: str, value: object) -> None:
+    policy = make_policy(tmp_path)
+    proof = boot_proof(policy, datetime.now(timezone.utc).isoformat())
+    if value is None:
+        proof.pop(field)
+    else:
+        proof[field] = value
+    path = tmp_path / f"invalid-{field}.json"
+    path.write_text(json.dumps(proof), encoding="utf-8")
+    report = backup.validate_boot_proof(path, policy, datetime.now(timezone.utc))
+    assert not report["ok"]
+    assert any(item.startswith("boot_schema_invalid:") for item in report["findings"])
+
+
 def test_boot_proof_rejects_wrong_device_identity(tmp_path: Path) -> None:
     policy = make_policy(tmp_path)
     proof = boot_proof(policy, datetime.now(timezone.utc).isoformat())
@@ -497,6 +530,9 @@ def test_gate_binds_candidate_snapshot_restore_and_boot_proof(monkeypatch, tmp_p
     snapshot.mkdir(parents=True)
     manifest = snapshot / "manifest.json"
     manifest.write_text('{"files":[]}\n', encoding="utf-8")
+    manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
+    manifest_archive.parent.mkdir()
+    manifest_archive.write_bytes(manifest.read_bytes())
     created_at = datetime.now(timezone.utc).isoformat()
     receipt = {
         "schema_version": 1,
@@ -555,6 +591,8 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     backup_receipt = {
         "snapshot_id": snapshot_id,
         "manifest_sha256": policy_module.sha256_file(manifest),
+        **policy.plan_identity(),
+        "result": "PASS",
     }
     (receipts / f"{snapshot_id}.backup.json").write_text(
         json.dumps(backup_receipt), encoding="utf-8"
@@ -563,13 +601,38 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
         json.dumps(backup_receipt), encoding="utf-8"
     )
     restore_name = f"{snapshot_id}.restore.test.json"
-    (receipts / restore_name).write_text("{}\n", encoding="utf-8")
+    restore_receipt = {
+        "snapshot_id": snapshot_id,
+        "manifest_sha256": backup_receipt["manifest_sha256"],
+        **policy.plan_identity(),
+        "result": "PASS",
+    }
+    (receipts / restore_name).write_text(json.dumps(restore_receipt), encoding="utf-8")
     (policy.backup_dir / "latest-restore.json").write_text(
         json.dumps({"receipt_path": f"receipts/{restore_name}"}), encoding="utf-8"
     )
     proof = policy.backup_dir / "boot.json"
-    proof.write_text("{}\n", encoding="utf-8")
-    monkeypatch.setattr(backup, "gate", lambda *_args, **_kwargs: {"ok": True, "findings": []})
+    proof.write_text(
+        json.dumps(boot_proof(policy, datetime.now(timezone.utc).isoformat())),
+        encoding="utf-8",
+    )
+    binding = {
+        "snapshot_id": snapshot_id,
+        "backup_receipt_path": f"receipts/{snapshot_id}.backup.json",
+        "restore_receipt_path": f"receipts/{restore_name}",
+        "manifest_archive_path": f"manifests/{snapshot_id}.json",
+        "manifest_sha256": backup_receipt["manifest_sha256"],
+        "boot_proof_sha256": policy_module.sha256_file(proof),
+    }
+    monkeypatch.setattr(
+        backup,
+        "gate",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "findings": [],
+            "evidence_binding": binding,
+        },
+    )
     monkeypatch.setattr(
         backup,
         "git_state",
@@ -587,6 +650,10 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(
         json.loads(first_path.read_text())
     )
+    (policy.backup_dir / "deployment-records/head.json").unlink()
+    (policy.backup_dir / "latest-backup.json").write_text(
+        json.dumps({"snapshot_id": "newer-snapshot"}), encoding="utf-8"
+    )
     second = backup.record_deployment_acceptance(
         policy, *roots, "d" * 40, COMMIT, proof, "pytest", ["deploy command"],
         dashboard_verified=True, services_verified=True,
@@ -599,6 +666,15 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
         "latest-" not in item["path"]
         for item in second_record["evidence"]
     )
+    artifact_paths = [
+        Path(item["path"])
+        for item in second_record["evidence"]
+        if "deployment-evidence" in item["path"] and "artifacts" in item["path"]
+    ]
+    assert len(artifact_paths) == 1
+    original_boot_evidence = policy.backup_dir / "boot-proof.log"
+    original_boot_evidence.unlink()
+    assert artifact_paths[0].read_text(encoding="utf-8") == "boot proof\n"
 
 
 def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> None:

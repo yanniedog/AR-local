@@ -87,6 +87,32 @@ def atomic_replace_json(path: Path, value: Mapping[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def atomic_copy_verified(source: Path, target: Path, expected_sha256: str) -> None:
+    """Create an immutable copy only when its streamed bytes match the declared digest."""
+
+    if not SHA256_RE.fullmatch(expected_sha256):
+        raise ValueError("expected SHA-256 is invalid")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.{os.urandom(6).hex()}.tmp")
+    digest = hashlib.sha256()
+    try:
+        with source.open("rb") as source_stream, temporary.open("xb") as target_stream:
+            for block in iter(lambda: source_stream.read(1024 * 1024), b""):
+                digest.update(block)
+                target_stream.write(block)
+            target_stream.flush()
+            os.fsync(target_stream.fileno())
+        if digest.hexdigest() != expected_sha256:
+            raise ValueError(f"source evidence digest changed: {source}")
+        os.chmod(temporary, 0o444)
+        if target.exists():
+            raise FileExistsError(target)
+        temporary.replace(target)
+        fsync_directory(target.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _decode_mount_field(value: str) -> str:
     return value.replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\")
 

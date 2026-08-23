@@ -37,6 +37,8 @@ trusted="/usr/local/lib/ar-local-backup"
 sudo install -d -o root -g root -m 0755 "$trusted"
 for name in \
   ar_local_backup_policy.py \
+  ar_local_boot_proof.py \
+  ar_local_deployment_chain.py \
   ar_local_operation_lock.py \
   pi_backup_foundation.py \
   cdr_atomic.py \
@@ -47,18 +49,23 @@ do
   sudo install -o root -g root -m 0644 "$repo/$name" "$trusted/$name"
 done
 sudo install -d -o root -g root -m 0755 "$trusted/contracts"
-sudo install -o root -g root -m 0644 "$repo/contracts/export-contract-v2.schema.json" "$trusted/contracts/export-contract-v2.schema.json"
+for name in export-contract-v2.schema.json pi-backup-boot-proof-v1.schema.json; do
+  sudo install -o root -g root -m 0644 "$repo/contracts/$name" "$trusted/contracts/$name"
+done
 (
   cd "$repo"
   sha256sum \
     ar_local_backup_policy.py \
+    ar_local_boot_proof.py \
+    ar_local_deployment_chain.py \
     ar_local_operation_lock.py \
     pi_backup_foundation.py \
     cdr_atomic.py \
     cdr_export_contract.py \
     cdr_file_lock.py \
     cdr_ledger_v2.py \
-    contracts/export-contract-v2.schema.json
+    contracts/export-contract-v2.schema.json \
+    contracts/pi-backup-boot-proof-v1.schema.json
 ) > "$tmp/backup-gate.sha256"
 sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
 for name in ar-local-backup.timer ar-local-restore-drill.timer; do
