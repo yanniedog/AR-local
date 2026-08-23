@@ -5,13 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
+from ar_local_backup_policy import utc_now
 from ar_local_launcher_constants import DAILY_WORKER_COUNT
+from ar_local_operation_lock import production_lock
 from ar_local_pi_runtime import (
     data_runs_root,
     data_state_root,
@@ -23,9 +28,9 @@ import app_payload_observation_gate as gate
 from cdr_export_contract import load_contract
 from cdr_finalization import verify_completion_marker
 from cdr_macro_ingest import DEFAULT_STORE_PATH as DEFAULT_MACRO_STORE_PATH
+from pi_ingest_terminal import record_failure
 
 REPO_ROOT = Path(__file__).resolve().parent
-LOCK_STALE_SECONDS = 6 * 60 * 60
 PENDING_PAYLOAD_FILENAME = "app-payload-publication-pending.json"
 DASHBOARD_UNIT = "ar-local-dashboard.service"
 DASHBOARD_CONTROL_TIMEOUT_SEC = 120
@@ -126,57 +131,18 @@ def prune_payload_staging(out_dir: Path, manifest_name: str) -> int:
 class DailyIngestLock:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.fd: int | None = None
-
-    def _owner_pid(self) -> int | None:
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        for line in text.splitlines():
-            if not line.startswith("pid="):
-                continue
-            try:
-                return int(line.removeprefix("pid=").strip())
-            except ValueError:
-                return None
-        return None
-
-    def _pid_is_alive(self, pid: int) -> bool:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        except OSError:
-            return False
-        return True
+        self._context = None
 
     def __enter__(self) -> "DailyIngestLock":
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            try:
-                age = time.time() - self.path.stat().st_mtime
-            except OSError:
-                age = 0
-            owner_pid = self._owner_pid()
-            owner_alive = bool(owner_pid and self._pid_is_alive(owner_pid))
-            if (owner_pid and not owner_alive) or (age > LOCK_STALE_SECONDS and not owner_alive):
-                self.path.unlink(missing_ok=True)
-                self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            else:
-                raise RuntimeError(f"daily ingest already running: {self.path}")
-        os.write(self.fd, f"pid={os.getpid()}\n".encode("utf-8"))
+        self._context = production_lock(self.path, "ingest")
+        self._context.__enter__()
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
-        if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
-        self.path.unlink(missing_ok=True)
+        context = self._context
+        self._context = None
+        if context is not None:
+            context.__exit__(exc_type, exc, tb)
 
 
 def _app_payload_enabled() -> bool:
@@ -520,7 +486,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = parse_args(argv)
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
+    args = parse_args(effective_argv)
+    exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     ensure_runtime_data_writable(REPO_ROOT)
     lock_path = data_state_root(REPO_ROOT) / "daily-ingest.lock"
     try:
@@ -558,21 +526,39 @@ def main(argv: Optional[list[str]] = None) -> int:
                 sector_args = ["--banks-only"]
             force_args = ["--force"] if args.force else []
             date_args = ["--date", args.date] if args.date else []
+            run_date = args.date or datetime.now(ZoneInfo("Australia/Hobart")).date().isoformat()
+            ingest_started_at = utc_now()
             dashboard_paused = pause_dashboard_for_ingest()
             try:
-                run_checked(
-                    [
-                        sys.executable,
-                        str(REPO_ROOT / "cdr_daily.py"),
-                        "--workers",
-                        str(DAILY_WORKER_COUNT),
-                        "--archive-failed-ram-stage",
-                        *sector_args,
-                        *force_args,
-                        *date_args,
-                    ],
-                    cwd=REPO_ROOT,
-                )
+                try:
+                    run_checked(
+                        [
+                            sys.executable,
+                            str(REPO_ROOT / "cdr_daily.py"),
+                            "--workers",
+                            str(DAILY_WORKER_COUNT),
+                            "--archive-failed-ram-stage",
+                            *sector_args,
+                            *force_args,
+                            *date_args,
+                        ],
+                        cwd=REPO_ROOT,
+                    )
+                except Exception as exc:
+                    try:
+                        record_path = record_failure(
+                            REPO_ROOT,
+                            data_state_root(REPO_ROOT),
+                            run_date,
+                            os.environ.get("USER", "unknown"),
+                            exact_command,
+                            ingest_started_at,
+                            exc,
+                        )
+                        print(f"[pi_daily_sync] terminal failure recorded path={record_path}", file=sys.stderr)
+                    except Exception as record_exc:
+                        print(f"[pi_daily_sync] terminal failure record failed: {record_exc}", file=sys.stderr)
+                    raise
             finally:
                 if dashboard_paused:
                     resume_dashboard_after_ingest()
@@ -600,9 +586,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                     file=sys.stderr,
                 )
     except RuntimeError as exc:
-        if "daily ingest already running" in str(exc):
+        if str(exc).startswith("production lock"):
             print(f"pi_daily_sync: {exc}")
-            return 0
+            return 75
         raise
     return 0
 

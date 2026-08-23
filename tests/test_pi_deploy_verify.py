@@ -51,6 +51,12 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: expected)
     monkeypatch.setattr(
         pi_deploy_verify,
+        "deployment_backup_gate",
+        lambda commit, protected, dry_run=False: calls.append(("gate", commit, protected, dry_run))
+        or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
         "deploy_pull_all",
         lambda commit, dry_run=False: calls.append(("pull", commit, dry_run))
         or pi_deploy_verify.EXIT_OK,
@@ -67,7 +73,102 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
         lambda **_kwargs: pytest.fail("dry-run must not contact the Pi"),
     )
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
-    assert calls == [("pull", expected, True), ("services", True)]
+    assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
+
+
+def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+    )
+    assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
+    command = captured[0]
+    assert "/usr/local/bin/ar-local-backup-gate gate" in command
+    assert "--candidate-sha" in command
+    assert "--protected-code-sha" in command
+    assert "git checkout" not in command
+    assert "git merge" not in command
+    assert "git show" not in command
+
+
+def test_backup_gate_failure_blocks_deployment(monkeypatch, capsys):
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (1, "", "backup proof is stale"),
+    )
+    assert pi_deploy_verify.deployment_backup_gate("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert "stale" in capsys.readouterr().err
+
+
+def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+    )
+    actual_command = "python pi_deploy_verify.py --deploy --expected-commit " + "a" * 40
+    assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, actual_command) == pi_deploy_verify.EXIT_OK
+    command = captured[0]
+    assert "record-deployment" in command
+    assert "--protected-code-sha" in command
+    assert "--candidate-sha" in command
+    assert "--dashboard-verified --services-verified" in command
+    assert actual_command in command
+
+
+def test_controlled_deploy_rejects_empty_rate_override(capsys):
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", "a" * 40, "--allow-empty-rates"]
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+    assert "forbidden for controlled deployment" in capsys.readouterr().err
+
+
+def test_main_preserves_actual_deploy_argv_for_acceptance(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "cmd_deploy",
+        lambda args: captured.append(args.effective_command) or pi_deploy_verify.EXIT_OK,
+    )
+    candidate = "a" * 40
+    assert pi_deploy_verify.main(
+        ["--deploy", "--expected-commit", candidate, "--allow-empty-rates"]
+    ) == pi_deploy_verify.EXIT_OK
+    assert "--allow-empty-rates" in captured[0]
+    assert candidate in captured[0]
+
+
+def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
+    protected = "b" * 40
+    candidate = "a" * 40
+    commands = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: commands.append(command) or (0, "", ""),
+    )
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: {"AR_HEAD": protected},
+    )
+    monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    assert (
+        pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
+        == pi_deploy_verify.EXIT_OK
+    )
+    assert "ar-local-backup-gate rollback-checkout" in commands[0]
+    assert f"--protected-code-sha {protected}" in commands[0]
+    assert "rm -f" not in commands[0]
+    assert "ar-local-backup-gate record-rollback" in commands[1]
+    assert f"--candidate-sha {candidate}" in commands[1]
+    assert "--dashboard-verified --services-verified" in commands[1]
 
 
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
@@ -79,14 +180,10 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     )
     expected = "a" * 40
     assert pi_deploy_verify.deploy_pull_all(expected) == pi_deploy_verify.EXIT_OK
-    assert expected in captured[0]
-    assert "git merge --ff-only" in captured[0]
+    assert f"--candidate-sha {expected}" in captured[0]
+    assert "ar-local-backup-gate install-checkout" in captured[0]
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
-    assert "daily-ingest.lock" in captured[0]
-    assert "role=deploy" in captured[0]
-    assert "kill -0" in captured[0]
-    assert "trap cleanup_lock EXIT" in captured[0]
-    assert "trap 'exit 143' TERM" in captured[0]
+    assert "rm -f" not in captured[0]
 
 
 def test_exact_commit_install_preserves_busy_lock_result(monkeypatch, capsys):
@@ -221,6 +318,26 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
 
 
+@pytest.mark.parametrize(
+    "path",
+    (
+        "ar_local_boot_proof.py",
+        "ar_local_checkout.py",
+        "ar_local_deployment_chain.py",
+        "ar_local_operation_lock.py",
+        "ar_local_rollback_record.py",
+        "pi_ingest_terminal.py",
+        "contracts/export-contract-v2.schema.json",
+        "contracts/pi-backup-boot-proof-v1.schema.json",
+        "contracts/pi-deployment-acceptance-v1.schema.json",
+        "contracts/pi-preservation-snapshot-v1.schema.json",
+        "contracts/pi-rollback-acceptance-v1.schema.json",
+    ),
+)
+def test_every_trusted_backup_gate_input_requires_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
+
+
 def _service_snapshot(**overrides: str) -> dict[str, str]:
     snapshot = {
         "DASHBOARD_WD": "/srv/ar-local/AR-local",
@@ -261,6 +378,37 @@ def _verified_sync_snapshot(ar_commit: str) -> dict[str, str]:
         "SITE_DIRTY": "",
         "DASHBOARD": "active",
     }
+
+
+def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(pi_deploy_verify, "deployment_backup_gate", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_pull_all", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "verify_sync", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "record_deployment_acceptance",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    rolled_back = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "rollback_to_protected_commit",
+        lambda *values, **_kwargs: rolled_back.append(values) or pi_deploy_verify.EXIT_OK,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", candidate]
+    )
+    args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert rolled_back == [(protected, candidate, args.effective_command)]
 
 
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(

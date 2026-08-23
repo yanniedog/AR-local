@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://australianrates.app/contracts/pi-deployment-acceptance-v1.schema.json",
+  "title": "AR-local Pi deployment acceptance v1",
+  "type": "object",
+  "required": [
+    "schema_version", "plan_document_id", "plan_version", "plan_git_commit",
+    "plan_sha256", "plan_raw_sha256", "protected_code_sha", "candidate_code_sha",
+    "operator", "started_at", "completed_at", "exact_commands", "evidence",
+    "sequence", "previous_record_sha256", "checks", "deviations", "deviation_authorization", "result"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "sequence": {"type": "integer", "minimum": 1},
+    "plan_document_id": {"const": "ARL-OPS-001"},
+    "plan_version": {"const": "1.0"},
+    "plan_git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "plan_raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "protected_code_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_code_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "operator": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "exact_commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "previous_record_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "checks": {
+      "type": "object",
+      "required": ["backup_gate", "clean_candidate_checkout", "services", "dashboard"],
+      "properties": {
+        "backup_gate": {"const": "PASS"},
+        "clean_candidate_checkout": {"const": "PASS"},
+        "services": {"const": "PASS"},
+        "dashboard": {"const": "PASS"}
+      },
+      "additionalProperties": false
+    },
+    "deviations": {"type": "array", "maxItems": 0},
+    "deviation_authorization": {"type": "null"},
+    "result": {"const": "PASS"}
+  },
+  "additionalProperties": false
+}

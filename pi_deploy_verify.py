@@ -90,12 +90,29 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_deploy_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
+    "pi_backup_foundation.py",
+    "pi_ingest_terminal.py",
+    "ar_local_backup_policy.py",
+    "ar_local_boot_proof.py",
+    "ar_local_checkout.py",
+    "ar_local_deployment_chain.py",
+    "ar_local_operation_lock.py",
+    "ar_local_rollback_record.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
+    "contracts/export-contract-v2.schema.json",
+    "contracts/pi-backup-boot-proof-v1.schema.json",
+    "contracts/pi-deployment-acceptance-v1.schema.json",
+    "contracts/pi-preservation-snapshot-v1.schema.json",
+    "contracts/pi-rollback-acceptance-v1.schema.json",
     "verify_local.py",
     "cdr_dashboard_server.py",
     "package.json",
 )
+
+
+def pi_backup_config() -> str:
+    return posix_repo_path(_env("AR_PI_BACKUP_CONFIG", "/etc/ar-local/backup.env"))
 
 
 def _env(name: str, default: str) -> str:
@@ -699,30 +716,13 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
     if not FULL_COMMIT_RE.fullmatch(expected_commit):
         print("pi_deploy_verify: invalid expected commit", file=sys.stderr)
         return EXIT_CONFIG
-    remote = pi_remote()
     ar = pi_ar_repo()
-    ingest_lock = f"{pi_data_root()}/state/daily-ingest.lock"
     script = (
-        f"set -e; "
-        f"lock={shell_quote(ingest_lock)}; "
-        "acquire_lock() { "
-        "if (set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null; then return 0; fi; "
-        "owner=$(sed -n 's/^pid=//p' \"$lock\" 2>/dev/null | head -n 1); "
-        "case \"$owner\" in ''|*[!0-9]*) owner='';; esac; "
-        "mtime=$(stat -c %Y \"$lock\" 2>/dev/null || printf 0); now=$(date +%s); "
-        "if { test -n \"$owner\" && kill -0 \"$owner\" 2>/dev/null; } || "
-        "{ test -z \"$owner\" && test $((now-mtime)) -le 21600; }; then return 75; fi; "
-        "rm -f -- \"$lock\"; "
-        "(set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null || return 75; "
-        "}; "
-        "acquire_lock || { echo 'pi_deploy_verify: ingest/deploy lock is busy' >&2; exit 75; }; "
-        "cleanup_lock() { rm -f -- \"$lock\"; }; "
-        "trap cleanup_lock EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; "
-        f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} main && "
-        f"test \"$(git rev-parse {shell_quote(remote)}/main)\" = "
-        f"{shell_quote(expected_commit)} && "
-        "git checkout main && "
-        f"git merge --ff-only {shell_quote(expected_commit)}"
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate install-checkout "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--data-root {shell_quote(pi_data_root())} "
+        f"--candidate-sha {shell_quote(expected_commit)}"
     )
     code, out, err = run_ssh(script, dry_run=dry_run)
     if code == EXIT_BUSY and not dry_run:
@@ -732,6 +732,127 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
         return EXIT_SSH
     if out and not dry_run:
         print(f"pi_deploy_verify: installed exact AR-local commit:\n{out}")
+    return EXIT_OK
+
+
+def deployment_backup_gate(
+    expected_commit: str,
+    protected_commit: str,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Run the candidate's backup gate before changing the production checkout."""
+
+    if not FULL_COMMIT_RE.fullmatch(expected_commit) or not FULL_COMMIT_RE.fullmatch(protected_commit):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    site = pi_site_repo()
+    data = pi_data_root()
+    script = (
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate gate "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(site)} --data-root {shell_quote(data)} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(expected_commit)}"
+    )
+    code, out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        print("pi_deploy_verify: dry-run would require a fresh verified backup, restore drill, and boot proof")
+        return EXIT_OK
+    if code != 0:
+        print(err or out or "pi_deploy_verify: backup gate blocked deployment", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: backup gate PASS:\n{out}")
+    return EXIT_OK
+
+
+def record_deployment_acceptance(
+    expected_commit: str,
+    protected_commit: str,
+    parent_command: str,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Persist the immutable controlled record after all deployment checks pass."""
+
+    if not FULL_COMMIT_RE.fullmatch(expected_commit) or not FULL_COMMIT_RE.fullmatch(protected_commit):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    if not parent_command.strip():
+        return EXIT_CONFIG
+    script = (
+        f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-deployment "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(pi_site_repo())} --data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(expected_commit)} "
+        f"--parent-command {shell_quote(parent_command)} --dashboard-verified --services-verified"
+    )
+    code, out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        print("pi_deploy_verify: dry-run would write an append-only deployment acceptance record")
+        return EXIT_OK
+    if code != 0:
+        print(err or out or "pi_deploy_verify: deployment acceptance record failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: deployment acceptance recorded:\n{out}")
+    return EXIT_OK
+
+
+def rollback_to_protected_commit(
+    protected_commit: str,
+    failed_candidate: str,
+    parent_command: str,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Restore the exact pre-deploy SHA when post-activation acceptance fails."""
+
+    if not FULL_COMMIT_RE.fullmatch(protected_commit) or not FULL_COMMIT_RE.fullmatch(failed_candidate):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    script = (
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate rollback-checkout "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)}"
+    )
+    code, _out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        return EXIT_OK
+    if code != 0:
+        print(err or "pi_deploy_verify: rollback checkout failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if deploy_services(dry_run=False) != EXIT_OK:
+        print("pi_deploy_verify: rollback service restoration failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    snap = pi_remote_snapshot(dry_run=False)
+    if snap is None or snap.get("AR_HEAD") != protected_commit:
+        print("pi_deploy_verify: rollback SHA verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if wait_for_http_smoke(pi_base_url()) != EXIT_OK:
+        print("pi_deploy_verify: rollback dashboard verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    record_script = (
+        f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-rollback "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(pi_site_repo())} --data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(failed_candidate)} "
+        f"--parent-command {shell_quote(parent_command)} "
+        f"--parent-command {shell_quote(script)} --dashboard-verified --services-verified"
+    )
+    code, out, err = run_ssh(record_script, dry_run=False)
+    if code != 0:
+        print(err or out or "pi_deploy_verify: rollback acceptance record failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: rollback acceptance recorded:\n{out}")
+    print(f"pi_deploy_verify: ROLLED_BACK to protected commit {protected_commit}")
     return EXIT_OK
 
 
@@ -816,6 +937,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_CONFIG
+    if args.allow_empty_rates:
+        print("pi_deploy_verify: --allow-empty-rates is forbidden for controlled deployment", file=sys.stderr)
+        return EXIT_CONFIG
     local_main = origin_main_sha_local()
     if local_main != expected_commit:
         print(
@@ -824,6 +948,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         )
         return EXIT_CONFIG
     if args.dry_run:
+        rc = deployment_backup_gate(expected_commit, expected_commit, dry_run=True)
+        if rc != EXIT_OK:
+            return rc
         rc = deploy_pull_all(expected_commit, dry_run=True)
         if rc != EXIT_OK:
             return rc
@@ -853,6 +980,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_VERIFY_FAIL
+    rc = deployment_backup_gate(expected_commit, snap["AR_HEAD"], dry_run=False)
+    if rc != EXIT_OK:
+        return rc
     rc = deploy_pull_all(expected_commit, dry_run=args.dry_run)
     if rc != EXIT_OK:
         return rc
@@ -865,6 +995,22 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
+    acceptance = record_deployment_acceptance(
+        expected_commit,
+        snap["AR_HEAD"],
+        args.effective_command,
+        dry_run=False,
+    )
+    if acceptance != EXIT_OK:
+        rollback = rollback_to_protected_commit(
+            snap["AR_HEAD"], expected_commit, args.effective_command, dry_run=False
+        )
+        if rollback != EXIT_OK:
+            print(
+                "pi_deploy_verify: CRITICAL acceptance failed and rollback was not verified",
+                file=sys.stderr,
+            )
+        return acceptance
     print("pi_deploy_verify: deploy OK")
     return EXIT_OK
 
@@ -933,8 +1079,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
+    args.effective_command = shlex.join(
+        [sys.executable, str(Path(__file__).resolve()), *effective_argv]
+    )
     if args.needs_pi:
         return cmd_needs_pi(args)
     if args.verify:
