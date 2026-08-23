@@ -13,14 +13,15 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `71003a5c1b69fe1da90c3781629fbfb5eda948a0` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `df07c9015d9d09d07542404856c0ddf6c2b08b7a5523b12250b925a59bd5a94e` |
+| Controlled plan SHA-256 | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` |
 
-The controlled plan SHA-256 is calculated over this final file after replacing
-every occurrence of the published 64-character controlled digest with the
-literal token `PLAN_SHA256_PENDING`. This canonicalisation avoids an impossible
-self-referential raw-file checksum while still detecting every other byte of
-drift. The raw file SHA-256 must also be recorded externally in each execution
-record and deployment acceptance manifest.
+The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
+mark after normalising CRLF and CR line endings to LF and replacing exactly two
+occurrences of the published 64-character controlled digest with the literal
+token `PLAN_SHA256_PENDING`. This canonicalisation avoids an impossible
+self-referential raw-file checksum and cross-platform checkout drift while still
+detecting every other byte. The raw checked-out file SHA-256 must also be
+recorded externally in each execution record and deployment acceptance manifest.
 
 This document is the complete, authoritative execution plan. Chat context,
 summaries, and operator recollection do not override it. Read it in full before
@@ -43,6 +44,147 @@ any Pi ingest, payload, database, backup, canary, deployment, or rollback work.
 | ID | Time | Decision | Reason and risk | Compensating control | Authorisation |
 |---|---|---|---|---|---|
 | D-001 | 2026-08-23 | Use a canonical embedded plan checksum and dynamically resolve the immutable document-containing Git commit. | A file cannot contain its own literal raw SHA-256, and a commit cannot contain its own future commit ID, without changing the value being identified. A placeholder would falsely imply verification. | Canonicalise only the checksum field; record both canonical and raw hashes plus the resolved commit in every external execution/deployment record. | Required to make the requested document control truthful and reproducible. |
+| D-002 | 2026-08-23 | Keep this controlled runbook immutable; record execution and deviations in external append-only evidence. The approved source plan remains reproduced below, but its instructions to recreate or append to this file are provenance text after merge. | Recreating or appending evidence to the controlled file would invalidate its version and checksum. Specialist review also found that the pinned producer cannot provide #506/#507 guarantees and that inherited Pi environment could defeat canary isolation. | Mandatory execution clarifications below supersede only those ambiguous mechanics. Any substantive plan change requires a new document version, checksum, and documentation PR. | Approved implementation of the user requirement for a literal drift-resistant plan. |
+
+## Mandatory execution clarifications
+
+These controls are part of version 1.0 and are normative. They preserve the
+complete approved source plan below while making its execution fail-closed.
+
+### Immutable identities and document gate
+
+- Stable Pi commit: `9302890fcc752cbf90da97d597e972c157d913e3`.
+- #506 provider-accounting commit: `417a4bd52817f8e952fc719b4e108fadda4adc52`.
+- Source `main` before this documentation PR: `71003a5c1b69fe1da90c3781629fbfb5eda948a0`.
+- WIP-only `dev`: `cd32e51ef5f5fc95491b0548724ce5d6b5b5c359`.
+- Quarantined restoration branch: `d92382f3d9df9a98c21791033ae2a1478d5b9414`.
+- Held PR #508 reviewed head: `6ad1e48b72b59120c897db45d78f1fcab706eddc`, parent `b4ce14c22b1e3b5d8848d4d80de72ece63276cdc`.
+- `BASE-01` may be read-only before merge. `CANARY-01`, `GH-01`, and every
+  remediation or public-repository mutation remain prohibited until the
+  documentation PR is merged, its document-containing commit plus raw and
+  controlled hashes are recorded externally, and the post-merge `main` SHA is
+  fetched and recalculated.
+- After merge, verify this file at this path; do not recreate it. A content
+  change requires version 1.1 or later through a new controlled PR.
+
+### Known limitations of the pinned 01:00 producer
+
+- The decision to keep production pinned is authoritative. It also means the
+  `2026-08-24` natural run is an observation of the last-known-good operational
+  path, not proof of safeguards that exist only in #506/#507.
+- The pinned producer may publish rolling v1 before the operator detects that
+  row-derived disclosure disagrees with the authorising export contract. It
+  cannot truthfully satisfy the later additive observation-disclosure contract.
+- The pinned producer may lose RAM-only raw attempt evidence on a non-zero exit,
+  timeout, power loss, or pre-promotion build failure because #507 is absent.
+- These are unmitigated tonight because disabling publication or deploying code
+  would violate the production freeze. Record either condition as `FAIL`, never
+  relabel it `PASS`, preserve whatever evidence exists, and do not claim the
+  natural run met the future-state acceptance contract.
+- Do not delete a bad public release or overwrite historical data during the
+  quiet window. Preserve evidence and correct the producer through the
+  controlled remediation phases.
+
+### Exact canary isolation and command
+
+The canary is cancelled for 2026-08-23 if all document, path, baseline, and
+resource gates are not proven by 21:30 Australia/Hobart. It must not be deferred
+into the quiet window or started late to satisfy a checkbox.
+
+Before start, resolve and compare every path, inspect the effective environment,
+and require all of the following:
+
+- `AR_LOCAL_DATA_ROOT=/srv/ar-local/canary/20260823/data`;
+- `AR_LOCAL_RAM_ROOT=/dev/shm/ar-local-canary-20260823`;
+- no production `EnvironmentFile` is loaded;
+- production checkout and `/srv/ar-local/data` are read-only to the unit;
+- only the canary data and RAM roots are writable;
+- at least 4.5 GiB `MemAvailable`, at least 500 GiB free on the data volume,
+  no OOM event since baseline, and memory PSI `avg10` below 10%;
+- dashboard HTTP status 200 within five seconds immediately before start.
+
+Start the transient unit from the candidate checkout using the following
+literal command, after substituting only the post-merge full candidate SHA in
+the evidence record (not in these paths):
+
+```sh
+sudo systemd-run \
+  --unit=ar-local-canary-20260823 \
+  --property=Type=exec \
+  --property=WorkingDirectory=/srv/ar-local/canary/20260823/source \
+  --property=Environment=AR_LOCAL_DATA_ROOT=/srv/ar-local/canary/20260823/data \
+  --property=Environment=AR_LOCAL_RAM_ROOT=/dev/shm/ar-local-canary-20260823 \
+  --property=Environment=PYTHONDONTWRITEBYTECODE=1 \
+  --property=ProtectSystem=strict \
+  --property=ReadOnlyPaths=/srv/ar-local/AR-local \
+  --property=ReadOnlyPaths=/srv/ar-local/data \
+  --property=ReadWritePaths=/srv/ar-local/canary/20260823 \
+  --property=ReadWritePaths=/dev/shm/ar-local-canary-20260823 \
+  --property=MemoryHigh=2500M \
+  --property=MemoryMax=3G \
+  --property=MemorySwapMax=0 \
+  --property=CPUQuota=200% \
+  --property=IOWeight=10 \
+  --property=TasksMax=256 \
+  --property=OOMPolicy=stop \
+  --property=KillMode=control-group \
+  --property=TimeoutStopSec=30s \
+  --property=RuntimeMaxSec=90m \
+  /usr/bin/python3 /srv/ar-local/canary/20260823/source/cdr_daily.py \
+    --runs /srv/ar-local/canary/20260823/data/runs \
+    --state /srv/ar-local/canary/20260823/data/state \
+    --date 2026-08-23 \
+    --banks-only \
+    --ram-stage \
+    --ram-root /dev/shm/ar-local-canary-20260823 \
+    --archive-failed-ram-stage \
+    --workers 2 \
+    --detail-workers 2
+```
+
+Any dashboard probe failure, response over five seconds, new OOM event, memory
+PSI `avg10` at or above 10%, `MemAvailable` below 2 GiB, or production mutation
+stops the canary unit immediately. `KillMode=control-group` must remove every
+descendant. The unit, child PIDs, canary lock, and RAM stage must be quiescent by
+23:30.
+
+At 00:30, prove the canary unit has no active children, no production lock
+exists, production unit/timer definitions and data hashes/mtimes are unchanged,
+the next timer trigger is exactly 01:00, resources recovered, and the dashboard
+is healthy. If any fact is unknown, record `BLOCKED`; do not attempt repairs or
+restarts inside the quiet window.
+
+### Exact data and publication gates
+
+- Bounded partial additionally requires `products_discovered > 0`,
+  `providers_registered > 0`, and `register_sources_attempted > 0`; zero
+  denominators never pass vacuously.
+- The existing `cdr_ledger_replicate.py` covers legacy `_exports` partitions
+  only. Phase A must add an inventory for ledger v2, export contracts, pointers,
+  completion markers, raw attempts, publication state, and macro storage. Never
+  run the legacy integrity `build` mode over preserved history. Back up SQLite
+  through its backup API or verified quiescence that includes WAL/SHM files.
+- A dated v1 generation is create-once. A same-day revision uses a distinct
+  immutable generation/revision tag; it never clobbers the original dated
+  manifest. Dates index success requires a monotonic superset, inclusion of the
+  current verified dated generation, no removal except an explicit gap record,
+  and public post-download verification.
+- Before changing the already-public v2 channel, prove consumer behavior.
+  Preserve old assets, publish a non-destructive deprecation/quarantine state,
+  and split future state into `v2_product_history` and
+  `v2_economic_outlook`. Define source- and frequency-specific macro freshness,
+  including how monthly reference periods are dated.
+
+### External append-only evidence
+
+The controlled runbook is immutable. Execution records are hash-chained JSONL
+under `/srv/ar-local/canary/evidence/ARL-OPS-001/<execution-id>/execution.jsonl`
+and are copied to the corresponding immutable GitHub canary/diagnostic evidence
+release. Each record contains the required plan identity, both hashes, exact
+commands, stdout/stderr artifact hashes, candidate SHA, state transition,
+operator, timestamps, result, and authorised deviation. Each entry includes the
+previous entry SHA-256; a runbook change creates a new version rather than
+editing completed evidence.
 
 ## Controlled document
 
@@ -394,25 +536,12 @@ The safe default for every failed or uncertain gate is:
 - make no unrecorded deviation;
 - continue only after the controlled document records the revised decision.
 
-## Execution evidence ledger
+## Execution evidence ledger schema
 
-This ledger is append-only. Add one row when a controlled step changes state;
-store detailed command output in durable evidence artifacts and link it here.
-
-| Step | Status | Started | Finished | Operator | Candidate SHA | Commands and evidence | Result notes | Deviation |
-|---|---|---|---|---|---|---|---|---|
-| DOC-01 Controlled document PR | RUNNING | 2026-08-23 |  | Codex | `71003a5c1b69fe1da90c3781629fbfb5eda948a0` | Documentation-only worktree and PR | Awaiting verification and merge | D-001 |
-| BASE-01 Production baseline | NOT_STARTED |  |  |  |  |  |  |  |
-| CANARY-01 2026-08-23 shadow ingest | NOT_STARTED |  |  |  |  |  |  |  |
-| GH-01 Diagnostic payload publication | NOT_STARTED |  |  |  |  |  |  |  |
-| NATURAL-01 2026-08-24 scheduled ingest | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-A Backup and recovery | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-B Deployment and rollback | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-C Current-main safeguards | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-D Transactional v1 | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-E Provider recovery | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-F v2 and macro | NOT_STARTED |  |  |  |  |  |  |  |
-| PHASE-G Operational hardening | NOT_STARTED |  |  |  |  |  |  |  |
+The append-only ledger is external as specified above. Its required step IDs
+are `DOC-01`, `BASE-01`, `CANARY-01`, `GH-01`, `NATURAL-01`, and `PHASE-A`
+through `PHASE-G`. A state transition is invalid unless its JSONL entry contains
+all document-control fields and a valid previous-entry hash.
 
 ## Version history
 
@@ -420,4 +549,4 @@ This table is append-only.
 
 | Version | Effective date | Git commit | Controlled plan SHA-256 | Change |
 |---|---|---|---|---|
-| 1.0 | 2026-08-23 | Resolve from Git history after merge | `df07c9015d9d09d07542404856c0ddf6c2b08b7a5523b12250b925a59bd5a94e` | Initial controlled recovery runbook transcribed from the approved plan. |
+| 1.0 | 2026-08-23 | Resolve from Git history after merge | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` | Initial controlled recovery runbook transcribed from the approved plan with mandatory execution clarifications D-001 and D-002. |
