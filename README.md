@@ -13,6 +13,11 @@ Future agents should also start with **`docs/UNIVERSAL_ROADMAP.md`**. It
 captures the Pi/LAN/SSD portability model, the banking-only scope, and the
 AustralianRates dashboard parity contract.
 
+Before any Pi ingest, payload, database, backup, canary, deployment, or rollback
+operation, read **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**. It is
+the controlled recovery plan and contains mandatory stop, evidence, and rollback
+gates.
+
 ## Installable app
 
 The Expo app, APK builds, updater, and app releases are owned by

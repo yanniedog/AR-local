@@ -2,6 +2,11 @@
 
 This is the shared roadmap for LLM agents working on AR-local. Treat it as the operating contract for changes that affect Pi runtime, dashboard parity, data durability, and ship workflow.
 
+> **Controlled ingest and deployment gate:** Before any Pi ingest, payload,
+> database, backup, canary, deployment, or rollback work, read
+> **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**. Its stop conditions,
+> evidence ledger, and rollback requirements are mandatory.
+
 ## North Star
 
 AR-local is the LAN-hosted, self-contained local runtime for Australian CDR data. On the Raspberry Pi it must serve the dashboard continuously at:
