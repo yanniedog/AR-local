@@ -55,6 +55,7 @@ for name in \
   ar_local_deployment_chain.py \
   ar_local_operation_lock.py \
   ar_local_rollback_record.py \
+  ar_local_restore_verification.py \
   pi_backup_foundation.py \
   pi_ingest_terminal.py \
   cdr_atomic.py \
@@ -65,7 +66,7 @@ do
   sudo install -o root -g root -m 0644 "$repo/$name" "$trusted/$name"
 done
 sudo install -d -o root -g root -m 0755 "$trusted/contracts"
-for name in export-contract-v2.schema.json pi-backup-boot-proof-v1.schema.json pi-deployment-acceptance-v1.schema.json pi-preservation-snapshot-v1.schema.json pi-rollback-acceptance-v1.schema.json; do
+for name in export-contract-v2.schema.json pi-backup-boot-proof-v1.schema.json pi-deployment-acceptance-v1.schema.json pi-preservation-snapshot-v1.schema.json pi-restore-acceptance-v1.schema.json pi-rollback-acceptance-v1.schema.json; do
   sudo install -o root -g root -m 0644 "$repo/contracts/$name" "$trusted/contracts/$name"
 done
 (
@@ -78,6 +79,7 @@ done
     ar_local_deployment_chain.py \
     ar_local_operation_lock.py \
     ar_local_rollback_record.py \
+    ar_local_restore_verification.py \
     pi_backup_foundation.py \
     pi_ingest_terminal.py \
     cdr_atomic.py \
@@ -88,6 +90,7 @@ done
     contracts/pi-backup-boot-proof-v1.schema.json \
     contracts/pi-deployment-acceptance-v1.schema.json \
     contracts/pi-preservation-snapshot-v1.schema.json \
+    contracts/pi-restore-acceptance-v1.schema.json \
     contracts/pi-rollback-acceptance-v1.schema.json
 ) > "$tmp/backup-gate.sha256"
 sudo install -o root -g root -m 0644 "$tmp/backup-gate.sha256" /etc/ar-local/backup-gate.sha256
