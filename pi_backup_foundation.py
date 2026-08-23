@@ -34,6 +34,7 @@ from ar_local_backup_policy import (
     validate_plan_identity,
 )
 from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
+from ar_local_checkout import install_candidate, rollback_candidate
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
@@ -80,6 +81,7 @@ def _run(command: Sequence[str], cwd: Path | None = None) -> str:
 
     if not command or command[0] != "git":
         raise ValueError("only internal git argv commands are allowed")
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     result = subprocess.run(
         tuple(command), cwd=cwd, text=True, capture_output=True, timeout=300, shell=False
     )
@@ -271,6 +273,8 @@ def create_snapshot(
     macro_db: Path,
     operator: str,
     exact_commands: list[str] | None = None,
+    *,
+    config_path: Path = DEFAULT_CONFIG,
 ) -> dict[str, object]:
     check = preflight(policy, repo, site_repo, data_root)
     if not check["ok"]:
@@ -278,16 +282,6 @@ def create_snapshot(
     repos = {"ar_local": git_state(repo), "site": git_state(site_repo)}
     if not all(state["clean"] for state in repos.values()):
         raise RuntimeError("production checkout is dirty")
-    snapshots_root = policy.backup_dir / "snapshots"
-    retained_snapshots = (
-        [path for path in snapshots_root.iterdir() if path.is_dir() and not path.is_symlink()]
-        if snapshots_root.is_dir()
-        else []
-    )
-    if len(retained_snapshots) >= policy.retention_count:
-        raise RuntimeError(
-            "snapshot retention ceiling reached; archive/removal requires a separately authorized decision"
-        )
     created_at = utc_now()
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:12]
     staging = policy.backup_dir / f".partial-{snapshot_id}"
@@ -296,6 +290,21 @@ def create_snapshot(
     lock = data_root / "state" / "daily-ingest.lock"
     try:
         with production_lock(lock, "backup"):
+            snapshots_root = policy.backup_dir / "snapshots"
+            if snapshots_root.is_symlink() or (
+                snapshots_root.exists() and not snapshots_root.is_dir()
+            ):
+                raise RuntimeError("snapshot root is not a real directory")
+            snapshot_children = list(snapshots_root.iterdir()) if snapshots_root.is_dir() else []
+            if any(path.is_symlink() or not path.is_dir() for path in snapshot_children):
+                raise RuntimeError("snapshot root contains an invalid entry")
+            retained_snapshots = (
+                snapshot_children if snapshots_root.is_dir() else []
+            )
+            if len(retained_snapshots) >= policy.retention_count:
+                raise RuntimeError(
+                    "snapshot retention ceiling reached; archive/removal requires a separately authorized decision"
+                )
             macro = macro_db.resolve()
             if not macro.is_file():
                 raise ValueError(f"macro database is missing: {macro}")
@@ -310,11 +319,29 @@ def create_snapshot(
                 raise RuntimeError("production data changed during snapshot")
             macro_report = _sqlite_backup(macro, staging / "macro/local-macro.sqlite")
             system_root = staging / "system"
-            for source in (Path("/etc/fstab"), Path("/etc/nginx/sites-available/ar-local-dashboard")):
+            system_configuration: list[dict[str, object]] = []
+            for source in (
+                Path("/etc/fstab"),
+                Path("/etc/nginx/sites-available/ar-local-dashboard"),
+                config_path,
+            ):
+                if source.is_symlink():
+                    raise ValueError(f"system configuration is a symlink: {source}")
                 if source.is_file():
-                    target = system_root / source.relative_to("/")
+                    target = system_root / source.relative_to(source.anchor)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
+                    info = source.stat()
+                    system_configuration.append(
+                        {
+                            "path": str(source),
+                            "snapshot_path": target.relative_to(staging).as_posix(),
+                            "uid": info.st_uid,
+                            "gid": info.st_gid,
+                            "mode": oct(info.st_mode & 0o777),
+                            "sha256": sha256_file(target),
+                        }
+                    )
             unit_root = Path("/etc/systemd/system")
             systemd_enablement: list[dict[str, str]] = []
             if unit_root.is_dir():
@@ -354,6 +381,7 @@ def create_snapshot(
         "repositories": repos,
         "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
         "secret_locations": _secret_metadata(),
+        "system_configuration": system_configuration,
         "systemd_enablement": systemd_enablement,
         "exclusions": [
             {"path": str(lock), "reason": "transient backup lock"},
@@ -843,7 +871,9 @@ def record_deployment_acceptance(
         if deployment_evidence_root.is_symlink() or not deployment_evidence_root.resolve().is_relative_to(backup_root):
             raise ValueError("deployment evidence root is not confined to backup storage")
         boot_evidence = archive_boot_evidence(
-            boot_proof, deployment_evidence_root / record_id
+            boot_proof,
+            deployment_evidence_root / record_id,
+            str(binding["boot_proof_sha256"]),
         )
         evidence_paths = (backup_receipt, restore_receipt, manifest_archive, *boot_evidence)
         evidence = [
@@ -894,7 +924,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "record-deployment"))
+    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "install-checkout", "rollback-checkout", "record-deployment"))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repo", type=Path, default=Path("/srv/ar-local/AR-local"))
     parser.add_argument("--site-repo", type=Path, default=Path("/srv/ar-local/australianrates"))
@@ -917,7 +947,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = preflight(policy, repo, site_repo, data_root)
         elif args.command == "snapshot":
             macro_db = (args.macro_db or (repo / "state/local-macro.sqlite")).resolve()
-            report = create_snapshot(policy, repo, site_repo, data_root, macro_db, args.operator, [exact_command])
+            report = create_snapshot(policy, repo, site_repo, data_root, macro_db, args.operator, [exact_command], config_path=args.config)
         elif args.command == "verify":
             if not args.snapshot_id:
                 raise ValueError("--snapshot-id is required")
@@ -932,6 +962,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not args.candidate_sha or not args.protected_code_sha:
                 raise ValueError("--candidate-sha and --protected-code-sha are required")
             report = gate(policy, repo, site_repo, data_root, args.protected_code_sha, args.candidate_sha, args.boot_proof, args.operator, [exact_command])
+        elif args.command == "install-checkout":
+            if not args.candidate_sha:
+                raise ValueError("--candidate-sha is required")
+            report = install_candidate(repo, data_root, args.candidate_sha)
+        elif args.command == "rollback-checkout":
+            if not args.protected_code_sha:
+                raise ValueError("--protected-code-sha is required")
+            report = rollback_candidate(repo, data_root, args.protected_code_sha)
         else:
             if not args.candidate_sha or not args.protected_code_sha:
                 raise ValueError("--candidate-sha and --protected-code-sha are required")
@@ -952,7 +990,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if report.get("ok", report.get("result") == "PASS") else 1
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "result": "BLOCKED", "error": str(exc)}), file=sys.stderr)
-        return 1
+        lock_busy = args.command in {"install-checkout", "rollback-checkout"} and str(exc).startswith(
+            "production lock"
+        )
+        return 75 if lock_busy else 1
 
 
 if __name__ == "__main__":

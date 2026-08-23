@@ -135,9 +135,9 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
     )
     monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
     assert pi_deploy_verify.rollback_to_protected_commit(protected) == pi_deploy_verify.EXIT_OK
-    assert "role=rollback" in commands[0]
-    assert f"git checkout --detach {protected}" in commands[0]
-    assert "git status --porcelain" in commands[0]
+    assert "ar-local-backup-gate rollback-checkout" in commands[0]
+    assert f"--protected-code-sha {protected}" in commands[0]
+    assert "rm -f" not in commands[0]
 
 
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
@@ -149,14 +149,10 @@ def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     )
     expected = "a" * 40
     assert pi_deploy_verify.deploy_pull_all(expected) == pi_deploy_verify.EXIT_OK
-    assert expected in captured[0]
-    assert "git merge --ff-only" in captured[0]
+    assert f"--candidate-sha {expected}" in captured[0]
+    assert "ar-local-backup-gate install-checkout" in captured[0]
     assert pi_deploy_verify.pi_site_repo() not in captured[0]
-    assert "daily-ingest.lock" in captured[0]
-    assert "role=deploy" in captured[0]
-    assert "kill -0" in captured[0]
-    assert "trap cleanup_lock EXIT" in captured[0]
-    assert "trap 'exit 143' TERM" in captured[0]
+    assert "rm -f" not in captured[0]
 
 
 def test_exact_commit_install_preserves_busy_lock_result(monkeypatch, capsys):
@@ -289,6 +285,23 @@ def test_pi_runtime_health_changes_require_pi_deploy():
 
 def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "ar_local_boot_proof.py",
+        "ar_local_checkout.py",
+        "ar_local_deployment_chain.py",
+        "ar_local_operation_lock.py",
+        "contracts/export-contract-v2.schema.json",
+        "contracts/pi-backup-boot-proof-v1.schema.json",
+        "contracts/pi-deployment-acceptance-v1.schema.json",
+        "contracts/pi-preservation-snapshot-v1.schema.json",
+    ),
+)
+def test_every_trusted_backup_gate_input_requires_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
 
 
 def _service_snapshot(**overrides: str) -> dict[str, str]:

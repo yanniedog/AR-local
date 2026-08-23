@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ar_local_backup_policy as policy_module  # noqa: E402
+import ar_local_checkout  # noqa: E402
+import ar_local_deployment_chain as deployment_chain  # noqa: E402
 import ar_local_operation_lock as operation_lock  # noqa: E402
 import pi_backup_foundation as backup  # noqa: E402
 import cdr_outputs  # noqa: E402
@@ -175,6 +177,16 @@ def test_immutable_json_record_cannot_be_rewritten(tmp_path: Path) -> None:
     with pytest.raises(FileExistsError):
         policy_module.atomic_create_json(target, {"result": "FAIL"})
     assert json.loads(target.read_text())["result"] == "PASS"
+
+
+def test_verified_evidence_copy_never_replaces_existing_target(tmp_path: Path) -> None:
+    source = tmp_path / "source.log"
+    target = tmp_path / "archive.log"
+    source.write_text("new evidence\n", encoding="utf-8")
+    target.write_text("existing evidence\n", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        policy_module.atomic_copy_verified(source, target, policy_module.sha256_file(source))
+    assert target.read_text(encoding="utf-8") == "existing evidence\n"
 
 
 def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> None:
@@ -341,7 +353,11 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
         connection.execute("INSERT INTO series_observations VALUES (1)")
     monkeypatch.setattr(backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}})
     monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
-    receipt = backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+    config = tmp_path / "backup.env"
+    config.write_text("AR_BACKUP_EXPECTED_SOURCE=/dev/test-backup\n", encoding="utf-8")
+    receipt = backup.create_snapshot(
+        policy, repo, site, data, macro, "pytest", config_path=config
+    )
     snapshot = policy.backup_dir / "snapshots" / str(receipt["snapshot_id"])
     assert backup.verify_snapshot(snapshot)["ok"]
     schema = json.loads((ROOT / "contracts/pi-preservation-snapshot-v1.schema.json").read_text())
@@ -353,6 +369,13 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     assert (snapshot / "macro/local-macro.sqlite").is_file()
     assert not (snapshot / "data/state/daily-ingest.lock").exists()
     assert not (snapshot / "data/state/.daily-ingest.lock.recovery-lock").exists()
+    manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    policy_entry = next(
+        item for item in manifest["system_configuration"] if item["path"] == str(config)
+    )
+    policy_copy = snapshot / policy_entry["snapshot_path"]
+    assert policy_copy.read_bytes() == config.read_bytes()
+    assert policy_entry["sha256"] == policy_module.sha256_file(policy_copy)
 
 
 def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path: Path) -> None:
@@ -422,6 +445,20 @@ def test_boot_proof_contract_accepts_complete_record(tmp_path: Path) -> None:
     proof = boot_proof(policy, datetime.now(timezone.utc).isoformat())
     schema = json.loads((ROOT / "contracts/pi-backup-boot-proof-v1.schema.json").read_text())
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(proof)
+
+
+def test_boot_archive_rejects_proof_changed_after_gate(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    path = tmp_path / "boot.json"
+    path.write_text(
+        json.dumps(boot_proof(policy, datetime.now(timezone.utc).isoformat())),
+        encoding="utf-8",
+    )
+    validated_digest = policy_module.sha256_file(path)
+    path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="changed after deployment gate"):
+        backup.archive_boot_evidence(path, tmp_path / "archive", validated_digest)
+    assert not (tmp_path / "archive/boot-proof.original.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -494,6 +531,32 @@ def test_snapshot_creation_stops_at_retention_ceiling(monkeypatch, tmp_path: Pat
         "git_state",
         lambda path: {"path": str(path), "commit": COMMIT, "clean": True, "status": []},
     )
+    roots = [tmp_path / name for name in ("repo", "site", "data")]
+    for root in roots:
+        root.mkdir()
+    with pytest.raises(RuntimeError, match="retention ceiling"):
+        backup.create_snapshot(policy, *roots, tmp_path / "macro.sqlite", "pytest")
+
+
+def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, tmp_path: Path) -> None:
+    policy = replace(make_policy(tmp_path), retention_count=2)
+    snapshots = policy.backup_dir / "snapshots"
+    (snapshots / "one").mkdir(parents=True)
+    monkeypatch.setattr(backup, "preflight", lambda *_args: {"ok": True, "findings": []})
+    monkeypatch.setattr(
+        backup,
+        "git_state",
+        lambda path: {"path": str(path), "commit": COMMIT, "clean": True, "status": []},
+    )
+
+    class AddSnapshotWhileAcquiring:
+        def __enter__(self):
+            (snapshots / "two").mkdir()
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(backup, "production_lock", lambda *_args: AddSnapshotWhileAcquiring())
     roots = [tmp_path / name for name in ("repo", "site", "data")]
     for root in roots:
         root.mkdir()
@@ -698,6 +761,67 @@ def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch
     original_boot_evidence = policy.backup_dir / "boot-proof.log"
     original_boot_evidence.unlink()
     assert artifact_paths[0].read_text(encoding="utf-8") == "boot proof\n"
+    (policy.backup_dir / "deployment-records/head.json").unlink()
+    corrupted_evidence = Path(second_record["evidence"][0]["path"])
+    os.chmod(corrupted_evidence, 0o644)
+    corrupted_evidence.write_text("corrupt\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="evidence digest mismatch"):
+        deployment_chain.reconcile_deployment_chain(
+            policy.backup_dir / "deployment-records", policy
+        )
+
+
+def test_deployment_chain_rejects_dangling_head_symlink(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    records = policy.backup_dir / "deployment-records"
+    records.mkdir()
+    try:
+        (records / "head.json").symlink_to(records / "missing.json")
+    except OSError as exc:
+        pytest.skip(f"file symlinks unavailable: {exc}")
+    with pytest.raises(ValueError, match="head is a symlink"):
+        deployment_chain.reconcile_deployment_chain(records, policy)
+
+
+def test_trusted_rollback_checkout_owns_the_shared_production_lock(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    protected = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=repo, text=True, capture_output=True, check=True
+    ).stdout.strip()
+    (repo / "tracked.txt").write_text("newer\n", encoding="utf-8")
+    subprocess.run(("git", "commit", "-qam", "newer"), cwd=repo, check=True)
+    data = tmp_path / "data"
+    (data / "state").mkdir(parents=True)
+    report = ar_local_checkout.rollback_candidate(repo, data, protected)
+    assert report["result"] == "ROLLED_BACK"
+    assert not (data / "state/daily-ingest.lock").exists()
+    assert subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=repo, text=True, capture_output=True, check=True
+    ).stdout.strip() == protected
+
+
+def test_trusted_install_checkout_fetches_only_exact_origin_main(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _git_repo(source)
+    origin = tmp_path / "origin.git"
+    subprocess.run(("git", "clone", "-q", "--bare", str(source), str(origin)), check=True)
+    target = tmp_path / "target"
+    subprocess.run(("git", "clone", "-q", str(origin), str(target)), check=True)
+    (source / "tracked.txt").write_text("candidate\n", encoding="utf-8")
+    subprocess.run(("git", "commit", "-qam", "candidate"), cwd=source, check=True)
+    candidate = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=source, text=True, capture_output=True, check=True
+    ).stdout.strip()
+    subprocess.run(("git", "push", "-q", str(origin), "main"), cwd=source, check=True)
+    data = tmp_path / "data"
+    (data / "state").mkdir(parents=True)
+    report = ar_local_checkout.install_candidate(target, data, candidate)
+    assert report["result"] == "PASS"
+    assert subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=target, text=True, capture_output=True, check=True
+    ).stdout.strip() == candidate
+    assert not (data / "state/daily-ingest.lock").exists()
 
 
 def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> None:

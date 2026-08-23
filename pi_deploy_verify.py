@@ -92,8 +92,16 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_capacity_monitor.py",
     "pi_backup_foundation.py",
     "ar_local_backup_policy.py",
+    "ar_local_boot_proof.py",
+    "ar_local_checkout.py",
+    "ar_local_deployment_chain.py",
+    "ar_local_operation_lock.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
+    "contracts/export-contract-v2.schema.json",
+    "contracts/pi-backup-boot-proof-v1.schema.json",
+    "contracts/pi-deployment-acceptance-v1.schema.json",
+    "contracts/pi-preservation-snapshot-v1.schema.json",
     "verify_local.py",
     "cdr_dashboard_server.py",
     "package.json",
@@ -705,30 +713,13 @@ def deploy_pull_all(expected_commit: str, *, dry_run: bool = False) -> int:
     if not FULL_COMMIT_RE.fullmatch(expected_commit):
         print("pi_deploy_verify: invalid expected commit", file=sys.stderr)
         return EXIT_CONFIG
-    remote = pi_remote()
     ar = pi_ar_repo()
-    ingest_lock = f"{pi_data_root()}/state/daily-ingest.lock"
     script = (
-        f"set -e; "
-        f"lock={shell_quote(ingest_lock)}; "
-        "acquire_lock() { "
-        "if (set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null; then return 0; fi; "
-        "owner=$(sed -n 's/^pid=//p' \"$lock\" 2>/dev/null | head -n 1); "
-        "case \"$owner\" in ''|*[!0-9]*) owner='';; esac; "
-        "mtime=$(stat -c %Y \"$lock\" 2>/dev/null || printf 0); now=$(date +%s); "
-        "if { test -n \"$owner\" && kill -0 \"$owner\" 2>/dev/null; } || "
-        "{ test -z \"$owner\" && test $((now-mtime)) -le 21600; }; then return 75; fi; "
-        "rm -f -- \"$lock\"; "
-        "(set -o noclobber; printf 'pid=%s\\nrole=deploy\\n' \"$$\" > \"$lock\") 2>/dev/null || return 75; "
-        "}; "
-        "acquire_lock || { echo 'pi_deploy_verify: ingest/deploy lock is busy' >&2; exit 75; }; "
-        "cleanup_lock() { rm -f -- \"$lock\"; }; "
-        "trap cleanup_lock EXIT; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; "
-        f"cd {shell_quote(ar)} && git fetch {shell_quote(remote)} main && "
-        f"test \"$(git rev-parse {shell_quote(remote)}/main)\" = "
-        f"{shell_quote(expected_commit)} && "
-        "git checkout main && "
-        f"git merge --ff-only {shell_quote(expected_commit)}"
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate install-checkout "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--data-root {shell_quote(pi_data_root())} "
+        f"--candidate-sha {shell_quote(expected_commit)}"
     )
     code, out, err = run_ssh(script, dry_run=dry_run)
     if code == EXIT_BUSY and not dry_run:
@@ -814,15 +805,12 @@ def rollback_to_protected_commit(protected_commit: str, *, dry_run: bool = False
     if not FULL_COMMIT_RE.fullmatch(protected_commit):
         return EXIT_CONFIG
     ar = pi_ar_repo()
-    ingest_lock = f"{pi_data_root()}/state/daily-ingest.lock"
     script = (
-        "set -e; "
-        f"lock={shell_quote(ingest_lock)}; "
-        "(set -o noclobber; printf 'pid=%s\\nrole=rollback\\n' \"$$\" > \"$lock\") 2>/dev/null || exit 75; "
-        "cleanup_lock() { rm -f -- \"$lock\"; }; trap cleanup_lock EXIT; "
-        f"cd {shell_quote(ar)}; test -z \"$(git status --porcelain)\"; "
-        f"git cat-file -e {shell_quote(protected_commit + '^{commit}')}; "
-        f"git checkout --detach {shell_quote(protected_commit)}"
+        "set -e; test -x /usr/local/bin/ar-local-backup-gate; "
+        "/usr/local/bin/ar-local-backup-gate rollback-checkout "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)}"
     )
     code, _out, err = run_ssh(script, dry_run=dry_run)
     if dry_run:

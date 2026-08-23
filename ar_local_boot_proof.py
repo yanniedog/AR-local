@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -45,12 +46,17 @@ def validate_boot_proof(
     candidate_sha: str | None = None,
 ) -> dict[str, object]:
     proof = _json(path)
-    findings = [
-        "boot_schema_invalid:"
-        + ".".join(str(part) for part in error.absolute_path)
-        + f":{error.validator}"
-        for error in sorted(_validator().iter_errors(proof), key=lambda item: list(item.absolute_path))
-    ]
+    findings = ["boot_proof_symlink"] if path.is_symlink() else []
+    findings.extend(
+        [
+            "boot_schema_invalid:"
+            + ".".join(str(part) for part in error.absolute_path)
+            + f":{error.validator}"
+            for error in sorted(
+                _validator().iter_errors(proof), key=lambda item: list(item.absolute_path)
+            )
+        ]
+    )
     if proof.get("result") != "PASS":
         findings.append("boot_result_not_pass")
     if not validate_plan_identity(proof, policy):
@@ -73,7 +79,12 @@ def validate_boot_proof(
                 continue
             evidence_path = Path(str(item.get("path") or ""))
             digest = str(item.get("sha256") or "")
-            if not evidence_path.is_absolute() or not evidence_path.is_file() or not SHA256_RE.fullmatch(digest):
+            if (
+                not evidence_path.is_absolute()
+                or evidence_path.is_symlink()
+                or not evidence_path.is_file()
+                or not SHA256_RE.fullmatch(digest)
+            ):
                 findings.append(f"boot_evidence_missing:{evidence_path}")
             elif sha256_file(evidence_path) != digest:
                 findings.append(f"boot_evidence_hash_mismatch:{evidence_path}")
@@ -98,12 +109,21 @@ def validate_boot_proof(
     return {"ok": not findings, "findings": findings, "proof": proof}
 
 
-def archive_boot_evidence(boot_proof: Path, archive_root: Path) -> list[Path]:
+def archive_boot_evidence(
+    boot_proof: Path, archive_root: Path, expected_sha256: str | None = None
+) -> list[Path]:
     """Preserve the original proof and every referenced artifact create-once."""
 
-    proof = _json(boot_proof)
+    raw = boot_proof.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    expected_sha256 = expected_sha256 or digest
+    if digest != expected_sha256:
+        raise ValueError("boot proof changed after deployment gate validation")
+    proof = json.loads(raw)
+    if not isinstance(proof, dict):
+        raise ValueError(f"expected JSON object: {boot_proof}")
     original = archive_root / "boot-proof.original.json"
-    atomic_create_json(original, proof)
+    atomic_copy_verified(boot_proof, original, expected_sha256)
     archived_entries: list[dict[str, object]] = []
     artifact_paths: list[Path] = []
     for index, item in enumerate(proof.get("evidence") or []):

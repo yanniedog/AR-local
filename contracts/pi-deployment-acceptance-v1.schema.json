@@ -22,12 +22,34 @@
     "operator": {"type": "string", "minLength": 1},
     "started_at": {"type": "string", "format": "date-time"},
     "completed_at": {"type": "string", "format": "date-time"},
-    "exact_commands": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-    "evidence": {"type": "array", "minItems": 1},
+    "exact_commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
     "previous_record_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
-    "checks": {"type": "object"},
-    "deviations": {"type": "array"},
-    "deviation_authorization": {"type": ["object", "null"]},
+    "checks": {
+      "type": "object",
+      "required": ["backup_gate", "clean_candidate_checkout", "services", "dashboard"],
+      "properties": {
+        "backup_gate": {"const": "PASS"},
+        "clean_candidate_checkout": {"const": "PASS"},
+        "services": {"const": "PASS"},
+        "dashboard": {"const": "PASS"}
+      },
+      "additionalProperties": false
+    },
+    "deviations": {"type": "array", "maxItems": 0},
+    "deviation_authorization": {"type": "null"},
     "result": {"const": "PASS"}
   },
   "additionalProperties": false

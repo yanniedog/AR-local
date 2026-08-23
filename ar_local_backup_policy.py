@@ -104,12 +104,21 @@ def atomic_copy_verified(source: Path, target: Path, expected_sha256: str) -> No
             os.fsync(target_stream.fileno())
         if digest.hexdigest() != expected_sha256:
             raise ValueError(f"source evidence digest changed: {source}")
-        os.chmod(temporary, 0o444)
-        if target.exists():
-            raise FileExistsError(target)
-        temporary.replace(target)
+        if os.name != "nt":
+            os.chmod(temporary, 0o444)
+        os.link(temporary, target)
+        temporary.unlink()
+        if os.name == "nt":
+            try:
+                os.chmod(target, 0o444)
+            except OSError:
+                target.unlink(missing_ok=True)
+                fsync_directory(target.parent)
+                raise
         fsync_directory(target.parent)
     finally:
+        if os.name == "nt" and temporary.exists():
+            os.chmod(temporary, 0o600)
         temporary.unlink(missing_ok=True)
 
 
