@@ -586,13 +586,8 @@ def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path:
     }
     database = exports / "local-cdr.sqlite"
     cdr_outputs.rebuild_run_db(database, run_date, banks)
-    connection = sqlite3.connect(database)
-    try:
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        connection.close()
-    for suffix in ("-wal", "-shm"):
-        Path(f"{database}{suffix}").unlink(missing_ok=True)
+    assert not Path(f"{database}-wal").exists()
+    assert not Path(f"{database}-shm").exists()
     (exports / f"banks-{run_date}.json").write_text(json.dumps(banks), encoding="utf-8")
     cache = exports / "dashboard-cache"
     cache.mkdir()

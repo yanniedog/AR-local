@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -376,7 +377,7 @@ def insert_rows(con: sqlite3.Connection, table: str, rows: List[Mapping[str, Any
 
 def rebuild_run_db(db_path: Path, run_date: str, banks: Mapping[str, Any]) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as con:
+    with closing(sqlite3.connect(db_path)) as con, con:
         ensure_db(con)
         for table in TABLE_COLUMNS:
             if table != "runs":
