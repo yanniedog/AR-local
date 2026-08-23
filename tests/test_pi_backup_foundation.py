@@ -883,7 +883,7 @@ def test_restore_drill_rejects_post_copy_data_corruption(
         backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []}
     )
     receipt = backup.restore_drill(
-        policy, snapshot_id, tmp_path / "scratch", "pytest"
+        policy, snapshot_id, tmp_path / "scratch", "pytest", ["restore-drill"]
     )
     assert receipt["result"] == "FAIL"
     assert (
@@ -1003,10 +1003,20 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
     )
     monkeypatch.setattr(backup, "_verify_restored_state", lambda _root: {"ok": True, "findings": []})
     scratch = tmp_path / "missing-parent/scratch"
-    receipt = backup.restore_drill(policy, snapshot_id, scratch, "pytest")
+    receipt = backup.restore_drill(
+        policy, snapshot_id, scratch, "pytest", ["restore-drill"]
+    )
     assert receipt["result"] == "PASS", receipt["checks"]
     assert receipt["scratch_retained"] is False
     assert list(scratch.iterdir()) == []
+
+
+def test_restore_drill_requires_exact_command_evidence(tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    with pytest.raises(ValueError, match="requires at least one exact command"):
+        backup.restore_drill(
+            policy, "snapshot", tmp_path / "scratch", "pytest"
+        )
 
 
 def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch, tmp_path: Path) -> None:

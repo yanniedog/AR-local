@@ -462,6 +462,11 @@ def restore_drill(
     operator: str,
     exact_commands: list[str] | None = None,
 ) -> dict[str, object]:
+    if not exact_commands or any(
+        not isinstance(command, str) or not command.strip()
+        for command in exact_commands
+    ):
+        raise ValueError("restore drill requires at least one exact command")
     started_at = utc_now()
     snapshot = policy.backup_dir / "snapshots" / snapshot_id
     verified = verify_snapshot(snapshot)
@@ -529,7 +534,7 @@ def restore_drill(
             result["ok"] = False
             result["findings"].append(f"scratch_cleanup_failed:{type(exc).__name__}")
     manifest_sha = sha256_file(snapshot / "manifest.json")
-    receipt = {**policy.plan_identity(), "schema_version": 1, "restore_acceptance_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt = {**policy.plan_identity(), "schema_version": 1, "restore_acceptance_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands, "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)
