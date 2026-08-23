@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from ar_local_backup_scope import (  # noqa: E402
     build_data_scope,
     copy_scoped_data,
+    metadata_only_records,
     scoped_tree_metadata,
 )
 
@@ -91,3 +92,23 @@ def test_scope_rejects_hardlinked_business_evidence(tmp_path: Path) -> None:
     scope = build_data_scope(root.resolve())
     with pytest.raises(ValueError, match="not a unique regular file"):
         scoped_tree_metadata(scope, set())
+
+
+def test_metadata_only_inventory_never_reports_permission_denial_as_absent(
+    monkeypatch, tmp_path: Path
+) -> None:
+    protected = tmp_path / "protected-secret"
+    original = Path.stat
+
+    def deny_target(path: Path, *args, **kwargs):
+        if path == protected:
+            raise PermissionError("simulated protected parent")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", deny_target)
+    record = metadata_only_records([protected])[0]
+    assert record == {
+        "path": str(protected),
+        "exists": None,
+        "metadata_status": "INACCESSIBLE",
+    }

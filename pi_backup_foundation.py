@@ -39,6 +39,8 @@ from ar_local_backup_scope import (
     build_data_scope,
     copy_regular_tree as _copy_regular_tree,
     copy_scoped_data,
+    metadata_only_records,
+    retention_capacity_plan,
     scoped_tree_metadata,
 )
 from ar_local_checkout import git_command, git_state, install_candidate, rollback_candidate
@@ -194,17 +196,6 @@ def _category_summary(entries: list[dict[str, object]]) -> dict[str, dict[str, i
     return categories
 
 
-def _secret_metadata(extra_paths: Sequence[Path] = ()) -> list[dict[str, object]]:
-    records: list[dict[str, object]] = []
-    for path in (*SECRET_PATHS, *extra_paths):
-        record: dict[str, object] = {"path": str(path), "exists": path.exists()}
-        if path.exists():
-            info = path.stat()
-            record.update({"uid": info.st_uid, "gid": info.st_gid, "mode": oct(info.st_mode & 0o777)})
-        records.append(record)
-    return records
-
-
 def preflight(policy: BackupPolicy, repo: Path, site_repo: Path, data_root: Path, *, probe: bool = True) -> dict[str, object]:
     report = mount_preflight(policy, (repo, site_repo, data_root), perform_probe=probe)
     plan = verify_plan_document(policy, repo)
@@ -262,15 +253,15 @@ def create_snapshot(
             macro_exclusions = {macro, Path(str(macro) + "-wal"), Path(str(macro) + "-shm")}
             exclusions = macro_exclusions | {lock.resolve(), recovery_lock_path(lock).resolve()}
             before = scoped_tree_metadata(data_scope, exclusions)
-            snapshot_payload_bytes = sum(size for size, _mtime in before.values()) + macro.stat().st_size
+            initial_payload_bytes = sum(size for size, _mtime in before.values()) + macro.stat().st_size
             remaining_slots = policy.retention_count - len(retained_snapshots)
-            required_free = max(
+            initial_required_free = max(
                 policy.min_free_bytes,
-                snapshot_payload_bytes * remaining_slots + 1024**3,
+                initial_payload_bytes * remaining_slots + 1024**3,
             )
             available_free = shutil.disk_usage(policy.backup_dir).free
-            if available_free < required_free:
-                raise RuntimeError(f"backup target lacks retention reserve: required={required_free}")
+            if available_free < initial_required_free:
+                raise RuntimeError(f"backup target lacks retention reserve: required={initial_required_free}")
             copy_scoped_data(data_scope, staging / "data", exclude=exclusions)
             after_scope = build_data_scope(data_root)
             if after_scope.manifest() != data_scope.manifest() or scoped_tree_metadata(after_scope, exclusions) != before:
@@ -320,10 +311,16 @@ def create_snapshot(
             bundles.mkdir()
             for name, source in (("AR-local", repo), ("australianrates", site_repo)):
                 git_command(("git", "bundle", "create", str((bundles / f"{name}.bundle").resolve()), "HEAD"), source)
+            entries = _manifest_entries(staging)
+            capacity_plan = retention_capacity_plan(
+                entries, remaining_slots, available_free, shutil.disk_usage(policy.backup_dir).free, policy.min_free_bytes
+            )
+            capacity_plan["retained_snapshots"] = len(retained_snapshots)
+            if not capacity_plan.pop("ok"):
+                raise RuntimeError(f"backup target lacks complete-snapshot retention reserve: required={capacity_plan['required_free_bytes']}")
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    entries = _manifest_entries(staging)
     manifest: dict[str, object] = {
         "schema_version": 1,
         "snapshot_id": snapshot_id,
@@ -338,7 +335,7 @@ def create_snapshot(
         "candidate_code_sha": repos["ar_local"]["commit"],
         "repositories": repos,
         "source_paths": {"data": str(data_root), "repo": str(repo), "site_repo": str(site_repo), "macro_db": str(macro_db.resolve())},
-        "secret_locations": _secret_metadata(data_scope.secret_locations),
+        "secret_locations": metadata_only_records((*SECRET_PATHS, *data_scope.secret_locations)),
         "data_scope": data_scope.manifest(),
         "system_configuration": system_configuration,
         "systemd_enablement": systemd_enablement,
@@ -348,13 +345,7 @@ def create_snapshot(
         ],
         "macro_backup": macro_report,
         "source_data_bytes": sum(size for size, _mtime in before.values()),
-        "capacity_plan": {
-            "snapshot_payload_bytes": snapshot_payload_bytes,
-            "retained_snapshots": len(retained_snapshots),
-            "remaining_slots": remaining_slots,
-            "required_free_bytes": required_free,
-            "available_free_bytes": available_free,
-        },
+        "capacity_plan": capacity_plan,
         "category_summary": _category_summary(entries),
         "files": entries,
         "result": "PASS",

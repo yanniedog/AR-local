@@ -73,10 +73,14 @@ def valid_snapshot_manifest(files: list[dict[str, object]]) -> dict[str, object]
         "source_data_bytes": 0,
         "capacity_plan": {
             "snapshot_payload_bytes": 0,
+            "staged_payload_bytes": 0,
+            "per_snapshot_metadata_reserve_bytes": 1,
             "retained_snapshots": 0,
             "remaining_slots": 1,
             "required_free_bytes": 1,
+            "required_after_staging_bytes": 1,
             "available_free_bytes": 1,
+            "available_after_staging_bytes": 1,
         },
         "category_summary": {},
         "files": files,
@@ -453,6 +457,7 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
         item for item in manifest["secret_locations"] if item["path"] == str(netdata_secret)
     )
     assert "sha256" not in secret_record
+    assert secret_record["metadata_status"] == "AVAILABLE"
     assert manifest["capacity_plan"]["remaining_slots"] == policy.retention_count
     policy_entry = next(
         item for item in manifest["system_configuration"] if item["path"] == str(config)
@@ -506,6 +511,38 @@ def test_snapshot_reserves_capacity_for_every_remaining_retention_slot(monkeypat
     one_generation_only = type("Usage", (), {"free": 1024**3 + 1024 + macro.stat().st_size})()
     monkeypatch.setattr(backup.shutil, "disk_usage", lambda _path: one_generation_only)
     with pytest.raises(RuntimeError, match="retention reserve"):
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+    assert not list(policy.backup_dir.glob(".partial-*"))
+
+
+def test_snapshot_reserve_includes_complete_staged_code_payload(monkeypatch, tmp_path: Path) -> None:
+    policy = replace(make_policy(tmp_path), retention_count=2, min_free_bytes=1)
+    repo = tmp_path / "repo"
+    site = tmp_path / "site"
+    _git_repo(repo)
+    _git_repo(site)
+    for source in (repo, site):
+        (source / "bundle-payload.bin").write_bytes(os.urandom(256 * 1024))
+        subprocess.run(("git", "add", "bundle-payload.bin"), cwd=source, check=True)
+        subprocess.run(("git", "commit", "-q", "-m", "payload"), cwd=source, check=True)
+    data = tmp_path / "data"
+    (data / "runs").mkdir(parents=True)
+    (data / "runs/evidence.bin").write_bytes(b"x")
+    (data / "state").mkdir()
+    macro = repo / "state/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    monkeypatch.setattr(
+        backup,
+        "mount_preflight",
+        lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}},
+    )
+    monkeypatch.setattr(backup, "verify_plan_document", lambda *_args: {"ok": True, "findings": []})
+    incomplete_only = type("Usage", (), {"free": 1024**3 + 64 * 1024})()
+    monkeypatch.setattr(backup.shutil, "disk_usage", lambda _path: incomplete_only)
+    with pytest.raises(RuntimeError, match="complete-snapshot retention reserve"):
         backup.create_snapshot(policy, repo, site, data, macro, "pytest")
     assert not list(policy.backup_dir.glob(".partial-*"))
 

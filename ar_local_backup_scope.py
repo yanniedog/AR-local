@@ -7,6 +7,7 @@ import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping, Sequence
 
 REQUIRED_DATA_DIRS = ("runs", "state")
 OPTIONAL_DATA_DIRS = ("logs", "predeploy", "runs-archive")
@@ -20,6 +21,8 @@ NETDATA_SECRET_RELATIVES = (
     "netdata/lib/config",
     "netdata/lib/cloud.d",
 )
+PER_SNAPSHOT_METADATA_RESERVE_BYTES = 1024**2
+RETENTION_SAFETY_HEADROOM_BYTES = 1024**3
 
 
 @dataclass(frozen=True)
@@ -162,6 +165,70 @@ def copy_scoped_data(scope: DataSnapshotScope, destination: Path, *, exclude: se
     destination.mkdir(parents=True, exist_ok=False)
     for source in scope.included:
         copy_regular_tree(source, destination / source.relative_to(scope.root), exclude=exclude)
+
+
+def metadata_only_records(paths: Sequence[Path]) -> list[dict[str, object]]:
+    """Inventory paths using lstat semantics without reading or following their bytes."""
+
+    records: list[dict[str, object]] = []
+    for path in paths:
+        record: dict[str, object] = {"path": str(path)}
+        try:
+            info = path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            record.update({"exists": False, "metadata_status": "ABSENT"})
+        except PermissionError:
+            record.update({"exists": None, "metadata_status": "INACCESSIBLE"})
+        except OSError:
+            record.update({"exists": None, "metadata_status": "UNAVAILABLE"})
+        else:
+            record.update(
+                {
+                    "exists": True,
+                    "metadata_status": "AVAILABLE",
+                    "uid": info.st_uid,
+                    "gid": info.st_gid,
+                    "mode": oct(stat.S_IMODE(info.st_mode)),
+                }
+            )
+        records.append(record)
+    return records
+
+
+def retention_capacity_plan(
+    files: Sequence[Mapping[str, object]],
+    remaining_slots: int,
+    available_before: int,
+    available_after_staging: int,
+    min_free_bytes: int,
+) -> dict[str, object]:
+    """Reserve complete staged generations plus bounded missing record overhead."""
+
+    logical_bytes = sum(int(item["size"]) for item in files)
+    consumed_bytes = max(0, available_before - available_after_staging)
+    staged_bytes = max(logical_bytes, consumed_bytes)
+    payload_bytes = staged_bytes + PER_SNAPSHOT_METADATA_RESERVE_BYTES
+    required_before = max(
+        min_free_bytes,
+        payload_bytes * remaining_slots + RETENTION_SAFETY_HEADROOM_BYTES,
+    )
+    required_after = max(
+        min_free_bytes,
+        payload_bytes * (remaining_slots - 1)
+        + PER_SNAPSHOT_METADATA_RESERVE_BYTES
+        + RETENTION_SAFETY_HEADROOM_BYTES,
+    )
+    return {
+        "snapshot_payload_bytes": payload_bytes,
+        "staged_payload_bytes": staged_bytes,
+        "per_snapshot_metadata_reserve_bytes": PER_SNAPSHOT_METADATA_RESERVE_BYTES,
+        "remaining_slots": remaining_slots,
+        "required_free_bytes": required_before,
+        "required_after_staging_bytes": required_after,
+        "available_free_bytes": available_before,
+        "available_after_staging_bytes": available_after_staging,
+        "ok": available_before >= required_before and available_after_staging >= required_after,
+    }
 
 
 def _sha256(path: Path) -> str:

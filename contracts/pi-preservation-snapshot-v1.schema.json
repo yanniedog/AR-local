@@ -24,7 +24,27 @@
     "candidate_code_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "repositories": {"type": "object"},
     "source_paths": {"type": "object"},
-    "secret_locations": {"type": "array"},
+    "secret_locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "exists", "metadata_status"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "exists": {"type": ["boolean", "null"]},
+          "metadata_status": {"enum": ["AVAILABLE", "ABSENT", "INACCESSIBLE", "UNAVAILABLE"]},
+          "uid": {"type": "integer", "minimum": 0},
+          "gid": {"type": "integer", "minimum": 0},
+          "mode": {"type": "string", "pattern": "^0o[0-7]{3,4}$"}
+        },
+        "allOf": [
+          {"if": {"properties": {"metadata_status": {"const": "AVAILABLE"}}}, "then": {"properties": {"exists": {"const": true}}, "required": ["uid", "gid", "mode"]}},
+          {"if": {"properties": {"metadata_status": {"const": "ABSENT"}}}, "then": {"properties": {"exists": {"const": false}}}},
+          {"if": {"properties": {"metadata_status": {"enum": ["INACCESSIBLE", "UNAVAILABLE"]}}}, "then": {"properties": {"exists": {"const": null}}}}
+        ],
+        "additionalProperties": false
+      }
+    },
     "data_scope": {
       "type": "object",
       "required": ["policy_version", "included", "excluded", "unknown_roots_allowed"],
@@ -84,13 +104,17 @@
     "source_data_bytes": {"type": "integer", "minimum": 0},
     "capacity_plan": {
       "type": "object",
-      "required": ["snapshot_payload_bytes", "retained_snapshots", "remaining_slots", "required_free_bytes", "available_free_bytes"],
+      "required": ["snapshot_payload_bytes", "staged_payload_bytes", "per_snapshot_metadata_reserve_bytes", "retained_snapshots", "remaining_slots", "required_free_bytes", "required_after_staging_bytes", "available_free_bytes", "available_after_staging_bytes"],
       "properties": {
         "snapshot_payload_bytes": {"type": "integer", "minimum": 0},
+        "staged_payload_bytes": {"type": "integer", "minimum": 0},
+        "per_snapshot_metadata_reserve_bytes": {"type": "integer", "minimum": 1},
         "retained_snapshots": {"type": "integer", "minimum": 0},
         "remaining_slots": {"type": "integer", "minimum": 1},
         "required_free_bytes": {"type": "integer", "minimum": 1},
-        "available_free_bytes": {"type": "integer", "minimum": 0}
+        "required_after_staging_bytes": {"type": "integer", "minimum": 1},
+        "available_free_bytes": {"type": "integer", "minimum": 0},
+        "available_after_staging_bytes": {"type": "integer", "minimum": 0}
       },
       "additionalProperties": false
     },
