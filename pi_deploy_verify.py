@@ -91,6 +91,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
     "pi_backup_foundation.py",
+    "pi_ingest_terminal.py",
     "ar_local_backup_policy.py",
     "ar_local_boot_proof.py",
     "ar_local_checkout.py",
@@ -768,6 +769,7 @@ def deployment_backup_gate(
 def record_deployment_acceptance(
     expected_commit: str,
     protected_commit: str,
+    parent_command: str,
     *,
     dry_run: bool = False,
 ) -> int:
@@ -776,9 +778,8 @@ def record_deployment_acceptance(
     if not FULL_COMMIT_RE.fullmatch(expected_commit) or not FULL_COMMIT_RE.fullmatch(protected_commit):
         return EXIT_CONFIG
     ar = pi_ar_repo()
-    parent_command = (
-        "python pi_deploy_verify.py --deploy --expected-commit " + expected_commit
-    )
+    if not parent_command.strip():
+        return EXIT_CONFIG
     script = (
         f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-deployment "
         f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
@@ -913,6 +914,9 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_CONFIG
+    if args.allow_empty_rates:
+        print("pi_deploy_verify: --allow-empty-rates is forbidden for controlled deployment", file=sys.stderr)
+        return EXIT_CONFIG
     local_main = origin_main_sha_local()
     if local_main != expected_commit:
         print(
@@ -971,6 +975,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     acceptance = record_deployment_acceptance(
         expected_commit,
         snap["AR_HEAD"],
+        args.effective_command,
         dry_run=False,
     )
     if acceptance != EXIT_OK:
@@ -1049,8 +1054,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    effective_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
+    args.effective_command = shlex.join(
+        [sys.executable, str(Path(__file__).resolve()), *effective_argv]
+    )
     if args.needs_pi:
         return cmd_needs_pi(args)
     if args.verify:

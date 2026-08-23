@@ -23,8 +23,12 @@ if systemctl is-active --quiet ar-local-daily.service || systemctl is-active --q
 fi
 today="$(TZ=Australia/Hobart date +%F)"
 if [ ! -f "$data/state/$today.done.json" ]; then
-  echo "Backup/restore is blocked until today's scheduled ingest has finalized: $today" >&2
-  exit 75
+  if ! PYTHONPATH=/usr/local/lib/ar-local-backup python3 /usr/local/lib/ar-local-backup/pi_ingest_terminal.py validate \
+    --state-root "$data/state" --date "$today" --config /etc/ar-local/backup.env >/dev/null; then
+    echo "Backup/restore is blocked until today's scheduled ingest has finalized or failed terminally: $today" >&2
+    exit 75
+  fi
+  echo "Backup/restore is preserving terminal failed-ingest evidence for $today" >&2
 fi
 
 case "$command" in

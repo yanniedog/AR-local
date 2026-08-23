@@ -376,6 +376,26 @@ def test_snapshot_is_create_once_and_contains_code_data_and_online_macro(monkeyp
     policy_copy = snapshot / policy_entry["snapshot_path"]
     assert policy_copy.read_bytes() == config.read_bytes()
     assert policy_entry["sha256"] == policy_module.sha256_file(policy_copy)
+    latest_before = (policy.backup_dir / "latest-backup.json").read_bytes()
+    mount_checks = 0
+
+    def disappearing_mount(*_args, **_kwargs):
+        nonlocal mount_checks
+        mount_checks += 1
+        return {
+            "ok": mount_checks == 1,
+            "findings": [] if mount_checks == 1 else ["backup_mount_missing"],
+            "mount": {},
+        }
+
+    monkeypatch.setattr(backup, "mount_preflight", disappearing_mount)
+    with pytest.raises(RuntimeError, match="mount changed before publication"):
+        backup.create_snapshot(
+            policy, repo, site, data, macro, "pytest", config_path=config
+        )
+    assert (policy.backup_dir / "latest-backup.json").read_bytes() == latest_before
+    assert len(list((policy.backup_dir / "snapshots").iterdir())) == 1
+    assert not list(policy.backup_dir.glob(".partial-*"))
 
 
 def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path: Path) -> None:
@@ -491,7 +511,7 @@ def test_boot_proof_rejects_wrong_device_identity(tmp_path: Path) -> None:
 
 def test_internal_runner_rejects_non_git_commands(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="only internal git"):
-        backup._run(("powershell", "Get-ChildItem"), tmp_path)
+        ar_local_checkout.git_command(("powershell", "Get-ChildItem"), tmp_path)
 
 
 def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) -> None:
@@ -518,6 +538,43 @@ def test_restore_drill_removes_unique_scratch_copy(monkeypatch, tmp_path: Path) 
     assert receipt["result"] == "PASS", receipt["checks"]
     assert receipt["scratch_retained"] is False
     assert list(scratch.iterdir()) == []
+
+
+def test_restore_drill_records_exception_without_replacing_last_pass(monkeypatch, tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    snapshot_id = "snapshot-failure"
+    snapshot = policy.backup_dir / "snapshots" / snapshot_id
+    (snapshot / "data").mkdir(parents=True)
+    (snapshot / "data/evidence.txt").write_text("evidence\n", encoding="utf-8")
+    macro = snapshot / "macro/local-macro.sqlite"
+    macro.parent.mkdir()
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    files = [
+        {"path": path.relative_to(snapshot).as_posix(), "size": path.stat().st_size, "sha256": policy_module.sha256_file(path)}
+        for path in sorted(snapshot.rglob("*"))
+        if path.is_file()
+    ]
+    (snapshot / "manifest.json").write_text(
+        json.dumps({"candidate_code_sha": COMMIT, "files": files}), encoding="utf-8"
+    )
+    latest = policy.backup_dir / "latest-restore.json"
+    latest.write_text('{"result":"PASS","receipt_path":"receipts/previous.json"}\n', encoding="utf-8")
+    previous = latest.read_bytes()
+
+    def fail_copy(*_args, **_kwargs):
+        raise OSError("simulated restore I/O failure")
+
+    monkeypatch.setattr(backup.shutil, "copytree", fail_copy)
+    with pytest.raises(RuntimeError, match="receipt="):
+        backup.restore_drill(policy, snapshot_id, tmp_path / "scratch", "pytest", ["restore"])
+    failure_receipts = list((policy.backup_dir / "receipts").glob("*.restore.*.json"))
+    assert len(failure_receipts) == 1
+    failed = json.loads(failure_receipts[0].read_text(encoding="utf-8"))
+    assert failed["result"] == "FAIL"
+    assert failed["checks"]["findings"] == ["restore_exception:OSError"]
+    assert latest.read_bytes() == previous
 
 
 def test_snapshot_creation_stops_at_retention_ceiling(monkeypatch, tmp_path: Path) -> None:
@@ -549,19 +606,33 @@ def test_snapshot_rechecks_retention_after_taking_production_lock(monkeypatch, t
         lambda path: {"path": str(path), "commit": COMMIT, "clean": True, "status": []},
     )
 
+    lock_entries = 0
+
     class AddSnapshotWhileAcquiring:
         def __enter__(self):
-            (snapshots / "two").mkdir()
+            nonlocal lock_entries
+            lock_entries += 1
+            if lock_entries == 2:
+                (snapshots / "two").mkdir()
 
         def __exit__(self, *_args):
             return None
 
     monkeypatch.setattr(backup, "production_lock", lambda *_args: AddSnapshotWhileAcquiring())
-    roots = [tmp_path / name for name in ("repo", "site", "data")]
-    for root in roots:
-        root.mkdir()
-    with pytest.raises(RuntimeError, match="retention ceiling"):
-        backup.create_snapshot(policy, *roots, tmp_path / "macro.sqlite", "pytest")
+    monkeypatch.setattr(
+        backup, "mount_preflight", lambda *_args, **_kwargs: {"ok": True, "findings": [], "mount": {}}
+    )
+    repo, site, data = (tmp_path / name for name in ("repo", "site", "data"))
+    _git_repo(repo)
+    _git_repo(site)
+    data.mkdir()
+    macro = tmp_path / "macro.sqlite"
+    with sqlite3.connect(macro) as connection:
+        connection.execute("CREATE TABLE series_observations(id INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(id INTEGER)")
+    with pytest.raises(RuntimeError, match="retention ceiling reached before publication"):
+        backup.create_snapshot(policy, repo, site, data, macro, "pytest")
+    assert lock_entries == 2
 
 
 def test_pointer_fields_are_bound_to_marker_and_contract(monkeypatch, tmp_path: Path) -> None:

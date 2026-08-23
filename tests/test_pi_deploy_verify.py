@@ -110,13 +110,37 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
         "run_ssh",
         lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
     )
-    assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
+    actual_command = "python pi_deploy_verify.py --deploy --expected-commit " + "a" * 40
+    assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40, actual_command) == pi_deploy_verify.EXIT_OK
     command = captured[0]
     assert "record-deployment" in command
     assert "--protected-code-sha" in command
     assert "--candidate-sha" in command
     assert "--dashboard-verified --services-verified" in command
-    assert "pi_deploy_verify.py --deploy --expected-commit" in command
+    assert actual_command in command
+
+
+def test_controlled_deploy_rejects_empty_rate_override(capsys):
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", "a" * 40, "--allow-empty-rates"]
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+    assert "forbidden for controlled deployment" in capsys.readouterr().err
+
+
+def test_main_preserves_actual_deploy_argv_for_acceptance(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "cmd_deploy",
+        lambda args: captured.append(args.effective_command) or pi_deploy_verify.EXIT_OK,
+    )
+    candidate = "a" * 40
+    assert pi_deploy_verify.main(
+        ["--deploy", "--expected-commit", candidate, "--allow-empty-rates"]
+    ) == pi_deploy_verify.EXIT_OK
+    assert "--allow-empty-rates" in captured[0]
+    assert candidate in captured[0]
 
 
 def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
@@ -294,6 +318,7 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
         "ar_local_checkout.py",
         "ar_local_deployment_chain.py",
         "ar_local_operation_lock.py",
+        "pi_ingest_terminal.py",
         "contracts/export-contract-v2.schema.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
         "contracts/pi-deployment-acceptance-v1.schema.json",
@@ -372,6 +397,7 @@ def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
     args = pi_deploy_verify.build_parser().parse_args(
         ["--deploy", "--expected-commit", candidate]
     )
+    args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
     assert rolled_back == [protected]
 

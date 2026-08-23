@@ -10,11 +10,13 @@ from ar_local_backup_policy import COMMIT_RE, utc_now
 from ar_local_operation_lock import production_lock
 
 
-def _git(repo: Path, arguments: Sequence[str]) -> str:
+def git_command(command: Sequence[str], repo: Path | None = None) -> str:
+    if not command or command[0] != "git":
+        raise ValueError("only internal git argv commands are allowed")
     # The executable is fixed, shell use is disabled, and every commit argument is validated.
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     result = subprocess.run(
-        ("git", *arguments),
+        tuple(command),
         cwd=repo,
         text=True,
         capture_output=True,
@@ -27,8 +29,19 @@ def _git(repo: Path, arguments: Sequence[str]) -> str:
 
 
 def _assert_clean(repo: Path) -> None:
-    if _git(repo, ("status", "--porcelain")):
+    if git_command(("git", "status", "--porcelain"), repo):
         raise RuntimeError("production checkout is dirty")
+
+
+def git_state(repo: Path) -> dict[str, object]:
+    sha = git_command(("git", "rev-parse", "HEAD"), repo)
+    status = git_command(("git", "status", "--porcelain"), repo)
+    return {
+        "path": str(repo.resolve()),
+        "commit": sha,
+        "clean": not status,
+        "status": status.splitlines(),
+    }
 
 
 def install_candidate(repo: Path, data_root: Path, candidate_sha: str) -> dict[str, object]:
@@ -40,13 +53,13 @@ def install_candidate(repo: Path, data_root: Path, candidate_sha: str) -> dict[s
     lock = data_root.resolve(strict=True) / "state/daily-ingest.lock"
     with production_lock(lock, "deploy"):
         _assert_clean(repo)
-        _git(repo, ("fetch", "origin", "main"))
-        if _git(repo, ("rev-parse", "origin/main")) != candidate_sha:
+        git_command(("git", "fetch", "origin", "main"), repo)
+        if git_command(("git", "rev-parse", "origin/main"), repo) != candidate_sha:
             raise RuntimeError("fetched origin/main does not match the approved candidate")
-        _git(repo, ("checkout", "main"))
-        _git(repo, ("merge", "--ff-only", candidate_sha))
+        git_command(("git", "checkout", "main"), repo)
+        git_command(("git", "merge", "--ff-only", candidate_sha), repo)
         _assert_clean(repo)
-        if _git(repo, ("rev-parse", "HEAD")) != candidate_sha:
+        if git_command(("git", "rev-parse", "HEAD"), repo) != candidate_sha:
             raise RuntimeError("production checkout did not reach the approved candidate")
     return {"ok": True, "result": "PASS", "candidate_code_sha": candidate_sha, "completed_at": utc_now()}
 
@@ -60,9 +73,9 @@ def rollback_candidate(repo: Path, data_root: Path, protected_sha: str) -> dict[
     lock = data_root.resolve(strict=True) / "state/daily-ingest.lock"
     with production_lock(lock, "rollback"):
         _assert_clean(repo)
-        _git(repo, ("cat-file", "-e", f"{protected_sha}^{{commit}}"))
-        _git(repo, ("checkout", "--detach", protected_sha))
+        git_command(("git", "cat-file", "-e", f"{protected_sha}^{{commit}}"), repo)
+        git_command(("git", "checkout", "--detach", protected_sha), repo)
         _assert_clean(repo)
-        if _git(repo, ("rev-parse", "HEAD")) != protected_sha:
+        if git_command(("git", "rev-parse", "HEAD"), repo) != protected_sha:
             raise RuntimeError("rollback checkout did not reach the protected commit")
     return {"ok": True, "result": "ROLLED_BACK", "candidate_code_sha": protected_sha, "completed_at": utc_now()}

@@ -29,6 +29,9 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "ar-local-backup.timer ar-local-restore-drill.timer" in installer
     assert "configured_identity" in installer
     assert "service_identity" in installer
+    assert "approved exact origin/main SHA required" in installer
+    assert 'status --porcelain --untracked-files=all' in installer
+    assert 'rev-parse origin/main' in installer
     assert "/usr/local/lib/ar-local-backup" in installer
     assert "ar_local_operation_lock.py" in installer
     assert "ar_local_boot_proof.py" in installer
@@ -37,6 +40,7 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
     assert "pi-backup-boot-proof-v1.schema.json" in installer
     assert "pi-deployment-acceptance-v1.schema.json" in installer
     assert "pi-preservation-snapshot-v1.schema.json" in installer
+    assert "pi_ingest_terminal.py" in installer
     assert "backup-gate.sha256" in installer
     assert 'install -d -o "$run_user" -g "$run_group" -m 0700 /srv/ar-local/restore-drills' in installer
     runtime_apply = read("apply-pi-runtime-units.sh")
@@ -69,7 +73,9 @@ def test_timers_run_outside_the_ingest_window() -> None:
     assert "00:30-03:30 ingest window" in guard
     assert "systemctl is-active --quiet ar-local-daily.service" in guard
     assert '"$data/state/$today.done.json"' in guard
-    assert "blocked until today's scheduled ingest has finalized" in guard
+    assert "pi_ingest_terminal.py" in guard
+    assert "finalized or failed terminally" in guard
+    assert "preserving terminal failed-ingest evidence" in guard
     for service in ("ar-local-backup.service", "ar-local-restore-drill.service"):
         assert "After=local-fs.target ar-local-daily.service ar-local-ingest-now.service" in read(
             service

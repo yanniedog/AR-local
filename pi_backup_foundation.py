@@ -11,7 +11,6 @@ import shutil
 import shlex
 import sqlite3
 import stat
-import subprocess
 import sys
 import uuid
 from contextlib import closing
@@ -34,7 +33,7 @@ from ar_local_backup_policy import (
     validate_plan_identity,
 )
 from ar_local_boot_proof import archive_boot_evidence, validate_boot_proof
-from ar_local_checkout import install_candidate, rollback_candidate
+from ar_local_checkout import git_command, git_state, install_candidate, rollback_candidate
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
@@ -76,20 +75,6 @@ def _json(path: Path) -> dict[str, object]:
     return payload
 
 
-def _run(command: Sequence[str], cwd: Path | None = None) -> str:
-    """Run an argv-only internal command; callers provide fixed git verbs, never shell text."""
-
-    if not command or command[0] != "git":
-        raise ValueError("only internal git argv commands are allowed")
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
-    result = subprocess.run(
-        tuple(command), cwd=cwd, text=True, capture_output=True, timeout=300, shell=False
-    )
-    if result.returncode:
-        raise RuntimeError(result.stderr.strip() or f"command failed: {command[0]}")
-    return result.stdout.strip()
-
-
 def _remove_tree(path: Path) -> None:
     def clear_readonly(function, failing_path, _error) -> None:
         os.chmod(failing_path, stat.S_IWRITE)
@@ -113,12 +98,6 @@ def _fsync_tree(root: Path) -> None:
     fsync_directory(root)
 
 
-def git_state(repo: Path) -> dict[str, object]:
-    sha = _run(("git", "rev-parse", "HEAD"), repo)
-    status = _run(("git", "status", "--porcelain"), repo)
-    return {"path": str(repo.resolve()), "commit": sha, "clean": not status, "status": status.splitlines()}
-
-
 def verify_plan_document(policy: BackupPolicy, repo: Path) -> dict[str, object]:
     path = repo / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
     findings: list[str] = []
@@ -132,7 +111,7 @@ def verify_plan_document(policy: BackupPolicy, repo: Path) -> dict[str, object]:
         canonical = text.replace(policy.plan_sha256, "PLAN_SHA256_PENDING").encode("utf-8")
         if hashlib.sha256(canonical).hexdigest() != policy.plan_sha256:
             findings.append("plan_controlled_sha256_mismatch")
-        commit = _run(("git", "log", "-1", "--format=%H", "--", path.relative_to(repo).as_posix()), repo)
+        commit = git_command(("git", "log", "-1", "--format=%H", "--", path.relative_to(repo).as_posix()), repo)
         if commit != policy.plan_git_commit:
             findings.append("plan_git_commit_mismatch")
     except (OSError, UnicodeError, RuntimeError, ValueError) as exc:
@@ -361,7 +340,7 @@ def create_snapshot(
             bundles = staging / "code"
             bundles.mkdir()
             for name, source in (("AR-local", repo), ("australianrates", site_repo)):
-                _run(("git", "bundle", "create", str((bundles / f"{name}.bundle").resolve()), "HEAD"), source)
+                git_command(("git", "bundle", "create", str((bundles / f"{name}.bundle").resolve()), "HEAD"), source)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -399,14 +378,33 @@ def create_snapshot(
         stream.flush()
         os.fsync(stream.fileno())
     _fsync_tree(staging)
-    final.parent.mkdir(parents=True, exist_ok=True)
-    staging.replace(final)
-    fsync_directory(final.parent)
-    manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
-    atomic_create_json(manifest_archive, manifest)
-    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": created_at, "started_at": created_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": repos["ar_local"]["commit"], "exact_commands": exact_commands or [], "evidence": [{"path": str(manifest_archive), "sha256": sha256_file(manifest_archive)}], "deviations": [], "deviation_authorization": None, "manifest_sha256": sha256_file(final / "manifest.json"), "result": "PASS"}
-    atomic_create_json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json", receipt)
-    atomic_replace_json(policy.backup_dir / "latest-backup.json", receipt)
+    try:
+        with production_lock(lock, "backup-publish"):
+            publication_mount = mount_preflight(policy, (repo, site_repo, data_root), perform_probe=False)
+            if not publication_mount["ok"]:
+                raise RuntimeError(f"backup mount changed before publication: {publication_mount['findings']}")
+            final.parent.mkdir(parents=True, exist_ok=True)
+            current = list(final.parent.iterdir())
+            if final.parent.is_symlink() or any(path.is_symlink() or not path.is_dir() for path in current):
+                raise RuntimeError("snapshot root changed before publication")
+            if len(current) >= policy.retention_count:
+                raise RuntimeError("snapshot retention ceiling reached before publication")
+            staging.replace(final)
+            fsync_directory(final.parent)
+            for evidence_root in (policy.backup_dir / "manifests", policy.backup_dir / "receipts"):
+                evidence_root.mkdir(parents=True, exist_ok=True)
+                if evidence_root.is_symlink() or not evidence_root.resolve().is_relative_to(policy.backup_dir.resolve()):
+                    raise RuntimeError("backup evidence directory escapes backup storage")
+            manifest_archive = policy.backup_dir / "manifests" / f"{snapshot_id}.json"
+            atomic_create_json(manifest_archive, manifest)
+            receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": created_at, "started_at": created_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": repos["ar_local"]["commit"], "exact_commands": exact_commands or [], "evidence": [{"path": str(manifest_archive), "sha256": sha256_file(manifest_archive)}], "deviations": [], "deviation_authorization": None, "manifest_sha256": sha256_file(final / "manifest.json"), "result": "PASS"}
+            atomic_create_json(policy.backup_dir / "receipts" / f"{snapshot_id}.backup.json", receipt)
+            if not mount_preflight(policy, (repo, site_repo, data_root), perform_probe=False)["ok"]:
+                raise RuntimeError("backup mount changed while publishing acceptance evidence")
+            atomic_replace_json(policy.backup_dir / "latest-backup.json", receipt)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return receipt
 
 
@@ -679,11 +677,12 @@ def restore_drill(
         raise ValueError("scratch restore root is not a real directory")
     destination = scratch_root / f"restore-{snapshot_id}-{uuid.uuid4().hex[:8]}"
     destination.mkdir(parents=True)
-    snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
-    if shutil.disk_usage(scratch_root).free < snapshot_bytes + 1024**3:
-        destination.rmdir()
-        raise ValueError("scratch storage lacks restore headroom")
+    failure: Exception | None = None
+    result: dict[str, object] = {"ok": False, "findings": []}
     try:
+        snapshot_bytes = sum(int(item.get("size") or 0) for item in verified["manifest"]["files"])
+        if shutil.disk_usage(scratch_root).free < snapshot_bytes + 1024**3:
+            raise ValueError("scratch storage lacks restore headroom")
         shutil.copytree(snapshot / "data", destination / "data")
         result = _verify_restored_state(destination / "data")
         macro_source = snapshot / "macro/local-macro.sqlite"
@@ -704,23 +703,24 @@ def restore_drill(
         if macro_quick != "ok" or missing_macro:
             result["ok"] = False
             result["findings"].append(f"macro_validation_failed:{','.join(missing_macro)}")
+    except Exception as exc:
+        failure = exc
+        result = {"ok": False, "findings": [f"restore_exception:{type(exc).__name__}"]}
     finally:
         try:
             _remove_tree(destination)
         except OSError as exc:
-            if "result" not in locals():
-                raise
             result["ok"] = False
             result["findings"].append(f"scratch_cleanup_failed:{type(exc).__name__}")
     manifest_sha = sha256_file(snapshot / "manifest.json")
-    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": False, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
+    receipt = {**policy.plan_identity(), "schema_version": 1, "snapshot_id": snapshot_id, "created_at": utc_now(), "started_at": started_at, "completed_at": utc_now(), "operator": operator, "candidate_code_sha": verified["manifest"].get("candidate_code_sha"), "manifest_sha256": manifest_sha, "scratch_path": str(destination), "scratch_retained": destination.exists(), "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "checks": result, "result": "PASS" if result["ok"] else "FAIL"}
     receipt_name = f"{snapshot_id}.restore.{uuid.uuid4().hex}.json"
     receipt_path = policy.backup_dir / "receipts" / receipt_name
     atomic_create_json(receipt_path, receipt)
-    atomic_replace_json(
-        policy.backup_dir / "latest-restore.json",
-        {**receipt, "receipt_path": receipt_path.relative_to(policy.backup_dir).as_posix()},
-    )
+    if result["ok"]:
+        atomic_replace_json(policy.backup_dir / "latest-restore.json", {**receipt, "receipt_path": receipt_path.relative_to(policy.backup_dir).as_posix()})
+    if failure is not None:
+        raise RuntimeError(f"restore drill failed; receipt={receipt_path}") from failure
     return receipt
 
 

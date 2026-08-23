@@ -4,8 +4,20 @@ set -eu
 repo="${1:-/srv/ar-local/AR-local}"
 site="${2:-/srv/ar-local/australianrates}"
 data="${3:-/srv/ar-local/data}"
+candidate="${4:?approved exact origin/main SHA required}"
 config="/etc/ar-local/backup.env"
 [ -f "$config" ] || { echo "Missing $config; refusing to install backup timers" >&2; exit 1; }
+case "$candidate" in *[!0-9a-f]*|'') echo "Invalid approved candidate SHA" >&2; exit 1;; esac
+[ "${#candidate}" -eq 40 ] || { echo "Approved candidate SHA must be 40 characters" >&2; exit 1; }
+[ -z "$(git -C "$repo" status --porcelain --untracked-files=all)" ] || {
+  echo "AR-local checkout is dirty; refusing to install trusted gate bytes" >&2
+  exit 1
+}
+[ "$(git -C "$repo" rev-parse HEAD)" = "$candidate" ] && \
+  [ "$(git -C "$repo" rev-parse origin/main)" = "$candidate" ] || {
+  echo "AR-local checkout is not the approved exact origin/main commit" >&2
+  exit 1
+}
 run_user="$(systemctl show ar-local-daily.service -p User --value)"
 run_group="$(systemctl show ar-local-daily.service -p Group --value)"
 run_home="$(getent passwd "$run_user" | cut -d: -f6)"
@@ -42,6 +54,7 @@ for name in \
   ar_local_deployment_chain.py \
   ar_local_operation_lock.py \
   pi_backup_foundation.py \
+  pi_ingest_terminal.py \
   cdr_atomic.py \
   cdr_export_contract.py \
   cdr_file_lock.py \
@@ -62,6 +75,7 @@ done
     ar_local_deployment_chain.py \
     ar_local_operation_lock.py \
     pi_backup_foundation.py \
+    pi_ingest_terminal.py \
     cdr_atomic.py \
     cdr_export_contract.py \
     cdr_file_lock.py \
