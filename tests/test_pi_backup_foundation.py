@@ -768,8 +768,21 @@ def test_restored_state_rejects_empty_observation_store(tmp_path: Path) -> None:
 
 def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -> None:
     _write_finalized_observation(tmp_path)
+    database = tmp_path / "runs/2026-08-24/_exports/local-cdr.sqlite"
+    database_sha256 = policy_module.sha256_file(database)
+    files_before = {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
     report = backup._verify_restored_state(tmp_path)
     assert report["ok"], report["findings"]
+    assert policy_module.sha256_file(database) == database_sha256
+    assert {
+        path.relative_to(tmp_path).as_posix()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    } == files_before
     assert report["selected_observation"]["observation_date"] == "2026-08-24"
     assert report["selected_observation"]["database_path"].endswith(
         "_exports/local-cdr.sqlite"

@@ -54,6 +54,15 @@ def _json(path: Path) -> dict[str, object]:
     return payload
 
 
+def _immutable_connection(path: Path) -> sqlite3.Connection:
+    """Open preserved SQLite evidence without creating WAL/SHM sidecars."""
+
+    return sqlite3.connect(
+        f"file:{path.as_posix()}?mode=ro&immutable=1",
+        uri=True,
+    )
+
+
 def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     banks_files = sorted(database.parent.glob("banks-*.json"))
     if len(banks_files) != 1:
@@ -61,7 +70,7 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     banks = _json(banks_files[0])
     run_date = banks_files[0].stem.removeprefix("banks-")
     expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)) as connection:
+    with closing(_immutable_connection(database)) as connection:
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
@@ -165,7 +174,7 @@ def _pointer_matches_marker(
 
 def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, object], list[str]]:
     findings: list[str] = []
-    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as connection:
+    with closing(_immutable_connection(path)) as connection:
         quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
         tables = {
             row[0]
@@ -183,7 +192,7 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
     if missing:
         findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
         return record, findings
-    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as connection:
+    with closing(_immutable_connection(path)) as connection:
         schema_version = connection.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
@@ -212,7 +221,7 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
     daily_databases: list[Path] = []
     for path in sorted(data_root.rglob("*.sqlite")):
         try:
-            with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as connection:
+            with closing(_immutable_connection(path)) as connection:
                 result = connection.execute("PRAGMA quick_check").fetchone()[0]
                 schema_version = None
                 if path.name == "local-cdr.sqlite":
