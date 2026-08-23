@@ -103,6 +103,22 @@ def test_backup_gate_failure_blocks_deployment(monkeypatch, capsys):
     assert "stale" in capsys.readouterr().err
 
 
+def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: captured.append(command) or (0, '{"result":"PASS"}', ""),
+    )
+    assert pi_deploy_verify.record_deployment_acceptance("a" * 40, "b" * 40) == pi_deploy_verify.EXIT_OK
+    command = captured[0]
+    assert "record-deployment" in command
+    assert "--protected-code-sha" in command
+    assert "--candidate-sha" in command
+    assert "--dashboard-verified --services-verified" in command
+    assert "pi_deploy_verify.py --deploy --expected-commit" in command
+
+
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
     captured = []
     monkeypatch.setattr(

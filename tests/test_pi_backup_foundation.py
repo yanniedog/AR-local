@@ -406,3 +406,42 @@ def test_gate_blocks_candidate_not_named_by_receipt(monkeypatch, tmp_path: Path)
     report = backup.gate(policy, *roots, COMMIT, "d" * 40, proof)
     assert not report["ok"]
     assert "backup_or_restore_receipt_missing_or_invalid" in report["findings"]
+
+
+def test_deployment_acceptance_is_immutable_schema_valid_and_chained(monkeypatch, tmp_path: Path) -> None:
+    policy = make_policy(tmp_path)
+    snapshot_id = "snapshot-deploy"
+    manifest = policy.backup_dir / "snapshots" / snapshot_id / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}\n", encoding="utf-8")
+    (policy.backup_dir / "latest-backup.json").write_text(
+        json.dumps({"snapshot_id": snapshot_id}), encoding="utf-8"
+    )
+    (policy.backup_dir / "latest-restore.json").write_text("{}\n", encoding="utf-8")
+    proof = policy.backup_dir / "boot.json"
+    proof.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(backup, "gate", lambda *_args, **_kwargs: {"ok": True, "findings": []})
+    monkeypatch.setattr(
+        backup,
+        "git_state",
+        lambda _repo: {"clean": True, "commit": COMMIT, "status": []},
+    )
+    roots = [tmp_path / name for name in ("repo", "site", "data")]
+    for root in roots:
+        root.mkdir()
+    first = backup.record_deployment_acceptance(
+        policy, *roots, "d" * 40, COMMIT, proof, "pytest", ["deploy command"],
+        dashboard_verified=True, services_verified=True,
+    )
+    first_path = Path(str(first["record_path"]))
+    schema = json.loads((ROOT / "contracts/pi-deployment-acceptance-v1.schema.json").read_text())
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(
+        json.loads(first_path.read_text())
+    )
+    second = backup.record_deployment_acceptance(
+        policy, *roots, "d" * 40, COMMIT, proof, "pytest", ["deploy command"],
+        dashboard_verified=True, services_verified=True,
+    )
+    second_record = json.loads(Path(str(second["record_path"])).read_text())
+    assert second_record["previous_record_sha256"] == policy_module.sha256_file(first_path)
+    assert len(list((policy.backup_dir / "deployment-records").glob("*.json"))) == 2

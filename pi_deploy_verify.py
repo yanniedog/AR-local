@@ -776,6 +776,40 @@ def deployment_backup_gate(
     return EXIT_OK
 
 
+def record_deployment_acceptance(
+    expected_commit: str,
+    protected_commit: str,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Persist the immutable controlled record after all deployment checks pass."""
+
+    if not FULL_COMMIT_RE.fullmatch(expected_commit) or not FULL_COMMIT_RE.fullmatch(protected_commit):
+        return EXIT_CONFIG
+    ar = pi_ar_repo()
+    parent_command = (
+        "python pi_deploy_verify.py --deploy --expected-commit " + expected_commit
+    )
+    script = (
+        f"cd {shell_quote(ar)} && /usr/bin/python3 pi_backup_foundation.py record-deployment "
+        f"--config {shell_quote(pi_backup_config())} --repo {shell_quote(ar)} "
+        f"--site-repo {shell_quote(pi_site_repo())} --data-root {shell_quote(pi_data_root())} "
+        f"--protected-code-sha {shell_quote(protected_commit)} "
+        f"--candidate-sha {shell_quote(expected_commit)} "
+        f"--parent-command {shell_quote(parent_command)} --dashboard-verified --services-verified"
+    )
+    code, out, err = run_ssh(script, dry_run=dry_run)
+    if dry_run:
+        print("pi_deploy_verify: dry-run would write an append-only deployment acceptance record")
+        return EXIT_OK
+    if code != 0:
+        print(err or out or "pi_deploy_verify: deployment acceptance record failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if out:
+        print(f"pi_deploy_verify: deployment acceptance recorded:\n{out}")
+    return EXIT_OK
+
+
 def deploy_services(*, dry_run: bool = False) -> int:
     ar_repo = pi_ar_repo()
     site_repo = pi_site_repo()
@@ -912,6 +946,13 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     smoke = wait_for_http_smoke(pi_base_url(), require_rates=not args.allow_empty_rates)
     if smoke != EXIT_OK:
         return smoke
+    acceptance = record_deployment_acceptance(
+        expected_commit,
+        snap["AR_HEAD"],
+        dry_run=False,
+    )
+    if acceptance != EXIT_OK:
+        return acceptance
     print("pi_deploy_verify: deploy OK")
     return EXIT_OK
 

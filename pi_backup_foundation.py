@@ -650,6 +650,80 @@ def gate(
     return {"ok": not findings, "created_at": utc_now(), **policy.plan_identity(), "protected_code_sha": protected_code_sha, "candidate_code_sha": candidate_sha, "operator": operator, "exact_commands": exact_commands or [], "deviations": [], "deviation_authorization": None, "findings": findings, "result": "PASS" if not findings else "BLOCKED"}
 
 
+def record_deployment_acceptance(
+    policy: BackupPolicy,
+    repo: Path,
+    site_repo: Path,
+    data_root: Path,
+    protected_code_sha: str,
+    candidate_sha: str,
+    boot_proof: Path,
+    operator: str,
+    exact_commands: list[str],
+    *,
+    dashboard_verified: bool,
+    services_verified: bool,
+) -> dict[str, object]:
+    started_at = utc_now()
+    gate_report = gate(
+        policy,
+        repo,
+        site_repo,
+        data_root,
+        protected_code_sha,
+        candidate_sha,
+        boot_proof,
+        operator,
+        exact_commands,
+    )
+    if not gate_report["ok"]:
+        raise ValueError(f"deployment evidence gate failed: {gate_report['findings']}")
+    repository = git_state(repo)
+    if not repository["clean"] or repository["commit"] != candidate_sha:
+        raise ValueError("deployed checkout is not the exact clean candidate")
+    if not dashboard_verified or not services_verified:
+        raise ValueError("dashboard and service verification must precede acceptance")
+    backup_pointer = policy.backup_dir / "latest-backup.json"
+    restore_pointer = policy.backup_dir / "latest-restore.json"
+    backup = _json(backup_pointer)
+    snapshot_manifest = (
+        policy.backup_dir / "snapshots" / str(backup["snapshot_id"]) / "manifest.json"
+    )
+    evidence_paths = (backup_pointer, restore_pointer, snapshot_manifest, boot_proof)
+    evidence = [
+        {"path": str(path.resolve()), "sha256": sha256_file(path)} for path in evidence_paths
+    ]
+    completed_at = utc_now()
+    records_root = policy.backup_dir / "deployment-records"
+    previous_records = sorted(records_root.glob("*.json")) if records_root.is_dir() else []
+    previous_record_sha256 = sha256_file(previous_records[-1]) if previous_records else None
+    record: dict[str, object] = {
+        "schema_version": 1,
+        **policy.plan_identity(),
+        "protected_code_sha": protected_code_sha,
+        "candidate_code_sha": candidate_sha,
+        "operator": operator,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "exact_commands": exact_commands,
+        "evidence": evidence,
+        "previous_record_sha256": previous_record_sha256,
+        "checks": {
+            "backup_gate": "PASS",
+            "clean_candidate_checkout": "PASS",
+            "services": "PASS",
+            "dashboard": "PASS",
+        },
+        "deviations": [],
+        "deviation_authorization": None,
+        "result": "PASS",
+    }
+    record_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex
+    record_path = records_root / f"{record_id}-{candidate_sha}.json"
+    atomic_create_json(record_path, record)
+    return {**record, "record_path": str(record_path), "record_sha256": sha256_file(record_path)}
+
+
 def _paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     return args.repo.resolve(), args.site_repo.resolve(), args.data_root.resolve()
 
@@ -658,7 +732,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
     exact_command = shlex.join([sys.executable, str(Path(__file__).resolve()), *effective_argv])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof"))
+    parser.add_argument("command", choices=("preflight", "snapshot", "verify", "restore-drill", "gate", "verify-boot-proof", "record-deployment"))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repo", type=Path, default=Path("/srv/ar-local/AR-local"))
     parser.add_argument("--site-repo", type=Path, default=Path("/srv/ar-local/australianrates"))
@@ -670,6 +744,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--candidate-sha")
     parser.add_argument("--protected-code-sha")
     parser.add_argument("--boot-proof", type=Path, default=DEFAULT_BOOT_PROOF)
+    parser.add_argument("--parent-command", action="append", default=[])
+    parser.add_argument("--dashboard-verified", action="store_true")
+    parser.add_argument("--services-verified", action="store_true")
     args = parser.parse_args(argv)
     try:
         policy = BackupPolicy.from_env_file(args.config)
@@ -689,10 +766,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = restore_drill(policy, args.snapshot_id, args.scratch_root, args.operator, [exact_command])
         elif args.command == "verify-boot-proof":
             report = validate_boot_proof(args.boot_proof, policy, datetime.now(timezone.utc))
-        else:
+        elif args.command == "gate":
             if not args.candidate_sha or not args.protected_code_sha:
                 raise ValueError("--candidate-sha and --protected-code-sha are required")
             report = gate(policy, repo, site_repo, data_root, args.protected_code_sha, args.candidate_sha, args.boot_proof, args.operator, [exact_command])
+        else:
+            if not args.candidate_sha or not args.protected_code_sha:
+                raise ValueError("--candidate-sha and --protected-code-sha are required")
+            report = record_deployment_acceptance(
+                policy,
+                repo,
+                site_repo,
+                data_root,
+                args.protected_code_sha,
+                args.candidate_sha,
+                args.boot_proof,
+                args.operator,
+                [*args.parent_command, exact_command],
+                dashboard_verified=args.dashboard_verified,
+                services_verified=args.services_verified,
+            )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report.get("ok", report.get("result") == "PASS") else 1
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:

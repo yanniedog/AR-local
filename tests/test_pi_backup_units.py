@@ -41,6 +41,11 @@ def test_configuration_has_controlled_plan_identity_and_no_force_bypass() -> Non
     policy = (ROOT / "ar_local_backup_policy.py").read_text(encoding="utf-8")
     assert "allow-unmounted" not in implementation.lower()
     assert "allow-unmounted" not in policy.lower()
+    deployment_schema = (ROOT / "contracts/pi-deployment-acceptance-v1.schema.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"previous_record_sha256"' in deployment_schema
+    assert '"candidate_code_sha"' in deployment_schema
 
 
 def test_timers_run_outside_the_ingest_window() -> None:
