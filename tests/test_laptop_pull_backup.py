@@ -38,14 +38,16 @@ def source_args(tmp_path: Path, date: str = "2026-08-25") -> Namespace:
 
 def manifest_entry(path: Path, root: Path) -> dict[str, object]:
     payload = path.read_bytes()
+    info = path.stat()
     return {
         "path": path.relative_to(root).as_posix(),
+        "type": "file",
         "size": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
-        "mode": "0o644",
-        "mtime_ns": path.stat().st_mtime_ns,
-        "uid": 0,
-        "gid": 0,
+        "mode": oct(info.st_mode & 0o7777),
+        "mtime_ns": (info.st_mtime_ns // 1_000_000_000) * 1_000_000_000,
+        "uid": info.st_uid,
+        "gid": info.st_gid,
     }
 
 
@@ -161,6 +163,39 @@ def test_observation_manifest_is_stable_and_source_change_is_detected(tmp_path: 
         source.recheck_entries(sources, first["files"])
 
 
+def test_retained_run_inventory_includes_terminal_diagnostics(tmp_path: Path) -> None:
+    args = source_args(tmp_path)
+    runs = Path(args.runs_root)
+    state = Path(args.state_root)
+    (runs / "2026-08-24").mkdir(parents=True)
+    (runs / "2026-08-25").mkdir()
+    state.mkdir(parents=True)
+    (state / "2026-08-24.done.json").write_text("{}", encoding="utf-8")
+    assert source.retained_runs(args) == [
+        {"date": "2026-08-24", "status": "completed"},
+        {"date": "2026-08-25", "status": "diagnostic"},
+    ]
+
+
+def test_diagnostic_sources_reject_completed_run_and_preserve_failure_evidence(tmp_path: Path) -> None:
+    args = source_args(tmp_path)
+    run = Path(args.runs_root) / args.date
+    run.mkdir(parents=True)
+    (run / "raw.json").write_text("{}", encoding="utf-8")
+    failure = Path(args.state_root) / "ingest-executions" / args.date
+    failure.mkdir(parents=True)
+    (failure / "attempt.FAIL.json").write_text("{}", encoding="utf-8")
+    selected, identity = source.diagnostic_sources(args)
+    assert identity == {"kind": "diagnostic", "run_date": args.date, "publishable": False}
+    assert [relative for _path, relative in selected] == [
+        f"data/runs/{args.date}/raw.json",
+        f"data/state/ingest-executions/{args.date}/attempt.FAIL.json",
+    ]
+    Path(args.state_root, f"{args.date}.done.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="completed run"):
+        source.diagnostic_sources(args)
+
+
 def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> None:
     database = tmp_path / "macro.sqlite"
     writer = sqlite3.connect(database)
@@ -220,6 +255,22 @@ def test_latest_observation_requires_bound_pointer(tmp_path: Path) -> None:
     restored = tmp_path / "restored"
     receiver.extract_archive(archive, restored)
     with pytest.raises(ValueError, match="lacks its bound"):
+        receiver.verify_extracted(restored, manifest, archive)
+
+
+def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    payload = source_root / "evidence.json"
+    payload.write_text("{}", encoding="utf-8")
+    entries = [manifest_entry(payload, source_root)]
+    manifest = {**base_manifest("diagnostic", entries), "run_date": "2026-08-25", "publishable": False}
+    manifest["files"][0]["mode"] = "0o600"
+    archive = tmp_path / "diagnostic.tar.zst"
+    make_file_only_tar(source_root, archive, entries)
+    restored = tmp_path / "restored"
+    receiver.extract_archive(archive, restored)
+    with pytest.raises(ValueError, match="metadata"):
         receiver.verify_extracted(restored, manifest, archive)
 
 

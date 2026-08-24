@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import uuid
@@ -34,8 +35,8 @@ from ar_local_restore_verification import (
 
 PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
-PLAN_VERSION = "1.2"
-PLAN_SHA256 = "94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194"
+PLAN_VERSION = "1.3"
+PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -69,16 +70,53 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def fsync_directory(path: Path) -> None:
+    """Persist directory metadata where POSIX exposes a directory fsync."""
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def durable_move(source: Path, destination: Path, *, replace: bool) -> None:
+    """Atomically promote a same-volume file with write-through on Windows."""
+    if destination.exists() and not replace:
+        raise FileExistsError(destination)
+    if os.name == "nt":
+        import ctypes
+
+        flags = 0x8  # MOVEFILE_WRITE_THROUGH
+        if replace:
+            flags |= 0x1  # MOVEFILE_REPLACE_EXISTING
+        move = ctypes.windll.kernel32.MoveFileExW
+        move.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        move.restype = ctypes.c_int
+        if not move(str(source), str(destination), flags):
+            raise ctypes.WinError()
+        return
+    if replace:
+        source.replace(destination)
+    else:
+        os.rename(source, destination)
+    fsync_directory(destination.parent)
+
+
 def atomic_create(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    if path.exists():
+        raise FileExistsError(path)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+        with temporary.open("xb") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
+        durable_move(temporary, path, replace=False)
     finally:
-        os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 
 
 def atomic_replace(path: Path, payload: bytes) -> None:
@@ -89,7 +127,7 @@ def atomic_replace(path: Path, payload: bytes) -> None:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        temporary.replace(path)
+        durable_move(temporary, path, replace=True)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -102,7 +140,7 @@ def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
     canonical = text.replace(PLAN_SHA256, "PLAN_SHA256_PENDING").encode("utf-8")
     if hashlib.sha256(canonical).hexdigest() != PLAN_SHA256:
         raise ValueError("controlled runbook checksum mismatch")
-    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.2` |" not in text:
+    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.3` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
     return {"plan_sha256": PLAN_SHA256, "plan_raw_sha256": hashlib.sha256(raw).hexdigest()}
 
@@ -247,10 +285,17 @@ def validate_manifest(
         if previous is not None and encoded <= previous:
             raise ValueError("source manifest is not strictly sorted by UTF-8 path")
         previous = encoded
+        if entry.get("type") != "file":
+            raise ValueError(f"invalid source type: {relative}")
         if not isinstance(entry.get("size"), int) or int(entry["size"]) < 0:
             raise ValueError(f"invalid source size: {relative}")
         if not SHA256_RE.fullmatch(str(entry.get("sha256") or "")):
             raise ValueError(f"invalid source hash: {relative}")
+        if not re.fullmatch(r"0o[0-7]{3,4}", str(entry.get("mode") or "")):
+            raise ValueError(f"invalid source mode: {relative}")
+        for metadata_key in ("mtime_ns", "uid", "gid"):
+            if not isinstance(entry.get(metadata_key), int) or int(entry[metadata_key]) < 0:
+                raise ValueError(f"invalid source {metadata_key}: {relative}")
         total += int(entry["size"])
     if value.get("file_count") != len(files) or value.get("total_bytes") != total:
         raise ValueError("source manifest summary mismatch")
@@ -300,8 +345,18 @@ def remote_list(args: argparse.Namespace, remote: str) -> dict[str, object]:
     if result.returncode:
         raise RuntimeError(f"Pi backup preflight failed: {result.stderr.decode('utf-8', 'replace')}")
     value = json.loads(result.stdout)
-    if not isinstance(value, dict) or not value.get("ok") or not isinstance(value.get("completed_dates"), list):
+    if not isinstance(value, dict) or not value.get("ok") or not isinstance(value.get("retained_runs"), list):
         raise ValueError("Pi backup preflight returned invalid JSON")
+    prior = ""
+    for item in value["retained_runs"]:
+        if (
+            not isinstance(item, dict)
+            or not DATE_RE.fullmatch(str(item.get("date") or ""))
+            or item.get("status") not in {"completed", "diagnostic"}
+            or str(item["date"]) <= prior
+        ):
+            raise ValueError("Pi retained-run inventory is invalid")
+        prior = str(item["date"])
     return value
 
 
@@ -313,6 +368,12 @@ def archive_paths(target: Path, manifest: Mapping[str, object], digest: str) -> 
             raise ValueError("invalid observation date in manifest")
         root = target / "observations" / date / digest
         archive = root / "observation.tar.zst"
+    elif kind == "diagnostic":
+        date = str(manifest["run_date"])
+        if not DATE_RE.fullmatch(date):
+            raise ValueError("invalid diagnostic run date in manifest")
+        root = target / "diagnostic-runs" / date / digest
+        archive = root / "diagnostic.tar.zst"
     else:
         generation = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{digest[:16]}"
         root = target / "control" / generation
@@ -362,11 +423,41 @@ def stream_partial(process: subprocess.Popen[bytes], stream: BinaryIO, partial: 
     return digest.hexdigest(), written
 
 
-def tar_members(archive: Path) -> list[str]:
-    result = subprocess.run(("tar", "-tf", str(archive)), text=True, capture_output=True, timeout=600)
-    if result.returncode:
-        raise RuntimeError(f"compressed archive is unreadable: {result.stderr}")
-    return [line.removeprefix("./") for line in result.stdout.splitlines() if line and not line.endswith("/")]
+def tar_metadata(archive: Path) -> list[dict[str, object]]:
+    """Read zstd tar headers through the platform tar without extracting bytes."""
+    process = subprocess.Popen(
+        ("tar", "-cf", "-", f"@{archive}"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None and process.stderr is not None
+    entries: list[dict[str, object]] = []
+    try:
+        with tarfile.open(fileobj=process.stdout, mode="r|*") as stream:
+            for member in stream:
+                relative = member.name.removeprefix("./")
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise ValueError(f"archive contains a non-regular member: {relative}")
+                entries.append({
+                    "path": relative,
+                    "type": "file",
+                    "size": member.size,
+                    "mode": oct(member.mode),
+                    "mtime_ns": int(member.mtime * 1_000_000_000),
+                    "uid": member.uid,
+                    "gid": member.gid,
+                })
+        error = process.stderr.read().decode("utf-8", "replace")
+        code = process.wait(timeout=600)
+        if code:
+            raise RuntimeError(f"compressed archive is unreadable: {error}")
+    except Exception:
+        process.kill()
+        process.wait(timeout=30)
+        raise
+    return entries
 
 
 def extract_archive(archive: Path, destination: Path) -> None:
@@ -389,7 +480,7 @@ def extracted_entries(root: Path) -> list[dict[str, object]]:
     return entries
 
 
-def sqlite_checks(root: Path) -> list[dict[str, object]]:
+def sqlite_checks(root: Path, *, required: bool = True) -> list[dict[str, object]]:
     reports = []
     for path in sorted(root.rglob("*.sqlite")):
         with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
@@ -398,7 +489,7 @@ def sqlite_checks(root: Path) -> list[dict[str, object]]:
         if quick != "ok":
             raise ValueError(f"SQLite quick_check failed: {path.relative_to(root)}")
         reports.append({"path": path.relative_to(root).as_posix(), "quick_check": quick, "tables": tables})
-    if not reports:
+    if required and not reports:
         raise ValueError("archive contains no SQLite database")
     return reports
 
@@ -474,18 +565,20 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
 
 def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) -> dict[str, object]:
     expected = [{"path": item["path"], "size": item["size"], "sha256": item["sha256"]} for item in manifest["files"]]
-    members = tar_members(archive)
-    expected_paths = [str(item["path"]) for item in expected]
-    if members != expected_paths:
-        raise ValueError("tar member list does not exactly match source manifest")
+    expected_metadata = [
+        {key: item[key] for key in ("path", "type", "size", "mode", "mtime_ns", "uid", "gid")}
+        for item in manifest["files"]
+    ]
+    if tar_metadata(archive) != expected_metadata:
+        raise ValueError("tar member metadata does not exactly match source manifest")
     actual = extracted_entries(root)
     if actual != expected:
         raise ValueError("extracted bytes do not exactly match source manifest")
-    sqlite_report = sqlite_checks(root)
+    sqlite_report = sqlite_checks(root, required=manifest["kind"] != "diagnostic")
     result: dict[str, object] = {"files_verified": len(actual), "bytes_verified": sum(int(item["size"]) for item in actual), "sqlite": sqlite_report}
     if manifest["kind"] == "observation":
         result["observation"] = observation_checks(root, manifest)
-    else:
+    elif manifest["kind"] == "control":
         bundles = sorted((root / "git").glob("*.bundle"))
         if {bundle.name for bundle in bundles} != {"AR-local.bundle", "australianrates.bundle"}:
             raise ValueError("control archive does not contain both required Git bundles")
@@ -503,6 +596,8 @@ def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) 
             raise ValueError("control archive secret-exclusion metadata is invalid")
         result["git_bundles"] = [path.name for path in bundles]
         result["secret_locations"] = len(secrets)
+    else:
+        result["diagnostic"] = {"run_date": manifest["run_date"], "publishable": False}
     return result
 
 
@@ -557,6 +652,7 @@ def append_catalog(target: Path, receipt: Mapping[str, object], receipt_path: Pa
         "previous_entry_sha256": entries[-1]["entry_sha256"] if entries else None,
         "kind": receipt["kind"],
         "observation_date": receipt.get("observation_date"),
+        "run_date": receipt.get("run_date"),
         "source_manifest_sha256": receipt["source_manifest_sha256"],
         "archive_sha256": receipt["archive_sha256"],
         "receipt_path": receipt_path.relative_to(target).as_posix(),
@@ -569,6 +665,7 @@ def append_catalog(target: Path, receipt: Mapping[str, object], receipt_path: Pa
         stream.write(canonical_json_bytes(entry))
         stream.flush()
         os.fsync(stream.fileno())
+    fsync_directory(catalog.parent)
     return entry
 
 
@@ -623,10 +720,9 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         checks = restore_verify_archive(target, partial, manifest, kind)
         if capacity(target)["free"] < FREE_FLOOR_BYTES:
             raise RuntimeError("free-space floor failed after verification")
-        atomic_create(manifest_path, manifest_bytes)
-        os.link(partial, archive)
-        partial.unlink()
+        durable_move(partial, archive, replace=False)
         partial = None
+        atomic_create(manifest_path, manifest_bytes)
         receipt = {
             "schema_version": 1,
             "plan_document_id": PLAN_DOCUMENT_ID,
@@ -643,6 +739,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
             "source_helper_sha256": helper_sha,
             "kind": kind,
             "observation_date": manifest.get("observation_date"),
+            "run_date": manifest.get("run_date"),
             "source_manifest_sha256": manifest_sha,
             "archive_sha256": archive_sha,
             "archive_bytes": archive_bytes,
@@ -681,6 +778,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
             "completed_at": utc_now(),
             "kind": kind,
             "observation_date": date,
+            "run_date": date if kind == "diagnostic" else None,
             "error": f"{type(exc).__name__}: {exc}",
             "remote_stderr": bytes(errors).decode("utf-8", "replace"),
             "partial_path": str(partial) if partial else None,
@@ -758,16 +856,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "preflight":
             print(json.dumps({"ok": True, "result": "PASS", "target": str(target), "capacity": capacity(target), "plan": plan, "recovery_base": recovery_base, "source_helper_sha256": helper_sha, **listing}, indent=2, sort_keys=True))
             return 0
-        dates = [str(date) for date in listing["completed_dates"] if DATE_RE.fullmatch(str(date))]
-        if not dates:
+        retained = [dict(item) for item in listing["retained_runs"]]
+        completed = [str(item["date"]) for item in retained if item["status"] == "completed"]
+        diagnostic = [str(item["date"]) for item in retained if item["status"] == "diagnostic"]
+        if not completed:
             raise ValueError("Pi reported no completed observations")
         results = []
         with ReceiverLock(target):
-            latest = dates[-1]
+            latest = completed[-1]
             results.append(backup_one(args, remote, helper_sha, "observation", latest))
+            for date in diagnostic:
+                results.append(backup_one(args, remote, helper_sha, "diagnostic", date))
             results.append(backup_one(args, remote, helper_sha, "control"))
             if args.command == "backfill":
-                for date in dates:
+                for date in completed:
                     if args.after_date < date < latest:
                         results.append(backup_one(args, remote, helper_sha, "observation", date))
         print(json.dumps({"ok": True, "result": "PASS", "latest": latest, "recovery_base": recovery_base, "results": results, "capacity_after": capacity(target)}, indent=2, sort_keys=True))

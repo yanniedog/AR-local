@@ -13,7 +13,7 @@
     "schema_version": {"const": 1},
     "sequence": {"type": "integer", "minimum": 1},
     "plan_document_id": {"const": "ARL-OPS-001"},
-    "plan_version": {"enum": ["1.0", "1.1", "1.2"]},
+    "plan_version": {"enum": ["1.0", "1.1", "1.2", "1.3"]},
     "plan_git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "plan_raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

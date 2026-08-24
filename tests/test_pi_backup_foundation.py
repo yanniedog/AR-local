@@ -42,7 +42,7 @@ def valid_snapshot_manifest(files: list[dict[str, object]]) -> dict[str, object]
         "completed_at": timestamp,
         "operator": "pytest",
         "plan_document_id": "ARL-OPS-001",
-        "plan_version": "1.2",
+        "plan_version": "1.3",
         "plan_git_commit": COMMIT,
         "plan_sha256": DIGEST,
         "plan_raw_sha256": "e" * 64,
@@ -1572,7 +1572,7 @@ def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> N
     policy = replace(
         make_policy(tmp_path),
         plan_git_commit=commit,
-        plan_sha256="94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194",
+        plan_sha256="8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d",
         plan_raw_sha256=policy_module.sha256_file(document),
     )
     report = backup.verify_plan_document(policy, repo)

@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -98,7 +99,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     if (state / "daily-ingest.lock").exists():
         raise ValueError("daily ingest lock exists")
     service = command("systemctl", "is-active", "ar-local-daily.service", check=False).stdout.strip()
-    if service != "inactive":
+    if service not in {"inactive", "failed"}:
         raise ValueError(f"daily ingest service is active: {service}")
     timer = command("systemctl", "is-enabled", "ar-local-daily.timer", check=False).stdout.strip()
     if timer != "enabled":
@@ -142,10 +143,11 @@ def file_entry(path: Path, relative: str, seen: dict[str, str]) -> dict[str, obj
         raise ValueError(f"source has multiple hard links: {path}")
     return {
         "path": relative,
+        "type": "file",
         "size": info.st_size,
         "sha256": sha256_file(path),
         "mode": oct(stat.S_IMODE(info.st_mode)),
-        "mtime_ns": info.st_mtime_ns,
+        "mtime_ns": (info.st_mtime_ns // 1_000_000_000) * 1_000_000_000,
         "uid": info.st_uid,
         "gid": info.st_gid,
     }
@@ -218,6 +220,35 @@ def observation_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]
     }
 
 
+def diagnostic_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]], dict[str, object]]:
+    runs = Path(args.runs_root)
+    state = Path(args.state_root)
+    date = args.date
+    run = (runs / date).resolve(strict=True)
+    if run.parent != runs.resolve() or not run.is_dir() or run.is_symlink():
+        raise ValueError("diagnostic run path is not a direct real child of runs root")
+    if (state / f"{date}.done.json").exists():
+        raise ValueError("completed run must use the observation archive path")
+    selected = {
+        f"data/runs/{date}/{path.relative_to(run).as_posix()}": path
+        for path in regular_tree(run)
+    }
+    failure_root = state / "ingest-executions" / date
+    if failure_root.is_dir() and not failure_root.is_symlink():
+        for path in regular_tree(failure_root):
+            selected[f"data/state/{path.relative_to(state).as_posix()}"] = path
+    if not selected:
+        raise ValueError("diagnostic run contains no retained evidence")
+    return sorted(
+        ((path, relative) for relative, path in selected.items()),
+        key=lambda item: item[1].encode("utf-8"),
+    ), {
+        "kind": "diagnostic",
+        "run_date": date,
+        "publishable": False,
+    }
+
+
 def copy_regular_tree(source: Path, destination: Path, *, exclude_locks: bool = False) -> None:
     destination.mkdir(parents=True, exist_ok=False)
     for path in regular_tree(source):
@@ -283,6 +314,11 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
     try:
         state = Path(args.state_root)
         copy_regular_tree(state, root / "data/state", exclude_locks=True)
+        data_root = state.parent
+        for name in ("runs-archive", "predeploy"):
+            optional = data_root / name
+            if optional.is_dir() and not optional.is_symlink():
+                copy_regular_tree(optional, root / f"data/{name}")
         macro = Path(args.macro_db).resolve(strict=True)
         macro_report = sqlite_backup(macro, root / "macro/local-macro.sqlite")
         repositories = []
@@ -379,16 +415,16 @@ def stream_tar(sources: Sequence[tuple[Path, str]], cwd: Path) -> None:
         raise RuntimeError(f"archive pipeline failed: tar={tar_code} {tar_error}; zstd={compressor_code} {compressor_error}")
 
 
-def completed_dates(args: argparse.Namespace) -> list[str]:
+def retained_runs(args: argparse.Namespace) -> list[dict[str, object]]:
     runs = Path(args.runs_root)
     state = Path(args.state_root)
-    dates = []
-    for marker in sorted(state.glob("????-??-??.done.json")):
-        date = marker.name.removesuffix(".done.json")
-        run = runs / date
-        if run.is_dir() and not run.is_symlink():
-            dates.append(date)
-    return dates
+    values = []
+    for run in sorted(runs.iterdir()):
+        if not run.is_dir() or run.is_symlink() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", run.name):
+            continue
+        completed = (state / f"{run.name}.done.json").is_file()
+        values.append({"date": run.name, "status": "completed" if completed else "diagnostic"})
+    return values
 
 
 def emit_stream(args: argparse.Namespace) -> int:
@@ -397,6 +433,9 @@ def emit_stream(args: argparse.Namespace) -> int:
     try:
         if args.kind == "observation":
             sources, identity = observation_sources(args)
+            cwd = Path("/srv/ar-local")
+        elif args.kind == "diagnostic":
+            sources, identity = diagnostic_sources(args)
             cwd = Path("/srv/ar-local")
         else:
             temporary, identity = prepare_control(args)
@@ -426,7 +465,7 @@ def emit_stream(args: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("command", choices=("list", "stream"))
-    value.add_argument("--kind", choices=("observation", "control"), default="observation")
+    value.add_argument("--kind", choices=("observation", "diagnostic", "control"), default="observation")
     value.add_argument("--date")
     value.add_argument("--runs-root", default="/srv/ar-local/data/runs")
     value.add_argument("--state-root", default="/srv/ar-local/data/state")
@@ -448,10 +487,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         preflight = production_preflight(args)
         if args.command == "list":
-            print(json.dumps({"ok": True, "preflight": preflight, "completed_dates": completed_dates(args)}, indent=2, sort_keys=True))
+            inventory = retained_runs(args)
+            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"]}, indent=2, sort_keys=True))
             return 0
-        if args.kind == "observation" and not args.date:
-            raise ValueError("--date is required for observation streams")
+        if args.kind in {"observation", "diagnostic"} and not args.date:
+            raise ValueError("--date is required for run streams")
         return emit_stream(args)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(json.dumps({"ok": False, "result": "BLOCKED", "error": str(exc)}), file=sys.stderr)

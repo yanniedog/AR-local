@@ -1,8 +1,8 @@
 # Laptop pull-backup operator notes
 
 Read [`PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`](PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md)
-completely before using these commands. Decision D-004 and the Phase A gates
-control this procedure.
+completely before using these commands. Decisions D-004 and D-005 and the
+Phase A gates control this procedure.
 
 The Windows laptop is the receiver. It pulls over SSH, writes only below an
 explicit target, and refuses any operation that would leave less than
@@ -29,26 +29,33 @@ npm run laptop:backup:preflight -- `
   --recovery-image C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21 `
   --candidate-code-sha <candidate-sha> `
   --protected-code-sha 9302890fcc752cbf90da97d597e972c157d913e3 `
-  --plan-git-commit 281c99d290361e779c8b6ed4fc7ccb3f67fa2672
+  --plan-git-commit 8efefe10890a295ef87f97b46d3cb981193cfddc
 
 npm run laptop:backup:latest -- `
   --target C:\code\backups\AR-local-pi5 `
   --recovery-image C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21 `
   --candidate-code-sha <candidate-sha> `
   --protected-code-sha 9302890fcc752cbf90da97d597e972c157d913e3 `
-  --plan-git-commit 281c99d290361e779c8b6ed4fc7ccb3f67fa2672
+  --plan-git-commit 8efefe10890a295ef87f97b46d3cb981193cfddc
 ```
 
 `backup-latest` first preserves and independently restores the latest completed
-observation, then captures control state, online-backed-up macro SQLite, both
-Git repositories, systemd definitions, package inventory, and secret metadata
-without secret bytes. It is successful only after source-manifest identity,
-archive readability, complete extracted SHA-256 comparison, SQLite
+observation, preserves every retained terminal/unfinished run as non-publishable
+diagnostic evidence, then captures current control state, `runs-archive`,
+predeploy evidence, online-backed-up macro SQLite, both Git repositories,
+systemd definitions, package inventory, and secret metadata without secret
+bytes. The observation, diagnostic, control, and macro components have separate
+receipts and freshness; an already verified observation never suppresses a new
+control/macro generation. It is successful only after source-manifest identity,
+archive readability, exact tar type/mode/mtime/UID/GID verification, complete
+extracted SHA-256 comparison, SQLite
 `PRAGMA quick_check`, daily export reconciliation, completion/contract/ledger
 binding, Git-bundle validation, and the free-space floor all pass.
 
 After that current-generation pass is accepted, backfill every completed
-observation after the historical image date:
+observation after the historical image date. Diagnostic runs are included even
+when they predate `--after-date`, because failure evidence is not treated as a
+publishable observation and must not disappear through date filtering:
 
 ```powershell
 npm run laptop:backup:backfill -- `
@@ -57,15 +64,17 @@ npm run laptop:backup:backfill -- `
   --after-date 2026-05-21 `
   --candidate-code-sha <candidate-sha> `
   --protected-code-sha 9302890fcc752cbf90da97d597e972c157d913e3 `
-  --plan-git-commit 281c99d290361e779c8b6ed4fc7ccb3f67fa2672
+  --plan-git-commit 8efefe10890a295ef87f97b46d3cb981193cfddc
 ```
 
 Backfill is incremental. A completed content-addressed observation is rehashed
 and skipped rather than retransferred. Each new archive is streamed to a unique
 `.partial`, read back into a unique restore-drill directory, verified, and only
-then promoted. A receipt is created last; the hash-linked catalog and latest
-pointer advance only after the receipt exists. Failure evidence is immutable,
-and only the exact partial created by the failed invocation may be removed.
+then promoted. On Windows, promotion uses an atomic write-through move; on
+POSIX it uses an atomic rename plus directory fsync. The order is archive,
+manifest, receipt, hash-linked catalog, then latest pointer. Each completed file
+is flushed before its metadata is promoted. Failure evidence is immutable, and
+only the exact partial created by the failed invocation may be removed.
 
 ## Stop conditions
 
