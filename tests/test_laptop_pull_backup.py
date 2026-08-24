@@ -196,6 +196,33 @@ def test_diagnostic_sources_reject_completed_run_and_preserve_failure_evidence(t
         source.diagnostic_sources(args)
 
 
+def test_failed_service_authorization_requires_hash_verified_terminal_evidence(tmp_path: Path) -> None:
+    date = "2026-08-25"
+    state = tmp_path / "state"
+    root = state / "ingest-executions" / date
+    root.mkdir(parents=True)
+    evidence = root / "attempt.failure.txt"
+    evidence.write_text("upstream failed\n", encoding="utf-8")
+    record = {
+        "result": "FAIL",
+        "run_date": date,
+        "repository_clean": True,
+        "candidate_code_sha": PROTECTED,
+        "exact_commands": ["cdr_daily.py"],
+        "evidence": [{"path": str(evidence.resolve()), "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest()}],
+        "deviations": [],
+        "deviation_authorization": None,
+    }
+    (root / "attempt.FAIL.json").write_text(json.dumps(record), encoding="utf-8")
+    assert source.valid_terminal_failure(state, PROTECTED) == {
+        "run_date": date,
+        "record_path": str(root / "attempt.FAIL.json"),
+        "result": "FAIL",
+    }
+    evidence.write_text("tampered\n", encoding="utf-8")
+    assert source.valid_terminal_failure(state, PROTECTED) is None
+
+
 def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> None:
     database = tmp_path / "macro.sqlite"
     writer = sqlite3.connect(database)

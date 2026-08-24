@@ -82,8 +82,9 @@ Stop without retrying ingest if any of these occur:
 
 - local time is in the 00:30–03:30 Australia/Hobart quiet window;
 - the Pi checkout is dirty or differs from the protected SHA;
-- the ingest lock exists, the daily service is active, or the timer/dashboard
-  preflight is unhealthy;
+- the ingest lock exists, the daily service is active, or a failed service lacks
+  append-only hash-verified terminal-failure evidence bound to the protected
+  production SHA; or the timer/dashboard preflight is unhealthy;
 - the laptop target is non-canonical, symlinked, already locked, or lacks the
   worst-case source-plus-restore capacity above the 50 GiB floor;
 - a source path is unsafe on Windows, collides by case, is a symlink/special

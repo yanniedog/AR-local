@@ -85,6 +85,50 @@ def http_healthy(url: str) -> bool:
         return False
 
 
+def valid_terminal_failure(state: Path, protected_sha: str) -> dict[str, object] | None:
+    root = state / "ingest-executions"
+    if not root.is_dir() or root.is_symlink():
+        return None
+    for record_path in sorted(root.glob("????-??-??/*.FAIL.json"), reverse=True):
+        try:
+            date = record_path.parent.name
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            if (
+                record_path.is_symlink()
+                or not isinstance(record, dict)
+                or record.get("result") != "FAIL"
+                or record.get("run_date") != date
+                or record.get("repository_clean") is not True
+                or record.get("candidate_code_sha") != protected_sha
+                or record.get("deviations") != []
+                or record.get("deviation_authorization") is not None
+                or not record.get("exact_commands")
+                or (state / f"{date}.done.json").exists()
+            ):
+                continue
+            evidence = record.get("evidence")
+            if not isinstance(evidence, list) or not evidence:
+                continue
+            failure_root = record_path.parent.resolve()
+            for item in evidence:
+                path = Path(str(item.get("path") or "")) if isinstance(item, dict) else Path()
+                resolved = path.resolve(strict=True)
+                if (
+                    not path.is_absolute()
+                    or path.is_symlink()
+                    or not path.is_file()
+                    or resolved != path
+                    or not resolved.is_relative_to(failure_root)
+                    or sha256_file(path) != str(item.get("sha256") or "")
+                ):
+                    break
+            else:
+                return {"run_date": date, "record_path": str(record_path), "result": "FAIL"}
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return None
+
+
 def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     if in_quiet_window():
         raise ValueError("backup is forbidden during the 00:30-03:30 Australia/Hobart quiet window")
@@ -99,7 +143,12 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     if (state / "daily-ingest.lock").exists():
         raise ValueError("daily ingest lock exists")
     service = command("systemctl", "is-active", "ar-local-daily.service", check=False).stdout.strip()
-    if service not in {"inactive", "failed"}:
+    terminal_failure = None
+    if service == "failed":
+        terminal_failure = valid_terminal_failure(state, args.expected_production_sha)
+        if terminal_failure is None:
+            raise ValueError("daily ingest service failed without verified terminal-failure evidence")
+    elif service != "inactive":
         raise ValueError(f"daily ingest service is active: {service}")
     timer = command("systemctl", "is-enabled", "ar-local-daily.timer", check=False).stdout.strip()
     if timer != "enabled":
@@ -112,6 +161,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "runs_root": str(runs),
         "state_root": str(state),
         "daily_service": service,
+        "terminal_failure_authorization": terminal_failure,
         "daily_timer": timer,
         "ingest_lock_absent": True,
         "dashboard_url": args.dashboard_url,
