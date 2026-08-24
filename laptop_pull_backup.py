@@ -100,12 +100,25 @@ def durable_move(source: Path, destination: Path, *, replace: bool) -> None:
     if replace:
         source.replace(destination)
     else:
-        os.rename(source, destination)
+        os.link(source, destination)
+        fsync_directory(destination.parent)
+        source.unlink()
     fsync_directory(destination.parent)
 
 
 def atomic_create(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        try:
+            with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+        finally:
+            os.close(descriptor)
+        fsync_directory(path.parent)
+        return
     if path.exists():
         raise FileExistsError(path)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -374,6 +387,9 @@ def archive_paths(target: Path, manifest: Mapping[str, object], digest: str) -> 
             raise ValueError("invalid diagnostic run date in manifest")
         root = target / "diagnostic-runs" / date / digest
         archive = root / "diagnostic.tar.zst"
+    elif kind == "macro":
+        root = target / "macro" / digest
+        archive = root / "macro.tar.zst"
     else:
         generation = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{digest[:16]}"
         root = target / "control" / generation
@@ -585,7 +601,7 @@ def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) 
     actual = extracted_entries(root)
     if actual != expected:
         raise ValueError("extracted bytes do not exactly match source manifest")
-    sqlite_report = sqlite_checks(root, required=manifest["kind"] != "diagnostic")
+    sqlite_report = sqlite_checks(root, required=manifest["kind"] in {"observation", "macro"})
     result: dict[str, object] = {"files_verified": len(actual), "bytes_verified": sum(int(item["size"]) for item in actual), "sqlite": sqlite_report}
     if manifest["kind"] == "observation":
         result["observation"] = observation_checks(root, manifest)
@@ -597,9 +613,6 @@ def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) 
             checked = subprocess.run(("git", "bundle", "list-heads", str(bundle)), text=True, capture_output=True, timeout=120)
             if checked.returncode or not checked.stdout.strip():
                 raise ValueError(f"Git bundle validation failed: {bundle.name}")
-        macro_reports = [report for report in sqlite_report if report["path"] == "macro/local-macro.sqlite"]
-        if len(macro_reports) != 1 or not {"series_observations", "ingest_runs"}.issubset(set(macro_reports[0]["tables"])):
-            raise ValueError("control archive macro database lacks its required schema")
         metadata_path = root / "system/control-metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         secrets = metadata.get("secret_locations") if isinstance(metadata, dict) else None
@@ -607,6 +620,11 @@ def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) 
             raise ValueError("control archive secret-exclusion metadata is invalid")
         result["git_bundles"] = [path.name for path in bundles]
         result["secret_locations"] = len(secrets)
+    elif manifest["kind"] == "macro":
+        macro_reports = [report for report in sqlite_report if report["path"] == "macro/local-macro.sqlite"]
+        if len(macro_reports) != 1 or not {"series_observations", "ingest_runs"}.issubset(set(macro_reports[0]["tables"])):
+            raise ValueError("macro archive database lacks its required schema")
+        result["macro"] = macro_reports[0]
     else:
         result["diagnostic"] = {"run_date": manifest["run_date"], "publishable": False}
     return result
@@ -686,6 +704,31 @@ def write_failure(target: Path, record: Mapping[str, object]) -> Path:
     return path
 
 
+def advance_latest_pointer(
+    target: Path,
+    kind: str,
+    manifest: Mapping[str, object],
+    receipt_path: Path,
+    entry: Mapping[str, object],
+) -> None:
+    if kind == "observation" and not manifest.get("is_latest_observation"):
+        return
+    pointer_names = {
+        "observation": "latest-verified.json",
+        "control": "latest-control.json",
+        "macro": "latest-macro.json",
+    }
+    if kind not in pointer_names:
+        return
+    payload = {
+        "kind": kind,
+        "receipt_path": receipt_path.relative_to(target).as_posix(),
+        "receipt_sha256": sha256_file(receipt_path),
+        "catalog_entry_sha256": entry["entry_sha256"],
+    }
+    atomic_replace(target / "catalog" / pointer_names[kind], canonical_json_bytes(payload))
+
+
 def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str, date: str | None = None) -> dict[str, object]:
     started = utc_now()
     command = [*remote_common(args, remote), "stream", "--kind", kind]
@@ -716,6 +759,10 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
                 local_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 validate_manifest(local_manifest, kind, args.candidate_code_sha, args.protected_code_sha, args.plan_git_commit)
                 checks = restore_verify_archive(target, archive, local_manifest, kind)
+                receipt_relative = receipt_path.relative_to(target).as_posix()
+                matches = [item for item in catalog_entries(target / "catalog/generations.jsonl") if item.get("receipt_path") == receipt_relative]
+                entry = matches[-1] if matches else append_catalog(target, existing, receipt_path)
+                advance_latest_pointer(target, kind, local_manifest, receipt_path, entry)
                 return {"result": "PASS", "status": "ALREADY_VERIFIED", "receipt": str(receipt_path), "checks": checks}
             raise ValueError("incomplete content-addressed generation already exists and is retained for diagnosis")
         root.mkdir(parents=True, exist_ok=False)
@@ -765,8 +812,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         }
         atomic_create(receipt_path, canonical_json_bytes(receipt))
         entry = append_catalog(target, receipt, receipt_path)
-        if kind == "observation" and manifest.get("is_latest_observation"):
-            atomic_replace(target / "catalog/latest-verified.json", canonical_json_bytes({"receipt_path": receipt_path.relative_to(target).as_posix(), "receipt_sha256": sha256_file(receipt_path), "catalog_entry_sha256": entry["entry_sha256"]}))
+        advance_latest_pointer(target, kind, manifest, receipt_path, entry)
         return {"result": "PASS", "receipt": str(receipt_path), "archive_bytes": archive_bytes, "source_bytes": manifest["total_bytes"]}
     except Exception as exc:
         process.kill()
@@ -829,6 +875,22 @@ class ReceiverLock:
         self.path.unlink()
 
 
+def backup_jobs(
+    retained: Sequence[Mapping[str, object]], command: str, after_date: str
+) -> tuple[str | None, list[tuple[str, str | None]]]:
+    completed = [str(item["date"]) for item in retained if item["status"] == "completed"]
+    diagnostic = [str(item["date"]) for item in retained if item["status"] == "diagnostic"]
+    latest = completed[-1] if completed else None
+    jobs: list[tuple[str, str | None]] = []
+    if latest is not None:
+        jobs.append(("observation", latest))
+    jobs.extend(("diagnostic", date) for date in diagnostic)
+    jobs.extend((("control", None), ("macro", None)))
+    if command == "backfill" and latest is not None:
+        jobs.extend(("observation", date) for date in completed if after_date < date < latest)
+    return latest, jobs
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("command", choices=("preflight", "backup-latest", "backfill"))
@@ -868,21 +930,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps({"ok": True, "result": "PASS", "target": str(target), "capacity": capacity(target), "plan": plan, "recovery_base": recovery_base, "source_helper_sha256": helper_sha, **listing}, indent=2, sort_keys=True))
             return 0
         retained = [dict(item) for item in listing["retained_runs"]]
-        completed = [str(item["date"]) for item in retained if item["status"] == "completed"]
-        diagnostic = [str(item["date"]) for item in retained if item["status"] == "diagnostic"]
-        if not completed:
-            raise ValueError("Pi reported no completed observations")
+        latest, jobs = backup_jobs(retained, args.command, args.after_date)
         results = []
         with ReceiverLock(target):
-            latest = completed[-1]
-            results.append(backup_one(args, remote, helper_sha, "observation", latest))
-            for date in diagnostic:
-                results.append(backup_one(args, remote, helper_sha, "diagnostic", date))
-            results.append(backup_one(args, remote, helper_sha, "control"))
-            if args.command == "backfill":
-                for date in completed:
-                    if args.after_date < date < latest:
-                        results.append(backup_one(args, remote, helper_sha, "observation", date))
+            for kind, date in jobs:
+                results.append(backup_one(args, remote, helper_sha, kind, date))
         print(json.dumps({"ok": True, "result": "PASS", "latest": latest, "recovery_base": recovery_base, "results": results, "capacity_after": capacity(target)}, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, sqlite3.Error, subprocess.SubprocessError) as exc:

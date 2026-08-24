@@ -42,11 +42,14 @@ npm run laptop:backup:latest -- `
 `backup-latest` first preserves and independently restores the latest completed
 observation, preserves every retained terminal/unfinished run as non-publishable
 diagnostic evidence, then captures current control state, `runs-archive`,
-predeploy evidence, online-backed-up macro SQLite, both Git repositories,
-systemd definitions, package inventory, and secret metadata without secret
-bytes. The observation, diagnostic, control, and macro components have separate
-receipts and freshness; an already verified observation never suppresses a new
-control/macro generation. It is successful only after source-manifest identity,
+predeploy evidence, both Git repositories, systemd definitions, package
+inventory, and secret metadata without secret bytes. `runs-archive` and
+predeploy files stream directly from their immutable namespaces with post-stream
+change detection; they are never duplicated into Pi tmpfs. A separate macro
+generation is created with SQLite's online backup API. Observation, diagnostic,
+control, and macro components have separate receipts and freshness pointers; an
+already verified observation never suppresses a new control or macro check. It
+is successful only after source-manifest identity,
 archive readability, exact tar type/mode/mtime/UID/GID verification, complete
 extracted SHA-256 comparison, SQLite
 `PRAGMA quick_check`, daily export reconciliation, completion/contract/ledger

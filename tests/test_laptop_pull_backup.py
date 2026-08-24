@@ -158,6 +158,7 @@ def test_observation_manifest_is_stable_and_source_change_is_detected(tmp_path: 
     first = source.manifest_for(sources, identity, args)
     second = source.manifest_for(sources, identity, args)
     assert source.canonical_json_bytes(first) == source.canonical_json_bytes(second)
+    source.recheck_entries(sources, first["files"])
     (run / "raw.json").write_text('{"changed":true}', encoding="utf-8")
     with pytest.raises(RuntimeError, match="changed"):
         source.recheck_entries(sources, first["files"])
@@ -241,6 +242,18 @@ def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> Non
         assert restored.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
 
 
+def test_runs_archive_is_streamed_from_immutable_source_without_tmpfs_copy(tmp_path: Path) -> None:
+    state = tmp_path / "data/state"
+    retained = tmp_path / "data/runs-archive/broken/raw.json"
+    state.mkdir(parents=True)
+    retained.parent.mkdir(parents=True)
+    retained.write_text("{}", encoding="utf-8")
+    args = source_args(tmp_path)
+    selected = source.immutable_control_sources(args)
+    assert selected == [(retained, "data/runs-archive/broken/raw.json")]
+    assert selected[0][0].is_relative_to(tmp_path / "data/runs-archive")
+
+
 def test_observation_archive_is_read_back_and_reconciled(tmp_path: Path) -> None:
     date = "2026-08-14"
     source_root = tmp_path / "source"
@@ -301,6 +314,23 @@ def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Pat
         receiver.verify_extracted(restored, manifest, archive)
 
 
+def test_macro_generation_has_independent_restore_verification(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    database = source_root / "macro/local-macro.sqlite"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE series_observations(value INTEGER)")
+        connection.execute("CREATE TABLE ingest_runs(value INTEGER)")
+    entries = [manifest_entry(database, source_root)]
+    manifest = {**base_manifest("macro", entries), "macro": {"quick_check": "ok"}}
+    archive = tmp_path / "macro.tar.zst"
+    make_file_only_tar(source_root, archive, entries)
+    restored = tmp_path / "restored"
+    receiver.extract_archive(archive, restored)
+    report = receiver.verify_extracted(restored, manifest, archive)
+    assert report["macro"]["quick_check"] == "ok"
+
+
 def test_catalog_chain_detects_tampering(tmp_path: Path) -> None:
     catalog = tmp_path / "generations.jsonl"
     material = {
@@ -315,6 +345,22 @@ def test_catalog_chain_detects_tampering(tmp_path: Path) -> None:
     catalog.write_bytes(catalog.read_bytes().replace(b"2026-08-25", b"2026-08-24"))
     with pytest.raises(ValueError, match="digest"):
         receiver.catalog_entries(catalog)
+
+
+def test_atomic_create_never_replaces_existing_file(tmp_path: Path) -> None:
+    target = tmp_path / "exclusive.lock"
+    receiver.atomic_create(target, b"first")
+    with pytest.raises(FileExistsError):
+        receiver.atomic_create(target, b"second")
+    assert target.read_bytes() == b"first"
+
+
+def test_diagnostics_and_recovery_state_are_backed_up_without_completed_observation() -> None:
+    latest, jobs = receiver.backup_jobs(
+        [{"date": "2026-08-25", "status": "diagnostic"}], "backup-latest", "2026-05-21"
+    )
+    assert latest is None
+    assert jobs == [("diagnostic", "2026-08-25"), ("control", None), ("macro", None)]
 
 
 def test_capacity_enforces_strict_fifty_gib_floor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
