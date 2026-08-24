@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Document ID | `ARL-OPS-001` |
-| Version | `1.1` |
+| Version | `1.2` |
 | Status | Controlled execution plan |
 | Effective date | `2026-08-25` |
 | Owner | AR-local operator |
@@ -13,7 +13,7 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` |
+| Controlled plan SHA-256 | `d6bdff038853eb0c26c1798517e35d95da1ab3f9feb2416cccdf734e67b8aa0a` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -43,6 +43,139 @@ not override it. Read it fully before any covered operation.
 | D-001 | 2026-08-23 | Use a canonical embedded plan checksum and dynamically resolve the immutable document-containing Git commit. | A file cannot contain its own literal raw SHA-256, and a commit cannot contain its own future commit ID, without changing the value being identified. A placeholder would falsely imply verification. | Canonicalise only the checksum field; record both canonical and raw hashes plus the resolved commit in every external execution/deployment record. | Required to make the requested document control truthful and reproducible. |
 | D-002 | 2026-08-23 | Keep this controlled runbook immutable; record execution and deviations in external append-only evidence. The approved source plan remains reproduced below, but its instructions to recreate or append to this file are provenance text after merge. | Recreating or appending evidence to the controlled file would invalidate its version and checksum. Specialist review also found that the pinned producer cannot provide #506/#507 guarantees and that inherited Pi environment could defeat canary isolation. | Mandatory execution clarifications below supersede only those ambiguous mechanics. Any substantive plan change requires a new document version, checksum, and documentation PR. | Approved implementation of the user requirement for a literal drift-resistant plan. |
 | D-003 | 2026-08-25 | Make the product-day the atomic publication unit. Publish every independently valid current product, quarantine or omit only the affected product, and disclose attributable provider and product gaps. Remove numeric failure-count and failure-ratio eligibility thresholds. | The v1.0 bounded-partial gate withheld otherwise valid observations and could strand the app on an older date. Conversely, relaxing the gate without positive membership proof could publish corrupt or stale products. | Require a ledger-bound `ProductAccountingV1` membership sidecar, exact database/sidecar/payload reconciliation, product-level validation, no stale carry-forward, transactional public verification, an upgraded AR-app before activation, staged feature modes, and whole-observation holds for control-plane failures that cannot be scoped safely. | Direct operator decision after the 2026-08-24 publication gap and the 2026-08-25 accounting-disclosure mismatch. |
+| D-004 | 2026-08-25 | Use the physically separate Windows laptop as the primary off-device pull-backup target, while preserving the existing 32 GB historical recovery-image candidate for later boot proof. Maintain a strict 50 GiB laptop free-space floor and store immutable, compressed, hash-manifested observation packs plus current control/configuration packs instead of thirty full physical-disk images. | The Pi has no adequate separate mounted disk: its 59.7 GB USB and 29.7 GB MMC devices are smaller than the 72.7 GiB authoritative data set. The laptop has enough measured capacity, already holds recovery material, and avoids writing credentials or network shares onto the Pi. Risks are laptop unavailability, single-site loss, ransomware, interrupted network transfer, and divergence between the historical boot image and current data layer. | Laptop initiates every pull over SSH; the Pi never receives laptop credentials. Use immutable per-observation packs, canonical source and archive hashes, atomic `.partial` promotion, continuous free-space enforcement, SQLite-consistent copies, secret exclusion, restore drills, freshness receipts, and a fail-closed scheduler. Preserve but quarantine the known-short failed image; do not call the exact-size historical image current or bootable until A4 proves it. A later independent site remains required for full disaster resilience. | Explicit operator direction to use the existing laptop backup and retain approximately 50 GB free. |
+
+## Version 1.2 laptop pull-backup amendment
+
+This section is normative for Phase A and supersedes only requirements that the
+off-device backup target be mounted on the Pi. It does not relax backup scope,
+integrity, restoration, freshness, production-pinning, quiet-window, or rollback
+gates. Version 1.1 remains authoritative for product and payload behavior.
+
+### Fixed laptop target and capacity contract
+
+- Target root: `C:\code\backups\AR-local-pi5` on the operator laptop.
+- Minimum free space after every write, promotion, verification, or cleanup:
+  `53,687,091,200` bytes (50 GiB). This stricter binary floor controls whenever
+  “50 GB” is stated conversationally.
+- Every receiver preflight records volume identity, total/free bytes, target
+  canonical path, owner, ACL summary, source Pi identity, and projected
+  worst-case write. It refuses to start unless the uncompressed source could fit
+  without crossing the floor; measured compression is planning evidence, never
+  permission to overrun the floor.
+- The receiver checks free bytes during transfer and aborts before the floor.
+  Only the exact `.partial` file created by that execution may be removed after
+  its failure is recorded and its canonical path is revalidated under the target
+  root. Existing completed backups are never deleted automatically.
+- The laptop pulls from `ar-local-pi5-lan`; the Pi does not mount a Windows share,
+  store laptop credentials, or expose a new listener.
+
+### Recovery base classification
+
+Treat `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`
+as a historical candidate, not an accepted bootable or current base. It is
+`31,902,400,512` bytes, has SHA-256
+`d0caeeb3a83a50b79703dd650c8198b9a0afcbbb09c667b24b716fada716be4f`,
+and has a valid MBR whose first-sector hash matches the recovery card. Its full
+hash differs from the current card
+(`ce0bcd6f1cb4364df2b97fb6324d0871a053fed6ed7738dcb0a65ef174d371d2`),
+and no creation-time source hash was found. Preserve it unchanged; accept it only
+after A4 boots it and validates root device, network, dashboard, storage, and
+inhibited timers. The shorter
+`C:\code\backups\pi5-microsd-20260521-175524\pi5-microsd.img` is quarantined:
+its own status records a sector-read failure and it must never be a restore
+source. No file is deleted merely because it is redundant or failed.
+
+The recovery base is not current-data proof. A boot restore always applies the
+latest separately verified current-state generation afterward and keeps ingest,
+publication, and credential-bearing timers inhibited until restoration checks
+pass.
+
+### Incremental backup layout
+
+Use immutable, content-addressed generations:
+
+```text
+AR-local-pi5/
+  recovery-base/                 # receipt; image remains at its existing path
+  observations/YYYY-MM-DD/
+    <source-manifest-sha256>/
+      observation.tar.zst
+      source-manifest.json
+      receipt.json
+  control/<generation-id>/
+    control.tar.zst
+    source-manifest.json
+    receipt.json
+  macro/<generation-id>/
+    macro.sqlite
+    receipt.json
+  catalog/
+    generations.jsonl
+    latest-verified.json
+  restore-drills/<execution-id>/
+```
+
+One observation pack contains exactly one completed immutable run directory,
+including raw attempts, daily SQLite, exports, contract, completion marker
+material copied into the run, and diagnostic evidence. The canonical source
+manifest lists every relative path, type, size, mode, modification time, and
+SHA-256, sorted by UTF-8 path bytes. Symlinks, devices, sockets, traversal, case
+collisions, alternate data streams, and paths invalid on Windows fail closed.
+
+The control pack records current state, completion/observation pointers, ledger,
+publication pending/component state, deployment records, redacted service/timer
+definitions, package inventory, Git bundles, and configuration metadata. It
+records secret-file locations, owner/mode, and digests but excludes secret bytes,
+SSH material, tokens, raw environment files, Netdata credential stores, caches,
+and logs. An optional secret escrow requires a separate encrypted design and is
+not implied by this backup.
+
+The macro SQLite file is produced with SQLite's online backup API into a unique
+temporary Pi path, checked with `PRAGMA quick_check`, streamed, rehashed, restored
+to laptop scratch, checked again, and then the exact temporary file is removed.
+Never copy a live WAL database by copying only its main file.
+
+### Transfer, commit, and retry protocol
+
+1. Refuse during 00:30–03:30 Australia/Hobart, while ingest is active, when the
+   production checkout is dirty or not pinned, or when dashboard/timer/lock/free
+   space preflight fails.
+2. Resolve and freeze the authoritative latest completed observation identity.
+   Generate its canonical source manifest without modifying production data.
+3. If the catalog already has an independently verified pack with that exact
+   source-manifest hash, skip its bytes and verify it again before advancing.
+4. Stream deterministic tar through `zstd` at low I/O priority and at most two
+   compression workers into a unique laptop `.partial` file. Capture SSH, tar,
+   compressor, byte-count, duration, and dashboard/resource results separately.
+5. Flush the file, verify compressed-frame and tar readability, compare every
+   extracted path/size/SHA-256 in scratch, validate SQLite and observation
+   contracts, and ensure laptop free space remains above the floor.
+6. Atomically rename `.partial` to its content-addressed final name. Create the
+   immutable receipt last, then append the hash-linked catalog entry and replace
+   `latest-verified.json` atomically.
+7. On interruption, never advance catalog/latest. Record the failed partial,
+   revalidate its exact path, remove only that partial if required to restore the
+   floor, and retry the same frozen observation. Never rerun ingest.
+
+Compression is not the integrity boundary. Acceptance requires source manifest,
+archive, extracted bytes, SQLite, contracts, ledger/pointers, and receipt hashes.
+At least one complete observation restore is performed from laptop bytes without
+reading the Pi source during verification.
+
+### Scheduling and residual risk
+
+After one manual backup and restore pass, schedule a laptop-side pull for 05:00
+Australia/Hobart and at laptop startup when stale. It exits successfully without
+writing when the latest observation is already verified; otherwise it defers on
+an active/failed ingest or unavailable Pi and alerts. It never runs in the quiet
+window. A freshness monitor reports the latest source observation, latest
+verified laptop generation, age, free bytes, and last restore result.
+
+The laptop is physically separate but not geographically separate and may be
+offline. This design therefore satisfies the immediate off-device Phase A0/A1
+foundation but does not complete A4 or eliminate the requirement for a later
+independent-site copy and boot test.
 
 ## Version 1.1 controlling amendment
 
@@ -640,11 +773,12 @@ behavioral slice advances.
 
 1. **DOC-02 — controlled v1.1 only.** Merge this document; recalculate plan
    commit, raw SHA-256, controlled SHA-256, and post-merge candidate SHAs.
-2. **A0 — physically separate bootstrap.** Provision and verify the backup
-   device, stable UUID/serial, mount policy, capacity, ownership, and absence of
-   production secrets. Install and run exact-candidate backup tooling only in a
-   non-production checkout without changing the pinned checkout, services, or
-   timers. A0 alone is exempt from the not-yet-possible backup/rollback gate.
+2. **A0 — physically separate bootstrap.** Verify the laptop volume, canonical
+   target, owner/ACL, 50 GiB floor, pull-only SSH route, recovery-base image, and
+   secret-exclusion policy under D-004. Install and run exact-candidate receiver
+   tooling only from a non-production checkout without changing the pinned Pi
+   checkout, services, or timers. A0 alone is exempt from the not-yet-possible
+   backup/rollback gate.
 3. **A1 — backup completeness.** Reject empty observation skeletons; require at
    least the authoritative latest observation chain and inventory counts.
 4. **A2 — restore fidelity.** Rehash every restored byte against the snapshot
@@ -825,9 +959,10 @@ three failed, and four partial; and the manifest had no observation disclosure.
 The operational Pi and public Aug 25 payload remain in place. This does not
 authorize an emergency rerun, force, rollback, or publication edit.
 
-### Version 1.1 evidence records
+### Version 1.2 evidence records
 
-New execution IDs use `DOC-02`, `NATURAL-02`, `PHASE-A0`–`A4`, `PHASE-B1`–`B3`,
+New execution IDs use `DOC-03`, `LAPTOP-BACKUP-01`, `LAPTOP-RESTORE-01`,
+`NATURAL-02`, `PHASE-A0`–`A4`, `PHASE-B1`–`B3`,
 `PHASE-C`, `PHASE-D`, `PHASE-E1`–`E4`, `APP-01`, `APP-GATE-A`, `APP-GATE-B`,
 `PHASE-F`, and `PHASE-G`.
 Each hash-linked JSONL entry records schema/step/execution IDs; plan identity and
@@ -1355,3 +1490,4 @@ This table is append-only.
 |---|---|---|---|---|
 | 1.0 | 2026-08-23 | Resolve from Git history after merge | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` | Initial controlled recovery runbook transcribed from the approved plan with mandatory execution clarifications D-001 and D-002. |
 | 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
+| 1.2 | 2026-08-25 | Resolve from Git history after merge | `d6bdff038853eb0c26c1798517e35d95da1ab3f9feb2416cccdf734e67b8aa0a` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
