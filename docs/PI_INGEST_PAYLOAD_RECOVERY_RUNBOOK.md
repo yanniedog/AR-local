@@ -13,7 +13,7 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `d6bdff038853eb0c26c1798517e35d95da1ab3f9feb2416cccdf734e67b8aa0a` |
+| Controlled plan SHA-256 | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -116,12 +116,14 @@ AR-local-pi5/
   restore-drills/<execution-id>/
 ```
 
-One observation pack contains exactly one completed immutable run directory,
-including raw attempts, daily SQLite, exports, contract, completion marker
-material copied into the run, and diagnostic evidence. The canonical source
-manifest lists every relative path, type, size, mode, modification time, and
-SHA-256, sorted by UTF-8 path bytes. Symlinks, devices, sockets, traversal, case
-collisions, alternate data streams, and paths invalid on Windows fail closed.
+One observation archive namespace contains exactly one completed immutable run
+directory plus its ledger-bound completion marker, contract, pointer, and
+diagnostic material selected from production state without modifying or copying
+anything into the production run. The run includes raw attempts, daily SQLite,
+and exports. The canonical source manifest lists every relative path, source
+namespace, type, size, mode, modification time, and SHA-256, sorted by UTF-8
+path bytes. Symlinks, devices, sockets, traversal, case collisions, alternate
+data streams, and paths invalid on Windows fail closed.
 
 The control pack records current state, completion/observation pointers, ledger,
 publication pending/component state, deployment records, redacted service/timer
@@ -1490,4 +1492,4 @@ This table is append-only.
 |---|---|---|---|---|
 | 1.0 | 2026-08-23 | Resolve from Git history after merge | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` | Initial controlled recovery runbook transcribed from the approved plan with mandatory execution clarifications D-001 and D-002. |
 | 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
-| 1.2 | 2026-08-25 | Resolve from Git history after merge | `d6bdff038853eb0c26c1798517e35d95da1ab3f9feb2416cccdf734e67b8aa0a` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
+| 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
