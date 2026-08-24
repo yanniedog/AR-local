@@ -55,9 +55,9 @@ def test_installation_is_explicit_and_preflight_precedes_enable() -> None:
 
 def test_configuration_has_controlled_plan_identity_and_no_force_bypass() -> None:
     example = read("backup.env.example")
-    assert "AR_BACKUP_PLAN_GIT_COMMIT=4a3af1ccbdc24deefe3d12da2f7152946984f459" in example
-    assert "AR_BACKUP_PLAN_SHA256=510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc" in example
-    assert "AR_BACKUP_PLAN_RAW_SHA256=0e40cba6682f0bd95bc48e2df044e387ebfeaa1a2a3e590145507a03cbf94d7c" in example
+    assert "AR_BACKUP_PLAN_GIT_COMMIT=281c99d290361e779c8b6ed4fc7ccb3f67fa2672" in example
+    assert "AR_BACKUP_PLAN_SHA256=94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194" in example
+    assert "AR_BACKUP_PLAN_RAW_SHA256=8f67871a86c5a3642fb9a8ef5aabf24e4dcfa1213530b9d9c2544f2c9486a086" in example
     implementation = (ROOT / "pi_backup_foundation.py").read_text(encoding="utf-8")
     policy = (ROOT / "ar_local_backup_policy.py").read_text(encoding="utf-8")
     assert "allow-unmounted" not in implementation.lower()

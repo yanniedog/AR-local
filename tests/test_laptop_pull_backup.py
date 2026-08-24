@@ -1,0 +1,270 @@
+"""Safety and restore tests for the laptop pull-backup protocol."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import tarfile
+from argparse import Namespace
+from pathlib import Path
+
+import pytest
+
+import laptop_pull_backup as receiver
+import pi_laptop_backup_source as source
+
+
+CANDIDATE = "a" * 40
+PROTECTED = "b" * 40
+
+
+def source_args(tmp_path: Path, date: str = "2026-08-25") -> Namespace:
+    return Namespace(
+        runs_root=str(tmp_path / "data/runs"),
+        state_root=str(tmp_path / "data/state"),
+        production_repo=str(tmp_path / "AR-local"),
+        site_repo=str(tmp_path / "australianrates"),
+        macro_db=str(tmp_path / "macro.sqlite"),
+        expected_production_sha=PROTECTED,
+        candidate_code_sha=CANDIDATE,
+        plan_document_id=receiver.PLAN_DOCUMENT_ID,
+        plan_version=receiver.PLAN_VERSION,
+        plan_git_commit="c" * 40,
+        plan_sha256=receiver.PLAN_SHA256,
+        date=date,
+    )
+
+
+def manifest_entry(path: Path, root: Path) -> dict[str, object]:
+    payload = path.read_bytes()
+    return {
+        "path": path.relative_to(root).as_posix(),
+        "size": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "mode": "0o644",
+        "mtime_ns": path.stat().st_mtime_ns,
+        "uid": 0,
+        "gid": 0,
+    }
+
+
+def base_manifest(kind: str, entries: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "protocol": receiver.PROTOCOL,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": receiver.PLAN_VERSION,
+        "plan_git_commit": "c" * 40,
+        "plan_sha256": receiver.PLAN_SHA256,
+        "candidate_code_sha": CANDIDATE,
+        "protected_code_sha": PROTECTED,
+        "kind": kind,
+        "files": entries,
+        "file_count": len(entries),
+        "total_bytes": sum(int(entry["size"]) for entry in entries),
+    }
+
+
+def create_daily_exports(root: Path, date: str) -> None:
+    exports = root / f"data/runs/{date}/_exports"
+    (exports / "dashboard-cache").mkdir(parents=True)
+    groups = {
+        "products": [],
+        "rates": [],
+        "product_facts": [],
+        "product_changes": [],
+        "fees": [],
+        "features": [],
+        "eligibility": [],
+        "constraints": [],
+    }
+    (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
+    (exports / "dashboard-cache/latest.json").write_text(
+        json.dumps({"run_date": date, "banks_counts": {key: 0 for key in groups}}),
+        encoding="utf-8",
+    )
+    database = exports / "local-cdr.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE runs(run_date TEXT, banks_counts_json TEXT);
+            CREATE TABLE bank_products(run_date TEXT, provider TEXT, product_id TEXT, product_key TEXT);
+            CREATE TABLE bank_rates(run_date TEXT, product_key TEXT, rate REAL, comparison_rate REAL);
+            CREATE TABLE bank_items(run_date TEXT, item_group TEXT, product_key TEXT);
+            CREATE TABLE bank_product_facts(run_date TEXT, product_key TEXT, fact_id TEXT, canonical_key TEXT);
+            CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
+            """
+        )
+        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps({key: 0 for key in groups})))
+
+
+def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
+    with tarfile.open(archive, "w") as tar:
+        for entry in entries:
+            tar.add(root / str(entry["path"]), arcname=str(entry["path"]), recursive=False)
+
+
+def test_controlled_runbook_checksum_is_current() -> None:
+    result = receiver.verify_plan_document()
+    assert result["plan_sha256"] == receiver.PLAN_SHA256
+    assert len(result["plan_raw_sha256"]) == 64
+
+
+@pytest.mark.parametrize(
+    "path",
+    ("../escape", "/absolute", "data/AUX.txt", "data/name. ", "data/has:stream", "data/line\nbreak"),
+)
+def test_windows_unsafe_paths_fail_closed(path: str) -> None:
+    with pytest.raises(ValueError):
+        receiver.validate_relative_path(path, {})
+
+
+def test_casefold_collision_fails_closed() -> None:
+    seen: dict[str, str] = {}
+    receiver.validate_relative_path("data/Bank.json", seen)
+    with pytest.raises(ValueError, match="collision"):
+        receiver.validate_relative_path("data/bank.json", seen)
+
+
+def test_manifest_validation_rejects_unsorted_or_wrong_identity(tmp_path: Path) -> None:
+    first = tmp_path / "z"
+    second = tmp_path / "a"
+    first.write_bytes(b"z")
+    second.write_bytes(b"a")
+    entries = [manifest_entry(first, tmp_path), manifest_entry(second, tmp_path)]
+    manifest = base_manifest("control", entries)
+    with pytest.raises(ValueError, match="sorted"):
+        receiver.validate_manifest(manifest, "control", CANDIDATE, PROTECTED, "c" * 40)
+    manifest["files"] = sorted(entries, key=lambda item: str(item["path"]).encode())
+    manifest["plan_version"] = "1.1"
+    with pytest.raises(ValueError, match="identity"):
+        receiver.validate_manifest(manifest, "control", CANDIDATE, PROTECTED, "c" * 40)
+
+
+def test_observation_manifest_is_stable_and_source_change_is_detected(tmp_path: Path) -> None:
+    run = tmp_path / "data/runs/2026-08-25"
+    state = tmp_path / "data/state"
+    run.mkdir(parents=True)
+    state.mkdir(parents=True)
+    (run / "raw.json").write_text("{}", encoding="utf-8")
+    (run / "_exports").mkdir()
+    (run / "_exports/local-cdr.sqlite").write_bytes(b"sqlite-placeholder")
+    (state / "2026-08-25.done.json").write_text("{}", encoding="utf-8")
+    args = source_args(tmp_path)
+    sources, identity = source.observation_sources(args)
+    first = source.manifest_for(sources, identity, args)
+    second = source.manifest_for(sources, identity, args)
+    assert source.canonical_json_bytes(first) == source.canonical_json_bytes(second)
+    (run / "raw.json").write_text('{"changed":true}', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="changed"):
+        source.recheck_entries(sources, first["files"])
+
+
+def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> None:
+    database = tmp_path / "macro.sqlite"
+    writer = sqlite3.connect(database)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("CREATE TABLE series_observations(value INTEGER)")
+    writer.execute("CREATE TABLE ingest_runs(value INTEGER)")
+    writer.execute("INSERT INTO series_observations VALUES (1)")
+    writer.execute("INSERT INTO ingest_runs VALUES (1)")
+    writer.commit()
+    destination = tmp_path / "copy.sqlite"
+    report = source.sqlite_backup(database, destination)
+    writer.close()
+    assert report["quick_check"] == "ok"
+    with sqlite3.connect(destination) as restored:
+        assert restored.execute("SELECT COUNT(*) FROM series_observations").fetchone()[0] == 1
+        assert restored.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
+
+
+def test_observation_archive_is_read_back_and_reconciled(tmp_path: Path) -> None:
+    date = "2026-08-14"
+    source_root = tmp_path / "source"
+    create_daily_exports(source_root, date)
+    state = source_root / "data/state"
+    state.mkdir(parents=True)
+    (state / f"{date}.done.json").write_text("{}", encoding="utf-8")
+    files = [path for path in source_root.rglob("*") if path.is_file()]
+    entries = sorted((manifest_entry(path, source_root) for path in files), key=lambda item: str(item["path"]).encode())
+    manifest = {
+        **base_manifest("observation", entries),
+        "observation_date": date,
+        "is_latest_observation": False,
+        "latest_pointer": None,
+    }
+    archive = tmp_path / "observation.tar.zst"
+    make_file_only_tar(source_root, archive, entries)
+    restored = tmp_path / "restored"
+    receiver.extract_archive(archive, restored)
+    report = receiver.verify_extracted(restored, manifest, archive)
+    assert report["files_verified"] == len(entries)
+    assert report["observation"]["reconciliation"]["run_date"] == date
+
+
+def test_latest_observation_requires_bound_pointer(tmp_path: Path) -> None:
+    date = "2026-08-25"
+    source_root = tmp_path / "source"
+    create_daily_exports(source_root, date)
+    files = [path for path in source_root.rglob("*") if path.is_file()]
+    entries = sorted((manifest_entry(path, source_root) for path in files), key=lambda item: str(item["path"]).encode())
+    manifest = {
+        **base_manifest("observation", entries),
+        "observation_date": date,
+        "is_latest_observation": True,
+        "latest_pointer": {"observation_date": date},
+    }
+    archive = tmp_path / "latest.tar.zst"
+    make_file_only_tar(source_root, archive, entries)
+    restored = tmp_path / "restored"
+    receiver.extract_archive(archive, restored)
+    with pytest.raises(ValueError, match="lacks its bound"):
+        receiver.verify_extracted(restored, manifest, archive)
+
+
+def test_catalog_chain_detects_tampering(tmp_path: Path) -> None:
+    catalog = tmp_path / "generations.jsonl"
+    material = {
+        "schema_version": 1,
+        "sequence": 1,
+        "created_at": "2026-08-25T00:00:00Z",
+        "previous_entry_sha256": None,
+    }
+    entry = {**material, "entry_sha256": hashlib.sha256(receiver.canonical_json_bytes(material)).hexdigest()}
+    catalog.write_bytes(receiver.canonical_json_bytes(entry))
+    assert receiver.catalog_entries(catalog)[0]["sequence"] == 1
+    catalog.write_bytes(catalog.read_bytes().replace(b"2026-08-25", b"2026-08-24"))
+    with pytest.raises(ValueError, match="digest"):
+        receiver.catalog_entries(catalog)
+
+
+def test_capacity_enforces_strict_fifty_gib_floor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(receiver, "capacity", lambda _target: {"total": 100, "used": 1, "free": receiver.FREE_FLOOR_BYTES + 9, "floor": receiver.FREE_FLOOR_BYTES})
+    with pytest.raises(ValueError, match="insufficient"):
+        receiver.require_capacity(tmp_path, 10)
+
+
+def test_recovery_base_is_registered_without_copying_image(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    image = tmp_path / "historical.img"
+    image.write_bytes(b"")
+    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_BYTES", 0)
+    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_SHA256", hashlib.sha256(b"").hexdigest())
+    target = tmp_path / "target"
+    target.mkdir()
+    args = Namespace(
+        recovery_image=image,
+        plan_git_commit="c" * 40,
+        plan_raw_sha256="d" * 64,
+        candidate_code_sha=CANDIDATE,
+        operator="pytest",
+    )
+    first = receiver.register_recovery_base(args, target)
+    second = receiver.register_recovery_base(args, target)
+    receipt = json.loads(Path(str(first["receipt"])).read_text(encoding="utf-8"))
+    assert first["status"] == "REGISTERED"
+    assert second["status"] == "ALREADY_REGISTERED"
+    assert receipt["bytes_duplicated"] == 0
+    assert receipt["classification"] == "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"

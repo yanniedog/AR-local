@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
-PLAN_VERSION = "1.0"
+PLAN_VERSION = "1.2"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
