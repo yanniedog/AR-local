@@ -13,11 +13,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 from contextlib import closing
@@ -84,6 +86,50 @@ def http_healthy(url: str) -> bool:
         return False
 
 
+def valid_terminal_failure(state: Path, protected_sha: str) -> dict[str, object] | None:
+    root = state / "ingest-executions"
+    if not root.is_dir() or root.is_symlink():
+        return None
+    for record_path in sorted(root.glob("????-??-??/*.FAIL.json"), reverse=True):
+        try:
+            date = record_path.parent.name
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            if (
+                record_path.is_symlink()
+                or not isinstance(record, dict)
+                or record.get("result") != "FAIL"
+                or record.get("run_date") != date
+                or record.get("repository_clean") is not True
+                or record.get("candidate_code_sha") != protected_sha
+                or record.get("deviations") != []
+                or record.get("deviation_authorization") is not None
+                or not record.get("exact_commands")
+                or (state / f"{date}.done.json").exists()
+            ):
+                continue
+            evidence = record.get("evidence")
+            if not isinstance(evidence, list) or not evidence:
+                continue
+            failure_root = record_path.parent.resolve()
+            for item in evidence:
+                path = Path(str(item.get("path") or "")) if isinstance(item, dict) else Path()
+                resolved = path.resolve(strict=True)
+                if (
+                    not path.is_absolute()
+                    or path.is_symlink()
+                    or not path.is_file()
+                    or resolved != path
+                    or not resolved.is_relative_to(failure_root)
+                    or sha256_file(path) != str(item.get("sha256") or "")
+                ):
+                    break
+            else:
+                return {"run_date": date, "record_path": str(record_path), "result": "FAIL"}
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return None
+
+
 def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     if in_quiet_window():
         raise ValueError("backup is forbidden during the 00:30-03:30 Australia/Hobart quiet window")
@@ -98,7 +144,12 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     if (state / "daily-ingest.lock").exists():
         raise ValueError("daily ingest lock exists")
     service = command("systemctl", "is-active", "ar-local-daily.service", check=False).stdout.strip()
-    if service != "inactive":
+    terminal_failure = None
+    if service == "failed":
+        terminal_failure = valid_terminal_failure(state, args.expected_production_sha)
+        if terminal_failure is None:
+            raise ValueError("daily ingest service failed without verified terminal-failure evidence")
+    elif service != "inactive":
         raise ValueError(f"daily ingest service is active: {service}")
     timer = command("systemctl", "is-enabled", "ar-local-daily.timer", check=False).stdout.strip()
     if timer != "enabled":
@@ -111,6 +162,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "runs_root": str(runs),
         "state_root": str(state),
         "daily_service": service,
+        "terminal_failure_authorization": terminal_failure,
         "daily_timer": timer,
         "ingest_lock_absent": True,
         "dashboard_url": args.dashboard_url,
@@ -142,10 +194,11 @@ def file_entry(path: Path, relative: str, seen: dict[str, str]) -> dict[str, obj
         raise ValueError(f"source has multiple hard links: {path}")
     return {
         "path": relative,
+        "type": "file",
         "size": info.st_size,
         "sha256": sha256_file(path),
         "mode": oct(stat.S_IMODE(info.st_mode)),
-        "mtime_ns": info.st_mtime_ns,
+        "mtime_ns": (info.st_mtime_ns // 1_000_000_000) * 1_000_000_000,
         "uid": info.st_uid,
         "gid": info.st_gid,
     }
@@ -218,6 +271,35 @@ def observation_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]
     }
 
 
+def diagnostic_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]], dict[str, object]]:
+    runs = Path(args.runs_root)
+    state = Path(args.state_root)
+    date = args.date
+    run = (runs / date).resolve(strict=True)
+    if run.parent != runs.resolve() or not run.is_dir() or run.is_symlink():
+        raise ValueError("diagnostic run path is not a direct real child of runs root")
+    if (state / f"{date}.done.json").exists():
+        raise ValueError("completed run must use the observation archive path")
+    selected = {
+        f"data/runs/{date}/{path.relative_to(run).as_posix()}": path
+        for path in regular_tree(run)
+    }
+    failure_root = state / "ingest-executions" / date
+    if failure_root.is_dir() and not failure_root.is_symlink():
+        for path in regular_tree(failure_root):
+            selected[f"data/state/{path.relative_to(state).as_posix()}"] = path
+    if not selected:
+        raise ValueError("diagnostic run contains no retained evidence")
+    return sorted(
+        ((path, relative) for relative, path in selected.items()),
+        key=lambda item: item[1].encode("utf-8"),
+    ), {
+        "kind": "diagnostic",
+        "run_date": date,
+        "publishable": False,
+    }
+
+
 def copy_regular_tree(source: Path, destination: Path, *, exclude_locks: bool = False) -> None:
     destination.mkdir(parents=True, exist_ok=False)
     for path in regular_tree(source):
@@ -283,8 +365,6 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
     try:
         state = Path(args.state_root)
         copy_regular_tree(state, root / "data/state", exclude_locks=True)
-        macro = Path(args.macro_db).resolve(strict=True)
-        macro_report = sqlite_backup(macro, root / "macro/local-macro.sqlite")
         repositories = []
         for label, configured in (("AR-local", args.production_repo), ("australianrates", args.site_repo)):
             repo = canonical_root(configured, f"{label} repo")
@@ -306,7 +386,6 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
         metadata = {
             "schema_version": 1,
             "repositories": repositories,
-            "macro_backup": macro_report,
             "secret_locations": secret_metadata(secret_paths),
             "hostname": command("hostname").stdout.strip(),
             "uname": command("uname", "-a").stdout.strip(),
@@ -317,6 +396,31 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
         raise
+
+
+def prepare_macro(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
+    root = Path(tempfile.mkdtemp(prefix="ar-local-laptop-macro-", dir="/dev/shm"))
+    os.chmod(root, 0o700)
+    try:
+        macro = Path(args.macro_db).resolve(strict=True)
+        report = sqlite_backup(macro, root / "macro/local-macro.sqlite")
+        return root, {"kind": "macro", "macro": report}
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+
+
+def immutable_control_sources(args: argparse.Namespace) -> list[tuple[Path, str]]:
+    selected: list[tuple[Path, str]] = []
+    data_root = Path(args.state_root).parent
+    for name in ("runs-archive", "predeploy"):
+        optional = data_root / name
+        if optional.is_dir() and not optional.is_symlink():
+            selected.extend(
+                (path, f"data/{name}/{path.relative_to(optional).as_posix()}")
+                for path in regular_tree(optional)
+            )
+    return selected
 
 
 def manifest_for(sources: Sequence[tuple[Path, str]], identity: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
@@ -344,51 +448,45 @@ def recheck_entries(sources: Sequence[tuple[Path, str]], entries: Sequence[Mappi
             raise RuntimeError("source and manifest order diverged")
         info = path.stat()
         expected = (entry["size"], entry["mtime_ns"], entry["sha256"])
-        actual = (info.st_size, info.st_mtime_ns, sha256_file(path))
+        normalized_mtime = (info.st_mtime_ns // 1_000_000_000) * 1_000_000_000
+        actual = (info.st_size, normalized_mtime, sha256_file(path))
         if actual != expected:
             raise RuntimeError(f"source changed while streaming: {path}")
 
 
-def stream_tar(sources: Sequence[tuple[Path, str]], cwd: Path) -> None:
-    tar_args = (
-        "ionice", "-c2", "-n7", "nice", "-n", "10", "tar",
-        "--create", "--format=gnu", "--numeric-owner", "--no-recursion",
-        "--directory", str(cwd), "--null", "--verbatim-files-from", "--files-from=-",
-    )
+def stream_tar(sources: Sequence[tuple[Path, str]]) -> None:
     zstd_args = ("ionice", "-c2", "-n7", "nice", "-n", "10", "zstd", "-3", "-T2", "--stdout", "--quiet")
-    tar = subprocess.Popen(tar_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert tar.stdin is not None and tar.stdout is not None
-    compressor = subprocess.Popen(zstd_args, stdin=tar.stdout, stdout=sys.stdout.buffer, stderr=subprocess.PIPE)
-    tar.stdout.close()
+    compressor = subprocess.Popen(zstd_args, stdin=subprocess.PIPE, stdout=sys.stdout.buffer, stderr=subprocess.PIPE)
+    assert compressor.stdin is not None
     try:
-        for path, relative in sources:
-            archive_relative = relative
-            if cwd != Path("/srv/ar-local"):
-                archive_relative = path.relative_to(cwd).as_posix()
-            tar.stdin.write(archive_relative.encode("utf-8") + b"\0")
-        tar.stdin.close()
-        tar_error = (tar.stderr.read() if tar.stderr else b"").decode("utf-8", "replace")
-        tar_code = tar.wait()
+        with tarfile.open(fileobj=compressor.stdin, mode="w|", format=tarfile.GNU_FORMAT) as archive:
+            for path, relative in sources:
+                info = archive.gettarinfo(str(path), arcname=relative)
+                if not info.isfile():
+                    raise ValueError(f"source is not a regular file: {path}")
+                info.mtime = int(info.mtime)
+                with path.open("rb") as payload:
+                    archive.addfile(info, payload)
+        compressor.stdin.close()
         compressor_error = (compressor.stderr.read() if compressor.stderr else b"").decode("utf-8", "replace")
         compressor_code = compressor.wait()
     except BaseException:
-        tar.kill()
         compressor.kill()
         raise
-    if tar_code or compressor_code:
-        raise RuntimeError(f"archive pipeline failed: tar={tar_code} {tar_error}; zstd={compressor_code} {compressor_error}")
+    if compressor_code:
+        raise RuntimeError(f"archive pipeline failed: zstd={compressor_code} {compressor_error}")
 
 
-def completed_dates(args: argparse.Namespace) -> list[str]:
+def retained_runs(args: argparse.Namespace) -> list[dict[str, object]]:
     runs = Path(args.runs_root)
     state = Path(args.state_root)
-    dates = []
-    for marker in sorted(state.glob("????-??-??.done.json")):
-        date = marker.name.removesuffix(".done.json")
-        run = runs / date
-        if run.is_dir() and not run.is_symlink():
-            dates.append(date)
-    return dates
+    values = []
+    for run in sorted(runs.iterdir()):
+        if not run.is_dir() or run.is_symlink() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", run.name):
+            continue
+        completed = (state / f"{run.name}.done.json").is_file()
+        values.append({"date": run.name, "status": "completed" if completed else "diagnostic"})
+    return values
 
 
 def emit_stream(args: argparse.Namespace) -> int:
@@ -397,11 +495,16 @@ def emit_stream(args: argparse.Namespace) -> int:
     try:
         if args.kind == "observation":
             sources, identity = observation_sources(args)
-            cwd = Path("/srv/ar-local")
-        else:
+        elif args.kind == "diagnostic":
+            sources, identity = diagnostic_sources(args)
+        elif args.kind == "control":
             temporary, identity = prepare_control(args)
             sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
-            cwd = temporary
+            sources.extend(immutable_control_sources(args))
+            sources.sort(key=lambda item: item[1].encode("utf-8"))
+        else:
+            temporary, identity = prepare_macro(args)
+            sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
         manifest = manifest_for(sources, identity, args)
         manifest_bytes = canonical_json_bytes(manifest)
         header = {
@@ -413,20 +516,20 @@ def emit_stream(args: argparse.Namespace) -> int:
         }
         sys.stdout.buffer.write(canonical_json_bytes(header))
         sys.stdout.buffer.flush()
-        stream_tar(sources, cwd)
+        stream_tar(sources)
         recheck_entries(sources, manifest["files"])
         return 0
     finally:
         if temporary is not None:
             resolved = temporary.resolve()
-            if resolved.parent == Path("/dev/shm") and resolved.name.startswith("ar-local-laptop-backup-"):
+            if resolved.parent == Path("/dev/shm") and resolved.name.startswith(("ar-local-laptop-backup-", "ar-local-laptop-macro-")):
                 shutil.rmtree(resolved)
 
 
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("command", choices=("list", "stream"))
-    value.add_argument("--kind", choices=("observation", "control"), default="observation")
+    value.add_argument("--kind", choices=("observation", "diagnostic", "control", "macro"), default="observation")
     value.add_argument("--date")
     value.add_argument("--runs-root", default="/srv/ar-local/data/runs")
     value.add_argument("--state-root", default="/srv/ar-local/data/state")
@@ -448,10 +551,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         preflight = production_preflight(args)
         if args.command == "list":
-            print(json.dumps({"ok": True, "preflight": preflight, "completed_dates": completed_dates(args)}, indent=2, sort_keys=True))
+            inventory = retained_runs(args)
+            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"]}, indent=2, sort_keys=True))
             return 0
-        if args.kind == "observation" and not args.date:
-            raise ValueError("--date is required for observation streams")
+        if args.kind in {"observation", "diagnostic"} and not args.date:
+            raise ValueError("--date is required for run streams")
         return emit_stream(args)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(json.dumps({"ok": False, "result": "BLOCKED", "error": str(exc)}), file=sys.stderr)
