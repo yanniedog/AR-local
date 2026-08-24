@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Document ID | `ARL-OPS-001` |
-| Version | `1.2` |
+| Version | `1.3` |
 | Status | Controlled execution plan |
 | Effective date | `2026-08-25` |
 | Owner | AR-local operator |
@@ -13,7 +13,7 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` |
+| Controlled plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -44,11 +44,62 @@ not override it. Read it fully before any covered operation.
 | D-002 | 2026-08-23 | Keep this controlled runbook immutable; record execution and deviations in external append-only evidence. The approved source plan remains reproduced below, but its instructions to recreate or append to this file are provenance text after merge. | Recreating or appending evidence to the controlled file would invalidate its version and checksum. Specialist review also found that the pinned producer cannot provide #506/#507 guarantees and that inherited Pi environment could defeat canary isolation. | Mandatory execution clarifications below supersede only those ambiguous mechanics. Any substantive plan change requires a new document version, checksum, and documentation PR. | Approved implementation of the user requirement for a literal drift-resistant plan. |
 | D-003 | 2026-08-25 | Make the product-day the atomic publication unit. Publish every independently valid current product, quarantine or omit only the affected product, and disclose attributable provider and product gaps. Remove numeric failure-count and failure-ratio eligibility thresholds. | The v1.0 bounded-partial gate withheld otherwise valid observations and could strand the app on an older date. Conversely, relaxing the gate without positive membership proof could publish corrupt or stale products. | Require a ledger-bound `ProductAccountingV1` membership sidecar, exact database/sidecar/payload reconciliation, product-level validation, no stale carry-forward, transactional public verification, an upgraded AR-app before activation, staged feature modes, and whole-observation holds for control-plane failures that cannot be scoped safely. | Direct operator decision after the 2026-08-24 publication gap and the 2026-08-25 accounting-disclosure mismatch. |
 | D-004 | 2026-08-25 | Use the physically separate Windows laptop as the primary off-device pull-backup target, while preserving the existing 32 GB historical recovery-image candidate for later boot proof. Maintain a strict 50 GiB laptop free-space floor and store immutable, compressed, hash-manifested observation packs plus current control/configuration packs instead of thirty full physical-disk images. | The Pi has no adequate separate mounted disk: its 59.7 GB USB and 29.7 GB MMC devices are smaller than the 72.7 GiB authoritative data set. The laptop has enough measured capacity, already holds recovery material, and avoids writing credentials or network shares onto the Pi. Risks are laptop unavailability, single-site loss, ransomware, interrupted network transfer, and divergence between the historical boot image and current data layer. | Laptop initiates every pull over SSH; the Pi never receives laptop credentials. Use immutable per-observation packs, canonical source and archive hashes, atomic `.partial` promotion, continuous free-space enforcement, SQLite-consistent copies, secret exclusion, restore drills, freshness receipts, and a fail-closed scheduler. Preserve but quarantine the known-short failed image; do not call the exact-size historical image current or bootable until A4 proves it. A later independent site remains required for full disaster resilience. | Explicit operator direction to use the existing laptop backup and retain approximately 50 GB free. |
+| D-005 | 2026-08-25 | Correct the laptop backup bootstrap before its first data transfer: preserve every retained completed and terminal-failed run plus `runs-archive`; reserve archive and scratch space simultaneously; verify every canonical manifest metadata field; durably flush every commit boundary; and make observation, control, and macro freshness independent scheduler gates. | Late review of v1.2 found that a latest-completed-only interpretation could lose older or failed raw evidence, that the stated capacity check omitted simultaneous archive bytes, that restore comparison omitted mode/time/ownership metadata, and that an observation-only no-op could leave control or macro recovery data stale. The same review found ambiguous DOC-02/DOC-03 and mounted-storage wording. | No backup transfer or schedule is accepted under v1.2 alone. Use DOC-03 for this document lineage; D-004/D-005 explicitly supersede the retained mounted-storage instruction. The receiver inventories all retained run namespaces, treats terminal failures as diagnostic evidence rather than publishable observations, uses worst-case dual-copy capacity, compares tar metadata and extracted bytes, flushes file and directory metadata in dependency order, and records independent freshness identities. | Mandatory safety correction from the repository's post-merge substantive review before first execution. |
+
+## Version 1.3 backup completeness and durability amendment
+
+This section is normative for laptop backup Phases A0 through A4 and corrects
+v1.2 before the first production-data transfer. It does not authorize a runtime
+deployment. Decision D-004 and this decision D-005 explicitly supersede the
+retained Phase A instruction to wire replication to Pi-mounted storage. Use only
+the laptop-side receiver at `C:\code\backups\AR-local-pi5`; the laptop initiates
+SSH and the Pi never mounts a Windows share or receives laptop credentials.
+
+The document-control execution ID for this version is `DOC-03`. `DOC-02`
+remains the immutable v1.1 record and is never reused for v1.2 or v1.3 work.
+
+Before opening a transfer, reserve at least the 50 GiB floor plus the complete
+uncompressed source, a worst-case archive of the same size, and a 1 GiB
+operational reserve. Recheck free bytes during the stream and before scratch
+extraction, promotion, receipt creation, catalog append, and pointer replace.
+Measured compression never reduces this admission requirement.
+
+The bootstrap inventory includes every direct retained date directory under
+`runs/`, whether completed or terminal-failed, and every retained namespace
+under `runs-archive/`. Completed observations use the marker/contract/ledger
+acceptance path. A run without a valid completion marker is preserved only as a
+non-publishable diagnostic generation, together with attributable terminal
+failure and raw-attempt evidence; it never advances latest-observation. Unknown
+or actively mutating run state blocks that generation but does not erase it.
+The current control generation includes `runs-archive`, predeployment evidence,
+state, Git bundles, service definitions, package/configuration metadata, and an
+online-backed-up macro database.
+
+For each tar member, compare path, regular-file type, size, normalized
+modification time, POSIX mode, UID, and GID against the canonical source
+manifest. Independently compare every extracted path, size, and SHA-256. The
+manifest remains the authoritative restoration metadata on filesystems that
+cannot represent POSIX ownership, but the archived tar header must still match
+it before promotion.
+
+Durability order is archive flush, containing-directory flush, manifest flush,
+receipt flush, catalog append flush, catalog-directory flush, and only then
+atomic latest-pointer replace plus its directory flush. A platform that cannot
+prove a required durability barrier blocks acceptance; it does not silently
+substitute process exit for durable storage.
+
+Scheduling remains prohibited until manual full backfill and restore PASS. A
+future scheduled no-op requires three independently verified identities:
+latest retained run/observation, current control source, and current macro
+SQLite source. A change to any one creates and restores a new generation even
+when the observation date is unchanged. A terminal failed run is backed up as
+diagnostic evidence rather than deferred indefinitely.
 
 ## Version 1.2 laptop pull-backup amendment
 
-This section is normative for Phase A and supersedes only requirements that the
-off-device backup target be mounted on the Pi. It does not relax backup scope,
+This section remains normative subject to the v1.3 corrections above. D-004 and
+D-005 explicitly supersede every retained instruction to use Pi-mounted storage
+or a Windows share. It does not relax backup scope,
 integrity, restoration, freshness, production-pinning, quiet-window, or rollback
 gates. Version 1.1 remains authoritative for product and payload behavior.
 
@@ -773,7 +824,7 @@ evidence. Runtime slices deploy only in daylight, soak at least two hours, end
 several hours before 00:30, and survive one natural ingest before the next
 behavioral slice advances.
 
-1. **DOC-02 — controlled v1.1 only.** Merge this document; recalculate plan
+1. **DOC-03 — controlled v1.3 laptop-backup plan.** Merge this document; recalculate plan
    commit, raw SHA-256, controlled SHA-256, and post-merge candidate SHAs.
 2. **A0 — physically separate bootstrap.** Verify the laptop volume, canonical
    target, owner/ACL, 50 GiB floor, pull-only SSH route, recovery-base image, and
@@ -1493,3 +1544,4 @@ This table is append-only.
 | 1.0 | 2026-08-23 | Resolve from Git history after merge | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` | Initial controlled recovery runbook transcribed from the approved plan with mandatory execution clarifications D-001 and D-002. |
 | 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
 | 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
+| 1.3 | 2026-08-25 | Resolve from Git history after merge | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` | Added D-005 before first transfer: full retained/failed-run scope, simultaneous archive-and-scratch capacity, complete tar metadata verification, durable file/directory commit barriers, independent observation/control/macro freshness, explicit mounted-storage supersession, and unambiguous DOC-03 execution identity. |
