@@ -291,7 +291,7 @@ def validate_manifest(
             raise ValueError(f"invalid source size: {relative}")
         if not SHA256_RE.fullmatch(str(entry.get("sha256") or "")):
             raise ValueError(f"invalid source hash: {relative}")
-        if not re.fullmatch(r"0o[0-7]{3,4}", str(entry.get("mode") or "")):
+        if not re.fullmatch(r"0o[0-7]{1,4}", str(entry.get("mode") or "")):
             raise ValueError(f"invalid source mode: {relative}")
         for metadata_key in ("mtime_ns", "uid", "gid"):
             if not isinstance(entry.get(metadata_key), int) or int(entry[metadata_key]) < 0:
@@ -423,32 +423,43 @@ def stream_partial(process: subprocess.Popen[bytes], stream: BinaryIO, partial: 
     return digest.hexdigest(), written
 
 
+def read_tar_metadata(stream: tarfile.TarFile) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for member in stream:
+        relative = member.name.removeprefix("./")
+        if member.isdir():
+            continue
+        if not member.isfile():
+            raise ValueError(f"archive contains a non-regular member: {relative}")
+        entries.append({
+            "path": relative,
+            "type": "file",
+            "size": member.size,
+            "mode": oct(member.mode),
+            "mtime_ns": int(member.mtime * 1_000_000_000),
+            "uid": member.uid,
+            "gid": member.gid,
+        })
+    return entries
+
+
 def tar_metadata(archive: Path) -> list[dict[str, object]]:
-    """Read zstd tar headers through the platform tar without extracting bytes."""
+    """Read tar headers without extracting bytes; use libarchive for zstd."""
+    try:
+        with tarfile.open(archive, mode="r:*") as stream:
+            return read_tar_metadata(stream)
+    except tarfile.ReadError:
+        if os.name != "nt":
+            raise RuntimeError("zstd tar header verification requires the Windows libarchive receiver")
     process = subprocess.Popen(
         ("tar", "-cf", "-", f"@{archive}"),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     assert process.stdout is not None and process.stderr is not None
-    entries: list[dict[str, object]] = []
     try:
         with tarfile.open(fileobj=process.stdout, mode="r|*") as stream:
-            for member in stream:
-                relative = member.name.removeprefix("./")
-                if member.isdir():
-                    continue
-                if not member.isfile():
-                    raise ValueError(f"archive contains a non-regular member: {relative}")
-                entries.append({
-                    "path": relative,
-                    "type": "file",
-                    "size": member.size,
-                    "mode": oct(member.mode),
-                    "mtime_ns": int(member.mtime * 1_000_000_000),
-                    "uid": member.uid,
-                    "gid": member.gid,
-                })
+            entries = read_tar_metadata(stream)
         error = process.stderr.read().decode("utf-8", "replace")
         code = process.wait(timeout=600)
         if code:

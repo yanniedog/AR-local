@@ -102,7 +102,7 @@ def create_daily_exports(root: Path, date: str) -> None:
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
-    with tarfile.open(archive, "w") as tar:
+    with tarfile.open(archive, "w", format=tarfile.GNU_FORMAT) as tar:
         for entry in entries:
             tar.add(root / str(entry["path"]), arcname=str(entry["path"]), recursive=False)
 
