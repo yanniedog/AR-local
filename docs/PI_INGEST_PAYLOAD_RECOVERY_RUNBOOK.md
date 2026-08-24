@@ -5,27 +5,24 @@
 | Field | Value |
 |---|---|
 | Document ID | `ARL-OPS-001` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | Controlled execution plan |
-| Effective date | `2026-08-23` |
+| Effective date | `2026-08-25` |
 | Owner | AR-local operator |
 | Time zone | Australia/Hobart |
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
-| Source baseline commit | `71003a5c1b69fe1da90c3781629fbfb5eda948a0` |
+| Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` |
+| Controlled plan SHA-256 | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
-mark after normalising CRLF and CR line endings to LF and replacing exactly two
-occurrences of the published 64-character controlled digest with the literal
-token `PLAN_SHA256_PENDING`. This canonicalisation avoids an impossible
-self-referential raw-file checksum and cross-platform checkout drift while still
-detecting every other byte. The raw checked-out file SHA-256 must also be
-recorded externally in each execution record and deployment acceptance manifest.
+mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
+the published digest with `PLAN_SHA256_PENDING`. This avoids an impossible
+self-reference and cross-platform drift while detecting every other byte. The
+raw file SHA-256 is also recorded in each execution/deployment record.
 
-This document is the complete, authoritative execution plan. Chat context,
-summaries, and operator recollection do not override it. Read it in full before
-any Pi ingest, payload, database, backup, canary, deployment, or rollback work.
+This is the complete authoritative plan; chat, summaries, and recollection do
+not override it. Read it fully before any covered operation.
 
 ## Change control
 
@@ -45,11 +42,809 @@ any Pi ingest, payload, database, backup, canary, deployment, or rollback work.
 |---|---|---|---|---|---|
 | D-001 | 2026-08-23 | Use a canonical embedded plan checksum and dynamically resolve the immutable document-containing Git commit. | A file cannot contain its own literal raw SHA-256, and a commit cannot contain its own future commit ID, without changing the value being identified. A placeholder would falsely imply verification. | Canonicalise only the checksum field; record both canonical and raw hashes plus the resolved commit in every external execution/deployment record. | Required to make the requested document control truthful and reproducible. |
 | D-002 | 2026-08-23 | Keep this controlled runbook immutable; record execution and deviations in external append-only evidence. The approved source plan remains reproduced below, but its instructions to recreate or append to this file are provenance text after merge. | Recreating or appending evidence to the controlled file would invalidate its version and checksum. Specialist review also found that the pinned producer cannot provide #506/#507 guarantees and that inherited Pi environment could defeat canary isolation. | Mandatory execution clarifications below supersede only those ambiguous mechanics. Any substantive plan change requires a new document version, checksum, and documentation PR. | Approved implementation of the user requirement for a literal drift-resistant plan. |
+| D-003 | 2026-08-25 | Make the product-day the atomic publication unit. Publish every independently valid current product, quarantine or omit only the affected product, and disclose attributable provider and product gaps. Remove numeric failure-count and failure-ratio eligibility thresholds. | The v1.0 bounded-partial gate withheld otherwise valid observations and could strand the app on an older date. Conversely, relaxing the gate without positive membership proof could publish corrupt or stale products. | Require a ledger-bound `ProductAccountingV1` membership sidecar, exact database/sidecar/payload reconciliation, product-level validation, no stale carry-forward, transactional public verification, an upgraded AR-app before activation, staged feature modes, and whole-observation holds for control-plane failures that cannot be scoped safely. | Direct operator decision after the 2026-08-24 publication gap and the 2026-08-25 accounting-disclosure mismatch. |
 
-## Mandatory execution clarifications
+## Version 1.1 controlling amendment
 
-These controls are part of version 1.0 and are normative. They preserve the
-complete approved source plan below while making its execution fail-closed.
+This section is normative and supersedes only the conflicting v1.0 statements
+identified below. All other v1.0 safety controls remain in force. In particular,
+production stays on its last-known-good immutable commit until the backup,
+rollback, exact-candidate, canary, daylight-deployment, and natural-ingest gates
+for the relevant slice pass.
+
+### Superseded v1.0 rules
+
+The following v1.0 publication rules are replaced by D-003:
+
+- `providers_failed == 0` as a publication requirement;
+- failure totals between 1 and 50;
+- failures no greater than 1% of discovered products;
+- partial providers no greater than 15% of registered providers; and
+- treating an attributable provider or product gap as a reason to suppress every
+  independently valid product in the observation.
+
+Those quantities remain mandatory metrics for disclosure, alerting, trend
+analysis, and operator triage. They never independently decide publication.
+Until the product-accounting activation slice passes, the deployed legacy gate
+continues to fail closed; D-003 is not permission to bypass it manually.
+
+### Non-negotiable safety invariants
+
+1. A consumer product appears for an observation only when its current-day
+   identity, classification, and consumer-critical rate evidence validate.
+2. A defect in optional details removes only those details and produces
+   `published_core_only`; it does not suppress valid core rates.
+3. A trust-critical defect suppresses that product everywhere and produces
+   `quarantined_invalid`.
+4. A valid but intentionally non-displayable product, including a product with
+   no valid current rate, produces `omitted_valid`.
+5. No prior-day row is copied forward or represented as observed today.
+6. Every registered provider receives an attributable attempt. A provider may
+   produce no current products and the remaining providers may still publish.
+7. Every discovered product belongs to exactly one disposition, and every
+   consumer row belongs to a publishable disposition.
+8. Daily SQLite observations become immutable after finalization. Corrections
+   use a new generation and immutable revision tag.
+9. Dated v1, rolling v1, and the dates index are separate transactions whose
+   public bytes must be verified independently.
+10. The upgraded AR-app must be released and verified before production can
+    activate product-scoped publication.
+11. Unknown, corrupt, or contradictory membership is never converted into an
+    apparently complete observation.
+12. `dev`, PR #508, and quarantined restoration branches are never production
+    sources. Candidates are exact immutable commits descended from `main`.
+
+### Product and provider dispositions
+
+Every currently indexed product receives exactly one of these values:
+
+| Disposition | Consumer eligibility | Required evidence | Public meaning |
+|---|---|---|---|
+| `published_full` | Core and valid details | Valid identity, classification, core rates, and optional details | Fully observed product |
+| `published_core_only` | Core plus independently validated optional fields | Valid identity, classification, and core rates; one or more optional fields rejected | Rates are usable; detail completeness is not promised |
+| `omitted_valid` | None | Valid identity and attributable current observation with genuinely absent current rate evidence, or an explicit supported exclusion | Expected gap, not invalid data |
+| `quarantined_invalid` | None | Evidence is missing, malformed, contradictory, misclassified, duplicated with conflicting values, or otherwise trust-critical | Invalid product withheld |
+
+For each observation:
+
+```text
+products_discovered
+  = published_full
+  + published_core_only
+  + omitted_valid
+  + quarantined_invalid
+```
+
+This is set-membership equality, not merely count equality. Product UIDs are
+unique. Current-day core, details, search, change, ribbon, and aggregate outputs
+reference only `published_full` or `published_core_only`. For
+`published_core_only`, the details asset may retain independently validated
+fields, must omit every rejected field, and sets `details_complete=false`.
+Prior verified history remains intact; an affected current date is `null`.
+Omitted and quarantined products appear only in quality disclosure.
+
+Provider state is independent of product disposition:
+
+| State | Definition |
+|---|---|
+| `complete` | Current provider population is known and every product reconciles |
+| `partial` | Some current provider products reconcile, with attributable gaps |
+| `empty` | An attributable successful attempt proves a current empty population |
+| `failed` | The provider was attempted but no trustworthy current population was obtained |
+| `not_attempted` | No attributable attempt exists; this is a global control-plane blocker |
+
+A `failed` provider contributes no current products and is disclosed. It does
+not block products from other providers. `population_known=false` must be used
+when a provider-index or pagination failure leaves the missing tail unknown.
+
+### Whole-observation hold conditions
+
+The producer withholds production publication only when safe separation or
+publication integrity cannot be proven. Initial activation blockers are:
+
+- completion marker, export contract, ledger event, observation pointer,
+  accounting digest, or required artifact missing or unverifiable;
+- any hash, generation ID, observation date, or pointer binding disagreement;
+- register provenance incomplete, a registered provider not attributable to an
+  attempt, or register/provider membership unreconciled;
+- corrupt or unattributed failure evidence greater than zero;
+- a raw failure record that cannot be mapped to a normalized issue or preserved
+  by raw-byte digest;
+- product disposition sets that overlap, omit a discovered product, contain a
+  duplicate conflicting identity, or disagree with SQLite or payload output;
+- an omitted or quarantined product present in any consumer asset;
+- zero individually publishable products;
+- invalid top-level payload schema, unsafe decompression bounds, or product and
+  provider summary disagreement;
+- required public asset, manifest, or dates-index upload or post-download
+  verification failure; or
+- candidate, plan, deployment, backup, rollback, or app-compatibility evidence
+  not matching the exact commit being promoted.
+
+Issue volume and impact severity do not independently hold publication once
+these trust-boundary gates pass. A severe but fully reconciled observation is
+published as severe rather than silently replaced with stale data.
+
+### Validation boundary
+
+Consumer-critical product validation must cover at least:
+
+- stable provider and product identity and a non-empty CDR product ID;
+- a known dataset and section classification;
+- conflict-free duplicate resolution;
+- finite numeric rate values with correct units and supported relationships;
+- Mortgage, Savings, and TD rate values between 0 and 1 inclusive in stored CDR
+  decimal form before percentage presentation;
+- tier boundaries that are finite, ordered, non-overlapping where the CDR
+  contract requires it, and bound to the correct product;
+- timestamps and effective dates that are parseable and not more than 24 hours
+  beyond the observation date;
+- no foreign product/provider cross-reference; and
+- every included row having positive evidence bound to the current generation.
+
+Invalid optional fields are removed, recorded as `field_omitted_invalid`, and
+yield `published_core_only`; remaining independently valid optional fields may
+be retained. Invalid identity, classification, observed rate value/unit,
+duplicate, or evidence binding yields `quarantined_invalid` for the whole
+product. `omitted_valid` is allowed only when current rate evidence is genuinely
+absent; malformed, conflicting, incorrectly unitised, or unbound observed rate
+evidence is always `quarantined_invalid`.
+
+### `ProductAccountingV1` internal sidecar
+
+Before finalization, generate canonical JSON named
+`product-accounting-v1.json`. It is an immutable export artifact and is hashed
+by the export contract and ledger event. Its minimum structure is:
+
+```json
+{"schema_version":1,"observation_date":"YYYY-MM-DD",
+ "accounting_id":"ingest-session-id","raw_attempt_journal_digest":"sha256",
+ "providers":[],"products":[],"issues":[],"summary":{}}
+```
+
+Provider records contain provider UID, safe display name, state, attempted,
+population-known, discovered and disposition counts, and issue IDs. Product
+records contain product UID, provider UID, CDR product ID, dataset, optional
+safe display name, disposition, allowlisted reason codes, and positive evidence
+IDs/digests. Issue records contain deterministic issue ID, scope, provider and
+product references when known, phase, allowlisted code, optional HTTP status,
+occurrence count, first/last timestamps, evidence digest, and resulting
+disposition. Arbitrary exception text, request headers, credentials, response
+bodies, and unredacted URLs are prohibited from public projections.
+
+`accounting_id` is the immutable raw-attempt session/source observation ID; it
+is assigned before finalization and is not derived from these JSON bytes. The
+sidecar contains neither its own hash nor the final generation ID. Canonical
+JSON uses UTF-8, sorted keys, compact separators, LF where text lines exist, and
+no non-semantic timestamps. The export contract hashes the completed sidecar;
+its digest then contributes to the final generation, contract, and ledger.
+
+Initial stable issue codes are product codes `detail_fetch_failed`,
+`detail_invalid_json`, `cdr_error`, `identity_mismatch`, `duplicate_conflict`,
+`rate_invalid`, `classification_unresolved`, `no_current_rate`,
+`product_closed`, and `unsupported_category`; optional-field code
+`field_omitted_invalid`; provider codes `products_index_failed`,
+`pagination_incomplete`, `holder_worker_crash`, and
+`provider_population_unknown`; and run codes `register_failed`,
+`failure_record_corrupt`, `failure_unattributed`, and
+`accounting_unreconciled`.
+
+Unknown codes fail schema validation in the producer. AR-app renders a generic
+safe label for a future unknown code so an additive producer release cannot
+crash an older supported app.
+
+### SQLite schema for new observations
+
+Historical SQLite files are never migrated in place. Newly finalized databases
+increment their schema version and add:
+
+```text
+bank_product_dispositions(
+  accounting_id TEXT, product_uid TEXT, provider_uid TEXT,
+  cdr_product_id TEXT, dataset TEXT, display_name TEXT,
+  disposition TEXT CHECK (...four allowed values...),
+  reason_codes_json TEXT, evidence_ids_json TEXT,
+  core_valid INTEGER CHECK (core_valid IN (0,1)),
+  details_valid INTEGER CHECK (details_valid IN (0,1)),
+  PRIMARY KEY (accounting_id, product_uid)
+)
+bank_provider_observations(
+  accounting_id TEXT, provider_uid TEXT, brand_name TEXT,
+  state TEXT CHECK (...five allowed values...),
+  attempted INTEGER CHECK (attempted IN (0,1)),
+  population_known INTEGER CHECK (population_known IN (0,1)),
+  discovered_count INTEGER, published_full_count INTEGER,
+  published_core_only_count INTEGER, omitted_valid_count INTEGER,
+  quarantined_invalid_count INTEGER, issue_count INTEGER,
+  PRIMARY KEY (accounting_id, provider_uid)
+)
+bank_observation_issues(
+  accounting_id TEXT, issue_id TEXT,
+  scope TEXT CHECK (scope IN ('product','provider','register','run')),
+  provider_uid TEXT, product_uid TEXT, phase TEXT, code TEXT,
+  http_status INTEGER, occurrence_count INTEGER CHECK (occurrence_count > 0),
+  first_seen_at TEXT, last_seen_at TEXT, evidence_digest TEXT,
+  disposition TEXT, public_safe INTEGER CHECK (public_safe IN (0,1)),
+  PRIMARY KEY (accounting_id, issue_id)
+)
+```
+
+Every column shown without an explicit nullable role is `NOT NULL`; every count
+has `CHECK (value >= 0)`.
+
+`display_name` is nullable. In issues, `provider_uid`, `product_uid`,
+`http_status`, and `disposition` are nullable only where the scope requires;
+every other shown column is `NOT NULL`. Enable `PRAGMA foreign_keys=ON` and use
+composite foreign keys on `(accounting_id, provider_uid)` and
+`(accounting_id, product_uid)`; application validation is additional defence,
+not a substitute. Add indexes on identity, disposition, state, code, and scope.
+Before finalization, independently regenerate canonical sidecar bytes from the
+tables, require byte-for-byte equality with the stored sidecar, verify its
+external SHA-256, and run `PRAGMA quick_check`.
+
+### Checked-in schemas and reconciliation
+
+Implementation must add and test `product-accounting-v1.schema.json`,
+`app-quality-v1.schema.json`, `app-observation-v1.schema.json`, and
+`dates-index-v1.schema.json`, `dates-index-entry-v1.schema.json`, and
+`dates-index-status-event-v1.schema.json`,
+`dates-index-compatibility-event-v1.schema.json`, and
+`rolling-unavailable-v1.schema.json`. Internal schemas reject additional
+properties. Public schemas allow only documented additive extension points.
+They define all required keys, types, enums, string patterns, nullable fields,
+integer minima, array uniqueness, gzip/media types, and byte limits.
+
+Provider summary requires `registered`, `attempted`, `complete`, `partial`,
+`empty`, `failed`, `not_attempted`, and `population_unknown`. Product summary
+requires `discovered`, `published_full`, `published_core_only`, `omitted_valid`,
+`quarantined_invalid`, and `consumer_visible`. Issue summary requires `total`,
+`corrupt`, `unattributed`, `affected_providers`, `affected_products`, and
+allowlisted `by_code`. Reconciliation requires provider states to total
+registered providers; attempted to equal complete + partial + empty + failed;
+product dispositions to total discovered; consumer-visible to equal both
+publishable dispositions; and every summary to match SQLite, sidecar, quality,
+core membership, manifest, and dates-index entry.
+
+Observation `state=complete` only when all registered providers are complete or
+proven empty, `population_unknown=0`, every discovered product is
+`published_full`, and issue total is zero. Every other accepted observation is
+`degraded`. Impact is separate and never changes this deterministic state rule.
+
+The following field sets are exhaustive and normative; schema files implement
+them rather than redesign them:
+
+| Object | Required fields |
+|---|---|
+| Accounting root | `schema_version` integer 1; `observation_date` date; `accounting_id` non-empty string; `raw_attempt_journal_digest` SHA-256; unique `providers`, `products`, and `issues` arrays; exact `summary` |
+| Provider | `provider_uid`, `brand_name`, unique `datasets`/`affected_sections`; provider `state`; booleans `attempted`/`population_known`; all discovered/disposition/issue counts; unique `issue_ids` |
+| Product | `product_uid`, `provider_uid`, `cdr_product_id`, dataset enum, nullable `display_name`/`legacy_product_key`; disposition; unique reason/evidence IDs; booleans `core_valid`/`details_complete` |
+| Issue | `issue_id`, scope, nullable provider/product UID as scope permits, affected sections, phase, allowlisted code, nullable HTTP status/disposition, positive count, first/last timestamps, evidence SHA-256, `public_safe` boolean |
+| Gap | date, provider UID, nullable product UID, non-empty affected sections, `population_known`, reason codes, and disposition |
+| Quality root | schema version 1, run date, accounting/generation IDs, publication mode, accounting SHA-256, exact summaries, unique gaps, and optional grouped issues only in expanded quality |
+
+All counts are integers at least zero; IDs and enums follow the values fixed in
+this document; arrays are deterministically sorted and unique. Public objects
+may contain one optional namespaced `extensions` object; other unknown keys are
+rejected by the producer and safely ignored by compatible consumers only inside
+that extension object.
+
+Official `provider_uid` is `provider:v1:<hex>` where `<hex>` is SHA-256 of
+compact sorted-key UTF-8 JSON `["identity-v1","provider",{"brand":B,"holder":H}]`,
+with `B` and `H` substituted as JSON strings. `H` and `B` are the exact trimmed
+CDR Register `dataHolderId` and
+`dataHolderBrandId` strings. Do not case-fold them. If either is missing, use
+`provider-fallback:v1:<hex>`, where `<hex>` hashes canonical JSON
+`["provider-fallback-v1",A,N]`. Build `A` by collecting every HTTPS endpoint in
+the register provider record, IDNA-encoding and lowercasing each host, removing a
+trailing dot and port 443, retaining any other explicit port, discarding path,
+query, and fragment, then choosing the lexicographically smallest non-empty
+`host[:port]`. Build `N` by Unicode NFC-normalising the display name, trimming it,
+and collapsing each ASCII whitespace run to one space; do not case-fold it.
+Missing `A` provider-scope holds that register record and exposes only its
+evidence digest as an unattributed-to-product provider issue. Mark
+fallback identity publicly and bind an append-only fallback identity/alias
+registry into the accounting contract and ledger. On later days, reuse the
+registered UID. If fallback inputs change without an operator-authorised alias,
+or any official/fallback UID collides, mark every affected provider population
+unknown and provider-scope hold its products rather than minting a new identity;
+unrelated providers remain eligible. Dataset is exactly one case-sensitive enum:
+`Mortgage`, `Savings`, or `TD`.
+
+`product_uid` is lowercase hex SHA-256 of UTF-8 bytes
+`product-v1\0<provider_uid>\0<dataset>\0<cdr_product_id>`. The producer adds it
+to every product-bearing core, details, search, history, change, saved-rate, and
+aggregate record. Accounting records also carry nullable `legacy_product_key`;
+the build verifies its one-to-one mapping and globally holds on collision or
+cross-asset disagreement.
+
+Canonical sidecar and public JSON are compact UTF-8 with sorted keys. Canonical
+arrays use their documented identity sort. Reproducible gzip uses empty filename,
+mtime zero, compression level 9, and a fixed OS header byte. Hashes cover exact
+compressed public bytes; inflated sizes cover canonical JSON bytes.
+
+### Additive public v1 contract
+
+Keep manifest `schema_version: 1` and every existing stable-app field unchanged.
+Add:
+
+```json
+{"publication_state":"accepted",
+ "observation":{"schema_version":1,"state":"complete","impact":"none",
+   "accounting_id":"ingest-session-id","generation_id":"obs-...",
+   "publication_mode":"product_scoped","export_contract_digest":"sha256",
+   "ledger_digest":"sha256","product_accounting_digest":"sha256",
+   "providers":{"registered":0,"attempted":0,"complete":0,"partial":0,
+     "empty":0,"failed":0,"not_attempted":0,"population_unknown":0},
+   "products":{"discovered":0,"published_full":0,
+     "published_core_only":0,"omitted_valid":0,
+     "quarantined_invalid":0,"consumer_visible":0},
+   "issues":{"total":0,"corrupt":0,"unattributed":0,
+     "affected_providers":0,"affected_products":0,"by_code":{}}},
+ "commit":{"dated_manifest_sha256":"sha256",
+   "index_entry_sha256":"sha256","dates_index_sha256":"sha256",
+   "quality_index_sha256":"sha256","quality_sha256":"sha256"},
+ "files":{"quality_index":{"name":"quality-index-YYYY-MM-DD-<digest>.json.gz",
+   "url":"https://github.com/.../quality-index-....json.gz",
+   "media_type":"application/json","content_encoding":"gzip",
+   "bytes":0,"inflated_bytes":0,"sha256":"sha256"},
+  "quality":{"name":"quality-YYYY-MM-DD-<digest>.json.gz",
+   "url":"https://github.com/.../quality-....json.gz",
+   "media_type":"application/json","content_encoding":"gzip",
+   "bytes":0,"inflated_bytes":0,"sha256":"sha256"}}}
+```
+
+`commit` is required only on rolling and prohibited on dated manifests, avoiding
+a circular dependency. `index_entry_sha256` hashes canonical entry JSON without
+any self-hash field; `dates_index_sha256` hashes the complete published index.
+
+`publication_state` is `accepted` or `diagnostic`. Production dated, rolling,
+and dates-index entries accept only `accepted`. Diagnostic smoke tags use
+`diagnostic` and can never finalize an app date. The separately schema-validated
+rolling-unavailable control manifest defined in the correction procedure is the
+only exception; it is not a dated manifest, observation, or dates-index entry.
+
+The mandatory `quality_index` binds run date, accounting ID, generation, mode,
+accounting digest, all summaries, stable affected identities/reason aggregates,
+and the gap matrix keyed by date, provider UID, optional product UID, and
+affected sections. It is eagerly downloaded before adoption and capped at 1 MiB
+compressed and 8 MiB inflated. Expanded `quality` adds normalized issue groups,
+is lazy, and is capped at 8 MiB compressed and 64 MiB inflated. Both are safe
+public projections, uploaded before the manifest, content-addressed,
+gzip-compressed, and SHA-256 verified before parsing.
+Exceeding either bound is a control-plane failure; issues are not silently
+truncated. Neither projection contains raw URLs, bodies, headers, credentials,
+or arbitrary exceptions. The accepted dated-manifest hash authenticates both
+descriptors and their URL, encoding, sizes, and SHA-256 values.
+
+Impact uses ordered algorithm `impact-v1` and never overrides inclusion proof.
+Evaluate `severe` first: more than 10% of discovered products are non-publishable;
+more than 10% of registered providers failed; a section discovered products but
+has zero visible products; or visible products are below 50% of the median of at
+least three available same-dataset accepted observations from the prior seven.
+Otherwise `degraded` applies when any provider failed, population is unknown,
+any product is quarantined, non-full products exceed 1% of discovered, or
+affected providers exceed 15% of registered. Otherwise `limited` applies when
+any issue, core-only product, or omitted product remains. Otherwise impact is
+`none`. Ratios use exact integer counts and strict `>`; zero required denominators
+are global blockers, and the trailing baseline test is skipped with fewer than
+three comparable observations.
+
+Extend `dates-index.json` additively while preserving the sorted legacy `dates`
+array:
+
+```json
+{"schema_version":1,"dates":["YYYY-MM-DD"],
+ "entries":[{"date":"YYYY-MM-DD","publication_status":"accepted",
+   "revision":0,"state":"complete","impact":"none","population_unknown":0,
+   "generation_id":"obs-...","tag":"app-payload-YYYY-MM-DD",
+   "dated_manifest_sha256":"sha256","quality_index_sha256":"sha256",
+   "quality_sha256":"sha256"}],
+  "status_events":[{"sequence":2,"event_id":"sha256",
+    "generation_id":"obs-...","status":"withdrawn",
+    "replacement_generation_id":null,"reason_code":"semantic_failure",
+    "recorded_at":"RFC3339Z","operator":"identity"}],
+  "compatibility_events":[{"sequence":1,"activation_id":"sha256",
+    "type":"legacy_cutoff_activated","app_min_version":"1.0.174",
+    "legacy_cutoff":{"date":"YYYY-MM-DD","tag":"app-payload-YYYY-MM-DD",
+      "generation_id":"obs-...","manifest_sha256":"sha256"},
+    "recorded_at":"RFC3339Z","operator":"identity"}]}
+```
+
+Entries are immutable and unique by `(date, generation_id, revision)`.
+Corrections append status events; they never edit an entry. Check in schemas for
+the complete dates index, each immutable entry, and each status event. A status
+event contains only `sequence`, `event_id`, `generation_id`, `status`, nullable
+`replacement_generation_id`, `reason_code`, `recorded_at`, and `operator`.
+`event_id` is lowercase SHA-256 of canonical event bytes with `event_id` omitted;
+canonicalisation follows the JSON rule above. Sequence is a positive integer,
+unique across both event arrays, contiguous from one when arrays are merged, and
+evaluated in ascending order.
+Every event generation and non-null replacement must resolve to a unique existing
+entry; replacement must differ from source, be effectively accepted, and have a
+later `(date, revision)`. The only legal first transition is `accepted ->
+withdrawn` or `accepted -> superseded`. Both are terminal for that generation;
+replacement linkage is carried on the same terminal event and never by a later
+second transition. Reject unknown fields, duplicate IDs/sequences, broken links,
+illegal transitions, and non-canonical order. The newest effectively accepted
+generation is the greatest `(date, revision, generation_id)` after applying all
+valid events; it must match the rolling commit. Legacy `dates[]` remains a
+monotonic record of dates ever published and is not pruned on withdrawal.
+
+`compatibility_events` is empty before APP-GATE-B and contains exactly one event
+after it. `activation_id` is lowercase SHA-256 of canonical event bytes with that
+field omitted. The cutoff tuple binds the final independently downloaded and
+hash-verified legacy manifest directly; its date must already exist in legacy
+`dates[]`, but it does not require or manufacture a new-format entry. The
+APP-GATE-B receipt records every legacy asset hash and the manifest hash;
+`app_min_version` is exact APP-01. A second activation, altered tuple, or
+sequence/order error invalidates the index. Every accepted rolling commit
+after activation binds `cutoff_activation_event_id=activation_id`. All apps,
+including fresh installs, select the first and only valid activation event from
+the verified full index and require rolling to match it; rolling alone can never
+create, remove, or widen the cutoff.
+
+For a new-format observation, use this literal consumer commit protocol:
+
+1. Upload and publicly verify immutable dated assets, quality, and dated manifest.
+2. Upload and verify rolling content-addressed assets without changing the
+   rolling manifest.
+3. Publish and verify the monotonic dates index entry referencing exact dated
+   manifest and quality hashes.
+4. Publish and verify the rolling accepted manifest last. Its rolling-only
+   `commit` binds the dated manifest, canonical index entry, full dates index,
+   quality index, and expanded quality SHA-256 values; its date and generation
+   match all documents.
+5. Clear internal pending only after all four public components are verified.
+
+The APP-GATE-B minimum-version manifest prevents unsupported clients
+from consuming step 3 early. The supporting app requires both the exact accepted
+index entry and matching rolling commit for the newest effectively accepted
+generation. If step 3 succeeds
+and step 4 fails, rolling stays old, the index remains a monotonic superset, and
+retry resumes step 4 from the original observation without rerunning ingest.
+
+### AR-app compatibility and disclosure
+
+Ship app support before producer quarantine or product-scoped publication.
+APP-01 targets versionName `1.0.174` and Android versionCode `193`. Its immutable
+release receipt records both values, APK SHA-256, and signing-certificate digest.
+The compatibility gate copies the verified versionName exactly into
+`app_min_version`; versionCode is evidence, not the compared value. AR-app fails
+closed when its native version cannot be read or does not satisfy the minimum.
+
+Required app behavior:
+
+- validate top-level manifest, run date, hashes, sizes, decompression bounds,
+  publication state, and observation summary before adoption;
+- before cutoff activation, accept legacy manifests under existing rules; after
+  observing the authenticated APP-GATE-B cutoff, accept them only through that
+  immutable tuple and never forget or move the cutoff forward;
+- never adopt a `diagnostic` manifest or diagnostic dated tag;
+- for every new-format manifest, require an exact accepted dates-index entry
+  matching date, tag, generation, dated-manifest, quality-index, and expanded
+  quality hashes; for the newest effectively accepted generation also require a
+  rolling `commit` whose
+  entry/index/artifact hashes match downloaded bytes; availability alone
+  finalizes only legacy data;
+- validate rows independently at download and cache-read boundaries, but assign
+  disposition by `product_uid`; any trust-critical row failure removes every
+  current row and dependent reference for that product;
+- use one local quarantined-product set to filter core, details, search, bank and
+  product history, changes, ribbons, aggregates, saved-rate lookups, and
+  notifications; an unscoped membership mismatch holds the prior cache;
+- retain the previous trusted cache only for top-level corruption, hash/run-date
+  mismatch, or an unusable observation contract;
+- preserve known history gaps as `null`; do not forward-fill a reported gap or
+  generate a removal/rate-change notification from it;
+- label the next observed change after a gap as first observed after a data gap;
+- exclude incomplete providers from aggregates/rankings that require complete
+  provider populations, or label the aggregate as incomplete;
+- show a calm tappable summary such as “3,018 valid products · 7 omitted ·
+  2 lenders affected” only when needed;
+- when population is unknown, separate known and unknowable scope, for example
+  “7 known products omitted · product count unavailable for 2 lenders”;
+- provide a Data quality screen with date, observation identity, reconciled
+  totals, collapsed provider groups, product/reason groups, and copyable stable
+  issue codes;
+- show an affected-lender notice and an exact-product optional-detail notice
+  without placing warnings on unaffected cards; and
+- never expose raw response bodies, credentials, or unsafe URLs.
+
+Legacy acceptance is bounded by an immutable pre-activation tuple of final
+legacy date, tag, generation (when present), and manifest hash recorded in the
+APP-GATE-B deployment receipt. Only releases at or before that boundary use
+legacy semantics. After APP-GATE-B, every mode, including rollback, emits the
+additive contract; missing required fields holds the previous trusted cache.
+
+APP-01 implements the cutoff protocol before release; it does not hardcode a
+future tuple. APP-GATE-B adds `compatibility.schema_version=1`, exact
+`app_min_version`, and the complete legacy cutoff tuple to the hash-verified
+rolling manifest and appends the one permitted compatibility activation event to
+the full dates index. APP-01 requires the two to match, then atomically persists
+that activation tuple, activation ID, rolling-manifest hash, and full-index hash
+before adopting the first gated generation. The activation is one-way: replay,
+absence, or an altered/future cutoff cannot erase or widen the stored boundary.
+A fresh install derives it only from the first valid activation event in the
+verified full index and matching rolling commit; an offline existing install may
+use only its already verified cache until it can verify the gate.
+
+Producer disclosure remains immutable. Device findings are stored separately
+as `device_quarantine` and displayed alongside, never merged into or substituted
+for signed producer counts. Persist device quarantine only in an atomic sidecar
+keyed by core SHA-256, every dependent-asset hash, and validator-schema version;
+otherwise recompute it. Never alter producer bytes or delete saved references;
+affected saves become unavailable. Cache quality atomically by `(run_date,
+generation_id, quality_index_sha256)` in the same cache transaction as core and
+never evict it independently. Cache expanded quality separately by `(run_date,
+generation_id, quality_sha256)` and use it offline only when identities match.
+Mandatory quality-index failure prevents adoption. Missing/unavailable expanded
+quality shows “Details unavailable” without invalidating verified core.
+
+Atomically retain at least the current and previous accepted, non-withdrawn
+generations. Cleanup never removes the predecessor until its successor has
+survived seven natural ingests with no open semantic alert; the last two verified
+generations are retained regardless.
+
+The gap matrix drives history and aggregates. Rankings may use valid current
+products with visible coverage. Lender/section aggregates are labelled partial.
+Before/after population calculations exclude affected provider-dates. Explicit
+gaps break chart lines; unknown local history warming is a different state.
+Exact-product alerts require publishability at both endpoints; the first valid
+post-gap observation re-baselines without alert. Category/search-best alerts
+are suppressed when an affected section population could change the winner.
+RBA-only alerts are unaffected; device quarantine follows the same suppression.
+
+Provide a date-addressable Data quality route. It verifies the selected dated
+manifest hash, tag, effective status, date, generation, quality-index hash, and
+expanded quality hash against the index before fetching/caching. Test loading,
+unavailable, hash-mismatch, empty-report, and withdrawn/superseded states.
+
+Production AR-app must reject diagnostic tags. Candidate rendering uses an
+internal signed test build from the exact APP-01 commit and lockfile with one
+compile-time pinned candidate URL and no runtime URL override. Its receipt binds
+source SHA, lockfile, candidate tag, APK hash, and signing certificate. Binary
+comparison must show the released build differs only in build profile and pinned
+endpoint; the released APK separately proves diagnostic rejection.
+
+Accessibility requires text and icon in addition to colour, button role and
+expanded state for disclosures, at least 48dp targets, one polite refresh
+announcement rather than per-row announcements, selectable diagnostic codes,
+and reduced-motion compliance. Large reports use virtualized provider/product
+groups, semantic headings, stable focus across expansion, complete disposition
+and count labels, one announced copy confirmation, large-text layouts without
+clipping, and no nested conflicting press targets.
+
+### Staged feature modes
+
+`AR_LOCAL_PRODUCT_PUBLICATION_MODE` has exactly four values:
+
+| Mode | Behavior |
+|---|---|
+| `legacy` | Current production behavior; no product-accounting authorization |
+| `report` | Preserve catalogue/core/details membership and legacy authorization decisions while allowing additive observation, quality, index, and manifest bytes |
+| `quarantine` | Remove individually invalid products while retaining the legacy observation-wide publication gate |
+| `product_scoped` | Authorize publication using the D-003 inclusion-proof gate |
+
+Absent configuration defaults to `legacy`; unknown values fail closed. The
+selected mode is recorded in completion, contract, ledger, internal publication
+state, manifest, deployment record, and evidence ledger. A code deploy and a
+mode activation are separate approvals and rollback targets.
+
+### Incremental implementation train
+
+Each numbered slice uses a fresh branch from current `origin/main`, one focused
+PR, exact-head CI, substantive review disposition, public PR gates, and immutable
+evidence. Runtime slices deploy only in daylight, soak at least two hours, end
+several hours before 00:30, and survive one natural ingest before the next
+behavioral slice advances.
+
+1. **DOC-02 — controlled v1.1 only.** Merge this document; recalculate plan
+   commit, raw SHA-256, controlled SHA-256, and post-merge candidate SHAs.
+2. **A0 — physically separate bootstrap.** Provision and verify the backup
+   device, stable UUID/serial, mount policy, capacity, ownership, and absence of
+   production secrets. Install and run exact-candidate backup tooling only in a
+   non-production checkout without changing the pinned checkout, services, or
+   timers. A0 alone is exempt from the not-yet-possible backup/rollback gate.
+3. **A1 — backup completeness.** Reject empty observation skeletons; require at
+   least the authoritative latest observation chain and inventory counts.
+4. **A2 — restore fidelity.** Rehash every restored byte against the snapshot
+   manifest, compare macro table counts, verify marker-to-contract-to-ledger and
+   pointer-to-marker bindings, and restore-test Git bundle and system config.
+   Use an isolated scratch volume or reserved free-space floor, I/O/memory/time
+   limits, dashboard/resource monitoring, and never run from 00:30–03:30.
+5. **A3 — backup crash recovery.** Detect and quarantine or resume `.partial-*`
+   and orphan generations; do not count them as retention; recompute the full
+   thirty-generation reserve at deployment time. Hold the production ingest
+   lock for backup/catch-up coordination and do not auto-enable a backup timer
+   until one manual backup and full restore pass. Apply the A2 scratch/free-space,
+   I/O, memory, runtime, dashboard/resource, and 00:30–03:30 exclusion controls
+   to every backup and catch-up execution.
+6. **A4 — physical recovery proof.** Bind backup freshness to the latest
+   observation identity, require stable storage UUID/serial identity, exclude or
+   redact secrets from config capture, and prove an actual clone boot/root
+   device. Inhibit cloned ingest/publication timers and credentials, identify
+   clone/root/source disks before writable mounts, verify timer definitions
+   without running them, then restore primary boot and reverify the pinned Pi,
+   dashboard, network, storage, and next 01:00 trigger.
+7. **B1 — immutable deployment records.** Before any candidate checkout, create
+   and verify a genesis record for pinned `9302890` containing cleanliness,
+   service/timer/dashboard state, backup/observation/public-payload identities,
+   plan identity, and legacy mode. Thereafter record candidate and prior SHA.
+8. **B2 — rollback correctness.** Roll back every failure after checkout,
+   including service apply, sync verification, and dashboard smoke. Permit only
+   the previous SHA from a verified deployment record and run full post-rollback
+   checks.
+9. **B3 — non-production deploy/rollback proof.** Exercise both paths against an
+   isolated checkout before any production runtime change.
+10. **C — current-main safeguards.** With PR #508 still held, canary and promote
+   #506 provider-accounting protection and #507 early raw-attempt preservation
+   only after A/B pass. Survive one natural ingest.
+11. **D — transactional v1.** Introduce independent versioned state for dated
+    v1, rolling v1, dates index, and v2; upload assets first and manifest/pointer
+    last; retry only incomplete components from the original observation.
+12. **E1 — report-only accounting.** Correct provider `failed`/`empty`
+    classification; capture true discovered/detailed/priced/disposition
+    populations; add new-observation SQLite tables and ledger-bound sidecar.
+13. **E2 — diagnostic disclosure.** Produce observation summary and quality
+    asset only on a diagnostic tag. Prove stable-app compatibility and public
+    bytes without advancing production dates.
+14. **APP — supporting AR-app release.** Implement runtime product quarantine,
+    gap-aware history and notifications, concise disclosure, accessibility, and
+    lazy verified quality details. Pass `cd mobile && npm run ci`, emulator
+    rendering, and physical-device evidence; release before producer activation.
+15. **APP-GATE-A — dormant compatibility deployment.** Deploy the additive
+    contract in `report` mode without changing catalogue membership or raising
+    the client minimum. Record it as the verified rollback predecessor, prove the
+    released app and stable legacy app both behave safely, and survive a natural
+    ingest.
+16. **APP-GATE-B — cutoff activation.** From the same additive-capable runtime,
+    republish current verified data with exact APP-01 `app_min_version`, record
+    the immutable legacy cutoff tuple, and publicly verify it. Its verified
+    rollback predecessor is APP-GATE-A and therefore continues emitting the
+    additive contract. No catalogue changes occur in either gate slice.
+17. **E3 — quarantine mode.** Activate `quarantine` while retaining the legacy
+    observation gate. Prove invalid products disappear everywhere, valid output
+    parity remains, and unsupported apps cannot consume the changed catalogue.
+18. **E4 — product-scoped mode.** Publish a public diagnostic candidate and
+    validate it with the receipted internal APP-01 test build; separately prove
+    the released APP-01 APK rejects diagnostic tags and accepts the same contract
+    only after APP-GATE-B production activation. Then activate `product_scoped`
+    in daylight under that minimum and survive a natural ingest before stable.
+19. **F/G — provider, v2, macro, and operations hardening.** Diagnose endpoint
+    failures with retained evidence; keep v2 independent/default-off until
+    verified; move and consistently back up macro storage; then repair journald,
+    alerts, WayVNC, and planned power-cycle recovery.
+
+No slice may combine documentation approval, backup foundation, transactional
+publication, app release, and gate activation into a single irreversible change.
+
+A0 through B3 are non-production prerequisite/evidence slices. They may operate
+only on the separate backup target and isolated checkouts; they do not activate
+production services, timers, candidates, or publication. Their purpose is to
+create the backup, restore, genesis-record, and rollback evidence that the full
+runtime gate requires. The full gate below first applies to Phase C and every
+later production activation slice.
+
+### Exact slice acceptance gates
+
+Every runtime slice requires the exact candidate SHA in a clean `origin/main`
+worktree; verified plan identity; exact-head CI/review/bot gates; an
+observation-bound backup and scratch restore; verified previous SHA and rollback
+proof; an isolated retained-real-data canary; database/schema/membership,
+contract/ledger/pointer/raw-attempt/digest verification; stable and upgraded app
+evidence for clean, gap, outage, offline, and large-report states; a diagnostic
+release whose public bytes verify; daylight deployment, service/dashboard
+checks, two-hour soak, and rollback readiness; then one observed natural ingest
+with dated, rolling, and index verification before advancement.
+
+### Required retained-real-data cases
+
+- **2026-08-23 parity:** unaffected product/rate rows match the existing
+  consumer-safe view. Every difference is explained by a disposition.
+- **2026-08-24 gaps:** Aussie Home Loans 404 and DDH Graham 406 are attributable
+  provider gaps; stale products are absent; all other valid products publish;
+  the app opens the date and concisely reports affected providers/products.
+- **2026-08-25 accounting mismatch:** reproduce the observed disagreement where
+  ingest status reported seven partial providers while the public core reported
+  three failed and four partial. New code must fail report reconciliation and
+  cannot authorize publication until one canonical membership view is used.
+- **2026-08-15 catastrophic case:** remain blocked when provenance or membership
+  cannot reconcile. It is not blocked merely for exceeding an arbitrary count.
+- **High-volume reconciled failure:** publish valid products with `severe`
+  disclosure when every inclusion and exclusion is proven.
+- **All products invalid:** retain the previous verified rolling payload because
+  zero individually publishable products is a global blocker.
+
+### Failure, rollback, and correction rules
+
+- On ingest failure, preserve raw and terminal evidence, keep the last verified rolling payload, and do not force or overwrite the primary observation.
+- On publication-only failure, never rerun ingest; retry only failed components using the immutable original observation pointer.
+- An older retry may repair its dated/revision release but cannot replace a newer rolling observation or remove newer index entries.
+- Disable a newly activated mode before code rollback when that restores the previous safe gate, and record both transitions.
+- Roll back only to the previous SHA in the verified deployment record, never arbitrary local HEAD.
+- After any post-checkout failure, restore the verified previous SHA and mode, reapply services, and repeat cleanliness, timer, dashboard, database/payload, and public freshness checks.
+- Same-day correction creates a new generation and revision tag; never mutate the original dated observation or historical SQLite file.
+- If semantic failure is discovered after acceptance, stop advancement and run
+  this correction transaction; never delete or overwrite the original dated
+  release:
+  1. Select the newest effectively accepted predecessor, or first publish and
+     verify an immutable replacement revision. APP-GATE-B activation and every
+     later acceptance require a separately verified retained fallback, so the
+     normal correction path cannot reach zero candidates.
+  2. Build a new canonical index by appending exactly one terminal event for the
+     bad generation: `withdrawn` with nullable replacement linkage, or
+     `superseded` naming the already verified replacement. Publish and publicly
+     verify that full index before altering rolling.
+  3. Until rolling is recommitted, the app observes the index/rolling mismatch
+     and immediately uses its retained predecessor with an explicit verification
+     or withdrawal notice; it must never continue showing the withdrawn current
+     generation and this is never a silent date downgrade.
+  4. Publish a new rolling manifest for the selected fallback. Its commit binds
+     the fallback dated manifest and exact immutable entry plus the newly
+     verified full-index and quality hashes. This is the sole monotonicity
+     exception: rolling may move backward only because the previously current
+     generation is terminally withdrawn or superseded in that exact index.
+  5. Download and verify rolling and index together. If rolling publication
+     fails, keep the append-only index and retry only step 4 idempotently. Clear
+     correction pending only after both components match publicly.
+
+If exceptional evidence invalidates every retained generation, append and verify
+the terminal event first, then publish a rolling `publication_state=unavailable`
+control manifest last under checked-in `rolling-unavailable-v1.schema.json`. Its
+exact top-level keys are `schema_version=1`,
+`publication_state="unavailable"`, `reason_code`, `generated_at`, `compatibility`,
+and `commit`; it contains no `observation`, `files`, `run_date`, or `generation_id`.
+`compatibility` contains schema version 1, exact APP-01 minimum, and the immutable
+legacy cutoff. `commit` contains only schema version 1, `dates_index_sha256`,
+`terminal_event_id`, `previous_rolling_manifest_sha256`, and
+`cutoff_activation_event_id`. The downloaded index must match the full-index
+hash; the terminal event must be its effective event for the previously rolling
+generation; the activation event and cutoff must match; and the previous rolling
+hash must equal the producer's last publicly verified receipt.
+
+APP-01 must implement an explicit unavailable-manifest parsing branch before
+APP-GATE-B. That branch is exempt only from accepted-entry, observation, and
+product-asset requirements; all schema, HTTPS, canonical-hash, index, event,
+cutoff, and anti-replay checks remain mandatory. On success it clears current
+catalogue views, preserves saved references without resolving them, and shows
+“Current rates unavailable while data is verified.” Retry a later replacement as
+a new immutable acceptance transaction. Never leave or restore a known-invalid
+generation merely to avoid an empty UI.
+
+### 2026-08-25 natural-run evidence and disposition
+
+The scheduled stable run started once at 01:00 and exited zero at 01:16:47. The
+dashboard returned, the lock cleared, raw evidence was retained, SQLite
+`quick_check` returned `ok`, and dated/rolling/index public assets were
+hash-verified. It contained 3,039 products, 17,120 rates, and 17 attributable
+failures across seven providers, with zero corrupt or unattributed records.
+
+Controlled acceptance is `FAIL`, not `PASS`: `ingest-status.json` classified 112
+providers complete and seven partial; public core classified 116 succeeded,
+three failed, and four partial; and the manifest had no observation disclosure.
+The operational Pi and public Aug 25 payload remain in place. This does not
+authorize an emergency rerun, force, rollback, or publication edit.
+
+### Version 1.1 evidence records
+
+New execution IDs use `DOC-02`, `NATURAL-02`, `PHASE-A0`–`A4`, `PHASE-B1`–`B3`,
+`PHASE-C`, `PHASE-D`, `PHASE-E1`–`E4`, `APP-01`, `APP-GATE-A`, `APP-GATE-B`,
+`PHASE-F`, and `PHASE-G`.
+Each hash-linked JSONL entry records schema/step/execution IDs; plan identity and
+hashes; candidate/previous SHAs; mode; operator/timestamps; exact commands and
+exit codes; evidence paths/sizes/hashes; observation and artifact identities;
+service/dashboard/GitHub/app/backup/restore/rollback results; controlled result;
+and authorized deviations with risk, controls, and revised criteria.
+
+Completed entries and evidence files are create-once. A correction is a new
+hash-linked entry; it never edits the prior record.
+
+## Retained v1.0 execution clarifications
+
+This section is retained for audit provenance. Its non-conflicting safety
+controls continue, but its dated canary command, v1.0 thresholds, old step IDs,
+and statements superseded by D-003 are historical and must not be executed as a
+current instruction. The v1.1 amendment above is authoritative.
 
 ### Immutable identities and document gate
 
@@ -186,7 +981,11 @@ operator, timestamps, result, and authorised deviation. Each entry includes the
 previous entry SHA-256; a runbook change creates a new version rather than
 editing completed evidence.
 
-## Controlled document
+## Retained v1.0 source plan (historical)
+
+The remainder of the v1.0 source plan is preserved for provenance. It is not a
+current command sheet where a date, threshold, phase order, interface, or step
+ID conflicts with the v1.1 controlling amendment above.
 
 Before any canary, deployment, or remediation, write the entire contents of this plan verbatim to:
 
@@ -318,7 +1117,10 @@ Require:
 - explicit enumeration of unpriced or omitted products;
 - no unexplained difference between discovered, detailed, and priced populations.
 
-A partial observation is eligible only when:
+> **Historical v1.0 threshold — superseded by D-003. Do not use for new
+> publication decisions.**
+
+A partial observation was eligible in v1.0 only when:
 
 - failure and register provenance are complete;
 - corrupt and unattributed failures are zero;
@@ -538,7 +1340,9 @@ The safe default for every failed or uncertain gate is:
 
 ## Execution evidence ledger schema
 
-The append-only ledger is external as specified above. Its required step IDs
+> **Historical v1.0 step IDs — new records use the v1.1 IDs above.**
+
+The append-only ledger is external as specified above. Its v1.0 step IDs
 are `DOC-01`, `BASE-01`, `CANARY-01`, `GH-01`, `NATURAL-01`, and `PHASE-A`
 through `PHASE-G`. A state transition is invalid unless its JSONL entry contains
 all document-control fields and a valid previous-entry hash.
@@ -550,3 +1354,4 @@ This table is append-only.
 | Version | Effective date | Git commit | Controlled plan SHA-256 | Change |
 |---|---|---|---|---|
 | 1.0 | 2026-08-23 | Resolve from Git history after merge | `510937fc4d09d0e9066c5830fedd80053c9d3c40a062c34c8acce764f1fa8adc` | Initial controlled recovery runbook transcribed from the approved plan with mandatory execution clarifications D-001 and D-002. |
+| 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
