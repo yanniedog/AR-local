@@ -582,7 +582,7 @@ def test_daily_export_reconciliation_binds_json_database_and_dashboard(tmp_path:
     banks = {
         "products": [], "rates": [], "fees": [], "features": [],
         "eligibility": [], "constraints": [], "product_facts": [],
-        "product_changes": [], "failures": [],
+        "product_changes": [], "failures": [], "holder_attempts": [],
     }
     database = exports / "local-cdr.sqlite"
     cdr_outputs.rebuild_run_db(database, run_date, banks)

@@ -82,10 +82,13 @@ def create_daily_exports(root: Path, date: str) -> None:
         "features": [],
         "eligibility": [],
         "constraints": [],
+        "failures": [{}, {}, {}],
+        "holder_attempts": [{}, {}],
     }
+    expected_counts = {key: len(value) for key, value in groups.items()}
     (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
     (exports / "dashboard-cache/latest.json").write_text(
-        json.dumps({"run_date": date, "banks_counts": {key: 0 for key in groups}}),
+        json.dumps({"run_date": date, "banks_counts": expected_counts}),
         encoding="utf-8",
     )
     database = exports / "local-cdr.sqlite"
@@ -100,7 +103,7 @@ def create_daily_exports(root: Path, date: str) -> None:
             CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
             """
         )
-        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps({key: 0 for key in groups})))
+        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps(expected_counts)))
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -329,6 +332,21 @@ def test_observation_archive_is_read_back_and_reconciled(tmp_path: Path) -> None
     report = receiver.verify_extracted(restored, manifest, archive)
     assert report["files_verified"] == len(entries)
     assert report["observation"]["reconciliation"]["run_date"] == date
+
+
+def test_reconciliation_rejects_corrupt_non_database_population(
+    tmp_path: Path,
+) -> None:
+    date = "2026-08-25"
+    source_root = tmp_path / "source"
+    create_daily_exports(source_root, date)
+    exports = source_root / f"data/runs/{date}/_exports"
+    banks_path = exports / f"banks-{date}.json"
+    banks = json.loads(banks_path.read_text(encoding="utf-8"))
+    banks["failures"] = []
+    banks_path.write_text(json.dumps(banks), encoding="utf-8")
+    with pytest.raises(ValueError, match="do not reconcile"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
 def test_latest_observation_requires_bound_pointer(tmp_path: Path) -> None:

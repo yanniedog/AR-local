@@ -532,6 +532,14 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
     if len(banks_files) != 1:
         raise ValueError("daily export must contain exactly one banks JSON")
     date = banks_files[0].stem.removeprefix("banks-")
+    banks = json.loads(banks_files[0].read_text(encoding="utf-8"))
+    if not isinstance(banks, dict):
+        raise ValueError("daily banks export is not a JSON object")
+    exported = {
+        key: len(value)
+        for key, value in banks.items()
+        if isinstance(value, list)
+    }
     with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
@@ -545,8 +553,12 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
     if len(run) != 1 or run[0][0] != date:
         raise ValueError("daily database run metadata is invalid")
     expected = json.loads(run[0][1])
-    if not isinstance(expected, dict) or actual != expected:
-        raise ValueError("daily database population counts do not match run metadata")
+    if (
+        not isinstance(expected, dict)
+        or exported != expected
+        or any(expected.get(key) != value for key, value in actual.items())
+    ):
+        raise ValueError("daily export population counts do not reconcile")
     dashboard = json.loads((database.parent / "dashboard-cache/latest.json").read_text(encoding="utf-8"))
     if not isinstance(dashboard, dict) or dashboard.get("run_date") != date or dashboard.get("banks_counts") != expected:
         raise ValueError("dashboard export manifest does not match daily database")
