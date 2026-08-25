@@ -369,6 +369,64 @@ def test_latest_observation_requires_bound_pointer(tmp_path: Path) -> None:
         receiver.verify_extracted(restored, manifest, archive)
 
 
+def test_latest_pointer_accepts_valid_root_compatibility_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "restored"
+    create_daily_exports(root, date)
+    state = root / "data/state"
+    pointer_root = state / "observation-pointers-v2"
+    pointer_root.mkdir(parents=True)
+    marker = {"generation_id": "obs-stable"}
+    (state / f"{date}.done.json").write_text(json.dumps(marker), encoding="utf-8")
+    pointer = {
+        "observation_date": date,
+        "generation_id": "obs-stable",
+        "marker_path": f"{date}.done.json",
+    }
+    (pointer_root / "latest-observation.json").write_text(
+        json.dumps(pointer), encoding="utf-8"
+    )
+    monkeypatch.setattr(receiver, "_completion_marker_valid", lambda *_args: True)
+    monkeypatch.setattr(receiver, "_pointer_matches_marker", lambda *_args: True)
+    report = receiver.observation_checks(
+        root, {"observation_date": date, "is_latest_observation": True}
+    )
+    assert report["latest_pointer"] == {
+        "valid": True,
+        "generation_id": "obs-stable",
+    }
+    assert {item["path"] for item in report["completion_markers"]} == {
+        f"{date}.done.json"
+    }
+
+
+def test_latest_pointer_rejects_marker_path_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "restored"
+    create_daily_exports(root, date)
+    pointer_root = root / "data/state/observation-pointers-v2"
+    pointer_root.mkdir(parents=True)
+    (pointer_root / "latest-observation.json").write_text(
+        json.dumps(
+            {
+                "observation_date": date,
+                "generation_id": "unsafe",
+                "marker_path": "../outside.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(receiver, "_completion_marker_valid", lambda *_args: True)
+    with pytest.raises(ValueError, match="unsafe"):
+        receiver.observation_checks(
+            root, {"observation_date": date, "is_latest_observation": True}
+        )
+
+
 def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Path) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
