@@ -95,6 +95,7 @@ def create_daily_exports(root: Path, date: str) -> None:
     with sqlite3.connect(database) as connection:
         connection.executescript(
             """
+            CREATE TABLE schema_meta(key TEXT PRIMARY KEY, value TEXT);
             CREATE TABLE runs(run_date TEXT, banks_counts_json TEXT);
             CREATE TABLE bank_products(run_date TEXT, provider TEXT, product_id TEXT, product_key TEXT);
             CREATE TABLE bank_rates(run_date TEXT, product_key TEXT, rate REAL, comparison_rate REAL);
@@ -103,6 +104,7 @@ def create_daily_exports(root: Path, date: str) -> None:
             CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
             """
         )
+        connection.execute("INSERT INTO schema_meta VALUES ('version', '8')")
         connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps(expected_counts)))
 
 
@@ -346,6 +348,38 @@ def test_reconciliation_rejects_corrupt_non_database_population(
     banks["failures"] = []
     banks_path.write_text(json.dumps(banks), encoding="utf-8")
     with pytest.raises(ValueError, match="do not reconcile"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_reconciliation_accepts_known_immutable_v6_schema(tmp_path: Path) -> None:
+    date = "2026-05-22"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+        connection.execute("DROP TABLE bank_product_changes")
+        connection.execute("UPDATE schema_meta SET value = '6' WHERE key = 'version'")
+    report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+    assert report["schema_version"] == "6"
+    assert report["schema_tables"] == [
+        "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
+    ]
+    assert {"product_changes", "product_facts"}.issubset(
+        report["unpersisted_populations"]
+    )
+
+
+def test_reconciliation_rejects_v8_database_missing_required_table(
+    tmp_path: Path,
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+    with pytest.raises(ValueError, match="schema version"):
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 

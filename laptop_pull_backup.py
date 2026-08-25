@@ -58,6 +58,14 @@ WINDOWS_RESERVED = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
+HISTORICAL_DAILY_TABLES = {
+    "6": {"schema_meta", "runs", "bank_products", "bank_rates", "bank_items"},
+    "7": {"schema_meta", "runs", "bank_products", "bank_rates", "bank_items"},
+    "8": {
+        "schema_meta", "runs", "bank_products", "bank_rates", "bank_items",
+        "bank_product_facts", "bank_product_changes",
+    },
+}
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -541,13 +549,35 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         if isinstance(value, list)
     }
     with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+            if row[0] != "sqlite_sequence"
+        }
+        if "schema_meta" not in tables:
+            raise ValueError("daily database schema metadata is missing")
+        schema_row = connection.execute(
+            "SELECT value FROM schema_meta WHERE key = 'version'"
+        ).fetchone()
+        schema_version = str(schema_row[0]) if schema_row else ""
+        expected_tables = HISTORICAL_DAILY_TABLES.get(schema_version)
+        if expected_tables is None or tables != expected_tables:
+            raise ValueError("daily database tables do not match its schema version")
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
             "rates": connection.execute("SELECT COUNT(*) FROM bank_rates").fetchone()[0],
-            "product_facts": connection.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0],
-            "product_changes": connection.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0],
         }
+        if "bank_product_facts" in tables:
+            actual["product_facts"] = connection.execute(
+                "SELECT COUNT(*) FROM bank_product_facts"
+            ).fetchone()[0]
+        if "bank_product_changes" in tables:
+            actual["product_changes"] = connection.execute(
+                "SELECT COUNT(*) FROM bank_product_changes"
+            ).fetchone()[0]
         for group in ("fees", "features", "eligibility", "constraints"):
             actual[group] = connection.execute("SELECT COUNT(*) FROM bank_items WHERE item_group = ?", (group,)).fetchone()[0]
     if len(run) != 1 or run[0][0] != date:
@@ -564,7 +594,11 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         raise ValueError("dashboard export manifest does not match daily database")
     return {
         "run_date": date,
-        "counts": actual,
+        "counts": exported,
+        "database_counts": actual,
+        "schema_version": schema_version,
+        "schema_tables": sorted(tables),
+        "unpersisted_populations": sorted(set(exported) - set(actual)),
         "banks_json": banks_files[0].name,
         "banks_json_bytes": banks_files[0].stat().st_size,
         "banks_json_sha256": sha256_file(banks_files[0]),
