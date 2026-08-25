@@ -606,11 +606,20 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
         ):
             raise ValueError("restored latest pointer marker path is unsafe")
         relative = Path(*relative_posix.parts)
-        marker_path = (state / relative).resolve()
-        if not is_within(marker_path, state) or not marker_path.is_file() or marker_path.is_symlink():
+        unresolved = state / relative
+        component = state
+        for part in relative.parts:
+            component /= part
+            if component.is_symlink():
+                raise ValueError("restored latest pointer marker path is unsafe")
+        try:
+            marker_path = unresolved.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("restored latest pointer marker is missing") from exc
+        if not is_within(marker_path, state) or not marker_path.is_file():
             raise ValueError("restored latest pointer marker is missing")
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
-        if not _completion_marker_valid(marker, state, date, relative):
+        if not isinstance(marker, Mapping) or not _completion_marker_valid(marker, state, date, relative):
             raise ValueError("restored latest pointer marker is invalid")
         if not _pointer_matches_marker(pointer, marker, state):
             raise ValueError("restored latest pointer does not match its marker")

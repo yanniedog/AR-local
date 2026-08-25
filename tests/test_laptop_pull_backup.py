@@ -427,6 +427,67 @@ def test_latest_pointer_rejects_marker_path_escape(
         )
 
 
+def test_latest_pointer_rejects_symlinked_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "restored"
+    create_daily_exports(root, date)
+    state = root / "data/state"
+    pointer_root = state / "observation-pointers-v2"
+    pointer_root.mkdir(parents=True)
+    real_marker = state / "real-marker.json"
+    real_marker.write_text("{}", encoding="utf-8")
+    linked_marker = state / f"{date}.done.json"
+    try:
+        linked_marker.symlink_to(real_marker.name)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    (pointer_root / "latest-observation.json").write_text(
+        json.dumps(
+            {
+                "observation_date": date,
+                "generation_id": "linked",
+                "marker_path": linked_marker.name,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(receiver, "_completion_marker_valid", lambda *_args: True)
+    with pytest.raises(ValueError, match="unsafe"):
+        receiver.observation_checks(
+            root, {"observation_date": date, "is_latest_observation": True}
+        )
+
+
+def test_latest_pointer_rejects_non_object_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "restored"
+    create_daily_exports(root, date)
+    state = root / "data/state"
+    pointer_root = state / "observation-pointers-v2"
+    pointer_root.mkdir(parents=True)
+    marker = state / f"{date}.done.json"
+    marker.write_text("[]", encoding="utf-8")
+    (pointer_root / "latest-observation.json").write_text(
+        json.dumps(
+            {
+                "observation_date": date,
+                "generation_id": "not-an-object",
+                "marker_path": marker.name,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(receiver, "_completion_marker_valid", lambda *_args: True)
+    with pytest.raises(ValueError, match="invalid"):
+        receiver.observation_checks(
+            root, {"observation_date": date, "is_latest_observation": True}
+        )
+
+
 def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Path) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
