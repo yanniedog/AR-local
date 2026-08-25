@@ -37,6 +37,7 @@ from laptop_backup_archive import (
     verify_tar_metadata,
 )
 from laptop_backup_transport import (
+    finish_stream_process,
     install_remote_helper,
     remove_remote_helper,
     windows_ssh_post_eof_only,
@@ -376,8 +377,9 @@ def validate_manifest(
 
 
 def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
+    read_available = getattr(stream, "read1", stream.read)
     while True:
-        block = stream.read(CHUNK)
+        block = read_available(CHUNK)
         if not block:
             return
         sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])
@@ -818,10 +820,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         capacity_before = require_capacity(target, projected)
         partial = root / f".{archive.name}.{uuid.uuid4().hex}.partial"
         archive_sha, archive_bytes = stream_partial(process, process.stdout, partial, target)
-        code = process.wait(timeout=300)
-        thread.join(timeout=10)
-        if (code or errors) and not windows_ssh_post_eof_only(bytes(errors)):
-            raise RuntimeError(f"Pi archive stream failed: {bytes(errors).decode('utf-8', 'replace')}")
+        finish_stream_process(process, thread, errors)
         checks = restore_verify_archive(target, partial, manifest, kind)
         if capacity(target)["free"] < FREE_FLOOR_BYTES:
             raise RuntimeError("free-space floor failed after verification")

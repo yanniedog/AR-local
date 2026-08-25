@@ -7,7 +7,9 @@ import io
 import json
 import sqlite3
 import subprocess
+import sys
 import tarfile
+import threading
 from argparse import Namespace
 from pathlib import Path
 
@@ -96,7 +98,8 @@ def create_daily_exports(root: Path, date: str) -> None:
         encoding="utf-8",
     )
     database = exports / "local-cdr.sqlite"
-    with sqlite3.connect(database) as connection:
+    connection = sqlite3.connect(database)
+    try:
         cdr_outputs.ensure_db(connection)
         connection.execute(
             "INSERT INTO runs VALUES (?, ?, ?)",
@@ -104,6 +107,8 @@ def create_daily_exports(root: Path, date: str) -> None:
         )
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -139,6 +144,111 @@ def test_windows_ssh_post_eof_signature_is_exact() -> None:
     expected = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
     assert transport.windows_ssh_post_eof_only(expected, platform="nt")
     assert not transport.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
+
+
+def test_hung_windows_ssh_is_killed_only_after_proven_post_eof(
+) -> None:
+    signature = bytearray(b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n")
+
+    class Process:
+        killed = False
+        waits = 0
+
+        def wait(self, timeout: float) -> int:
+            self.waits += 1
+            if self.waits == 1:
+                raise subprocess.TimeoutExpired(("ssh",), timeout)
+            return -9
+
+        def kill(self) -> None:
+            self.killed = True
+
+    class Thread:
+        def join(self, timeout: float) -> None:
+            assert timeout <= 10
+
+        def is_alive(self) -> bool:
+            return False
+
+    process = Process()
+    assert transport.finish_stream_process(
+        process, Thread(), signature, timeout=0.01, platform="nt"
+    ) == 0
+    assert process.killed
+
+
+def test_hung_ssh_without_post_eof_proof_fails_closed() -> None:
+    class Process:
+        def wait(self, timeout: float) -> int:
+            raise subprocess.TimeoutExpired(("ssh",), timeout)
+
+    class Thread:
+        def join(self, timeout: float) -> None:
+            pass
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        transport.finish_stream_process(
+            Process(), Thread(), bytearray(), timeout=0.01, drain_timeout=0.01
+        )
+
+
+def test_delayed_complete_post_eof_signature_is_bounded_and_accepted(
+) -> None:
+    errors = bytearray(b"close - IO is still pending")
+    complete = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+
+    class Process:
+        killed = False
+        waits = 0
+
+        def wait(self, timeout: float) -> int:
+            self.waits += 1
+            if self.waits == 1:
+                raise subprocess.TimeoutExpired(("ssh",), timeout)
+            return -9
+
+        def kill(self) -> None:
+            self.killed = True
+
+    class Thread:
+        joins = 0
+
+        def join(self, timeout: float) -> None:
+            self.joins += 1
+            if self.joins == 2:
+                errors[:] = complete
+
+        def is_alive(self) -> bool:
+            return False
+
+    process = Process()
+    assert transport.finish_stream_process(
+        process, Thread(), errors, timeout=0.01, drain_timeout=1, platform="nt"
+    ) == 0
+    assert process.killed
+
+
+def test_post_eof_signature_is_read_from_live_pipe_before_process_exit() -> None:
+    signature = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+    command = [
+        sys.executable,
+        "-c",
+        "import sys,time; sys.stderr.buffer.write(" + repr(signature) + "); sys.stderr.flush(); time.sleep(30)",
+    ]
+    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    assert process.stderr is not None
+    errors = bytearray()
+    thread = threading.Thread(target=receiver.stderr_reader, args=(process.stderr, errors), daemon=True)
+    thread.start()
+    try:
+        assert transport.finish_stream_process(
+            process, thread, errors, timeout=0.1, drain_timeout=2, platform="nt"
+        ) == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+    assert bytes(errors) == signature
 
 
 def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
