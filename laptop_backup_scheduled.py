@@ -43,12 +43,22 @@ def content_revision(manifest: Mapping[str, object]) -> str:
     files = manifest.get("files")
     if not isinstance(files, list):
         raise ValueError("component manifest lacks files")
+    volatile_control_paths = {
+        f"system/systemd/{unit}.show.txt"
+        for unit in (
+            "ar-local-daily.service",
+            "ar-local-daily.timer",
+            "ar-local-dashboard.service",
+        )
+    }
     identity = [
         {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
         for item in files
         if isinstance(item, Mapping)
+        and not (manifest.get("kind") == "control" and item.get("path") in volatile_control_paths)
     ]
-    if len(identity) != len(files):
+    valid_files = [item for item in files if isinstance(item, Mapping)]
+    if len(valid_files) != len(files):
         raise ValueError("component manifest contains an invalid file")
     return hashlib.sha256(receiver.canonical_json_bytes(identity)).hexdigest()
 

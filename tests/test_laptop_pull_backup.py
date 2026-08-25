@@ -874,9 +874,11 @@ def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) 
     }
 
 
-def test_component_revision_is_shared_and_ignores_archive_metadata() -> None:
+def test_component_revision_is_shared_and_ignores_only_archive_and_runtime_metadata() -> None:
     manifest = base_manifest("control", [
         {"path": "state/a.json", "type": "file", "size": 2, "sha256": "a" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-dashboard.service.show.txt", "type": "file", "size": 3, "sha256": "c" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-dashboard.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
     ])
     first = scheduled.content_revision(manifest)
     assert first == source.content_revision(manifest)
@@ -884,6 +886,12 @@ def test_component_revision_is_shared_and_ignores_archive_metadata() -> None:
     manifest["files"][0]["mode"] = "0o644"
     assert scheduled.content_revision(manifest) == first
     manifest["files"][0]["sha256"] = "b" * 64
+    assert scheduled.content_revision(manifest) != first
+    manifest["files"][0]["sha256"] = "a" * 64
+    manifest["files"][1]["sha256"] = "e" * 64
+    assert scheduled.content_revision(manifest) == first
+    assert source.content_revision(manifest) == first
+    manifest["files"][2]["sha256"] = "f" * 64
     assert scheduled.content_revision(manifest) != first
 
 
