@@ -34,6 +34,7 @@
     "laptop:backup:preflight": "python laptop_pull_backup.py preflight",
     "laptop:backup:latest": "python laptop_pull_backup.py backup-latest",
     "laptop:backup:backfill": "python laptop_pull_backup.py backfill",
+    "laptop:backup:scheduled": "python laptop_backup_scheduled.py",
     "git:graph-hygiene": "git fetch origin --prune",
     "chief:scan": "node scripts/chief-scan.mjs",
     "agent:auditor": "node scripts/agent-auditor-scan.mjs",

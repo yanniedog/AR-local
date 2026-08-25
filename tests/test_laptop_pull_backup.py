@@ -16,6 +16,7 @@ import zstandard
 
 import cdr_outputs
 import laptop_backup_transport as transport
+import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 
@@ -686,3 +687,125 @@ def test_recovery_base_is_registered_without_copying_image(
     Path(str(first["receipt"])).write_text(json.dumps(receipt), encoding="utf-8")
     with pytest.raises(ValueError, match="no longer matches"):
         receiver.register_recovery_base(args, target)
+
+
+def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    root = target / "observations/2026-08-25/digest"
+    root.mkdir(parents=True)
+    date = "2026-08-25"
+    done_hash = hashlib.sha256(b"done").hexdigest()
+    pointer_hash = hashlib.sha256(b"pointer").hexdigest()
+    manifest = {
+        **base_manifest("observation", [
+            {"path": f"data/state/{date}.done.json", "type": "file", "size": 4, "sha256": done_hash, "mode": "0o644", "mtime_ns": 0, "uid": 0, "gid": 0},
+            {"path": "data/state/observation-pointers-v2/latest-observation.json", "type": "file", "size": 7, "sha256": pointer_hash, "mode": "0o644", "mtime_ns": 0, "uid": 0, "gid": 0},
+        ]),
+        "observation_date": date,
+        "is_latest_observation": True,
+        "latest_pointer": {"observation_date": date},
+    }
+    manifest_path = root / "source-manifest.json"
+    manifest_path.write_bytes(receiver.canonical_json_bytes(manifest))
+    archive = root / "observation.tar.zst"
+    archive.write_bytes(b"archive")
+    receipt = {
+        "result": "PASS", "kind": "observation", "observation_date": date,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID, "plan_version": receiver.PLAN_VERSION,
+        "plan_sha256": receiver.PLAN_SHA256, "plan_git_commit": "c" * 40,
+        "candidate_code_sha": CANDIDATE, "protected_code_sha": PROTECTED,
+        "source_manifest_sha256": receiver.sha256_file(manifest_path),
+        "archive_sha256": receiver.sha256_file(archive), "archive_bytes": archive.stat().st_size,
+        "checks": {"observation": {"reconciliation": {"run_date": date}}}, "deviations": [],
+    }
+    receipt_path = root / "receipt.json"
+    receipt_path.write_bytes(receiver.canonical_json_bytes(receipt))
+    entry = receiver.append_catalog(target, receipt, receipt_path)
+    receiver.advance_latest_pointer(target, "observation", manifest, receipt_path, entry)
+    status = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": pointer_hash,
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
+    assert status["status"] == "UP_TO_DATE"
+    assert status["catalog_sequence"] == 1
+    changed = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": "f" * 64,
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
+    assert changed["status"] == "STALE"
+    assert "pointer changed" in changed["reason"]
+    wrong_candidate = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": pointer_hash,
+    }, candidate_sha="d" * 40, protected_sha=PROTECTED, plan_commit="c" * 40)
+    assert wrong_candidate["status"] == "STALE"
+    assert "receipt identity" in wrong_candidate["reason"]
+
+
+def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) -> None:
+    args = source_args(tmp_path)
+    state = Path(args.state_root)
+    state.mkdir(parents=True)
+    done = state / "2026-08-25.done.json"
+    done.write_text("{}", encoding="utf-8")
+    pointer = state / "observation-pointers-v2/latest-observation.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text(json.dumps({"observation_date": "2026-08-25"}), encoding="utf-8")
+    identity = source.latest_observation_identity(
+        args, [{"date": "2026-08-25", "status": "completed"}]
+    )
+    assert identity == {
+        "observation_date": "2026-08-25",
+        "completion_marker_sha256": receiver.sha256_file(done),
+        "pointer_sha256": receiver.sha256_file(pointer),
+    }
+
+
+def test_component_revision_is_shared_and_ignores_archive_metadata() -> None:
+    manifest = base_manifest("control", [
+        {"path": "state/a.json", "type": "file", "size": 2, "sha256": "a" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+    ])
+    first = scheduled.content_revision(manifest)
+    assert first == source.content_revision(manifest)
+    manifest["files"][0]["mtime_ns"] = 999
+    manifest["files"][0]["mode"] = "0o644"
+    assert scheduled.content_revision(manifest) == first
+    manifest["files"][0]["sha256"] = "b" * 64
+    assert scheduled.content_revision(manifest) != first
+
+
+def test_inventory_gate_detects_incomplete_historical_backfill(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    report = scheduled.inventory_status(
+        target,
+        [
+            {"date": "2026-05-21", "status": "completed"},
+            {"date": "2026-05-22", "status": "completed"},
+        ],
+        {"diagnostics": {}},
+        protected_sha=PROTECTED,
+        plan_commit="c" * 40,
+    )
+    assert report["status"] == "STALE"
+    assert report["missing_completed_dates"] == ["2026-05-22"]
+
+
+def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    (target / "catalog").mkdir(parents=True)
+    args = Namespace(
+        plan_git_commit="c" * 40,
+        candidate_code_sha=CANDIDATE,
+        protected_code_sha=PROTECTED,
+        operator="pytest",
+    )
+    path = scheduled.record_execution(target, args, "BLOCKED", "PREFLIGHT_FAILED", {"error": "offline"})
+    pointer = json.loads((target / "catalog/latest-scheduled.json").read_text(encoding="utf-8"))
+    assert pointer["record_sha256"] == receiver.sha256_file(path)
+    assert json.loads(path.read_text(encoding="utf-8"))["result"] == "BLOCKED"
+    with pytest.raises(FileExistsError):
+        receiver.atomic_create(path, b"replace")

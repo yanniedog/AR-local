@@ -1,0 +1,484 @@
+"""Run a scheduled laptop pull only when any protected component is stale."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import sys
+import uuid
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Mapping, Sequence
+
+import laptop_pull_backup as receiver
+
+
+def local_path(target: Path, relative: str) -> Path:
+    receiver.validate_relative_path(relative, {})
+    parts = PurePosixPath(relative).parts
+    candidate = target.joinpath(*parts)
+    component = target
+    for part in parts:
+        component /= part
+        if component.is_symlink():
+            raise ValueError(f"backup metadata path is symlinked: {relative}")
+    resolved = candidate.resolve(strict=True)
+    if not receiver.is_within(resolved, target) or not resolved.is_file():
+        raise ValueError(f"backup metadata path is unsafe: {relative}")
+    return resolved
+
+
+def manifest_file_hash(manifest: Mapping[str, object], relative: str) -> str | None:
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        return None
+    matches = [item for item in files if isinstance(item, Mapping) and item.get("path") == relative]
+    return str(matches[0].get("sha256")) if len(matches) == 1 else None
+
+
+def content_revision(manifest: Mapping[str, object]) -> str:
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError("component manifest lacks files")
+    identity = [
+        {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
+        for item in files
+        if isinstance(item, Mapping)
+    ]
+    if len(identity) != len(files):
+        raise ValueError("component manifest contains an invalid file")
+    return hashlib.sha256(receiver.canonical_json_bytes(identity)).hexdigest()
+
+
+def verified_receipt(
+    target: Path,
+    receipt_relative: str,
+    catalog_entry: Mapping[str, object],
+    kind: str,
+    *,
+    candidate_sha: str | None,
+    protected_sha: str,
+    plan_commit: str,
+) -> tuple[dict[str, object], dict[str, object], Path]:
+    receipt_path = local_path(target, receipt_relative)
+    if receiver.sha256_file(receipt_path) != catalog_entry.get("receipt_sha256"):
+        raise ValueError(f"{kind} receipt digest mismatch")
+    receipt = json.loads(receipt_path.read_bytes())
+    expected_candidate = candidate_sha or str(receipt.get("candidate_code_sha") or "")
+    if (
+        receipt.get("result") != "PASS"
+        or receipt.get("kind") != kind
+        or receipt.get("plan_document_id") != receiver.PLAN_DOCUMENT_ID
+        or receipt.get("plan_version") != receiver.PLAN_VERSION
+        or receipt.get("plan_sha256") != receiver.PLAN_SHA256
+        or receipt.get("candidate_code_sha") != expected_candidate
+        or receipt.get("protected_code_sha") != protected_sha
+        or receipt.get("plan_git_commit") != plan_commit
+        or receipt.get("deviations") != []
+    ):
+        raise ValueError(f"{kind} receipt identity is invalid")
+    manifest_path = local_path(
+        target, receipt_path.with_name("source-manifest.json").relative_to(target).as_posix()
+    )
+    archive_name = {
+        "observation": "observation.tar.zst",
+        "diagnostic": "diagnostic.tar.zst",
+        "control": "control.tar.zst",
+        "macro": "macro.tar.zst",
+    }[kind]
+    archive = local_path(target, receipt_path.with_name(archive_name).relative_to(target).as_posix())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if receiver.sha256_file(manifest_path) != receipt.get("source_manifest_sha256"):
+        raise ValueError(f"{kind} source manifest digest mismatch")
+    receiver.validate_manifest(manifest, kind, expected_candidate, protected_sha, plan_commit)
+    if (
+        receiver.sha256_file(archive) != receipt.get("archive_sha256")
+        or archive.stat().st_size != receipt.get("archive_bytes")
+    ):
+        raise ValueError(f"{kind} archive bytes are invalid")
+    if not isinstance(receipt.get("checks"), Mapping):
+        raise ValueError(f"{kind} receipt lacks restore evidence")
+    return receipt, manifest, receipt_path
+
+
+def pointer_generation(
+    target: Path,
+    pointer_name: str,
+    kind: str,
+    *,
+    candidate_sha: str,
+    protected_sha: str,
+    plan_commit: str,
+) -> tuple[dict[str, object], dict[str, object], Mapping[str, object], Path]:
+    pointer_path = target / f"catalog/{pointer_name}"
+    if pointer_path.is_symlink():
+        raise ValueError(f"{kind} pointer is symlinked")
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    entries = receiver.catalog_entries(target / "catalog/generations.jsonl")
+    matches = [
+        item for item in entries
+        if item.get("entry_sha256") == pointer.get("catalog_entry_sha256")
+        and item.get("receipt_path") == pointer.get("receipt_path")
+        and item.get("receipt_sha256") == pointer.get("receipt_sha256")
+        and item.get("kind") == kind
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"{kind} pointer is not bound to the catalog")
+    receipt, manifest, receipt_path = verified_receipt(
+        target,
+        str(pointer["receipt_path"]),
+        matches[0],
+        kind,
+        candidate_sha=candidate_sha,
+        protected_sha=protected_sha,
+        plan_commit=plan_commit,
+    )
+    return receipt, manifest, matches[0], receipt_path
+
+
+def latest_status(
+    target: Path,
+    remote: Mapping[str, object] | None,
+    *,
+    candidate_sha: str,
+    protected_sha: str,
+    plan_commit: str,
+) -> dict[str, object]:
+    if not remote:
+        return {"status": "STALE", "reason": "Pi has no completed observation"}
+    date = str(remote.get("observation_date") or "")
+    try:
+        receipt, manifest, entry, receipt_path = pointer_generation(
+            target,
+            "latest-verified.json",
+            "observation",
+            candidate_sha=candidate_sha,
+            protected_sha=protected_sha,
+            plan_commit=plan_commit,
+        )
+        if receipt.get("observation_date") != date:
+            raise ValueError("latest observation date changed")
+        if manifest_file_hash(manifest, f"data/state/{date}.done.json") != remote.get("completion_marker_sha256"):
+            raise ValueError("Pi completion generation changed")
+        pointer_relative = "data/state/observation-pointers-v2/latest-observation.json"
+        if manifest_file_hash(manifest, pointer_relative) != remote.get("pointer_sha256"):
+            raise ValueError("Pi observation pointer changed")
+        checks = receipt.get("checks")
+        if not isinstance(checks, Mapping) or not isinstance(checks.get("observation"), Mapping):
+            raise ValueError("latest receipt lacks observation restore evidence")
+        return {
+            "status": "UP_TO_DATE",
+            "observation_date": date,
+            "receipt_path": str(receipt_path),
+            "archive_sha256": receipt["archive_sha256"],
+            "catalog_sequence": entry["sequence"],
+        }
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        return {"status": "STALE", "observation_date": date, "reason": str(exc)}
+
+
+def component_status(
+    target: Path,
+    identities: Mapping[str, object],
+    kind: str,
+    *,
+    candidate_sha: str,
+    protected_sha: str,
+    plan_commit: str,
+) -> dict[str, object]:
+    try:
+        remote = identities.get(kind)
+        if not isinstance(remote, Mapping):
+            raise ValueError(f"Pi {kind} identity is missing")
+        receipt, manifest, entry, path = pointer_generation(
+            target,
+            f"latest-{kind}.json",
+            kind,
+            candidate_sha=candidate_sha,
+            protected_sha=protected_sha,
+            plan_commit=plan_commit,
+        )
+        if content_revision(manifest) != remote.get("content_revision"):
+            raise ValueError(f"Pi {kind} content changed")
+        checks = receipt.get("checks")
+        if not isinstance(checks, Mapping) or kind not in checks:
+            raise ValueError(f"{kind} receipt lacks component restore evidence")
+        return {"status": "UP_TO_DATE", "receipt_path": str(path), "catalog_sequence": entry["sequence"]}
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        return {"status": "STALE", "reason": str(exc)}
+
+
+def inventory_status(
+    target: Path,
+    retained: Sequence[Mapping[str, object]],
+    identities: Mapping[str, object],
+    *,
+    protected_sha: str,
+    plan_commit: str,
+    after_date: str = "2026-05-21",
+) -> dict[str, object]:
+    entries = receiver.catalog_entries(target / "catalog/generations.jsonl")
+    completed = {
+        str(item["date"])
+        for item in retained
+        if item.get("status") == "completed" and str(item["date"]) > after_date
+    }
+    covered: set[str] = set()
+    for entry in entries:
+        if entry.get("kind") != "observation" or entry.get("result") != "PASS":
+            continue
+        try:
+            receipt_path = local_path(target, str(entry["receipt_path"]))
+            if receiver.sha256_file(receipt_path) != entry.get("receipt_sha256"):
+                continue
+            receipt = json.loads(receipt_path.read_bytes())
+            checks = receipt.get("checks")
+            if (
+                receipt.get("result") == "PASS"
+                and receipt.get("kind") == "observation"
+                and receipt.get("plan_document_id") == receiver.PLAN_DOCUMENT_ID
+                and receipt.get("plan_version") == receiver.PLAN_VERSION
+                and receipt.get("plan_sha256") == receiver.PLAN_SHA256
+                and receipt.get("protected_code_sha") == protected_sha
+                and receipt.get("plan_git_commit") == plan_commit
+                and receipt.get("deviations") == []
+                and isinstance(checks, Mapping)
+                and isinstance(checks.get("observation"), Mapping)
+            ):
+                covered.add(str(receipt.get("observation_date")))
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            continue
+    missing = sorted(completed - covered)
+    diagnostics = identities.get("diagnostics")
+    stale_diagnostics: list[str] = []
+    if not isinstance(diagnostics, Mapping):
+        stale_diagnostics.append("identity inventory missing")
+    else:
+        for date, remote in diagnostics.items():
+            candidates = [
+                item for item in entries
+                if item.get("kind") == "diagnostic" and item.get("run_date") == date
+            ]
+            accepted = False
+            for entry in reversed(candidates):
+                try:
+                    if not isinstance(remote, Mapping):
+                        raise ValueError("invalid remote identity")
+                    _receipt, manifest, _path = verified_receipt(
+                        target,
+                        str(entry["receipt_path"]),
+                        entry,
+                        "diagnostic",
+                        candidate_sha=None,
+                        protected_sha=protected_sha,
+                        plan_commit=plan_commit,
+                    )
+                    if content_revision(manifest) == remote.get("content_revision"):
+                        accepted = True
+                        break
+                except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                    continue
+            if not accepted:
+                stale_diagnostics.append(str(date))
+    status = "UP_TO_DATE" if not missing and not stale_diagnostics else "STALE"
+    return {
+        "status": status,
+        "missing_completed_dates": missing,
+        "stale_diagnostics": stale_diagnostics,
+    }
+
+
+def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
+    identities = listing.get("component_identities")
+    retained = listing.get("retained_runs")
+    if not isinstance(identities, Mapping) or not isinstance(retained, list):
+        return {"status": "STALE", "reason": "Pi component inventory is missing", "backfill_required": True}
+    observation = latest_status(
+        target,
+        listing.get("latest_observation"),
+        candidate_sha=args.candidate_code_sha,
+        protected_sha=args.protected_code_sha,
+        plan_commit=args.plan_git_commit,
+    )
+    controls = {
+        kind: component_status(
+            target,
+            identities,
+            kind,
+            candidate_sha=args.candidate_code_sha,
+            protected_sha=args.protected_code_sha,
+            plan_commit=args.plan_git_commit,
+        )
+        for kind in ("control", "macro")
+    }
+    inventory = inventory_status(
+        target,
+        retained,
+        identities,
+        protected_sha=args.protected_code_sha,
+        plan_commit=args.plan_git_commit,
+    )
+    status = "UP_TO_DATE" if all(
+        item["status"] == "UP_TO_DATE"
+        for item in (observation, controls["control"], controls["macro"], inventory)
+    ) else "STALE"
+    return {
+        "status": status,
+        "backfill_required": bool(inventory.get("missing_completed_dates")),
+        "observation": observation,
+        **controls,
+        "inventory": inventory,
+    }
+
+
+def parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(description=__doc__)
+    value.add_argument("--target", type=Path, required=True)
+    value.add_argument("--host", default="ar-local-pi5-lan")
+    value.add_argument("--source-helper", type=Path)
+    value.add_argument("--recovery-image", type=Path, required=True)
+    value.add_argument("--candidate-code-sha", required=True)
+    value.add_argument("--protected-code-sha", required=True)
+    value.add_argument("--plan-git-commit", required=True)
+    value.add_argument("--operator")
+    value.add_argument("--check-only", action="store_true")
+    return value
+
+
+def receiver_arguments(args: argparse.Namespace, command: str) -> list[str]:
+    values = [
+        command,
+        "--target", str(args.target),
+        "--host", args.host,
+        "--recovery-image", str(args.recovery_image),
+        "--candidate-code-sha", args.candidate_code_sha,
+        "--protected-code-sha", args.protected_code_sha,
+        "--plan-git-commit", args.plan_git_commit,
+    ]
+    if args.source_helper:
+        values.extend(("--source-helper", str(args.source_helper)))
+    if args.operator:
+        values.extend(("--operator", args.operator))
+    return values
+
+
+def invoke_receiver(args: argparse.Namespace, command: str) -> tuple[int, str, str]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        code = receiver.main(receiver_arguments(args, command))
+    return code, stdout.getvalue(), stderr.getvalue()
+
+
+def record_execution(
+    target: Path,
+    args: argparse.Namespace,
+    result: str,
+    action: str,
+    detail: object,
+) -> Path:
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    record = {
+        "schema_version": 1,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": receiver.PLAN_VERSION,
+        "plan_git_commit": args.plan_git_commit,
+        "plan_sha256": receiver.PLAN_SHA256,
+        "candidate_code_sha": args.candidate_code_sha,
+        "protected_code_sha": args.protected_code_sha,
+        "operator": args.operator or "scheduled-task",
+        "timestamps": {"completed_at": now},
+        "exact_commands": [" ".join(json.dumps(value) for value in [sys.executable, *sys.argv])],
+        "action": action,
+        "detail": detail,
+        "deviations": [],
+        "deviation_authorization": None,
+        "result": result,
+    }
+    root = target / "catalog/scheduled-runs"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{now.replace(':', '').replace('-', '')}-{uuid.uuid4().hex}.json"
+    receiver.atomic_create(path, receiver.canonical_json_bytes(record))
+    receiver.atomic_replace(
+        target / "catalog/latest-scheduled.json",
+        receiver.canonical_json_bytes({
+            "record_path": path.relative_to(target).as_posix(),
+            "record_sha256": receiver.sha256_file(path),
+            "result": result,
+        }),
+    )
+    return path
+
+
+def safe_record(args: argparse.Namespace, result: str, action: str, detail: object) -> Path | None:
+    try:
+        target = receiver.canonical_target(args.target)
+        if receiver.capacity(target)["free"] <= receiver.FREE_FLOOR_BYTES + 1024**2:
+            return None
+        return record_execution(target, args, result, action, detail)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    preflight_code, preflight_stdout, preflight_stderr = invoke_receiver(args, "preflight")
+    if preflight_code:
+        error = preflight_stderr or preflight_stdout
+        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        sys.stderr.write(error)
+        return preflight_code
+    listing = json.loads(preflight_stdout)
+    target = Path(str(listing["target"])).resolve(strict=True)
+    status = scheduled_status(target, listing, args)
+    if status["status"] == "UP_TO_DATE":
+        path = record_execution(target, args, "PASS", "NO_BACKUP_DATA_WRITE", status)
+        print(json.dumps({
+            "ok": True,
+            "result": "PASS",
+            "action": "NO_BACKUP_DATA_WRITE",
+            "execution_record": str(path),
+            **status,
+        }, indent=2, sort_keys=True))
+        return 0
+    if args.check_only:
+        path = record_execution(target, args, "BLOCKED", "BACKUP_REQUIRED", status)
+        print(json.dumps({
+            "ok": False,
+            "result": "BLOCKED",
+            "action": "BACKUP_REQUIRED",
+            "execution_record": str(path),
+            **status,
+        }, indent=2, sort_keys=True))
+        return 1
+    command = "backfill" if status.get("backfill_required") else "backup-latest"
+    backup_code, backup_stdout, backup_stderr = invoke_receiver(args, command)
+    if backup_code:
+        error = backup_stderr or backup_stdout
+        record_execution(target, args, "FAIL", command.upper(), {"before": status, "error": error})
+        sys.stderr.write(error)
+        return backup_code
+    verify_code, verify_stdout, verify_stderr = invoke_receiver(args, "preflight")
+    if verify_code:
+        error = verify_stderr or verify_stdout
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {"before": status, "error": error})
+        sys.stderr.write(error)
+        return verify_code
+    verified = scheduled_status(target, json.loads(verify_stdout), args)
+    result = "PASS" if verified["status"] == "UP_TO_DATE" else "FAIL"
+    path = record_execution(target, args, result, command.upper(), {"before": status, "after": verified})
+    sys.stdout.write(backup_stdout)
+    print(json.dumps({
+        "ok": result == "PASS",
+        "result": result,
+        "execution_record": str(path),
+        **verified,
+    }, indent=2, sort_keys=True))
+    return 0 if result == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
