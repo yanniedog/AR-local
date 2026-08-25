@@ -111,7 +111,7 @@ def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object
 def test_controlled_runbook_checksum_is_current() -> None:
     result = receiver.verify_plan_document()
     assert result["plan_sha256"] == receiver.PLAN_SHA256
-    assert len(result["plan_raw_sha256"]) == 64
+    assert result["plan_raw_sha256"] == receiver.PLAN_RAW_SHA256
 
 
 @pytest.mark.parametrize(
@@ -420,3 +420,44 @@ def test_recovery_base_is_registered_without_copying_image(
     assert second["status"] == "ALREADY_REGISTERED"
     assert receipt["bytes_duplicated"] == 0
     assert receipt["classification"] == "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
+
+
+def test_recovery_base_corrects_checkout_raw_digest_append_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    image = tmp_path / "historical.img"
+    image.write_bytes(b"")
+    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_BYTES", 0)
+    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_SHA256", hashlib.sha256(b"").hexdigest())
+    target = tmp_path / "target"
+    receipt_path = target / "recovery-base/historical-image-2026-05-21.receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    legacy = {
+        "result": "PASS",
+        "image_sha256": receiver.RECOVERY_IMAGE_SHA256,
+        "image_bytes": 0,
+        "image_path": str(image.resolve()),
+        "image_mtime_ns": image.stat().st_mtime_ns,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": receiver.PLAN_VERSION,
+        "plan_git_commit": "c" * 40,
+        "plan_sha256": receiver.PLAN_SHA256,
+        "plan_raw_sha256": "checkout-crlf-digest",
+    }
+    original = receiver.canonical_json_bytes(legacy)
+    receipt_path.write_bytes(original)
+    args = Namespace(
+        recovery_image=image,
+        plan_git_commit="c" * 40,
+        plan_raw_sha256=receiver.PLAN_RAW_SHA256,
+        candidate_code_sha=CANDIDATE,
+        operator="pytest",
+    )
+    first = receiver.register_recovery_base(args, target)
+    second = receiver.register_recovery_base(args, target)
+    assert first["status"] == "REGISTERED_WITH_APPEND_ONLY_PLAN_CORRECTION"
+    assert second["status"] == "ALREADY_REGISTERED_WITH_PLAN_CORRECTION"
+    assert receipt_path.read_bytes() == original
+    correction = json.loads(Path(str(first["receipt"])).read_text(encoding="utf-8"))
+    assert correction["plan_raw_sha256"] == receiver.PLAN_RAW_SHA256
+    assert correction["superseded_receipt_sha256"] == hashlib.sha256(original).hexdigest()

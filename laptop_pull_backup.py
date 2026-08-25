@@ -37,6 +37,7 @@ PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
 PLAN_VERSION = "1.3"
 PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
+PLAN_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -158,7 +159,10 @@ def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
         raise ValueError("controlled runbook checksum mismatch")
     if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.3` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
-    return {"plan_sha256": PLAN_SHA256, "plan_raw_sha256": hashlib.sha256(raw).hexdigest()}
+    normalized_raw = text.encode("utf-8")
+    if hashlib.sha256(normalized_raw).hexdigest() != PLAN_RAW_SHA256:
+        raise ValueError("controlled runbook normalized raw checksum mismatch")
+    return {"plan_sha256": PLAN_SHA256, "plan_raw_sha256": PLAN_RAW_SHA256}
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -211,6 +215,22 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
     if not image.is_file() or image.stat().st_size != RECOVERY_IMAGE_BYTES:
         raise ValueError("historical recovery image size does not match the classified candidate")
     receipt_path = target / "recovery-base/historical-image-2026-05-21.receipt.json"
+    correction_path = target / "recovery-base/historical-image-2026-05-21.plan-v1.3-correction.json"
+    if correction_path.exists():
+        correction = json.loads(correction_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(correction, dict)
+            or correction.get("result") != "PASS"
+            or correction.get("plan_raw_sha256") != args.plan_raw_sha256
+            or correction.get("image_sha256") != RECOVERY_IMAGE_SHA256
+            or correction.get("image_bytes") != RECOVERY_IMAGE_BYTES
+            or correction.get("image_path") != str(image)
+            or correction.get("image_mtime_ns") != image.stat().st_mtime_ns
+            or correction.get("superseded_receipt_path") != str(receipt_path)
+            or correction.get("superseded_receipt_sha256") != sha256_file(receipt_path)
+        ):
+            raise ValueError("append-only recovery-base correction no longer matches its evidence")
+        return {"status": "ALREADY_REGISTERED_WITH_PLAN_CORRECTION", "receipt": str(correction_path)}
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         if (
@@ -222,6 +242,38 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
             or receipt.get("image_mtime_ns") != image.stat().st_mtime_ns
         ):
             raise ValueError("existing recovery-base receipt no longer matches the historical image")
+        if (
+            receipt.get("plan_document_id") != PLAN_DOCUMENT_ID
+            or receipt.get("plan_version") != PLAN_VERSION
+            or receipt.get("plan_git_commit") != args.plan_git_commit
+            or receipt.get("plan_sha256") != PLAN_SHA256
+            or receipt.get("plan_raw_sha256") != args.plan_raw_sha256
+        ):
+            correction = {
+                "schema_version": 1,
+                "plan_document_id": PLAN_DOCUMENT_ID,
+                "plan_version": PLAN_VERSION,
+                "plan_git_commit": args.plan_git_commit,
+                "plan_sha256": PLAN_SHA256,
+                "plan_raw_sha256": args.plan_raw_sha256,
+                "candidate_code_sha": args.candidate_code_sha,
+                "operator": args.operator,
+                "created_at": utc_now(),
+                "image_path": str(image),
+                "image_bytes": RECOVERY_IMAGE_BYTES,
+                "image_mtime_ns": image.stat().st_mtime_ns,
+                "image_sha256": RECOVERY_IMAGE_SHA256,
+                "classification": "HISTORICAL_UNPROVEN_BOOT_CANDIDATE",
+                "bytes_duplicated": 0,
+                "superseded_receipt_path": str(receipt_path),
+                "superseded_receipt_sha256": sha256_file(receipt_path),
+                "correction_reason": "normalized immutable Git/LF plan raw digest replaces checkout-specific CRLF digest",
+                "deviations": [],
+                "deviation_authorization": None,
+                "result": "PASS",
+            }
+            atomic_create(correction_path, canonical_json_bytes(correction))
+            return {"status": "REGISTERED_WITH_APPEND_ONLY_PLAN_CORRECTION", "receipt": str(correction_path)}
         return {"status": "ALREADY_REGISTERED", "receipt": str(receipt_path)}
     digest = sha256_file(image)
     if digest != RECOVERY_IMAGE_SHA256:
