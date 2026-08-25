@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import cdr_outputs
 import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
@@ -93,17 +94,13 @@ def create_daily_exports(root: Path, date: str) -> None:
     )
     database = exports / "local-cdr.sqlite"
     with sqlite3.connect(database) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE runs(run_date TEXT, banks_counts_json TEXT);
-            CREATE TABLE bank_products(run_date TEXT, provider TEXT, product_id TEXT, product_key TEXT);
-            CREATE TABLE bank_rates(run_date TEXT, product_key TEXT, rate REAL, comparison_rate REAL);
-            CREATE TABLE bank_items(run_date TEXT, item_group TEXT, product_key TEXT);
-            CREATE TABLE bank_product_facts(run_date TEXT, product_key TEXT, fact_id TEXT, canonical_key TEXT);
-            CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
-            """
+        cdr_outputs.ensure_db(connection)
+        connection.execute(
+            "INSERT INTO runs VALUES (?, ?, ?)",
+            (date, "2026-08-25T00:00:00Z", json.dumps(expected_counts)),
         )
-        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps(expected_counts)))
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -346,6 +343,83 @@ def test_reconciliation_rejects_corrupt_non_database_population(
     banks["failures"] = []
     banks_path.write_text(json.dumps(banks), encoding="utf-8")
     with pytest.raises(ValueError, match="do not reconcile"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:
+    date = "2026-08-14"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+        connection.execute("DROP TABLE bank_product_changes")
+        connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
+        banks_path = exports / f"banks-{date}.json"
+        banks = json.loads(banks_path.read_text(encoding="utf-8"))
+        for key in ("product_facts", "product_changes", "holder_attempts"):
+            banks.pop(key)
+        expected = {key: len(value) for key, value in banks.items()}
+        banks_path.write_text(json.dumps(banks), encoding="utf-8")
+        (exports / "dashboard-cache/latest.json").write_text(
+            json.dumps({"run_date": date, "banks_counts": expected}),
+            encoding="utf-8",
+        )
+        connection.execute(
+            "UPDATE runs SET banks_counts_json = ?", (json.dumps(expected),)
+        )
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+    assert report["schema_version"] == "7"
+    assert report["schema_tables"] == [
+        "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
+    ]
+    assert report["unpersisted_populations"] == ["failures"]
+
+
+def test_reconciliation_rejects_population_unsupported_by_v7(
+    tmp_path: Path,
+) -> None:
+    date = "2026-08-14"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+        connection.execute("DROP TABLE bank_product_changes")
+        connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with pytest.raises(ValueError, match="populations"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_reconciliation_rejects_v8_database_missing_required_table(
+    tmp_path: Path,
+) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with pytest.raises(ValueError, match="schema version"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_reconciliation_rejects_column_definition_drift(tmp_path: Path) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("ALTER TABLE bank_products ADD COLUMN tampered TEXT")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with pytest.raises(ValueError, match="definition"):
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
