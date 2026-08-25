@@ -18,7 +18,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import threading
 import uuid
@@ -30,6 +29,12 @@ from typing import BinaryIO, Mapping, Sequence
 from ar_local_restore_verification import (
     _completion_marker_valid,
     _pointer_matches_marker,
+)
+from laptop_backup_archive import (
+    extract_archive as extract_tar_archive,
+    extracted_entries,
+    tar_metadata,
+    verify_tar_metadata,
 )
 from laptop_backup_transport import (
     install_remote_helper,
@@ -478,83 +483,8 @@ def stream_partial(process: subprocess.Popen[bytes], stream: BinaryIO, partial: 
     return digest.hexdigest(), written
 
 
-def read_tar_metadata(stream: tarfile.TarFile) -> list[dict[str, object]]:
-    entries: list[dict[str, object]] = []
-    for member in stream:
-        relative = member.name.removeprefix("./")
-        if member.isdir():
-            continue
-        if not member.isfile():
-            raise ValueError(f"archive contains a non-regular member: {relative}")
-        entries.append({
-            "path": relative,
-            "type": "file",
-            "size": member.size,
-            "mode": oct(member.mode),
-            "mtime_ns": int(member.mtime * 1_000_000_000),
-            "uid": member.uid,
-            "gid": member.gid,
-        })
-    return entries
-
-
-def tar_metadata(archive: Path) -> list[dict[str, object]]:
-    """Read tar headers without extracting bytes; use libarchive for zstd."""
-    try:
-        with tarfile.open(archive, mode="r:*") as stream:
-            return read_tar_metadata(stream)
-    except tarfile.ReadError:
-        if os.name != "nt":
-            raise RuntimeError("zstd tar header verification requires the Windows libarchive receiver")
-    process = subprocess.Popen(
-        ("tar", "-cf", "-", f"@{archive}"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    assert process.stdout is not None and process.stderr is not None
-    errors = bytearray()
-    thread = threading.Thread(target=stderr_reader, args=(process.stderr, errors), daemon=True)
-    thread.start()
-    try:
-        with tarfile.open(fileobj=process.stdout, mode="r|*") as stream:
-            entries = read_tar_metadata(stream)
-        # Streaming tar readers stop at the end marker and can leave archive
-        # padding in the pipe.  Drain it so Windows bsdtar can close stdout and
-        # exit instead of deadlocking while this process waits on stderr.
-        trailing = process.stdout.read()
-        code = process.wait(timeout=600)
-        thread.join(timeout=30)
-        error = errors.decode("utf-8", "replace")
-        if code:
-            raise RuntimeError(f"compressed archive is unreadable: {error}")
-        if trailing.strip(b"\0"):
-            raise RuntimeError("compressed archive contains non-padding data after its end marker")
-    except Exception:
-        process.kill()
-        process.wait(timeout=30)
-        thread.join(timeout=30)
-        raise
-    return entries
-
-
 def extract_archive(archive: Path, destination: Path) -> None:
-    destination.mkdir(parents=True, exist_ok=False)
-    result = subprocess.run(("tar", "-xf", str(archive), "-C", str(destination)), text=True, capture_output=True, timeout=1800)
-    if result.returncode:
-        raise RuntimeError(f"archive extraction failed: {result.stderr}")
-
-
-def extracted_entries(root: Path) -> list[dict[str, object]]:
-    entries = []
-    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix().encode("utf-8")):
-        relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
-            raise ValueError(f"extracted archive contains symlink: {relative}")
-        if path.is_file():
-            entries.append({"path": relative, "size": path.stat().st_size, "sha256": sha256_file(path)})
-        elif not path.is_dir():
-            raise ValueError(f"extracted archive contains special file: {relative}")
-    return entries
+    extract_tar_archive(archive, destination, validate_relative_path)
 
 
 def sqlite_checks(root: Path, *, required: bool = True) -> list[dict[str, object]]:
@@ -704,14 +634,16 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
     return {"reconciliation": reconciliation, "completion_markers": marker_results, "latest_pointer": pointer_result}
 
 
-def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) -> dict[str, object]:
+def verify_extracted(
+    root: Path,
+    manifest: Mapping[str, object],
+    archive: Path,
+    *,
+    metadata_verified: bool = False,
+) -> dict[str, object]:
     expected = [{"path": item["path"], "size": item["size"], "sha256": item["sha256"]} for item in manifest["files"]]
-    expected_metadata = [
-        {key: item[key] for key in ("path", "type", "size", "mode", "mtime_ns", "uid", "gid")}
-        for item in manifest["files"]
-    ]
-    if tar_metadata(archive) != expected_metadata:
-        raise ValueError("tar member metadata does not exactly match source manifest")
+    if not metadata_verified:
+        verify_tar_metadata(manifest, archive)
     actual = extracted_entries(root)
     if actual != expected:
         raise ValueError("extracted bytes do not exactly match source manifest")
@@ -755,8 +687,9 @@ def restore_verify_archive(
     if not is_within(scratch, target) or scratch.exists():
         raise ValueError("unsafe or existing restore scratch path")
     try:
+        verify_tar_metadata(manifest, archive)
         extract_archive(archive, scratch)
-        return verify_extracted(scratch, manifest, archive)
+        return verify_extracted(scratch, manifest, archive, metadata_verified=True)
     finally:
         if scratch.exists():
             resolved = scratch.resolve()
