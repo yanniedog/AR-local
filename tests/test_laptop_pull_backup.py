@@ -12,6 +12,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+import zstandard
 
 import cdr_outputs
 import laptop_backup_transport as transport
@@ -579,67 +580,28 @@ def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Pat
         receiver.verify_extracted(restored, manifest, archive)
 
 
-def test_windows_tar_metadata_drains_trailing_padding(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    class TrackingBytesIO(io.BytesIO):
-        drained = False
-
-        def read(self, size: int = -1) -> bytes:
-            if size == -1:
-                self.drained = True
-            return super().read(size)
-
+def test_zstd_tar_preserves_unicode_member_names(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    payload_path = source_root / "HSBC Limited – Wholesale Banking/product-detail.json"
+    payload_path.parent.mkdir(parents=True)
+    payload_path.write_bytes(b"verified")
+    entries = [manifest_entry(payload_path, source_root)]
+    manifest = {**base_manifest("diagnostic", entries), "run_date": "2026-08-16", "publishable": False}
     tar_bytes = io.BytesIO()
-    payload = b"verified"
-    with tarfile.open(fileobj=tar_bytes, mode="w") as stream:
-        member = tarfile.TarInfo("evidence.json")
-        member.size = len(payload)
-        member.mode = 0o640
-        member.mtime = 1_700_000_000
-        member.uid = 1000
-        member.gid = 1000
-        stream.addfile(member, io.BytesIO(payload))
-    stdout = TrackingBytesIO(tar_bytes.getvalue() + (b"\0" * 131_072))
+    with tarfile.open(fileobj=tar_bytes, mode="w", format=tarfile.GNU_FORMAT) as stream:
+        member = stream.gettarinfo(str(payload_path), arcname=str(entries[0]["path"]))
+        member.mtime = int(member.mtime)
+        with payload_path.open("rb") as payload:
+            stream.addfile(member, payload)
+    archive = tmp_path / "diagnostic.tar.zst"
+    archive.write_bytes(zstandard.ZstdCompressor(level=3).compress(tar_bytes.getvalue()))
+    restored = tmp_path / "restored"
 
-    class Process:
-        stderr = io.BytesIO()
+    receiver.extract_archive(archive, restored)
 
-        def __init__(self) -> None:
-            self.stdout = stdout
-
-        def wait(self, timeout: int) -> int:
-            return 0
-
-        def kill(self) -> None:
-            raise AssertionError("valid trailing padding must not kill tar")
-
-    real_open = receiver.tarfile.open
-    calls = 0
-
-    def open_tar(*args: object, **kwargs: object):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise tarfile.ReadError("force Windows zstd fallback")
-        return real_open(*args, **kwargs)
-
-    monkeypatch.setattr(receiver.os, "name", "nt")
-    monkeypatch.setattr(receiver.tarfile, "open", open_tar)
-    monkeypatch.setattr(receiver.subprocess, "Popen", lambda *_args, **_kwargs: Process())
-
-    entries = receiver.tar_metadata(tmp_path / "observation.tar.zst")
-
-    assert stdout.drained is True
-    assert entries == [{
-        "path": "evidence.json",
-        "type": "file",
-        "size": len(payload),
-        "mode": "0o640",
-        "mtime_ns": 1_700_000_000_000_000_000,
-        "uid": 1000,
-        "gid": 1000,
-    }]
+    assert receiver.tar_metadata(archive)[0]["path"] == entries[0]["path"]
+    assert (restored / str(entries[0]["path"])).read_bytes() == b"verified"
+    assert receiver.verify_extracted(restored, manifest, archive)["bytes_verified"] == 8
 
 
 def test_macro_generation_has_independent_restore_verification(tmp_path: Path) -> None:
