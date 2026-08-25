@@ -45,26 +45,27 @@ def finish_stream_process(
     *,
     timeout: float = 30,
     drain_timeout: float = 10,
+    platform: str | None = None,
 ) -> int:
     """Finish ssh, accepting only its proven Windows post-EOF hang signature."""
     try:
         code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         deadline = time.monotonic() + drain_timeout
-        while not windows_ssh_post_eof_only(bytes(errors)) and time.monotonic() < deadline:
+        while not windows_ssh_post_eof_only(bytes(errors), platform=platform) and time.monotonic() < deadline:
             stderr_thread.join(timeout=min(0.1, max(0, deadline - time.monotonic())))
-        if not windows_ssh_post_eof_only(bytes(errors)):
+        if not windows_ssh_post_eof_only(bytes(errors), platform=platform):
             raise
         process.kill()
         process.wait(timeout=30)
         stderr_thread.join(timeout=10)
-        if stderr_thread.is_alive() or not windows_ssh_post_eof_only(bytes(errors)):
+        if stderr_thread.is_alive() or not windows_ssh_post_eof_only(bytes(errors), platform=platform):
             raise RuntimeError("Windows SSH post-EOF termination could not be proven")
         return 0
     stderr_thread.join(timeout=10)
     if stderr_thread.is_alive():
         raise RuntimeError("SSH stderr reader did not terminate")
-    if (code or errors) and not windows_ssh_post_eof_only(bytes(errors)):
+    if (code or errors) and not windows_ssh_post_eof_only(bytes(errors), platform=platform):
         raise RuntimeError(f"Pi archive stream failed: {bytes(errors).decode('utf-8', 'replace')}")
     return code
 

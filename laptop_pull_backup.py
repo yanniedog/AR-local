@@ -377,8 +377,9 @@ def validate_manifest(
 
 
 def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
+    read_available = getattr(stream, "read1", stream.read)
     while True:
-        block = stream.read(CHUNK)
+        block = read_available(CHUNK)
         if not block:
             return
         sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])

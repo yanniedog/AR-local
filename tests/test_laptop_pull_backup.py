@@ -7,7 +7,9 @@ import io
 import json
 import sqlite3
 import subprocess
+import sys
 import tarfile
+import threading
 from argparse import Namespace
 from pathlib import Path
 
@@ -145,7 +147,6 @@ def test_windows_ssh_post_eof_signature_is_exact() -> None:
 
 
 def test_hung_windows_ssh_is_killed_only_after_proven_post_eof(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     signature = bytearray(b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n")
 
@@ -170,8 +171,9 @@ def test_hung_windows_ssh_is_killed_only_after_proven_post_eof(
             return False
 
     process = Process()
-    monkeypatch.setattr(transport.os, "name", "nt")
-    assert transport.finish_stream_process(process, Thread(), signature, timeout=0.01) == 0
+    assert transport.finish_stream_process(
+        process, Thread(), signature, timeout=0.01, platform="nt"
+    ) == 0
     assert process.killed
 
 
@@ -191,7 +193,6 @@ def test_hung_ssh_without_post_eof_proof_fails_closed() -> None:
 
 
 def test_delayed_complete_post_eof_signature_is_bounded_and_accepted(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     errors = bytearray(b"close - IO is still pending")
     complete = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
@@ -221,11 +222,33 @@ def test_delayed_complete_post_eof_signature_is_bounded_and_accepted(
             return False
 
     process = Process()
-    monkeypatch.setattr(transport.os, "name", "nt")
     assert transport.finish_stream_process(
-        process, Thread(), errors, timeout=0.01, drain_timeout=1
+        process, Thread(), errors, timeout=0.01, drain_timeout=1, platform="nt"
     ) == 0
     assert process.killed
+
+
+def test_post_eof_signature_is_read_from_live_pipe_before_process_exit() -> None:
+    signature = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+    command = [
+        sys.executable,
+        "-c",
+        "import sys,time; sys.stderr.buffer.write(" + repr(signature) + "); sys.stderr.flush(); time.sleep(30)",
+    ]
+    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    assert process.stderr is not None
+    errors = bytearray()
+    thread = threading.Thread(target=receiver.stderr_reader, args=(process.stderr, errors), daemon=True)
+    thread.start()
+    try:
+        assert transport.finish_stream_process(
+            process, thread, errors, timeout=0.1, drain_timeout=2, platform="nt"
+        ) == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+    assert bytes(errors) == signature
 
 
 def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
