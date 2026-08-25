@@ -83,6 +83,14 @@ HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
 }
+HISTORICAL_EXPORT_POPULATIONS = {
+    "6": {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"},
+    "7": {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"},
+    "8": {
+        "products", "rates", "fees", "features", "eligibility", "constraints",
+        "product_facts", "product_changes", "failures", "holder_attempts",
+    },
+}
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -583,6 +591,8 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         expected_schema = HISTORICAL_DAILY_SCHEMA_SQL_SHA256.get(schema_version)
         if expected_schema is None or schema_sql != expected_schema:
             raise ValueError("daily database definition does not match its schema version")
+        if set(exported) != HISTORICAL_EXPORT_POPULATIONS[schema_version]:
+            raise ValueError("daily export populations do not match its schema version")
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],

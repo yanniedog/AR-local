@@ -355,6 +355,19 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
         connection.execute("DROP TABLE bank_product_facts")
         connection.execute("DROP TABLE bank_product_changes")
         connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
+        banks_path = exports / f"banks-{date}.json"
+        banks = json.loads(banks_path.read_text(encoding="utf-8"))
+        for key in ("product_facts", "product_changes", "holder_attempts"):
+            banks.pop(key)
+        expected = {key: len(value) for key, value in banks.items()}
+        banks_path.write_text(json.dumps(banks), encoding="utf-8")
+        (exports / "dashboard-cache/latest.json").write_text(
+            json.dumps({"run_date": date, "banks_counts": expected}),
+            encoding="utf-8",
+        )
+        connection.execute(
+            "UPDATE runs SET banks_counts_json = ?", (json.dumps(expected),)
+        )
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
@@ -362,9 +375,24 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
     assert report["schema_tables"] == [
         "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
     ]
-    assert {"product_changes", "product_facts"}.issubset(
-        report["unpersisted_populations"]
-    )
+    assert report["unpersisted_populations"] == ["failures"]
+
+
+def test_reconciliation_rejects_population_unsupported_by_v7(
+    tmp_path: Path,
+) -> None:
+    date = "2026-08-14"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("DROP TABLE bank_product_facts")
+        connection.execute("DROP TABLE bank_product_changes")
+        connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with pytest.raises(ValueError, match="populations"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
 def test_reconciliation_rejects_v8_database_missing_required_table(
