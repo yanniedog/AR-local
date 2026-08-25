@@ -58,12 +58,29 @@ WINDOWS_RESERVED = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
-HISTORICAL_DAILY_TABLES = {
-    "6": {"schema_meta", "runs", "bank_products", "bank_rates", "bank_items"},
-    "7": {"schema_meta", "runs", "bank_products", "bank_rates", "bank_items"},
+HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
+    "6": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_products": "aac255948d8428386f8ff82e8ae21048bdad976c33fa3d1c5e13955c34cbac4d",
+        "bank_rates": "de1518ed0e183e244b9821c92e6bfd53138eb77b11f48030ccc886671b695f97",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
+    "7": {
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_products": "aac255948d8428386f8ff82e8ae21048bdad976c33fa3d1c5e13955c34cbac4d",
+        "bank_rates": "0628240b062e356f2608a9d18d684289c7bb458ab3acdb9f5dd3c1bfe2429191",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
+    },
     "8": {
-        "schema_meta", "runs", "bank_products", "bank_rates", "bank_items",
-        "bank_product_facts", "bank_product_changes",
+        "bank_items": "73fe34d78096f0bf097b11f99bca0a5d0ea97a28ddc78f8b303ed3ac6ec287e5",
+        "bank_product_changes": "ec8fd2a618bd34c04e84e8e28401ed9f3c848e00bb27e3e5b20f03f225062049",
+        "bank_product_facts": "2b4ab300506dc67339d0982de038042c8cde0cd3cc8dc9b8d51ec0b1a4c2f788",
+        "bank_products": "aac255948d8428386f8ff82e8ae21048bdad976c33fa3d1c5e13955c34cbac4d",
+        "bank_rates": "0628240b062e356f2608a9d18d684289c7bb458ab3acdb9f5dd3c1bfe2429191",
+        "runs": "db53d10ea555a157e80ba6cf3fb788568fedb33d192279d6ba9fe2ed67a7e84e",
+        "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
 }
 
@@ -549,22 +566,23 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         if isinstance(value, list)
     }
     with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
+        schema_sql = {
+            str(name): hashlib.sha256(str(sql).encode("utf-8")).hexdigest()
+            for name, sql in connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type = 'table' AND name != 'sqlite_sequence'"
             )
-            if row[0] != "sqlite_sequence"
         }
+        tables = set(schema_sql)
         if "schema_meta" not in tables:
             raise ValueError("daily database schema metadata is missing")
         schema_row = connection.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
         schema_version = str(schema_row[0]) if schema_row else ""
-        expected_tables = HISTORICAL_DAILY_TABLES.get(schema_version)
-        if expected_tables is None or tables != expected_tables:
-            raise ValueError("daily database tables do not match its schema version")
+        expected_schema = HISTORICAL_DAILY_SCHEMA_SQL_SHA256.get(schema_version)
+        if expected_schema is None or schema_sql != expected_schema:
+            raise ValueError("daily database definition does not match its schema version")
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {
             "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],

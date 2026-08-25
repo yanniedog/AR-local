@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import cdr_outputs
 import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
@@ -93,19 +94,13 @@ def create_daily_exports(root: Path, date: str) -> None:
     )
     database = exports / "local-cdr.sqlite"
     with sqlite3.connect(database) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE schema_meta(key TEXT PRIMARY KEY, value TEXT);
-            CREATE TABLE runs(run_date TEXT, banks_counts_json TEXT);
-            CREATE TABLE bank_products(run_date TEXT, provider TEXT, product_id TEXT, product_key TEXT);
-            CREATE TABLE bank_rates(run_date TEXT, product_key TEXT, rate REAL, comparison_rate REAL);
-            CREATE TABLE bank_items(run_date TEXT, item_group TEXT, product_key TEXT);
-            CREATE TABLE bank_product_facts(run_date TEXT, product_key TEXT, fact_id TEXT, canonical_key TEXT);
-            CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
-            """
+        cdr_outputs.ensure_db(connection)
+        connection.execute(
+            "INSERT INTO runs VALUES (?, ?, ?)",
+            (date, "2026-08-25T00:00:00Z", json.dumps(expected_counts)),
         )
-        connection.execute("INSERT INTO schema_meta VALUES ('version', '8')")
-        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps(expected_counts)))
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -351,17 +346,19 @@ def test_reconciliation_rejects_corrupt_non_database_population(
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
-def test_reconciliation_accepts_known_immutable_v6_schema(tmp_path: Path) -> None:
-    date = "2026-05-22"
+def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:
+    date = "2026-08-14"
     root = tmp_path / "source"
     create_daily_exports(root, date)
     exports = root / f"data/runs/{date}/_exports"
     with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
         connection.execute("DROP TABLE bank_product_facts")
         connection.execute("DROP TABLE bank_product_changes")
-        connection.execute("UPDATE schema_meta SET value = '6' WHERE key = 'version'")
+        connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
-    assert report["schema_version"] == "6"
+    assert report["schema_version"] == "7"
     assert report["schema_tables"] == [
         "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
     ]
@@ -379,7 +376,22 @@ def test_reconciliation_rejects_v8_database_missing_required_table(
     exports = root / f"data/runs/{date}/_exports"
     with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
         connection.execute("DROP TABLE bank_product_facts")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     with pytest.raises(ValueError, match="schema version"):
+        receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_reconciliation_rejects_column_definition_drift(tmp_path: Path) -> None:
+    date = "2026-08-25"
+    root = tmp_path / "source"
+    create_daily_exports(root, date)
+    exports = root / f"data/runs/{date}/_exports"
+    with sqlite3.connect(exports / "local-cdr.sqlite") as connection:
+        connection.execute("ALTER TABLE bank_products ADD COLUMN tampered TEXT")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with pytest.raises(ValueError, match="definition"):
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
