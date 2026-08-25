@@ -96,7 +96,8 @@ def create_daily_exports(root: Path, date: str) -> None:
         encoding="utf-8",
     )
     database = exports / "local-cdr.sqlite"
-    with sqlite3.connect(database) as connection:
+    connection = sqlite3.connect(database)
+    try:
         cdr_outputs.ensure_db(connection)
         connection.execute(
             "INSERT INTO runs VALUES (?, ?, ?)",
@@ -104,6 +105,8 @@ def create_daily_exports(root: Path, date: str) -> None:
         )
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
