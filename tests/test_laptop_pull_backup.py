@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import subprocess
 import tarfile
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
+import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 
@@ -111,6 +113,7 @@ def test_controlled_runbook_checksum_is_current() -> None:
     result = receiver.verify_plan_document()
     assert result["plan_sha256"] == receiver.PLAN_SHA256
     assert len(result["plan_raw_sha256"]) == 64
+    assert result["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
 
 
 @pytest.mark.parametrize(
@@ -127,6 +130,56 @@ def test_casefold_collision_fails_closed() -> None:
     receiver.validate_relative_path("data/Bank.json", seen)
     with pytest.raises(ValueError, match="collision"):
         receiver.validate_relative_path("data/bank.json", seen)
+
+
+def test_windows_ssh_post_eof_signature_is_exact() -> None:
+    expected = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+    assert transport.windows_ssh_post_eof_only(expected, platform="nt")
+    assert not transport.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
+
+
+def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text("print('safe')\n", encoding="utf-8")
+    digest = receiver.sha256_file(helper)
+    remote_dir = "/tmp/ar-local-laptop-backup.Ab12Cd34"
+    remote = f"{remote_dir}/source.py"
+    post_eof = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+    results = iter((
+        subprocess.CompletedProcess(("ssh",), 3221226356, f"{remote_dir}\n".encode(), post_eof),
+        subprocess.CompletedProcess(("scp",), 1, b"", b""),
+        subprocess.CompletedProcess(
+            ("ssh",),
+            3221226356,
+            f"{digest}  {remote}\n".encode(),
+            post_eof,
+        ),
+        subprocess.CompletedProcess(("ssh",), 3221226356, b"700\n", post_eof),
+    ))
+    monkeypatch.setattr(transport.subprocess, "run", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(transport, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
+    assert transport.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
+
+
+def test_remote_helper_cleanup_reports_real_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    results = iter((
+        subprocess.CompletedProcess(("ssh",), 1, b"", b"permission denied\n"),
+        subprocess.CompletedProcess(("ssh",), 1, b"", b"directory not empty\n"),
+    ))
+
+    def run(*args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        return next(results)
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        transport.remove_remote_helper(
+            Namespace(host="pi"), "/tmp/ar-local-laptop-backup.Ab12Cd34/source.py"
+        )
+    assert len(calls) == 2
 
 
 def test_manifest_validation_rejects_unsorted_or_wrong_identity(tmp_path: Path) -> None:
@@ -392,3 +445,7 @@ def test_recovery_base_is_registered_without_copying_image(
     assert second["status"] == "ALREADY_REGISTERED"
     assert receipt["bytes_duplicated"] == 0
     assert receipt["classification"] == "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
+    receipt["plan_document_id"] = "tampered"
+    Path(str(first["receipt"])).write_text(json.dumps(receipt), encoding="utf-8")
+    with pytest.raises(ValueError, match="no longer matches"):
+        receiver.register_recovery_base(args, target)

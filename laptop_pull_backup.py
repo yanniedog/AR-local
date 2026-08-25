@@ -31,12 +31,18 @@ from ar_local_restore_verification import (
     _completion_marker_valid,
     _pointer_matches_marker,
 )
+from laptop_backup_transport import (
+    install_remote_helper,
+    remove_remote_helper,
+    windows_ssh_post_eof_only,
+)
 
 
 PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
 PLAN_VERSION = "1.3"
 PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
+PLAN_NORMALIZED_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -155,7 +161,14 @@ def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
         raise ValueError("controlled runbook checksum mismatch")
     if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.3` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
-    return {"plan_sha256": PLAN_SHA256, "plan_raw_sha256": hashlib.sha256(raw).hexdigest()}
+    normalized_raw = text.encode("utf-8")
+    if hashlib.sha256(normalized_raw).hexdigest() != PLAN_NORMALIZED_RAW_SHA256:
+        raise ValueError("controlled runbook normalized raw checksum mismatch")
+    return {
+        "plan_sha256": PLAN_SHA256,
+        "plan_raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "plan_normalized_raw_sha256": PLAN_NORMALIZED_RAW_SHA256,
+    }
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -217,6 +230,15 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
             or receipt.get("image_bytes") != RECOVERY_IMAGE_BYTES
             or receipt.get("image_path") != str(image)
             or receipt.get("image_mtime_ns") != image.stat().st_mtime_ns
+            or receipt.get("plan_document_id") != PLAN_DOCUMENT_ID
+            or receipt.get("plan_version") != PLAN_VERSION
+            or receipt.get("plan_git_commit") != args.plan_git_commit
+            or receipt.get("plan_sha256") != PLAN_SHA256
+            or receipt.get("plan_raw_sha256") != args.plan_raw_sha256
+            or receipt.get("classification") != "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
+            or receipt.get("bytes_duplicated") != 0
+            or receipt.get("deviations") != []
+            or receipt.get("deviation_authorization") is not None
         ):
             raise ValueError("existing recovery-base receipt no longer matches the historical image")
         return {"status": "ALREADY_REGISTERED", "receipt": str(receipt_path)}
@@ -336,26 +358,10 @@ def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
     ]
 
 
-def install_remote_helper(args: argparse.Namespace) -> tuple[str, str]:
-    source = Path(args.source_helper).resolve(strict=True)
-    helper_sha = sha256_file(source)
-    remote = f"/tmp/ar-local-laptop-backup-source-{helper_sha}.py"
-    copied = subprocess.run(("scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", str(source), f"{args.host}:{remote}"), capture_output=True)
-    if copied.returncode:
-        raise RuntimeError(f"failed to transfer reviewed source helper: {copied.stderr.decode('utf-8', 'replace')}")
-    return remote, helper_sha
-
-
-def remove_remote_helper(args: argparse.Namespace, remote: str) -> None:
-    if not re.fullmatch(r"/tmp/ar-local-laptop-backup-source-[0-9a-f]{64}\.py", remote):
-        raise ValueError("refusing to remove unexpected remote helper path")
-    subprocess.run(("ssh", "-o", "BatchMode=yes", args.host, "rm", "--", remote), capture_output=True, timeout=30, check=False)
-
-
 def remote_list(args: argparse.Namespace, remote: str) -> dict[str, object]:
     command = [*remote_common(args, remote), "list"]
     result = subprocess.run(command, capture_output=True, timeout=180)
-    if result.returncode:
+    if (result.returncode or result.stderr) and not windows_ssh_post_eof_only(result.stderr):
         raise RuntimeError(f"Pi backup preflight failed: {result.stderr.decode('utf-8', 'replace')}")
     value = json.loads(result.stdout)
     if not isinstance(value, dict) or not value.get("ok") or not isinstance(value.get("retained_runs"), list):
@@ -773,7 +779,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         archive_sha, archive_bytes = stream_partial(process, process.stdout, partial, target)
         code = process.wait(timeout=300)
         thread.join(timeout=10)
-        if code:
+        if (code or errors) and not windows_ssh_post_eof_only(bytes(errors)):
             raise RuntimeError(f"Pi archive stream failed: {bytes(errors).decode('utf-8', 'replace')}")
         checks = restore_verify_archive(target, partial, manifest, kind)
         if capacity(target)["free"] < FREE_FLOOR_BYTES:
