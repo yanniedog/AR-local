@@ -82,10 +82,16 @@ def latest_status(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if receiver.sha256_file(manifest_path) != receipt.get("source_manifest_sha256"):
             raise ValueError("latest source manifest digest mismatch")
-        candidate_sha = str(receipt.get("candidate_code_sha") or "")
-        protected_sha = str(receipt.get("protected_code_sha") or "")
-        plan_commit = str(receipt.get("plan_git_commit") or "")
-        receiver.validate_manifest(manifest, "observation", candidate_sha, protected_sha, plan_commit)
+        receipt_candidate_sha = str(receipt.get("candidate_code_sha") or "")
+        receipt_protected_sha = str(receipt.get("protected_code_sha") or "")
+        receipt_plan_commit = str(receipt.get("plan_git_commit") or "")
+        receiver.validate_manifest(
+            manifest,
+            "observation",
+            receipt_candidate_sha,
+            receipt_protected_sha,
+            receipt_plan_commit,
+        )
         if receiver.sha256_file(archive) != receipt.get("archive_sha256") or archive.stat().st_size != receipt.get("archive_bytes"):
             raise ValueError("latest archive bytes are invalid")
         if manifest_file_hash(manifest, f"data/state/{date}.done.json") != remote.get("completion_marker_sha256"):
@@ -140,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     preflight = subprocess.run(receiver_command(args, "preflight"), text=True, capture_output=True)
     if preflight.returncode:
-        sys.stderr.write(preflight.stderr)
+        sys.stderr.write(preflight.stderr or preflight.stdout)
         return preflight.returncode
     listing = json.loads(preflight.stdout)
     target = Path(str(listing["target"])).resolve(strict=True)
