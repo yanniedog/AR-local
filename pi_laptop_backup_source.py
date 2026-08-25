@@ -496,6 +496,8 @@ def latest_observation_identity(args: argparse.Namespace, inventory: Sequence[Ma
     date = completed[-1]
     state = Path(args.state_root)
     done = state / f"{date}.done.json"
+    if not done.is_file() or done.is_symlink():
+        raise ValueError("latest completion marker is missing or unsafe")
     pointer = state / "observation-pointers-v2/latest-observation.json"
     result: dict[str, object] = {
         "observation_date": date,
@@ -509,22 +511,71 @@ def latest_observation_identity(args: argparse.Namespace, inventory: Sequence[Ma
     return result
 
 
+def prepared_sources(args: argparse.Namespace, kind: str) -> tuple[list[tuple[Path, str]], dict[str, object], Path | None]:
+    temporary: Path | None = None
+    if kind == "observation":
+        sources, identity = observation_sources(args)
+    elif kind == "diagnostic":
+        sources, identity = diagnostic_sources(args)
+    elif kind == "control":
+        temporary, identity = prepare_control(args)
+        sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
+        sources.extend(immutable_control_sources(args))
+        sources.sort(key=lambda item: item[1].encode("utf-8"))
+    else:
+        temporary, identity = prepare_macro(args)
+        sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
+    return sources, identity, temporary
+
+
+def content_revision(manifest: Mapping[str, object]) -> str:
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError("component manifest lacks files")
+    identity = [
+        {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
+        for item in files
+        if isinstance(item, Mapping)
+    ]
+    if len(identity) != len(files):
+        raise ValueError("component manifest contains an invalid file")
+    return hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+
+
+def component_identities(args: argparse.Namespace, inventory: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {"diagnostics": {}}
+    prior_date = args.date
+    try:
+        for kind in ("control", "macro"):
+            temporary: Path | None = None
+            try:
+                sources, identity, temporary = prepared_sources(args, kind)
+                manifest = manifest_for(sources, identity, args)
+                recheck_entries(sources, manifest["files"])
+                result[kind] = {"content_revision": content_revision(manifest), "source_bytes": manifest["total_bytes"]}
+            finally:
+                if temporary is not None:
+                    shutil.rmtree(temporary)
+        diagnostics = result["diagnostics"]
+        assert isinstance(diagnostics, dict)
+        for item in inventory:
+            if item.get("status") != "diagnostic":
+                continue
+            args.date = str(item["date"])
+            sources, identity, _temporary = prepared_sources(args, "diagnostic")
+            manifest = manifest_for(sources, identity, args)
+            recheck_entries(sources, manifest["files"])
+            diagnostics[args.date] = {"content_revision": content_revision(manifest), "source_bytes": manifest["total_bytes"]}
+        return result
+    finally:
+        args.date = prior_date
+
+
 def emit_stream(args: argparse.Namespace) -> int:
     preflight = production_preflight(args)
     temporary: Path | None = None
     try:
-        if args.kind == "observation":
-            sources, identity = observation_sources(args)
-        elif args.kind == "diagnostic":
-            sources, identity = diagnostic_sources(args)
-        elif args.kind == "control":
-            temporary, identity = prepare_control(args)
-            sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
-            sources.extend(immutable_control_sources(args))
-            sources.sort(key=lambda item: item[1].encode("utf-8"))
-        else:
-            temporary, identity = prepare_macro(args)
-            sources = [(path, path.relative_to(temporary).as_posix()) for path in regular_tree(temporary)]
+        sources, identity, temporary = prepared_sources(args, args.kind)
         manifest = manifest_for(sources, identity, args)
         manifest_bytes = canonical_json_bytes(manifest)
         header = {
@@ -572,7 +623,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         preflight = production_preflight(args)
         if args.command == "list":
             inventory = retained_runs(args)
-            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"], "latest_observation": latest_observation_identity(args, inventory)}, indent=2, sort_keys=True))
+            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"], "latest_observation": latest_observation_identity(args, inventory), "component_identities": component_identities(args, inventory)}, indent=2, sort_keys=True))
             return 0
         if args.kind in {"observation", "diagnostic"} and not args.date:
             raise ValueError("--date is required for run streams")

@@ -12,18 +12,22 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = $PSScriptRoot
 $script = Join-Path $repo 'laptop_backup_scheduled.py'
+$runner = Join-Path $repo 'run_laptop_backup_task.ps1'
 if ((git -C $repo status --porcelain) -or ((git -C $repo rev-parse HEAD).Trim() -ne $CandidateCodeSha)) {
   throw 'Task source must be a clean checkout at the exact candidate SHA.'
 }
 
 $arguments = @(
-  ('"{0}"' -f $script),
-  '--target', ('"{0}"' -f (Resolve-Path -LiteralPath $Target).Path),
-  '--recovery-image', ('"{0}"' -f (Resolve-Path -LiteralPath $RecoveryImage).Path),
-  '--candidate-code-sha', $CandidateCodeSha,
-  '--protected-code-sha', $ProtectedCodeSha,
-  '--plan-git-commit', $PlanGitCommit,
-  '--operator', ('"{0}"' -f $Operator)
+  '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+  '-File', ('"{0}"' -f $runner),
+  '-PythonPath', ('"{0}"' -f $PythonPath),
+  '-ScriptPath', ('"{0}"' -f $script),
+  '-Target', ('"{0}"' -f (Resolve-Path -LiteralPath $Target).Path),
+  '-RecoveryImage', ('"{0}"' -f (Resolve-Path -LiteralPath $RecoveryImage).Path),
+  '-CandidateCodeSha', $CandidateCodeSha,
+  '-ProtectedCodeSha', $ProtectedCodeSha,
+  '-PlanGitCommit', $PlanGitCommit,
+  '-Operator', ('"{0}"' -f $Operator)
 ) -join ' '
 
 & $PythonPath $script --target $Target --recovery-image $RecoveryImage `
@@ -34,9 +38,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Manual backup and restore gate is not current;
 $daily = New-ScheduledTaskTrigger -Daily -At '05:00'
 $startup = New-ScheduledTaskTrigger -AtStartup
 $startup.Delay = 'PT5M'
-$action = New-ScheduledTaskAction -Execute $PythonPath -Argument $arguments -WorkingDirectory $repo
+$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument $arguments -WorkingDirectory $repo
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-  -ExecutionTimeLimit (New-TimeSpan -Hours 6) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+  -ExecutionTimeLimit (New-TimeSpan -Hours 6) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30) `
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
   -LogonType S4U -RunLevel Limited
 $task = New-ScheduledTask -Action $action -Trigger @($daily, $startup) -Settings $settings -Principal $principal `

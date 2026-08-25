@@ -762,3 +762,50 @@ def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) 
         "completion_marker_sha256": receiver.sha256_file(done),
         "pointer_sha256": receiver.sha256_file(pointer),
     }
+
+
+def test_component_revision_is_shared_and_ignores_archive_metadata() -> None:
+    manifest = base_manifest("control", [
+        {"path": "state/a.json", "type": "file", "size": 2, "sha256": "a" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+    ])
+    first = scheduled.content_revision(manifest)
+    assert first == source.content_revision(manifest)
+    manifest["files"][0]["mtime_ns"] = 999
+    manifest["files"][0]["mode"] = "0o644"
+    assert scheduled.content_revision(manifest) == first
+    manifest["files"][0]["sha256"] = "b" * 64
+    assert scheduled.content_revision(manifest) != first
+
+
+def test_inventory_gate_detects_incomplete_historical_backfill(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    report = scheduled.inventory_status(
+        target,
+        [
+            {"date": "2026-05-21", "status": "completed"},
+            {"date": "2026-05-22", "status": "completed"},
+        ],
+        {"diagnostics": {}},
+        protected_sha=PROTECTED,
+        plan_commit="c" * 40,
+    )
+    assert report["status"] == "STALE"
+    assert report["missing_completed_dates"] == ["2026-05-22"]
+
+
+def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    (target / "catalog").mkdir(parents=True)
+    args = Namespace(
+        plan_git_commit="c" * 40,
+        candidate_code_sha=CANDIDATE,
+        protected_code_sha=PROTECTED,
+        operator="pytest",
+    )
+    path = scheduled.record_execution(target, args, "BLOCKED", "PREFLIGHT_FAILED", {"error": "offline"})
+    pointer = json.loads((target / "catalog/latest-scheduled.json").read_text(encoding="utf-8"))
+    assert pointer["record_sha256"] == receiver.sha256_file(path)
+    assert json.loads(path.read_text(encoding="utf-8"))["result"] == "BLOCKED"
+    with pytest.raises(FileExistsError):
+        receiver.atomic_create(path, b"replace")

@@ -123,7 +123,11 @@ bound to a locally verified archive and hash-linked catalog entry:
 ```
 
 The task runs with the laptop operator identity, at 05:00 local time and five
-minutes after startup. It reuses an intact current archive without writing. A
-new Pi completion marker or observation pointer runs `backup-latest`; receiver
+minutes after startup. A no-data-write result requires independently current
+observation, control, macro, diagnostic, and historical-coverage gates from the
+exact scheduled receiver. A missing historical date selects `backfill`; other
+staleness selects `backup-latest`. Every invocation writes an immutable status
+record and updates `catalog/latest-scheduled.json`; failures retry three times
+at 30-minute intervals and send a best-effort Windows operator message. Receiver
 locking, quiet-window, Pi health, restore verification, and the 50 GiB floor
 remain mandatory. `MultipleInstances=IgnoreNew` prevents overlap.
