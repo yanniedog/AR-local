@@ -141,6 +141,50 @@ def test_windows_ssh_post_eof_signature_is_exact() -> None:
     assert not transport.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
 
 
+def test_hung_windows_ssh_is_killed_only_after_proven_post_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signature = bytearray(b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n")
+
+    class Process:
+        killed = False
+        waits = 0
+
+        def wait(self, timeout: float) -> int:
+            self.waits += 1
+            if self.waits == 1:
+                raise subprocess.TimeoutExpired(("ssh",), timeout)
+            return -9
+
+        def kill(self) -> None:
+            self.killed = True
+
+    class Thread:
+        def join(self, timeout: float) -> None:
+            assert timeout in {1, 10}
+
+        def is_alive(self) -> bool:
+            return False
+
+    process = Process()
+    monkeypatch.setattr(transport.os, "name", "nt")
+    assert transport.finish_stream_process(process, Thread(), signature, timeout=0.01) == 0
+    assert process.killed
+
+
+def test_hung_ssh_without_post_eof_proof_fails_closed() -> None:
+    class Process:
+        def wait(self, timeout: float) -> int:
+            raise subprocess.TimeoutExpired(("ssh",), timeout)
+
+    class Thread:
+        def join(self, timeout: float) -> None:
+            pass
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        transport.finish_stream_process(Process(), Thread(), bytearray(), timeout=0.01)
+
+
 def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

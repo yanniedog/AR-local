@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path, PurePosixPath
 
 
@@ -34,6 +35,34 @@ def ssh_result_acceptable(result: subprocess.CompletedProcess[bytes]) -> bool:
         (result.returncode == 0 and not result.stderr)
         or windows_ssh_post_eof_only(result.stderr)
     )
+
+
+def finish_stream_process(
+    process: subprocess.Popen[bytes],
+    stderr_thread: threading.Thread,
+    errors: bytearray,
+    *,
+    timeout: float = 30,
+) -> int:
+    """Finish ssh, accepting only its proven Windows post-EOF hang signature."""
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stderr_thread.join(timeout=1)
+        if not windows_ssh_post_eof_only(bytes(errors)):
+            raise
+        process.kill()
+        process.wait(timeout=30)
+        stderr_thread.join(timeout=10)
+        if stderr_thread.is_alive() or not windows_ssh_post_eof_only(bytes(errors)):
+            raise RuntimeError("Windows SSH post-EOF termination could not be proven")
+        return 0
+    stderr_thread.join(timeout=10)
+    if stderr_thread.is_alive():
+        raise RuntimeError("SSH stderr reader did not terminate")
+    if (code or errors) and not windows_ssh_post_eof_only(bytes(errors)):
+        raise RuntimeError(f"Pi archive stream failed: {bytes(errors).decode('utf-8', 'replace')}")
+    return code
 
 
 def remove_remote_helper(args: object, remote: str) -> None:
