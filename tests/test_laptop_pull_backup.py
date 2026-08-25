@@ -142,15 +142,19 @@ def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
     helper = tmp_path / "helper.py"
     helper.write_text("print('safe')\n", encoding="utf-8")
     digest = receiver.sha256_file(helper)
-    remote = f"/tmp/ar-local-laptop-backup-source-{digest}.py"
+    remote_dir = "/tmp/ar-local-laptop-backup.Ab12Cd34"
+    remote = f"{remote_dir}/source.py"
+    post_eof = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
     results = iter((
+        subprocess.CompletedProcess(("ssh",), 3221226356, f"{remote_dir}\n".encode(), post_eof),
         subprocess.CompletedProcess(("scp",), 1, b"", b""),
         subprocess.CompletedProcess(
             ("ssh",),
             3221226356,
             f"{digest}  {remote}\n".encode(),
-            b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n",
+            post_eof,
         ),
+        subprocess.CompletedProcess(("ssh",), 3221226356, b"700\n", post_eof),
     ))
     monkeypatch.setattr(receiver.subprocess, "run", lambda *_args, **_kwargs: next(results))
     monkeypatch.setattr(receiver, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
