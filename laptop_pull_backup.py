@@ -31,13 +31,18 @@ from ar_local_restore_verification import (
     _completion_marker_valid,
     _pointer_matches_marker,
 )
+from laptop_backup_transport import (
+    install_remote_helper,
+    remove_remote_helper,
+    windows_ssh_post_eof_only,
+)
 
 
 PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
 PLAN_VERSION = "1.3"
 PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
-PLAN_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
+PLAN_NORMALIZED_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -53,10 +58,6 @@ WINDOWS_RESERVED = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
-SSH_POST_EOF_RE = re.compile(
-    rb"close - IO is still pending on closed socket\. read:\d+, write:\d+, io:[0-9A-Fa-f]+\r?\n?"
-)
-REMOTE_HELPER_DIR_RE = re.compile(r"^/tmp/ar-local-laptop-backup\.[A-Za-z0-9]{8}$")
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -161,9 +162,13 @@ def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
     if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.3` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
     normalized_raw = text.encode("utf-8")
-    if hashlib.sha256(normalized_raw).hexdigest() != PLAN_RAW_SHA256:
+    if hashlib.sha256(normalized_raw).hexdigest() != PLAN_NORMALIZED_RAW_SHA256:
         raise ValueError("controlled runbook normalized raw checksum mismatch")
-    return {"plan_sha256": PLAN_SHA256, "plan_raw_sha256": PLAN_RAW_SHA256}
+    return {
+        "plan_sha256": PLAN_SHA256,
+        "plan_raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "plan_normalized_raw_sha256": PLAN_NORMALIZED_RAW_SHA256,
+    }
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -216,22 +221,6 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
     if not image.is_file() or image.stat().st_size != RECOVERY_IMAGE_BYTES:
         raise ValueError("historical recovery image size does not match the classified candidate")
     receipt_path = target / "recovery-base/historical-image-2026-05-21.receipt.json"
-    correction_path = target / "recovery-base/historical-image-2026-05-21.plan-v1.3-correction.json"
-    if correction_path.exists():
-        correction = json.loads(correction_path.read_text(encoding="utf-8"))
-        if (
-            not isinstance(correction, dict)
-            or correction.get("result") != "PASS"
-            or correction.get("plan_raw_sha256") != args.plan_raw_sha256
-            or correction.get("image_sha256") != RECOVERY_IMAGE_SHA256
-            or correction.get("image_bytes") != RECOVERY_IMAGE_BYTES
-            or correction.get("image_path") != str(image)
-            or correction.get("image_mtime_ns") != image.stat().st_mtime_ns
-            or correction.get("superseded_receipt_path") != str(receipt_path)
-            or correction.get("superseded_receipt_sha256") != sha256_file(receipt_path)
-        ):
-            raise ValueError("append-only recovery-base correction no longer matches its evidence")
-        return {"status": "ALREADY_REGISTERED_WITH_PLAN_CORRECTION", "receipt": str(correction_path)}
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         if (
@@ -241,40 +230,17 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
             or receipt.get("image_bytes") != RECOVERY_IMAGE_BYTES
             or receipt.get("image_path") != str(image)
             or receipt.get("image_mtime_ns") != image.stat().st_mtime_ns
-        ):
-            raise ValueError("existing recovery-base receipt no longer matches the historical image")
-        if (
-            receipt.get("plan_document_id") != PLAN_DOCUMENT_ID
+            or receipt.get("plan_document_id") != PLAN_DOCUMENT_ID
             or receipt.get("plan_version") != PLAN_VERSION
             or receipt.get("plan_git_commit") != args.plan_git_commit
             or receipt.get("plan_sha256") != PLAN_SHA256
             or receipt.get("plan_raw_sha256") != args.plan_raw_sha256
+            or receipt.get("classification") != "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
+            or receipt.get("bytes_duplicated") != 0
+            or receipt.get("deviations") != []
+            or receipt.get("deviation_authorization") is not None
         ):
-            correction = {
-                "schema_version": 1,
-                "plan_document_id": PLAN_DOCUMENT_ID,
-                "plan_version": PLAN_VERSION,
-                "plan_git_commit": args.plan_git_commit,
-                "plan_sha256": PLAN_SHA256,
-                "plan_raw_sha256": args.plan_raw_sha256,
-                "candidate_code_sha": args.candidate_code_sha,
-                "operator": args.operator,
-                "created_at": utc_now(),
-                "image_path": str(image),
-                "image_bytes": RECOVERY_IMAGE_BYTES,
-                "image_mtime_ns": image.stat().st_mtime_ns,
-                "image_sha256": RECOVERY_IMAGE_SHA256,
-                "classification": "HISTORICAL_UNPROVEN_BOOT_CANDIDATE",
-                "bytes_duplicated": 0,
-                "superseded_receipt_path": str(receipt_path),
-                "superseded_receipt_sha256": sha256_file(receipt_path),
-                "correction_reason": "normalized immutable Git/LF plan raw digest replaces checkout-specific CRLF digest",
-                "deviations": [],
-                "deviation_authorization": None,
-                "result": "PASS",
-            }
-            atomic_create(correction_path, canonical_json_bytes(correction))
-            return {"status": "REGISTERED_WITH_APPEND_ONLY_PLAN_CORRECTION", "receipt": str(correction_path)}
+            raise ValueError("existing recovery-base receipt no longer matches the historical image")
         return {"status": "ALREADY_REGISTERED", "receipt": str(receipt_path)}
     digest = sha256_file(image)
     if digest != RECOVERY_IMAGE_SHA256:
@@ -379,17 +345,6 @@ def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
         sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])
 
 
-def windows_ssh_post_eof_only(stderr: bytes, *, platform: str | None = None) -> bool:
-    return (platform or os.name) == "nt" and SSH_POST_EOF_RE.fullmatch(stderr) is not None
-
-
-def ssh_result_acceptable(result: subprocess.CompletedProcess[bytes]) -> bool:
-    return (
-        (result.returncode == 0 and not result.stderr)
-        or windows_ssh_post_eof_only(result.stderr)
-    )
-
-
 def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
     return [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host,
@@ -401,48 +356,6 @@ def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
         "--plan-git-commit", args.plan_git_commit,
         "--plan-sha256", PLAN_SHA256,
     ]
-
-
-def install_remote_helper(args: argparse.Namespace) -> tuple[str, str]:
-    source = Path(args.source_helper).resolve(strict=True)
-    helper_sha = sha256_file(source)
-    created = subprocess.run(
-        ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host, "mktemp", "-d", "/tmp/ar-local-laptop-backup.XXXXXXXX"),
-        capture_output=True,
-        timeout=30,
-    )
-    remote_dir = created.stdout.decode("utf-8", "replace").strip()
-    if not ssh_result_acceptable(created) or not REMOTE_HELPER_DIR_RE.fullmatch(remote_dir):
-        raise RuntimeError(f"failed to create private remote helper directory: {created.stderr.decode('utf-8', 'replace')}")
-    remote = f"{remote_dir}/source.py"
-    copied = subprocess.run(("scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", str(source), f"{args.host}:{remote}"), capture_output=True)
-    verified = subprocess.run(
-        ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host, "sha256sum", "--", remote),
-        capture_output=True,
-        timeout=30,
-    )
-    fields = verified.stdout.decode("utf-8", "replace").split()
-    verified_stderr = verified.stderr
-    mode = subprocess.run(
-        ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host, "stat", "-c", "%a", "--", remote_dir),
-        capture_output=True,
-        timeout=30,
-    )
-    if not ssh_result_acceptable(verified) or fields != [helper_sha, remote] or not ssh_result_acceptable(mode) or mode.stdout != b"700\n":
-        copy_error = copied.stderr.decode("utf-8", "replace")
-        verify_error = verified_stderr.decode("utf-8", "replace")
-        remove_remote_helper(args, remote)
-        raise RuntimeError(f"failed to transfer and hash-verify reviewed source helper: scp={copied.returncode} {copy_error}; verify={verified.returncode} {verify_error}")
-    return remote, helper_sha
-
-
-def remove_remote_helper(args: argparse.Namespace, remote: str) -> None:
-    path = PurePosixPath(remote)
-    remote_dir = str(path.parent)
-    if path.name != "source.py" or not REMOTE_HELPER_DIR_RE.fullmatch(remote_dir):
-        raise ValueError("refusing to remove unexpected remote helper path")
-    subprocess.run(("ssh", "-o", "BatchMode=yes", args.host, "rm", "--", remote), capture_output=True, timeout=30, check=False)
-    subprocess.run(("ssh", "-o", "BatchMode=yes", args.host, "rmdir", "--", remote_dir), capture_output=True, timeout=30, check=False)
 
 
 def remote_list(args: argparse.Namespace, remote: str) -> dict[str, object]:

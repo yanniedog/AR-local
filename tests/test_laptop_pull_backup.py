@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 
@@ -111,7 +112,8 @@ def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object
 def test_controlled_runbook_checksum_is_current() -> None:
     result = receiver.verify_plan_document()
     assert result["plan_sha256"] == receiver.PLAN_SHA256
-    assert result["plan_raw_sha256"] == receiver.PLAN_RAW_SHA256
+    assert len(result["plan_raw_sha256"]) == 64
+    assert result["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
 
 
 @pytest.mark.parametrize(
@@ -132,8 +134,8 @@ def test_casefold_collision_fails_closed() -> None:
 
 def test_windows_ssh_post_eof_signature_is_exact() -> None:
     expected = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
-    assert receiver.windows_ssh_post_eof_only(expected, platform="nt")
-    assert not receiver.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
+    assert transport.windows_ssh_post_eof_only(expected, platform="nt")
+    assert not transport.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
 
 
 def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
@@ -156,9 +158,28 @@ def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
         ),
         subprocess.CompletedProcess(("ssh",), 3221226356, b"700\n", post_eof),
     ))
-    monkeypatch.setattr(receiver.subprocess, "run", lambda *_args, **_kwargs: next(results))
-    monkeypatch.setattr(receiver, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
-    assert receiver.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
+    monkeypatch.setattr(transport.subprocess, "run", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(transport, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
+    assert transport.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
+
+
+def test_remote_helper_cleanup_reports_real_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    results = iter((
+        subprocess.CompletedProcess(("ssh",), 1, b"", b"permission denied\n"),
+        subprocess.CompletedProcess(("ssh",), 1, b"", b"directory not empty\n"),
+    ))
+
+    def run(*args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        return next(results)
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        transport.remove_remote_helper(
+            Namespace(host="pi"), "/tmp/ar-local-laptop-backup.Ab12Cd34/source.py"
+        )
+    assert len(calls) == 2
 
 
 def test_manifest_validation_rejects_unsorted_or_wrong_identity(tmp_path: Path) -> None:
@@ -424,44 +445,7 @@ def test_recovery_base_is_registered_without_copying_image(
     assert second["status"] == "ALREADY_REGISTERED"
     assert receipt["bytes_duplicated"] == 0
     assert receipt["classification"] == "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
-
-
-def test_recovery_base_corrects_checkout_raw_digest_append_only(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    image = tmp_path / "historical.img"
-    image.write_bytes(b"")
-    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_BYTES", 0)
-    monkeypatch.setattr(receiver, "RECOVERY_IMAGE_SHA256", hashlib.sha256(b"").hexdigest())
-    target = tmp_path / "target"
-    receipt_path = target / "recovery-base/historical-image-2026-05-21.receipt.json"
-    receipt_path.parent.mkdir(parents=True)
-    legacy = {
-        "result": "PASS",
-        "image_sha256": receiver.RECOVERY_IMAGE_SHA256,
-        "image_bytes": 0,
-        "image_path": str(image.resolve()),
-        "image_mtime_ns": image.stat().st_mtime_ns,
-        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
-        "plan_version": receiver.PLAN_VERSION,
-        "plan_git_commit": "c" * 40,
-        "plan_sha256": receiver.PLAN_SHA256,
-        "plan_raw_sha256": "checkout-crlf-digest",
-    }
-    original = receiver.canonical_json_bytes(legacy)
-    receipt_path.write_bytes(original)
-    args = Namespace(
-        recovery_image=image,
-        plan_git_commit="c" * 40,
-        plan_raw_sha256=receiver.PLAN_RAW_SHA256,
-        candidate_code_sha=CANDIDATE,
-        operator="pytest",
-    )
-    first = receiver.register_recovery_base(args, target)
-    second = receiver.register_recovery_base(args, target)
-    assert first["status"] == "REGISTERED_WITH_APPEND_ONLY_PLAN_CORRECTION"
-    assert second["status"] == "ALREADY_REGISTERED_WITH_PLAN_CORRECTION"
-    assert receipt_path.read_bytes() == original
-    correction = json.loads(Path(str(first["receipt"])).read_text(encoding="utf-8"))
-    assert correction["plan_raw_sha256"] == receiver.PLAN_RAW_SHA256
-    assert correction["superseded_receipt_sha256"] == hashlib.sha256(original).hexdigest()
+    receipt["plan_document_id"] = "tampered"
+    Path(str(first["receipt"])).write_text(json.dumps(receipt), encoding="utf-8")
+    with pytest.raises(ValueError, match="no longer matches"):
+        receiver.register_recovery_base(args, target)
