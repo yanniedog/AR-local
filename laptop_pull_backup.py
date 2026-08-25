@@ -512,16 +512,27 @@ def tar_metadata(archive: Path) -> list[dict[str, object]]:
         stderr=subprocess.PIPE,
     )
     assert process.stdout is not None and process.stderr is not None
+    errors = bytearray()
+    thread = threading.Thread(target=stderr_reader, args=(process.stderr, errors), daemon=True)
+    thread.start()
     try:
         with tarfile.open(fileobj=process.stdout, mode="r|*") as stream:
             entries = read_tar_metadata(stream)
-        error = process.stderr.read().decode("utf-8", "replace")
+        # Streaming tar readers stop at the end marker and can leave archive
+        # padding in the pipe.  Drain it so Windows bsdtar can close stdout and
+        # exit instead of deadlocking while this process waits on stderr.
+        trailing = process.stdout.read()
         code = process.wait(timeout=600)
+        thread.join(timeout=30)
+        error = errors.decode("utf-8", "replace")
         if code:
             raise RuntimeError(f"compressed archive is unreadable: {error}")
+        if trailing.strip(b"\0"):
+            raise RuntimeError("compressed archive contains non-padding data after its end marker")
     except Exception:
         process.kill()
         process.wait(timeout=30)
+        thread.join(timeout=30)
         raise
     return entries
 

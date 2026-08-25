@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sqlite3
 import subprocess
@@ -576,6 +577,69 @@ def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Pat
     receiver.extract_archive(archive, restored)
     with pytest.raises(ValueError, match="metadata"):
         receiver.verify_extracted(restored, manifest, archive)
+
+
+def test_windows_tar_metadata_drains_trailing_padding(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class TrackingBytesIO(io.BytesIO):
+        drained = False
+
+        def read(self, size: int = -1) -> bytes:
+            if size == -1:
+                self.drained = True
+            return super().read(size)
+
+    tar_bytes = io.BytesIO()
+    payload = b"verified"
+    with tarfile.open(fileobj=tar_bytes, mode="w") as stream:
+        member = tarfile.TarInfo("evidence.json")
+        member.size = len(payload)
+        member.mode = 0o640
+        member.mtime = 1_700_000_000
+        member.uid = 1000
+        member.gid = 1000
+        stream.addfile(member, io.BytesIO(payload))
+    stdout = TrackingBytesIO(tar_bytes.getvalue() + (b"\0" * 131_072))
+
+    class Process:
+        stderr = io.BytesIO()
+
+        def __init__(self) -> None:
+            self.stdout = stdout
+
+        def wait(self, timeout: int) -> int:
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("valid trailing padding must not kill tar")
+
+    real_open = receiver.tarfile.open
+    calls = 0
+
+    def open_tar(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise tarfile.ReadError("force Windows zstd fallback")
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(receiver.os, "name", "nt")
+    monkeypatch.setattr(receiver.tarfile, "open", open_tar)
+    monkeypatch.setattr(receiver.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+
+    entries = receiver.tar_metadata(tmp_path / "observation.tar.zst")
+
+    assert stdout.drained is True
+    assert entries == [{
+        "path": "evidence.json",
+        "type": "file",
+        "size": len(payload),
+        "mode": "0o640",
+        "mtime_ns": 1_700_000_000_000_000_000,
+        "uid": 1000,
+        "gid": 1000,
+    }]
 
 
 def test_macro_generation_has_independent_restore_verification(tmp_path: Path) -> None:
