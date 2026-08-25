@@ -107,3 +107,23 @@ their restore evidence pass. The eventual laptop task runs at 05:00
 Australia/Hobart and at startup when stale, never in the quiet window. Laptop
 backup is physically separate but not geographically separate; the A4 boot test
 and later independent-site copy remain mandatory.
+
+After those gates pass, install the task from a durable clean checkout of the
+exact candidate. The installer first performs a read-only freshness check and
+refuses registration unless the Pi's current completion generation is already
+bound to a locally verified archive and hash-linked catalog entry:
+
+```powershell
+.\install_laptop_backup_task.ps1 `
+  -Target C:\code\backups\AR-local-pi5 `
+  -RecoveryImage C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21 `
+  -CandidateCodeSha <candidate-sha> `
+  -ProtectedCodeSha 9302890fcc752cbf90da97d597e972c157d913e3 `
+  -PlanGitCommit 8efefe10890a295ef87f97b46d3cb981193cfddc
+```
+
+The task runs with the laptop operator identity, at 05:00 local time and five
+minutes after startup. It reuses an intact current archive without writing. A
+new Pi completion marker or observation pointer runs `backup-latest`; receiver
+locking, quiet-window, Pi health, restore verification, and the 50 GiB floor
+remain mandatory. `MultipleInstances=IgnoreNew` prevents overlap.

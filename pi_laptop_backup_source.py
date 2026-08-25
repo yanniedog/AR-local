@@ -489,6 +489,26 @@ def retained_runs(args: argparse.Namespace) -> list[dict[str, object]]:
     return values
 
 
+def latest_observation_identity(args: argparse.Namespace, inventory: Sequence[Mapping[str, object]]) -> dict[str, object] | None:
+    completed = [str(item["date"]) for item in inventory if item.get("status") == "completed"]
+    if not completed:
+        return None
+    date = completed[-1]
+    state = Path(args.state_root)
+    done = state / f"{date}.done.json"
+    pointer = state / "observation-pointers-v2/latest-observation.json"
+    result: dict[str, object] = {
+        "observation_date": date,
+        "completion_marker_sha256": sha256_file(done),
+        "pointer_sha256": None,
+    }
+    if pointer.is_file() and not pointer.is_symlink():
+        value = json_object(pointer)
+        if value.get("observation_date") == date:
+            result["pointer_sha256"] = sha256_file(pointer)
+    return result
+
+
 def emit_stream(args: argparse.Namespace) -> int:
     preflight = production_preflight(args)
     temporary: Path | None = None
@@ -552,7 +572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         preflight = production_preflight(args)
         if args.command == "list":
             inventory = retained_runs(args)
-            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"]}, indent=2, sort_keys=True))
+            print(json.dumps({"ok": True, "preflight": preflight, "retained_runs": inventory, "completed_dates": [item["date"] for item in inventory if item["status"] == "completed"], "latest_observation": latest_observation_identity(args, inventory)}, indent=2, sort_keys=True))
             return 0
         if args.kind in {"observation", "diagnostic"} and not args.date:
             raise ValueError("--date is required for run streams")

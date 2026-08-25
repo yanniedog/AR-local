@@ -16,6 +16,7 @@ import zstandard
 
 import cdr_outputs
 import laptop_backup_transport as transport
+import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 
@@ -686,3 +687,71 @@ def test_recovery_base_is_registered_without_copying_image(
     Path(str(first["receipt"])).write_text(json.dumps(receipt), encoding="utf-8")
     with pytest.raises(ValueError, match="no longer matches"):
         receiver.register_recovery_base(args, target)
+
+
+def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    root = target / "observations/2026-08-25/digest"
+    root.mkdir(parents=True)
+    date = "2026-08-25"
+    done_hash = hashlib.sha256(b"done").hexdigest()
+    pointer_hash = hashlib.sha256(b"pointer").hexdigest()
+    manifest = {
+        **base_manifest("observation", [
+            {"path": f"data/state/{date}.done.json", "type": "file", "size": 4, "sha256": done_hash, "mode": "0o644", "mtime_ns": 0, "uid": 0, "gid": 0},
+            {"path": "data/state/observation-pointers-v2/latest-observation.json", "type": "file", "size": 7, "sha256": pointer_hash, "mode": "0o644", "mtime_ns": 0, "uid": 0, "gid": 0},
+        ]),
+        "observation_date": date,
+        "is_latest_observation": True,
+        "latest_pointer": {"observation_date": date},
+    }
+    manifest_path = root / "source-manifest.json"
+    manifest_path.write_bytes(receiver.canonical_json_bytes(manifest))
+    archive = root / "observation.tar.zst"
+    archive.write_bytes(b"archive")
+    receipt = {
+        "result": "PASS", "kind": "observation", "observation_date": date,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID, "plan_version": receiver.PLAN_VERSION,
+        "plan_sha256": receiver.PLAN_SHA256, "plan_git_commit": "c" * 40,
+        "candidate_code_sha": CANDIDATE, "protected_code_sha": PROTECTED,
+        "source_manifest_sha256": receiver.sha256_file(manifest_path),
+        "archive_sha256": receiver.sha256_file(archive), "archive_bytes": archive.stat().st_size,
+        "checks": {"observation": {"reconciliation": {"run_date": date}}}, "deviations": [],
+    }
+    receipt_path = root / "receipt.json"
+    receipt_path.write_bytes(receiver.canonical_json_bytes(receipt))
+    entry = receiver.append_catalog(target, receipt, receipt_path)
+    receiver.advance_latest_pointer(target, "observation", manifest, receipt_path, entry)
+    status = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": pointer_hash,
+    })
+    assert status["status"] == "UP_TO_DATE"
+    assert status["catalog_sequence"] == 1
+    changed = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": "f" * 64,
+    })
+    assert changed["status"] == "STALE"
+    assert "pointer changed" in changed["reason"]
+
+
+def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) -> None:
+    args = source_args(tmp_path)
+    state = Path(args.state_root)
+    state.mkdir(parents=True)
+    done = state / "2026-08-25.done.json"
+    done.write_text("{}", encoding="utf-8")
+    pointer = state / "observation-pointers-v2/latest-observation.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text(json.dumps({"observation_date": "2026-08-25"}), encoding="utf-8")
+    identity = source.latest_observation_identity(
+        args, [{"date": "2026-08-25", "status": "completed"}]
+    )
+    assert identity == {
+        "observation_date": "2026-08-25",
+        "completion_marker_sha256": receiver.sha256_file(done),
+        "pointer_sha256": receiver.sha256_file(pointer),
+    }
