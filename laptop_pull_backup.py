@@ -545,7 +545,10 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
     if len(run) != 1 or run[0][0] != date:
         raise ValueError("daily database run metadata is invalid")
     expected = json.loads(run[0][1])
-    if not isinstance(expected, dict) or actual != expected:
+    if (
+        not isinstance(expected, dict)
+        or any(expected.get(key) != value for key, value in actual.items())
+    ):
         raise ValueError("daily database population counts do not match run metadata")
     dashboard = json.loads((database.parent / "dashboard-cache/latest.json").read_text(encoding="utf-8"))
     if not isinstance(dashboard, dict) or dashboard.get("run_date") != date or dashboard.get("banks_counts") != expected:

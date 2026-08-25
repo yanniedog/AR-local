@@ -83,9 +83,14 @@ def create_daily_exports(root: Path, date: str) -> None:
         "eligibility": [],
         "constraints": [],
     }
+    expected_counts = {
+        **{key: 0 for key in groups},
+        "failures": 3,
+        "holder_attempts": 2,
+    }
     (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
     (exports / "dashboard-cache/latest.json").write_text(
-        json.dumps({"run_date": date, "banks_counts": {key: 0 for key in groups}}),
+        json.dumps({"run_date": date, "banks_counts": expected_counts}),
         encoding="utf-8",
     )
     database = exports / "local-cdr.sqlite"
@@ -100,7 +105,7 @@ def create_daily_exports(root: Path, date: str) -> None:
             CREATE TABLE bank_product_changes(run_date TEXT, event_id TEXT, product_id TEXT, event_type TEXT);
             """
         )
-        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps({key: 0 for key in groups})))
+        connection.execute("INSERT INTO runs VALUES (?, ?)", (date, json.dumps(expected_counts)))
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
