@@ -161,7 +161,7 @@ def test_hung_windows_ssh_is_killed_only_after_proven_post_eof(
 
     class Thread:
         def join(self, timeout: float) -> None:
-            assert timeout in {1, 10}
+            assert timeout <= 10
 
         def is_alive(self) -> bool:
             return False
@@ -182,7 +182,47 @@ def test_hung_ssh_without_post_eof_proof_fails_closed() -> None:
             pass
 
     with pytest.raises(subprocess.TimeoutExpired):
-        transport.finish_stream_process(Process(), Thread(), bytearray(), timeout=0.01)
+        transport.finish_stream_process(
+            Process(), Thread(), bytearray(), timeout=0.01, drain_timeout=0.01
+        )
+
+
+def test_delayed_complete_post_eof_signature_is_bounded_and_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    errors = bytearray(b"close - IO is still pending")
+    complete = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+
+    class Process:
+        killed = False
+        waits = 0
+
+        def wait(self, timeout: float) -> int:
+            self.waits += 1
+            if self.waits == 1:
+                raise subprocess.TimeoutExpired(("ssh",), timeout)
+            return -9
+
+        def kill(self) -> None:
+            self.killed = True
+
+    class Thread:
+        joins = 0
+
+        def join(self, timeout: float) -> None:
+            self.joins += 1
+            if self.joins == 2:
+                errors[:] = complete
+
+        def is_alive(self) -> bool:
+            return False
+
+    process = Process()
+    monkeypatch.setattr(transport.os, "name", "nt")
+    assert transport.finish_stream_process(
+        process, Thread(), errors, timeout=0.01, drain_timeout=1
+    ) == 0
+    assert process.killed
 
 
 def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(

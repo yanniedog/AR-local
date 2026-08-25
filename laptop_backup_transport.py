@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from pathlib import Path, PurePosixPath
 
 
@@ -43,12 +44,15 @@ def finish_stream_process(
     errors: bytearray,
     *,
     timeout: float = 30,
+    drain_timeout: float = 10,
 ) -> int:
     """Finish ssh, accepting only its proven Windows post-EOF hang signature."""
     try:
         code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        stderr_thread.join(timeout=1)
+        deadline = time.monotonic() + drain_timeout
+        while not windows_ssh_post_eof_only(bytes(errors)) and time.monotonic() < deadline:
+            stderr_thread.join(timeout=min(0.1, max(0, deadline - time.monotonic())))
         if not windows_ssh_post_eof_only(bytes(errors)):
             raise
         process.kill()
