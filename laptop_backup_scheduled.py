@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
-import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path, PurePosixPath
 from typing import Mapping, Sequence
 
@@ -39,8 +40,9 @@ def latest_status(
     target: Path,
     remote: Mapping[str, object] | None,
     *,
-    protected_sha: str | None = None,
-    plan_commit: str | None = None,
+    candidate_sha: str,
+    protected_sha: str,
+    plan_commit: str,
 ) -> dict[str, object]:
     if not remote:
         return {"status": "STALE", "reason": "Pi has no completed observation"}
@@ -61,13 +63,12 @@ def latest_status(
             or receipt.get("plan_document_id") != receiver.PLAN_DOCUMENT_ID
             or receipt.get("plan_version") != receiver.PLAN_VERSION
             or receipt.get("plan_sha256") != receiver.PLAN_SHA256
+            or receipt.get("candidate_code_sha") != candidate_sha
+            or receipt.get("protected_code_sha") != protected_sha
+            or receipt.get("plan_git_commit") != plan_commit
             or receipt.get("deviations") != []
         ):
             raise ValueError("latest receipt identity is invalid")
-        if protected_sha is not None and receipt.get("protected_code_sha") != protected_sha:
-            raise ValueError("latest receipt protected SHA is invalid")
-        if plan_commit is not None and receipt.get("plan_git_commit") != plan_commit:
-            raise ValueError("latest receipt plan commit is invalid")
         entries = receiver.catalog_entries(target / "catalog/generations.jsonl")
         matches = [
             item for item in entries
@@ -82,15 +83,12 @@ def latest_status(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if receiver.sha256_file(manifest_path) != receipt.get("source_manifest_sha256"):
             raise ValueError("latest source manifest digest mismatch")
-        receipt_candidate_sha = str(receipt.get("candidate_code_sha") or "")
-        receipt_protected_sha = str(receipt.get("protected_code_sha") or "")
-        receipt_plan_commit = str(receipt.get("plan_git_commit") or "")
         receiver.validate_manifest(
             manifest,
             "observation",
-            receipt_candidate_sha,
-            receipt_protected_sha,
-            receipt_plan_commit,
+            candidate_sha,
+            protected_sha,
+            plan_commit,
         )
         if receiver.sha256_file(archive) != receipt.get("archive_sha256") or archive.stat().st_size != receipt.get("archive_bytes"):
             raise ValueError("latest archive bytes are invalid")
@@ -126,9 +124,9 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
-def receiver_command(args: argparse.Namespace, command: str) -> list[str]:
+def receiver_arguments(args: argparse.Namespace, command: str) -> list[str]:
     values = [
-        sys.executable, str(Path(__file__).resolve().with_name("laptop_pull_backup.py")), command,
+        command,
         "--target", str(args.target), "--host", args.host,
         "--recovery-image", str(args.recovery_image),
         "--candidate-code-sha", args.candidate_code_sha,
@@ -142,17 +140,26 @@ def receiver_command(args: argparse.Namespace, command: str) -> list[str]:
     return values
 
 
+def invoke_receiver(args: argparse.Namespace, command: str) -> tuple[int, str, str]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        code = receiver.main(receiver_arguments(args, command))
+    return code, stdout.getvalue(), stderr.getvalue()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    preflight = subprocess.run(receiver_command(args, "preflight"), text=True, capture_output=True)
-    if preflight.returncode:
-        sys.stderr.write(preflight.stderr or preflight.stdout)
-        return preflight.returncode
-    listing = json.loads(preflight.stdout)
+    preflight_code, preflight_stdout, preflight_stderr = invoke_receiver(args, "preflight")
+    if preflight_code:
+        sys.stderr.write(preflight_stderr or preflight_stdout)
+        return preflight_code
+    listing = json.loads(preflight_stdout)
     target = Path(str(listing["target"])).resolve(strict=True)
     status = latest_status(
         target,
         listing.get("latest_observation"),
+        candidate_sha=args.candidate_code_sha,
         protected_sha=args.protected_code_sha,
         plan_commit=args.plan_git_commit,
     )
@@ -162,7 +169,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.check_only:
         print(json.dumps({"ok": False, "result": "BLOCKED", "action": "BACKUP_REQUIRED", **status}, indent=2, sort_keys=True))
         return 1
-    return subprocess.run(receiver_command(args, "backup-latest")).returncode
+    backup_code, backup_stdout, backup_stderr = invoke_receiver(args, "backup-latest")
+    sys.stdout.write(backup_stdout)
+    sys.stderr.write(backup_stderr)
+    return backup_code
 
 
 if __name__ == "__main__":

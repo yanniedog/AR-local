@@ -726,16 +726,23 @@ def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> 
         "observation_date": date,
         "completion_marker_sha256": done_hash,
         "pointer_sha256": pointer_hash,
-    })
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
     assert status["status"] == "UP_TO_DATE"
     assert status["catalog_sequence"] == 1
     changed = scheduled.latest_status(target, {
         "observation_date": date,
         "completion_marker_sha256": done_hash,
         "pointer_sha256": "f" * 64,
-    })
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
     assert changed["status"] == "STALE"
     assert "pointer changed" in changed["reason"]
+    wrong_candidate = scheduled.latest_status(target, {
+        "observation_date": date,
+        "completion_marker_sha256": done_hash,
+        "pointer_sha256": pointer_hash,
+    }, candidate_sha="d" * 40, protected_sha=PROTECTED, plan_commit="c" * 40)
+    assert wrong_candidate["status"] == "STALE"
+    assert "receipt identity" in wrong_candidate["reason"]
 
 
 def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) -> None:
