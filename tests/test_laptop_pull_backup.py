@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import subprocess
 import tarfile
 from argparse import Namespace
 from pathlib import Path
@@ -127,6 +128,33 @@ def test_casefold_collision_fails_closed() -> None:
     receiver.validate_relative_path("data/Bank.json", seen)
     with pytest.raises(ValueError, match="collision"):
         receiver.validate_relative_path("data/bank.json", seen)
+
+
+def test_windows_ssh_post_eof_signature_is_exact() -> None:
+    expected = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
+    assert receiver.windows_ssh_post_eof_only(expected, platform="nt")
+    assert not receiver.windows_ssh_post_eof_only(expected + b"remote failure\n", platform="nt")
+
+
+def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text("print('safe')\n", encoding="utf-8")
+    digest = receiver.sha256_file(helper)
+    remote = f"/tmp/ar-local-laptop-backup-source-{digest}.py"
+    results = iter((
+        subprocess.CompletedProcess(("scp",), 1, b"", b""),
+        subprocess.CompletedProcess(
+            ("ssh",),
+            3221226356,
+            f"{digest}  {remote}\n".encode(),
+            b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n",
+        ),
+    ))
+    monkeypatch.setattr(receiver.subprocess, "run", lambda *_args, **_kwargs: next(results))
+    monkeypatch.setattr(receiver, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
+    assert receiver.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
 
 
 def test_manifest_validation_rejects_unsorted_or_wrong_identity(tmp_path: Path) -> None:

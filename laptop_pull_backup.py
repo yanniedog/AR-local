@@ -52,6 +52,9 @@ WINDOWS_RESERVED = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
+SSH_POST_EOF_RE = re.compile(
+    rb"close - IO is still pending on closed socket\. read:\d+, write:\d+, io:[0-9A-Fa-f]+\r?\n?"
+)
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -323,6 +326,10 @@ def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
         sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])
 
 
+def windows_ssh_post_eof_only(stderr: bytes, *, platform: str | None = None) -> bool:
+    return (platform or os.name) == "nt" and SSH_POST_EOF_RE.fullmatch(stderr) is not None
+
+
 def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
     return [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host,
@@ -341,8 +348,21 @@ def install_remote_helper(args: argparse.Namespace) -> tuple[str, str]:
     helper_sha = sha256_file(source)
     remote = f"/tmp/ar-local-laptop-backup-source-{helper_sha}.py"
     copied = subprocess.run(("scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", str(source), f"{args.host}:{remote}"), capture_output=True)
-    if copied.returncode:
-        raise RuntimeError(f"failed to transfer reviewed source helper: {copied.stderr.decode('utf-8', 'replace')}")
+    verified = subprocess.run(
+        ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host, "sha256sum", "--", remote),
+        capture_output=True,
+        timeout=30,
+    )
+    fields = verified.stdout.decode("utf-8", "replace").split()
+    verified_stderr = verified.stderr
+    verified_status_ok = (
+        (verified.returncode == 0 and not verified_stderr)
+        or windows_ssh_post_eof_only(verified_stderr)
+    )
+    if not verified_status_ok or fields != [helper_sha, remote]:
+        copy_error = copied.stderr.decode("utf-8", "replace")
+        verify_error = verified_stderr.decode("utf-8", "replace")
+        raise RuntimeError(f"failed to transfer and hash-verify reviewed source helper: scp={copied.returncode} {copy_error}; verify={verified.returncode} {verify_error}")
     return remote, helper_sha
 
 
@@ -355,7 +375,7 @@ def remove_remote_helper(args: argparse.Namespace, remote: str) -> None:
 def remote_list(args: argparse.Namespace, remote: str) -> dict[str, object]:
     command = [*remote_common(args, remote), "list"]
     result = subprocess.run(command, capture_output=True, timeout=180)
-    if result.returncode:
+    if (result.returncode or result.stderr) and not windows_ssh_post_eof_only(result.stderr):
         raise RuntimeError(f"Pi backup preflight failed: {result.stderr.decode('utf-8', 'replace')}")
     value = json.loads(result.stdout)
     if not isinstance(value, dict) or not value.get("ok") or not isinstance(value.get("retained_runs"), list):
@@ -773,7 +793,7 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         archive_sha, archive_bytes = stream_partial(process, process.stdout, partial, target)
         code = process.wait(timeout=300)
         thread.join(timeout=10)
-        if code:
+        if (code or errors) and not windows_ssh_post_eof_only(bytes(errors)):
             raise RuntimeError(f"Pi archive stream failed: {bytes(errors).decode('utf-8', 'replace')}")
         checks = restore_verify_archive(target, partial, manifest, kind)
         if capacity(target)["free"] < FREE_FLOOR_BYTES:
