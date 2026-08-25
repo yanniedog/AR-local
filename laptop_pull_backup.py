@@ -537,6 +537,25 @@ def tar_metadata(archive: Path) -> list[dict[str, object]]:
     return entries
 
 
+def verify_tar_metadata(manifest: Mapping[str, object], archive: Path) -> None:
+    expected = [
+        {key: item[key] for key in ("path", "type", "size", "mode", "mtime_ns", "uid", "gid")}
+        for item in manifest["files"]
+    ]
+    actual = tar_metadata(archive)
+    if actual == expected:
+        return
+    for index in range(max(len(expected), len(actual))):
+        wanted = expected[index] if index < len(expected) else None
+        found = actual[index] if index < len(actual) else None
+        if wanted != found:
+            raise ValueError(
+                "tar member metadata mismatch "
+                f"at index {index}: expected={wanted!r}; actual={found!r}"
+            )
+    raise ValueError("tar member metadata mismatch without a differentiating entry")
+
+
 def extract_archive(archive: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
     result = subprocess.run(("tar", "-xf", str(archive), "-C", str(destination)), text=True, capture_output=True, timeout=1800)
@@ -704,14 +723,16 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
     return {"reconciliation": reconciliation, "completion_markers": marker_results, "latest_pointer": pointer_result}
 
 
-def verify_extracted(root: Path, manifest: Mapping[str, object], archive: Path) -> dict[str, object]:
+def verify_extracted(
+    root: Path,
+    manifest: Mapping[str, object],
+    archive: Path,
+    *,
+    metadata_verified: bool = False,
+) -> dict[str, object]:
     expected = [{"path": item["path"], "size": item["size"], "sha256": item["sha256"]} for item in manifest["files"]]
-    expected_metadata = [
-        {key: item[key] for key in ("path", "type", "size", "mode", "mtime_ns", "uid", "gid")}
-        for item in manifest["files"]
-    ]
-    if tar_metadata(archive) != expected_metadata:
-        raise ValueError("tar member metadata does not exactly match source manifest")
+    if not metadata_verified:
+        verify_tar_metadata(manifest, archive)
     actual = extracted_entries(root)
     if actual != expected:
         raise ValueError("extracted bytes do not exactly match source manifest")
@@ -755,8 +776,9 @@ def restore_verify_archive(
     if not is_within(scratch, target) or scratch.exists():
         raise ValueError("unsafe or existing restore scratch path")
     try:
+        verify_tar_metadata(manifest, archive)
         extract_archive(archive, scratch)
-        return verify_extracted(scratch, manifest, archive)
+        return verify_extracted(scratch, manifest, archive, metadata_verified=True)
     finally:
         if scratch.exists():
             resolved = scratch.resolve()

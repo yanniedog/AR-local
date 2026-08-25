@@ -575,7 +575,7 @@ def test_tar_header_metadata_mismatch_fails_before_byte_acceptance(tmp_path: Pat
     make_file_only_tar(source_root, archive, entries)
     restored = tmp_path / "restored"
     receiver.extract_archive(archive, restored)
-    with pytest.raises(ValueError, match="metadata"):
+    with pytest.raises(ValueError, match=r"metadata mismatch at index 0.*mode"):
         receiver.verify_extracted(restored, manifest, archive)
 
 
