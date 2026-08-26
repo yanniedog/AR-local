@@ -935,11 +935,12 @@ def backup_jobs(
         jobs.append(("observation", latest))
     jobs.extend(("diagnostic", date) for date in diagnostic)
     jobs.extend((("control", None), ("macro", None)))
-    if command == "backfill" and latest is not None:
-        selected = set(include_dates)
+    selected = set(include_dates)
+    if command == "backfill":
         unknown = selected - set(completed)
         if unknown:
             raise ValueError(f"requested backfill dates are not completed: {sorted(unknown)}")
+    if command == "backfill" and latest is not None:
         jobs.extend(
             ("observation", date)
             for date in completed

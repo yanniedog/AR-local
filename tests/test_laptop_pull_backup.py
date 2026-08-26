@@ -782,6 +782,16 @@ def test_scheduled_backfill_selects_only_missing_historical_dates() -> None:
     ]
 
 
+def test_selective_backfill_rejects_requested_date_without_completed_runs() -> None:
+    with pytest.raises(ValueError, match="not completed"):
+        receiver.backup_jobs(
+            [{"date": "2026-08-25", "status": "diagnostic"}],
+            "backfill",
+            "2026-05-21",
+            ["2026-08-25"],
+        )
+
+
 def test_scheduled_receiver_arguments_forward_missing_dates(tmp_path: Path) -> None:
     args = Namespace(
         target=tmp_path,
