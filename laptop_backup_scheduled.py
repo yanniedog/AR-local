@@ -51,6 +51,11 @@ def content_revision(manifest: Mapping[str, object]) -> str:
             "ar-local-dashboard.service",
         )
     }
+    volatile_control_paths.update({
+        "git/AR-local.bundle",
+        "git/australianrates.bundle",
+        "system/control-metadata.json",
+    })
     identity = [
         {"path": item["path"], "size": item["size"], "sha256": item["sha256"]}
         for item in files
@@ -60,7 +65,20 @@ def content_revision(manifest: Mapping[str, object]) -> str:
     valid_files = [item for item in files if isinstance(item, Mapping)]
     if len(valid_files) != len(files):
         raise ValueError("component manifest contains an invalid file")
-    return hashlib.sha256(receiver.canonical_json_bytes(identity)).hexdigest()
+    material: object = identity
+    if manifest.get("kind") == "control":
+        control = manifest.get("control")
+        if not isinstance(control, Mapping) or not isinstance(control.get("repositories"), list):
+            raise ValueError("control manifest lacks semantic metadata")
+        repositories = []
+        for repository in control["repositories"]:
+            if not isinstance(repository, Mapping):
+                raise ValueError("control repository metadata is invalid")
+            repositories.append({key: value for key, value in repository.items() if key != "bundle_sha256"})
+        normalized_control = dict(control)
+        normalized_control["repositories"] = repositories
+        material = {"files": identity, "control": normalized_control}
+    return hashlib.sha256(receiver.canonical_json_bytes(material)).hexdigest()
 
 
 def verified_receipt(
