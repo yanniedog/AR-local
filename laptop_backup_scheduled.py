@@ -81,6 +81,21 @@ def content_revision(manifest: Mapping[str, object]) -> str:
     return hashlib.sha256(receiver.canonical_json_bytes(material)).hexdigest()
 
 
+def has_component_restore_evidence(checks: object, kind: str) -> bool:
+    if not isinstance(checks, Mapping):
+        return False
+    if kind == "control":
+        bundles = checks.get("git_bundles")
+        return (
+            isinstance(bundles, list)
+            and all(isinstance(bundle, str) for bundle in bundles)
+            and sorted(bundles) == ["AR-local.bundle", "australianrates.bundle"]
+            and type(checks.get("secret_locations")) is int
+            and checks["secret_locations"] >= 0
+        )
+    return isinstance(checks.get(kind), Mapping)
+
+
 def verified_receipt(
     target: Path,
     receipt_relative: str,
@@ -231,8 +246,7 @@ def component_status(
         )
         if content_revision(manifest) != remote.get("content_revision"):
             raise ValueError(f"Pi {kind} content changed")
-        checks = receipt.get("checks")
-        if not isinstance(checks, Mapping) or kind not in checks:
+        if not has_component_restore_evidence(receipt.get("checks"), kind):
             raise ValueError(f"{kind} receipt lacks component restore evidence")
         return {"status": "UP_TO_DATE", "receipt_path": str(path), "catalog_sequence": entry["sequence"]}
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
