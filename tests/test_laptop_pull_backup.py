@@ -981,6 +981,18 @@ def test_inventory_gate_detects_incomplete_historical_backfill(tmp_path: Path) -
     assert report["missing_completed_dates"] == ["2026-05-22"]
 
 
+def test_control_restore_evidence_uses_verified_bundle_and_secret_checks() -> None:
+    valid = {
+        "git_bundles": ["AR-local.bundle", "australianrates.bundle"],
+        "secret_locations": 4,
+    }
+    assert scheduled.has_component_restore_evidence(valid, "control")
+    assert not scheduled.has_component_restore_evidence(
+        {"git_bundles": valid["git_bundles"]}, "control"
+    )
+    assert scheduled.has_component_restore_evidence({"macro": {}}, "macro")
+
+
 def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path: Path) -> None:
     target = tmp_path / "backup"
     (target / "catalog").mkdir(parents=True)
