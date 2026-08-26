@@ -928,6 +928,7 @@ def test_component_revision_is_shared_and_ignores_only_archive_and_runtime_metad
         {"path": "system/systemd/ar-local-dashboard.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "git/AR-local.bundle", "type": "file", "size": 5, "sha256": "e" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "system/control-metadata.json", "type": "file", "size": 6, "sha256": "f" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "data/state/runtime_health.json", "type": "file", "size": 7, "sha256": "9" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
     ])
     manifest["control"] = {
         "hostname": "pi",
@@ -957,6 +958,7 @@ def test_component_revision_is_shared_and_ignores_only_archive_and_runtime_metad
     manifest["files"][2]["sha256"] = "d" * 64
     manifest["files"][3]["sha256"] = "1" * 64
     manifest["files"][4]["sha256"] = "2" * 64
+    manifest["files"][5]["sha256"] = "8" * 64
     manifest["control"]["repositories"][0]["bundle_sha256"] = "1" * 64
     assert scheduled.content_revision(manifest) == first
     assert source.content_revision(manifest) == first
