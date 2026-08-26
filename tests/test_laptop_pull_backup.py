@@ -764,6 +764,53 @@ def test_diagnostics_and_recovery_state_are_backed_up_without_completed_observat
     assert jobs == [("diagnostic", "2026-08-25"), ("control", None), ("macro", None)]
 
 
+def test_scheduled_backfill_selects_only_missing_historical_dates() -> None:
+    retained = [
+        {"date": "2026-08-23", "status": "completed"},
+        {"date": "2026-08-24", "status": "completed"},
+        {"date": "2026-08-25", "status": "completed"},
+    ]
+    latest, jobs = receiver.backup_jobs(
+        retained, "backfill", "2026-05-21", ["2026-08-24", "2026-08-25"]
+    )
+    assert latest == "2026-08-25"
+    assert jobs == [
+        ("observation", "2026-08-25"),
+        ("control", None),
+        ("macro", None),
+        ("observation", "2026-08-24"),
+    ]
+
+
+def test_selective_backfill_rejects_requested_date_without_completed_runs() -> None:
+    with pytest.raises(ValueError, match="not completed"):
+        receiver.backup_jobs(
+            [{"date": "2026-08-25", "status": "diagnostic"}],
+            "backfill",
+            "2026-05-21",
+            ["2026-08-25"],
+        )
+
+
+def test_scheduled_receiver_arguments_forward_missing_dates(tmp_path: Path) -> None:
+    args = Namespace(
+        target=tmp_path,
+        host="pi",
+        recovery_image=tmp_path / "image",
+        candidate_code_sha=CANDIDATE,
+        protected_code_sha=PROTECTED,
+        plan_git_commit="c" * 40,
+        source_helper=None,
+        operator="pytest",
+    )
+    values = scheduled.receiver_arguments(
+        args, "backfill", ["2026-08-24", "2026-08-25"]
+    )
+    assert values[-4:] == [
+        "--include-date", "2026-08-24", "--include-date", "2026-08-25"
+    ]
+
+
 def test_capacity_enforces_strict_fifty_gib_floor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(receiver, "capacity", lambda _target: {"total": 100, "used": 1, "free": receiver.FREE_FLOOR_BYTES + 9, "floor": receiver.FREE_FLOOR_BYTES})
     with pytest.raises(ValueError, match="insufficient"):

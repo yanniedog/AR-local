@@ -358,7 +358,9 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
-def receiver_arguments(args: argparse.Namespace, command: str) -> list[str]:
+def receiver_arguments(
+    args: argparse.Namespace, command: str, include_dates: Sequence[str] = ()
+) -> list[str]:
     values = [
         command,
         "--target", str(args.target),
@@ -372,14 +374,18 @@ def receiver_arguments(args: argparse.Namespace, command: str) -> list[str]:
         values.extend(("--source-helper", str(args.source_helper)))
     if args.operator:
         values.extend(("--operator", args.operator))
+    for date in include_dates:
+        values.extend(("--include-date", date))
     return values
 
 
-def invoke_receiver(args: argparse.Namespace, command: str) -> tuple[int, str, str]:
+def invoke_receiver(
+    args: argparse.Namespace, command: str, include_dates: Sequence[str] = ()
+) -> tuple[int, str, str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
-        code = receiver.main(receiver_arguments(args, command))
+        code = receiver.main(receiver_arguments(args, command, include_dates))
     return code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -465,7 +471,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         }, indent=2, sort_keys=True))
         return 1
     command = "backfill" if status.get("backfill_required") else "backup-latest"
-    backup_code, backup_stdout, backup_stderr = invoke_receiver(args, command)
+    missing_dates = status.get("inventory", {}).get("missing_completed_dates", [])
+    backup_code, backup_stdout, backup_stderr = invoke_receiver(
+        args, command, missing_dates if command == "backfill" else ()
+    )
     if backup_code:
         error = backup_stderr or backup_stdout
         record_execution(target, args, "FAIL", command.upper(), {"before": status, "error": error})
