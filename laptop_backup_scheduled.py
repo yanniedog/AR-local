@@ -88,8 +88,10 @@ def has_component_restore_evidence(checks: object, kind: str) -> bool:
         bundles = checks.get("git_bundles")
         return (
             isinstance(bundles, list)
+            and all(isinstance(bundle, str) for bundle in bundles)
             and sorted(bundles) == ["AR-local.bundle", "australianrates.bundle"]
-            and isinstance(checks.get("secret_locations"), int)
+            and type(checks.get("secret_locations")) is int
+            and checks["secret_locations"] >= 0
         )
     return isinstance(checks.get(kind), Mapping)
 

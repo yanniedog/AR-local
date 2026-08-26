@@ -990,6 +990,15 @@ def test_control_restore_evidence_uses_verified_bundle_and_secret_checks() -> No
     assert not scheduled.has_component_restore_evidence(
         {"git_bundles": valid["git_bundles"]}, "control"
     )
+    assert not scheduled.has_component_restore_evidence(
+        {"git_bundles": ["AR-local.bundle", 1], "secret_locations": 4}, "control"
+    )
+    assert not scheduled.has_component_restore_evidence(
+        {"git_bundles": valid["git_bundles"], "secret_locations": True}, "control"
+    )
+    assert not scheduled.has_component_restore_evidence(
+        {"git_bundles": valid["git_bundles"], "secret_locations": -1}, "control"
+    )
     assert scheduled.has_component_restore_evidence({"macro": {}}, "macro")
 
 
