@@ -541,6 +541,7 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         )
     }
     volatile_control_paths.update({
+        "data/state/runtime_health.json",
         "git/AR-local.bundle",
         "git/australianrates.bundle",
         "system/control-metadata.json",
