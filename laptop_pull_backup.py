@@ -922,7 +922,10 @@ class ReceiverLock:
 
 
 def backup_jobs(
-    retained: Sequence[Mapping[str, object]], command: str, after_date: str
+    retained: Sequence[Mapping[str, object]],
+    command: str,
+    after_date: str,
+    include_dates: Sequence[str] = (),
 ) -> tuple[str | None, list[tuple[str, str | None]]]:
     completed = [str(item["date"]) for item in retained if item["status"] == "completed"]
     diagnostic = [str(item["date"]) for item in retained if item["status"] == "diagnostic"]
@@ -933,7 +936,15 @@ def backup_jobs(
     jobs.extend(("diagnostic", date) for date in diagnostic)
     jobs.extend((("control", None), ("macro", None)))
     if command == "backfill" and latest is not None:
-        jobs.extend(("observation", date) for date in completed if after_date < date < latest)
+        selected = set(include_dates)
+        unknown = selected - set(completed)
+        if unknown:
+            raise ValueError(f"requested backfill dates are not completed: {sorted(unknown)}")
+        jobs.extend(
+            ("observation", date)
+            for date in completed
+            if after_date < date < latest and (not selected or date in selected)
+        )
     return latest, jobs
 
 
@@ -948,6 +959,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--protected-code-sha", required=True)
     value.add_argument("--plan-git-commit", required=True)
     value.add_argument("--after-date", default="2026-05-21")
+    value.add_argument("--include-date", action="append", default=[])
     value.add_argument("--operator", default=getpass.getuser())
     return value
 
@@ -960,6 +972,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("candidate, protected, and plan commits must be full lowercase Git SHAs")
         if not DATE_RE.fullmatch(args.after_date):
             raise ValueError("--after-date must be YYYY-MM-DD")
+        if any(not DATE_RE.fullmatch(date) for date in args.include_date):
+            raise ValueError("--include-date must be YYYY-MM-DD")
         target = canonical_target(args.target)
         args.target = target
         plan = verify_plan_document()
@@ -976,7 +990,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps({"ok": True, "result": "PASS", "target": str(target), "capacity": capacity(target), "plan": plan, "recovery_base": recovery_base, "source_helper_sha256": helper_sha, **listing}, indent=2, sort_keys=True))
             return 0
         retained = [dict(item) for item in listing["retained_runs"]]
-        latest, jobs = backup_jobs(retained, args.command, args.after_date)
+        latest, jobs = backup_jobs(retained, args.command, args.after_date, args.include_date)
         results = []
         with ReceiverLock(target):
             for kind, date in jobs:
