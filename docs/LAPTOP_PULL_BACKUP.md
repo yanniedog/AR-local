@@ -108,10 +108,12 @@ Australia/Hobart and at startup when stale, never in the quiet window. Laptop
 backup is physically separate but not geographically separate; the A4 boot test
 and later independent-site copy remain mandatory.
 
-After those gates pass, install the task from a durable clean checkout of the
-exact candidate. The installer first performs a read-only freshness check and
-refuses registration unless the Pi's current completion generation is already
-bound to a locally verified archive and hash-linked catalog entry:
+After those gates pass, use an Administrator PowerShell owned by the laptop
+operator to install the task from a durable clean checkout of the exact
+candidate. The installer first performs a read-only freshness check and refuses
+registration unless the Pi's current completion generation is already bound to
+a locally verified archive and hash-linked catalog entry. Registration or
+read-back failure is terminal and must never be accepted from a printed summary:
 
 ```powershell
 .\install_laptop_backup_task.ps1 `
