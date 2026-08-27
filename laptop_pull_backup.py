@@ -46,9 +46,25 @@ from laptop_backup_transport import (
 
 PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
-PLAN_VERSION = "1.3"
-PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
-PLAN_NORMALIZED_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
+PLAN_VERSION = "1.4"
+PLAN_GIT_COMMIT = "14dd066099bba393cccf61a280243e43162eedc9"
+PLAN_SHA256 = "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713"
+PLAN_NORMALIZED_RAW_SHA256 = "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4"
+PLAN_VALID_RAW_SHA256S = frozenset({
+    PLAN_NORMALIZED_RAW_SHA256,
+    "a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d",
+})
+LEGACY_PLAN_IDENTITIES = {
+    (
+        PLAN_DOCUMENT_ID,
+        "1.3",
+        "8efefe10890a295ef87f97b46d3cb981193cfddc",
+        "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d",
+    ): frozenset({
+        "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c",
+        "6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444",
+    }),
+}
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -192,22 +208,48 @@ def atomic_replace(path: Path, payload: bytes) -> None:
 
 def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
     raw = path.read_bytes()
+    raw_sha256 = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     if text.count(PLAN_SHA256) != 2:
         raise ValueError("controlled runbook must contain its published digest exactly twice")
     canonical = text.replace(PLAN_SHA256, "PLAN_SHA256_PENDING").encode("utf-8")
     if hashlib.sha256(canonical).hexdigest() != PLAN_SHA256:
         raise ValueError("controlled runbook checksum mismatch")
-    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.3` |" not in text:
+    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.4` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
     normalized_raw = text.encode("utf-8")
     if hashlib.sha256(normalized_raw).hexdigest() != PLAN_NORMALIZED_RAW_SHA256:
         raise ValueError("controlled runbook normalized raw checksum mismatch")
+    if raw_sha256 not in PLAN_VALID_RAW_SHA256S:
+        raise ValueError("controlled runbook raw checksum mismatch")
     return {
+        "plan_document_id": PLAN_DOCUMENT_ID,
+        "plan_version": PLAN_VERSION,
+        "plan_git_commit": PLAN_GIT_COMMIT,
         "plan_sha256": PLAN_SHA256,
-        "plan_raw_sha256": hashlib.sha256(raw).hexdigest(),
+        "plan_raw_sha256": raw_sha256,
         "plan_normalized_raw_sha256": PLAN_NORMALIZED_RAW_SHA256,
     }
+
+
+def supported_receipt_plan_identity(
+    value: object, *, allow_legacy: bool = False
+) -> tuple[str, str, str, str] | None:
+    if not isinstance(value, Mapping):
+        return None
+    identity = (
+        str(value.get("plan_document_id") or ""),
+        str(value.get("plan_version") or ""),
+        str(value.get("plan_git_commit") or ""),
+        str(value.get("plan_sha256") or ""),
+    )
+    raw_sha256 = str(value.get("plan_raw_sha256") or "")
+    current = (PLAN_DOCUMENT_ID, PLAN_VERSION, PLAN_GIT_COMMIT, PLAN_SHA256)
+    if identity == current and raw_sha256 in PLAN_VALID_RAW_SHA256S:
+        return identity
+    if allow_legacy and raw_sha256 in LEGACY_PLAN_IDENTITIES.get(identity, frozenset()):
+        return identity
+    return None
 
 
 def git_state(repo: Path) -> dict[str, object]:
@@ -269,11 +311,7 @@ def register_recovery_base(args: argparse.Namespace, target: Path) -> dict[str, 
             or receipt.get("image_bytes") != RECOVERY_IMAGE_BYTES
             or receipt.get("image_path") != str(image)
             or receipt.get("image_mtime_ns") != image.stat().st_mtime_ns
-            or receipt.get("plan_document_id") != PLAN_DOCUMENT_ID
-            or receipt.get("plan_version") != PLAN_VERSION
-            or receipt.get("plan_git_commit") != args.plan_git_commit
-            or receipt.get("plan_sha256") != PLAN_SHA256
-            or receipt.get("plan_raw_sha256") != args.plan_raw_sha256
+            or supported_receipt_plan_identity(receipt, allow_legacy=True) is None
             or receipt.get("classification") != "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
             or receipt.get("bytes_duplicated") != 0
             or receipt.get("deviations") != []
@@ -329,13 +367,16 @@ def validate_manifest(
     candidate_sha: str,
     protected_sha: str,
     plan_git_commit: str,
+    *,
+    plan_version: str = PLAN_VERSION,
+    plan_sha256: str = PLAN_SHA256,
 ) -> dict[str, object]:
     if not isinstance(value, dict) or value.get("schema_version") != 1 or value.get("protocol") != PROTOCOL:
         raise ValueError("invalid source manifest protocol")
     expected = {
         "plan_document_id": PLAN_DOCUMENT_ID,
-        "plan_version": PLAN_VERSION,
-        "plan_sha256": PLAN_SHA256,
+        "plan_version": plan_version,
+        "plan_sha256": plan_sha256,
         "plan_git_commit": plan_git_commit,
         "candidate_code_sha": candidate_sha,
         "protected_code_sha": protected_sha,
@@ -976,6 +1017,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if not COMMIT_RE.fullmatch(args.candidate_code_sha) or not COMMIT_RE.fullmatch(args.protected_code_sha) or not COMMIT_RE.fullmatch(args.plan_git_commit):
             raise ValueError("candidate, protected, and plan commits must be full lowercase Git SHAs")
+        if args.plan_git_commit != PLAN_GIT_COMMIT:
+            raise ValueError("plan commit does not match the controlled runbook")
         if not DATE_RE.fullmatch(args.after_date):
             raise ValueError("--after-date must be YYYY-MM-DD")
         if any(not DATE_RE.fullmatch(date) for date in args.include_date):

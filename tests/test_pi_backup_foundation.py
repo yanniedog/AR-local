@@ -1572,7 +1572,7 @@ def test_checked_in_runbook_matches_its_controlled_identity(tmp_path: Path) -> N
     policy = replace(
         make_policy(tmp_path),
         plan_git_commit=commit,
-        plan_sha256="8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d",
+        plan_sha256="78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713",
         plan_raw_sha256=policy_module.sha256_file(document),
     )
     report = backup.verify_plan_document(policy, repo)

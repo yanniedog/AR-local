@@ -25,6 +25,10 @@ import pi_laptop_backup_source as source
 
 CANDIDATE = "a" * 40
 PROTECTED = "b" * 40
+LEGACY_PLAN_VERSION = "1.3"
+LEGACY_PLAN_COMMIT = "8efefe10890a295ef87f97b46d3cb981193cfddc"
+LEGACY_PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
+LEGACY_PLAN_RAW_SHA256 = "6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444"
 
 
 def source_args(tmp_path: Path, date: str = "2026-08-25") -> Namespace:
@@ -38,7 +42,7 @@ def source_args(tmp_path: Path, date: str = "2026-08-25") -> Namespace:
         candidate_code_sha=CANDIDATE,
         plan_document_id=receiver.PLAN_DOCUMENT_ID,
         plan_version=receiver.PLAN_VERSION,
-        plan_git_commit="c" * 40,
+        plan_git_commit=receiver.PLAN_GIT_COMMIT,
         plan_sha256=receiver.PLAN_SHA256,
         date=date,
     )
@@ -65,7 +69,7 @@ def base_manifest(kind: str, entries: list[dict[str, object]]) -> dict[str, obje
         "protocol": receiver.PROTOCOL,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
         "plan_version": receiver.PLAN_VERSION,
-        "plan_git_commit": "c" * 40,
+        "plan_git_commit": receiver.PLAN_GIT_COMMIT,
         "plan_sha256": receiver.PLAN_SHA256,
         "candidate_code_sha": CANDIDATE,
         "protected_code_sha": PROTECTED,
@@ -119,9 +123,63 @@ def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object
 
 def test_controlled_runbook_checksum_is_current() -> None:
     result = receiver.verify_plan_document()
+    assert result["plan_document_id"] == "ARL-OPS-001"
+    assert result["plan_version"] == "1.4"
+    assert result["plan_git_commit"] == "14dd066099bba393cccf61a280243e43162eedc9"
     assert result["plan_sha256"] == receiver.PLAN_SHA256
-    assert len(result["plan_raw_sha256"]) == 64
+    assert result["plan_raw_sha256"] in receiver.PLAN_VALID_RAW_SHA256S
     assert result["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
+
+
+def test_only_exact_current_or_legacy_receipt_plan_identity_is_supported() -> None:
+    current = {
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": receiver.PLAN_VERSION,
+        "plan_git_commit": receiver.PLAN_GIT_COMMIT,
+        "plan_sha256": receiver.PLAN_SHA256,
+        "plan_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
+    }
+    legacy = {
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": LEGACY_PLAN_VERSION,
+        "plan_git_commit": LEGACY_PLAN_COMMIT,
+        "plan_sha256": LEGACY_PLAN_SHA256,
+        "plan_raw_sha256": LEGACY_PLAN_RAW_SHA256,
+    }
+    assert receiver.supported_receipt_plan_identity(current) is not None
+    assert receiver.supported_receipt_plan_identity(legacy) is None
+    assert receiver.supported_receipt_plan_identity(legacy, allow_legacy=True) is not None
+    legacy["plan_raw_sha256"] = "f" * 64
+    assert receiver.supported_receipt_plan_identity(legacy, allow_legacy=True) is None
+    assert receiver.supported_receipt_plan_identity([], allow_legacy=True) is None
+
+
+def test_receiver_and_scheduler_reject_wrong_plan_commit_without_writes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    receiver_target = tmp_path / "receiver-target"
+    receiver_code = receiver.main([
+        "preflight",
+        "--target", str(receiver_target),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", "c" * 40,
+    ])
+    assert receiver_code == 1
+    assert not receiver_target.exists()
+    assert "plan commit does not match" in capsys.readouterr().err
+
+    scheduled_target = tmp_path / "scheduled-target"
+    scheduled_code = scheduled.main([
+        "--target", str(scheduled_target),
+        "--recovery-image", str(tmp_path / "missing.img"),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", "c" * 40,
+    ])
+    assert scheduled_code == 1
+    assert not scheduled_target.exists()
+    assert "plan commit does not match" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -383,11 +441,15 @@ def test_manifest_validation_rejects_unsorted_or_wrong_identity(tmp_path: Path) 
     entries = [manifest_entry(first, tmp_path), manifest_entry(second, tmp_path)]
     manifest = base_manifest("control", entries)
     with pytest.raises(ValueError, match="sorted"):
-        receiver.validate_manifest(manifest, "control", CANDIDATE, PROTECTED, "c" * 40)
+        receiver.validate_manifest(
+            manifest, "control", CANDIDATE, PROTECTED, receiver.PLAN_GIT_COMMIT
+        )
     manifest["files"] = sorted(entries, key=lambda item: str(item["path"]).encode())
     manifest["plan_version"] = "1.1"
     with pytest.raises(ValueError, match="identity"):
-        receiver.validate_manifest(manifest, "control", CANDIDATE, PROTECTED, "c" * 40)
+        receiver.validate_manifest(
+            manifest, "control", CANDIDATE, PROTECTED, receiver.PLAN_GIT_COMMIT
+        )
 
 
 def test_observation_manifest_is_stable_and_source_change_is_detected(tmp_path: Path) -> None:
@@ -879,7 +941,7 @@ def test_scheduled_receiver_arguments_forward_missing_dates(tmp_path: Path) -> N
         recovery_image=tmp_path / "image",
         candidate_code_sha=CANDIDATE,
         protected_code_sha=PROTECTED,
-        plan_git_commit="c" * 40,
+        plan_git_commit=receiver.PLAN_GIT_COMMIT,
         source_helper=None,
         operator="pytest",
     )
@@ -908,8 +970,8 @@ def test_recovery_base_is_registered_without_copying_image(
     target.mkdir()
     args = Namespace(
         recovery_image=image,
-        plan_git_commit="c" * 40,
-        plan_raw_sha256="d" * 64,
+        plan_git_commit=receiver.PLAN_GIT_COMMIT,
+        plan_raw_sha256=receiver.PLAN_NORMALIZED_RAW_SHA256,
         candidate_code_sha=CANDIDATE,
         operator="pytest",
     )
@@ -920,13 +982,25 @@ def test_recovery_base_is_registered_without_copying_image(
     assert second["status"] == "ALREADY_REGISTERED"
     assert receipt["bytes_duplicated"] == 0
     assert receipt["classification"] == "HISTORICAL_UNPROVEN_BOOT_CANDIDATE"
+    receipt.update({
+        "plan_version": LEGACY_PLAN_VERSION,
+        "plan_git_commit": LEGACY_PLAN_COMMIT,
+        "plan_sha256": LEGACY_PLAN_SHA256,
+        "plan_raw_sha256": LEGACY_PLAN_RAW_SHA256,
+    })
+    Path(str(first["receipt"])).write_bytes(receiver.canonical_json_bytes(receipt))
+    legacy = receiver.register_recovery_base(args, target)
+    assert legacy["status"] == "ALREADY_REGISTERED"
     receipt["plan_document_id"] = "tampered"
     Path(str(first["receipt"])).write_text(json.dumps(receipt), encoding="utf-8")
     with pytest.raises(ValueError, match="no longer matches"):
         receiver.register_recovery_base(args, target)
 
 
-def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy", (False, True))
+def test_scheduled_status_reuses_verified_current_generation(
+    tmp_path: Path, legacy: bool
+) -> None:
     target = tmp_path / "backup"
     root = target / "observations/2026-08-25/digest"
     root.mkdir(parents=True)
@@ -942,14 +1016,25 @@ def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> 
         "is_latest_observation": True,
         "latest_pointer": {"observation_date": date},
     }
+    if legacy:
+        manifest.update({
+            "plan_version": LEGACY_PLAN_VERSION,
+            "plan_git_commit": LEGACY_PLAN_COMMIT,
+            "plan_sha256": LEGACY_PLAN_SHA256,
+        })
     manifest_path = root / "source-manifest.json"
     manifest_path.write_bytes(receiver.canonical_json_bytes(manifest))
     archive = root / "observation.tar.zst"
     archive.write_bytes(b"archive")
     receipt = {
         "result": "PASS", "kind": "observation", "observation_date": date,
-        "plan_document_id": receiver.PLAN_DOCUMENT_ID, "plan_version": receiver.PLAN_VERSION,
-        "plan_sha256": receiver.PLAN_SHA256, "plan_git_commit": "c" * 40,
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": LEGACY_PLAN_VERSION if legacy else receiver.PLAN_VERSION,
+        "plan_sha256": LEGACY_PLAN_SHA256 if legacy else receiver.PLAN_SHA256,
+        "plan_git_commit": LEGACY_PLAN_COMMIT if legacy else receiver.PLAN_GIT_COMMIT,
+        "plan_raw_sha256": (
+            LEGACY_PLAN_RAW_SHA256 if legacy else receiver.PLAN_NORMALIZED_RAW_SHA256
+        ),
         "candidate_code_sha": CANDIDATE, "protected_code_sha": PROTECTED,
         "source_manifest_sha256": receiver.sha256_file(manifest_path),
         "archive_sha256": receiver.sha256_file(archive), "archive_bytes": archive.stat().st_size,
@@ -963,21 +1048,21 @@ def test_scheduled_status_reuses_verified_current_generation(tmp_path: Path) -> 
         "observation_date": date,
         "completion_marker_sha256": done_hash,
         "pointer_sha256": pointer_hash,
-    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit=receiver.PLAN_GIT_COMMIT)
     assert status["status"] == "UP_TO_DATE"
     assert status["catalog_sequence"] == 1
     changed = scheduled.latest_status(target, {
         "observation_date": date,
         "completion_marker_sha256": done_hash,
         "pointer_sha256": "f" * 64,
-    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit="c" * 40)
+    }, candidate_sha=CANDIDATE, protected_sha=PROTECTED, plan_commit=receiver.PLAN_GIT_COMMIT)
     assert changed["status"] == "STALE"
     assert "pointer changed" in changed["reason"]
     wrong_candidate = scheduled.latest_status(target, {
         "observation_date": date,
         "completion_marker_sha256": done_hash,
         "pointer_sha256": pointer_hash,
-    }, candidate_sha="d" * 40, protected_sha=PROTECTED, plan_commit="c" * 40)
+    }, candidate_sha="d" * 40, protected_sha=PROTECTED, plan_commit=receiver.PLAN_GIT_COMMIT)
     assert wrong_candidate["status"] == "STALE"
     assert "receipt identity" in wrong_candidate["reason"]
 
@@ -1057,10 +1142,50 @@ def test_inventory_gate_detects_incomplete_historical_backfill(tmp_path: Path) -
         ],
         {"diagnostics": {}},
         protected_sha=PROTECTED,
-        plan_commit="c" * 40,
+        plan_commit=receiver.PLAN_GIT_COMMIT,
     )
     assert report["status"] == "STALE"
     assert report["missing_completed_dates"] == ["2026-05-22"]
+
+
+def test_inventory_reuses_exact_legacy_observation_without_relabelling(tmp_path: Path) -> None:
+    target = tmp_path / "backup"
+    receipt_path = target / "observations/2026-05-22/legacy/receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt = {
+        "result": "PASS",
+        "kind": "observation",
+        "observation_date": "2026-05-22",
+        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+        "plan_version": LEGACY_PLAN_VERSION,
+        "plan_git_commit": LEGACY_PLAN_COMMIT,
+        "plan_sha256": LEGACY_PLAN_SHA256,
+        "plan_raw_sha256": LEGACY_PLAN_RAW_SHA256,
+        "protected_code_sha": PROTECTED,
+        "source_manifest_sha256": "d" * 64,
+        "archive_sha256": "e" * 64,
+        "checks": {"observation": {"quick_check": "ok"}},
+        "deviations": [],
+    }
+    receipt_path.write_bytes(receiver.canonical_json_bytes(receipt))
+    receiver.append_catalog(target, receipt, receipt_path)
+
+    report = scheduled.inventory_status(
+        target,
+        [{"date": "2026-05-22", "status": "completed"}],
+        {"diagnostics": {}},
+        protected_sha=PROTECTED,
+        plan_commit=receiver.PLAN_GIT_COMMIT,
+    )
+
+    assert report == {
+        "status": "UP_TO_DATE",
+        "missing_completed_dates": [],
+        "stale_diagnostics": [],
+    }
+    stored = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert stored["plan_version"] == LEGACY_PLAN_VERSION
+    assert stored["plan_git_commit"] == LEGACY_PLAN_COMMIT
 
 
 def test_control_restore_evidence_uses_verified_bundle_and_secret_checks() -> None:
@@ -1088,7 +1213,7 @@ def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path:
     target = tmp_path / "backup"
     (target / "catalog").mkdir(parents=True)
     args = Namespace(
-        plan_git_commit="c" * 40,
+        plan_git_commit=receiver.PLAN_GIT_COMMIT,
         candidate_code_sha=CANDIDATE,
         protected_code_sha=PROTECTED,
         operator="pytest",
@@ -1096,6 +1221,9 @@ def test_scheduled_execution_record_is_immutable_and_pointer_is_hashed(tmp_path:
     path = scheduled.record_execution(target, args, "BLOCKED", "PREFLIGHT_FAILED", {"error": "offline"})
     pointer = json.loads((target / "catalog/latest-scheduled.json").read_text(encoding="utf-8"))
     assert pointer["record_sha256"] == receiver.sha256_file(path)
-    assert json.loads(path.read_text(encoding="utf-8"))["result"] == "BLOCKED"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert record["result"] == "BLOCKED"
+    assert record["plan_raw_sha256"] in receiver.PLAN_VALID_RAW_SHA256S
+    assert record["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256
     with pytest.raises(FileExistsError):
         receiver.atomic_create(path, b"replace")

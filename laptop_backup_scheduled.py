@@ -107,20 +107,20 @@ def verified_receipt(
     protected_sha: str,
     plan_commit: str,
 ) -> tuple[dict[str, object], dict[str, object], Path]:
+    if plan_commit != receiver.PLAN_GIT_COMMIT:
+        raise ValueError(f"{kind} plan commit is not current")
     receipt_path = local_path(target, receipt_relative)
     if receiver.sha256_file(receipt_path) != catalog_entry.get("receipt_sha256"):
         raise ValueError(f"{kind} receipt digest mismatch")
     receipt = json.loads(receipt_path.read_bytes())
     expected_candidate = candidate_sha or str(receipt.get("candidate_code_sha") or "")
+    plan_identity = receiver.supported_receipt_plan_identity(receipt, allow_legacy=True)
     if (
         receipt.get("result") != "PASS"
         or receipt.get("kind") != kind
-        or receipt.get("plan_document_id") != receiver.PLAN_DOCUMENT_ID
-        or receipt.get("plan_version") != receiver.PLAN_VERSION
-        or receipt.get("plan_sha256") != receiver.PLAN_SHA256
+        or plan_identity is None
         or receipt.get("candidate_code_sha") != expected_candidate
         or receipt.get("protected_code_sha") != protected_sha
-        or receipt.get("plan_git_commit") != plan_commit
         or receipt.get("deviations") != []
     ):
         raise ValueError(f"{kind} receipt identity is invalid")
@@ -137,7 +137,16 @@ def verified_receipt(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if receiver.sha256_file(manifest_path) != receipt.get("source_manifest_sha256"):
         raise ValueError(f"{kind} source manifest digest mismatch")
-    receiver.validate_manifest(manifest, kind, expected_candidate, protected_sha, plan_commit)
+    assert plan_identity is not None
+    receiver.validate_manifest(
+        manifest,
+        kind,
+        expected_candidate,
+        protected_sha,
+        plan_identity[2],
+        plan_version=plan_identity[1],
+        plan_sha256=plan_identity[3],
+    )
     if (
         receiver.sha256_file(archive) != receipt.get("archive_sha256")
         or archive.stat().st_size != receipt.get("archive_bytes")
@@ -263,6 +272,8 @@ def inventory_status(
     plan_commit: str,
     after_date: str = "2026-05-21",
 ) -> dict[str, object]:
+    if plan_commit != receiver.PLAN_GIT_COMMIT:
+        raise ValueError("inventory plan commit is not current")
     entries = receiver.catalog_entries(target / "catalog/generations.jsonl")
     completed = {
         str(item["date"])
@@ -282,11 +293,8 @@ def inventory_status(
             if (
                 receipt.get("result") == "PASS"
                 and receipt.get("kind") == "observation"
-                and receipt.get("plan_document_id") == receiver.PLAN_DOCUMENT_ID
-                and receipt.get("plan_version") == receiver.PLAN_VERSION
-                and receipt.get("plan_sha256") == receiver.PLAN_SHA256
+                and receiver.supported_receipt_plan_identity(receipt, allow_legacy=True) is not None
                 and receipt.get("protected_code_sha") == protected_sha
-                and receipt.get("plan_git_commit") == plan_commit
                 and receipt.get("deviations") == []
                 and isinstance(checks, Mapping)
                 and isinstance(checks.get("observation"), Mapping)
@@ -430,12 +438,15 @@ def record_execution(
     detail: object,
 ) -> Path:
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    plan = receiver.verify_plan_document()
     record = {
         "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
         "plan_version": receiver.PLAN_VERSION,
         "plan_git_commit": args.plan_git_commit,
         "plan_sha256": receiver.PLAN_SHA256,
+        "plan_raw_sha256": plan["plan_raw_sha256"],
+        "plan_normalized_raw_sha256": plan["plan_normalized_raw_sha256"],
         "candidate_code_sha": args.candidate_code_sha,
         "protected_code_sha": args.protected_code_sha,
         "operator": args.operator or "scheduled-task",
@@ -474,6 +485,13 @@ def safe_record(args: argparse.Namespace, result: str, action: str, detail: obje
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.plan_git_commit != receiver.PLAN_GIT_COMMIT:
+        print(json.dumps({
+            "ok": False,
+            "result": "BLOCKED",
+            "error": "plan commit does not match the controlled runbook",
+        }, indent=2), file=sys.stderr)
+        return 1
     preflight_code, preflight_stdout, preflight_stderr = invoke_receiver(args, "preflight")
     if preflight_code:
         error = preflight_stderr or preflight_stdout
