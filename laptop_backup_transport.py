@@ -77,12 +77,14 @@ def remove_remote_helper(args: object, remote: str) -> None:
         raise ValueError("refusing to remove unexpected remote helper path")
     removed = subprocess.run(
         ("ssh", "-o", "BatchMode=yes", args.host, "rm", "--", remote),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
         check=False,
     )
     directory = subprocess.run(
         ("ssh", "-o", "BatchMode=yes", args.host, "rmdir", "--", remote_dir),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
         check=False,
@@ -104,6 +106,7 @@ def install_remote_helper(args: object) -> tuple[str, str]:
             "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
             args.host, "mktemp", "-d", "/tmp/ar-local-laptop-backup.XXXXXXXX",
         ),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
     )
@@ -114,41 +117,51 @@ def install_remote_helper(args: object) -> tuple[str, str]:
             + created.stderr.decode("utf-8", "replace")
         )
     remote = f"{remote_dir}/source.py"
-    copied = subprocess.run(
-        (
-            "scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            str(source), f"{args.host}:{remote}",
-        ),
-        capture_output=True,
-    )
-    verified = subprocess.run(
-        (
-            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            args.host, "sha256sum", "--", remote,
-        ),
-        capture_output=True,
-        timeout=30,
-    )
-    fields = verified.stdout.decode("utf-8", "replace").split()
-    mode = subprocess.run(
-        (
-            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            args.host, "stat", "-c", "%a", "--", remote_dir,
-        ),
-        capture_output=True,
-        timeout=30,
-    )
-    if (
-        not ssh_result_acceptable(verified)
-        or fields != [helper_sha, remote]
-        or not ssh_result_acceptable(mode)
-        or mode.stdout != b"700\n"
-    ):
-        copy_error = copied.stderr.decode("utf-8", "replace")
-        verify_error = verified.stderr.decode("utf-8", "replace")
-        remove_remote_helper(args, remote)
-        raise RuntimeError(
-            "failed to transfer and hash-verify reviewed source helper: "
-            f"scp={copied.returncode} {copy_error}; verify={verified.returncode} {verify_error}"
+    try:
+        copied = subprocess.run(
+            (
+                "scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                str(source), f"{args.host}:{remote}",
+            ),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=30,
         )
+        verified = subprocess.run(
+            (
+                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                args.host, "sha256sum", "--", remote,
+            ),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=30,
+        )
+        fields = verified.stdout.decode("utf-8", "replace").split()
+        mode = subprocess.run(
+            (
+                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                args.host, "stat", "-c", "%a", "--", remote_dir,
+            ),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=30,
+        )
+        if (
+            not ssh_result_acceptable(verified)
+            or fields != [helper_sha, remote]
+            or not ssh_result_acceptable(mode)
+            or mode.stdout != b"700\n"
+        ):
+            copy_error = copied.stderr.decode("utf-8", "replace")
+            verify_error = verified.stderr.decode("utf-8", "replace")
+            raise RuntimeError(
+                "failed to transfer and hash-verify reviewed source helper: "
+                f"scp={copied.returncode} {copy_error}; verify={verified.returncode} {verify_error}"
+            )
+    except Exception as transfer_error:
+        try:
+            remove_remote_helper(args, remote)
+        except Exception as cleanup_error:
+            raise transfer_error from cleanup_error
+        raise
     return remote, helper_sha

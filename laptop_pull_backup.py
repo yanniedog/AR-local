@@ -400,7 +400,7 @@ def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
 
 def remote_list(args: argparse.Namespace, remote: str) -> dict[str, object]:
     command = [*remote_common(args, remote), "list"]
-    result = subprocess.run(command, capture_output=True, timeout=180)
+    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=180)
     if (result.returncode or result.stderr) and not windows_ssh_post_eof_only(result.stderr):
         raise RuntimeError(f"Pi backup preflight failed: {result.stderr.decode('utf-8', 'replace')}")
     value = json.loads(result.stdout)
@@ -783,7 +783,12 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
     command = [*remote_common(args, remote), "stream", "--kind", kind]
     if date:
         command.extend(("--date", date))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     assert process.stdout is not None and process.stderr is not None
     errors = bytearray()
     thread = threading.Thread(target=stderr_reader, args=(process.stderr, errors), daemon=True)
