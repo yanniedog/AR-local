@@ -281,11 +281,20 @@ The next operator must continue A3; do not start A4 or any deployment.
    SHA-256 using the algorithm in the runbook and require
    `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`.
 
-3. At approximately 00:25, perform read-only Pi preflight:
+3. At approximately 00:25, create the laptop evidence directory and perform
+   the read-only Pi preflight. The command prints `lock=ABSENT` or
+   `lock=PRESENT` explicitly and returns failure for a present lock; absence
+   must never be inferred from silent `test` output:
 
    ```powershell
-   ssh -o BatchMode=yes ar-local-pi5-lan `
-     "date --iso-8601=seconds; git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl show ar-local-daily.timer -p NextElapseUSecRealtime -p LastTriggerUSec -p Result; systemctl is-active ar-local-daily.service || true; test ! -e /srv/ar-local/data/state/daily-ingest.lock; df -h /srv/ar-local/data; free -h; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest; curl -fsS --max-time 15 -o /dev/null -w 'github_http=%{http_code}\n' https://api.github.com/"
+   $evidenceRun = [datetimeoffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':','')
+   $evidenceRoot = Join-Path `
+     'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260828' $evidenceRun
+   New-Item -ItemType Directory -Path $evidenceRoot -ErrorAction Stop | Out-Null
+   $preflight = ssh -o BatchMode=yes ar-local-pi5-lan `
+     "set -eu; date --iso-8601=seconds; git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl show ar-local-daily.timer -p NextElapseUSecRealtime -p LastTriggerUSec -p Result; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; df -h /srv/ar-local/data; free -h; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest; curl -fsS --max-time 15 -o /dev/null -w 'github_http=%{http_code}\n' https://api.github.com/"
+   if ($LASTEXITCODE -ne 0) { throw "Pi preflight failed: ssh exit $LASTEXITCODE" }
+   $preflight | Tee-Object -FilePath (Join-Path $evidenceRoot '0025-preflight.txt')
    ```
 
 4. Require the exact protected SHA, a clean checkout, enabled/active timer with
@@ -300,9 +309,248 @@ canary, manual ingest, service restart, task trigger, package change, backup,
 restore, clone test, storage maintenance, or publication manipulation is
 allowed.
 
+At approximately 00:58, repeat the complete safety gate immediately before the
+timer fires. This is mandatory even when the 00:25 gate passed:
+
+```powershell
+$immediate = ssh -o BatchMode=yes ar-local-pi5-lan `
+  "set -eu; date --iso-8601=seconds; git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl show ar-local-daily.timer -p NextElapseUSecRealtime -p LastTriggerUSec -p Result; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; df -h /srv/ar-local/data; free -h; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest; curl -fsS --max-time 15 -o /dev/null -w 'github_http=%{http_code}\n' https://api.github.com/"
+if ($LASTEXITCODE -ne 0) { throw "Immediate Pi gate failed: ssh exit $LASTEXITCODE" }
+$immediate | Tee-Object -FilePath (Join-Path $evidenceRoot '0058-immediate-gate.txt')
+```
+
+Require the same protected SHA, clean checkout, timer, resources, connectivity,
+inactive service, explicit `lock=ABSENT`, and dashboard health. A failure is a
+`BLOCKED` pre-start condition to record and escalate under the controlled
+runbook; it does not authorize a service start, timer edit, restart, or force.
+
 Observe the natural timer start exactly once. Do not run `--force` and do not
 manually start the service. Continue read-only observation until the service is
 terminal, the lock is absent, and the dashboard returns.
+
+Use the following exact read-only commands. Capture the start snapshot only
+after `ActiveState=active`; do not write to the Pi. Each polling interval is at
+most 30 seconds so the operator remains present:
+
+```powershell
+$startDeadline = [datetimeoffset]'2026-08-28T01:10:00+10:00'
+do {
+  $active = (ssh -o BatchMode=yes ar-local-pi5-lan `
+    "systemctl show ar-local-daily.service -p ActiveState --value").Trim()
+  if ([datetimeoffset]::Now -gt $startDeadline) {
+    throw 'Natural service did not become active by 01:10 AEST.'
+  }
+  if ($active -ne 'active') { Start-Sleep -Seconds 10 }
+} until ($active -eq 'active')
+
+$start = ssh -o BatchMode=yes ar-local-pi5-lan `
+  "date --iso-8601=seconds; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result -p NRestarts; systemctl show ar-local-daily.timer -p LastTriggerUSec -p NextElapseUSecRealtime; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; else echo lock=ABSENT; fi; pgrep -a -f '[p]i_daily_sync.py|[c]dr_daily.py' || true"
+if ($LASTEXITCODE -ne 0) { throw "Start observation failed: ssh exit $LASTEXITCODE" }
+$start | Tee-Object -FilePath (Join-Path $evidenceRoot '0100-start.txt')
+
+do {
+  Start-Sleep -Seconds 30
+  $active = (ssh -o BatchMode=yes ar-local-pi5-lan `
+    "systemctl show ar-local-daily.service -p ActiveState --value").Trim()
+} while ($active -eq 'active' -or $active -eq 'activating')
+
+$terminal = ssh -o BatchMode=yes ar-local-pi5-lan `
+  "date --iso-8601=seconds; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p ExecMainCode -p Result -p NRestarts; systemctl show ar-local-daily.timer -p LastTriggerUSec -p NextElapseUSecRealtime; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest"
+if ($LASTEXITCODE -ne 0) { throw "Terminal observation failed: ssh exit $LASTEXITCODE" }
+$terminal | Tee-Object -FilePath (Join-Path $evidenceRoot 'terminal-service.txt')
+
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "journalctl -u ar-local-daily.service --since '2026-08-28 00:55:00' --output=short-iso-precise --no-pager" `
+  | Set-Content -LiteralPath (Join-Path $evidenceRoot 'service-journal.txt')
+if ($LASTEXITCODE -ne 0) { throw "Journal capture failed: ssh exit $LASTEXITCODE" }
+```
+
+Require one new `InvocationID`, exactly one 01:00 `ExecMainStartTimestamp`, the
+timer's `LastTriggerUSec` advancing exactly once from the 00:58 snapshot,
+`NRestarts=0`, `Result=success`, `ExecMainStatus=0`, terminal inactive state,
+and `lock=ABSENT`. Treat the journal as supporting evidence because persistent
+journald is a known risk; the systemd identities and direct start observation
+are the primary single-start evidence.
+
+Validate the finalized local observation from the production checkout without
+changing it. The ledger verifier re-hashes every contract artifact, including
+the raw-attempt evidence. The second command verifies the marker/contract/event
+binding, the source date, explicit attempt-evidence retention, provider
+reconciliation, database hash/size, SQLite integrity and all table populations:
+
+```powershell
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "cd /srv/ar-local/AR-local && python3 cdr_ledger_v2.py verify --state /srv/ar-local/data/state" `
+  | Tee-Object -FilePath (Join-Path $evidenceRoot 'ledger-verify.json')
+if ($LASTEXITCODE -ne 0) { throw "Ledger verification failed: ssh exit $LASTEXITCODE" }
+
+@'
+import hashlib, json, sqlite3
+from pathlib import Path
+from cdr_finalization import verify_completion_marker
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+DATE = "2026-08-28"
+DATA = Path("/srv/ar-local/data").resolve()
+STATE = (DATA / "state").resolve()
+pointer_path = STATE / "observation-pointers-v2/latest-observation.json"
+pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+if pointer.get("observation_date") != DATE:
+    raise SystemExit(f"latest observation is {pointer.get('observation_date')}, not {DATE}")
+marker_path = (STATE / pointer["marker_path"]).resolve()
+marker_path.relative_to(STATE)
+marker = json.loads(marker_path.read_text(encoding="utf-8"))
+if not verify_completion_marker(marker, STATE, DATE):
+    raise SystemExit("completion/contract/ledger/artifact verification failed")
+contract_path = (STATE / marker["export_contract_path"]).resolve()
+contract_path.relative_to(STATE)
+contract = json.loads(contract_path.read_text(encoding="utf-8"))
+if pointer.get("generation_id") != marker.get("generation_id") or pointer.get("generation_id") != contract.get("generation_id"):
+    raise SystemExit("generation binding mismatch")
+if pointer.get("ledger_event_digest") != marker.get("ledger_event_digest"):
+    raise SystemExit("pointer/marker ledger digest mismatch")
+attempt = marker.get("attempt_evidence") or {}
+if attempt.get("verified") is not True or int(attempt.get("attempts") or 0) <= 0:
+    raise SystemExit("raw-attempt evidence is absent or unverified")
+coverage = contract.get("coverage") or {}
+registered = int(coverage.get("providers_registered") or 0)
+attempted = int(coverage.get("providers_attempted") or 0)
+complete = int(coverage.get("providers_complete") or 0)
+partial = int(coverage.get("providers_partial") or 0)
+failed = int(coverage.get("providers_failed") or 0)
+if registered <= 0 or attempted != registered or complete + partial + failed != registered:
+    raise SystemExit("provider accounting does not reconcile")
+source = (DATA / contract["source_path"]).resolve()
+source.relative_to(DATA)
+db_artifacts = [a for a in contract["artifacts"] if a["path"].endswith(".sqlite")]
+if len(db_artifacts) != 1:
+    raise SystemExit(f"expected one contracted SQLite file, found {len(db_artifacts)}")
+db_meta = db_artifacts[0]
+db_path = (source / db_meta["path"]).resolve()
+db_path.relative_to(source)
+digest = sha256_file(db_path)
+if db_path.stat().st_size != int(db_meta["bytes"]) or digest != db_meta["sha256"]:
+    raise SystemExit("SQLite bytes differ from the export contract")
+with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+    quick_check = con.execute("PRAGMA quick_check").fetchone()[0]
+    tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+    required = ["runs", "schema_meta", "bank_products", "bank_rates", "bank_items", "bank_product_facts", "bank_product_changes"]
+    missing = sorted(set(required) - set(tables))
+    if quick_check != "ok" or missing:
+        raise SystemExit(f"SQLite invalid: quick_check={quick_check!r}, missing={missing}")
+    populations = {t: con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in required}
+if populations["bank_products"] <= 0 or populations["bank_rates"] <= 0 or populations["bank_items"] <= 0 or populations["bank_product_facts"] <= 0:
+    raise SystemExit("daily database lacks credible product/rate/item/fact populations")
+report = {
+    "result": "PASS", "date": DATE, "pointer": pointer,
+    "banks": marker.get("banks") or {},
+    "marker_path": str(marker_path), "marker_sha256": hashlib.sha256(marker_path.read_bytes()).hexdigest(),
+    "contract_path": str(contract_path), "contract_digest": contract["contract_digest"],
+    "ledger_event_digest": marker["ledger_event_digest"], "attempt_evidence": attempt,
+    "coverage": coverage, "provider_states": contract.get("provider_states", []),
+    "quarantines": contract.get("quarantines", []), "sqlite_path": str(db_path),
+    "sqlite_bytes": db_path.stat().st_size, "sqlite_sha256": digest,
+    "quick_check": quick_check, "tables": tables, "populations": populations,
+}
+print(json.dumps(report, indent=2, sort_keys=True))
+'@ | ssh -o BatchMode=yes ar-local-pi5-lan `
+  "cd /srv/ar-local/AR-local && python3 -" `
+  | Tee-Object -FilePath (Join-Path $evidenceRoot 'observation-verify.json')
+if ($LASTEXITCODE -ne 0) { throw "Observation verification failed: ssh exit $LASTEXITCODE" }
+```
+
+Finally, download and hash the public dated v1, rolling v1, dates index, and the
+independent v2 manifest. This creates laptop evidence only; it does not alter a
+release. Every v1 asset named by each manifest is downloaded and checked before
+the manifest is accepted:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$date = '2026-08-28'
+$publicRoot = Join-Path $evidenceRoot 'public-github'
+New-Item -ItemType Directory -Path $publicRoot -ErrorAction Stop | Out-Null
+$publicReport = [ordered]@{ date = $date; result = 'RUNNING'; manifests = @{} }
+foreach ($tag in @("app-payload-$date", 'app-payload-latest')) {
+  $tagRoot = Join-Path $publicRoot $tag
+  New-Item -ItemType Directory -Path $tagRoot -ErrorAction Stop | Out-Null
+  $manifestPath = Join-Path $tagRoot 'manifest.json'
+  Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 `
+    -Uri "https://github.com/yanniedog/AR-local/releases/download/$tag/manifest.json" `
+    -OutFile $manifestPath
+  $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+  if ($manifest.schema_version -ne 1 -or $manifest.run_date -ne $date -or $manifest.tag -ne $tag) {
+    throw "$tag manifest identity mismatch"
+  }
+  $localObservation = Get-Content -LiteralPath (Join-Path $evidenceRoot 'observation-verify.json') -Raw | ConvertFrom-Json
+  $localCountNames = @($localObservation.banks.PSObject.Properties.Name | Sort-Object)
+  $publicCountNames = @($manifest.counts.PSObject.Properties.Name | Sort-Object)
+  if (($localCountNames -join ',') -ne ($publicCountNames -join ',')) {
+    throw "$tag manifest count fields differ from the finalized marker"
+  }
+  foreach ($countName in $localCountNames) {
+    if ([int64]$manifest.counts.$countName -ne [int64]$localObservation.banks.$countName) {
+      throw "$tag manifest count mismatch for $countName"
+    }
+  }
+  $verifiedFiles = @()
+  foreach ($property in $manifest.files.PSObject.Properties) {
+    $asset = $property.Value
+    $assetPath = Join-Path $tagRoot $asset.name
+    Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $asset.url -OutFile $assetPath
+    $actualHash = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualBytes = (Get-Item -LiteralPath $assetPath).Length
+    if ($actualHash -ne $asset.sha256 -or $actualBytes -ne [int64]$asset.bytes) {
+      throw "$tag/$($asset.name) public-byte verification failed"
+    }
+    $env:AR_PUBLIC_ASSET = $assetPath
+    python -c "import gzip,json,os; p=os.environ['AR_PUBLIC_ASSET']; v=json.load(gzip.open(p,'rt',encoding='utf-8')); assert isinstance(v,(dict,list)), p"
+    if ($LASTEXITCODE -ne 0) { throw "$tag/$($asset.name) is not valid gzip JSON" }
+    $verifiedFiles += [ordered]@{ role=$property.Name; name=$asset.name; bytes=$actualBytes; sha256=$actualHash }
+  }
+  $publicReport.manifests[$tag] = [ordered]@{
+    run_date=$manifest.run_date; counts=$manifest.counts; files=$verifiedFiles
+    manifest_sha256=(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+}
+$indexPath = Join-Path $publicRoot 'dates-index.json'
+Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 `
+  -Uri 'https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json' `
+  -OutFile $indexPath
+$index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
+if ($index.schema_version -ne 1 -or $index.latest_date -ne $date -or $index.dates -notcontains $date) {
+  throw 'Public dates index does not independently select 2026-08-28'
+}
+$v2Path = Join-Path $publicRoot 'manifest-v2.json'
+Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 `
+  -Uri 'https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json' `
+  -OutFile $v2Path
+$publicReport.dates_index = [ordered]@{
+  latest_date=$index.latest_date; count=$index.count
+  sha256=(Get-FileHash -LiteralPath $indexPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$publicReport.v2 = [ordered]@{
+  status='RECORDED_INDEPENDENTLY_NOT_A_V1_GATE'
+  sha256=(Get-FileHash -LiteralPath $v2Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$publicReport.result = 'PASS'
+$publicReport | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $publicRoot 'verification.json')
+Get-FileHash -LiteralPath (Join-Path $publicRoot 'verification.json') -Algorithm SHA256
+```
+
+Compare both public v1 manifests' counts with the validated local marker's
+`banks` counts and record any discrepancy as `FAIL`; schema/date/hash success
+alone is insufficient. The legacy v1 manifest has no generation or contract
+digest field, so this stable-runtime limitation must be disclosed rather than
+inventing an identity. Public v1 acceptance for this protected release is the
+combination of exact current date, matching populations, and verified public
+bytes. Record v2's own date/status separately; stale or failed v2 does not turn
+v1 into either success or failure.
 
 Natural-ingest acceptance requires, independently:
 
@@ -335,6 +583,12 @@ validated, wait for Task Scheduler's natural 05:00 run and inspect it:
 ```powershell
 $task = Get-ScheduledTask -TaskName 'AR-local laptop backup'
 $info = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-c87cdd0'
+$receiverHead = (git -C $receiver rev-parse HEAD).Trim()
+$receiverDirty = @(git -C $receiver status --porcelain=v1)
+if ($LASTEXITCODE -ne 0 -or $receiverHead -ne 'c87cdd0077e209d1824bbe485c0f5ad30723d0c4' -or $receiverDirty.Count -ne 0) {
+  throw 'Accepted A3 receiver is missing, dirty, or at the wrong commit.'
+}
 $liveXml = Export-ScheduledTask -TaskName 'AR-local laptop backup'
 $recordedXmlPath = 'C:\code\backups\AR-local-pi5\catalog\task-definitions\installed-c87cdd0-20260827T112050Z.xml'
 $recordedXml = Get-Content -LiteralPath $recordedXmlPath -Raw
@@ -347,8 +601,42 @@ if ($recordedXmlSha -ne '6f69ec39707ffbe2fc2e79d712748250eb00133fb5948ce0fd9b8a0
 }
 $task | Select-Object TaskName, State, Principal, Triggers, Actions, Settings
 $info | Select-Object LastRunTime, LastTaskResult, NextRunTime
-Get-Content -LiteralPath `
-  'C:\code\backups\AR-local-pi5\catalog\latest-scheduled.json' -Raw
+$latestPointerPath = 'C:\code\backups\AR-local-pi5\catalog\latest-scheduled.json'
+$latestPointer = Get-Content -LiteralPath $latestPointerPath -Raw | ConvertFrom-Json
+$targetRoot = [IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5')
+$recordPathText = [string]$latestPointer.record_path
+$recordPath = if ([IO.Path]::IsPathRooted($recordPathText)) {
+  [IO.Path]::GetFullPath($recordPathText)
+} else {
+  [IO.Path]::GetFullPath((Join-Path $targetRoot $recordPathText))
+}
+if (-not $recordPath.StartsWith($targetRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Scheduled-run record escapes the backup target.'
+}
+if (-not (Test-Path -LiteralPath $recordPath -PathType Leaf)) {
+  throw 'Scheduled-run record named by latest-scheduled.json is missing.'
+}
+$actualRecordSha = (Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualRecordSha -ne ([string]$latestPointer.record_sha256).ToLowerInvariant()) {
+  throw 'Scheduled-run pointer hash does not match its execution record.'
+}
+$executionRecord = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
+if ($executionRecord.result -ne 'PASS' -or $executionRecord.action -notin @('BACKUP-LATEST','NO_BACKUP_DATA_WRITE')) {
+  throw "Natural scheduled backup did not produce an accepted PASS action: $($executionRecord.action)"
+}
+if ($executionRecord.candidate_code_sha -ne 'c87cdd0077e209d1824bbe485c0f5ad30723d0c4' -or
+    $executionRecord.protected_code_sha -ne '9302890fcc752cbf90da97d597e972c157d913e3' -or
+    $executionRecord.plan_document_id -ne 'ARL-OPS-001' -or
+    $executionRecord.plan_version -ne '1.3' -or
+    $executionRecord.plan_git_commit -ne '8efefe10890a295ef87f97b46d3cb981193cfddc' -or
+    $executionRecord.plan_sha256 -ne '8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d' -or
+    $executionRecord.operator -ne 'jkoka' -or
+    $executionRecord.deviations.Count -ne 0 -or
+    $null -ne $executionRecord.deviation_authorization) {
+  throw 'Natural scheduled execution record has an identity or deviation mismatch.'
+}
+$latestPointer | ConvertTo-Json -Depth 10
+$executionRecord | ConvertTo-Json -Depth 20
 ```
 
 Exact XML equality is mandatory and covers the action path and arguments,
@@ -356,7 +644,10 @@ receiver/candidate/protected/plan identities, principal and logon mode, both
 triggers, startup delay, `IgnoreNew`, three `PT30M` retries, and the `PT6H`
 execution limit. Also require the receiver checkout to remain clean at
 `c87cdd0077e209d1824bbe485c0f5ad30723d0c4`. Task state and exit zero alone are
-not acceptance.
+not acceptance. Require the newly resolved execution record itself—not only its
+pointer—to show the expected action, `PASS`, exact candidate/protected/plan
+identities, operator, source identities, backup/restore detail, timestamps and
+no unauthorized deviation. Preserve both its absolute path and verified hash.
 
 Expected normal outcome: `BACKUP-LATEST` with `PASS`, because the natural ingest
 should create a new `2026-08-28` observation. `NO_BACKUP_DATA_WRITE` is
