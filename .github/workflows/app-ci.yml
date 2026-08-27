@@ -11,6 +11,8 @@ on:
       - 'cdr_*.py'
       - 'pi_*.py'
       - 'laptop_*.py'
+      - 'install_laptop_backup_task*.ps1'
+      - 'run_laptop_backup_task.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -26,6 +28,8 @@ on:
       - 'cdr_*.py'
       - 'pi_*.py'
       - 'laptop_*.py'
+      - 'install_laptop_backup_task*.ps1'
+      - 'run_laptop_backup_task.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -47,6 +51,8 @@ jobs:
         # payload-encryption path, so install it here to run those rather than skip.
         # openpyxl is test-only: production XLSX output remains stdlib-only.
         run: python -m pip install --quiet -r requirements.txt cryptography openpyxl pytest
+      - name: Verify PowerShell 7 for installer regression
+        run: pwsh --version
       - name: Test
         # Run the whole server-side suite (payload, ribbon kernel, ledger
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
