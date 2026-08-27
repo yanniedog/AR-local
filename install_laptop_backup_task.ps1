@@ -11,12 +11,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = $PSScriptRoot
-. (Join-Path $repo 'install_laptop_backup_task_core.ps1')
 $script = Join-Path $repo 'laptop_backup_scheduled.py'
 $runner = Join-Path $repo 'run_laptop_backup_task.ps1'
 if ((git -C $repo status --porcelain) -or ((git -C $repo rev-parse HEAD).Trim() -ne $CandidateCodeSha)) {
   throw 'Task source must be a clean checkout at the exact candidate SHA.'
 }
+. (Join-Path $repo 'install_laptop_backup_task_core.ps1')
 
 $arguments = @(
   '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',

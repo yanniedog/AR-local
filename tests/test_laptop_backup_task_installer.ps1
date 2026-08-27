@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\install_laptop_backup_task_core.ps1')
+. (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_task_core.ps1')
 
 function Register-ScheduledTask {
   [CmdletBinding()]

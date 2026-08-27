@@ -51,6 +51,8 @@ jobs:
         # payload-encryption path, so install it here to run those rather than skip.
         # openpyxl is test-only: production XLSX output remains stdlib-only.
         run: python -m pip install --quiet -r requirements.txt cryptography openpyxl pytest
+      - name: Verify PowerShell 7 for installer regression
+        run: pwsh --version
       - name: Test
         # Run the whole server-side suite (payload, ribbon kernel, ledger
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so
