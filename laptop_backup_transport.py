@@ -158,7 +158,10 @@ def install_remote_helper(args: object) -> tuple[str, str]:
                 "failed to transfer and hash-verify reviewed source helper: "
                 f"scp={copied.returncode} {copy_error}; verify={verified.returncode} {verify_error}"
             )
-    except Exception:
-        remove_remote_helper(args, remote)
+    except Exception as transfer_error:
+        try:
+            remove_remote_helper(args, remote)
+        except Exception as cleanup_error:
+            raise transfer_error from cleanup_error
         raise
     return remote, helper_sha

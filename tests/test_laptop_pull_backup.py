@@ -328,6 +328,34 @@ def test_helper_timeout_removes_only_verified_remote_temporary_directory(
     assert any("rmdir" in command for command in calls)
 
 
+def test_helper_cleanup_failure_preserves_transfer_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text("print('safe')\n", encoding="utf-8")
+    remote_dir = "/tmp/ar-local-laptop-backup.Ab12Cd34"
+    transfer_command: tuple[object, ...] | None = None
+
+    def run(command: tuple[object, ...], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        nonlocal transfer_command
+        if command[0] == "ssh" and "mktemp" in command:
+            return subprocess.CompletedProcess(command, 0, f"{remote_dir}\n".encode(), b"")
+        if command[0] == "scp":
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+        if "sha256sum" in command:
+            transfer_command = command
+            raise subprocess.TimeoutExpired(command, 30)
+        if "rm" in command:
+            raise subprocess.TimeoutExpired(command, 30)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        transport.install_remote_helper(Namespace(source_helper=helper, host="pi"))
+    assert caught.value.cmd == transfer_command
+    assert isinstance(caught.value.__cause__, subprocess.TimeoutExpired)
+
+
 def test_remote_helper_cleanup_reports_real_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     results = iter((
