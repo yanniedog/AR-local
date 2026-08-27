@@ -740,3 +740,284 @@ The latest observation was additionally verified using the protected producer's
 `cdr_export_contract.load_contract`, `cdr_ledger_v2.verify_reachable_generation`,
 and `cdr_finalization.verify_completion_marker`, plus SQLite read-only
 `PRAGMA quick_check` and table population counts.
+
+---
+
+## Entry `HANDOFF-20260828T052104+1000`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Previous handoff entry | `HANDOFF-20260827T220351+1000` |
+| Created, Australia/Hobart | `2026-08-28T05:21:04+10:00` |
+| Created, UTC | `2026-08-27T19:21:04Z` |
+| Operator | `Codex for jkoka` |
+| Result | `BLOCKED` |
+| Current phase | `A3 — terminal evidence complete; acceptance blocked pending controlled decision` |
+| Controlling plan document | `ARL-OPS-001` |
+| Controlling plan version | `1.4` |
+| Controlling plan Git commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlling plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Controlling plan raw Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| In-flight A3 plan version | `1.3` |
+| In-flight A3 plan Git commit | `8efefe10890a295ef87f97b46d3cb981193cfddc` |
+| In-flight A3 plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Protected Pi code SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Installed receiver candidate SHA | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Previous handoff-containing commit | `012cae64988c7637ea90b88aee1490d78c943de0` |
+| Previous handoff raw Git-blob SHA-256 | `e5dcd67f2611750b55467fa3735025ddc579ba64d22bed31c0c6273c730b9eae` |
+| Deviations | Mandatory natural-ingest preflight evidence at 00:25 and 00:58 was missed |
+| Deviation authorization | None; the missing evidence is not waived |
+
+This entry terminally supersedes the `RUNNING` status of the previous entry. It
+does not change the controlled runbook, relabel the completed v1.3 proof, or
+authorise A4. The natural data capture, finalization, public v1 publication,
+and 05:00 laptop backup all passed. A3 nevertheless remains `BLOCKED` because
+the two mandatory pre-run evidence points were not observed and cannot be
+reconstructed after the fact.
+
+### Terminal gate matrix
+
+| Gate | Result | Evidence-backed meaning |
+|---|---|---|
+| Runbook v1.4 identity | `PASS` | Commit and canonical controlled checksum verified; raw Git-blob SHA-256 verified |
+| Previous handoff identity | `PASS` | Commit `012cae649...` contains the expected raw Git-blob bytes |
+| 00:25 natural-ingest preflight | `BLOCKED` | No contemporaneous evidence exists; the hourly heartbeat next ran at 01:01 |
+| 00:58 final lock/resource preflight | `BLOCKED` | No contemporaneous evidence exists and post-run state cannot substitute for it |
+| Natural 01:00 scheduled start | `PASS` | Exactly one start at 01:00; invocation `a30dfd78d17e412b8164425418b55d11`; zero restarts |
+| Current-day CDR capture | `PASS` | `2026-08-28`, 3,839 retained attempts, all 119 registered providers attempted |
+| Observation finalization | `PASS` | Marker, contract, ledger, pointer, SQLite and populations verified |
+| Product/provider accounting | `PASS` | 112 complete, 7 partial, 0 failed providers; 17 attributable failures; corrupt/unattributed zero |
+| Dashboard automatic return | `PASS` | Dashboard returned without restart or operator intervention |
+| Dated v1 publication | `PASS` | Public manifest and every named public asset downloaded and hash-checked |
+| Rolling v1 publication | `PASS` | Public manifest and every named public asset downloaded and hash-checked |
+| Dates index | `PASS` | Public index independently selects `2026-08-28` |
+| v2 | `FAIL` | Independently stale at `2026-08-21`; this does not invalidate v1 |
+| Natural 05:00 scheduled start | `PASS` | Task Scheduler start `2026-08-28T05:00:01+10:00`; never manually triggered |
+| Task terminal state | `PASS` | `Ready`, `LastTaskResult=0`, next run `2026-08-29T05:00:00+10:00` |
+| Task XML and receiver identity | `PASS` | Exact accepted XML and clean exact receiver commit verified |
+| Selective backup action | `PASS` | `BACKFILL` copied only genuinely missing date `2026-08-28`; post-state has no missing dates |
+| Observation restore proof | `PASS` | Archive bytes/hash, full extraction, metadata, marker/pointer, populations and SQLite verified |
+| Control restore proof | `PASS` | Archive, files, Git bundles, secret locations and retained SQLite verified |
+| Macro restore proof | `PASS` | Archive, file inventory and macro SQLite verified |
+| Catalog append-only chain | `PASS` | Existing 322-entry prefix retained; only sequences 323–325 appended; full 325-entry chain verified |
+| Post-task hygiene | `PASS` | No lock, partials, helpers, overlap, or relevant local/Pi process remains |
+| Laptop capacity floor | `PASS` | `159,253,090,304` bytes free in terminal correction evidence, above `53,687,091,200` |
+| A3 acceptance | `BLOCKED` | Successful runtime evidence cannot conversationally waive the missing mandatory preflights |
+| A4 and Phases B–G | `NOT_STARTED` | Prohibited pending a controlled decision and a new authorising handoff entry |
+
+### Natural `2026-08-28` observation
+
+| Field | Verified value |
+|---|---|
+| Generation | `obs-2026-08-28-3c534348347d3f4e` |
+| Observation state | `partial` |
+| SQLite bytes | `1,108,135,936` |
+| SQLite SHA-256 | `6db087a83874e6cce6516a9f34d2deba048f4010d5afef57f715baf5bd84c684` |
+| SQLite quick check | `ok` |
+| Export-contract digest | `ce7f51d3d7622a5b0b5cfac52172feee1ea6d6e5e5c674f493828e47aa298f38` |
+| Ledger digest | `7a9d1b4b0a23be781fbcef02ba2863da49dd2f44c60941e210a16aa1af6d673e` |
+| Raw attempts | `3,839` |
+| Providers | `119 registered / 119 attempted / 112 complete / 7 partial / 0 failed` |
+| Failure integrity | `17 failures / 0 corrupt / 0 unattributed` |
+| Products | `3,012` |
+| Rates | `17,052` |
+| Fees | `29,882` |
+| Features | `18,449` |
+| Eligibility records | `8,514` |
+| Constraints | `5,088` |
+| Product facts | `661,741` |
+| Natural service terminal | `2026-08-28T01:18:47+10:00`, result `success`, exit `0` |
+| Validation completed | `2026-08-28T01:25:00.3824810+10:00` |
+| Next ingest timer | `2026-08-29T01:00:00+10:00` |
+
+The partial state is not a whole-observation failure. All providers were
+attempted, no provider failed completely, and the 17 failures remain
+attributable while unrelated valid products were retained and published. This
+matches D-003's product-day principle. The legacy protected runtime cannot add
+the future per-product quality contract; this entry records only what the
+current marker, contract, ledger, database, and public v1 bytes prove.
+
+### Independent public payload evidence
+
+| Component | Public SHA-256 | Result |
+|---|---|---|
+| Dated v1 manifest, `app-payload-2026-08-28` | `2a542c0b14d037f00c65e8307a4b627bea14b12060416afb12ec79c62dfba2b9` | `PASS` |
+| Rolling v1 manifest, `app-payload-latest` | `f2b9f5e915bd5d34597abce0c2680ee32ddafce1fd2732e3baa6ea78fe7cbac7` | `PASS` |
+| Dates index | `ec15504011cebb7817887fea28bc53f926eac66b89ba1aa65be9abec7a24bc01` | `PASS` |
+| v2 manifest | `02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb` | `FAIL` — stale `2026-08-21`, recorded independently |
+
+Every v1 asset named by the dated and rolling manifests was downloaded from
+public GitHub, checked for exact byte count and SHA-256, decompressed, parsed as
+JSON, and reconciled to the protected runtime's finalized populations. The
+dates index was separately downloaded and checked. No publication was modified
+by this verification.
+
+### Natural 05:00 backup and restore proof
+
+The scheduled execution record is:
+
+`C:\code\backups\AR-local-pi5\catalog\scheduled-runs\20260827T191348Z-d1c09a9cc980481a86eb07a1e8237310.json`
+
+- bytes: `2,439`;
+- SHA-256: `c202ff010679ce0a08344103875adf98d8d600f92f28a679553f415ef97a2035`;
+- action: `BACKFILL`;
+- result: `PASS`;
+- completed: `2026-08-27T19:13:48Z`;
+- exact candidate, protected SHA, v1.3 plan identity, operator, command, and
+  empty deviation fields: verified.
+
+The previous entry forecast `BACKUP-LATEST`, but the receiver's preflight found
+exactly one missing completed date, `2026-08-28`. Its designed inventory route
+therefore selected `BACKFILL`. This is accepted for the backup component only:
+
+- before: missing completed dates exactly `["2026-08-28"]`;
+- after: missing completed dates `[]`, stale diagnostics `[]`, status
+  `UP_TO_DATE`;
+- no historical observation was recopied or rewritten;
+- the verified catalog prefix through sequence 322 was unchanged;
+- sequence 323 is the new observation, 324 the current control pack, and 325
+  the current macro pack; and
+- the full chain through 325 verifies.
+
+The action is consistent with the operator's explicit requirement that
+selective backfill transfer only genuinely missing dates and with D-005. It is
+not an authorisation to reinterpret the missing natural-ingest preflights.
+
+#### Observation receipt, catalog sequence 323
+
+`C:\code\backups\AR-local-pi5\observations\2026-08-28\81c03779a4d203b3fdbea660c9cd897888ac1f6cce0e729e8989899fa8894f61\receipt.json`
+
+- receipt bytes `3,394`, SHA-256
+  `066554a67e41f2463a9db306edcfc17bd306973974e1e9b465f126f44752ec757b35`;
+- source manifest SHA-256
+  `81c03779a4d203b3fdbea660c9cd897888ac1f6cce0e729e8989899fa8894f61`;
+- archive bytes `240,169,360`, archive SHA-256
+  `db98067e11835b06fdba5d80d29c5c5f145ec35b9c3a0670050e2bd341d1d286`;
+- restored bytes `2,776,556,753` across `10,995` files;
+- completion marker and latest pointer valid for the same generation;
+- SQLite quick check `ok`; and
+- restored dashboard/database populations reconcile.
+
+#### Control receipt, catalog sequence 324
+
+`C:\code\backups\AR-local-pi5\control\20260827T191250Z-6f4ef5220f31b0e8\receipt.json`
+
+- receipt bytes `2,482`, SHA-256
+  `19a35eae9132228db306edcfc17bd306973974e1e9b465f126f44752ec757b35`;
+- source manifest SHA-256
+  `6f4ef5220f31b0e8b960d3ef77890b674efba67ce52764556b8ce0f4ee912d7f`;
+- archive bytes `80,242,711`, archive SHA-256
+  `a514ce2b436c850d87b97f22ef1d48694c91cd20c0a1b512327640d1a14d662e`;
+- restored bytes `223,740,481` across `321` files;
+- both repository Git bundles verified; and
+- secret locations were inventoried without copying secret values into Git.
+
+#### Macro receipt, catalog sequence 325
+
+`C:\code\backups\AR-local-pi5\macro\77358d47b44012db2c2ddd4bbf3bb95b9e3d969c96491ebb7b8c6d3358cf0278\receipt.json`
+
+- receipt bytes `2,223`, SHA-256
+  `8ec4675f7cb0040e3be5530eac7b245afa71f3dfcb37abe4e3da3eed29b2512e`;
+- source manifest SHA-256
+  `77358d47b44012db2c2ddd4bbf3bb95b9e3d969c96491ebb7b8c6d3358cf0278`;
+- archive bytes `166,665`, archive SHA-256
+  `5fd7e59e2f58a315e06bb7f570cd36dbc44a5706a434bae5a6cab5b6d4365a9e`;
+- restored bytes `995,328`, one file; and
+- macro SQLite quick check `ok` with `ingest_runs` and
+  `series_observations` present.
+
+### Immutable execution evidence
+
+| Evidence | Bytes | SHA-256 |
+|---|---:|---|
+| `C:\code\backups\AR-local-pi5\evidence\NATURAL-20260828\20260828T010247+1000\natural-result.json` | 8,443 | `c38b2ffc2ecc6269fccc55630976a78822d3cb31569ccbac16092fa7ceff3b1f` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\a3-terminal-result.json` | 12,777 | `ba5da62c07f196fd1686a90f27f31d7bb14bef29e49652d6df21250c7cea8fde` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\terminal-task-and-record.json` | 4,391 | `02bf8b6c1460829b3320dd31364f0817ece8023cc1aef795e3fa5dfe755cbe8c` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\catalog-chain-verify.json` | 829 | `536858ddc6831d51d5139e2acb0ba2962022e7285c363a01e6f4486735032fbe` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\post-task-preflight.json` | 11,802 | `d56c23b82ac4f2927851cefa9a6a0857bd8f6fd9bbb2f3d19773f6f1e97cb2ab` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\hygiene-verify-correction.json` | 1,137 | `6490c35d8f67f49137c84fd44bdfc2a2354759eeba2b02a30cfb414151e213c8` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\0500-start-snapshot.json` | 4,906 | `bce9da953256f977ff00a6562ad2a16c891cf8e207cbfc3c9d498dbfc0540240` |
+
+The original `hygiene-verify.json` is retained unchanged even though it reported
+a failure. Its remote `pgrep` matched the observer's own command text because
+the helper path string appeared in that command. The append-only correction
+above uses a non-self-matching process expression and separately checks helper
+paths. It reports no receiver lock, no partials, no local or Pi relevant
+process, and no Pi helper path. This is an evidence-query correction, not a
+production or policy deviation.
+
+### Exact commands and mutation boundary
+
+The immutable JSON records contain the exact executable command and command
+families. The scheduled task's exact command was:
+
+```text
+"C:\Users\jkoka\.pyenv\pyenv-win\versions\3.10.9\python.exe" "C:\code\backups\AR-local-pi5-receiver-c87cdd0\laptop_backup_scheduled.py" "--target" "C:\code\backups\AR-local-pi5" "--recovery-image" "C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21" "--candidate-code-sha" "c87cdd0077e209d1824bbe485c0f5ad30723d0c4" "--protected-code-sha" "9302890fcc752cbf90da97d597e972c157d913e3" "--plan-git-commit" "8efefe10890a295ef87f97b46d3cb981193cfddc" "--operator" "jkoka"
+```
+
+Read-only validation used `Get-ScheduledTask`, `Get-ScheduledTaskInfo`,
+`Export-ScheduledTask`, `Get-FileHash`, `Get-PSDrive`, receiver `git rev-parse`
+and `git status`, the receiver's read-only preflight and catalog-chain parser,
+explicit lock/partial/process/helper checks, Pi `systemctl`/Git/dashboard checks,
+the protected producer's contract/finalization/ledger validators, SQLite
+`PRAGMA quick_check`, and public HTTP downloads with independent SHA-256 and
+gzip-JSON validation.
+
+No command in this execution deployed code, changed the Pi checkout, restarted
+a service, forced or reran ingestion, manually started the scheduled task, or
+manipulated GitHub publication. The only backup-data mutation was the natural
+scheduled receiver action described above. The documentation change that adds
+this entry is isolated in a fresh worktree based on `origin/main`.
+
+### Blocker, risk, and preservation action
+
+The missing 00:25 and 00:58 evidence is a procedural blocker, not evidence of a
+failed ingest. The automation was hourly and next activated at 01:01, after the
+natural service had begun. The run itself was not interrupted or altered. A
+post-run snapshot cannot prove every exact pre-run condition at those required
+times, so neither the successful observation nor the successful backup is
+allowed to silently convert the overall A3 result to `PASS`.
+
+Until a controlled decision is appended:
+
+- keep production clean at protected SHA
+  `9302890fcc752cbf90da97d597e972c157d913e3`;
+- preserve the current daily 01:00 timer and D-006 freeze/validation cadence;
+- preserve every raw attempt, completed observation, receipt, catalog entry,
+  public v1 byte, and diagnostic record;
+- leave the completed v1.3 scheduled task installed and unchanged;
+- do not deploy, run PR #508, start A4, or advance Phases B–G;
+- do not use `--force` or rerun a prior day's ingest; and
+- keep at least 50 GiB free on the laptop.
+
+The hourly heartbeat cadence is not sufficient to prove future 00:25 and 00:58
+gates. Before relying on another daily cycle for acceptance, schedule or
+otherwise arrange exact preflight-capable activations before those times. A
+mere hourly retry is not an accepted compensating control.
+
+### Exact next action and acceptance boundary
+
+The next operator must obtain and append one controlled decision choosing one
+of these paths:
+
+1. accept the complete post-run ingest evidence plus complete natural 05:00
+   backup/restore proof as sufficient to close A3 despite the missed preflight
+   timestamps, with an explicit authorised deviation containing reason, risk,
+   compensating controls, and revised acceptance criteria; or
+2. keep A3 blocked and observe another full natural daily cycle with both
+   required preflights, terminal ingest validation, and the natural 05:00
+   backup proof.
+
+The safe default is option 2 until explicit authorisation exists. If option 2
+is selected, the monitor must be capable of acting before 00:25 and 00:58; it
+must not manually trigger ingestion or backup, and it must preserve that day's
+current-only CDR window. A successful later cycle requires a new append-only
+entry. Only that entry may mark A3 `PASS` and authorise planning—not execution—
+of A4 as a separate daylight slice.
+
+No further technical action is required from the completed 2026-08-28 05:00
+backup proof itself. Its task is `Ready`, its next natural trigger is
+`2026-08-29T05:00:00+10:00`, and its verified free-space measurement remains
+well above the controlled floor.
