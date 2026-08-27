@@ -1455,3 +1455,483 @@ writing, task alteration, backup-data mutation, or risk of crossing the daily
 freeze. Rollback is to leave or close the unmerged topic branch; production and
 the installed v1.3 task remain unchanged. A merged candidate is not authorised
 for installation until a later entry explicitly permits it.
+
+---
+
+## Entry `HANDOFF-20260828T070253+1000-A3-PLAN-V14`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Previous handoff entry | `HANDOFF-20260828T063742+1000-A3-DECISION` |
+| Previous handoff-containing commit | `e000d22c03077b364441a903673912160ca041a4` |
+| Previous handoff raw Git-blob SHA-256 | `83dae48c1bf207fde508febeb00e751daef5605e2c5aa2076b95df6c535606a4` |
+| Created, Australia/Hobart | `2026-08-28T07:02:53+10:00` |
+| Created, UTC | `2026-08-27T21:02:53Z` |
+| Operator | `Codex for jkoka` |
+| Result | `PASS` |
+| Current phase | `A3 complete; v1.4 backup-tooling identity update complete; v1.4 scheduled-task transition is the next bounded slice` |
+| Controlling plan document | `ARL-OPS-001` |
+| Controlling plan version | `1.4` |
+| Controlling plan Git commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlling plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Controlling plan raw Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Completed code candidate | `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi code SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Completed A3 plan document | `ARL-OPS-001` |
+| Completed A3 plan version | `1.3` |
+| Completed A3 plan Git commit | `8efefe10890a295ef87f97b46d3cb981193cfddc` |
+| Completed A3 plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Completed A3 plan raw file SHA-256 | `6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444` |
+| Installed receiver SHA | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` — intentionally unchanged |
+| Decision ID | `DEC-A3-002` |
+| Decision | Accept the v1.4 plan-identity code slice after post-merge exact-head, exact-tree, review-closure, and no-mutation controls; preserve the premature-merge incident in immutable evidence |
+| Authorization | Direct operator instruction to proceed with the controlled runbook and plan; advancement remains bounded by this entry |
+
+### Authoritative repositories and cleanliness
+
+| Purpose | Path and state |
+|---|---|
+| Pi production | `/srv/ar-local/AR-local`; clean at protected `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Merged v1.4 verification checkout | `C:\code\backups\AR-local-a3-plan-v14-merged-f214e32`; clean detached checkout at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Installed A3 receiver | `C:\code\backups\AR-local-pi5-receiver-c87cdd0`; clean at `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Laptop backup root | `C:\code\backups\AR-local-pi5`; immutable catalog remains at sequence 325 |
+| Historical recovery-image candidate | `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; retained unchanged; not an accepted boot proof |
+| This documentation worktree | `C:\code\backups\AR-local-a3-plan-v14-handoff`; branch `codex/docs-a3-plan-v14-result-20260828`, created from exact `f214e324...` |
+| User checkout — prohibited for controlled work | `C:\code\AR-local`; at `a0bd0f54200c91ef7aaa2fb163e752005ddb71e8`, modified `.cursor/skills/pi-deploy-agent/SKILL.md`, untracked `.codex/`; do not clean or use |
+
+### Completed slice
+
+PR #540, `Advance laptop backup tooling to runbook v1.4`, was created from
+exact base `e000d22c03077b364441a903673912160ca041a4`. Its PR head was
+`156e5af45757ff5baf2ac23aa2c69bd072599410`; it squash-merged as
+`f214e3249c7968d574e3449edb14792904e1cc1f`. The PR head and merge commit
+have the identical tree SHA `3330c4483ee7b6188b230161281a32f0b743291e`.
+
+The merged implementation:
+
+- embeds exact ARL-OPS-001 v1.4 plan commit, controlled checksum, normalized
+  Git-blob checksum, and accepted LF/CRLF raw checksums;
+- rejects an incorrect plan commit before target creation, execution-record
+  creation, or remote contact;
+- permits immutable historical receipts only under the exact completed v1.3
+  document/version/commit/controlled/raw identity tuple;
+- keeps every new manifest, receipt, and scheduled record on v1.4;
+- reuses exact v1.3 historical coverage without relabelling it or initiating a
+  redundant complete backfill; and
+- records raw and normalized plan hashes in scheduled execution evidence.
+
+PR #540 was code availability only and did not itself change the installed
+Windows task, which remains at receiver `c87cdd0...` and plan v1.3 at the time
+of this entry. The later review-correction section of this same entry separately
+authorises the bounded v1.4 laptop-task transition. Neither the merge nor that
+transition authorises changing Pi production.
+
+### Immutable execution evidence
+
+The create-once execution record is:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-PLAN-V14-20260828\20260828T070051+1000\a3-plan-v14-result.json`
+
+- bytes: `8,618`;
+- SHA-256:
+  `1e3be821c54c6fa0fae88546981c66c055c2094844e799a2f0386dbeb7227e08`;
+- original execution result: `BLOCKED` pending this append-only decision.
+
+That file is not edited by this decision. Its technical checks and the merge
+incident remain preserved exactly as recorded.
+
+### Verification and review evidence
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Focused backup/scheduler/restore/plan tests on PR tree | `PASS` | `120 passed, 1 skipped` |
+| Full server-side test suite on PR tree | `PASS` | `1008 passed, 11 skipped, 4 warnings` |
+| GitHub app-ci on exact PR head | `PASS` | Run `33115723102`, head `156e5af...` |
+| PR/merge tree identity | `PASS` | Both tree SHAs `3330c448...` |
+| Fresh exact merged-candidate checkout | `PASS` | Clean detached `f214e324...`; focused suite `120 passed, 1 skipped` |
+| Existing receipt compatibility | `PASS` | All `326` stored receipts accepted under the exact allowlist; zero rejected; read-only scan |
+| Historical evidence preservation | `PASS` | No receipt or catalog file rewritten; catalog remains 325 entries |
+| Review closure | `PASS` | Sourcery finding declined with code-path evidence, replied to, and resolved |
+| Post-resolution feedback gate | `PASS` | Run `33115934002` |
+| Gemini advisory review | `UNAVAILABLE` | Workflow returned `503 UNAVAILABLE`; no finding was produced and it is not a required gate |
+| Diff integrity | `PASS` | `git diff --check` |
+
+Sourcery asserted that the copied helper would reject v1.4 against the Pi's
+v1.3 `/etc/ar-local/backup.env`. The finding was declined because the laptop
+receiver installs `pi_laptop_backup_source.py` at a unique temporary path and
+passes its plan tuple directly. That helper does not import
+`ar_local_backup_policy.py` or read `/etc/ar-local/backup.env`; its preflight
+checks the quiet window, protected production SHA and cleanliness, ingest
+service/lock/timer, and dashboard. The v1.3 environment example belongs to the
+separate Pi-mounted-storage backup foundation, which this slice neither deploys
+nor invokes.
+
+### Formal deviation decision `DEV-A3-PLAN-V14-001`
+
+| Required field | Decision record |
+|---|---|
+| Event | PR #540 merged immediately instead of merely arming auto-merge. |
+| Reason | The documented `pr:arm-and-park` npm script is absent. The allowed fallback wrapper then failed because the user's existing checkout owns `main`. Direct `gh pr merge --auto --squash` interpreted the request as immediate merge because the sole enforced check had already passed. |
+| Risk | Merge occurred 21 seconds before non-required app-ci completed and before Sourcery posted its finding, violating the intended gate order. |
+| Compensating controls | No production/runtime/task/catalog/payload mutation; exact PR-head app-ci later passed; PR and merge trees are identical; a fresh exact merged checkout passed focused tests; the late finding was substantively evaluated and resolved; the post-resolution feedback gate passed; post-slice drift checks passed. |
+| Revised acceptance criteria | Require exact-head app-ci PASS, byte-identical PR/merge trees, exact merged-candidate focused tests PASS, complete finding disposition and thread closure, post-resolution feedback gate PASS, and read-only proof that Pi, task, catalog, and public v1 remained unchanged. |
+| Revised acceptance result | `PASS` — every compensating criterion is satisfied. |
+| Authorization | This append-only decision is made within the operator-authorized code slice. `DEC-A3-002` alone does not broaden authority to installation, deployment, A4 execution, or later phases; the separately stated review correction below controls the next task-transition slice. |
+| Preservation | The original `BLOCKED` evidence record remains immutable. This entry changes only the controlled phase interpretation. |
+
+### Post-slice no-drift state
+
+Read-only checks after PR #540 confirmed:
+
+- Pi production remains clean at
+  `9302890fcc752cbf90da97d597e972c157d913e3`;
+- `ar-local-daily.service` is inactive; `ar-local-daily.timer` is enabled and
+  active for `2026-08-29T01:00:00+10:00`;
+- the ingest lock is absent and no ingest process competes;
+- the dashboard is HTTP-healthy on run date `2026-08-28`;
+- the installed task remains `Ready`, last result `0`, and next run
+  `2026-08-29T05:00:00+10:00`;
+- live task XML still equals the accepted file with SHA-256
+  `6f69ec39707ffbe2fc2e79d712748250eb00133fb5948ce0fd9b8a0d673b2f28`;
+- the accepted receiver remains clean at `c87cdd0077...`;
+- no receiver lock or partial exists and free space is `159,177,940,992`
+  bytes, above the `53,687,091,200`-byte floor;
+- the catalog remains valid through sequence 325 with file SHA-256
+  `0f3517c61ae5c9fb13a2ecc634895b8c0ee935d3d005e4b6d7cf68086e4d5704`;
+- the latest scheduled record remains the v1.3 `BACKFILL` `PASS` record with
+  SHA-256 `c202ff010679ce0a08344103875adf98d8d600f92f28a679553f415ef97a2035`;
+  and
+- dated v1 manifest `2a542c0b...`, rolling v1 manifest `f2b9f5e9...`, and
+  dates index `ec155040...` remain unchanged from the pre-slice audit.
+
+### Phase state after this decision
+
+| Gate or slice | State | Authority |
+|---|---|---|
+| A3 backup crash recovery | `PASS` | `DEC-A3-001` and immutable A3 evidence |
+| Backup-tooling v1.4 plan identity | `PASS` | PR #540, immutable execution evidence, and `DEC-A3-002` |
+| Installed daily laptop task | `TRANSITION REQUIRED` | The accepted v1.3 task must not execute again after terminal A3; replace it with exact v1.4 only after the gate below passes |
+| `NATURAL-20260828` procedure | `BLOCKED` | Missed timed preflight evidence remains independent and unchanged |
+| Daily natural ingest continuity | `RUNNING` | Exact 00:25/00:58 observation remains mandatory every day |
+| v1.4 scheduled-task transition | `NOT_STARTED`, now authorised | Must complete or fail closed before the next 00:30 freeze |
+| A4 planning | `BLOCKED` | Do not begin until the v1.4 task transition and its first natural 05:00 execution are terminally accepted |
+| A4 tooling implementation | `NOT_STARTED` | Not authorised |
+| A4 physical execution | `NOT_STARTED` | Prohibited; requires explicit later entry, spare-media identity, and operator-present controls |
+| Pi deployment or runtime change | `NOT_STARTED` | Prohibited |
+| Phases B through G | `NOT_STARTED` | Not authorised |
+
+### Latest observation and independent continuity states
+
+The latest accepted observation remains `2026-08-28`, generation
+`obs-2026-08-28-3c534348347d3f4e`. Its observation state is `partial`, with
+3,839 raw attempts; 119 registered and attempted providers; 112 complete,
+seven partial, and zero failed providers; 17 attributable failures; zero
+corrupt or unattributed failures; and SQLite `PRAGMA quick_check=ok`.
+
+| Independent outcome | State | Evidence or interpretation |
+|---|---|---|
+| Timed natural-ingest procedure | `BLOCKED` | Mandatory 00:25 and 00:58 evidence was missed; this remains unwaived |
+| CDR source capture | `PASS` | Raw attempts retained; immutable natural record `c38b2ffc...` |
+| Observation finalization | `PASS` | Marker, contract, ledger, pointer, database and provider accounting validated |
+| Dated v1 publication | `PASS` | Manifest SHA-256 `2a542c0b14d037f00c65e8307a4b627bea14b12060416afb12ec79c62dfba2b9` and named assets publicly verified |
+| Rolling v1 publication | `PASS` | Manifest SHA-256 `f2b9f5e915bd5d34597abce0c2680ee32ddafce1fd2732e3baa6ea78fe7cbac7` and seven named assets publicly verified |
+| Dates index | `PASS` | SHA-256 `ec15504011cebb7817887fea28bc53f926eac66b89ba1aa65be9abec7a24bc01`; latest date `2026-08-28` |
+| v2 | `FAIL`, independent | Public v2 remains stale at `2026-08-21`; it neither passes nor invalidates v1 |
+| Dashboard return | `PASS` | HTTP healthy and serving `2026-08-28` |
+| Laptop observation/control/macro backup | `PASS` | Natural 05:00 selective backfill, restore checks, catalog sequence 325 |
+| Next natural ingest | `RUNNING` continuity obligation | `2026-08-29` at 01:00; exact 00:25/00:58 observation remains mandatory |
+| Next natural laptop backup | `BLOCKED_PENDING_TRANSITION` | The active v1.3 definition must be replaced by exact v1.4 before it may execute at `2026-08-29T05:00:00+10:00` |
+
+### Review correction: the v1.4 task transition precedes A4
+
+Late exact-head review correctly identified that the accepted v1.3 task cannot
+remain enabled for a new execution after terminal A3. ARL-OPS-001 v1.4 says that
+the installed v1.3 task and receiver remain authoritative only through their
+first natural 05:00 proof after the 2026-08-28 ingest; after that terminal A3
+execution, every new execution uses v1.4. Keeping the v1.3 task enabled for
+`2026-08-29T05:00:00+10:00` would create evidence under the wrong controlled
+identity. This entry therefore replaces the earlier A4-planning next step.
+
+### Next bounded daylight slice: transition the scheduled task to v1.4
+
+This is a laptop-only control-plane slice. It may read the Pi through the
+existing pull-only SSH path and may append verified immutable generations to
+the existing laptop backup catalog. It must not change the Pi checkout, data,
+services, timer, lock, ingest, dashboard, or publication. It must not start A4.
+
+The exact new receiver candidate is the already merged and verified commit
+`f214e3249c7968d574e3449edb14792904e1cc1f`. The receiver is bound to:
+
+- document `ARL-OPS-001`;
+- version `1.4`;
+- plan commit `14dd066099bba393cccf61a280243e43162eedc9`;
+- controlled SHA-256
+  `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`;
+- normalized Git-blob SHA-256
+  `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4`;
+  and
+- protected Pi SHA `9302890fcc752cbf90da97d597e972c157d913e3`.
+
+The transition has two ordered write gates. First, run one foreground v1.4
+scheduled-wrapper execution. Because the current catalog identity is v1.3, the
+normal expected action is `BACKUP-LATEST` with `PASS`; it creates current v1.4
+observation, control, and macro generations while retaining every historical
+v1.3 receipt unchanged. It must not initiate a full historical backfill. Second,
+only after that pass, run the installer. The installer performs a v1.4
+`--check-only` gate, registers the replacement task disabled, verifies its exact
+definition, enables it, and verifies the enabled definition. Activation or
+read-back failure must leave the task disabled.
+
+#### Time and collision boundary
+
+- Earliest start: after this documentation PR is merged and its exact commit and
+  handoff raw Git-blob hash are recorded.
+- Latest start: only when enough daylight remains to finish or safely disable
+  the old task by `2026-08-28T23:30:00+10:00`.
+- Mandatory stop: `2026-08-28T23:30:00+10:00`.
+- Freeze: `2026-08-29T00:30:00+10:00` through terminal validation of the natural
+  `2026-08-29` ingest.
+- No backup transition command may run during the freeze, while
+  `ar-local-daily.service` is active, while the production ingest lock exists,
+  or while another receiver/helper process is active.
+- The production 01:00 timer is never disabled, delayed, restarted, or modified.
+
+#### Gate 1 — create and verify the exact clean receiver
+
+Run in a normal PowerShell session. Replace only `<HANDOFF-MERGE-SHA>` and
+`<HANDOFF-RAW-SHA256>` with the immutable values recorded after this PR merges.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$controlRepo = 'C:\code\backups\AR-local-a3-plan-v14-handoff'
+$candidate = 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$protected = '9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit = '14dd066099bba393cccf61a280243e43162eedc9'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$expectedHandoffCommit = '<HANDOFF-MERGE-SHA>'
+$expectedHandoffHash = '<HANDOFF-RAW-SHA256>'
+
+git -C $controlRepo fetch origin --prune
+if ((git -C $controlRepo rev-parse origin/main).Trim() -ne $expectedHandoffCommit) {
+  throw 'origin/main does not equal the authorised handoff merge.'
+}
+if (Test-Path -LiteralPath $receiver) { throw "Receiver path already exists: $receiver" }
+git -C $controlRepo worktree add --detach $receiver $candidate
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $candidate) { throw 'Receiver SHA mismatch.' }
+if (@(git -C $receiver status --porcelain=v1).Count -ne 0) { throw 'Receiver is dirty.' }
+
+Set-Location $receiver
+Get-Content docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md -Raw
+Get-Content docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md -Raw
+python -c "import hashlib,subprocess; b=subprocess.run(['git','-C',r'$controlRepo','show','origin/main:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'],capture_output=True,check=True).stdout; h=hashlib.sha256(b).hexdigest(); print(h); assert h=='$expectedHandoffHash'"
+python -c "import laptop_pull_backup as r; p=r.verify_plan_document(); assert p['plan_document_id']=='ARL-OPS-001'; assert p['plan_version']=='1.4'; assert p['plan_git_commit']=='14dd066099bba393cccf61a280243e43162eedc9'; assert p['plan_sha256']=='78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713'; print(p)"
+```
+
+Abort before any backup write if any identity, checkout, or checksum differs.
+Do not delete or repair an unexpected receiver path; record the collision.
+
+#### Gate 2 — read-only Pi and laptop preflight
+
+Run outside the freeze. These commands must show the protected clean Pi,
+inactive ingest, absent lock, active/enabled timer, healthy dashboard, no
+competing backup process, valid laptop target, and at least 50 GiB free.
+
+```powershell
+$target = 'C:\code\backups\AR-local-pi5'
+$image = 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21'
+$floor = 53687091200
+$now = [DateTimeOffset]::Now
+if ($now -ge [DateTimeOffset]'2026-08-28T23:30:00+10:00') { throw 'Safe transition window has closed.' }
+if (-not (Test-Path -LiteralPath $target -PathType Container)) { throw 'Backup target is absent.' }
+if (-not (Test-Path -LiteralPath $image -PathType Leaf)) { throw 'Recovery image is absent.' }
+$free = (Get-Volume -DriveLetter C).SizeRemaining
+if ($free -lt $floor) { throw "Laptop free space is below 50 GiB: $free" }
+if (Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+  $_.CommandLine -like "*$receiver*" -and $_.ProcessId -ne $PID
+}) {
+  throw 'A receiver process is already active.'
+}
+if (Test-Path -LiteralPath "$target\catalog\.receiver.lock") { throw 'Receiver lock exists.' }
+if (Get-ChildItem -LiteralPath $target -Recurse -Force -Filter '*.partial' -ErrorAction Stop) {
+  throw 'Partial backup artifacts exist.'
+}
+
+$pi = @'
+set -eu
+test "$(git -C /srv/ar-local/AR-local rev-parse HEAD)" = "9302890fcc752cbf90da97d597e972c157d913e3"
+test -z "$(git -C /srv/ar-local/AR-local status --porcelain=v1)"
+test "$(systemctl is-active ar-local-daily.service || true)" = "inactive"
+test "$(systemctl is-active ar-local-daily.timer)" = "active"
+test "$(systemctl is-enabled ar-local-daily.timer)" = "enabled"
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+! pgrep -af '[c]dr_daily.py|[p]i_daily_sync.py'
+curl --fail --silent --show-error http://127.0.0.1:8808/api/latest
+systemctl show ar-local-daily.timer -p NextElapseUSecRealtime
+df -B1 /srv/ar-local/data
+free -b
+'@
+ssh ar-local-pi5 $pi
+if ($LASTEXITCODE -ne 0) { throw 'Pi preflight failed.' }
+```
+
+Any preflight uncertainty is `BLOCKED`. Do not use `--force`, restart a service,
+remove a lock, repair a partial, or modify the Pi to make the gate pass.
+
+#### Gate 3 — foreground v1.4 backup and verification
+
+Run the scheduled wrapper without `--check-only`. Capture its full stdout and
+stderr in the new immutable transition evidence directory. The command may
+append only genuinely current v1.4 generations and catalog entries.
+
+```powershell
+$python = (Get-Command python -ErrorAction Stop).Source
+$operator = 'jkoka'
+$evidence = Join-Path $target ('evidence\A3-V14-TASK-TRANSITION-20260828\' + (Get-Date -Format 'yyyyMMddTHHmmssK').Replace(':',''))
+New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+$stdout = Join-Path $evidence 'manual-v14-backup.stdout.txt'
+$stderr = Join-Path $evidence 'manual-v14-backup.stderr.txt'
+$arguments = @(
+  (Join-Path $receiver 'laptop_backup_scheduled.py'),
+  '--target', $target,
+  '--recovery-image', $image,
+  '--candidate-code-sha', $candidate,
+  '--protected-code-sha', $protected,
+  '--plan-git-commit', $planCommit,
+  '--operator', $operator
+)
+& $python @arguments 1> $stdout 2> $stderr
+if ($LASTEXITCODE -ne 0) { throw "Foreground v1.4 backup failed; evidence: $evidence" }
+$result = Get-Content -LiteralPath $stdout -Raw
+$result
+if ($result -notmatch '"result":\s*"PASS"') { throw 'Foreground result is not PASS.' }
+if ($result -notmatch '"status":\s*"UP_TO_DATE"') { throw 'Post-backup state is not UP_TO_DATE.' }
+if ($result -notmatch '"backfill_required":\s*false') { throw 'Unexpected historical backfill requirement.' }
+```
+
+`BACKUP-LATEST` is the normal expected action. `NO_BACKUP_DATA_WRITE` is not
+accepted merely because the wrapper exits zero: it requires independent proof
+that the latest run/observation, control, macro, diagnostics, history, and plan
+identity were already v1.4 and unchanged. `BACKFILL` is `BLOCKED` for this
+transition because the 326 historical receipts already passed the exact legacy
+allowlist scan; investigate rather than recopying history.
+
+Before installation, verify and record all of the following:
+
+- the latest scheduled execution record is create-once and has result `PASS`;
+- its plan, candidate, protected SHA, operator, action, before/after identities,
+  and evidence path are exact;
+- every new receipt records v1.4 without altering historical v1.3 receipts;
+- all 326 pre-transition receipts still parse under the exact legacy allowlist;
+- completed-date inventory has no missing dates and no stale diagnostics;
+- the catalog prefix is byte-identical and the appended hash chain validates;
+- observation, control, and macro source identities equal the live Pi listing;
+- every required restore verification reports `PASS`;
+- no receiver lock, `.partial`, helper, or overlapping process remains; and
+- laptop free space remains at least `53,687,091,200` bytes.
+
+Hash the stdout, stderr, new execution record, new receipts, catalog, and a
+create-once transition-result JSON. The transition result includes the plan
+identity, candidate and protected SHAs, operator, timestamps, exact commands,
+pre/post catalog sequence and hashes, source identities, evidence paths and
+hashes, deviations, and terminal `PASS`, `FAIL`, or `BLOCKED`. Never edit it
+after creation.
+
+#### Gate 4 — install and verify the v1.4 scheduled task
+
+This gate requires a new elevated Windows PowerShell session under
+`yanniedog\jkoka`. Do not use another account and do not run it until Gate 3 is
+`PASS`. The installer performs its own `--check-only` proof before registration.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+whoami
+# Must print: yanniedog\jkoka
+([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Must print: True
+
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$target = 'C:\code\backups\AR-local-pi5'
+$image = 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21'
+$candidate = 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$protected = '9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit = '14dd066099bba393cccf61a280243e43162eedc9'
+
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $candidate) { throw 'Receiver SHA mismatch.' }
+if (@(git -C $receiver status --porcelain=v1).Count -ne 0) { throw 'Receiver is dirty.' }
+& "$receiver\install_laptop_backup_task.ps1" `
+  -Target $target `
+  -RecoveryImage $image `
+  -CandidateCodeSha $candidate `
+  -ProtectedCodeSha $protected `
+  -PlanGitCommit $planCommit `
+  -Operator 'jkoka'
+if ($LASTEXITCODE -ne 0) { throw 'v1.4 task installation failed.' }
+
+$task = Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$info = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xml = Export-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$task | Format-List TaskName,State
+$info | Format-List LastRunTime,LastTaskResult,NextRunTime,NumberOfMissedRuns
+$xml
+```
+
+Acceptance requires exact read-back of one action rooted in receiver
+`f214e32`, candidate `f214e324...`, plan commit `14dd066...`, protected SHA
+`9302890...`, operator `jkoka`, principal `yanniedog\jkoka`, `S4U`, `Limited`,
+enabled state, one 05:00 daily trigger, one startup trigger delayed `PT5M`,
+`IgnoreNew`, three retries at `PT30M`, `PT6H` execution limit, and
+start-when-available. Save the live XML in immutable evidence and record its
+SHA-256. The task must be `Ready` after installation. Do not manually trigger
+it.
+
+The retained v1.3 receiver, its accepted XML, execution records, receipts, and
+A3 proof remain immutable historical evidence. They are not relabelled,
+deleted, overwritten, or used for another execution.
+
+#### Stop conditions and rollback
+
+Stop immediately and preserve evidence if:
+
+- plan, handoff, candidate, protected SHA, repository cleanliness, or path
+  identity differs;
+- the Pi service is active, ingest lock exists, timer is unhealthy, dashboard
+  is unavailable, a backup/ingest helper overlaps, or the freeze is near;
+- the wrapper requests a historical backfill, rewrites a historical receipt,
+  breaks the catalog prefix/hash chain, fails restoration, or drops below the
+  free-space floor;
+- the check-only installer gate is not current; or
+- task registration, disabled read-back, enablement, or enabled read-back fails.
+
+Before Gate 4, rollback is to leave the accepted v1.3 task definition untouched
+while preserving the failed v1.4 attempt. However, because D-006 prohibits any
+new v1.3 execution after terminal A3, if Gate 4 cannot reach exact enabled v1.4
+acceptance by `2026-08-28T23:30:00+10:00`, disable `AR-local laptop backup`,
+verify it is disabled, hash and preserve the resulting XML, and record
+`BLOCKED`. Do not re-enable v1.3 for the 05:00 run.
+
+If Gate 4 has replaced the definition but any acceptance check fails, leave or
+make the task disabled. Do not restore an enabled v1.3 definition. Preserve the
+accepted old XML for evidence and use it only for comparison. The production
+01:00 ingest remains unaffected; a missed laptop backup can be recovered after
+the freeze from retained Pi data, whereas a missed current-day CDR source
+capture cannot.
+
+#### First natural v1.4 proof and next resume point
+
+After exact installation acceptance, append a new handoff entry and stop this
+slice. The next natural execution is the installed task at
+`2026-08-29T05:00:00+10:00`, only after the independent natural 01:00 ingest is
+terminally validated and the dashboard has returned. Do not trigger the task
+manually. Its expected action is `BACKUP-LATEST` with `PASS` if the 2026-08-29
+observation advanced; `NO_BACKUP_DATA_WRITE` requires independent proof that all
+source identities genuinely remained unchanged. Validate task result zero,
+exact execution-record identity, catalog append-only integrity, receipts,
+restores, Pi identity equality, no locks/partials/helpers/overlaps, and the
+50 GiB floor.
+
+A4 planning remains `BLOCKED` until both the transition entry and the first
+natural v1.4 05:00 proof entry are terminal `PASS`. No authority in this entry
+permits A4 implementation or execution, Pi deployment, runtime modification,
+manual ingest, forced ingest, publication manipulation, or Phase B advancement.
