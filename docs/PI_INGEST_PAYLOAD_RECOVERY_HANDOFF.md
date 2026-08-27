@@ -1275,3 +1275,183 @@ unchanged, and do not use `--force`, rerun another date, deploy, or start A4.
 There is no rollback action because this resume procedure permits no production
 mutation. If an unauthorised mutation is detected, stop without attempting an
 ad-hoc reversal and follow the controlled rollback procedure in ARL-OPS-001.
+
+---
+
+## Entry `HANDOFF-20260828T063742+1000-A3-DECISION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Previous handoff entry | `HANDOFF-20260828T052556+1000-CORRECTION` |
+| Previous handoff-containing commit | `efce38d7db074217791acc9408b8e8d1c1719705` |
+| Previous handoff raw Git-blob SHA-256 | `0412984f22202ca4f8af3d7439bd879e82ed25cb4774f3be934f0849f6586ef6` |
+| Created, Australia/Hobart | `2026-08-28T06:37:42+10:00` |
+| Created, UTC | `2026-08-27T20:37:42Z` |
+| Operator | `Codex for jkoka` |
+| Result | `PASS` |
+| Current phase | `A3 accepted; next bounded slice is the non-production backup-tooling plan-identity update` |
+| Controlling plan document | `ARL-OPS-001` |
+| Controlling plan version | `1.4` |
+| Controlling plan Git commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlling plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Controlling plan raw Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Completed A3 plan version | `1.3` |
+| Completed A3 plan Git commit | `8efefe10890a295ef87f97b46d3cb981193cfddc` |
+| Completed A3 plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Completed receiver candidate SHA | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Protected Pi code SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Decision ID | `DEC-A3-001` |
+| Decision | Accept A3 from its complete backup/restore evidence; retain the missed natural-ingest preflights as an independent procedural blocker for `NATURAL-20260828` |
+| Authorization | Direct operator instruction on 2026-08-28 rejecting the wait-only interpretation and directing continuation of the runbook and plan |
+
+### Reason and scope correction
+
+The preceding handoff incorrectly coupled two independent results:
+
+1. the `NATURAL-20260828` execution missed its mandatory 00:25 and 00:58
+   contemporaneous preflight evidence and therefore remains procedurally
+   `BLOCKED`; and
+2. A3's backup crash-recovery and scheduled backup/restore acceptance evidence
+   passed completely.
+
+ARL-OPS-001 v1.4 defines A3 as backup crash recovery: partial/orphan handling,
+retention reserve enforcement, lock coordination, a successful manual backup
+and restore before timer enablement, then safe scheduled operation under the A2
+resource and time controls. The A3 evidence proves those requirements. The
+runbook's daily-cycle section separately requires each natural ingest to carry
+its own capture, finalization, publication, dashboard, and backup outcomes.
+One result must not silently redefine the other.
+
+The operator rejected the interpretation that the missed natural preflight
+timestamps require all daylight development to idle until another daily cycle.
+This entry implements that instruction without rewriting either completed
+execution. It does not declare `NATURAL-20260828` procedurally complete and does
+not weaken future timed preflights.
+
+### Formal deviation decision
+
+| Required field | Decision record |
+|---|---|
+| Reason | The previous handoff treated an independent natural-ingest evidence defect as if it invalidated the fully proven A3 backup subsystem and prohibited the runbook's explicit daylight bounded-slice cadence. |
+| Risk | Separating the results could be misread as excusing missed daily preflights or allowing an unsafe deployment. |
+| Compensating controls | Preserve the natural execution as `BLOCKED`; retain every immutable artifact; keep exact 00:25/00:58 monitoring active; keep production pinned and clean; permit only an isolated non-production plan-identity update; keep A4 execution and all deployment prohibited. |
+| Revised A3 acceptance criteria | Require the accepted manual backup/restore gate, exact installed task/receiver identities, natural scheduled task result zero, selective transfer limited to genuinely missing dates, observation/control/macro restore proofs, full catalog chain, hygiene, and capacity floor. These all passed. Natural-ingest preflight completeness is recorded independently and is not an A3 backup acceptance criterion. |
+| Authorization | AR-local operator instruction: the wait-only conclusion was “not right”, followed by “Proceed with runbook and plan”, on 2026-08-28. |
+| Effective result | A3 `PASS`; `NATURAL-20260828` remains procedurally `BLOCKED`; no production deployment or A4 execution is authorised. |
+
+### Evidence supporting A3 acceptance
+
+| Component | Result | Authoritative evidence |
+|---|---|---|
+| Manual backup and full restore prerequisite | `PASS` | Prior A3 installation and manual proof retained under the v1.3 identity |
+| Natural 05:00 Task Scheduler execution | `PASS` | Start `2026-08-28T05:00:01+10:00`, task returned `Ready`, result `0` |
+| Exact task and receiver identity | `PASS` | Task XML SHA-256 `6f69ec39707ffbe2fc2e79d712748250eb00133fb5948ce0fd9b8a0d673b2f28`; clean receiver `c87cdd0077...` |
+| Selective observation transfer | `PASS` | Only genuinely missing date `2026-08-28` transferred; no missing dates afterward |
+| Observation restore | `PASS` | Catalog sequence 323; receipt SHA-256 `066554a67e41f2463a9db306edcfc17bd306973974e1e9b465f126f44752ec757b35` |
+| Control restore | `PASS` | Catalog sequence 324; receipt SHA-256 `19a35eae9132228db306edcfc17bd306973974e1e9b465f126f44752ec757b35` |
+| Macro restore | `PASS` | Catalog sequence 325; receipt SHA-256 `8ec4675f7cb0040e3be5530eac7b245afa71f3dfcb37abe4e3da3eed29b2512e` |
+| Catalog chain | `PASS` | Complete append-only chain through sequence 325 |
+| Post-task hygiene | `PASS` | No lock, partial, helper, overlap, or relevant residual process |
+| Capacity | `PASS` | More than 159 GB free at acceptance checks; controlled floor is 53,687,091,200 bytes |
+
+The terminal A3 record remains:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-20260828-0500\20260828T050102+1000\a3-terminal-result.json`
+
+- bytes: `12,777`;
+- SHA-256:
+  `ba5da62c07f196fd1686a90f27f31d7bb14bef29e49652d6df21250c7cea8fde`.
+
+Its overall `BLOCKED` value is preserved as the result produced before this
+scope decision. This entry is the append-only authorised decision that changes
+the phase-level interpretation; it does not edit that file.
+
+The latest read-only no-drift audit is:
+
+`C:\code\backups\AR-local-pi5\evidence\DRIFT-AUDIT-20260828\20260828T063323+1000\drift-audit.json`
+
+- bytes: `4,835`;
+- SHA-256:
+  `962cc0ce8171db0f1a1c05bcc6a78663748db759e2e13f39e59347f85d725913`;
+- result: `PASS`.
+
+It reconfirmed the protected clean Pi, enabled/active next 01:00 timer, absent
+lock, healthy current dashboard, exact clean receiver and task XML, 325-entry
+catalog, no lock or partials, capacity floor, and unchanged public v1 bytes.
+
+### Phase state after this decision
+
+| Gate or slice | State | Authority |
+|---|---|---|
+| A3 backup crash recovery | `PASS` | This append-only decision plus immutable A3 evidence |
+| `NATURAL-20260828` procedure | `BLOCKED` | Missed 00:25 and 00:58 evidence remains recorded |
+| Daily natural ingest continuity | `RUNNING` | Timed 00:25/00:58 monitor remains mandatory every day |
+| Backup-tooling v1.4 plan-identity update | `NOT_STARTED` | Authorised as the next isolated non-production slice |
+| A4 planning | `NOT_STARTED` | May begin only after the plan-identity update passes and its handoff is appended |
+| A4 physical execution | `NOT_STARTED` | Not authorised by this entry |
+| Pi deployment or runtime change | `NOT_STARTED` | Prohibited |
+| Phases B–G | `NOT_STARTED` | Not authorised |
+
+### Next bounded daylight slice
+
+Create a fresh worktree from the exact post-decision `origin/main`. Update the
+backup receiver's embedded plan identity and tests from the completed v1.3
+identity to the controlling v1.4 identity. This is a code-and-test compatibility
+slice only; it must not reinstall the accepted v1.3 Windows task, alter backup
+catalog data, connect a writable operation to the Pi, start A4, or deploy.
+
+Before editing, identify every embedded plan version, Git commit, controlled
+digest, normalized/raw digest expectation, fixture, installer default, and
+scheduled-wrapper assertion. Do not mechanically replace unrelated historical
+evidence or the immutable v1.3 task proof.
+
+The candidate must:
+
+- derive from exact current `origin/main` after this documentation PR merges;
+- use ARL-OPS-001 v1.4 commit
+  `14dd066099bba393cccf61a280243e43162eedc9` and controlled digest
+  `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`;
+- validate the v1.4 raw and normalized document identities without relabelling
+  any completed v1.3 execution;
+- retain protected Pi SHA `9302890...` only as an explicit input, never a
+  hidden default for future production;
+- pass focused backup, scheduler, restore, plan-identity, and regression tests;
+- pass exact-head CI and substantive review closure; and
+- be proven only from an isolated non-production checkout.
+
+### Timing, commands, and acceptance boundary
+
+Earliest start is immediately after this decision PR merges. The latest safe
+stop is `2026-08-28T23:30:00+10:00`; stop earlier if CI, review, or proof cannot
+finish cleanly. No work from this slice may continue into the 00:30 freeze.
+
+Initial read-only discovery commands are:
+
+```powershell
+git fetch origin --prune
+git worktree add -b codex/a3-plan-identity-v14 <fresh-path> origin/main
+rg -n "1\.3|8efefe10890a295ef87f97b46d3cb981193cfddc|8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d|PLAN_SHA256|plan_git_commit|plan_version" laptop_pull_backup.py laptop_backup_scheduled.py install tests
+```
+
+Verification must be discovered from the exact changed paths and CI, and must
+include at minimum:
+
+```powershell
+python -m pytest tests/test_laptop_pull_backup.py -q
+python -m pytest tests/test_pi_backup_foundation.py -q
+git diff --check
+```
+
+Acceptance requires one focused PR, exact post-decision base, clean worktree,
+all targeted tests passing, required CI green, every substantive review finding
+disposed and resolved, and no Pi/Task Scheduler/backup-catalog/public-payload
+mutation. Append a new handoff entry after the PR reaches a terminal result.
+
+Stop on any unexpected plan identity, historical-evidence rewrite, test failure,
+dirty base, merge conflict, receiver incompatibility, Pi contact capable of
+writing, task alteration, backup-data mutation, or risk of crossing the daily
+freeze. Rollback is to leave or close the unmerged topic branch; production and
+the installed v1.3 task remain unchanged. A merged candidate is not authorised
+for installation until a later entry explicitly permits it.
