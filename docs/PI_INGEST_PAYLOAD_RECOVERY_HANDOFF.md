@@ -2007,11 +2007,11 @@ The scheduled execution record is:
   diagnostics; and
 - observation, control, and macro all `UP_TO_DATE`.
 
-| Receipt | Receipt SHA-256 | Archive SHA-256 | Archive bytes |
-|---|---|---|---:|
-| `observations\2026-08-28\b9027f6e...\receipt.json` | `B6DE77630C6F5772C897CA74149C6A275C773FE69413FDD6369C80A7B78A2F56` | `db98067e11835b06fdba5d80d29c5c5f145ec35b9c3a0670050e2bd341d1d286` | 240,169,360 |
-| `control\20260827T212745Z-e04bdadaae10b8ab\receipt.json` | `B250386D2245B7A9FDD9C45C7AE8891FF909D3AA2BB615BFE89FC2E6E752B4A5` | `8d836989ed525972c99cd2d86aa4598e690032225c85b5b0fc13b503d62a2fd9` | 80,275,369 |
-| `macro\19afe13e...\receipt.json` | `F2EEEC162C6D84E1A0F6108E3EA1C050AA2E0B92340FBF89C1A2E2EFA6420EB9` | `ca4f75992aacba746523d6c7c958b2f41451e9cc9b9730eb2fcfb24e15fdc4c5` | 166,665 |
+| Catalog sequence | Exact receipt path under `C:\code\backups\AR-local-pi5` | Receipt SHA-256 | Archive SHA-256 | Archive bytes |
+|---:|---|---|---|---:|
+| 326 | `observations\2026-08-28\b9027f6e3b870fc49770daf412bbedabefa36498283a8e96fa31bb1b95e94632\receipt.json` | `B6DE77630C6F5772C897CA74149C6A275C773FE69413FDD6369C80A7B78A2F56` | `db98067e11835b06fdba5d80d29c5c5f145ec35b9c3a0670050e2bd341d1d286` | 240,169,360 |
+| 327 | `control\20260827T212745Z-e04bdadaae10b8ab\receipt.json` | `B250386D2245B7A9FDD9C45C7AE8891FF909D3AA2BB615BFE89FC2E6E752B4A5` | `8d836989ed525972c99cd2d86aa4598e690032225c85b5b0fc13b503d62a2fd9` | 80,275,369 |
+| 328 | `macro\19afe13e46d63568f858f832adbd548bd4761a5815d30e67bb3e06b843c027f2\receipt.json` | `F2EEEC162C6D84E1A0F6108E3EA1C050AA2E0B92340FBF89C1A2E2EFA6420EB9` | `ca4f75992aacba746523d6c7c958b2f41451e9cc9b9730eb2fcfb24e15fdc4c5` | 166,665 |
 
 The latest observation remains `2026-08-28`, generation
 `obs-2026-08-28-3c534348347d3f4e`: capture `PASS`, finalization `PASS`, dated
