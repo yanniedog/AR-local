@@ -1479,10 +1479,27 @@ for installation until a later entry explicitly permits it.
 | Controlling plan raw Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
 | Completed code candidate | `f214e3249c7968d574e3449edb14792904e1cc1f` |
 | Protected Pi code SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Completed A3 plan document | `ARL-OPS-001` |
+| Completed A3 plan version | `1.3` |
+| Completed A3 plan Git commit | `8efefe10890a295ef87f97b46d3cb981193cfddc` |
+| Completed A3 plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Completed A3 plan raw file SHA-256 | `6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444` |
 | Installed receiver SHA | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` — intentionally unchanged |
 | Decision ID | `DEC-A3-002` |
 | Decision | Accept the v1.4 plan-identity code slice after post-merge exact-head, exact-tree, review-closure, and no-mutation controls; preserve the premature-merge incident in immutable evidence |
 | Authorization | Direct operator instruction to proceed with the controlled runbook and plan; advancement remains bounded by this entry |
+
+### Authoritative repositories and cleanliness
+
+| Purpose | Path and state |
+|---|---|
+| Pi production | `/srv/ar-local/AR-local`; clean at protected `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Merged v1.4 verification checkout | `C:\code\backups\AR-local-a3-plan-v14-merged-f214e32`; clean detached checkout at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Installed A3 receiver | `C:\code\backups\AR-local-pi5-receiver-c87cdd0`; clean at `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Laptop backup root | `C:\code\backups\AR-local-pi5`; immutable catalog remains at sequence 325 |
+| Historical recovery-image candidate | `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; retained unchanged; not an accepted boot proof |
+| This documentation worktree | `C:\code\backups\AR-local-a3-plan-v14-handoff`; branch `codex/docs-a3-plan-v14-result-20260828`, created from exact `f214e324...` |
+| User checkout — prohibited for controlled work | `C:\code\AR-local`; at `a0bd0f54200c91ef7aaa2fb163e752005ddb71e8`, modified `.cursor/skills/pi-deploy-agent/SKILL.md`, untracked `.codex/`; do not clean or use |
 
 ### Completed slice
 
@@ -1603,6 +1620,28 @@ Read-only checks after PR #540 confirmed:
 | Pi deployment or runtime change | `NOT_STARTED` | Prohibited |
 | Phases B through G | `NOT_STARTED` | Not authorised |
 
+### Latest observation and independent continuity states
+
+The latest accepted observation remains `2026-08-28`, generation
+`obs-2026-08-28-3c534348347d3f4e`. Its observation state is `partial`, with
+3,839 raw attempts; 119 registered and attempted providers; 112 complete,
+seven partial, and zero failed providers; 17 attributable failures; zero
+corrupt or unattributed failures; and SQLite `PRAGMA quick_check=ok`.
+
+| Independent outcome | State | Evidence or interpretation |
+|---|---|---|
+| Timed natural-ingest procedure | `BLOCKED` | Mandatory 00:25 and 00:58 evidence was missed; this remains unwaived |
+| CDR source capture | `PASS` | Raw attempts retained; immutable natural record `c38b2ffc...` |
+| Observation finalization | `PASS` | Marker, contract, ledger, pointer, database and provider accounting validated |
+| Dated v1 publication | `PASS` | Manifest SHA-256 `2a542c0b14d037f00c65e8307a4b627bea14b12060416afb12ec79c62dfba2b9` and named assets publicly verified |
+| Rolling v1 publication | `PASS` | Manifest SHA-256 `f2b9f5e915bd5d34597abce0c2680ee32ddafce1fd2732e3baa6ea78fe7cbac7` and seven named assets publicly verified |
+| Dates index | `PASS` | SHA-256 `ec15504011cebb7817887fea28bc53f926eac66b89ba1aa65be9abec7a24bc01`; latest date `2026-08-28` |
+| v2 | `FAIL`, independent | Public v2 remains stale at `2026-08-21`; it neither passes nor invalidates v1 |
+| Dashboard return | `PASS` | HTTP healthy and serving `2026-08-28` |
+| Laptop observation/control/macro backup | `PASS` | Natural 05:00 selective backfill, restore checks, catalog sequence 325 |
+| Next natural ingest | `RUNNING` continuity obligation | `2026-08-29` at 01:00; exact 00:25/00:58 observation remains mandatory |
+| Next natural laptop backup | `SCHEDULED` | `2026-08-29` at 05:00 under unchanged v1.3 receiver/task |
+
 ### Next bounded daylight slice: A4 planning only
 
 Create a fresh worktree from exact `origin/main` after this documentation PR
@@ -1642,6 +1681,54 @@ execution design that a new session can follow without guessing; exact paths,
 device-identity rules, destructive boundaries, evidence requirements, tests,
 operator actions, timings, stop conditions, and rollback must all be explicit.
 Append another handoff entry before any implementation or physical step.
+
+Use this exact read-only start sequence after this handoff PR merges:
+
+```powershell
+$controlRepo = 'C:\code\backups\AR-local-a3-plan-v14-handoff'
+git -C $controlRepo fetch origin --prune
+$main = (git -C $controlRepo rev-parse origin/main).Trim()
+$planning = "C:\code\backups\AR-local-a4-planning-$($main.Substring(0,7))"
+if (Test-Path -LiteralPath $planning) { throw "A4 planning path already exists: $planning" }
+git -C $controlRepo worktree add --detach $planning $main
+if (@(git -C $planning status --porcelain=v1).Count -ne 0) { throw 'A4 planning checkout is dirty.' }
+
+Set-Location $planning
+python -c "import laptop_pull_backup as r; p=r.verify_plan_document(); assert p['plan_version']=='1.4'; assert p['plan_git_commit']=='14dd066099bba393cccf61a280243e43162eedc9'; assert p['plan_sha256']=='78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713'; print(p)"
+python -c "import hashlib,subprocess; b=subprocess.run(['git','show','origin/main:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'],capture_output=True,check=True).stdout; print(hashlib.sha256(b).hexdigest())"
+Get-Content docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md -Raw
+Get-Content docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md -Raw
+
+rg --files | rg -i 'restore|backup|clone|boot|recovery'
+rg -n "A4|boot|clone|root device|target.media|serial|UUID|inhibit|secret|rollback" `
+  ar_local_boot_proof.py ar_local_restore_verification.py ar_local_backup_scope.py `
+  ar_local_backup_policy.py pi_backup_foundation.py deploy/pi contracts tests docs/PI_BACKUP_FOUNDATION.md
+Get-Content contracts/pi-backup-boot-proof-v1.schema.json -Raw
+Get-Content contracts/pi-restore-acceptance-v1.schema.json -Raw
+Get-Content deploy/pi/ar-local-restore-latest.sh -Raw
+Get-Content deploy/pi/ar-local-boot-recovery.sh -Raw
+Get-Disk | Select-Object Number,FriendlyName,SerialNumber,UniqueId,BusType,PartitionStyle,OperationalStatus,IsBoot,IsSystem,Size
+Get-Partition | Select-Object DiskNumber,PartitionNumber,DriveLetter,Type,Size,IsBoot,IsSystem
+Get-Volume | Select-Object DriveLetter,FileSystemLabel,FileSystem,Path,Size,SizeRemaining,HealthStatus
+Get-Item -LiteralPath 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21' | Select-Object FullName,Length,LastWriteTimeUtc
+Get-Content -LiteralPath 'C:\code\backups\AR-local-pi5\recovery-base\historical-image-2026-05-21.receipt.json' -Raw
+```
+
+The next operator must compare the printed handoff raw Git-blob hash with the
+post-merge automation authority, and must also record the squash-merge commit returned by
+`git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`; content
+hash equality does not replace commit identity.
+
+The planning output must enumerate every inspected file and command, the exact
+candidate SHA, repository cleanliness, evidence paths and hashes, findings,
+requirements, residual risks, and a terminal `PASS`, `FAIL`, or `BLOCKED`. If a
+tooling PR is proposed, stop at the plan and append a new handoff entry; do not
+begin implementation from this authority.
+
+Preserve the installed v1.3 task, receiver, recovery image, all 325 catalog
+entries, every receipt/archive, the original `BLOCKED` execution record, public
+v1, Pi production, and the dirty user checkout byte-for-byte. Do not delete
+orphan evidence, normalize old receipts, or replace a historical plan identity.
 
 Stop and preserve state if any authoritative identity differs, if an operation
 would write to the Pi/task/catalog/public payload or any storage device, if a
