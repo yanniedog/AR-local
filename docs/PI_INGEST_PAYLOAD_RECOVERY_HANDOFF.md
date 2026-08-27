@@ -1935,3 +1935,157 @@ A4 planning remains `BLOCKED` until both the transition entry and the first
 natural v1.4 05:00 proof entry are terminal `PASS`. No authority in this entry
 permits A4 implementation or execution, Pi deployment, runtime modification,
 manual ingest, forced ingest, publication manipulation, or Phase B advancement.
+
+---
+
+## Entry `HANDOFF-20260828T073037+1000-A3-V14-TASK-TRANSITION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Previous entry | `HANDOFF-20260828T070253+1000-A3-PLAN-V14` |
+| Previous entry merge commit | `d2ceb39adb31cf4268af2dfeee1e7d69dafed3a9` |
+| Previous handoff raw Git-blob SHA-256 | `62d7c23bd7fad502ef9ff8ee5237d6ebd6f7d5568ab8b9a0d36fe0ec624c6dbd` |
+| Created, Australia/Hobart | `2026-08-28T07:30:37+10:00` |
+| Created, UTC | `2026-08-27T21:30:37Z` |
+| Operator | `Codex for jkoka` |
+| Result | `BLOCKED` — administrator-only Gate 4 remains for the operator |
+| Current phase | `A3 v1.4 scheduled-task transition: Gates 1 through 3 PASS; Gate 4 pending` |
+| Plan document | `ARL-OPS-001` |
+| Plan version | `1.4` |
+| Plan commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Candidate code SHA | `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator identity required for Gate 4 | `yanniedog\jkoka`, elevated administrator shell |
+| Deviations | None |
+
+### Authoritative paths and initial state
+
+| Purpose | Path and state |
+|---|---|
+| Pi production | `/srv/ar-local/AR-local`; clean at protected SHA; not changed |
+| Exact v1.4 receiver | `C:\code\backups\AR-local-pi5-receiver-f214e32`; clean detached checkout at candidate SHA |
+| Backup target | `C:\code\backups\AR-local-pi5`; intentionally advanced append-only through catalog sequence 328 |
+| Recovery image | `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; unchanged |
+| Old installed receiver | `C:\code\backups\AR-local-pi5-receiver-c87cdd0`; retained unchanged as historical A3 evidence |
+| Old installed task | `AR-local laptop backup`; still enabled and `Ready` on v1.3 pending Gate 4 |
+| Dirty user checkout | `C:\code\AR-local`; prohibited and untouched |
+| This documentation worktree | `C:\code\backups\AR-local-a3-v14-task-transition-handoff`; fresh branch from exact previous merge |
+
+### Gate results
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Documentation authority | `PASS` | Previous merge and raw handoff hash exact; runbook verifier returned v1.4 identity |
+| Exact receiver | `PASS` | Clean detached `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Laptop preflight | `PASS` | Target/image present, 158,916,251,648 free bytes, no receiver lock/partial/helper |
+| Pi read-only preflight | `PASS` | Protected clean SHA, ingest inactive, lock absent, timer active/enabled for 01:00, dashboard healthy for `2026-08-28` |
+| Foreground v1.4 wrapper | `PASS` | Expected `BACKUP-LATEST`; no historical backfill; post-state `UP_TO_DATE` |
+| Historical catalog prefix | `PASS` | First 325 lines retain SHA-256 `0f3517c61ae5c9fb13a2ecc634895b8c0ee935d3d005e4b6d7cf68086e4d5704` |
+| Current catalog | `PASS` | 328 valid hash-linked entries; SHA-256 `0758084ea8ac5708c568c407682382acdf7c006829705addf8a0e4d21aef27a6`; tip digest `b9cb51490976782661f73ba0773d24856accf892d1fa366ca4c3ed374b80c5ba` |
+| Receipt identities | `PASS` | 325 catalogued v1.3 receipts accepted only through the exact legacy allowlist; three new receipts are exact v1.4 |
+| Observation restore | `PASS` | 10,995 files and 2,776,556,753 source bytes verified; SQLite quick check `ok`; 3,012 products; 17,052 rates |
+| Control restore | `PASS` | 321 files and 223,783,395 source bytes verified; both Git bundles present; SQLite checks `ok` |
+| Macro restore | `PASS` | One file and 995,328 source bytes verified; SQLite quick check `ok` |
+| Post-run hygiene | `PASS` | No receiver lock, partial, or helper; 158,597,357,568 free bytes |
+| v1.4 task installation/read-back | `BLOCKED` | Requires the operator's elevated Windows shell; current Codex shell is not elevated |
+
+### Immutable v1.4 backup evidence
+
+The scheduled execution record is:
+
+`C:\code\backups\AR-local-pi5\catalog\scheduled-runs\20260827T212833Z-5f79ead38f3f45a989da9d19221dc122.json`
+
+- SHA-256:
+  `7818886261AFAC38558625171E00886CC6926834869CE4AF3ECD9FAFA8E344CF`;
+- action `BACKUP-LATEST`;
+- result `PASS`;
+- inventory `UP_TO_DATE` with no missing completed dates and no stale
+  diagnostics; and
+- observation, control, and macro all `UP_TO_DATE`.
+
+| Receipt | Receipt SHA-256 | Archive SHA-256 | Archive bytes |
+|---|---|---|---:|
+| `observations\2026-08-28\b9027f6e...\receipt.json` | `B6DE77630C6F5772C897CA74149C6A275C773FE69413FDD6369C80A7B78A2F56` | `db98067e11835b06fdba5d80d29c5c5f145ec35b9c3a0670050e2bd341d1d286` | 240,169,360 |
+| `control\20260827T212745Z-e04bdadaae10b8ab\receipt.json` | `B250386D2245B7A9FDD9C45C7AE8891FF909D3AA2BB615BFE89FC2E6E752B4A5` | `8d836989ed525972c99cd2d86aa4598e690032225c85b5b0fc13b503d62a2fd9` | 80,275,369 |
+| `macro\19afe13e...\receipt.json` | `F2EEEC162C6D84E1A0F6108E3EA1C050AA2E0B92340FBF89C1A2E2EFA6420EB9` | `ca4f75992aacba746523d6c7c958b2f41451e9cc9b9730eb2fcfb24e15fdc4c5` | 166,665 |
+
+The latest observation remains `2026-08-28`, generation
+`obs-2026-08-28-3c534348347d3f4e`: capture `PASS`, finalization `PASS`, dated
+v1 `PASS`, rolling v1 `PASS`, dates index `PASS`, dashboard return `PASS`, and
+laptop backup `PASS`. v2 remains independently stale/`FAIL`; the missed 00:25
+and 00:58 proof leaves the timed natural-ingest procedure independently
+`BLOCKED`. None of those independent outcomes is relabelled by this entry.
+
+### Exact Gate 4 operator action
+
+Run this block once in a new **administrator** Windows PowerShell window. Do not
+run it in the non-elevated Codex terminal. Do not manually start the task after
+installation.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+whoami
+# Must print: yanniedog\jkoka
+([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Must print: True
+
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$target = 'C:\code\backups\AR-local-pi5'
+$image = 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21'
+$candidate = 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$protected = '9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit = '14dd066099bba393cccf61a280243e43162eedc9'
+
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $candidate) { throw 'Receiver SHA mismatch.' }
+if (@(git -C $receiver status --porcelain=v1).Count -ne 0) { throw 'Receiver is dirty.' }
+if (Test-Path -LiteralPath "$target\catalog\.receiver.lock") { throw 'Receiver lock exists.' }
+if (Get-ChildItem -LiteralPath $target -Recurse -Force -Filter '*.partial') { throw 'Partial artifact exists.' }
+if ((Get-Volume -DriveLetter C).SizeRemaining -lt 53687091200) { throw 'Less than 50 GiB remains.' }
+
+& "$receiver\install_laptop_backup_task.ps1" `
+  -Target $target `
+  -RecoveryImage $image `
+  -CandidateCodeSha $candidate `
+  -ProtectedCodeSha $protected `
+  -PlanGitCommit $planCommit `
+  -Operator 'jkoka'
+if ($LASTEXITCODE -ne 0) { throw 'v1.4 task installation failed.' }
+
+$task = Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$info = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xml = Export-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$task | Format-List TaskName,State
+$info | Format-List LastRunTime,LastTaskResult,NextRunTime,NumberOfMissedRuns
+$xml
+```
+
+Expected installer precheck: `NO_BACKUP_DATA_WRITE`, result `PASS`, every
+component `UP_TO_DATE`. Expected task: `Ready`, enabled, exact receiver and
+candidate above, plan commit `14dd066...`, protected SHA `9302890...`, operator
+`jkoka`, principal `yanniedog\jkoka`, `S4U`, `Limited`, one daily 05:00 trigger,
+one startup-plus-five-minute trigger, `IgnoreNew`, three 30-minute retries,
+six-hour limit, and start-when-available.
+
+Return the complete output to the controlling session. The next session then
+hashes and preserves the live XML, validates the new installer-created
+scheduled record, performs a final read-only Pi/laptop no-drift check, and
+appends a terminal transition entry. If installation or read-back fails, leave
+the task disabled and return the exact error; do not restore an enabled v1.3
+definition.
+
+### Time boundary and resume state
+
+Gate 4 must reach exact acceptance by `2026-08-28T23:30:00+10:00`. If it cannot,
+an elevated operator must disable `AR-local laptop backup`, verify disabled
+read-back, preserve its XML, and record `BLOCKED`. The v1.3 task must not execute
+again after terminal A3. The 00:30 freeze still takes precedence, and the natural
+2026-08-29 01:00 Pi ingest remains untouched.
+
+A4 planning, A4 execution, deployment, manual ingest, force, publication
+manipulation, and Phases B through G remain prohibited. After exact task
+installation passes, the first natural v1.4 05:00 run on 2026-08-29 must be
+observed and accepted before A4 planning can begin.
