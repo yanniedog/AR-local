@@ -7,11 +7,16 @@ The installable consumer is maintained separately in
 
 ## Start here
 
-1. Read `AGENTS.md`, `WORKFLOW.md`, and `docs/UNIVERSAL_ROADMAP.md`.
-2. Inspect the current branch, worktrees, and local changes before writing.
-3. Use an isolated topic worktree and preserve unrelated work.
-4. Run `python -m pytest tests/ -q` for producer changes.
-5. Follow the repository PR review and squash-merge ship bar.
+1. For any active Pi recovery, ingest, payload, database, backup, canary,
+   deployment, or rollback task, read
+   `docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` completely and then read
+   `docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md` completely. Its last
+   chronological entry is the exact resume pointer.
+2. Read `AGENTS.md`, `WORKFLOW.md`, and `docs/UNIVERSAL_ROADMAP.md`.
+3. Inspect the current branch, worktrees, and local changes before writing.
+4. Use an isolated topic worktree and preserve unrelated work.
+5. Run `python -m pytest tests/ -q` for producer changes.
+6. Follow the repository PR review and squash-merge ship bar.
 
 Never deploy over an unknown or dirty Pi checkout. Verification and deployment
 are separate operations; use the documented canary approval flow for any

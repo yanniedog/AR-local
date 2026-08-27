@@ -14,9 +14,11 @@ captures the Pi/LAN/SSD portability model, the banking-only scope, and the
 AustralianRates dashboard parity contract.
 
 Before any Pi ingest, payload, database, backup, canary, deployment, or rollback
-operation, read **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**. It is
-the controlled recovery plan and contains mandatory stop, evidence, and rollback
-gates.
+operation, read **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**, then
+read **`docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md` in full** and resume only
+from its last chronological entry. The runbook controls mandatory stop,
+evidence, and rollback gates; the append-only handoff ledger records current
+phase, accepted evidence, and the exact next action.
 
 ## Installable app
 
@@ -30,9 +32,10 @@ repository's **`app-payload-latest`** rolling release and immutable
 **`app-payload-<date>`** history releases. See **`docs/MOBILE_APP.md`** for the
 cross-repository contract and **`docs/HANDOFF.md`** for producer operations.
 
-> **Picking up this work (any LLM/agent)?** Start with **`docs/HANDOFF.md`** — a
-> self-contained guide to the Pi→GitHub payload flow, daily verification,
-> producer file layout, secrets, and operational gotchas.
+> **Picking up recovery work (any LLM/agent)?** Read the controlled runbook and
+> **`docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`** before the general
+> **`docs/HANDOFF.md`**. The recovery handoff is the authoritative resume ledger;
+> the general handoff explains the broader Pi→GitHub producer flow.
 
 ## Easiest Start
 
