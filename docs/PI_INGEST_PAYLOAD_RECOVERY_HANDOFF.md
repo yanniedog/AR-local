@@ -2165,15 +2165,16 @@ The installer-created check-only record is:
 | Enabled/read-back | `PASS` | `Ready`, enabled, zero missed runs; full core assertion passed |
 | Previous task result | `PASS` | Last natural v1.3 A3 run remains result zero and historical evidence is unchanged |
 | Next natural task run | `RUNNING` obligation | `2026-08-29T05:00:00+10:00`; do not trigger manually |
-| Catalog integrity | `PASS` | Still 328 entries; SHA-256 `0758084e...`; no generation was appended by installation |
+| Catalog integrity | `PASS` | Still 328 entries; SHA-256 `0758084ea8ac5708c568c407682382acdf7c006829705addf8a0e4d21aef27a6`; no generation was appended by installation |
 | Hygiene/capacity | `PASS` | No receiver lock or partial; 158,551,814,144 free bytes |
 | Pi no-drift | `PASS` | Protected clean SHA, ingest inactive, lock absent, timer active/enabled for 01:00 |
 | Dashboard | `PASS` | HTTP healthy for observation date `2026-08-28` |
 
 The superseded v1.3 task is no longer active. Its receiver, accepted XML,
 receipts, and execution records remain immutable historical evidence. No Pi
-production, service, timer, data, payload, or publication state was modified by
-this transition.
+production state or production backup data/generation was modified or appended
+by this transition. The installer wrote the scheduled-run JSON evidence record
+listed above and updated the backup target's latest-scheduled pointer.
 
 ### Operating policy and exact resume point
 
