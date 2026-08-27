@@ -276,6 +276,58 @@ def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
     assert transport.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
 
 
+def test_helper_transport_detaches_scheduled_task_stdin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text("print('safe')\n", encoding="utf-8")
+    digest = receiver.sha256_file(helper)
+    remote_dir = "/tmp/ar-local-laptop-backup.Ab12Cd34"
+    remote = f"{remote_dir}/source.py"
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    results = iter((
+        subprocess.CompletedProcess(("ssh",), 0, f"{remote_dir}\n".encode(), b""),
+        subprocess.CompletedProcess(("scp",), 0, b"", b""),
+        subprocess.CompletedProcess(("ssh",), 0, f"{digest}  {remote}\n".encode(), b""),
+        subprocess.CompletedProcess(("ssh",), 0, b"700\n", b""),
+    ))
+
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((args, kwargs))
+        return next(results)
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    assert transport.install_remote_helper(Namespace(source_helper=helper, host="pi")) == (remote, digest)
+    assert len(calls) == 4
+    assert all(kwargs.get("stdin") is subprocess.DEVNULL for _args, kwargs in calls)
+    assert calls[1][1].get("timeout") == 30
+
+
+def test_helper_timeout_removes_only_verified_remote_temporary_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text("print('safe')\n", encoding="utf-8")
+    remote_dir = "/tmp/ar-local-laptop-backup.Ab12Cd34"
+    calls: list[tuple[object, ...]] = []
+
+    def run(command: tuple[object, ...], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        if command[0] == "ssh" and "mktemp" in command:
+            return subprocess.CompletedProcess(command, 0, f"{remote_dir}\n".encode(), b"")
+        if command[0] == "scp":
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+        if "sha256sum" in command:
+            raise subprocess.TimeoutExpired(command, 30)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    with pytest.raises(subprocess.TimeoutExpired):
+        transport.install_remote_helper(Namespace(source_helper=helper, host="pi"))
+    assert any("rm" in command for command in calls)
+    assert any("rmdir" in command for command in calls)
+
+
 def test_remote_helper_cleanup_reports_real_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     results = iter((
