@@ -53,7 +53,17 @@ $registered = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $expectedExecutable = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $expectedPrincipalSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 Assert-ArLaptopBackupTaskDefinition -Registered $registered -ExpectedExecutable $expectedExecutable `
-  -ExpectedArguments $arguments -ExpectedWorkingDirectory $repo -ExpectedPrincipalSid $expectedPrincipalSid
+  -ExpectedArguments $arguments -ExpectedWorkingDirectory $repo -ExpectedPrincipalSid $expectedPrincipalSid `
+  -ExpectedEnabled $false
+
+$verifyEnabledTask = {
+  param($EnabledTask)
+  Assert-ArLaptopBackupTaskDefinition -Registered $EnabledTask -ExpectedExecutable $expectedExecutable `
+    -ExpectedArguments $arguments -ExpectedWorkingDirectory $repo -ExpectedPrincipalSid $expectedPrincipalSid `
+    -ExpectedEnabled $true
+}
+$registered = Enable-ArLaptopBackupTaskAfterVerification -TaskName $TaskName `
+  -VerifyEnabledTask $verifyEnabledTask
 
 [pscustomobject]@{
   task_name = $registered.TaskName

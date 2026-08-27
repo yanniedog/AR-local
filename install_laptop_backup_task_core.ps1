@@ -9,6 +9,7 @@ function Invoke-ArLaptopBackupTaskRegistration {
     }
   )
 
+  $Task.Settings.Enabled = $false
   try {
     & $RegisterTask $TaskName $Task
   } catch {
@@ -24,6 +25,7 @@ function Assert-ArLaptopBackupTaskDefinition {
     [Parameter(Mandatory = $true)][string]$ExpectedArguments,
     [Parameter(Mandatory = $true)][string]$ExpectedWorkingDirectory,
     [Parameter(Mandatory = $true)][string]$ExpectedPrincipalSid,
+    [Parameter(Mandatory = $true)][bool]$ExpectedEnabled,
     [scriptblock]$ResolvePrincipalSid = {
       param($UserId)
       ([System.Security.Principal.NTAccount]$UserId).Translate(
@@ -45,7 +47,7 @@ function Assert-ArLaptopBackupTaskDefinition {
   if ($registeredPrincipalSid -ne $ExpectedPrincipalSid) { $mismatches += 'principal identity' }
   if ($Registered.Principal.LogonType.ToString() -ne 'S4U') { $mismatches += 'logon type' }
   if ($Registered.Principal.RunLevel.ToString() -ne 'Limited') { $mismatches += 'run level' }
-  if (-not $Registered.Settings.Enabled) { $mismatches += 'enabled state' }
+  if ([bool]$Registered.Settings.Enabled -ne $ExpectedEnabled) { $mismatches += 'enabled state' }
   if ($Registered.Settings.MultipleInstances.ToString() -ne 'IgnoreNew') { $mismatches += 'overlap policy' }
   if ($Registered.Settings.RestartCount -ne 3) { $mismatches += 'retry count' }
   if ($Registered.Settings.RestartInterval -ne 'PT30M') { $mismatches += 'retry interval' }
@@ -55,5 +57,40 @@ function Assert-ArLaptopBackupTaskDefinition {
   if ($startupTrigger.Count -ne 1 -or $startupTrigger[0].Delay -ne 'PT5M') { $mismatches += 'startup trigger' }
   if ($mismatches.Count -gt 0) {
     throw "Scheduled task read-back verification failed: $($mismatches -join ', ')."
+  }
+}
+
+function Enable-ArLaptopBackupTaskAfterVerification {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$TaskName,
+    [Parameter(Mandatory = $true)][scriptblock]$VerifyEnabledTask,
+    [scriptblock]$EnableTask = {
+      param($Name)
+      Enable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+    },
+    [scriptblock]$GetTask = {
+      param($Name)
+      Get-ScheduledTask -TaskName $Name -ErrorAction Stop
+    },
+    [scriptblock]$DisableTask = {
+      param($Name)
+      Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+    }
+  )
+
+  try {
+    & $EnableTask $TaskName
+    $enabledTask = & $GetTask $TaskName
+    & $VerifyEnabledTask $enabledTask
+    return $enabledTask
+  } catch {
+    $activationError = $_.Exception.Message
+    try {
+      & $DisableTask $TaskName
+    } catch {
+      throw "Scheduled task activation/read-back failed ($activationError), and disabling it also failed: $($_.Exception.Message)"
+    }
+    throw "Scheduled task activation/read-back failed; the task was disabled: $activationError"
   }
 }
