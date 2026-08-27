@@ -5,15 +5,15 @@
 | Field | Value |
 |---|---|
 | Document ID | `ARL-OPS-001` |
-| Version | `1.3` |
+| Version | `1.4` |
 | Status | Controlled execution plan |
-| Effective date | `2026-08-25` |
+| Effective date | `2026-08-27` |
 | Owner | AR-local operator |
 | Time zone | Australia/Hobart |
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Controlled plan SHA-256 | `b234469085141f8799a7744f20980728bf829970758e904126b811dca7f98218` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -45,6 +45,192 @@ not override it. Read it fully before any covered operation.
 | D-003 | 2026-08-25 | Make the product-day the atomic publication unit. Publish every independently valid current product, quarantine or omit only the affected product, and disclose attributable provider and product gaps. Remove numeric failure-count and failure-ratio eligibility thresholds. | The v1.0 bounded-partial gate withheld otherwise valid observations and could strand the app on an older date. Conversely, relaxing the gate without positive membership proof could publish corrupt or stale products. | Require a ledger-bound `ProductAccountingV1` membership sidecar, exact database/sidecar/payload reconciliation, product-level validation, no stale carry-forward, transactional public verification, an upgraded AR-app before activation, staged feature modes, and whole-observation holds for control-plane failures that cannot be scoped safely. | Direct operator decision after the 2026-08-24 publication gap and the 2026-08-25 accounting-disclosure mismatch. |
 | D-004 | 2026-08-25 | Use the physically separate Windows laptop as the primary off-device pull-backup target, while preserving the existing 32 GB historical recovery-image candidate for later boot proof. Maintain a strict 50 GiB laptop free-space floor and store immutable, compressed, hash-manifested observation packs plus current control/configuration packs instead of thirty full physical-disk images. | The Pi has no adequate separate mounted disk: its 59.7 GB USB and 29.7 GB MMC devices are smaller than the 72.7 GiB authoritative data set. The laptop has enough measured capacity, already holds recovery material, and avoids writing credentials or network shares onto the Pi. Risks are laptop unavailability, single-site loss, ransomware, interrupted network transfer, and divergence between the historical boot image and current data layer. | Laptop initiates every pull over SSH; the Pi never receives laptop credentials. Use immutable per-observation packs, canonical source and archive hashes, atomic `.partial` promotion, continuous free-space enforcement, SQLite-consistent copies, secret exclusion, restore drills, freshness receipts, and a fail-closed scheduler. Preserve but quarantine the known-short failed image; do not call the exact-size historical image current or bootable until A4 proves it. A later independent site remains required for full disaster resilience. | Explicit operator direction to use the existing laptop backup and retain approximately 50 GB free. |
 | D-005 | 2026-08-25 | Correct the laptop backup bootstrap before its first data transfer: preserve every retained completed and terminal-failed run plus `runs-archive`; reserve archive and scratch space simultaneously; verify every canonical manifest metadata field; durably flush every commit boundary; and make observation, control, and macro freshness independent scheduler gates. | Late review of v1.2 found that a latest-completed-only interpretation could lose older or failed raw evidence, that the stated capacity check omitted simultaneous archive bytes, that restore comparison omitted mode/time/ownership metadata, and that an observation-only no-op could leave control or macro recovery data stale. The same review found ambiguous DOC-02/DOC-03 and mounted-storage wording. | No backup transfer or schedule is accepted under v1.2 alone. Use DOC-03 for this document lineage; D-004/D-005 explicitly supersede the retained mounted-storage instruction. The receiver inventories all retained run namespaces, treats terminal failures as diagnostic evidence rather than publishable observations, uses worst-case dual-copy capacity, compares tar metadata and extracted bytes, flushes file and directory metadata in dependency order, and records independent freshness identities. | Mandatory safety correction from the repository's post-merge substantive review before first execution. |
+| D-006 | 2026-08-27 | Treat recovery as a multi-day controlled program while preserving the natural 01:00 ingest as an independent, non-negotiable daily production obligation. Daily capture takes precedence over every development, remediation, canary, deployment, backup, and recovery-proof activity. | The upstream CDR exposes only the current Australia/Hobart calendar day's data. At midnight that source data disappears and the next day's data replaces it. A missed capture therefore creates an irreversible source gap; later development success, a forced rerun on another day, or a reconstructed payload cannot recover the lost source observation. Multi-day work also creates repeated collision risk around the daily timer. | Use the v1.4 daily operating cycle, immutable per-day evidence, an enforced pre-ingest freeze, independent capture/finalization/publication outcomes, and same-day-only controlled recovery. Pause phase work whenever required to protect the natural ingest. Never disable or repurpose the production timer for development. Record a missed day as an immutable source gap rather than substituting stale or next-day data. | Direct operator instruction on 2026-08-27. |
+
+## Version 1.4 multi-day continuity and daily capture amendment
+
+This section is normative for all work performed on or after 2026-08-27. The
+recovery program is expected to span multiple days or weeks. No phase, slice, or
+pull request is expected to finish in one day. The safe unit of progress is one
+small, bounded, evidenced change that leaves production ready for the next
+natural ingest. Unfinished work remains `RUNNING` or `BLOCKED`; schedule pressure
+is never permission to widen a slice, waive a gate, or deploy near an ingest.
+
+The document-control execution ID for this version is `DOC-04`. Existing
+completed evidence retains the plan identity under which it was created and is
+never rewritten. New executions started after the v1.4 documentation merge use
+the v1.4 plan commit and controlled digest, subject to the explicit transition
+rule below.
+
+### Irreversible upstream availability boundary
+
+- The upstream CDR exposes only data for the current calendar date in
+  `Australia/Hobart`.
+- The upstream day changes at 00:00. Once midnight passes, the previous day's
+  source data is no longer available from that upstream interface.
+- A successful 01:00 ingest therefore captures the only live source observation
+  available for that day. It is not merely a scheduled convenience.
+- A missed day cannot be repaired by assigning the next day's data to the prior
+  date, copying a prior payload, carrying a stale product forward, or changing a
+  manifest date. Those actions would create invalid provenance.
+- Historical public payloads, local exports, backups, or caches may preserve
+  evidence already captured, but they do not recreate source evidence that was
+  never captured.
+- If a day's source window is lost, record an immutable source-gap entry with the
+  affected date, known cause, available evidence, impact, and recovery limits.
+  Never conceal the gap or label reconstructed data as a live CDR observation.
+
+### Non-negotiable daily production obligation
+
+The natural `ar-local-daily.timer` 01:00 ingest continues every day throughout
+all remediation phases. It is independent of whether the current development
+slice is `NOT_STARTED`, `RUNNING`, `PASS`, `FAIL`, `BLOCKED`, or `ROLLED_BACK`.
+No phase owner may disable, postpone, mask, stop, replace, or repurpose that
+timer to make development easier. Production stays on the last-known-good
+commit until a later candidate satisfies every deployment gate in this runbook.
+
+Daily capture outranks:
+
+1. canary or shadow work;
+2. pull-request completion and CI;
+3. deployments and rollback exercises;
+4. manual ingest experiments;
+5. backup, restore, or clone tests;
+6. package, operating-system, service, network, or storage maintenance; and
+7. convenience or pressure to finish a phase on a particular day.
+
+When any work might threaten the next natural ingest, stop or defer that work.
+Protecting the day's only source window is the controlling acceptance criterion.
+
+### Repeating daily operating cycle
+
+Every Australia/Hobart calendar day uses the following cycle until the complete
+recovery train is closed:
+
+1. **After the prior natural ingest is validated:** select at most one bounded
+   slice whose stop point leaves production unchanged or demonstrably safe.
+   Record its planned files, commands, resource limits, rollback boundary, and
+   latest safe stop time before starting.
+2. **Daylight work:** perform documentation, isolated development, review, CI,
+   and approved non-production proof. Runtime deployment remains subject to the
+   stricter daylight, backup, rollback, soak, and natural-ingest gates elsewhere
+   in this runbook.
+3. **Pre-freeze closure:** stop mutating operations early enough to restore a
+   clean, healthy, known state and complete evidence. A task that cannot finish
+   safely before the freeze is left `RUNNING` or `BLOCKED` and resumes on a later
+   day; it is not rushed through.
+4. **00:30 freeze:** from 00:30 until the natural ingest is terminally complete
+   and production validation has finished, perform read-only observation only.
+   No deployment, canary, manual ingest, service restart, package change,
+   publication manipulation, backup transfer, restore drill, clone test, or
+   storage maintenance is permitted.
+5. **01:00 natural ingest:** allow the production timer to start exactly once.
+   Observe locks, service state, resource pressure, dashboard pause/return, raw
+   capture, finalization, and publication without competing with the job.
+6. **Post-ingest validation:** independently record raw capture, observation
+   finalization, database/contracts/ledger/pointers, dashboard return, and every
+   public publication component. A zero process exit is not by itself a pass.
+7. **05:00 laptop protection:** when the laptop is available and the A3 task is
+   proven, the scheduled pull normally creates and verifies a new generation for
+   the newly captured observation and any changed control or macro identity.
+   `NO_BACKUP_DATA_WRITE` is correct only when all three independently verified
+   source identities are genuinely unchanged. It must not be expected merely
+   because the preceding manual proof was a no-op.
+8. **Resume gate:** resume the next bounded development slice only after the
+   natural ingest has a terminal evidence result, the dashboard is healthy, no
+   ingest lock remains, production is clean at the expected SHA, and the day's
+   backup outcome is understood. A publication-only issue follows the recorded
+   observation's existing-payload retry path and does not justify rerunning
+   ingest.
+
+The 00:30 boundary is a minimum protection window, not a target for finishing
+work. Runtime deployments must still finish several hours before 00:30 and meet
+the required soak. A longer freeze is mandatory whenever system health or the
+remaining work duration is uncertain.
+
+### Independent daily result model
+
+Use execution ID `NATURAL-YYYYMMDD` for the natural ingest of each source date.
+Its append-only evidence must separately record:
+
+| Component | Required result and meaning |
+|---|---|
+| `source_capture` | Whether same-day upstream responses and raw attempts were durably retained |
+| `observation_finalization` | Whether SQLite, completion, contract, ledger, pointers, schema, integrity, and accounting passed |
+| `dated_v1` | Whether the immutable dated v1 component was publicly downloaded and verified |
+| `rolling_v1` | Whether the monotonic rolling v1 component was publicly downloaded and verified |
+| `dates_index` | Whether the public dates index was independently downloaded and verified |
+| `v2` | Its independent state; it cannot clear or redefine a v1 result |
+| `dashboard_return` | Whether the controlled ingest pause ended and dashboard health returned automatically |
+| `laptop_backup` | The later scheduled backup result and exact observation/control/macro identities when available |
+
+Capture, finalization, publication, and backup are not interchangeable. For
+example, a publication failure can coexist with a preserved valid observation;
+it must not trigger a second upstream ingest. Likewise, a withheld payload must
+not cause raw evidence or a valid daily database to be deleted.
+
+### Same-day failure and catch-up boundary
+
+On any natural-ingest failure:
+
+- preserve the first attempt, raw responses, logs, partial files, service state,
+  lock evidence, and all already-durable database or contract material;
+- keep the previous verified rolling payload public;
+- do not reflexively use `--force`, overwrite the primary observation, or rerun
+  the publication path as though it were a fresh ingest;
+- distinguish upstream capture failure, observation-finalization failure, and
+  publication-only failure before choosing any response;
+- use the existing-payload retry path for publication-only failures; and
+- never wait until after midnight expecting the failed source day to remain
+  available.
+
+A manual same-day catch-up may occur only if an already-proven
+immutable-generation procedure exists, the exact approved code SHA and plan identity are
+recorded, the production lock is absent, the first attempt remains preserved,
+resources and dashboard are healthy, no competing job exists, and enough time
+remains to finish and validate before the next 00:30 freeze. It creates a
+separate generation and never overwrites the primary attempt. Until that path is
+proven under the applicable remediation phase, preserve evidence and escalate;
+do not improvise on production.
+
+If safe same-day recovery is unavailable or midnight has passed, mark that
+source date `FAIL` with an immutable `SOURCE_WINDOW_LOST` condition. Development
+may continue later, but no later observation can be represented as the lost day.
+
+### Phase progress across calendar days
+
+- Only a small amount of the plan may advance on any day. That is expected and
+  does not constitute delay or failure.
+- Each slice has an explicit daily start state, safe stop state, resume point,
+  and evidence pointer. The next session reads the complete runbook and the
+  append-only evidence before resuming.
+- A phase can remain `RUNNING` across many natural ingests. Each intervening
+  ingest is still performed, validated, and backed up independently.
+- No behavioral slice advances merely because development tests pass. It still
+  requires its exact-head gates and the prescribed natural-ingest proof.
+- If there is no safe deployment and soak window on a given day, wait for a later
+  day. Never borrow time from the freeze or natural ingest.
+- Daily operational evidence is not edited when a later phase discovers a new
+  defect. Append a linked finding or decision instead.
+
+### In-flight A3 transition
+
+The already-installed laptop scheduled task and its first natural 05:00 proof
+remain bound to the immutable v1.3 execution identity, plan commit
+`8efefe10890a295ef87f97b46d3cb981193cfddc`, controlled plan digest
+`8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d`, and
+receiver candidate `c87cdd0077e209d1824bbe485c0f5ad30723d0c4`. Do not rewrite,
+reinstall, or relabel that in-flight proof as v1.4. Its natural 05:00 execution
+after the 2026-08-28 ingest is expected to perform `BACKUP-LATEST` when the new
+observation changes the verified source identity; a no-write is acceptable only
+when the source identities truly have not changed and the reason is understood.
+
+After that A3 execution reaches a terminal evidence state, new executions use
+the v1.4 plan identity. The documentation-only v1.4 merge does not authorize
+running newer-main backup tooling whose embedded plan constants have not yet
+been updated and reviewed in a separate focused implementation PR. Continue
+using the installed exact-candidate task for its approved proof, then advance
+only through the normal slice gates.
 
 ## Version 1.3 backup completeness and durability amendment
 
@@ -822,7 +1008,10 @@ Each numbered slice uses a fresh branch from current `origin/main`, one focused
 PR, exact-head CI, substantive review disposition, public PR gates, and immutable
 evidence. Runtime slices deploy only in daylight, soak at least two hours, end
 several hours before 00:30, and survive one natural ingest before the next
-behavioral slice advances.
+behavioral slice advances. This train explicitly spans multiple calendar days.
+Every intervening 01:00 natural ingest proceeds under D-006 regardless of phase
+status. Daily capture is production continuity work, not a reason to skip gates
+or declare the active remediation slice complete.
 
 1. **DOC-03 — controlled v1.3 laptop-backup plan.** Merge this document; recalculate plan
    commit, raw SHA-256, controlled SHA-256, and post-merge candidate SHAs.
@@ -1545,3 +1734,4 @@ This table is append-only.
 | 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
 | 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
 | 1.3 | 2026-08-25 | Resolve from Git history after merge | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` | Added D-005 before first transfer: full retained/failed-run scope, simultaneous archive-and-scratch capacity, complete tar metadata verification, durable file/directory commit barriers, independent observation/control/macro freshness, explicit mounted-storage supersession, and unambiguous DOC-03 execution identity. |
+| 1.4 | 2026-08-27 | Resolve from Git history after merge | `b234469085141f8799a7744f20980728bf829970758e904126b811dca7f98218` | Added D-006 and the normative multi-day continuity model: daily 01:00 current-day-only capture takes precedence over remediation, repeating freeze/validation/backup cadence, independent daily outcomes, immutable source-gap handling, same-day recovery limits, cross-day phase resumption, and an explicit transition for the in-flight v1.3 A3 proof. |
