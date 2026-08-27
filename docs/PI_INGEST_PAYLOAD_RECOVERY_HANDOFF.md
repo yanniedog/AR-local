@@ -1522,10 +1522,11 @@ The merged implementation:
   redundant complete backfill; and
 - records raw and normalized plan hashes in scheduled execution evidence.
 
-This merge is code availability only. The installed Windows task remains at
-receiver `c87cdd0...` and plan v1.3. No instruction in this entry permits
-installing `f214e32...`, changing the task, running the receiver against the Pi,
-or changing Pi production.
+PR #540 was code availability only and did not itself change the installed
+Windows task, which remains at receiver `c87cdd0...` and plan v1.3 at the time
+of this entry. The later review-correction section of this same entry separately
+authorises the bounded v1.4 laptop-task transition. Neither the merge nor that
+transition authorises changing Pi production.
 
 ### Immutable execution evidence
 
@@ -1577,7 +1578,7 @@ nor invokes.
 | Compensating controls | No production/runtime/task/catalog/payload mutation; exact PR-head app-ci later passed; PR and merge trees are identical; a fresh exact merged checkout passed focused tests; the late finding was substantively evaluated and resolved; the post-resolution feedback gate passed; post-slice drift checks passed. |
 | Revised acceptance criteria | Require exact-head app-ci PASS, byte-identical PR/merge trees, exact merged-candidate focused tests PASS, complete finding disposition and thread closure, post-resolution feedback gate PASS, and read-only proof that Pi, task, catalog, and public v1 remained unchanged. |
 | Revised acceptance result | `PASS` — every compensating criterion is satisfied. |
-| Authorization | This append-only decision is made within the operator-authorized bounded slice and does not broaden authority to installation, deployment, A4 execution, or later phases. |
+| Authorization | This append-only decision is made within the operator-authorized code slice. `DEC-A3-002` alone does not broaden authority to installation, deployment, A4 execution, or later phases; the separately stated review correction below controls the next task-transition slice. |
 | Preservation | The original `BLOCKED` evidence record remains immutable. This entry changes only the controlled phase interpretation. |
 
 ### Post-slice no-drift state
