@@ -2169,6 +2169,10 @@ The installer-created check-only record is:
 | Hygiene/capacity | `PASS` | No receiver lock or partial; 158,551,814,144 free bytes |
 | Pi no-drift | `PASS` | Protected clean SHA, ingest inactive, lock absent, timer active/enabled for 01:00 |
 | Dashboard | `PASS` | HTTP healthy for observation date `2026-08-28` |
+| Current observation | `PASS` unchanged | `2026-08-28`, generation `obs-2026-08-28-3c534348347d3f4e`; capture and finalization remain `PASS` |
+| Current public v1 | `PASS` unchanged | Dated v1, rolling v1, and dates index remain independently `PASS` |
+| Current public v2 | `FAIL` unchanged | v2 remains independently stale; this task-transition result does not supersede it |
+| Timed natural-ingest procedure | `BLOCKED` unchanged | The 2026-08-28 00:25 and 00:58 evidence was missed; the next complete timed proof is 2026-08-29 |
 
 The superseded v1.3 task is no longer active. Its receiver, accepted XML,
 receipts, and execution records remain immutable historical evidence. No Pi
@@ -2186,20 +2190,226 @@ cannot be completed through the available tools, such as physical hardware,
 UAC that cannot be satisfied by the execution environment, or unavailable
 credentials. Such a boundary is reported precisely and remains fail-closed.
 
-Daily capture remains the overriding D-006 obligation. At 00:25 and 00:58,
-perform and preserve the exact read-only preflights. Freeze begins at 00:30 and
-continues through terminal validation of the natural 2026-08-29 01:00 ingest.
-Do not deploy, run a canary/manual ingest, force, restart services, change the
-task, or manipulate publication during that interval.
+Daily capture remains the overriding D-006 obligation. The commands below are
+the self-contained v1.4 continuation for 2026-08-29. Do not substitute the
+superseded v1.3 receiver/XML commands elsewhere in this ledger.
 
-After the natural ingest terminally validates and the dashboard returns, wait
-for the installed task's natural 05:00 execution; never trigger it manually.
-At 05:15 or after terminal completion, verify exact task identity, state
-`Ready`, `LastTaskResult=0`, the new immutable v1.4 scheduled execution record,
-expected `BACKUP-LATEST` when the observation advanced, catalog prefix/hash
-chain, receipts and restore checks, Pi source-identity equality, absence of
-locks/partials/helpers/overlap, and at least 50 GiB free. Append a new terminal
-handoff entry with exact paths and hashes.
+At 00:25 Australia/Hobart, run this block. It creates a unique laptop-only
+evidence directory and records its path for later unattended invocations:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$sourceDate = '2026-08-29'
+$expectedPi = '9302890fcc752cbf90da97d597e972c157d913e3'
+$expectedReceiver = 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$target = 'C:\code\backups\AR-local-pi5'
+$evidenceParent = Join-Path $target 'evidence\NATURAL-20260829'
+$activePointer = Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt'
+New-Item -ItemType Directory -Path $evidenceParent -Force -ErrorAction Stop | Out-Null
+if (Test-Path -LiteralPath $activePointer) { throw 'An unclosed 2026-08-29 evidence run already exists.' }
+$evidenceRun = [datetimeoffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':','')
+$evidenceRoot = Join-Path $evidenceParent $evidenceRun
+New-Item -ItemType Directory -Path $evidenceRoot -ErrorAction Stop | Out-Null
+[IO.File]::WriteAllText($activePointer, $evidenceRoot, [Text.UTF8Encoding]::new($false))
+
+git fetch origin --prune
+$runbookCommit = (git log -1 --format=%H origin/main -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md).Trim()
+if ($runbookCommit -ne '14dd066099bba393cccf61a280243e43162eedc9') { throw 'Runbook commit mismatch.' }
+Push-Location $receiver
+try {
+  $plan = python -c "import json,laptop_pull_backup as r; print(json.dumps(r.verify_plan_document(),sort_keys=True))"
+  if ($LASTEXITCODE -ne 0) { throw 'Controlled-plan verification failed.' }
+} finally { Pop-Location }
+$planObject = $plan | ConvertFrom-Json
+if ($planObject.plan_document_id -ne 'ARL-OPS-001' -or
+    $planObject.plan_version -ne '1.4' -or
+    $planObject.plan_git_commit -ne '14dd066099bba393cccf61a280243e43162eedc9' -or
+    $planObject.plan_sha256 -ne '78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713') {
+  throw 'Controlled-plan identity mismatch.'
+}
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $expectedReceiver) { throw 'Receiver SHA mismatch.' }
+if (@(git -C $receiver status --porcelain=v1).Count -ne 0) { throw 'Receiver is dirty.' }
+$authority = [ordered]@{
+  observed_at=[datetimeoffset]::Now.ToString('o'); source_date=$sourceDate
+  origin_main=(git rev-parse origin/main).Trim(); runbook_commit=$runbookCommit
+  plan=$planObject; receiver_sha=$expectedReceiver; protected_pi_sha=$expectedPi
+}
+$authority | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidenceRoot 'authority.json')
+
+$preflight = ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan `
+  "set -eu; date --iso-8601=seconds; git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl show ar-local-daily.timer -p NextElapseUSecRealtime -p LastTriggerUSec -p Result; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; pgrep -a -f '[p]i_daily_sync.py|[c]dr_daily.py' || true; df -B1 /srv/ar-local/data; free -b; journalctl -k --since '24 hours ago' --no-pager | grep -Ei 'oom|out of memory|killed process' || true; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest; curl -fsS --max-time 15 -o /dev/null -w 'github_http=%{http_code}\n' https://api.github.com/"
+$preflight | Set-Content -LiteralPath (Join-Path $evidenceRoot '0025-preflight.txt')
+if ($LASTEXITCODE -ne 0) { throw "00:25 Pi preflight failed: ssh exit $LASTEXITCODE" }
+if (($preflight -join "`n") -notmatch [regex]::Escape($expectedPi) -or
+    ($preflight -join "`n") -notmatch 'lock=ABSENT') { throw '00:25 protected identity or lock gate failed.' }
+Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $evidenceRoot 'authority.json'),(Join-Path $evidenceRoot '0025-preflight.txt') |
+  Format-Table -AutoSize | Out-String | Set-Content -LiteralPath (Join-Path $evidenceRoot '0025-hashes.txt')
+```
+
+The freeze begins at 00:30 and continues through terminal ingest validation.
+During it, do not deploy, run a canary/manual ingest, force, restart services,
+change the task, run a backup, or manipulate publication. At 00:58, recover the
+exact active evidence directory and repeat the fail-closed read-only gate:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$expectedPi = '9302890fcc752cbf90da97d597e972c157d913e3'
+$evidenceParent = 'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260829'
+$activePointer = Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt'
+$evidenceRoot = [IO.Path]::GetFullPath((Get-Content -LiteralPath $activePointer -Raw).Trim())
+if (-not $evidenceRoot.StartsWith([IO.Path]::GetFullPath($evidenceParent) + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Active evidence path escapes its controlled parent.'
+}
+$immediate = ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan `
+  "set -eu; date --iso-8601=seconds; git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl show ar-local-daily.timer -p NextElapseUSecRealtime -p LastTriggerUSec -p Result; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; pgrep -a -f '[p]i_daily_sync.py|[c]dr_daily.py' || true; df -B1 /srv/ar-local/data; free -b; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest; curl -fsS --max-time 15 -o /dev/null -w 'github_http=%{http_code}\n' https://api.github.com/"
+$immediate | Set-Content -LiteralPath (Join-Path $evidenceRoot '0058-immediate-gate.txt')
+if ($LASTEXITCODE -ne 0) { throw "00:58 Pi gate failed: ssh exit $LASTEXITCODE" }
+if (($immediate -join "`n") -notmatch [regex]::Escape($expectedPi) -or
+    ($immediate -join "`n") -notmatch 'lock=ABSENT') { throw '00:58 protected identity or lock gate failed.' }
+Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $evidenceRoot '0058-immediate-gate.txt') |
+  Format-Table -AutoSize | Out-String | Set-Content -LiteralPath (Join-Path $evidenceRoot '0058-hash.txt')
+```
+
+Observe, but never start, force, restart, or rerun, the natural service. Use the
+following exact terminal capture after directly observing its single start:
+
+```powershell
+$startDeadline = [datetimeoffset]'2026-08-29T01:10:00+10:00'
+do {
+  $active = (ssh -o BatchMode=yes ar-local-pi5-lan "systemctl show ar-local-daily.service -p ActiveState --value").Trim()
+  if ([datetimeoffset]::Now -gt $startDeadline) { throw 'Natural service did not start by 01:10.' }
+  if ($active -ne 'active') { Start-Sleep -Seconds 10 }
+} until ($active -eq 'active')
+$start = ssh -o BatchMode=yes ar-local-pi5-lan `
+  "date --iso-8601=seconds; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p Result -p NRestarts; systemctl show ar-local-daily.timer -p LastTriggerUSec -p NextElapseUSecRealtime; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; else echo lock=ABSENT; fi; pgrep -a -f '[p]i_daily_sync.py|[c]dr_daily.py' || true"
+$start | Set-Content -LiteralPath (Join-Path $evidenceRoot '0100-start.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Natural start capture failed.' }
+do {
+  Start-Sleep -Seconds 30
+  $active = (ssh -o BatchMode=yes ar-local-pi5-lan "systemctl show ar-local-daily.service -p ActiveState --value").Trim()
+} while ($active -in @('active','activating'))
+$terminal = ssh -o BatchMode=yes ar-local-pi5-lan `
+  "set -eu; date --iso-8601=seconds; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p ExecMainCode -p Result -p NRestarts; systemctl show ar-local-daily.timer -p LastTriggerUSec -p NextElapseUSecRealtime; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi; curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest"
+$terminal | Set-Content -LiteralPath (Join-Path $evidenceRoot 'terminal-service.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Natural terminal capture failed.' }
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "journalctl -u ar-local-daily.service --since '2026-08-29 00:55:00' --output=short-iso-precise --no-pager" |
+  Set-Content -LiteralPath (Join-Path $evidenceRoot 'service-journal.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Journal capture failed.' }
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "cd /srv/ar-local/AR-local && python3 cdr_ledger_v2.py verify --state /srv/ar-local/data/state" |
+  Set-Content -LiteralPath (Join-Path $evidenceRoot 'ledger-verify.json')
+if ($LASTEXITCODE -ne 0) { throw 'Ledger verification failed.' }
+```
+
+Run the complete observation and public-GitHub validators from entry
+`HANDOFF-20260827T220351+1000-A3` exactly as printed there, with their date
+literal set to `2026-08-29` and their existing `$evidenceRoot` retained. This is
+the only authorised literal substitution: the observation validator must write
+`observation-verify.json`, and the public validator must write
+`public-github\verification.json`. Require raw-attempt, marker, contract,
+ledger, generation, SQLite, provider accounting, dated v1, rolling v1, dates
+index, dashboard, and public-byte checks all to pass. Record v2 independently;
+its existing stale/`FAIL` state is not silently promoted and does not invalidate
+otherwise valid v1.
+
+After the ingest terminally validates and the dashboard returns, wait for the
+installed task's natural triggers; never trigger it manually. A laptop boot
+after the observation advances may legitimately execute the startup-plus-five-
+minute trigger before 05:00. Therefore validate every scheduled-run record
+after the installation baseline, not merely `latest-scheduled.json`. Use this
+exact block at 05:15 or after the task is terminal:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$taskName = 'AR-local laptop backup'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$target = 'C:\code\backups\AR-local-pi5'
+$candidate = 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$protected = '9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit = '14dd066099bba393cccf61a280243e43162eedc9'
+$planSha = '78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713'
+$baselineCompleted = [datetimeoffset]'2026-08-27T21:58:15Z'
+$recordedXmlPath = 'C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml'
+$recordedXmlSha = 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+$evidenceParent = Join-Path $target 'evidence\NATURAL-20260829'
+$evidenceRoot = [IO.Path]::GetFullPath((Get-Content -LiteralPath (Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt') -Raw).Trim())
+if (-not $evidenceRoot.StartsWith([IO.Path]::GetFullPath($evidenceParent) + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Active evidence path escapes its controlled parent.'
+}
+
+$task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+$info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+if ($task.State -ne 'Ready' -or -not $task.Settings.Enabled -or $info.LastTaskResult -ne 0) {
+  throw 'Natural task is not Ready/enabled or LastTaskResult is nonzero.'
+}
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $candidate -or
+    @(git -C $receiver status --porcelain=v1).Count -ne 0) { throw 'v1.4 receiver drifted.' }
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $recordedXmlPath).Hash.ToLowerInvariant() -ne $recordedXmlSha) {
+  throw 'Recorded accepted task XML changed.'
+}
+$liveXml = Export-ScheduledTask -TaskName $taskName -ErrorAction Stop
+$recordedXml = Get-Content -LiteralPath $recordedXmlPath -Raw
+if ($liveXml -cne $recordedXml) { throw 'Live task differs from accepted v1.4 XML.' }
+if (Test-Path -LiteralPath (Join-Path $target 'catalog\.receiver.lock')) { throw 'Receiver lock exists.' }
+if (Get-ChildItem -LiteralPath $target -Recurse -Force -Filter '*.partial') { throw 'Partial artifact exists.' }
+if ((Get-Volume -DriveLetter C).SizeRemaining -lt 53687091200) { throw 'Less than 50 GiB remains.' }
+
+$records = Get-ChildItem -LiteralPath (Join-Path $target 'catalog\scheduled-runs') -File -Filter '*.json' |
+  ForEach-Object {
+    $record = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json
+    [pscustomobject]@{ Path=$_.FullName; Sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(); Record=$record; Completed=[datetimeoffset]$record.timestamps.completed_at }
+  } | Where-Object { $_.Completed -gt $baselineCompleted } | Sort-Object Completed
+if ($records.Count -lt 1) { throw 'No natural v1.4 scheduled execution record exists.' }
+foreach ($item in $records) {
+  $r = $item.Record
+  if ($r.result -ne 'PASS' -or $r.action -notin @('BACKUP-LATEST','NO_BACKUP_DATA_WRITE') -or
+      $r.candidate_code_sha -ne $candidate -or $r.protected_code_sha -ne $protected -or
+      $r.plan_document_id -ne 'ARL-OPS-001' -or $r.plan_version -ne '1.4' -or
+      $r.plan_git_commit -ne $planCommit -or $r.plan_sha256 -ne $planSha -or
+      $r.operator -ne 'jkoka' -or @($r.deviations).Count -ne 0 -or $null -ne $r.deviation_authorization) {
+    throw "Scheduled record identity/result mismatch: $($item.Path)"
+  }
+}
+$backupRecords = @($records | Where-Object { $_.Record.action -eq 'BACKUP-LATEST' })
+if ($backupRecords.Count -lt 1) { throw 'No BACKUP-LATEST record captured the advanced 2026-08-29 observation.' }
+$acceptedBackup = @($backupRecords | Where-Object {
+  $_.Record.detail.observation.status -eq 'UP_TO_DATE' -and
+  $_.Record.detail.observation.observation_date -eq '2026-08-29' -and
+  $_.Record.detail.control.status -eq 'UP_TO_DATE' -and
+  $_.Record.detail.macro.status -eq 'UP_TO_DATE' -and
+  $_.Record.detail.inventory.status -eq 'UP_TO_DATE'
+})
+if ($acceptedBackup.Count -lt 1) { throw 'No BACKUP-LATEST record proves all current identities.' }
+foreach ($component in @('observation','control','macro')) {
+  $receiptPath = [IO.Path]::GetFullPath([string]$acceptedBackup[-1].Record.detail.$component.receipt_path)
+  if (-not $receiptPath.StartsWith([IO.Path]::GetFullPath($target) + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw "$component receipt escapes target." }
+  $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+  if ($receipt.result -ne 'PASS' -or $receipt.candidate_code_sha -ne $candidate -or
+      $receipt.protected_code_sha -ne $protected -or $receipt.plan_git_commit -ne $planCommit -or
+      $receipt.plan_sha256 -ne $planSha) { throw "$component receipt verification failed." }
+}
+$records | Select-Object Completed,Path,Sha256,@{n='Action';e={$_.Record.action}},@{n='Result';e={$_.Record.result}} |
+  ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidenceRoot 'scheduled-records.json')
+Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $evidenceRoot 'scheduled-records.json')
+```
+
+Thus `BACKUP-LATEST` may occur at the startup trigger and a subsequent natural
+05:00 `NO_BACKUP_DATA_WRITE` is accepted only after the earlier backup record,
+all three identity receipts, every intervening record, and the 05:00 zero result
+are preserved and verified. Also require the full catalog prefix/hash chain,
+restore checks, Pi source-identity equality, no locks/partials/helpers/overlap,
+and at least 50 GiB free. Remove `ACTIVE_EVIDENCE_PATH.txt` only after the new
+immutable terminal handoff entry and all evidence hashes have been committed.
+
+Any missed timed gate or ambiguous/mismatched identity is `BLOCKED`; any corrupt
+artifact, failed integrity check, invalid public byte, or failed natural process
+is `FAIL`. Preserve the evidence directory, raw data, last verified rolling
+payload, and all scheduled records. Do not deploy, force, rerun ingest, rerun a
+publication-only failure, manually trigger backup, delete/overwrite the day, or
+repair state inside the freeze. Append the terminal outcome and exact hashes;
+never edit completed evidence.
 
 A4 planning remains `BLOCKED` until that first natural v1.4 execution is
 terminal `PASS`. A4 implementation/execution, Pi deployment, runtime changes,
