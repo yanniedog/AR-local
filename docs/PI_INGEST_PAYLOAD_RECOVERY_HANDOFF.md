@@ -151,6 +151,17 @@ before relying on them.
 | `C:\code\backups\AR-local-pi5\control\20260827T111627Z-926a01eff002e835\receipt.json` | 2,482 | `4b687b9e794859954b7b3ab0c6840c61d315fdb9505511bb6a113d6dfae4ada8` |
 | `C:\code\backups\AR-local-pi5\macro\2def7e4acc17445f29922ac398f36b3c238e3d3bd93e6329905b53a42e591586\receipt.json` | 2,223 | `91a54aa1edc03438c9bfc7ac8f604f5d46a317455e8183324281eab4859f66b0` |
 
+The task XML, completed scheduled-run records, and generation receipts are
+immutable and must continue to match exactly. `generations.jsonl` is an
+append-only catalog, and `latest-scheduled.json`, `latest-verified.json`,
+`latest-control.json`, and `latest-macro.json` are atomic current pointers. Their
+recorded hashes are exact before the natural 05:00 run. After that expected run,
+the catalog may only grow from the verified 322-entry prefix with a valid hash
+chain, and each changed pointer must name and hash a newly verified immutable
+record. A legitimate append is not evidence tampering; truncation, rewritten
+prefix bytes, a broken chain, an unbound pointer, or any change before the
+expected scheduled execution is a stop condition.
+
 Catalog state is a valid 322-entry hash chain at the snapshot time. Sequence
 320 is the latest verified `2026-08-27` observation, sequence 321 is control,
 and sequence 322 is macro. The observation archive SHA-256 is
