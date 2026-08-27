@@ -2089,3 +2089,118 @@ A4 planning, A4 execution, deployment, manual ingest, force, publication
 manipulation, and Phases B through G remain prohibited. After exact task
 installation passes, the first natural v1.4 05:00 run on 2026-08-29 must be
 observed and accepted before A4 planning can begin.
+
+---
+
+## Entry `HANDOFF-20260828T080245+1000-A3-V14-TASK-PASS`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Previous entry | `HANDOFF-20260828T073037+1000-A3-V14-TASK-TRANSITION` |
+| Previous entry merge commit | `3f626c7e08885b3fa7f2e5f0c433d4fde4a3b35d` |
+| Previous handoff raw Git-blob SHA-256 | `c0824d46f041ec258e3d2acb4568248933640cea7a8b0f72d036c48cd2a624e9` |
+| Created, Australia/Hobart | `2026-08-28T08:02:45+10:00` |
+| Created, UTC | `2026-08-27T22:02:45Z` |
+| Operator | `Codex for jkoka`; elevated registration executed as `yanniedog\jkoka` |
+| Result | `PASS` |
+| Current phase | `A3 v1.4 scheduled-task transition complete; first natural v1.4 05:00 proof pending` |
+| Plan document/version | `ARL-OPS-001` / `1.4` |
+| Plan commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Candidate code SHA | `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Deviations | None |
+
+### Terminal evidence
+
+Create-once result:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\transition-result.json`
+
+- bytes: `4,976`;
+- SHA-256:
+  `72A395FCC67C23D57E5CD0C6C1BFFB6069EA918432817373A9A7439B49E53933`;
+- result: `PASS`.
+
+Preserved exact live Task Scheduler XML:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml`
+
+- encoding: UTF-16LE with BOM;
+- bytes: `4,774`;
+- SHA-256:
+  `AA539FB4BB2F1768B2EA57539E7D5201A930E88EECF9192F4F94518B08E9D9E2`.
+
+The elevated operator output is retained at
+`C:\Users\jkoka\.codex\attachments\294655f6-4b6c-4eb0-8160-9a61a8ce8b04\pasted-text.txt`,
+SHA-256
+`1FA10E0F981449E9F4188AF45365810A67FE634CDB3166D8C38FE6BAB31264BD`.
+
+The installer-created check-only record is:
+
+`C:\code\backups\AR-local-pi5\catalog\scheduled-runs\20260827T215815Z-a0712f88d7e74dd8b3b4708a4c69e3c7.json`
+
+- SHA-256:
+  `66C7A84AB8E7FDE7A2278909285517EE078E4338A86681C254B54A858E2AB567`;
+- action `NO_BACKUP_DATA_WRITE`;
+- result `PASS`;
+- exact v1.4 plan, candidate, protected SHA, and operator identities;
+- observation sequence 326, control sequence 327, and macro sequence 328 all
+  `UP_TO_DATE`; and
+- no missing completed dates or stale diagnostics.
+
+### Acceptance results
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Exact clean receiver | `PASS` | Detached `f214e324...`; no dirty paths |
+| Installer check-only | `PASS` | Exact record and hash above; no backup-data write |
+| Exact task action | `PASS` | Receiver, script, target, image, candidate, protected SHA, plan commit, and operator all exact |
+| Task principal | `PASS` | SID `S-1-5-21-689213601-40760280-3596424081-1001`, `S4U`, `Limited` |
+| Triggers | `PASS` | Daily 05:00 and startup delay `PT5M` |
+| Overlap/retry/runtime | `PASS` | `IgnoreNew`, three retries at `PT30M`, execution limit `PT6H` |
+| Enabled/read-back | `PASS` | `Ready`, enabled, zero missed runs; full core assertion passed |
+| Previous task result | `PASS` | Last natural v1.3 A3 run remains result zero and historical evidence is unchanged |
+| Next natural task run | `RUNNING` obligation | `2026-08-29T05:00:00+10:00`; do not trigger manually |
+| Catalog integrity | `PASS` | Still 328 entries; SHA-256 `0758084e...`; no generation was appended by installation |
+| Hygiene/capacity | `PASS` | No receiver lock or partial; 158,551,814,144 free bytes |
+| Pi no-drift | `PASS` | Protected clean SHA, ingest inactive, lock absent, timer active/enabled for 01:00 |
+| Dashboard | `PASS` | HTTP healthy for observation date `2026-08-28` |
+
+The superseded v1.3 task is no longer active. Its receiver, accepted XML,
+receipts, and execution records remain immutable historical evidence. No Pi
+production, service, timer, data, payload, or publication state was modified by
+this transition.
+
+### Operating policy and exact resume point
+
+The operator directs future controlling agents to execute safe, authorised
+commands themselves using available permissions and automation. Do not delegate
+routine PowerShell, SSH, Git, validation, or evidence commands back to the
+operator. Request human action only when an unavoidable interactive boundary
+cannot be completed through the available tools, such as physical hardware,
+UAC that cannot be satisfied by the execution environment, or unavailable
+credentials. Such a boundary is reported precisely and remains fail-closed.
+
+Daily capture remains the overriding D-006 obligation. At 00:25 and 00:58,
+perform and preserve the exact read-only preflights. Freeze begins at 00:30 and
+continues through terminal validation of the natural 2026-08-29 01:00 ingest.
+Do not deploy, run a canary/manual ingest, force, restart services, change the
+task, or manipulate publication during that interval.
+
+After the natural ingest terminally validates and the dashboard returns, wait
+for the installed task's natural 05:00 execution; never trigger it manually.
+At 05:15 or after terminal completion, verify exact task identity, state
+`Ready`, `LastTaskResult=0`, the new immutable v1.4 scheduled execution record,
+expected `BACKUP-LATEST` when the observation advanced, catalog prefix/hash
+chain, receipts and restore checks, Pi source-identity equality, absence of
+locks/partials/helpers/overlap, and at least 50 GiB free. Append a new terminal
+handoff entry with exact paths and hashes.
+
+A4 planning remains `BLOCKED` until that first natural v1.4 execution is
+terminal `PASS`. A4 implementation/execution, Pi deployment, runtime changes,
+manual or forced ingest, publication manipulation, and Phases B through G remain
+prohibited.
