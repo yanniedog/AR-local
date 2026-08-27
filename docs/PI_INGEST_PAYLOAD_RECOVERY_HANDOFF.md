@@ -1021,3 +1021,257 @@ No further technical action is required from the completed 2026-08-28 05:00
 backup proof itself. Its task is `Ready`, its next natural trigger is
 `2026-08-29T05:00:00+10:00`, and its verified free-space measurement remains
 well above the controlled floor.
+
+---
+
+## Entry `HANDOFF-20260828T052556+1000-CORRECTION`
+
+### Correction control record
+
+| Field | Value |
+|---|---|
+| Previous handoff entry | `HANDOFF-20260828T052104+1000` |
+| Previous handoff-containing commit | `3ed39126d159b77b03744887c9c12b8a37dd40e3` |
+| Previous handoff raw Git-blob SHA-256 | `f15bac9ac1a3035cff387824dd1fc4f1be055f30f49a48d35c96c7826134750b` |
+| Created, Australia/Hobart | `2026-08-28T05:25:56+10:00` |
+| Created, UTC | `2026-08-27T19:25:56Z` |
+| Operator | `Codex for jkoka` |
+| Result | `BLOCKED` |
+| Current phase | `A3 — terminal evidence complete; acceptance blocked pending controlled decision` |
+| Controlling plan document | `ARL-OPS-001` |
+| Controlling plan version | `1.4` |
+| Controlling plan Git commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlling plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Controlling plan raw Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| In-flight A3 plan version | `1.3` |
+| In-flight A3 plan Git commit | `8efefe10890a295ef87f97b46d3cb981193cfddc` |
+| In-flight A3 plan SHA-256 | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` |
+| Protected Pi code SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Installed receiver candidate SHA | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Correction reason | Post-merge review of PR #537 identified an invalid runbook-level state label and omitted repository path/cleanliness fields |
+| Risk | A later operator could misclassify the accepted observation or rely on a stale repository snapshot |
+| Compensating control | Preserve the prior entry unchanged; append this correction with the normative state and independently captured repository evidence |
+| Revised acceptance criteria | Interpret the observation as runbook state `degraded`, require both named repositories to be revalidated live before any future action, and retain A3 as `BLOCKED` |
+| Authorization | Mandatory correction of substantive review findings under the append-only handoff rules; no gate waiver or phase advancement |
+
+This entry corrects two fields of interpretation and completeness in the
+previous entry. It does not alter any source observation, immutable execution
+evidence, backup receipt, protected Pi state, A3 result, or prohibition.
+
+### Observation-state correction
+
+The previous entry recorded the protected producer's raw state value
+`partial`. That raw value remains evidence of what the pinned runtime emitted,
+but it is not the normative ARL-OPS-001 v1.4 observation state.
+
+ARL-OPS-001 v1.4 defines observation `state=complete` only when every registered
+provider is complete or proven empty, population uncertainty is zero, every
+discovered product is fully published, and issue total is zero. Every other
+accepted observation is `degraded`. Because this observation has seven partial
+providers and 17 attributable issues, its normative state is:
+
+| Field | Correct value |
+|---|---|
+| Protected producer raw value | `partial` |
+| ARL-OPS-001 v1.4 observation state | `degraded` |
+| Provider-level partial count | `7` |
+| Acceptance | Accepted v1 product-day with attributable gaps; A3 procedure remains `BLOCKED` independently |
+
+Every later operator must use `degraded` only for the runbook-level label.
+Machine-readable export contracts, completion markers, ledger events, backup
+receipts, and validator inputs must retain the pinned runtime's schema-valid
+`partial` value until their schemas and implementations are changed. Never
+rewrite an existing artifact merely to normalize its vocabulary. This
+correction implements the first substantive Sourcery finding on PR #537
+without rewriting completed evidence.
+
+### Authoritative repository paths and cleanliness
+
+The following read-only state was captured at
+`2026-08-28T05:25:56.2308940+10:00`:
+
+| Repository | Host | Authoritative path | HEAD | Cleanliness |
+|---|---|---|---|---|
+| Pi production | `ar-local-pi5-lan` | `/srv/ar-local/AR-local` | `9302890fcc752cbf90da97d597e972c157d913e3` | `PASS` — `git status --porcelain=v1` empty |
+| Laptop receiver | Windows laptop | `C:\code\backups\AR-local-pi5-receiver-c87cdd0` | `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` | `PASS` — `git status --porcelain=v1` empty |
+
+At that snapshot, the Pi daily service was inactive, the timer was enabled,
+`/srv/ar-local/data/state/daily-ingest.lock` was absent, and
+`http://127.0.0.1:8808/api/latest` was healthy for `2026-08-28`. These are
+point-in-time facts only. The next operator must re-run the live checks before
+acting and must stop on any mismatch.
+
+The immutable correction evidence is:
+
+`C:\code\backups\AR-local-pi5\evidence\HANDOFF-CORRECTION-20260828\20260828T052556+1000\repository-state.json`
+
+- bytes: `2,214`;
+- SHA-256:
+  `bbc71f264adb1d2bcff6bde3af830892168210ab9c20a39efc7582c40c311542`;
+- result: `PASS`;
+- deviations: none.
+
+It records the exact read-only command families, both repository paths, HEADs,
+empty status results, Pi service/timer/lock/dashboard state, and the raw versus
+normative observation-state distinction. No secret values are present.
+
+### Disposition and next action
+
+Both late PR #537 findings are `Implemented` by this append-only correction:
+
+1. the normative observation state is now unambiguously `degraded`, while the
+   source producer's raw `partial` value remains preserved; and
+2. the production and candidate repository paths, exact commits, and current
+   cleanliness results are now explicit and hash-bound to source evidence.
+
+The terminal result remains `BLOCKED`. The exact next action and acceptance
+boundary is reproduced below so this last chronological entry is independently
+actionable. A4, deployment, PR #508, and Phases B–G remain prohibited.
+
+### Complete resume procedure
+
+#### Decision and timing
+
+The next action is a controlled documentation decision, not a Pi action. The
+operator must choose and append exactly one of these outcomes:
+
+1. authorise a formal deviation accepting the complete post-run ingest evidence
+   and natural 05:00 backup/restore proof as sufficient to close A3; or
+2. require another fully observed natural daily cycle.
+
+The safe default is option 2. No conversational statement, automation prompt,
+or chat summary is deviation authorization. Option 1 must append the reason,
+risk, compensating controls, revised acceptance criteria, named authorizer,
+and timestamp before A3 can become `PASS`.
+
+For option 2, use the first daily cycle for which exact monitoring can be
+guaranteed. Earliest preflight is `00:25:00` Australia/Hobart on that calendar
+day. The second preflight is `00:58:00`. Production's quiet window begins at
+`00:30:00` and lasts through terminal ingest validation. All development,
+deployment, canary, manual ingest, service restart, package change, and
+publication manipulation must stop by `00:30:00`. Read-only observation may
+continue. If either preflight is missed, that cycle cannot close A3; record it
+without interrupting the natural ingest.
+
+#### Exact preflight commands
+
+Run these from a clean plan-control checkout of current `origin/main`. Replace
+`YYYY-MM-DD` only with the current Australia/Hobart source date; do not use a
+prior or next date:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$expectedPi = '9302890fcc752cbf90da97d597e972c157d913e3'
+$expectedReceiver = 'c87cdd0077e209d1824bbe485c0f5ad30723d0c4'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-c87cdd0'
+
+git fetch origin --prune
+git log -1 --format=%H origin/main -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md
+git show origin/main:docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md
+git show origin/main:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md
+git -C $receiver rev-parse HEAD
+git -C $receiver status --porcelain=v1
+
+ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan `
+  "git -C /srv/ar-local/AR-local rev-parse HEAD; git -C /srv/ar-local/AR-local status --porcelain=v1; systemctl is-enabled ar-local-daily.timer; systemctl is-active ar-local-daily.timer; systemctl is-active ar-local-daily.service; test ! -e /srv/ar-local/data/state/daily-ingest.lock; df -B1 /srv/ar-local/data; free -b; curl -fsS http://127.0.0.1:8808/api/latest; git ls-remote https://github.com/yanniedog/AR-local.git HEAD"
+```
+
+At both preflights, independently require:
+
+- runbook document commit
+  `14dd066099bba393cccf61a280243e43162eedc9` and controlled SHA-256
+  `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`;
+- the latest chronological handoff entry and its Git-blob SHA verified from the
+  then-current merged `origin/main`;
+- Pi production path `/srv/ar-local/AR-local`, clean at `$expectedPi`;
+- receiver path `$receiver`, clean at `$expectedReceiver`;
+- timer enabled and active for the natural 01:00 schedule;
+- daily service inactive and ingest lock absent before start;
+- no competing ingest process;
+- adequate Pi disk, memory, and swap without OOM evidence;
+- healthy dashboard and GitHub connectivity; and
+- the previous observation, pending-publication state, and backup target
+  unambiguous.
+
+Write every command, timestamp, stdout/stderr, exit status, resolved path, and
+SHA-256 to a new unique evidence directory. Never overwrite evidence from a
+prior cycle.
+
+#### Natural ingest observation and validation
+
+Never start, force, restart, or rerun the ingest. Observe the scheduled unit
+from before 01:00 until terminal completion:
+
+```powershell
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "systemctl show ar-local-daily.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p InvocationID -p NRestarts -p ExecMainStartTimestamp -p ExecMainExitTimestamp; systemctl list-timers ar-local-daily.timer --all; test ! -e /srv/ar-local/data/state/daily-ingest.lock; curl -fsS http://127.0.0.1:8808/api/latest"
+
+ssh -o BatchMode=yes ar-local-pi5-lan `
+  "cd /srv/ar-local/AR-local && python3 cdr_ledger_v2.py verify --state /srv/ar-local/data/state"
+```
+
+Then run the ledger's protected Python observation validator for the current
+date, changing only its `DATE` constant. Require one scheduled invocation, zero
+competing ingests, terminal service success, absent lock, automatic dashboard
+return, raw attempts present and verified, marker/contract/ledger/pointer bound
+to one generation, SQLite `PRAGMA quick_check=ok`, expected tables, credible
+nonzero populations, and exact provider accounting. Preserve product/provider
+gaps; do not discard valid unrelated products. Classify the runbook-level state
+as `complete` or `degraded`, while retaining the protected runtime's
+machine-readable `complete`, `partial`, or `failed` value unchanged.
+
+Download the current dated v1 manifest and assets, rolling v1 manifest and
+assets, and dates index from public GitHub. Verify every byte count, SHA-256,
+gzip/JSON schema, source date, and population independently. Record v2
+separately. A stale or failed v2 neither passes nor fails v1.
+
+#### Natural 05:00 backup validation
+
+Do not trigger the task. After the ingest has terminally validated and the
+dashboard has returned, wait for the natural 05:00 task. Use:
+
+```powershell
+$task = Get-ScheduledTask -TaskName 'AR-local laptop backup'
+$info = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup'
+$liveXml = Export-ScheduledTask -TaskName 'AR-local laptop backup'
+$recordedXmlPath = 'C:\code\backups\AR-local-pi5\catalog\task-definitions\installed-c87cdd0-20260827T112050Z.xml'
+$recordedXml = Get-Content -LiteralPath $recordedXmlPath -Raw
+if ($liveXml -cne $recordedXml) { throw 'Installed task XML changed.' }
+Get-FileHash -Algorithm SHA256 -LiteralPath $recordedXmlPath
+git -C 'C:\code\backups\AR-local-pi5-receiver-c87cdd0' rev-parse HEAD
+git -C 'C:\code\backups\AR-local-pi5-receiver-c87cdd0' status --porcelain=v1
+Get-PSDrive -Name C
+```
+
+Safely resolve `catalog/latest-scheduled.json` beneath
+`C:\code\backups\AR-local-pi5`, verify its named record hash, and parse that
+immutable execution record. Require task state `Ready`, `LastTaskResult=0`,
+exact task XML, clean exact receiver, exact v1.3 plan/candidate/protected/operator
+identities, truthful `PASS`, current observation/control/macro/diagnostic
+identities, complete catalog chain, restore verification, SQLite checks, no
+lock/partial/helper/overlap, and at least `53,687,091,200` free bytes.
+`BACKFILL` is acceptable only when the pre-state identifies exact genuinely
+missing dates and the post-state proves no unrelated history changed.
+
+#### Acceptance, stop conditions, and preservation
+
+Mark the later cycle `PASS` only when both timed preflights, the complete natural
+ingest validation, public v1 verification, dashboard return, and natural 05:00
+backup/restore proof pass with immutable evidence. Append a new handoff entry
+containing its exact paths and hashes. That entry may close A3 and may authorise
+planning of A4; it must not execute A4 or deploy.
+
+Stop and record `BLOCKED` or `FAIL` if any identity, cleanliness, timer, lock,
+process, resource, dashboard, network, database, contract, ledger, pointer,
+raw-attempt, provider-accounting, publication, task XML, receiver, catalog,
+receipt, restore, hygiene, or capacity check fails or is uncertain. Also stop
+if the monitoring activation misses either preflight or threatens the current
+source window.
+
+On stop, preserve all raw and diagnostic evidence, retain the day's immutable
+observation if it completed, keep the Pi at the protected SHA, keep the previous
+verified rolling payload if publication is not valid, leave the installed task
+unchanged, and do not use `--force`, rerun another date, deploy, or start A4.
+There is no rollback action because this resume procedure permits no production
+mutation. If an unauthorised mutation is detected, stop without attempting an
+ad-hoc reversal and follow the controlled rollback procedure in ARL-OPS-001.
