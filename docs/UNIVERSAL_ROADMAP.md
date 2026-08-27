@@ -4,8 +4,11 @@ This is the shared roadmap for LLM agents working on AR-local. Treat it as the o
 
 > **Controlled ingest and deployment gate:** Before any Pi ingest, payload,
 > database, backup, canary, deployment, or rollback work, read
-> **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**. Its stop conditions,
-> evidence ledger, and rollback requirements are mandatory.
+> **`docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md` in full**, then read
+> **`docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md` in full** and select its last
+> chronological entry. The runbook's stop conditions, evidence ledger, and
+> rollback requirements are mandatory; the append-only handoff is the current
+> phase and exact resume pointer.
 
 ## North Star
 

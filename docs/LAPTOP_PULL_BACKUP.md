@@ -1,8 +1,19 @@
 # Laptop pull-backup operator notes
 
 Read [`PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`](PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md)
-completely before using these commands. Decisions D-004 and D-005 and the
-Phase A gates control this procedure.
+completely, then read
+[`PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`](PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md)
+completely before using these commands. Decisions D-004 through D-006 and the
+Phase A gates control this procedure. The handoff ledger's last chronological
+entry controls the current candidate, phase state, exact next action, and
+accepted evidence.
+
+The installed A3 scheduled proof recorded on 2026-08-27 is deliberately pinned
+to receiver `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` and ARL-OPS-001 v1.3.
+Do not replace, relabel, reinstall, or manually trigger it. The
+`<candidate-sha>` examples below are templates for a future separately approved
+candidate, not instructions to substitute current `main` during the in-flight
+A3 proof.
 
 The Windows laptop is the receiver. It pulls over SSH, writes only below an
 explicit target, and refuses any operation that would leave less than
