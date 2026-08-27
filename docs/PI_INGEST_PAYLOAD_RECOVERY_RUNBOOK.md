@@ -13,7 +13,7 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `b234469085141f8799a7744f20980728bf829970758e904126b811dca7f98218` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -405,11 +405,15 @@ reading the Pi source during verification.
 ### Scheduling and residual risk
 
 After one manual backup and restore pass, schedule a laptop-side pull for 05:00
-Australia/Hobart and at laptop startup when stale. It exits successfully without
-writing when the latest observation is already verified; otherwise it defers on
-an active/failed ingest or unavailable Pi and alerts. It never runs in the quiet
-window. A freshness monitor reports the latest source observation, latest
-verified laptop generation, age, free bytes, and last restore result.
+Australia/Hobart and at laptop startup when stale. It exits successfully with
+`NO_BACKUP_DATA_WRITE` only when the latest retained run/observation, current
+control source, and current macro SQLite source identities are all independently
+verified and unchanged. An unchanged observation never suppresses a changed
+control or macro generation. Otherwise it backs up and restores every changed
+identity, or defers on an active/failed ingest or unavailable Pi and alerts. It
+never runs in the quiet window. A freshness monitor reports the latest source
+observation, latest verified laptop generation, current control and macro
+identities, age, free bytes, and last restore result.
 
 The laptop is physically separate but not geographically separate and may be
 offline. This design therefore satisfies the immediate off-device Phase A0/A1
@@ -1734,4 +1738,4 @@ This table is append-only.
 | 1.1 | 2026-08-25 | Resolve from Git history after merge | `4aa3a4d6e16d770e275801c10cdc1eecc56309f7998f4399000367db56e2fa46` | Added controlling decision D-003, product-day atomic publication, canonical product/provider accounting, new-observation SQLite and public quality contracts, AR-app disclosure and compatibility gates, staged feature modes, repaired backup/rollback prerequisites, retained-real-data acceptance cases, and the incremental activation train. |
 | 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
 | 1.3 | 2026-08-25 | Resolve from Git history after merge | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` | Added D-005 before first transfer: full retained/failed-run scope, simultaneous archive-and-scratch capacity, complete tar metadata verification, durable file/directory commit barriers, independent observation/control/macro freshness, explicit mounted-storage supersession, and unambiguous DOC-03 execution identity. |
-| 1.4 | 2026-08-27 | Resolve from Git history after merge | `b234469085141f8799a7744f20980728bf829970758e904126b811dca7f98218` | Added D-006 and the normative multi-day continuity model: daily 01:00 current-day-only capture takes precedence over remediation, repeating freeze/validation/backup cadence, independent daily outcomes, immutable source-gap handling, same-day recovery limits, cross-day phase resumption, and an explicit transition for the in-flight v1.3 A3 proof. |
+| 1.4 | 2026-08-27 | Resolve from Git history after merge | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` | Added D-006 and the normative multi-day continuity model: daily 01:00 current-day-only capture takes precedence over remediation, repeating freeze/validation/backup cadence, independent daily outcomes, immutable source-gap handling, same-day recovery limits, cross-day phase resumption, and an explicit transition for the in-flight v1.3 A3 proof. |
