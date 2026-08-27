@@ -123,6 +123,7 @@ a terminal result.
 | Laptop backup target | `C:\code\backups\AR-local-pi5` |
 | Installed clean receiver | `C:\code\backups\AR-local-pi5-receiver-c87cdd0` |
 | Installed receiver state | Clean at exact SHA `c87cdd0077e209d1824bbe485c0f5ad30723d0c4` |
+| Dedicated plan-control repository | `C:\code\backups\AR-local-recovery-control`; create as a no-checkout clone when absent; never use the dirty developer checkout for fetch or plan verification |
 | Historical recovery image | `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21` |
 | Existing developer checkout | `C:\code\AR-local`; dirty and stale at snapshot time; do not clean, update, deploy, or use it for controlled work |
 | Clean-worktree rule | Create every new slice from fresh `origin/main` outside the dirty checkout |
@@ -187,6 +188,12 @@ At `2026-08-27T22:03:51+10:00`, Task Scheduler reported:
 - action path: the exact clean receiver
   `C:\code\backups\AR-local-pi5-receiver-c87cdd0` with the v1.3 plan and
   protected Pi SHA shown above.
+
+`Export-ScheduledTask` exactly matched the recorded 2,386-character XML at the
+snapshot time. After LF normalization and one trailing newline, both had
+SHA-256 `714b0cb33ba3da79bac136a32a6007a1768c86e4631b1b52620a1b60dbafac68`.
+The raw recorded XML file hash remains the authoritative
+`6f69ec39707ffbe2fc2e79d712748250eb00133fb5948ce0fd9b8a0d673b2f28`.
 
 Laptop `C:` free space was `161,576,448,000` bytes (`150.48 GiB`), safely above
 the mandatory `53,687,091,200`-byte floor. Revalidate it before and after the
@@ -260,8 +267,12 @@ The next operator must continue A3; do not start A4 or any deployment.
 2. Verify the runbook identity:
 
    ```powershell
-   git -C C:\code\AR-local fetch origin main --prune
-   git -C C:\code\AR-local log -1 --format=%H `
+   $controlRepo = 'C:\code\backups\AR-local-recovery-control'
+   if (-not (Test-Path -LiteralPath (Join-Path $controlRepo '.git'))) {
+     git clone --no-checkout https://github.com/yanniedog/AR-local.git $controlRepo
+   }
+   git -C $controlRepo fetch origin main --prune
+   git -C $controlRepo log -1 --format=%H `
      origin/main -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md
    ```
 
@@ -324,11 +335,28 @@ validated, wait for Task Scheduler's natural 05:00 run and inspect it:
 ```powershell
 $task = Get-ScheduledTask -TaskName 'AR-local laptop backup'
 $info = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup'
-$task | Select-Object TaskName, State
+$liveXml = Export-ScheduledTask -TaskName 'AR-local laptop backup'
+$recordedXmlPath = 'C:\code\backups\AR-local-pi5\catalog\task-definitions\installed-c87cdd0-20260827T112050Z.xml'
+$recordedXml = Get-Content -LiteralPath $recordedXmlPath -Raw
+if ($liveXml -cne $recordedXml) {
+  throw 'Installed task definition differs from the accepted A3 XML.'
+}
+$recordedXmlSha = (Get-FileHash -LiteralPath $recordedXmlPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($recordedXmlSha -ne '6f69ec39707ffbe2fc2e79d712748250eb00133fb5948ce0fd9b8a0d673b2f28') {
+  throw 'Accepted A3 task XML hash mismatch.'
+}
+$task | Select-Object TaskName, State, Principal, Triggers, Actions, Settings
 $info | Select-Object LastRunTime, LastTaskResult, NextRunTime
 Get-Content -LiteralPath `
   'C:\code\backups\AR-local-pi5\catalog\latest-scheduled.json' -Raw
 ```
+
+Exact XML equality is mandatory and covers the action path and arguments,
+receiver/candidate/protected/plan identities, principal and logon mode, both
+triggers, startup delay, `IgnoreNew`, three `PT30M` retries, and the `PT6H`
+execution limit. Also require the receiver checkout to remain clean at
+`c87cdd0077e209d1824bbe485c0f5ad30723d0c4`. Task state and exit zero alone are
+not acceptance.
 
 Expected normal outcome: `BACKUP-LATEST` with `PASS`, because the natural ingest
 should create a new `2026-08-28` observation. `NO_BACKUP_DATA_WRITE` is
@@ -402,8 +430,7 @@ The entry was assembled from these read-only command families. Their output is
 summarized above; source files and hashes remain authoritative:
 
 ```powershell
-git -C C:\code\AR-local fetch origin main --prune
-git -C C:\code\AR-local log -1 --format=%H `
+git -C C:\code\backups\AR-local-runbook-multiday log -1 --format=%H `
   origin/main -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md
 
 ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan `
