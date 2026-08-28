@@ -2415,3 +2415,144 @@ A4 planning remains `BLOCKED` until that first natural v1.4 execution is
 terminal `PASS`. A4 implementation/execution, Pi deployment, runtime changes,
 manual or forced ingest, publication manipulation, and Phases B through G remain
 prohibited.
+
+## Entry `HANDOFF-20260829T052121+1000-A3-NATURAL-BACKUP-BLOCKED`
+
+This is an append-only terminal record for the natural 2026-08-29 ingest and
+the first natural v1.4 Windows backup proof. It does not rewrite or relabel any
+earlier result.
+
+### Authority and immutable identities
+
+| Field | Value |
+|---|---|
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Prior handoff merge | `799b090c2cc5167c67ec6a7cc5317c6b1995453d` |
+| Prior handoff raw SHA-256 | `d6df576b0c30978c58a5fd0436d9009be10f78f88aeb1261003e62b3284c78bc` |
+| Receiver | `C:\code\backups\AR-local-pi5-receiver-f214e32` |
+| Candidate code SHA | `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator | Codex unattended for `jkoka` |
+| A4 status | `BLOCKED` |
+
+### Natural ingest outcome
+
+The natural 2026-08-29 ingest independently passed all data and publication
+checks. Invocation `28480326733b49a2a2206bcb402f6236` ran once from
+01:00:00 through 01:17:15 Australia/Hobart, returned systemd `success` with
+`ExecMainStatus=0` and `NRestarts=0`, left no lock, and restored the dashboard.
+Ledger verification passed 18/18 with no findings or warnings. Observation
+`obs-2026-08-29-85d1deba454330c8` was a valid bounded partial observation:
+3,839 hash-bound raw attempts; 119/119 providers attempted; 112 complete, 7
+partial, and 0 failed providers; 17 attributable product failures; zero corrupt
+or unattributed failures; 3,012 products; 17,050 rates; SQLite quick check
+`ok`; and no quarantines. Dated v1, rolling v1, dates index, and every referenced
+public asset passed independent public-byte verification. v2 remains separately
+stale at 2026-08-21 and was not promoted.
+
+The overall timed-ingest procedure remains `BLOCKED`, not `PASS`, because the
+00:58 heartbeat arrived at 00:59:47 and the gate executed at 01:00:10 after the
+natural ingest lock already existed. The independently valid ingest is not
+relabelled, and the procedural miss is not concealed.
+
+Authoritative ingest evidence remains under
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260829\20260829T002709+1000`:
+
+- `ingest-validation-summary.json`: `E2124D0925EB45E89FB17340036CDEEF69ACD33A16076B3340113B661CAEB944`;
+- `observation-verify.json`: `0CA5FF6247C9A630D653010138863F46690DE28EEC1C74544BBE84EA5FFAF1EE`;
+- `ledger-verify.json`: `93BCB37B7A397C4764BAB9243DA551FEC3474AF153D51BA91A91A7F210CA1875`;
+- `public-github\verification.json`: `EFCC3009F823745562C30BD4F7AA2F296948A2C6789490AF0FA0938412A4D066`.
+
+### First natural v1.4 backup outcome
+
+The installed task started naturally at 05:00:01 and completed its immutable
+record at 05:13:17 Australia/Hobart. It was not manually triggered or
+reinstalled. The task remained enabled and `Ready`, `LastTaskResult` was zero,
+the accepted XML matched byte-for-byte, the receiver was clean at the exact
+candidate, no receiver lock, partial artifacts, helper processes, or overlap
+remained, and 144.21 GiB was free.
+
+The backup bytes and restoration checks independently `PASS`:
+
+- observation 2026-08-29 is current at catalog sequence 329, archive SHA-256
+  `a309f5d516336f58e9974dbffde26309ffaac4b289bc66b201660118b99e5625`,
+  with 10,995 files and 2,709,341,187 restored bytes verified, generation
+  `obs-2026-08-29-85d1deba454330c8`, and SQLite quick check `ok`;
+- control is current at sequence 330, archive SHA-256
+  `3676f7061fa472d9adc2a3ce978bf2c6351581749333d9c68599ae4d911676ea`,
+  with 326 restored files, both Git bundles verified, two SQLite quick checks
+  `ok`, and all four secret locations excluded from copied bytes;
+- macro is current at sequence 331, archive SHA-256
+  `9c0f1fa50fa7500e1aed2d990c223f916e35ed1018292bf4c8efb207f60a861d`,
+  with its SQLite quick check `ok`;
+- all source manifests, archives, receipts, plan identities, candidate and
+  protected SHAs, and Pi source identities match;
+- the full 331-entry catalog hash chain validates; catalog SHA-256 is
+  `acb15773fe069c863a0d00daea368f45c838c570b7ca32f1875b7f813470ce8d`;
+  the first 328 entries retain SHA-256
+  `0758084ea8ac5708c568c407682382acdf7c006829705addf8a0e4d21aef27a6`.
+
+Controlled acceptance is nevertheless `BLOCKED`. The only natural scheduled
+record after the baseline is
+`C:\code\backups\AR-local-pi5\catalog\scheduled-runs\20260828T191317Z-5b3033fc4db54962bb2fd53b9af5c1aa.json`,
+SHA-256 `2753be7b5d87af3d1ab5a581be83f1668a9695f2b5cce58822d675a920e42764`.
+It truthfully records `result=PASS` but `action=BACKFILL`; the controlled gate
+requires `BACKUP-LATEST`, or `NO_BACKUP_DATA_WRITE` only after an accepted
+`BACKUP-LATEST`. No deviation was authorized, so this action is not relabelled.
+
+The cause is deterministic in candidate `f214e324`: `scheduled_status()` sets
+`backfill_required` whenever the protected inventory has any missing completed
+date, and `main()` selects `backfill` whenever that Boolean is true. Therefore
+the ordinary newly created 2026-08-29 observation was classified as historical
+backfill. The transfer is complete and valid, but the action semantics do not
+match the controlled proof.
+
+The append-only backup validation record is
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260829\20260829T002709+1000\backup-validation-result.json`,
+SHA-256 `763A2C01B03D5FECDE1675A2AAC495F8FDDF951318DD1C6F28FE86023A9C3766`.
+It records component-level passes separately from the terminal controlled
+`BLOCKED` result. Completed evidence and the scheduled record must never be
+edited.
+
+### Controlled next actions
+
+Daily current-day-only CDR capture remains the overriding priority under D-006.
+The existing scheduled backup remains installed because it safely captured and
+verified all required bytes; do not manually trigger or relabel it. Before the
+next natural 01:00 ingest, no Pi runtime, production checkout, publication, or
+task mutation is authorized.
+
+Resume A3 only. In daylight, prepare one focused code PR from fresh
+`origin/main` that distinguishes:
+
+1. the ordinary newest completed observation, which must use
+   `backup-latest` and record `BACKUP-LATEST`;
+2. genuinely missing older completed dates, which must use selective
+   `backfill` and record `BACKFILL`;
+3. an already current target, which must record `NO_BACKUP_DATA_WRITE`.
+
+The PR must add exact boundary tests for new-latest-only, historical-gap-only,
+both conditions together, and already-current state. It must preserve the
+50-GiB floor, immutable catalog, restore verification, identity binding,
+overlap prevention, and fail-closed behavior. It must not deploy to the Pi,
+start A4, or manipulate publication. Do not replace the installed task until
+that correction is reviewed, merged, exact-head tested against isolated backup
+state, and an append-only decision entry explicitly authorizes the transition.
+
+For the natural 2026-08-30 ingest, schedule unattended continuity checks early
+enough that the final pre-start gate completes before 01:00. Run the full
+read-only preflight at 00:25 Australia/Hobart and begin the final gate no later
+than 00:55. Freeze begins at 00:30 and lasts through terminal validation. Observe
+the natural service only; never start, restart, force, or rerun it. Preserve the
+same raw-attempt, completion, contract, ledger, SQLite, provider accounting,
+dashboard-return, dated-v1, rolling-v1, dates-index, asset-byte, and independent
+v2 checks used for 2026-08-29. After terminal validation, observe the natural
+05:00 laptop task without triggering it and record its immutable action exactly.
+
+A4 and Phases B through G remain `BLOCKED` until a corrected A3 candidate has a
+terminal natural proof or a formal append-only deviation decision revises the
+acceptance criteria with its reason, risk, compensating controls, and explicit
+authorization.
