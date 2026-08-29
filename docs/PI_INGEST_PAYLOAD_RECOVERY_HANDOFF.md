@@ -3860,8 +3860,11 @@ Exact launch block:
 ```powershell
 $ErrorActionPreference='Stop'
 $script='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\run-compensated-a3-transition.ps1'
-if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'b0d2ab393b35cf2251c4a8c01706061c75cbbeecfe6661a98f30e7f171ee95c6'){throw 'Authorized A3 launcher hash mismatch.'}
-$process=Start-Process -FilePath 'C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'))
+$expected='b0d2ab393b35cf2251c4a8c01706061c75cbbeecfe6661a98f30e7f171ee95c6'
+if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected){throw 'Authorized A3 launcher hash mismatch.'}
+$command='$ErrorActionPreference=''Stop'';$script='''+$script.Replace("'","''")+''';$expected='''+$expected+''';if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected){throw ''Authorized A3 launcher hash mismatch inside elevated process.''};& $script'
+$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+$process=Start-Process -FilePath 'C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded)
 if($process.ExitCode -ne 0){throw "A3 compensated transition failed with exit code $($process.ExitCode)."}
 ```
 
