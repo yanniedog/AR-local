@@ -12,6 +12,7 @@ import pytest
 import laptop_backup_transition as transition
 import laptop_backup_transition_authority as authority
 import laptop_backup_transition_contract as contract
+import laptop_backup_transition_evidence as transition_evidence
 import laptop_pull_backup as receiver
 
 
@@ -401,6 +402,84 @@ def test_runtime_lease_allows_exact_stale_resume_only(tmp_path: Path) -> None:
     )
     with transition.runtime_lease(root, "one", resume=True):
         assert lock.exists()
+
+
+@pytest.mark.parametrize(
+    "transition_id",
+    [
+        "../outside", "..", "a/b", "a\\b", "C:\\outside", ".hidden",
+        "CON", "prn", "AUX", "nul", "COM1", "com9", "LPT1", "lpt9",
+    ],
+)
+def test_runtime_lease_rejects_unsafe_transition_id_before_writes(
+    tmp_path: Path, transition_id: str
+) -> None:
+    root = tmp_path / "evidence"
+    outside = tmp_path / "outside"
+
+    with pytest.raises(ValueError, match="unsafe path characters"):
+        with transition.runtime_lease(root, transition_id, resume=True):
+            pass
+
+    assert not outside.exists()
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("transition_id", [None, 1, Path("identifier")])
+def test_runtime_lease_rejects_non_string_transition_id_before_writes(
+    tmp_path: Path, transition_id: object
+) -> None:
+    root = tmp_path / "evidence"
+
+    with pytest.raises(ValueError, match="unsafe path characters"):
+        with transition.runtime_lease(root, transition_id, resume=True):  # type: ignore[arg-type]
+            pass
+
+    assert not root.exists()
+
+
+def test_runtime_lease_rejects_reparse_root_before_lease_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    monkeypatch.setattr(
+        contract,
+        "is_link_or_reparse",
+        lambda path: path == root,
+    )
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        with transition.runtime_lease(root, "safe-id", resume=False):
+            pass
+
+    assert not (root / ".transition-runtime.lock").exists()
+
+
+def test_transition_path_rejects_existing_reparse_child_inside_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "evidence"
+    child = root / "safe-id"
+    child.mkdir(parents=True)
+    monkeypatch.setattr(
+        contract,
+        "is_link_or_reparse",
+        lambda path: path == child,
+    )
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        transition_evidence.transition_path(root, "safe-id")
+
+
+def test_transition_path_rejects_dangling_child_symlink(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    child = root / "safe-id"
+    child.symlink_to(root / "missing-sibling", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        transition_evidence.transition_path(root, "safe-id")
 
 
 def test_runtime_lease_rejects_dead_lease_for_different_transition(tmp_path: Path) -> None:
