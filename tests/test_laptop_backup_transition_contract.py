@@ -424,6 +424,37 @@ def test_runtime_lease_rejects_unsafe_transition_id_before_writes(
     assert not root.exists()
 
 
+@pytest.mark.parametrize("transition_id", [None, 1, Path("identifier")])
+def test_runtime_lease_rejects_non_string_transition_id_before_writes(
+    tmp_path: Path, transition_id: object
+) -> None:
+    root = tmp_path / "evidence"
+
+    with pytest.raises(ValueError, match="unsafe path characters"):
+        with transition.runtime_lease(root, transition_id, resume=True):  # type: ignore[arg-type]
+            pass
+
+    assert not root.exists()
+
+
+def test_runtime_lease_rejects_reparse_root_before_lease_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    monkeypatch.setattr(
+        contract,
+        "is_link_or_reparse",
+        lambda path: path == root,
+    )
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        with transition.runtime_lease(root, "safe-id", resume=False):
+            pass
+
+    assert not (root / ".transition-runtime.lock").exists()
+
+
 def test_runtime_lease_rejects_dead_lease_for_different_transition(tmp_path: Path) -> None:
     root = tmp_path / "evidence"
     evidence = root / "one"

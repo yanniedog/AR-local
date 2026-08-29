@@ -26,10 +26,23 @@ WINDOWS_RESERVED_NAMES = {
 
 def validate_transition_id(transition_id: str) -> None:
     if (
-        not TRANSITION_ID_RE.fullmatch(transition_id)
+        not isinstance(transition_id, str)
+        or not TRANSITION_ID_RE.fullmatch(transition_id)
         or transition_id.upper() in WINDOWS_RESERVED_NAMES
     ):
         raise ValueError("transition ID contains unsafe path characters")
+
+
+def validate_runtime_root(root: Path) -> None:
+    if not root.is_absolute() or any(part in {".", ".."} for part in root.parts):
+        raise ValueError("transition evidence root is not an absolute lexical path")
+    current = Path(root.anchor)
+    for part in root.parts[1:]:
+        current /= part
+        if current.exists() and contract.is_link_or_reparse(current):
+            raise ValueError("transition evidence root traverses a link or reparse point")
+    if root.exists() and not root.is_dir():
+        raise ValueError("transition evidence root is not a directory")
 
 
 def transition_path(root: Path, transition_id: str) -> Path:
@@ -132,6 +145,7 @@ def _reclamation_claim(root: Path) -> Iterator[None]:
 @contextmanager
 def runtime_lease(root: Path, transition_id: str, *, resume: bool) -> Iterator[None]:
     validate_transition_id(transition_id)
+    validate_runtime_root(root)
     root.mkdir(parents=True, exist_ok=True)
     transition_path(root, transition_id)
     lock = root / ".transition-runtime.lock"
