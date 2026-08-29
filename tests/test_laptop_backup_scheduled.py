@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -11,6 +15,209 @@ import laptop_pull_backup as receiver
 
 CANDIDATE = "c" * 40
 PROTECTED = "9" * 40
+HOBART = ZoneInfo("Australia/Hobart")
+
+
+def source_listing() -> dict[str, object]:
+    return {
+        "ok": True,
+        "preflight": {
+            "checked_at": "2026-08-29T17:00:00+10:00",
+            "production": {
+                "clean": True,
+                "commit": PROTECTED,
+                "dirty_paths": [],
+            },
+            "daily_service": "inactive",
+            "terminal_failure_authorization": None,
+            "daily_timer": "enabled",
+            "daily_timer_active": "active",
+            "ingest_lock_absent": True,
+            "dashboard_healthy": True,
+            "state_root": "/srv/ar-local/data/state",
+        },
+        "retained_runs": [
+            {"date": "2026-08-28", "status": "completed"},
+            {"date": "2026-08-29", "status": "completed"},
+        ],
+        "completed_dates": ["2026-08-28", "2026-08-29"],
+        "component_identities": {
+            "control": {"content_revision": "1" * 64, "source_bytes": 1},
+            "macro": {"content_revision": "2" * 64, "source_bytes": 1},
+            "diagnostics": {},
+        },
+        "latest_observation": {
+            "observation_date": "2026-08-29",
+            "completion_marker_sha256": "3" * 64,
+            "pointer_sha256": "4" * 64,
+        },
+    }
+
+
+InvalidMutation = Callable[[dict[str, object]], None]
+INVALID_SOURCE_IDENTITIES: tuple[tuple[InvalidMutation, str], ...] = (
+    (lambda value: value.update(ok=False), "did not report success"),
+    (lambda value: value.update(preflight={}), "lacks a checked_at"),
+    (
+        lambda value: value.update(preflight={"checked_at": "2026-08-29T17:00:00"}),
+        "not timezone-aware",
+    ),
+    (
+        lambda value: value.update(preflight={"checked_at": "2026-08-29T17:00:00+00:00"}),
+        "not Australia/Hobart",
+    ),
+    (
+        lambda value: value.update(preflight={"checked_at": "2026-08-29T17:07:00+10:00"}),
+        "checked_at is in the future",
+    ),
+    (
+        lambda value: value["preflight"].update(checked_at="2026-08-29T16:55:00+10:00"),
+        "checked_at is stale",
+    ),
+    (
+        lambda value: value["preflight"].update(production={}),
+        "production identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"]["production"].update(clean=False),
+        "production identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"]["production"].update(commit="8" * 40),
+        "production identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(daily_service="active"),
+        "daily service identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(
+            daily_service="failed", terminal_failure_authorization=None
+        ),
+        "lacks terminal-failure authorization",
+    ),
+    (
+        lambda value: value["preflight"].update(
+            daily_service="failed",
+            terminal_failure_authorization={
+                "run_date": "2026-08-29",
+                "record_path": "/unrelated/2026-08-29/record.FAIL.json",
+                "result": "FAIL",
+            },
+        ),
+        "terminal-failure authorization is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(
+            daily_service="failed",
+            terminal_failure_authorization={
+                "run_date": "2026-08-29",
+                "record_path": (
+                    "/srv/ar-local/data/state/../state/ingest-executions/"
+                    "2026-08-29/record.FAIL.json"
+                ),
+                "result": "FAIL",
+            },
+        ),
+        "terminal-failure authorization is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(daily_timer="disabled"),
+        "daily timer identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(daily_timer_active="inactive"),
+        "active daily timer identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(ingest_lock_absent=False),
+        "ingest lock identity is invalid",
+    ),
+    (
+        lambda value: value["preflight"].update(dashboard_healthy=False),
+        "dashboard identity is invalid",
+    ),
+    (
+        lambda value: value["component_identities"].update(control={}),
+        "control component identity is invalid",
+    ),
+    (
+        lambda value: value["component_identities"].update(macro={}),
+        "macro component identity is invalid",
+    ),
+    (
+        lambda value: value["component_identities"]["control"].update(source_bytes=0),
+        "control component identity is invalid",
+    ),
+    (
+        lambda value: value["component_identities"]["control"].update(
+            content_revision=int("1" * 64)
+        ),
+        "control component identity is invalid",
+    ),
+    (
+        lambda value: value.update(
+            retained_runs=[{"date": "2026-08-29", "status": "diagnostic"}],
+            completed_dates=[],
+            latest_observation=None,
+        ),
+        "no completed observation",
+    ),
+    (
+        lambda value: value.update(completed_dates=["2026-08-28"]),
+        "completed-date identity is inconsistent",
+    ),
+    (
+        lambda value: value["retained_runs"].insert(
+            0, {"date": "2026-08-27", "status": "diagnostic"}
+        ),
+        "diagnostic identity is inconsistent",
+    ),
+    (
+        lambda value: value["latest_observation"].update(pointer_sha256=None),
+        "latest observation identity is incomplete",
+    ),
+    (
+        lambda value: value["latest_observation"].update(
+            completion_marker_sha256=int("3" * 64)
+        ),
+        "latest observation identity is incomplete",
+    ),
+    (
+        lambda value: value["retained_runs"][0].update(date="2026-02-30"),
+        "retained-run inventory is invalid",
+    ),
+    (
+        lambda value: value["retained_runs"].append(
+            {"date": "2026-08-29", "status": "diagnostic"}
+        ),
+        "retained-run inventory is invalid",
+    ),
+    (
+        lambda value: value["retained_runs"].append(
+            {"date": "2026-08-30", "status": "diagnostic"}
+        ),
+        "retained-run inventory is invalid",
+    ),
+    (
+        lambda value: value["latest_observation"].update(
+            observation_date="2026-08-30"
+        ),
+        "latest observation date is in the future",
+    ),
+    (
+        lambda value: value["component_identities"]["diagnostics"].update(
+            {"2026-08-27": {"content_revision": 5, "source_bytes": 1}}
+        ),
+        "diagnostic 2026-08-27 component identity is invalid",
+    ),
+    (
+        lambda value: value["component_identities"]["diagnostics"].update(
+            {"2026-08-30": {"content_revision": "5" * 64, "source_bytes": 1}}
+        ),
+        "diagnostic date is in the future",
+    ),
+)
 
 
 @pytest.mark.parametrize(
@@ -88,28 +295,248 @@ def test_request_blocks_invalid_latest_identity(latest: object) -> None:
 
 
 def test_source_listing_requires_complete_consistent_identity() -> None:
-    valid = {
-        "ok": True,
-        "retained_runs": [
-            {"date": "2026-08-28", "status": "completed"},
-            {"date": "2026-08-29", "status": "completed"},
-        ],
-        "component_identities": {"control": {}, "macro": {}, "diagnostics": {}},
-        "latest_observation": {"observation_date": "2026-08-29"},
-    }
+    valid = source_listing()
+    reference = datetime(2026, 8, 29, 17, 1, tzinfo=HOBART)
 
-    identities, retained = scheduled.validate_source_listing(valid)
+    identities, retained = scheduled.validate_source_listing(
+        valid, protected_sha=PROTECTED, now=reference
+    )
     assert identities is valid["component_identities"]
     assert retained is valid["retained_runs"]
-    for invalid in (
-        {**valid, "component_identities": None},
-        {**valid, "component_identities": {"control": {}, "macro": {}}},
-        {**valid, "latest_observation": None},
-        {**valid, "latest_observation": {"observation_date": "2026-08-28"}},
-        {**valid, "latest_observation": {"observation_date": "2026-08-30"}},
-    ):
-        with pytest.raises(ValueError):
-            scheduled.validate_source_listing(invalid)
+
+
+def test_source_listing_accepts_verified_terminal_failure_identity() -> None:
+    valid = source_listing()
+    valid["preflight"].update(
+        daily_service="failed",
+        terminal_failure_authorization={
+            "run_date": "2026-08-29",
+            "record_path": (
+                "/srv/ar-local/data/state/ingest-executions/2026-08-29/"
+                "20260829T010000+1000.FAIL.json"
+            ),
+            "result": "FAIL",
+        },
+    )
+
+    scheduled.validate_source_listing(
+        valid,
+        protected_sha=PROTECTED,
+        now=datetime(2026, 8, 29, 17, 1, tzinfo=HOBART),
+    )
+
+
+def test_source_listing_rejects_stale_clock_at_quiet_window_boundary() -> None:
+    invalid = source_listing()
+    invalid["preflight"]["checked_at"] = "2026-08-29T23:29:00+10:00"
+
+    with pytest.raises(ValueError, match="checked_at is stale"):
+        scheduled.validate_source_listing(
+            invalid,
+            protected_sha=PROTECTED,
+            now=datetime(2026, 8, 30, 0, 29, tzinfo=HOBART),
+        )
+
+
+@pytest.mark.parametrize(
+    ("now_value", "checked_at"),
+    (
+        (
+            datetime(2026, 8, 30, 0, 31, tzinfo=HOBART),
+            "2026-08-30T00:27:00+10:00",
+        ),
+        (
+            datetime(2026, 8, 30, 3, 29, tzinfo=HOBART),
+            "2026-08-30T03:33:00+10:00",
+        ),
+    ),
+)
+def test_source_listing_uses_laptop_clock_for_quiet_window(
+    now_value: datetime, checked_at: str
+) -> None:
+    invalid = source_listing()
+    invalid["preflight"]["checked_at"] = checked_at
+
+    with pytest.raises(ValueError, match="Hobart quiet window"):
+        scheduled.validate_source_listing(
+            invalid, protected_sha=PROTECTED, now=now_value
+        )
+
+
+@pytest.mark.parametrize(
+    "record_path",
+    (
+        "/unrelated/2026-08-29/record.FAIL.json",
+        "/srv/ar-local/data/state/../state/ingest-executions/2026-08-29/record.FAIL.json",
+    ),
+)
+def test_source_listing_binds_terminal_failure_to_state_root(record_path: str) -> None:
+    invalid = source_listing()
+    invalid["preflight"].update(
+        daily_service="failed",
+        terminal_failure_authorization={
+            "run_date": "2026-08-29",
+            "record_path": record_path,
+            "result": "FAIL",
+        },
+    )
+
+    with pytest.raises(ValueError, match="terminal-failure authorization is invalid"):
+        scheduled.validate_source_listing(
+            invalid,
+            protected_sha=PROTECTED,
+            now=datetime(2026, 8, 29, 17, 1, tzinfo=HOBART),
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    INVALID_SOURCE_IDENTITIES,
+)
+def test_source_listing_rejects_incomplete_or_future_identity(
+    mutation: InvalidMutation, match: str
+) -> None:
+    invalid = deepcopy(source_listing())
+    mutation(invalid)
+
+    with pytest.raises(ValueError, match=match):
+        scheduled.validate_source_listing(
+            invalid,
+            protected_sha=PROTECTED,
+            now=datetime(2026, 8, 29, 17, 1, tzinfo=HOBART),
+        )
+
+
+def test_source_listing_rejects_cross_midnight_future_date() -> None:
+    invalid = source_listing()
+    invalid["preflight"]["checked_at"] = "2026-08-30T00:02:00+10:00"
+    invalid["retained_runs"][-1]["date"] = "2026-08-30"
+    invalid["completed_dates"][-1] = "2026-08-30"
+    invalid["latest_observation"]["observation_date"] = "2026-08-30"
+
+    with pytest.raises(ValueError, match="future Hobart date"):
+        scheduled.validate_source_listing(
+            invalid,
+            protected_sha=PROTECTED,
+            now=datetime(2026, 8, 29, 23, 58, tzinfo=HOBART),
+        )
+
+
+@pytest.mark.parametrize(("mutation", "_match"), INVALID_SOURCE_IDENTITIES)
+def test_main_blocks_invalid_source_identity_before_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mutation: InvalidMutation,
+    _match: str,
+) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    recovery = tmp_path / "recovery.img"
+    recovery.write_bytes(b"")
+    listing = source_listing()
+    listing["target"] = str(target)
+    mutation(listing)
+    calls: list[str] = []
+    records: list[tuple[str, str]] = []
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            fixed = datetime(2026, 8, 29, 17, 1, tzinfo=HOBART)
+            return fixed.astimezone(tz) if tz is not None else fixed.replace(tzinfo=None)
+
+    def invoke(_args: object, command: str, _dates: tuple[str, ...] = ()) -> tuple[int, str, str]:
+        calls.append(command)
+        return 0, json.dumps(listing), ""
+
+    monkeypatch.setattr(scheduled, "datetime", FixedDateTime)
+    monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
+    monkeypatch.setattr(
+        scheduled,
+        "record_execution",
+        lambda _target, _args, result, action, _detail: (
+            records.append((result, action)) or target / "record.json"
+        ),
+    )
+
+    code = scheduled.main([
+        "--target", str(target),
+        "--recovery-image", str(recovery),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", receiver.PLAN_GIT_COMMIT,
+    ])
+
+    assert code == 1
+    assert calls == ["preflight"]
+    assert records == [("BLOCKED", "PREFLIGHT_FAILED")]
+
+
+@pytest.mark.parametrize(
+    ("now_value", "checked_at"),
+    (
+        (
+            datetime(2026, 8, 30, 0, 31, tzinfo=HOBART),
+            "2026-08-30T00:27:00+10:00",
+        ),
+        (
+            datetime(2026, 8, 30, 3, 29, tzinfo=HOBART),
+            "2026-08-30T03:33:00+10:00",
+        ),
+    ),
+)
+def test_main_blocks_quiet_window_clock_skew_before_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    now_value: datetime,
+    checked_at: str,
+) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    recovery = tmp_path / "recovery.img"
+    recovery.write_bytes(b"")
+    listing = source_listing()
+    listing["target"] = str(target)
+    listing["preflight"]["checked_at"] = checked_at
+    calls: list[str] = []
+    records: list[tuple[str, str]] = []
+
+    class BoundaryDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return (
+                now_value.astimezone(tz)
+                if tz is not None
+                else now_value.replace(tzinfo=None)
+            )
+
+    def invoke(
+        _args: object, command: str, _dates: tuple[str, ...] = ()
+    ) -> tuple[int, str, str]:
+        calls.append(command)
+        return 0, json.dumps(listing), ""
+
+    monkeypatch.setattr(scheduled, "datetime", BoundaryDateTime)
+    monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
+    monkeypatch.setattr(
+        scheduled,
+        "record_execution",
+        lambda _target, _args, result, action, _detail: (
+            records.append((result, action)) or target / "record.json"
+        ),
+    )
+
+    code = scheduled.main([
+        "--target", str(target),
+        "--recovery-image", str(recovery),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", receiver.PLAN_GIT_COMMIT,
+    ])
+
+    assert code == 1
+    assert calls == ["preflight"]
+    assert records == [("BLOCKED", "PREFLIGHT_FAILED")]
 
 
 @pytest.mark.parametrize(

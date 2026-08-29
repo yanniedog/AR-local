@@ -9,11 +9,15 @@ import json
 import sys
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 import laptop_pull_backup as receiver
+
+
+HOBART_TZ = ZoneInfo("Australia/Hobart")
 
 
 def local_path(target: Path, relative: str) -> Path:
@@ -367,43 +371,172 @@ def select_backup_request(
 
 def validate_source_listing(
     listing: Mapping[str, object],
+    *,
+    protected_sha: str,
+    now: datetime | None = None,
 ) -> tuple[Mapping[str, object], list[Mapping[str, object]]]:
+    if listing.get("ok") is not True:
+        raise ValueError("Pi source listing did not report success")
+    preflight = listing.get("preflight")
+    checked_at_raw = preflight.get("checked_at") if isinstance(preflight, Mapping) else None
+    if not isinstance(checked_at_raw, str):
+        raise ValueError("Pi source listing lacks a checked_at identity")
+    try:
+        checked_at = datetime.fromisoformat(checked_at_raw)
+    except ValueError as exc:
+        raise ValueError("Pi source listing has an invalid checked_at identity") from exc
+    if checked_at.tzinfo is None or checked_at.utcoffset() is None:
+        raise ValueError("Pi source listing checked_at is not timezone-aware")
+    checked_at_hobart = checked_at.astimezone(HOBART_TZ)
+    if checked_at.utcoffset() != checked_at_hobart.utcoffset():
+        raise ValueError("Pi source listing checked_at is not Australia/Hobart time")
+    reference = (now or datetime.now(HOBART_TZ)).astimezone(HOBART_TZ)
+    reference_minute = reference.hour * 60 + reference.minute
+    if 30 <= reference_minute < 210:
+        raise ValueError("laptop backup is forbidden during the Hobart quiet window")
+    if checked_at_hobart > reference + timedelta(minutes=5):
+        raise ValueError("Pi source listing checked_at is in the future")
+    if checked_at_hobart < reference - timedelta(minutes=5):
+        raise ValueError("Pi source listing checked_at is stale")
+    if checked_at_hobart.date() > reference.date():
+        raise ValueError("Pi source listing checked_at is on a future Hobart date")
+    source_date = checked_at_hobart.date()
+
+    def source_date_value(value: object, label: str) -> str:
+        if not isinstance(value, str) or not receiver.DATE_RE.fullmatch(value):
+            raise ValueError(f"Pi {label} date is invalid")
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"Pi {label} date is invalid") from exc
+        if parsed > source_date:
+            raise ValueError(f"Pi {label} date is in the future")
+        return value
+
+    def component_identity(value: object, label: str) -> Mapping[str, object]:
+        revision = value.get("content_revision") if isinstance(value, Mapping) else None
+        if (
+            not isinstance(value, Mapping)
+            or not isinstance(revision, str)
+            or not receiver.SHA256_RE.fullmatch(revision)
+            or type(value.get("source_bytes")) is not int
+            or int(value["source_bytes"]) <= 0
+        ):
+            raise ValueError(f"Pi {label} component identity is invalid")
+        return value
+
+    production = preflight.get("production") if isinstance(preflight, Mapping) else None
+    if (
+        not isinstance(production, Mapping)
+        or production.get("clean") is not True
+        or production.get("commit") != protected_sha
+        or production.get("dirty_paths") != []
+    ):
+        raise ValueError("Pi production identity is invalid")
+    if preflight.get("daily_timer") != "enabled":
+        raise ValueError("Pi daily timer identity is invalid")
+    if preflight.get("daily_timer_active") != "active":
+        raise ValueError("Pi active daily timer identity is invalid")
+    if preflight.get("ingest_lock_absent") is not True:
+        raise ValueError("Pi ingest lock identity is invalid")
+    if preflight.get("dashboard_healthy") is not True:
+        raise ValueError("Pi dashboard identity is invalid")
+    service = preflight.get("daily_service")
+    terminal_failure = preflight.get("terminal_failure_authorization")
+    if service == "inactive":
+        if terminal_failure is not None:
+            raise ValueError("Pi inactive service has unexpected failure authorization")
+    elif service == "failed":
+        if not isinstance(terminal_failure, Mapping):
+            raise ValueError("Pi failed service lacks terminal-failure authorization")
+        failure_date = source_date_value(terminal_failure.get("run_date"), "failure")
+        state_root_raw = preflight.get("state_root")
+        record_path = terminal_failure.get("record_path")
+        state_root = PurePosixPath(state_root_raw) if isinstance(state_root_raw, str) else None
+        failure_path = PurePosixPath(record_path) if isinstance(record_path, str) else None
+        if (
+            terminal_failure.get("result") != "FAIL"
+            or state_root is None
+            or not state_root.is_absolute()
+            or str(state_root) != state_root_raw
+            or any(part in {".", ".."} for part in state_root.parts)
+            or failure_path is None
+            or not failure_path.is_absolute()
+            or str(failure_path) != record_path
+            or any(part in {".", ".."} for part in failure_path.parts)
+            or failure_path.parent
+            != state_root / "ingest-executions" / failure_date
+            or not failure_path.name.endswith(".FAIL.json")
+        ):
+            raise ValueError("Pi terminal-failure authorization is invalid")
+    else:
+        raise ValueError("Pi daily service identity is invalid")
+
     identities = listing.get("component_identities")
     retained = listing.get("retained_runs")
     if (
         not isinstance(identities, Mapping)
-        or not isinstance(identities.get("control"), Mapping)
-        or not isinstance(identities.get("macro"), Mapping)
         or not isinstance(identities.get("diagnostics"), Mapping)
         or not isinstance(retained, list)
     ):
         raise ValueError("Pi component inventory is missing or incomplete")
+    component_identity(identities.get("control"), "control")
+    component_identity(identities.get("macro"), "macro")
+    diagnostics = identities["diagnostics"]
+    assert isinstance(diagnostics, Mapping)
+    for diagnostic_date, diagnostic_identity in diagnostics.items():
+        source_date_value(diagnostic_date, "diagnostic")
+        component_identity(diagnostic_identity, f"diagnostic {diagnostic_date}")
     completed: list[str] = []
+    diagnostic_dates: list[str] = []
     prior = ""
     for item in retained:
-        date = str(item.get("date") or "") if isinstance(item, Mapping) else ""
+        run_date = item.get("date") if isinstance(item, Mapping) else None
         if (
             not isinstance(item, Mapping)
-            or not receiver.DATE_RE.fullmatch(date)
             or item.get("status") not in {"completed", "diagnostic"}
-            or date <= prior
         ):
             raise ValueError("Pi retained-run inventory is invalid")
-        prior = date
+        try:
+            run_date = source_date_value(run_date, "retained-run")
+        except ValueError as exc:
+            raise ValueError("Pi retained-run inventory is invalid") from exc
+        if run_date <= prior:
+            raise ValueError("Pi retained-run inventory is invalid")
+        prior = run_date
         if item["status"] == "completed":
-            completed.append(date)
+            completed.append(run_date)
+        else:
+            diagnostic_dates.append(run_date)
+    if not completed:
+        raise ValueError("Pi source listing has no completed observation")
+    if listing.get("completed_dates") != completed:
+        raise ValueError("Pi completed-date identity is inconsistent with retained runs")
+    if sorted(diagnostics) != diagnostic_dates:
+        raise ValueError("Pi diagnostic identity is inconsistent with retained runs")
     latest = listing.get("latest_observation")
-    if completed:
-        if not isinstance(latest, Mapping) or latest.get("observation_date") != completed[-1]:
-            raise ValueError("Pi latest observation is inconsistent with retained runs")
-    elif latest is not None:
-        raise ValueError("Pi latest observation exists without a completed run")
+    if not isinstance(latest, Mapping):
+        raise ValueError("Pi latest observation is inconsistent with retained runs")
+    latest_date = source_date_value(latest.get("observation_date"), "latest observation")
+    if latest_date != completed[-1]:
+        raise ValueError("Pi latest observation is inconsistent with retained runs")
+    completion_digest = latest.get("completion_marker_sha256")
+    pointer_digest = latest.get("pointer_sha256")
+    if (
+        not isinstance(completion_digest, str)
+        or not receiver.SHA256_RE.fullmatch(completion_digest)
+        or not isinstance(pointer_digest, str)
+        or not receiver.SHA256_RE.fullmatch(pointer_digest)
+    ):
+        raise ValueError("Pi latest observation identity is incomplete")
     return identities, retained
 
 
 def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
     try:
-        identities, retained = validate_source_listing(listing)
+        identities, retained = validate_source_listing(
+            listing, protected_sha=args.protected_code_sha
+        )
     except ValueError as exc:
         return {"status": "BLOCKED", "reason": str(exc)}
     observation = latest_status(
