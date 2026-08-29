@@ -3045,3 +3045,255 @@ failure.
 A4 and Phases B-G remain `BLOCKED`. Only a later append-only entry recording
 the controlled transition and natural 05:00 result may advance A3 or authorize
 the next phase.
+
+## Entry `HANDOFF-20260829T221124+1000-A3-HARNESS-MERGED`
+
+### Required control record
+
+| Field | Value |
+|---|---|
+| Created at, Australia/Hobart | `2026-08-29T22:11:24+10:00` |
+| Created at, UTC | `2026-08-29T12:11:24Z` |
+| Previous handoff entry | `HANDOFF-20260829T183043+1000-A3-SOURCE-IDENTITY-MERGED` |
+| Previous handoff-containing merge | `7e9651cec6bf5facf07c98dedd65913775f95911` |
+| Previous complete handoff Git-blob SHA-256 | `c8608be633bcfb9db4f6e339abcaf4bee6478c1e440eedc320416a6ee0875b6b` |
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan Git-blob SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Harness candidate and new receiver SHA | `089238c7b9e568e3d659f2952d84edfddd360b4e` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Accepted old receiver SHA | `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Operator | Codex unattended for `jkoka`; elevation remains an explicit Windows security boundary |
+| Overall result | `BLOCKED` |
+| Completed component | A3 transition harness implementation, hardening, exact-head verification, and merge: `PASS` |
+| Current phase | A3 real Windows receiver/task transition: `AUTHORIZED FOR 2026-08-30 DAYLIGHT ONLY AFTER THE NATURAL 05:00 PROOF` |
+| A4 and Phases B-G | `BLOCKED` until the first natural v1.4 05:00 proof is terminal `PASS` |
+| Deviations | `DEV-A3-HARNESS-001`, recorded below |
+| Deviation authorization | This append-only entry, limited to documentation of the already-completed merge-governance event; it grants no production or Pi change |
+
+This entry supersedes only the previous entry's statement that the harness code
+slice remained to be written. It preserves every earlier evidence result and
+does not relabel the natural-ingest timing miss, the stale v2 state, or any
+blocked A3 runtime result. The real transition has not run. The installed task,
+accepted receiver, backup catalog, Pi production checkout, ingest timer, and
+public payload were not changed by the three code PRs or this documentation PR.
+
+### Completed code slices and exact verification
+
+The authorized A3 harness was delivered as three intentionally reviewable
+slices:
+
+1. PR #549, head `d7e66d38651f322b22c6dc0e38d92923e3fcb7b0`, merged as
+   `c6463b58f4ae93f3b76832b391e7899fca9e2011` at
+   `2026-08-29T10:46:33Z`, added the fail-closed transition harness,
+   immutable evidence lease, authority validation, Windows task helper, and
+   deterministic recovery tests.
+2. PR #550, head `3993c3ad732ce2c6fbb12b083b0d51c07b06b5e1`, merged as
+   `ebd7788578b6c77a64bb8043cf0299ced5ba7f4e` at
+   `2026-08-29T11:35:12Z`, confined caller-supplied transition identifiers and
+   every derived evidence path against aliases, traversal, reserved Windows
+   names, symlinks, junctions, and reparse points.
+3. PR #551, head `3ce050e08f33a87de04919a3d92559c1bd06052f`, merged as
+   `089238c7b9e568e3d659f2952d84edfddd360b4e` at
+   `2026-08-29T12:08:27Z`, made scheduled execution lineage append-only and
+   crash recoverable, added a persistent OS-level mutex shared by every
+   new-code `latest-scheduled.json` writer, authenticated unique orphan/root
+   roll-forward, validated lineage before backup mutation, and quiesced the
+   accepted old task before any recovery pointer mutation.
+
+PR #551 exact head passed `python -m pytest -q` with `1276 passed, 11
+skipped`; its focused transition/lineage suite passed `256 passed`. Three
+independent read-only reviews found no remaining P0, P1, or P2 defect. App CI,
+Sourcery exact-head review, Codex exact-head review presence, the only universal
+required context `bot-feedback-gate`, and all review-thread closures passed.
+Gemini remained advisory while its exact-head workflow was still externally
+owned; it was not used as runtime evidence. No real backup target was used by
+tests and no Windows task or Pi mutation occurred.
+
+The clean detached receiver for the real transition now exists at
+`C:\code\backups\AR-local-pi5-receiver-089238c` and is clean at exact
+`089238c7b9e568e3d659f2952d84edfddd360b4e`. Its presence is preparation only;
+it is not installed and must be revalidated immediately before transition.
+
+### Formal deviation decision `DEV-A3-HARNESS-001`
+
+| Field | Decision |
+|---|---|
+| Event | PR #549 became merged before the final late review findings and normal guarded merge closeout had completed. |
+| Reason | The merge state changed during the multi-step GitHub closeout while the harness was still receiving exact-head review. This was a repository-governance sequencing failure, not an authorized bypass and not a runtime action. |
+| Risk | Unreviewed transition defects could have reached `main`; using that merge directly could have corrupted scheduled lineage or left the laptop task disabled. |
+| Compensating controls | The real transition remained prohibited. PR #550 and PR #551 separately hardened the exact merged code; every late finding received an `Implemented` disposition and thread resolution; full tests and three independent reviews were rerun; no candidate was installed or executed against the real target. |
+| Revised acceptance criteria | The runtime candidate is the later exact merge `089238c7b9e568e3d659f2952d84edfddd360b4e`, not PR #549. It must pass the complete authority, source, transition, recovery, task, catalog, capacity, and natural-run gates below. |
+| Authorization | This entry records and controls the completed governance deviation. It does not authorize bypassing any future PR, runtime, D-006, elevation, or evidence gate. |
+
+The PR #550 guarded wrapper also reported a local post-merge cleanup problem
+because another checkout owned `main`; GitHub had already completed the guarded
+squash merge. That local wrapper behavior changed no production state and was
+verified from a fresh standalone clone. It is retained as workflow evidence,
+not relabelled as an end-to-end wrapper `PASS`.
+
+### Canonical real-transition authorization
+
+The following is the only machine-readable A3 transition authorization in this
+ledger. It is deliberately bound to one candidate, one source observation date,
+one hard deadline, one old task, one target, and one operator. If the natural
+2026-08-30 ingest or the old 05:00 backup does not validate, if this entry is
+not merged before use, if `origin/main` advances after the containing merge, or
+if execution cannot start with adequate daylight margin, this authorization is
+`BLOCKED` and a new append-only decision is required. It must never be edited.
+
+<!-- ARL_A3_TRANSITION_AUTHORIZATION_BEGIN -->
+{"accepted_old_xml_sha256":"aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2","candidate_code_sha":"089238c7b9e568e3d659f2952d84edfddd360b4e","deadline":"2026-08-30T22:00:00+10:00","expected_observation_date":"2026-08-30","host":"ar-local-pi5-lan","new_receiver":"C:\\code\\backups\\AR-local-pi5-receiver-089238c","old_candidate_code_sha":"f214e3249c7968d574e3449edb14792904e1cc1f","old_receiver":"C:\\code\\backups\\AR-local-pi5-receiver-f214e32","operator":"jkoka","plan_document_id":"ARL-OPS-001","plan_git_commit":"14dd066099bba393cccf61a280243e43162eedc9","plan_sha256":"78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713","plan_version":"1.4","principal":"yanniedog\\jkoka","protected_code_sha":"9302890fcc752cbf90da97d597e972c157d913e3","recovery_image":"C:\\code\\AR-local-pi-image-2026-05-21\\AR-local-pi-image-2026-05-21","schema_version":1,"source_identity_base":"46e2aeba55fe3f97ace4143ba08fc00e36225dc1","target":"C:\\code\\backups\\AR-local-pi5","task_name":"AR-local laptop backup"}
+<!-- ARL_A3_TRANSITION_AUTHORIZATION_END -->
+
+### D-006 sequence before the real transition
+
+The transition is not permitted on 2026-08-29 because the controlled daylight
+window has closed. The following sequence is mandatory and chronological:
+
+1. At approximately 00:25 Australia/Hobart on 2026-08-30, run the complete
+   read-only D-006 preflight and finish before 00:30. At approximately 00:55,
+   begin the final read-only gate early enough to finish before 01:00.
+2. From 00:30 through terminal ingest validation, perform no deployment,
+   canary, manual or forced ingest, restart, task change or trigger, package
+   change, backup, restore, storage maintenance, or publication manipulation.
+3. Observe exactly one natural `2026-08-30` 01:00 ingest. Require clean protected
+   Pi SHA, enabled/active timer, no competing lock, terminal service success,
+   dashboard return, raw-attempt preservation, completion/contract/ledger/
+   pointer/generation binding, SQLite `quick_check`, exact provider and product
+   accounting with attributable product gaps preserved, and independent public
+   verification of dated v1, rolling v1, dates index, and every referenced
+   asset. Keep v2 independent and never relabel stale v2 as v1 failure or
+   success.
+4. Do not manually trigger the laptop task. Observe the accepted old receiver's
+   natural 05:00 execution and validate it at 05:15. Require task `Ready`,
+   enabled, `LastTaskResult=0`, exact old task XML, all scheduled records since
+   the prior baseline `PASS`, a valid `BACKUP-LATEST` for observation
+   `2026-08-30` unless a hash-proven startup run already performed it, exact
+   observation/control/macro/inventory identities and receipts, complete
+   append-only catalog and restore checks, no locks/partials/helpers/overlap,
+   Pi source equality, and at least 50 GiB free.
+5. Only after both natural outcomes are terminally validated may the real
+   transition begin. Start as soon as practical after 05:15 and with substantial
+   margin before 22:00. If either natural outcome is `FAIL`, `BLOCKED`,
+   uncertain, or lacks immutable evidence, do not run the transition.
+
+### Exact transition preparation and command
+
+Use a clean plan-control checkout of the documentation merge containing this
+entry. Resolve its merge commit and Git-blob handoff hash after merge; never
+substitute the documentation PR head for its squash merge. Before execution,
+prove the two controlled checkouts and immutable old XML:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$candidate = '089238c7b9e568e3d659f2952d84edfddd360b4e'
+$receiver = 'C:\code\backups\AR-local-pi5-receiver-089238c'
+$oldReceiver = 'C:\code\backups\AR-local-pi5-receiver-f214e32'
+$authorityRepo = 'C:\code\backups\AR-local-a3-handoff-089238c'
+$target = 'C:\code\backups\AR-local-pi5'
+$oldXml = 'C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml'
+$python = (Get-Command python -ErrorAction Stop).Source
+$oldPython = 'C:\Users\jkoka\.pyenv\pyenv-win\shims\python.bat'
+
+git -C $authorityRepo fetch origin main
+$authorityCommit = (git -C $authorityRepo rev-parse origin/main).Trim()
+if ((git -C $authorityRepo status --porcelain=v1) -or
+    (git -C $receiver status --porcelain=v1) -or
+    (git -C $oldReceiver status --porcelain=v1)) { throw 'A controlled checkout is dirty.' }
+if ((git -C $receiver rev-parse HEAD).Trim() -ne $candidate) { throw 'Candidate receiver drift.' }
+if ((git -C $oldReceiver rev-parse HEAD).Trim() -ne 'f214e3249c7968d574e3449edb14792904e1cc1f') { throw 'Old receiver drift.' }
+if ((Get-FileHash -LiteralPath $oldXml -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+    'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2') { throw 'Old XML drift.' }
+$handoffSha = (& $python -c 'import hashlib,subprocess,sys; print(hashlib.sha256(subprocess.check_output(["git","-C",sys.argv[1],"show",sys.argv[2]+":docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"])).hexdigest())' $authorityRepo $authorityCommit).Trim()
+if ($LASTEXITCODE -ne 0 -or $handoffSha -notmatch '^[0-9a-f]{64}$') { throw 'Handoff hash resolution failed.' }
+```
+
+The transition itself requires an elevated `yanniedog\jkoka` process. The
+current unattended Codex process was explicitly measured as non-elevated and
+Windows `sudo` is disabled. Codex must execute every other safe command itself,
+but it must not bypass UAC, create a privileged workaround task, weaken the
+harness, or ask the operator to run routine commands. If elevation cannot be
+obtained through the normal Windows consent boundary, record `BLOCKED` without
+mutation. In the elevated process, use exactly:
+
+```powershell
+& $python "$receiver\laptop_backup_transition.py" `
+  --target $target `
+  --recovery-image 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21' `
+  --receiver $receiver `
+  --old-receiver $oldReceiver `
+  --old-task-xml $oldXml `
+  --candidate-code-sha $candidate `
+  --old-candidate-code-sha 'f214e3249c7968d574e3449edb14792904e1cc1f' `
+  --protected-code-sha '9302890fcc752cbf90da97d597e972c157d913e3' `
+  --plan-git-commit '14dd066099bba393cccf61a280243e43162eedc9' `
+  --plan-sha256 '78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713' `
+  --authority-repo $authorityRepo `
+  --authority-commit $authorityCommit `
+  --handoff-sha256 $handoffSha `
+  --expected-observation-date '2026-08-30' `
+  --operator 'jkoka' `
+  --principal 'yanniedog\jkoka' `
+  --python-path $python `
+  --old-python-path $oldPython `
+  --task-name 'AR-local laptop backup' `
+  --deadline '2026-08-30T22:00:00+10:00' `
+  --host 'ar-local-pi5-lan' `
+  --accepted-old-xml-sha256 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+if ($LASTEXITCODE -ne 0) { throw 'A3 transition did not pass.' }
+```
+
+Never invent a resume ID. If the first command terminates without a sealed
+terminal result, read `ACTIVE_TRANSITION.json`, authenticate its transition ID,
+authority, evidence-root, saved hashes, and runtime lease exactly as the
+harness requires, then invoke the same command with only
+`--resume-transition-id <authenticated-id>` added. Resume performs recovery or
+finalization only; it must never repeat the foreground backup or installer.
+
+### Transition acceptance and rollback boundary
+
+The real transition is `PASS` only if its one immutable terminal record proves:
+
+- exact plan, authority, handoff, candidate, protected Pi, operator, date, and
+  command identities;
+- accepted old task authentication and disabled-before-mutation ordering;
+- exactly one foreground `PASS/BACKUP-LATEST/UP_TO_DATE` for observation
+  `2026-08-30`, with candidate-bound observation/control/macro receipts;
+- catalog-prefix preservation, valid scheduled-record lineage, receipt and
+  archive hashes, SQLite restore proof, no unexpected diagnostic/backfill,
+  and at least 50 GiB free;
+- exact installed candidate task definition, `Ready` and enabled state,
+  `LastTaskResult=0`, 05:00 and startup-plus-five-minute triggers, `IgnoreNew`,
+  three 30-minute retries, six-hour limit, and start-when-available;
+- a separate `PASS/NO_BACKUP_DATA_WRITE` check-only record after installation;
+  and
+- final source/Pi/dashboard/timer health, no lock, partial, helper, overlap, or
+  unsealed evidence, plus a hash-bound closed transition pointer.
+
+Any non-`PASS`, uncertainty, unexpected append, expired deadline, active helper,
+or identity mismatch invokes only the harness's authenticated recovery. Preserve
+all records and generations. Restore the exact old task and only the eligible
+component pointers; never delete evidence or roll back `latest-scheduled`.
+Record the terminal result as `FAIL`, `BLOCKED`, or `ROLLED_BACK` exactly as
+emitted. Do not retry with a new transition ID on the same authorization.
+
+### First natural v1.4 proof and A4 advancement rule
+
+After transition `PASS`, do not manually trigger or reinstall the task. Preserve
+D-006 for the natural 2026-08-31 01:00 ingest, validate it completely, then
+observe the natural 2026-08-31 05:00 v1.4 task. A3 becomes terminal `PASS` only
+when at least one verified scheduled record performs `BACKUP-LATEST` for
+observation `2026-08-31`, any additional startup/daily no-write record is exactly
+identity-bound, all intervening records are `PASS`, every receipt and catalog
+link validates, restore/SQLite checks pass where required, Pi identities match,
+no residue or overlap remains, the task is exact and healthy, and at least
+50 GiB remains free.
+
+After that terminal result, create a fresh `origin/main` documentation-only
+branch and append immutable paths, hashes, commands, timestamps, task XML,
+catalog/pointer/receipt identities, natural-ingest result, natural-backup result,
+deviations, and explicit A3 `PASS`, `FAIL`, `BLOCKED`, or `ROLLED_BACK`. Only an
+explicit `PASS` entry may authorize A4 planning. A4 implementation and physical
+boot execution remain separate later slices; no Pi deployment is implied.
