@@ -3647,3 +3647,175 @@ separate daylight, no-runtime-mutation slice. A4 physical boot execution still
 requires exact spare-media identity and any unavoidable physical/UAC boundary;
 it must not endanger the next 01:00 capture. Pi deployment, PR #508, and Phases
 B-G remain blocked until their own later gates.
+
+## Entry `HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Created at, Australia/Hobart | `2026-08-30T08:31:00+10:00` |
+| Previous handoff-containing merge | `59b42701154e1e421581b47069772bbcf2af5230` |
+| Previous complete handoff Git-blob SHA-256 | `57d27cc293e6e5c1782a641117d8c03deeeb5149fd86d215844bb02bbb773eda` |
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Candidate | `88557b96d4a240dca640285bcb3457751b381667` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator | Codex unattended for `jkoka`; Windows UAC consent remains the only human boundary |
+| Current result | `RUNNING`; compensated transition is authorized below, then A3 remains pending its first natural new-task proof |
+
+### Append-only decision `DEV-A3-TIMED-GATE-003`
+
+The scheduled 00:25 and 00:55 continuation did not execute. This is a
+procedural `BLOCKED` result and is never relabelled `PASS`. The natural ingest
+was not missed, forced, restarted, or duplicated: systemd ran invocation
+`893b9b8ab55f45f28c9d71014b048b5c` once from 01:00:03 to 01:16:57 with
+`Result=success`, `ExecMainStatus=0`, and `NRestarts=0`; the lock and ingest
+processes were absent terminally and the dashboard returned.
+
+Risk: there is no contemporaneous 00:25/00:55 evidence proving the pre-start
+lock/process/resource state. Compensating controls are a complete post-terminal
+service journal, clean protected Pi identity, 19/19 ledger verification,
+hash-bound raw attempts, marker/contract/generation reconciliation, SQLite
+integrity, provider/product accounting, independently matched Pi-staged and
+public dated/rolling payload bytes, and the natural 05:00 backup record. These
+controls prove the resulting observation and backup are internally complete
+and authentic, but do not rewrite the procedural miss.
+
+The independent ingest evidence root is
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000`:
+
+- `validation-summary.json`: `5e10dcbee493465e2d898df448d029383d7016d137b89da9efe5a5ecf4e8b800`;
+- `observation-and-producer.json`: `8f2055d0ccb34a25ce1229f5d73fea607804d5f24e647195d01b20b984e6ba61`;
+- `public-verification.json`: `700f756a9676ef4b38f03855e7519ab7cbc72b1c47deeebbb1d4960f7b96c167`;
+- `ledger-verify.json`: `58c4ef3add3aced0a866b6ac54037f258f3fa19d253d82ec89d7f677af2ef63e`;
+- `service-journal-late.txt`: `0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5`;
+- `supplemental-binding-verifier.py`: `d11e7df28a61c81aac2998e2ba41691b3f3adb9c616e4f0374356a2c3f5f0759`;
+- `supplemental-binding.json`: `409509bb1b3d677031e15ceab51d591a14b866c012cfd631ebf7dffdba2f6c57`;
+- `supplemental-command-ledger-v2.json`: `452d2858261e8e7434903baccf80252d4c6a2122deec3830ea9c567838770e41`.
+
+The supplemental binding reran from its saved, hashed source and records the
+exact commands. It binds pointer SHA-256
+`1b28c00659282781016820e7f2f18ce50f6222d0a6e52ed61a7f632bcd01d42c`,
+marker SHA-256
+`59c03052d4fce710ab6b298c4fb43a8010bfe8e3b40b364b3a7ec426c886f22c`,
+contract SHA-256
+`9555fa261fbcbc3be0efaae6a318671dc09dc6dedbc8e8e8ad9bbe0f8e3d80d1`,
+contract digest
+`e306489f4a5a3002d003260e393e14b9ef41d948f2e32ca0dafcf278bc1100d5`,
+ledger-event raw SHA-256
+`b311a5c554d28470c2031b89b8df3435f73449c128acc1c1be4d56531120f599`
+and event digest
+`5e27b5c4c7d4d171e212b62348e98e5af91dd4ca5798df9168defa6cb9101eae`.
+Raw attempt evidence is independently retained as head
+`99355453a936db8bd5799ccc3942aebcc0bc46c70082888cf97b0cab619144f5`,
+tree `8509eaf6891804bb695fee3dcd94886e93bd4007bcdb31dfca88b2f16b43e97a`,
+promotion manifest
+`050ea48723b783be0796cf9c4874ae7daaeeb5b2f4178b4c38966fd4c6f8fbde`,
+10,981 files, and 42,660,057 bytes.
+
+Observation `obs-2026-08-30-69a34aa4c745bb2e` is a valid bounded partial:
+3,841 attempts; 119/119 providers attempted; 112 complete, seven partial, zero
+failed; 17 attributable failures; zero corrupt/unattributed; 3,012 products;
+17,050 rates; SQLite SHA-256
+`f246fd77d3215ac631e7c0255ba550f9bfb6e49f0e9c866041040f740fa6f834`
+with `quick_check=ok`. Dated v1, rolling v1, every referenced asset, and the
+dates index independently match Pi staging. Individual gaps remain disclosed;
+they did not discard unrelated valid products.
+
+The natural old task ran once at 05:00:01 and produced immutable
+`PASS/BACKFILL` record
+`catalog/scheduled-runs/20260829T191444Z-3a75034934e640cdbd694f957805206d.json`,
+SHA-256 `40bfca76438b0de7eb047c4eacbf3beb58ecf81bb9a976deb0481b5084d976ae`,
+for observation date `2026-08-30`. The task is Ready/enabled with result zero,
+next run 2026-08-31 05:00, and 151,989,071,872 bytes free. Its concise evidence
+`0500-task-summary-late.json` has SHA-256
+`6346113a080f61911cbe181e03c577d63d484962ca9fd4335bf5edab42016af7`.
+
+Two defects in the previous manual continuity block are recorded without
+editing it: .NET `o` format contains seven fractional digits that Python's
+`datetime.fromisoformat` rejects, and the manual loop demands a predecessor
+from a legacy record whose authenticated format intentionally has
+`previous_execution=null`. The candidate's tested transition contract is the
+authority for unique legacy-anchor recovery and live-pointer binding. Revised
+acceptance therefore requires its own elevated `static_preflight` and
+`runtime_preflight` to accept this exact record before any mutation.
+
+### Revised transition authority
+
+This decision authorizes the prior entry's exact real transition command today
+before 22:00, despite the recorded timed-procedure miss, only when all evidence
+and identities above still hash-match and these substitutions are made:
+
+1. Resolve this entry's document-containing merge using marker
+   `HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION`; require it to equal
+   current `origin/main`, and calculate the complete handoff Git-blob SHA-256
+   from that merge.
+2. Pass that merge and hash as `--authority-commit` and `--handoff-sha256`.
+3. Retain expected observation date `2026-08-30`, deadline
+   `2026-08-30T22:00:00+10:00`, candidate/protected/plan identities, old task
+   XML, receivers, recovery image, operator, principal, and every other argument
+   from the prior exact command unchanged.
+4. Run only in an elevated `yanniedog\jkoka` process. UAC denial or absence is
+   `BLOCKED`; no privilege workaround is authorized.
+
+The substitutions above are implemented by this self-contained replacement;
+it supersedes the previous entry's executable block:
+
+```powershell
+$ErrorActionPreference='Stop'
+if(-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'A3 transition requires normal UAC elevation.'}
+$candidate='88557b96d4a240dca640285bcb3457751b381667';$receiver='C:\code\backups\AR-local-pi5-receiver-88557b9';$oldReceiver='C:\code\backups\AR-local-pi5-receiver-f214e32'
+$authorityRepo='C:\code\backups\AR-local-a3-transition-authority';$target='C:\code\backups\AR-local-pi5';$expectedPi='9302890fcc752cbf90da97d597e972c157d913e3'
+$marker='HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION';$handoff='docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+git -C $authorityRepo fetch origin main --prune
+if($LASTEXITCODE -ne 0){throw "Transition authority fetch failed: git exit $LASTEXITCODE"}
+$authorityCommit=(& python -c 'import subprocess,sys; r,m,p=sys.argv[1:]; cs=subprocess.check_output(["git","-C",r,"rev-list","--reverse","--first-parent","origin/main","--",p],text=True).split(); hits=[c for c in cs if m.encode() in subprocess.check_output(["git","-C",r,"show",f"{c}:{p}"])]; print(hits[0] if hits else "")' $authorityRepo $marker $handoff).Trim()
+if($LASTEXITCODE -ne 0 -or $authorityCommit -notmatch '^[0-9a-f]{40}$' -or (git -C $authorityRepo rev-parse origin/main).Trim() -ne $authorityCommit){throw 'Compensated transition authority is absent or stale.'}
+git -C $authorityRepo checkout --detach $authorityCommit
+if($LASTEXITCODE -ne 0){throw 'Authority checkout failed.'}
+$handoffSha=(& python -c 'import hashlib,subprocess,sys; print(hashlib.sha256(subprocess.check_output(["git","-C",sys.argv[1],"show",sys.argv[2]+":"+sys.argv[3]])).hexdigest())' $authorityRepo $authorityCommit $handoff).Trim()
+if($LASTEXITCODE -ne 0 -or $handoffSha -notmatch '^[0-9a-f]{64}$'){throw 'Handoff digest resolution failed.'}
+$late='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000'
+$evidence=@{
+ 'validation-summary.json'='5e10dcbee493465e2d898df448d029383d7016d137b89da9efe5a5ecf4e8b800';
+ 'observation-and-producer.json'='8f2055d0ccb34a25ce1229f5d73fea607804d5f24e647195d01b20b984e6ba61';
+ 'public-verification.json'='700f756a9676ef4b38f03855e7519ab7cbc72b1c47deeebbb1d4960f7b96c167';
+ 'ledger-verify.json'='58c4ef3add3aced0a866b6ac54037f258f3fa19d253d82ec89d7f677af2ef63e';
+ 'service-journal-late.txt'='0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5';
+ '0500-task-summary-late.json'='6346113a080f61911cbe181e03c577d63d484962ca9fd4335bf5edab42016af7';
+ 'supplemental-binding-verifier.py'='d11e7df28a61c81aac2998e2ba41691b3f3adb9c616e4f0374356a2c3f5f0759';
+ 'supplemental-binding.json'='409509bb1b3d677031e15ceab51d591a14b866c012cfd631ebf7dffdba2f6c57';
+ 'supplemental-command-ledger-v2.json'='452d2858261e8e7434903baccf80252d4c6a2122deec3830ea9c567838770e41'
+}
+foreach($name in $evidence.Keys){$path=Join-Path $late $name;if(-not(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $evidence[$name]){throw "Compensating evidence mismatch: $name"}}
+if(@(git -C $authorityRepo status --porcelain=v1).Count -ne 0 -or @(git -C $receiver status --porcelain=v1).Count -ne 0 -or (git -C $receiver rev-parse HEAD).Trim() -ne $candidate){throw 'Transition checkout identity failed.'}
+$python=(Get-Command python -ErrorAction Stop).Source;$oldPython='C:\Users\jkoka\.pyenv\pyenv-win\shims\python.bat';$oldXml='C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml'
+& $python "$receiver\laptop_backup_transition.py" --target $target `
+ --recovery-image 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21' `
+ --receiver $receiver --old-receiver $oldReceiver --old-task-xml $oldXml `
+ --candidate-code-sha $candidate --old-candidate-code-sha 'f214e3249c7968d574e3449edb14792904e1cc1f' `
+ --protected-code-sha $expectedPi --plan-git-commit '14dd066099bba393cccf61a280243e43162eedc9' `
+ --plan-sha256 '78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713' `
+ --authority-repo $authorityRepo --authority-commit $authorityCommit --handoff-sha256 $handoffSha `
+ --expected-observation-date '2026-08-30' --operator 'jkoka' --principal 'yanniedog\jkoka' `
+ --python-path $python --old-python-path $oldPython --task-name 'AR-local laptop backup' `
+ --deadline '2026-08-30T22:00:00+10:00' --host 'ar-local-pi5-lan' `
+ --accepted-old-xml-sha256 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+if($LASTEXITCODE -ne 0){throw 'A3 compensated transition did not PASS.'}
+```
+
+The transition harness must itself reauthenticate the current task, exact
+legacy record, source identities, current observation/control/macro/inventory,
+receipts, restoration checks, disk floor, locks, helpers, authority, and
+deadline before disabling anything. It must complete foreground backup,
+candidate task installation, standalone check-only proof, rollback validation,
+closed evidence, and zero residue. On failure use only its authenticated
+recovery path. Do not deploy or modify Pi production.
+
+After transition `PASS`, append its exact evidence and bind the 2026-08-31
+natural ingest and first candidate-task 05:00 proof. A3 becomes terminal `PASS`
+only after that proof; then begin A4 planning automatically in a separate
+documentation-only slice. No physical A4 work or Pi deployment is authorized
+by this decision.
