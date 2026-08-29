@@ -71,5 +71,5 @@ $registered = Enable-ArLaptopBackupTaskAfterVerification -TaskName $TaskName `
   candidate_code_sha = $CandidateCodeSha
   daily_time = '05:00 Australia/Hobart laptop local time'
   startup_delay = 'PT5M'
-  stale_action = 'verified latest observation: NO_WRITE; otherwise backup-latest'
+  stale_action = 'current: NO_BACKUP_DATA_WRITE; historical gaps: selective backfill; otherwise backup-latest'
 } | ConvertTo-Json
