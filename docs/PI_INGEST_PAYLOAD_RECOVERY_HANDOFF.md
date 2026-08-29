@@ -3663,9 +3663,16 @@ B-G remain blocked until their own later gates.
 | Candidate | `88557b96d4a240dca640285bcb3457751b381667` |
 | Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
 | Operator | Codex unattended for `jkoka`; Windows UAC consent remains the only human boundary |
+| Deviation authorizer | AR-local operator `jkoka` |
+| Durable authorization source | Controlled-thread operator direction on 2026-08-30 after disclosure of the timed-gate `BLOCKED` result: “I want you to PROGRESS through the runbook and plan” |
 | Current result | `RUNNING`; compensated transition is authorized below, then A3 remains pending its first natural new-task proof |
 
 ### Append-only decision `DEV-A3-TIMED-GATE-003`
+
+The AR-local operator's direction above authorizes this narrowly scoped
+compensated transition decision. It does not waive the recorded procedural
+failure, evidence hashes, elevated harness preflights, rollback, deadline,
+natural 2026-08-31 proof, A4 boundary, or any Pi deployment control.
 
 The scheduled 00:25 and 00:55 continuation did not execute. This is a
 procedural `BLOCKED` result and is never relabelled `PASS`. The natural ingest
