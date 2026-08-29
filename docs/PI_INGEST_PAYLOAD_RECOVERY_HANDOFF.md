@@ -3819,3 +3819,54 @@ natural ingest and first candidate-task 05:00 proof. A3 becomes terminal `PASS`
 only after that proof; then begin A4 planning automatically in a separate
 documentation-only slice. No physical A4 work or Pi deployment is authorized
 by this decision.
+
+## Entry `HANDOFF-20260830T084500+1000-A3-DEVIATION-AUTHORIZATION`
+
+This append-only addendum records the operator authorization that was omitted
+from the already-merged compensated-transition entry above. It does not edit,
+rewrite, relabel, or weaken that entry or any completed evidence.
+
+| Field | Value |
+|---|---|
+| Previous decision merge | `790e6f2cba601d0f2fc8e3b07d04012e3f5dfbef` |
+| Previous complete handoff Git-blob SHA-256 | `397f76e6f1b23413f2eec5c9324fa4cdbd16769a120a3038b28f36761a8b75d0` |
+| Controlled plan | ARL-OPS-001 v1.4; commit `14dd066099bba393cccf61a280243e43162eedc9`; SHA-256 `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Deviation | Permit the exact compensated A3 laptop-task transition despite the truthfully retained 2026-08-30 timed-preflight `BLOCKED` result. |
+| Authorizer | AR-local operator `jkoka` |
+| Durable authorization source | Controlled task instruction after disclosure of the procedural miss: “I want you to PROGRESS through the runbook and plan!!!” |
+| Executor | Codex, acting unattended except for the unavoidable Windows UAC consent boundary |
+| Result | `RUNNING` until the transition harness produces terminal immutable evidence; A3 remains nonterminal until the first natural candidate-task proof on 2026-08-31. |
+
+The authorization is deliberately narrow. It does not waive or relabel the
+timed-preflight miss, any evidence hash, UAC, static/runtime preflight,
+authenticated rollback, deadline, disk floor, Pi-cleanliness requirement,
+2026-08-31 natural-ingest proof, or first natural 05:00 candidate-task proof.
+It does not authorize a Pi deployment, a manual/forced ingest, publication
+manipulation, or physical A4 implementation.
+
+The only authorized launcher is:
+
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\run-compensated-a3-transition.ps1`
+
+Its required SHA-256 is
+`b0d2ab393b35cf2251c4a8c01706061c75cbbeecfe6661a98f30e7f171ee95c6`.
+It resolves this entry's first-parent document-containing commit, requires that
+commit to equal current `origin/main`, calculates the complete handoff Git-blob
+SHA-256, re-verifies all listed immutable evidence, and invokes the tested
+candidate transition harness with the unchanged controlled arguments.
+
+Exact launch block:
+
+```powershell
+$ErrorActionPreference='Stop'
+$script='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\run-compensated-a3-transition.ps1'
+if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'b0d2ab393b35cf2251c4a8c01706061c75cbbeecfe6661a98f30e7f171ee95c6'){throw 'Authorized A3 launcher hash mismatch.'}
+$process=Start-Process -FilePath 'C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$script+'"'))
+if($process.ExitCode -ne 0){throw "A3 compensated transition failed with exit code $($process.ExitCode)."}
+```
+
+After a transition `PASS`, append the exact transition evidence in a fresh
+documentation-only slice and bind the 2026-08-31 natural ingest plus first
+natural candidate-task 05:00 proof. Only after that proof may A3 be declared
+terminal `PASS` and A4 planning begin. No A4 implementation or Pi deployment
+is authorized by this addendum.
