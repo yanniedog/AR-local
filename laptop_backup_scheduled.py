@@ -342,11 +342,70 @@ def inventory_status(
     }
 
 
-def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
+def select_backup_request(
+    observation: Mapping[str, object], inventory: Mapping[str, object]
+) -> tuple[str, tuple[str, ...]]:
+    missing = inventory.get("missing_completed_dates")
+    if not isinstance(missing, list) or any(
+        not isinstance(date, str) or not receiver.DATE_RE.fullmatch(date) for date in missing
+    ):
+        raise ValueError("backup inventory has invalid missing completed dates")
+    if missing != sorted(set(missing)):
+        raise ValueError("backup inventory missing dates are not unique and ordered")
+    latest = observation.get("observation_date")
+    if latest is not None and (
+        not isinstance(latest, str) or not receiver.DATE_RE.fullmatch(latest)
+    ):
+        raise ValueError("backup observation has an invalid latest date")
+    if missing and latest is None:
+        raise ValueError("backup inventory has missing dates without a latest observation")
+    if isinstance(latest, str) and any(date > latest for date in missing):
+        raise ValueError("backup inventory has a missing date after the latest observation")
+    historical = tuple(date for date in missing if date != latest)
+    return ("backfill", historical) if historical else ("backup-latest", ())
+
+
+def validate_source_listing(
+    listing: Mapping[str, object],
+) -> tuple[Mapping[str, object], list[Mapping[str, object]]]:
     identities = listing.get("component_identities")
     retained = listing.get("retained_runs")
-    if not isinstance(identities, Mapping) or not isinstance(retained, list):
-        return {"status": "STALE", "reason": "Pi component inventory is missing", "backfill_required": True}
+    if (
+        not isinstance(identities, Mapping)
+        or not isinstance(identities.get("control"), Mapping)
+        or not isinstance(identities.get("macro"), Mapping)
+        or not isinstance(identities.get("diagnostics"), Mapping)
+        or not isinstance(retained, list)
+    ):
+        raise ValueError("Pi component inventory is missing or incomplete")
+    completed: list[str] = []
+    prior = ""
+    for item in retained:
+        date = str(item.get("date") or "") if isinstance(item, Mapping) else ""
+        if (
+            not isinstance(item, Mapping)
+            or not receiver.DATE_RE.fullmatch(date)
+            or item.get("status") not in {"completed", "diagnostic"}
+            or date <= prior
+        ):
+            raise ValueError("Pi retained-run inventory is invalid")
+        prior = date
+        if item["status"] == "completed":
+            completed.append(date)
+    latest = listing.get("latest_observation")
+    if completed:
+        if not isinstance(latest, Mapping) or latest.get("observation_date") != completed[-1]:
+            raise ValueError("Pi latest observation is inconsistent with retained runs")
+    elif latest is not None:
+        raise ValueError("Pi latest observation exists without a completed run")
+    return identities, retained
+
+
+def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse.Namespace) -> dict[str, object]:
+    try:
+        identities, retained = validate_source_listing(listing)
+    except ValueError as exc:
+        return {"status": "BLOCKED", "reason": str(exc)}
     observation = latest_status(
         target,
         listing.get("latest_observation"),
@@ -376,9 +435,12 @@ def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse
         item["status"] == "UP_TO_DATE"
         for item in (observation, controls["control"], controls["macro"], inventory)
     ) else "STALE"
+    command, backfill_dates = select_backup_request(observation, inventory)
     return {
         "status": status,
-        "backfill_required": bool(inventory.get("missing_completed_dates")),
+        "backup_command": command,
+        "backfill_required": command == "backfill",
+        "backfill_dates": list(backfill_dates),
         "observation": observation,
         **controls,
         "inventory": inventory,
@@ -498,9 +560,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
         sys.stderr.write(error)
         return preflight_code
-    listing = json.loads(preflight_stdout)
-    target = Path(str(listing["target"])).resolve(strict=True)
-    status = scheduled_status(target, listing, args)
+    try:
+        listing = json.loads(preflight_stdout)
+    except json.JSONDecodeError as exc:
+        error = f"Pi backup preflight returned invalid JSON: {exc}"
+        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        print(error, file=sys.stderr)
+        return 1
+    try:
+        target = Path(str(listing["target"])).resolve(strict=True)
+        status = scheduled_status(target, listing, args)
+    except (KeyError, OSError, ValueError) as exc:
+        error = f"Pi backup preflight metadata is invalid: {exc}"
+        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        print(error, file=sys.stderr)
+        return 1
+    if status["status"] == "BLOCKED":
+        path = record_execution(target, args, "BLOCKED", "PREFLIGHT_FAILED", status)
+        print(json.dumps({
+            "ok": False,
+            "result": "BLOCKED",
+            "action": "PREFLIGHT_FAILED",
+            "execution_record": str(path),
+            **status,
+        }, indent=2, sort_keys=True), file=sys.stderr)
+        return 1
     if status["status"] == "UP_TO_DATE":
         path = record_execution(target, args, "PASS", "NO_BACKUP_DATA_WRITE", status)
         print(json.dumps({
@@ -521,8 +605,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             **status,
         }, indent=2, sort_keys=True))
         return 1
-    command = "backfill" if status.get("backfill_required") else "backup-latest"
-    missing_dates = status.get("inventory", {}).get("missing_completed_dates", [])
+    command = str(status["backup_command"])
+    missing_dates = status.get("backfill_dates", [])
     backup_code, backup_stdout, backup_stderr = invoke_receiver(
         args, command, missing_dates if command == "backfill" else ()
     )
@@ -537,13 +621,49 @@ def main(argv: Sequence[str] | None = None) -> int:
         record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {"before": status, "error": error})
         sys.stderr.write(error)
         return verify_code
-    verified = scheduled_status(target, json.loads(verify_stdout), args)
+    try:
+        verified_listing = json.loads(verify_stdout)
+    except json.JSONDecodeError as exc:
+        error = f"Post-backup preflight returned invalid JSON: {exc}"
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {
+            "before": status,
+            "attempted_action": command.upper(),
+            "error": error,
+        })
+        print(error, file=sys.stderr)
+        return 1
+    try:
+        verified = scheduled_status(target, verified_listing, args)
+    except (KeyError, OSError, ValueError) as exc:
+        error = f"Post-backup preflight metadata is invalid: {exc}"
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {
+            "before": status,
+            "attempted_action": command.upper(),
+            "error": error,
+        })
+        print(error, file=sys.stderr)
+        return 1
+    if verified["status"] == "BLOCKED":
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {
+            "before": status,
+            "attempted_action": command.upper(),
+            "after": verified,
+        })
+        print(json.dumps({
+            "ok": False,
+            "result": "FAIL",
+            "action": "POST_BACKUP_VERIFY",
+            "attempted_action": command.upper(),
+            "detail": verified,
+        }, indent=2, sort_keys=True), file=sys.stderr)
+        return 1
     result = "PASS" if verified["status"] == "UP_TO_DATE" else "FAIL"
     path = record_execution(target, args, result, command.upper(), {"before": status, "after": verified})
     sys.stdout.write(backup_stdout)
     print(json.dumps({
         "ok": result == "PASS",
         "result": result,
+        "action": command.upper(),
         "execution_record": str(path),
         **verified,
     }, indent=2, sort_keys=True))
