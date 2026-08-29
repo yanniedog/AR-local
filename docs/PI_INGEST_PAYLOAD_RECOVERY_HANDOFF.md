@@ -3690,7 +3690,30 @@ The independent ingest evidence root is
 - `observation-and-producer.json`: `8f2055d0ccb34a25ce1229f5d73fea607804d5f24e647195d01b20b984e6ba61`;
 - `public-verification.json`: `700f756a9676ef4b38f03855e7519ab7cbc72b1c47deeebbb1d4960f7b96c167`;
 - `ledger-verify.json`: `58c4ef3add3aced0a866b6ac54037f258f3fa19d253d82ec89d7f677af2ef63e`;
-- `service-journal-late.txt`: `0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5`.
+- `service-journal-late.txt`: `0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5`;
+- `supplemental-binding-verifier.py`: `d11e7df28a61c81aac2998e2ba41691b3f3adb9c616e4f0374356a2c3f5f0759`;
+- `supplemental-binding.json`: `409509bb1b3d677031e15ceab51d591a14b866c012cfd631ebf7dffdba2f6c57`;
+- `supplemental-command-ledger-v2.json`: `452d2858261e8e7434903baccf80252d4c6a2122deec3830ea9c567838770e41`.
+
+The supplemental binding reran from its saved, hashed source and records the
+exact commands. It binds pointer SHA-256
+`1b28c00659282781016820e7f2f18ce50f6222d0a6e52ed61a7f632bcd01d42c`,
+marker SHA-256
+`59c03052d4fce710ab6b298c4fb43a8010bfe8e3b40b364b3a7ec426c886f22c`,
+contract SHA-256
+`9555fa261fbcbc3be0efaae6a318671dc09dc6dedbc8e8e8ad9bbe0f8e3d80d1`,
+contract digest
+`e306489f4a5a3002d003260e393e14b9ef41d948f2e32ca0dafcf278bc1100d5`,
+ledger-event raw SHA-256
+`b311a5c554d28470c2031b89b8df3435f73449c128acc1c1be4d56531120f599`
+and event digest
+`5e27b5c4c7d4d171e212b62348e98e5af91dd4ca5798df9168defa6cb9101eae`.
+Raw attempt evidence is independently retained as head
+`99355453a936db8bd5799ccc3942aebcc0bc46c70082888cf97b0cab619144f5`,
+tree `8509eaf6891804bb695fee3dcd94886e93bd4007bcdb31dfca88b2f16b43e97a`,
+promotion manifest
+`050ea48723b783be0796cf9c4874ae7daaeeb5b2f4178b4c38966fd4c6f8fbde`,
+10,981 files, and 42,660,057 bytes.
 
 Observation `obs-2026-08-30-69a34aa4c745bb2e` is a valid bounded partial:
 3,841 attempts; 119/119 providers attempted; 112 complete, seven partial, zero
@@ -3736,6 +3759,52 @@ and identities above still hash-match and these substitutions are made:
    from the prior exact command unchanged.
 4. Run only in an elevated `yanniedog\jkoka` process. UAC denial or absence is
    `BLOCKED`; no privilege workaround is authorized.
+
+The substitutions above are implemented by this self-contained replacement;
+it supersedes the previous entry's executable block:
+
+```powershell
+$ErrorActionPreference='Stop'
+if(-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'A3 transition requires normal UAC elevation.'}
+$candidate='88557b96d4a240dca640285bcb3457751b381667';$receiver='C:\code\backups\AR-local-pi5-receiver-88557b9';$oldReceiver='C:\code\backups\AR-local-pi5-receiver-f214e32'
+$authorityRepo='C:\code\backups\AR-local-a3-transition-authority';$target='C:\code\backups\AR-local-pi5';$expectedPi='9302890fcc752cbf90da97d597e972c157d913e3'
+$marker='HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION';$handoff='docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+git -C $authorityRepo fetch origin main --prune
+if($LASTEXITCODE -ne 0){throw "Transition authority fetch failed: git exit $LASTEXITCODE"}
+$authorityCommit=(& python -c 'import subprocess,sys; r,m,p=sys.argv[1:]; cs=subprocess.check_output(["git","-C",r,"rev-list","--reverse","--first-parent","origin/main","--",p],text=True).split(); hits=[c for c in cs if m.encode() in subprocess.check_output(["git","-C",r,"show",f"{c}:{p}"])]; print(hits[0] if hits else "")' $authorityRepo $marker $handoff).Trim()
+if($LASTEXITCODE -ne 0 -or $authorityCommit -notmatch '^[0-9a-f]{40}$' -or (git -C $authorityRepo rev-parse origin/main).Trim() -ne $authorityCommit){throw 'Compensated transition authority is absent or stale.'}
+git -C $authorityRepo checkout --detach $authorityCommit
+if($LASTEXITCODE -ne 0){throw 'Authority checkout failed.'}
+$handoffSha=(& python -c 'import hashlib,subprocess,sys; print(hashlib.sha256(subprocess.check_output(["git","-C",sys.argv[1],"show",sys.argv[2]+":"+sys.argv[3]])).hexdigest())' $authorityRepo $authorityCommit $handoff).Trim()
+if($LASTEXITCODE -ne 0 -or $handoffSha -notmatch '^[0-9a-f]{64}$'){throw 'Handoff digest resolution failed.'}
+$late='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000'
+$evidence=@{
+ 'validation-summary.json'='5e10dcbee493465e2d898df448d029383d7016d137b89da9efe5a5ecf4e8b800';
+ 'observation-and-producer.json'='8f2055d0ccb34a25ce1229f5d73fea607804d5f24e647195d01b20b984e6ba61';
+ 'public-verification.json'='700f756a9676ef4b38f03855e7519ab7cbc72b1c47deeebbb1d4960f7b96c167';
+ 'ledger-verify.json'='58c4ef3add3aced0a866b6ac54037f258f3fa19d253d82ec89d7f677af2ef63e';
+ 'service-journal-late.txt'='0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5';
+ '0500-task-summary-late.json'='6346113a080f61911cbe181e03c577d63d484962ca9fd4335bf5edab42016af7';
+ 'supplemental-binding-verifier.py'='d11e7df28a61c81aac2998e2ba41691b3f3adb9c616e4f0374356a2c3f5f0759';
+ 'supplemental-binding.json'='409509bb1b3d677031e15ceab51d591a14b866c012cfd631ebf7dffdba2f6c57';
+ 'supplemental-command-ledger-v2.json'='452d2858261e8e7434903baccf80252d4c6a2122deec3830ea9c567838770e41'
+}
+foreach($name in $evidence.Keys){$path=Join-Path $late $name;if(-not(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $evidence[$name]){throw "Compensating evidence mismatch: $name"}}
+if(@(git -C $authorityRepo status --porcelain=v1).Count -ne 0 -or @(git -C $receiver status --porcelain=v1).Count -ne 0 -or (git -C $receiver rev-parse HEAD).Trim() -ne $candidate){throw 'Transition checkout identity failed.'}
+$python=(Get-Command python -ErrorAction Stop).Source;$oldPython='C:\Users\jkoka\.pyenv\pyenv-win\shims\python.bat';$oldXml='C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml'
+& $python "$receiver\laptop_backup_transition.py" --target $target `
+ --recovery-image 'C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21' `
+ --receiver $receiver --old-receiver $oldReceiver --old-task-xml $oldXml `
+ --candidate-code-sha $candidate --old-candidate-code-sha 'f214e3249c7968d574e3449edb14792904e1cc1f' `
+ --protected-code-sha $expectedPi --plan-git-commit '14dd066099bba393cccf61a280243e43162eedc9' `
+ --plan-sha256 '78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713' `
+ --authority-repo $authorityRepo --authority-commit $authorityCommit --handoff-sha256 $handoffSha `
+ --expected-observation-date '2026-08-30' --operator 'jkoka' --principal 'yanniedog\jkoka' `
+ --python-path $python --old-python-path $oldPython --task-name 'AR-local laptop backup' `
+ --deadline '2026-08-30T22:00:00+10:00' --host 'ar-local-pi5-lan' `
+ --accepted-old-xml-sha256 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+if($LASTEXITCODE -ne 0){throw 'A3 compensated transition did not PASS.'}
+```
 
 The transition harness must itself reauthenticate the current task, exact
 legacy record, source identities, current observation/control/macro/inventory,
