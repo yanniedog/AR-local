@@ -632,7 +632,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         })
         print(error, file=sys.stderr)
         return 1
-    verified = scheduled_status(target, verified_listing, args)
+    try:
+        verified = scheduled_status(target, verified_listing, args)
+    except (KeyError, OSError, ValueError) as exc:
+        error = f"Post-backup preflight metadata is invalid: {exc}"
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {
+            "before": status,
+            "attempted_action": command.upper(),
+            "error": error,
+        })
+        print(error, file=sys.stderr)
+        return 1
+    if verified["status"] == "BLOCKED":
+        record_execution(target, args, "FAIL", "POST_BACKUP_VERIFY", {
+            "before": status,
+            "attempted_action": command.upper(),
+            "after": verified,
+        })
+        print(json.dumps({
+            "ok": False,
+            "result": "FAIL",
+            "action": "POST_BACKUP_VERIFY",
+            "attempted_action": command.upper(),
+            "detail": verified,
+        }, indent=2, sort_keys=True), file=sys.stderr)
+        return 1
     result = "PASS" if verified["status"] == "UP_TO_DATE" else "FAIL"
     path = record_execution(target, args, result, command.upper(), {"before": status, "after": verified})
     sys.stdout.write(backup_stdout)

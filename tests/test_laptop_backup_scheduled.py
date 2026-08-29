@@ -224,3 +224,55 @@ def test_main_current_state_records_no_write_without_backup(
     assert code == 0
     assert calls == ["preflight"]
     assert records == [("PASS", "NO_BACKUP_DATA_WRITE")]
+
+
+def test_main_records_post_backup_metadata_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "backup"
+    target.mkdir()
+    recovery = tmp_path / "recovery.img"
+    recovery.write_bytes(b"")
+    listing = json.dumps({"target": str(target)})
+    calls: list[str] = []
+
+    def invoke(_args: object, command: str, _dates: tuple[str, ...] = ()) -> tuple[int, str, str]:
+        calls.append(command)
+        return (0, listing if command == "preflight" else "{}", "")
+
+    status_calls = 0
+
+    def status(*_args: object) -> dict[str, object]:
+        nonlocal status_calls
+        status_calls += 1
+        if status_calls == 1:
+            return {
+                "status": "STALE",
+                "backup_command": "backup-latest",
+                "backfill_dates": [],
+            }
+        raise ValueError("invalid verification inventory")
+
+    records: list[tuple[str, str, object]] = []
+    monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
+    monkeypatch.setattr(scheduled, "scheduled_status", status)
+    monkeypatch.setattr(
+        scheduled,
+        "record_execution",
+        lambda _target, _args, result, action, detail: (
+            records.append((result, action, detail)) or target / "record.json"
+        ),
+    )
+
+    code = scheduled.main([
+        "--target", str(target),
+        "--recovery-image", str(recovery),
+        "--candidate-code-sha", CANDIDATE,
+        "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", receiver.PLAN_GIT_COMMIT,
+    ])
+
+    assert code == 1
+    assert calls == ["preflight", "backup-latest", "preflight"]
+    assert records[0][0:2] == ("FAIL", "POST_BACKUP_VERIFY")
+    assert records[0][2]["attempted_action"] == "BACKUP-LATEST"
