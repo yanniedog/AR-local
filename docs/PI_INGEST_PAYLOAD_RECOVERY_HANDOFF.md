@@ -3647,3 +3647,106 @@ separate daylight, no-runtime-mutation slice. A4 physical boot execution still
 requires exact spare-media identity and any unavoidable physical/UAC boundary;
 it must not endanger the next 01:00 capture. Pi deployment, PR #508, and Phases
 B-G remain blocked until their own later gates.
+
+## Entry `HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Created at, Australia/Hobart | `2026-08-30T08:31:00+10:00` |
+| Previous handoff-containing merge | `59b42701154e1e421581b47069772bbcf2af5230` |
+| Previous complete handoff Git-blob SHA-256 | `57d27cc293e6e5c1782a641117d8c03deeeb5149fd86d215844bb02bbb773eda` |
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Candidate | `88557b96d4a240dca640285bcb3457751b381667` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator | Codex unattended for `jkoka`; Windows UAC consent remains the only human boundary |
+| Current result | `RUNNING`; compensated transition is authorized below, then A3 remains pending its first natural new-task proof |
+
+### Append-only decision `DEV-A3-TIMED-GATE-003`
+
+The scheduled 00:25 and 00:55 continuation did not execute. This is a
+procedural `BLOCKED` result and is never relabelled `PASS`. The natural ingest
+was not missed, forced, restarted, or duplicated: systemd ran invocation
+`893b9b8ab55f45f28c9d71014b048b5c` once from 01:00:03 to 01:16:57 with
+`Result=success`, `ExecMainStatus=0`, and `NRestarts=0`; the lock and ingest
+processes were absent terminally and the dashboard returned.
+
+Risk: there is no contemporaneous 00:25/00:55 evidence proving the pre-start
+lock/process/resource state. Compensating controls are a complete post-terminal
+service journal, clean protected Pi identity, 19/19 ledger verification,
+hash-bound raw attempts, marker/contract/generation reconciliation, SQLite
+integrity, provider/product accounting, independently matched Pi-staged and
+public dated/rolling payload bytes, and the natural 05:00 backup record. These
+controls prove the resulting observation and backup are internally complete
+and authentic, but do not rewrite the procedural miss.
+
+The independent ingest evidence root is
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000`:
+
+- `validation-summary.json`: `5e10dcbee493465e2d898df448d029383d7016d137b89da9efe5a5ecf4e8b800`;
+- `observation-and-producer.json`: `8f2055d0ccb34a25ce1229f5d73fea607804d5f24e647195d01b20b984e6ba61`;
+- `public-verification.json`: `700f756a9676ef4b38f03855e7519ab7cbc72b1c47deeebbb1d4960f7b96c167`;
+- `ledger-verify.json`: `58c4ef3add3aced0a866b6ac54037f258f3fa19d253d82ec89d7f677af2ef63e`;
+- `service-journal-late.txt`: `0c2d373af5673926ac0c1600fa027dafbd52f27b7f923e18560ae66f7755fee5`.
+
+Observation `obs-2026-08-30-69a34aa4c745bb2e` is a valid bounded partial:
+3,841 attempts; 119/119 providers attempted; 112 complete, seven partial, zero
+failed; 17 attributable failures; zero corrupt/unattributed; 3,012 products;
+17,050 rates; SQLite SHA-256
+`f246fd77d3215ac631e7c0255ba550f9bfb6e49f0e9c866041040f740fa6f834`
+with `quick_check=ok`. Dated v1, rolling v1, every referenced asset, and the
+dates index independently match Pi staging. Individual gaps remain disclosed;
+they did not discard unrelated valid products.
+
+The natural old task ran once at 05:00:01 and produced immutable
+`PASS/BACKFILL` record
+`catalog/scheduled-runs/20260829T191444Z-3a75034934e640cdbd694f957805206d.json`,
+SHA-256 `40bfca76438b0de7eb047c4eacbf3beb58ecf81bb9a976deb0481b5084d976ae`,
+for observation date `2026-08-30`. The task is Ready/enabled with result zero,
+next run 2026-08-31 05:00, and 151,989,071,872 bytes free. Its concise evidence
+`0500-task-summary-late.json` has SHA-256
+`6346113a080f61911cbe181e03c577d63d484962ca9fd4335bf5edab42016af7`.
+
+Two defects in the previous manual continuity block are recorded without
+editing it: .NET `o` format contains seven fractional digits that Python's
+`datetime.fromisoformat` rejects, and the manual loop demands a predecessor
+from a legacy record whose authenticated format intentionally has
+`previous_execution=null`. The candidate's tested transition contract is the
+authority for unique legacy-anchor recovery and live-pointer binding. Revised
+acceptance therefore requires its own elevated `static_preflight` and
+`runtime_preflight` to accept this exact record before any mutation.
+
+### Revised transition authority
+
+This decision authorizes the prior entry's exact real transition command today
+before 22:00, despite the recorded timed-procedure miss, only when all evidence
+and identities above still hash-match and these substitutions are made:
+
+1. Resolve this entry's document-containing merge using marker
+   `HANDOFF-20260830T083100+1000-A3-COMPENSATED-TRANSITION`; require it to equal
+   current `origin/main`, and calculate the complete handoff Git-blob SHA-256
+   from that merge.
+2. Pass that merge and hash as `--authority-commit` and `--handoff-sha256`.
+3. Retain expected observation date `2026-08-30`, deadline
+   `2026-08-30T22:00:00+10:00`, candidate/protected/plan identities, old task
+   XML, receivers, recovery image, operator, principal, and every other argument
+   from the prior exact command unchanged.
+4. Run only in an elevated `yanniedog\jkoka` process. UAC denial or absence is
+   `BLOCKED`; no privilege workaround is authorized.
+
+The transition harness must itself reauthenticate the current task, exact
+legacy record, source identities, current observation/control/macro/inventory,
+receipts, restoration checks, disk floor, locks, helpers, authority, and
+deadline before disabling anything. It must complete foreground backup,
+candidate task installation, standalone check-only proof, rollback validation,
+closed evidence, and zero residue. On failure use only its authenticated
+recovery path. Do not deploy or modify Pi production.
+
+After transition `PASS`, append its exact evidence and bind the 2026-08-31
+natural ingest and first candidate-task 05:00 proof. A3 becomes terminal `PASS`
+only after that proof; then begin A4 planning automatically in a separate
+documentation-only slice. No physical A4 work or Pi deployment is authorized
+by this decision.
