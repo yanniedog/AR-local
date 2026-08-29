@@ -3145,8 +3145,10 @@ $evidenceParent = Join-Path $target 'evidence\NATURAL-20260830'
 $activePointer = Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt'
 if (-not (Test-Path -LiteralPath (Join-Path $authorityRepo '.git'))) {
   git clone --branch main --single-branch https://github.com/yanniedog/AR-local.git $authorityRepo
+  if ($LASTEXITCODE -ne 0) { throw "Authority clone failed: git exit $LASTEXITCODE" }
 }
 git -C $authorityRepo fetch origin main --prune
+if ($LASTEXITCODE -ne 0) { throw "Authority fetch failed: git exit $LASTEXITCODE" }
 if (@(git -C $authorityRepo status --porcelain=v1).Count -ne 0) { throw 'Authority checkout is dirty before resolution.' }
 $authorityCommit = (& python -c 'import subprocess,sys; r,m,p=sys.argv[1:]; cs=subprocess.check_output(["git","-C",r,"rev-list","--reverse","--first-parent","origin/main","--",p],text=True).split(); hits=[c for c in cs if m.encode() in subprocess.check_output(["git","-C",r,"show",f"{c}:{p}"])]; print(hits[0] if hits else "")' $authorityRepo $marker 'docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md').Trim()
 if ($LASTEXITCODE -ne 0 -or $authorityCommit -notmatch '^[0-9a-f]{40}$') { throw 'Document-containing authority merge was not uniquely resolved.' }
@@ -3211,7 +3213,7 @@ $observed0025=[datetimeoffset]::Parse($gate0025.observed_at)
 if($observed0025 -lt [datetimeoffset]'2026-08-30T00:20:00+10:00' -or $observed0025 -ge [datetimeoffset]'2026-08-30T00:30:00+10:00' -or
    $gate0025.head -ne $expectedPi -or $gate0025.checkout_clean -ne 'true' -or
    $gate0025.timer_enabled -ne 'enabled' -or $gate0025.timer_active -ne 'active' -or
-   $gate0025.timer_next -notmatch '2026-08-30 01:00:00' -or $gate0025.service_active -ne 'inactive' -or
+   $gate0025.timer_next -cne 'Sun 2026-08-30 01:00:00 AEST' -or $gate0025.service_active -ne 'inactive' -or
    [int]$gate0025.service_restarts -ne 0 -or $gate0025.lock -ne 'ABSENT' -or
    $gate0025.competing_process -ne 'ABSENT' -or [int64]$gate0025.disk_available_bytes -lt 10737418240 -or
    [int64]$gate0025.memory_available_bytes -lt 268435456 -or [int64]$gate0025.swap_free_bytes -lt 67108864 -or
@@ -3275,7 +3277,7 @@ $observed0055=[datetimeoffset]::Parse($gate0055.observed_at)
 if($observed0055 -lt [datetimeoffset]'2026-08-30T00:55:00+10:00' -or $observed0055 -ge [datetimeoffset]'2026-08-30T01:00:00+10:00' -or
    $gate0055.head -ne $expectedPi -or $gate0055.checkout_clean -ne 'true' -or
    $gate0055.timer_enabled -ne 'enabled' -or $gate0055.timer_active -ne 'active' -or
-   $gate0055.timer_next -notmatch '2026-08-30 01:00:00' -or $gate0055.timer_last -ne $baseline.timer_last -or
+   $gate0055.timer_next -cne 'Sun 2026-08-30 01:00:00 AEST' -or $gate0055.timer_last -ne $baseline.timer_last -or
    $gate0055.service_active -ne 'inactive' -or $gate0055.service_invocation -ne $baseline.service_invocation -or
    [int]$gate0055.service_restarts -ne 0 -or $gate0055.lock -ne 'ABSENT' -or
    $gate0055.competing_process -ne 'ABSENT' -or [int64]$gate0055.disk_available_bytes -lt 10737418240 -or
@@ -3363,6 +3365,7 @@ if($terminalValues.active -ne 'inactive' -or $terminalValues.invocation -ne $sta
 $terminalValues | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidenceRoot 'terminal-service-values.json')
 ssh -o BatchMode=yes ar-local-pi5-lan "journalctl -u ar-local-daily.service --since '2026-08-30 00:55:00' --output=short-iso-precise --no-pager" |
   Set-Content -LiteralPath (Join-Path $evidenceRoot 'service-journal.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Journal capture failed.' }
 ssh -o BatchMode=yes ar-local-pi5-lan "cd /srv/ar-local/AR-local && python3 cdr_ledger_v2.py verify --state /srv/ar-local/data/state" |
   Set-Content -LiteralPath (Join-Path $evidenceRoot 'ledger-verify.json')
 if ($LASTEXITCODE -ne 0) { throw 'Ledger verification failed.' }
@@ -3415,7 +3418,25 @@ with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as con:
  assert counts['bank_product_changes']==int(banks.get('product_changes') or 0)
  assert counts['bank_items']==sum(int(banks.get(k) or 0) for k in ('fees','features','eligibility','constraints'))
 assert sum(int(x.get('failure_records') or 0) for x in states)==failures
-print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':qc,'populations':counts}},sort_keys=True,indent=2))
+local_v1={}
+for key,folder,tag,roles in (
+ ('dated','v1-dated',f'app-payload-{D}',{'core','details'}),
+ ('rolling','v1-latest','app-payload-latest',{'bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'}),
+):
+ root=(state/'app-payload/v1'/folder).resolve(); root.relative_to(state)
+ manifest_path=(root/'manifest.json').resolve(); manifest_path.relative_to(root)
+ payload=json.loads(manifest_path.read_text())
+ assert payload.get('schema_version')==1 and payload.get('run_date')==D and payload.get('tag')==tag
+ assert set((payload.get('files') or {}).keys())==roles
+ assets={}
+ for role,meta in payload['files'].items():
+  name=meta['name']; assert Path(name).name==name
+  asset=(root/name).resolve(); asset.relative_to(root)
+  asset_sha=h(asset); asset_bytes=asset.stat().st_size
+  assert asset_sha==meta['sha256'] and asset_bytes==int(meta['bytes'])
+  assets[role]={'name':name,'sha256':asset_sha,'bytes':asset_bytes}
+ local_v1[key]={'tag':tag,'manifest_sha256':h(manifest_path),'assets':assets}
+print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':qc,'populations':counts},'local_v1':local_v1},sort_keys=True,indent=2))
 '@ | ssh -o BatchMode=yes ar-local-pi5-lan "cd /srv/ar-local/AR-local && python3 -" |
   Set-Content -LiteralPath (Join-Path $evidenceRoot 'observation-verify.json')
 if ($LASTEXITCODE -ne 0) { throw 'Observation verification failed.' }
@@ -3427,10 +3448,12 @@ foreach($tag in @("app-payload-$date",'app-payload-latest')){
  $manifestPath=Join-Path $tagRoot 'manifest.json'; Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 -Uri "https://github.com/yanniedog/AR-local/releases/download/$tag/manifest.json" -OutFile $manifestPath
  $env:AR_PUBLIC_MANIFEST=$manifestPath;python -c "import json,os; h=lambda p: (_ for _ in ()).throw(ValueError('duplicate JSON key')) if len(p)!=len(dict(p)) else dict(p); json.load(open(os.environ['AR_PUBLIC_MANIFEST'],encoding='utf-8'),object_pairs_hook=h)";if($LASTEXITCODE -ne 0){throw "$tag manifest JSON is ambiguous"}
  $m=Get-Content -Raw $manifestPath|ConvertFrom-Json; if($m.schema_version -ne 1 -or $m.run_date -ne $date -or $m.tag -ne $tag){throw "$tag identity mismatch"}
+ $localKey=if($tag -eq "app-payload-$date"){'dated'}else{'rolling'};$producer=$local.local_v1.$localKey
+ $publicManifestSha=(Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant();if($publicManifestSha -cne $producer.manifest_sha256){throw "$tag public manifest differs from the independently recorded Pi staging manifest"}
  $requiredRoles=if($tag -eq "app-payload-$date"){@('core','details')}else{@('bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index')};$actualRoles=@($m.files.PSObject.Properties.Name|Sort-Object);if(($actualRoles -join ',') -cne (($requiredRoles|Sort-Object)-join ',')){throw "$tag v1 asset role set mismatch"}
  foreach($n in $local.banks.PSObject.Properties.Name){if([int64]$m.counts.$n -ne [int64]$local.banks.$n){throw "$tag count mismatch: $n"}}
- $assets=@(); foreach($f in $m.files.PSObject.Properties){$a=$f.Value;$roleName=$f.Name.Replace('_','-');if($a.sha256 -notmatch '^[0-9a-f]{64}$'){throw "$tag unsafe asset digest: $($f.Name)"};$expectedName="${roleName}-${date}-$($a.sha256.Substring(0,12)).json.gz";if($a.name -cne $expectedName -or [IO.Path]::GetFileName($a.name) -cne $a.name){throw "$tag unsafe asset identity: $($f.Name)"};$canonicalUrl="https://github.com/yanniedog/AR-local/releases/download/$tag/$expectedName";if($a.url -cne $canonicalUrl){throw "$tag noncanonical asset URL: $($f.Name)"};$out=[IO.Path]::GetFullPath((Join-Path $tagRoot $expectedName));if(-not $out.StartsWith([IO.Path]::GetFullPath($tagRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'asset path escaped evidence root'};Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $canonicalUrl -OutFile $out;$sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant();$bytes=(Get-Item $out).Length;if($sha -ne $a.sha256 -or $bytes -ne [int64]$a.bytes){throw "$tag asset mismatch: $($a.name)"};$env:AR_PUBLIC_ASSET=$out;$env:AR_PUBLIC_DATE=$date;python -c "import gzip,json,os; x=json.load(gzip.open(os.environ['AR_PUBLIC_ASSET'],'rt',encoding='utf-8')); assert isinstance(x,(dict,list)); assert not isinstance(x,dict) or x.get('run_date',os.environ['AR_PUBLIC_DATE'])==os.environ['AR_PUBLIC_DATE']";if($LASTEXITCODE -ne 0){throw 'asset schema/date failure'};$assets+=[ordered]@{role=$f.Name;name=$a.name;sha256=$sha;bytes=$bytes}}
- $report.manifests[$tag]=[ordered]@{sha256=(Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant();assets=$assets}
+ $assets=@(); foreach($f in $m.files.PSObject.Properties){$a=$f.Value;$producerAsset=$producer.assets.PSObject.Properties[$f.Name].Value;if($null -eq $producerAsset){throw "$tag has no independently recorded Pi staging asset: $($f.Name)"};$roleName=$f.Name.Replace('_','-');if($a.sha256 -notmatch '^[0-9a-f]{64}$'){throw "$tag unsafe asset digest: $($f.Name)"};$expectedName="${roleName}-${date}-$($a.sha256.Substring(0,12)).json.gz";if($a.name -cne $expectedName -or [IO.Path]::GetFileName($a.name) -cne $a.name){throw "$tag unsafe asset identity: $($f.Name)"};if($a.name -cne $producerAsset.name -or $a.sha256 -cne $producerAsset.sha256 -or [int64]$a.bytes -ne [int64]$producerAsset.bytes){throw "$tag manifest asset differs from independently recorded Pi staging: $($f.Name)"};$canonicalUrl="https://github.com/yanniedog/AR-local/releases/download/$tag/$expectedName";if($a.url -cne $canonicalUrl){throw "$tag noncanonical asset URL: $($f.Name)"};$out=[IO.Path]::GetFullPath((Join-Path $tagRoot $expectedName));if(-not $out.StartsWith([IO.Path]::GetFullPath($tagRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'asset path escaped evidence root'};Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $canonicalUrl -OutFile $out;$sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant();$bytes=(Get-Item $out).Length;if($sha -ne $a.sha256 -or $bytes -ne [int64]$a.bytes -or $sha -cne $producerAsset.sha256 -or $bytes -ne [int64]$producerAsset.bytes){throw "$tag public asset mismatch: $($a.name)"};$env:AR_PUBLIC_ASSET=$out;$env:AR_PUBLIC_DATE=$date;python -c "import gzip,json,os; x=json.load(gzip.open(os.environ['AR_PUBLIC_ASSET'],'rt',encoding='utf-8')); assert isinstance(x,(dict,list)); assert not isinstance(x,dict) or x.get('run_date',os.environ['AR_PUBLIC_DATE'])==os.environ['AR_PUBLIC_DATE']";if($LASTEXITCODE -ne 0){throw 'asset schema/date failure'};$assets+=[ordered]@{role=$f.Name;name=$a.name;sha256=$sha;bytes=$bytes}}
+ $report.manifests[$tag]=[ordered]@{sha256=$publicManifestSha;producer_manifest_sha256=$producer.manifest_sha256;assets=$assets}
 }
 $datedAssets=@{};foreach($a in $report.manifests["app-payload-$date"].assets){$datedAssets[$a.role]=$a.sha256}
 foreach($role in @('core','details')){$rollingAsset=$report.manifests['app-payload-latest'].assets|Where-Object {$_.role -eq $role};if($datedAssets[$role] -ne $rollingAsset.sha256){throw "dated/rolling asset mismatch: $role"}}
