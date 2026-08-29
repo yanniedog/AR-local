@@ -2556,3 +2556,158 @@ A4 and Phases B through G remain `BLOCKED` until a corrected A3 candidate has a
 terminal natural proof or a formal append-only deviation decision revises the
 acceptance criteria with its reason, risk, compensating controls, and explicit
 authorization.
+
+## Entry `HANDOFF-20260829T110711+1000-A3-CLASSIFIER-MERGED`
+
+### Required control record
+
+| Field | Value |
+|---|---|
+| Created at, Australia/Hobart | `2026-08-29T11:07:11+10:00` |
+| Created at, UTC | `2026-08-29T01:07:11Z` |
+| Previous handoff entry | `HANDOFF-20260829T052121+1000-A3-NATURAL-BACKUP-BLOCKED` |
+| Previous handoff merge | `c879227a267c144560563efc933addcfe858c59a` |
+| Previous handoff raw SHA-256 | `6d8a0b1dd9368f16160b3d88bd1fce452c4918d92741044d1e91cf775a2caf24` |
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Corrected code merge | `9643b2e22a342ef106025377f02b0179501db1ca` |
+| Corrected PR head | `49588081161a7d7caee1a831d4fd7f435c139a23` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator | Codex unattended for `jkoka` |
+| Overall result | `BLOCKED` |
+| Completed component | `A3 scheduler-classification code and isolated verification: PASS` |
+| Current phase | `A3 corrected merge proven; receiver/task transition NOT_STARTED` |
+| A4 and Phases B-G | `BLOCKED` |
+| Deviations | none |
+| Deviation authorization | none |
+
+The overall result is `BLOCKED`, rather than `PASS`, because the corrected code
+has not replaced the installed receiver or task, no natural run has exercised
+it, and the Pi became unreachable during the post-merge read-only health check.
+This entry does not authorize a Pi deployment, task replacement, manual backup,
+manual ingest, publication manipulation, or A4 work.
+
+### Append-only corrections to the preceding entry
+
+The 2026-08-29 producer observation retains raw value `partial`; its controlled
+ARL-OPS-001 state is `degraded`. It remains acceptable v1 data because all
+bounded-degraded thresholds, provenance, provider accounting, SQLite, ledger,
+contract, public-byte, and disclosure checks passed.
+
+Both timed pre-start gates were missed. The evidence directory timestamp proves
+that the nominal 00:25 block began at 00:27:09, and the nominal 00:58 block began
+at 01:00:10 after the lock existed. The independently valid natural ingest does
+not change either procedural gate from `BLOCKED`.
+
+The combined-action decision is now explicit and non-conversational:
+
+- only the authoritative newest completed observation missing means one
+  `backup-latest` request and immutable action `BACKUP-LATEST`;
+- any strictly older completed observation missing means one `backfill` request
+  and immutable action `BACKFILL`;
+- if newest and older dates are both missing, the request remains one
+  `BACKFILL`, only the older dates are supplied as `--include-date`, and the
+  receiver captures the newest observation first in that same invocation;
+- a fully current target remains `NO_BACKUP_DATA_WRITE`;
+- absent, malformed, unordered, duplicate, future, or internally inconsistent
+  source identity is `BLOCKED` before transfer;
+- post-transfer invalid verification metadata is immutable
+  `FAIL/POST_BACKUP_VERIFY`, retaining the attempted action.
+
+Reason: this preserves one atomic receiver invocation and existing restore,
+capacity, catalog, and lock controls while distinguishing normal daily advance
+from genuine historical recovery. Risk: a mixed invocation is labelled by its
+historical-repair purpose even though it also captures latest. Compensating
+controls: `backfill_dates` exposes the exact older set, the receiver always
+processes latest first, and success requires terminal `UP_TO_DATE` for latest,
+inventory, diagnostics, control, and macro. Revised acceptance: latest-only
+must record `BACKUP-LATEST`; mixed or historical-only may record `BACKFILL` only
+with exact older `backfill_dates` and full post-verification.
+
+### Corrected code and exact-merge verification
+
+PR #545, `Fix scheduled backup classification`, was squash-merged at
+`2026-08-29T01:05:49Z` as
+`9643b2e22a342ef106025377f02b0179501db1ca`. Required
+`bot-feedback-gate`, payload-builder pytest, and Sourcery review passed on exact
+head `49588081161a7d7caee1a831d4fd7f435c139a23`; all review threads were
+dispositioned and resolved. The final Gemini rerun failed only with external
+`503 UNAVAILABLE`; Gemini is advisory and its preceding exact-head review had
+reported the implementation ready. The post-merge `sync-matrix` bookkeeping
+check is also advisory and does not authorize runtime change.
+
+Exact-head and exact-merge commands and results:
+
+- `python -m pytest tests/test_laptop_backup_scheduled.py tests/test_laptop_pull_backup.py tests/test_pi_backup_foundation.py tests/test_laptop_backup_task_installer.py -q`: `132 passed, 1 skipped` on PR head and again on detached merge;
+- `python -m pytest tests/ -q`: `1026 passed, 11 skipped` on exact PR head;
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_laptop_backup_task_installer.ps1`: exit zero on PR head and detached merge;
+- `git diff --check`, Python compile, clean detached merge status: pass;
+- `git diff --exit-code 49588081161a7d7caee1a831d4fd7f435c139a23 9643b2e22a342ef106025377f02b0179501db1ca -- install_laptop_backup_task.ps1 laptop_backup_scheduled.py tests/test_laptop_backup_scheduled.py`: pass, proving identical corrected file content after squash merge.
+
+No real backup target was used by tests. Test backup state was confined to
+pytest temporary directories.
+
+### Preserved production and laptop state
+
+At `2026-08-29T11:07:11+10:00`, the installed Windows task remained enabled and
+`Ready`, `LastTaskResult=0`, and its live XML remained byte-identical to the
+accepted v1.4 XML SHA-256
+`aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`.
+The installed receiver remained clean at
+`f214e3249c7968d574e3449edb14792904e1cc1f`. The real backup catalog remained
+unchanged at SHA-256
+`acb15773fe069c863a0d00daea368f45c838c570b7ca32f1875b7f813470ce8d`;
+no receiver lock or partial artifact existed; 143.59 GiB remained free.
+
+Catalog sequence receipts required by the preceding schema correction are:
+
+| Sequence | Kind | Exact receipt path | Bytes | SHA-256 |
+|---:|---|---|---:|---|
+| 329 | observation | `C:\code\backups\AR-local-pi5\observations\2026-08-29\544a35bd7648590f42ae0c895aafb289ab243612874952c8b28bf42e5f6fdf56\receipt.json` | 3392 | `fef41f36eb73568fd4ad932a5dcfc054a0e66e2303193241e6e4281358d1163f` |
+| 330 | control | `C:\code\backups\AR-local-pi5\control\20260828T191210Z-7f2e5999a02216eb\receipt.json` | 2482 | `3f3b1ec27a08cdebaeb3de3d3fa83ec833cd0e0dd29431c174fba923df3d9e11` |
+| 331 | macro | `C:\code\backups\AR-local-pi5\macro\f7de21b246b60e20af693c5a5bedb34b9896f08ec9466f7e0efbb59134dffd4c\receipt.json` | 2223 | `f07fd2fc63e88320a67a1f891fdb7302e14ed2076da1716e0c663b761ac63927` |
+
+The installed receiver, task, catalog, receipts, archives, completed evidence,
+Pi production data, and public payload were not changed by this slice.
+
+### Pi reachability stop condition
+
+The last successful Pi preflight was `2026-08-29T05:20:12+10:00`: production
+was clean at protected SHA `9302890`, the ingest service was inactive, the
+timer was enabled, the lock was absent, and the dashboard was healthy. Current
+cleanliness cannot be asserted. From approximately 10:42 through at least 11:07
+Australia/Hobart, both LAN `192.168.20.19:22` and Tailscale
+`100.78.28.10:22` were unreachable; Tailscale reported the Pi offline. No
+restart, wake, power, service, filesystem, task, or publication action was
+attempted.
+
+Pi unreachability is an active stop condition for receiver transition and must
+be resolved well before the 00:30 freeze. Until a fresh read-only Pi preflight
+proves clean protected SHA, inactive ingest, absent lock, enabled timer,
+dashboard health, storage, memory, and source identity, the only authorized
+actions are read-only reachability checks and preservation of existing state.
+
+### Mandatory next resume point
+
+Resume this entry at A3; do not start A4. First restore and prove Pi
+reachability using read-only checks. Then, only in daylight and outside the
+00:30 freeze, create a clean detached receiver checkout at exact merge
+`9643b2e22a342ef106025377f02b0179501db1ca`, prove it clean, and run the
+corrected classification against isolated temporary backup state. Preserve
+pre/post SHA-256 for accepted task XML, installed receiver, catalog, receipts,
+and real backup root. Do not point an isolated test at the real target.
+
+A later append-only decision may authorize one controlled Windows task
+transition only after Pi reachability and all isolated gates pass. That
+transition must not deploy or modify Pi production and must retain an immediate
+rollback to the currently accepted task XML and receiver `f214e324`. The first
+natural corrected task run must then be observed without manual triggering.
+
+D-006 remains overriding. For 2026-08-30, begin the full preflight at 00:25 and
+the final gate no later than 00:55 so it completes before 01:00. The 00:30
+freeze continues through terminal natural-ingest validation. If the Pi is not
+healthy well before the freeze, report `BLOCKED` immediately; do not improvise
+a deployment, force an ingest, or alter publication. Preserve the last verified
+rolling payload and all local backup evidence.
