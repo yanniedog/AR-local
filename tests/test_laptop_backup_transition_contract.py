@@ -12,6 +12,7 @@ import pytest
 import laptop_backup_transition as transition
 import laptop_backup_transition_authority as authority
 import laptop_backup_transition_contract as contract
+import laptop_backup_transition_evidence as transition_evidence
 import laptop_pull_backup as receiver
 
 
@@ -453,6 +454,22 @@ def test_runtime_lease_rejects_reparse_root_before_lease_write(
             pass
 
     assert not (root / ".transition-runtime.lock").exists()
+
+
+def test_transition_path_rejects_existing_reparse_child_inside_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "evidence"
+    child = root / "safe-id"
+    child.mkdir(parents=True)
+    monkeypatch.setattr(
+        contract,
+        "is_link_or_reparse",
+        lambda path: path == child,
+    )
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        transition_evidence.transition_path(root, "safe-id")
 
 
 def test_runtime_lease_rejects_dead_lease_for_different_transition(tmp_path: Path) -> None:

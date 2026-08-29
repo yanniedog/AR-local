@@ -511,7 +511,8 @@ def run_transition(
     resume: bool = False,
 ) -> tuple[str, Path]:
     started_at = ops.now().isoformat()
-    transition_id = transition_id or datetime.now(HOBART).strftime("%Y%m%dT%H%M%S%z") + "-" + uuid.uuid4().hex
+    if transition_id is None:
+        transition_id = datetime.now(HOBART).strftime("%Y%m%dT%H%M%S%z") + "-" + uuid.uuid4().hex
     validate_evidence_target(config)
     root = evidence_root(config)
     with runtime_lease(root, transition_id, resume=resume):

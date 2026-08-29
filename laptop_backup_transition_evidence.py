@@ -48,7 +48,10 @@ def validate_runtime_root(root: Path) -> None:
 def transition_path(root: Path, transition_id: str) -> Path:
     validate_transition_id(transition_id)
     resolved_root = root.resolve(strict=True)
-    candidate = (resolved_root / transition_id).resolve(strict=False)
+    lexical_child = resolved_root / transition_id
+    if lexical_child.exists() and contract.is_link_or_reparse(lexical_child):
+        raise ValueError("transition evidence path is a link or reparse point")
+    candidate = lexical_child.resolve(strict=False)
     if candidate.parent != resolved_root:
         raise ValueError("transition evidence path escapes its controlled root")
     return candidate

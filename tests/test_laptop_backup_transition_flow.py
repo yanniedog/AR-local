@@ -273,8 +273,21 @@ def test_success_calls_foreground_once_and_never_restores(
     assert "task:Restore" not in payload["exact_commands"]
     assert ops.calls.count("task:Install") == 1
     assert "task:Restore" not in ops.calls
-    payload = json.loads(terminal.read_text(encoding="utf-8"))
     assert payload["result"] == "PASS"
+
+
+def test_run_transition_rejects_supplied_empty_id_before_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+
+    with pytest.raises(ValueError, match="unsafe path characters"):
+        transition.run_transition(value, ops, transition_id="")
+
+    assert not (value.target / "evidence/A3-LAPTOP-TASK-TRANSITION").exists()
+    assert not ops.calls
 
 
 def test_invalid_preflight_invokes_no_backup_installer_or_task_mutation(
