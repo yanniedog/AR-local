@@ -154,6 +154,11 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     timer = command("systemctl", "is-enabled", "ar-local-daily.timer", check=False).stdout.strip()
     if timer != "enabled":
         raise ValueError(f"daily ingest timer is not enabled: {timer}")
+    timer_active = command(
+        "systemctl", "is-active", "ar-local-daily.timer", check=False
+    ).stdout.strip()
+    if timer_active != "active":
+        raise ValueError(f"daily ingest timer is not active: {timer_active}")
     if not http_healthy(args.dashboard_url):
         raise ValueError("dashboard health endpoint is not HTTP 200")
     return {
@@ -164,6 +169,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "daily_service": service,
         "terminal_failure_authorization": terminal_failure,
         "daily_timer": timer,
+        "daily_timer_active": timer_active,
         "ingest_lock_absent": True,
         "dashboard_url": args.dashboard_url,
         "dashboard_healthy": True,
