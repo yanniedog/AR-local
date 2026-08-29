@@ -112,3 +112,38 @@ def test_reconciliation_accepts_legacy_anchor_with_live_linked_child(tmp_path: P
         child.relative_to(value.target).as_posix(),
     ]
     assert result["latest_record"] == child.relative_to(value.target).as_posix()
+
+
+def test_reconciliation_rejects_live_pointer_digest_mismatch(tmp_path: Path) -> None:
+    value = config(tmp_path)
+    baseline = (value.target / "catalog/latest-scheduled.json").read_bytes()
+    root = value.target / "catalog/scheduled-runs"
+    legacy_value = execution_record("NO_BACKUP_DATA_WRITE")
+    legacy_value["candidate_code_sha"] = value.old_candidate_code_sha
+    legacy = root / "legacy.json"
+    legacy.write_bytes(contract.canonical_json(legacy_value))
+    child_value = execution_record("BACKUP-LATEST")
+    child_value["previous_execution"] = {
+        "record_path": legacy.relative_to(value.target).as_posix(),
+        "record_sha256": contract.sha256_file(legacy),
+    }
+    child = root / "child.json"
+    child.write_bytes(contract.canonical_json(child_value))
+    live = contract.canonical_json({
+        "record_path": child.relative_to(value.target).as_posix(),
+        "record_sha256": "f" * 64,
+        "result": "PASS",
+    })
+    records = {
+        path.relative_to(value.target).as_posix(): contract.sha256_file(path)
+        for path in (legacy, child)
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="scheduled execution pointer hash is invalid|not bound to the live pointer",
+    ):
+        contract.reconcile_scheduled_pointer(
+            value.target, baseline, live, records,
+            old_candidate_sha=value.old_candidate_code_sha, apply=False,
+        )

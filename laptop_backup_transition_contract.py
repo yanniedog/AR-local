@@ -623,7 +623,7 @@ def reconcile_scheduled_pointer(
                 cursor, cursor_sha = matches[0]
                 visited.add(cursor)
                 reached = cursor == live_relative
-            if reached:
+            if reached and cursor_sha == live_identity["record_sha256"]:
                 anchors.append(anchor)
         if len(anchors) != 1:
             raise ValueError("legacy scheduled records are not bound to the live pointer")
