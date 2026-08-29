@@ -2739,3 +2739,309 @@ freeze continues through terminal natural-ingest validation. If the Pi is not
 healthy well before the freeze, report `BLOCKED` immediately; do not improvise
 a deployment, force an ingest, or alter publication. Preserve the last verified
 rolling payload and all local backup evidence.
+
+## Entry `HANDOFF-20260829T183043+1000-A3-SOURCE-IDENTITY-MERGED`
+
+### Required control record
+
+| Field | Value |
+|---|---|
+| Created at, Australia/Hobart | `2026-08-29T18:30:43+10:00` |
+| Created at, UTC | `2026-08-29T08:30:43Z` |
+| Previous handoff entry | `HANDOFF-20260829T110711+1000-A3-CLASSIFIER-MERGED` |
+| Previous handoff merge | `9ccd46f4c62c36431298bc5a55f9d301b4c2f4ce` |
+| Previous complete handoff raw SHA-256 | `9678672cf2a63673459d0a2f825abeb8e847a019cd307c98bdcdfc7b156b9a8f` |
+| Plan | `ARL-OPS-001` v1.4 |
+| Plan document-containing commit | `14dd066099bba393cccf61a280243e43162eedc9` |
+| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Normalized plan SHA-256 | `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Source-identity code merge | `46e2aeba55fe3f97ace4143ba08fc00e36225dc1` |
+| Source-identity PR head | `868f118fa2e463ec78c32bef1739cf4f1eb9bcf2` |
+| Protected Pi SHA | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Operator | Codex unattended for `jkoka` |
+| Overall result | `BLOCKED` |
+| Completed component | `A3 source/preflight identity guard and exact-merge proof: PASS` |
+| Current phase | `A3 transition-harness code slice authorized; real transition BLOCKED` |
+| A4 and Phases B-G | `BLOCKED` |
+| Deviations | none |
+| Deviation authorization | none |
+
+The overall result remains `BLOCKED`, rather than `PASS`, because the accepted
+Windows task and receiver have not transitioned to the corrected merge and no
+natural 05:00 run has proved the corrected task. This entry authorizes only the
+bounded A3 transition-harness code slice described below; it does not authorize
+the real task transition. It also does not authorize Pi deployment, manual or
+forced ingest, a manual task trigger, publication manipulation, A4, or any
+Phase B-G implementation.
+
+### Source-identity guard result
+
+PR #547, `Fail closed on invalid laptop backup source identity`, was
+squash-merged at `2026-08-29T08:27:44Z` as
+`46e2aeba55fe3f97ace4143ba08fc00e36225dc1`. The implementation rejects a
+source listing before any `backup-latest` or `backfill` transfer unless all of
+the following are true:
+
+- the source reports success with a fresh, offset-aware Hobart timestamp;
+- the independent laptop clock is outside the 00:30-03:30 Hobart quiet window;
+- Pi production is clean at the exact protected SHA;
+- the daily service is inactive, or failed with a canonical failure record
+  bound below the reported state root;
+- the daily timer is both enabled and active, the ingest lock is absent, and
+  the dashboard is healthy;
+- control and macro identities contain real string SHA-256 revisions and
+  positive source-byte counts;
+- at least one completed observation exists and the completed-date list,
+  retained-run list, latest observation, diagnostic identities, completion
+  marker, and observation pointer reconcile exactly; and
+- retained, latest, diagnostic, and terminal-failure dates are valid calendar
+  dates and are not future-dated.
+
+The Pi source helper now independently requires and reports
+`daily_timer_active=active`. Tests cover unsuccessful and missing preflights,
+naive/wrong/stale/future timestamps, both quiet-window clock-skew edges, dirty
+or wrong production, active/unauthorized failed services, disabled/inactive
+timers, lock and dashboard contradictions, wrong-root and traversal failure
+records, empty/malformed component identities, numeric fake digests, zero
+completed observations, invalid/unordered/duplicate/future dates, inconsistent
+completed/latest/diagnostic populations, and incomplete latest hashes. Every
+rejected case proves the receiver call list remains exactly `preflight` and the
+immutable outcome is `BLOCKED/PREFLIGHT_FAILED`.
+
+### Exact-head, GitHub, and exact-merge evidence
+
+PR head `868f118fa2e463ec78c32bef1739cf4f1eb9bcf2` was based directly on prior
+authority merge `9ccd46f4c62c36431298bc5a55f9d301b4c2f4ce`. Required
+`bot-feedback-gate`, path-filtered payload-builder pytest, Codex review, and
+Sourcery review passed; Codex and Sourcery reported no actionable findings and
+the thread gate reported zero unresolved threads. Gemini is advisory and both
+its initial run and single failed-job rerun ended only with external
+`503 UNAVAILABLE`; this was not relabelled as a successful Gemini review and no
+further retry was made. The guarded squash wrapper performed the merge; its
+nonzero terminal status arose only when post-merge local branch cleanup found
+the user's existing `main` worktree.
+
+The clean detached exact-merge checkout is
+`C:\code\backups\AR-local-a3-source-identity-proof-46e2aeb`. It remained clean
+at exact merge `46e2aeba55fe3f97ace4143ba08fc00e36225dc1` after these commands:
+
+- `python -m py_compile laptop_backup_scheduled.py pi_laptop_backup_source.py laptop_pull_backup.py`: PASS;
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_laptop_backup_task_installer.ps1`: PASS;
+- `python -m pytest tests/test_laptop_backup_scheduled.py tests/test_laptop_pull_backup.py tests/test_pi_backup_foundation.py tests/test_laptop_backup_task_installer.py tests/test_pi_laptop_backup_source_preflight.py -q`: `206 passed, 1 skipped`;
+- `python -m pytest tests -q`: `1100 passed, 11 skipped`, with four known
+  openpyxl no-default-style warnings;
+- `git diff --check`: PASS; and
+- `npm run verify:pi`: PASS against `http://100.78.28.10/`.
+
+No test used the real backup target. All backup-state mutations were confined
+to pytest temporary directories. Independent safety, test, and 2IC reviews
+found no remaining actionable defect. The append-only execution record is
+`C:\code\backups\AR-local-pi5\evidence\A3-SOURCE-IDENTITY-GUARD-20260829\20260829T183043+1000\execution-record.json`,
+3,402 bytes, SHA-256
+`693a838a26569c75cd34ebc63e820ff609f481ac50963f4fcc1d8a7d2985fd64`.
+
+### Preserved runtime and D-006 state
+
+At `2026-08-29T18:23:38+10:00`, after the operator-restored power and a
+temporary LAN banner delay, read-only LAN SSH again passed. Pi production was
+clean at protected `9302890fcc752cbf90da97d597e972c157d913e3`, the daily
+service was inactive, the lock was absent, and the timer was enabled and active
+for `2026-08-30T01:00:00+10:00`. The dashboard API returned HTTP 200 for
+2026-08-29 with 3,012 products, 17,050 rates, 119 holder attempts, and 17
+attributable failures. `npm run verify:pi` passed. This is a point-in-time
+check; the mandatory 00:25 and 00:55 preflights remain required.
+
+The installed task and receiver remain unchanged and accepted at receiver
+`f214e3249c7968d574e3449edb14792904e1cc1f` and task XML SHA-256
+`aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`.
+The live exported XML matched the accepted XML; the task was enabled and
+`Ready`, `LastTaskResult=0`, with its next run at
+`2026-08-30T05:00:00+10:00`. The receiver was clean at the exact old SHA, the
+catalog remained SHA-256
+`acb15773fe069c863a0d00daea368f45c838c570b7ca32f1875b7f813470ce8d`,
+no receiver lock or partial existed, and 146.05 GiB was free.
+No task trigger, backup, restore, catalog mutation, Pi deployment, ingest,
+publication change, or A4 action occurred during the source-identity slice.
+
+### Controlled A3 transition-harness authorization
+
+The direct task-transition draft was independently rejected before execution.
+No foreground backup, catalog mutation, pointer advancement, task replacement,
+or rollback was performed. The accepted task therefore remains safely bound to
+receiver `f214e3249c7968d574e3449edb14792904e1cc1f`.
+
+The reason is concrete: any exact post-harness candidate must first create
+candidate-bound observation, control, and macro receipts because the current
+receipts correctly remain bound to the accepted old candidate. A foreground
+`BACKUP-LATEST` can partially append or advance pointers before a later failure.
+The rejected command sequence did not authenticate every preserved artifact
+before rollback, structurally bind one coherent execution record, assert every
+post-install task/catalog/runtime gate, or make the hard daylight deadline
+fail closed. Executing it would permit a false `PASS` or leave the old task
+with mixed-candidate pointers.
+
+After this documentation-only entry passes exact-head review, thread, and CI
+gates and is merged, exactly one additional code-only A3 safety slice is
+authorized. It must add a self-contained, checked-in Windows transition harness
+and deterministic tests. It must not use the real backup target in tests, alter
+the installed task, run a foreground real backup, deploy or modify the Pi,
+trigger an ingest, trigger the scheduled task, manipulate publication, begin
+A4, or begin any Phase B-G work.
+
+The harness must be additive and must:
+
+1. bind exact immutable inputs: plan `ARL-OPS-001` v1.4, plan commit
+   `14dd066099bba393cccf61a280243e43162eedc9`, controlled plan SHA-256
+   `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`,
+   source-identity base `46e2aeba55fe3f97ace4143ba08fc00e36225dc1`, protected Pi SHA
+   `9302890fcc752cbf90da97d597e972c157d913e3`, operator
+   `yanniedog\\jkoka`/`jkoka`, task `AR-local laptop backup`, target
+   `C:\code\backups\AR-local-pi5`, recovery image
+   `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`,
+   and old receiver `C:\code\backups\AR-local-pi5-receiver-f214e32`. The
+   harness candidate SHA, new receiver path, expected latest observation date,
+   containing handoff merge, and complete handoff raw SHA-256 are intentionally
+   not guessed here: a later append-only entry must bind them to the exact
+   merged harness candidate before any real transition;
+2. require an elevated `yanniedog\\jkoka` process and make every native
+   command exit code fail closed;
+3. verify fresh merged authority bytes and hashes, a clean exact candidate
+   checkout, the accepted old task XML SHA-256
+   `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`,
+   the complete old task definition, old receiver cleanliness, task
+   enabled/`Ready`, and `LastTaskResult=0`;
+4. stop before mutation if the task is running, a receiver/helper/overlap exists,
+   a lock or partial exists, capacity is below 50 GiB, the Pi is not clean at
+   the protected SHA, the daily service is not safely inactive, the timer is not
+   enabled and active for the exact next 01:00, the ingest lock exists, or the
+   dashboard is unhealthy;
+5. acquire the active transition as an atomic create-new ownership lock so two
+   unattended contenders cannot both pass. A new invocation must refuse an
+   unterminated lock unless it uses an explicit authenticated
+   `resume/recover-existing-transition-id` mode. That mode must reuse the exact
+   evidence root, verify lock ownership and all preserved evidence hashes, run
+   no new foreground backup or installer action, perform only remaining
+   recovery/finalization, and atomically create the single terminal result. A
+   terminal lock must bind the terminal-result path and SHA-256 before it is
+   closed; it must never be silently overwritten;
+6. create a unique evidence directory and authenticate the preserved old XML,
+   all old current pointers, the copied catalog prefix, live task state, source
+   identities, and exact command list before the first backup mutation;
+7. immediately before the first foreground mutation, disable the accepted old
+   task and prove it is disabled and not running. This is the first recoverable
+   task mutation and prevents a reboot/startup trigger from launching the old
+   receiver against mixed or new candidate-bearing pointers while the
+   transition is active. Any disable failure or ambiguous/partial state must
+   stop before backup and enter authenticated recovery;
+8. start only early enough to complete before the hard 22:00
+   Australia/Hobart deadline, impose a bounded runtime, recheck the deadline
+   immediately before foreground mutation and task replacement, and stop or
+   recover when the remaining safety window is insufficient;
+9. invoke the checked-in foreground backup once without manually triggering the
+   task, require structurally parsed `PASS/BACKUP-LATEST/UP_TO_DATE` for the
+   exact latest observation date bound by the later transition entry, and
+   resolve the create-once execution record canonically beneath
+   `catalog/scheduled-runs`;
+10. verify one coherent execution record with exact plan, candidate, protected
+   SHA, operator, action, result, before/after state, no missing completed dates,
+   no stale diagnostics, and exact observation/control/macro receipts and
+   source identities; validate receipt hashes, archive and SQLite restore proof,
+   catalog prefix and append-only chain, and allow only expected new
+   candidate-bound observation/control/macro generations and scheduled records;
+11. treat any `BACKFILL`, diagnostic generation, different source date,
+    `NO_BACKUP_DATA_WRITE` at the first candidate-bound transfer, `FAIL`,
+    `BLOCKED`, malformed output, unexpected append, or identity mismatch as a
+    non-`PASS` terminal outcome;
+12. invoke the existing installer only after the foreground gate passes; require
+    its internal no-write proof, then independently assert the complete installed
+    action, arguments, working directory, principal, enabled/`Ready` state,
+    `LastTaskResult=0`, 05:00 trigger, startup-plus-five-minute trigger,
+    `IgnoreNew`, three 30-minute retries, six-hour limit, and
+    start-when-available;
+13. run a standalone structural `--check-only` and require
+    `PASS/NO_BACKUP_DATA_WRITE`, then revalidate scheduled records, receipts,
+    pointers, catalog chain, locks, partials, helpers, overlap, capacity, Pi
+    identity, dashboard, and exact next 01:00 timer;
+14. authorize recovery after any mutation begins, starting with attempted task
+    disable and not merely after task replacement. On failure, authenticate
+    saved XML and pointer bytes against pre-mutation hashes before any restore;
+    restore the exact old task XML and enabled/`Ready` state after any attempted
+    disable or installed-task mutation; restore only candidate-bearing
+    component pointers such as `latest-verified`, `latest-control`, and
+    `latest-macro` atomically; and never roll back `latest-scheduled`, which must
+    continue to identify the newest preserved hash-bound execution record;
+15. preserve every appended generation, receipt, restore record, and scheduled
+    record. Never truncate, rewrite, or delete immutable evidence. Recovery must
+    prove the old catalog remains an exact prefix, old pointers/receipts validate,
+    the old task is exact and healthy, no residue exists, and Pi/dashboard/timer
+    health passes; and
+16. create exactly one immutable terminal result containing plan and code
+    identity, operator, timestamps, exact commands, source identities, old/new
+    task XML hashes, old/new pointer and catalog hashes, execution and receipt
+    paths/hashes, restore results, capacity, Pi/dashboard/timer results,
+    deviations and authorization, and one of `PASS`, `FAIL`, `BLOCKED`, or
+    `ROLLED_BACK`.
+
+Required deterministic tests must inject failure or interruption:
+
+- before mutation and after each observation, control, macro, pointer, scheduled
+  record, installer, task-enable, and standalone-check boundary;
+- with stale/tampered authority, XML, pointer, receipt, catalog prefix, execution
+  record, output, source identity, and restore evidence;
+- for active/running/disabled/drifted tasks, nonzero last result, helper/lock/
+  partial/overlap residue, insufficient disk, wrong Pi SHA, dirty Pi, active
+  ingest, wrong timer state/time, dashboard failure, and quiet/deadline edges;
+- for concatenated or conflicting JSON objects, path escape, symlink/reparse
+  escape, wrong candidate/plan/operator/date, unexpected `BACKFILL` or
+  diagnostics, and invalid appended generation kinds/counts;
+- for recovery both before and after task replacement, including recovery
+  interruption, corrupt saved artifacts, atomic pointer restore, preserved
+  append-only records, exact old task restoration, and create-once terminal
+  evidence;
+- for hard kill and authenticated restart after active-lock creation and at
+  every recovery boundary, proving the same transition ID and evidence root are
+  reused and exactly one terminal result is created;
+- with two concurrent contenders, proving atomic ownership allows exactly one
+  process to reach mutation and closes the lock with the terminal path and hash;
+- for pre- and post-installer recovery, proving only candidate-bearing component
+  pointers roll back while `latest-scheduled` remains bound to the newest
+  preserved execution record; and
+- with call-count and side-effect assertions proving every invalid preflight
+  invokes backup, installer, task mutation, and pointer mutation zero times;
+  every rejected foreground result invokes installer/task replacement zero
+  times; success invokes foreground backup exactly once with no retry; and only
+  the explicitly authorized pointer/catalog writes occur; and
+- for old-task disable failure and partial disable, crash immediately after
+  disable, reboot/startup-trigger attempts while the transition lock is active
+  (which must invoke backup zero times), and authenticated exact old-task XML
+  restoration plus re-enable/`Ready` proof on every non-`PASS` path after task
+  disable or replacement was attempted.
+
+Acceptance for this code-only slice requires exact-head focused and full tests,
+PowerShell parser and installer tests, clean-tree and diff checks, independent
+safety/test/2IC review with every substantive finding resolved, normal CI and
+thread gates, guarded merge, and a clean detached exact-merge rerun. Only a
+later append-only handoff entry may authorize the real backup/task transition.
+Do not manually trigger the corrected task. After a later handoff authorizes
+and records the real transition, its first acceptance proof must be the next
+natural 05:00 execution after a fully validated natural 01:00 ingest. A3 is
+not terminally complete until that run contains at least one valid
+`BACKUP-LATEST` for the immediately preceding ingest date, any later
+`NO_BACKUP_DATA_WRITE` is correctly identity-bound, all intervening records and
+receipts pass, Pi identities match, restoration checks pass where required, no
+overlap or residue exists, and at least 50 GiB remains free.
+
+D-006 overrides the transition. At 00:25 run the complete read-only preflight;
+finish it before the 00:30 freeze. Begin the final read-only gate at 00:55 so it
+finishes before 01:00. From 00:30 through terminal ingest validation, prohibit
+all deployment, canary, manual ingest, force, restart, task change/trigger,
+package, backup, restore, storage-maintenance, and publication actions. Observe
+the natural ingest once, validate all raw, completion, contract, ledger,
+pointer, SQLite, provider/product, dashboard, dated-v1, rolling-v1,
+dates-index, public-asset, and independent-v2 evidence, then wait for the
+natural 05:00 task. Preserve the previous verified rolling payload on any
+failure.
+
+A4 and Phases B-G remain `BLOCKED`. Only a later append-only entry recording
+the controlled transition and natural 05:00 result may advance A3 or authorize
+the next phase.
