@@ -17,10 +17,18 @@ import laptop_pull_backup as receiver
 
 _RECLAIM_THREAD_LOCK = threading.Lock()
 TRANSITION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_+-]{0,127}$")
+WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
 
 
 def validate_transition_id(transition_id: str) -> None:
-    if not TRANSITION_ID_RE.fullmatch(transition_id):
+    if (
+        not TRANSITION_ID_RE.fullmatch(transition_id)
+        or transition_id.upper() in WINDOWS_RESERVED_NAMES
+    ):
         raise ValueError("transition ID contains unsafe path characters")
 
 

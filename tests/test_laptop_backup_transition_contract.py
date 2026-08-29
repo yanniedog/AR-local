@@ -405,7 +405,10 @@ def test_runtime_lease_allows_exact_stale_resume_only(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "transition_id",
-    ["../outside", "..", "a/b", "a\\b", "C:\\outside", ".hidden"],
+    [
+        "../outside", "..", "a/b", "a\\b", "C:\\outside", ".hidden",
+        "CON", "prn", "AUX", "nul", "COM1", "com9", "LPT1", "lpt9",
+    ],
 )
 def test_runtime_lease_rejects_unsafe_transition_id_before_writes(
     tmp_path: Path, transition_id: str
