@@ -3338,7 +3338,7 @@ echo "observed_at=$(date --iso-8601=seconds)"
 echo "active=$(systemctl is-active ar-local-daily.service || true)"
 echo "invocation=$(systemctl show ar-local-daily.service -p InvocationID --value)"
 echo "start_timestamp=$(systemctl show ar-local-daily.service -p ExecMainStartTimestamp --value)"
-echo "exit_timestamp=$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value)"
+exit_timestamp=$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value); echo "exit_timestamp=$exit_timestamp"; echo "exit_iso=$(date --date="$exit_timestamp" --iso-8601=seconds)"
 echo "status=$(systemctl show ar-local-daily.service -p ExecMainStatus --value)"
 echo "code=$(systemctl show ar-local-daily.service -p ExecMainCode --value)"
 echo "result=$(systemctl show ar-local-daily.service -p Result --value)"
@@ -3356,6 +3356,7 @@ if ($LASTEXITCODE -ne 0) { throw "Terminal Pi capture failed: ssh exit $LASTEXIT
 $terminalValues=Convert-GateLines $terminal
 if($terminalValues.active -ne 'inactive' -or $terminalValues.invocation -ne $startValues.invocation -or
    $terminalValues.start_timestamp -ne $startValues.start_timestamp -or $terminalValues.timer_last -ne $startValues.timer_last -or
+   [datetimeoffset]::Parse($terminalValues.exit_iso) -ge $terminalDeadline -or
    $terminalValues.status -ne '0' -or $terminalValues.code -ne 'exited' -or $terminalValues.result -ne 'success' -or
    [int]$terminalValues.restarts -ne 0 -or $terminalValues.lock -ne 'ABSENT' -or
    $terminalValues.competing_process -ne 'ABSENT' -or $terminalValues.dashboard -ne 'HEALTHY') { throw 'Natural service terminal identity gate failed.' }
@@ -3511,9 +3512,9 @@ for completed,path,record in records:
  assert link=={'record_path':previous[0],'record_sha256':previous[1]}
  relative=path.relative_to(root).as_posix(); previous=(relative,digest)
  if action in {'BACKFILL','BACKUP-LATEST'}: writes.append({'path':relative,'observation_date':record_date})
- if completed>=task_start: natural_records.append(relative)
+ if completed>=task_start: natural_records.append({'path':relative,'observation_date':record_date})
  evidence.append({'path':str(path),'sha256':digest,'action':action,'observation_date':record_date,'completed_at':record['timestamps']['completed_at']})
-assert any(x['observation_date']=='2026-08-30' for x in writes) and len(natural_records)==1
+assert any(x['observation_date']=='2026-08-30' for x in writes) and len(natural_records)==1 and natural_records[0]['observation_date']=='2026-08-30'
 pointer=json.loads((root/'catalog/latest-scheduled.json').read_text()); assert pointer['record_path']==previous[0] and pointer['record_sha256']==previous[1] and pointer['result']=='PASS'
 catalog=r.catalog_entries(root/'catalog/generations.jsonl'); assert catalog and all(x.get('result')=='PASS' for x in catalog)
 receipts=c.validate_receipts(root,candidate_sha=candidate,protected_sha=protected,plan_commit=r.PLAN_GIT_COMMIT,expected_date='2026-08-30')
