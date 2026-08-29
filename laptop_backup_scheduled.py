@@ -714,6 +714,18 @@ def record_execution(
 ) -> Path:
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     plan = receiver.verify_plan_document()
+    previous_execution = None
+    pointer_path = target / "catalog/latest-scheduled.json"
+    if pointer_path.exists():
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        relative = pointer.get("record_path") if isinstance(pointer, Mapping) else None
+        digest = pointer.get("record_sha256") if isinstance(pointer, Mapping) else None
+        if not isinstance(relative, str) or not relative.startswith("catalog/scheduled-runs/"):
+            raise ValueError("previous scheduled execution pointer path is invalid")
+        previous_path = local_path(target, relative)
+        if not isinstance(digest, str) or receiver.sha256_file(previous_path) != digest:
+            raise ValueError("previous scheduled execution pointer hash is invalid")
+        previous_execution = {"record_path": relative, "record_sha256": digest}
     record = {
         "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
@@ -732,13 +744,14 @@ def record_execution(
         "deviations": [],
         "deviation_authorization": None,
         "result": result,
+        "previous_execution": previous_execution,
     }
     root = target / "catalog/scheduled-runs"
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{now.replace(':', '').replace('-', '')}-{uuid.uuid4().hex}.json"
     receiver.atomic_create(path, receiver.canonical_json_bytes(record))
     receiver.atomic_replace(
-        target / "catalog/latest-scheduled.json",
+        pointer_path,
         receiver.canonical_json_bytes({
             "record_path": path.relative_to(target).as_posix(),
             "record_sha256": receiver.sha256_file(path),

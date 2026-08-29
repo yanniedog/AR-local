@@ -391,6 +391,24 @@ def scheduled_record_path_from_pointer_bytes(target: Path, payload: bytes) -> Pa
     return record
 
 
+def scheduled_pointer_identity(target: Path, payload: bytes) -> dict[str, object]:
+    pointer = json.loads(payload.decode("utf-8"))
+    record = scheduled_record_path_from_pointer_bytes(target, payload)
+    value = json.loads(record.read_text(encoding="utf-8"))
+    pointer_result = pointer.get("result") if isinstance(pointer, Mapping) else None
+    if (
+        not isinstance(value, Mapping)
+        or pointer_result not in {"PASS", "FAIL", "BLOCKED"}
+        or value.get("result") != pointer_result
+    ):
+        raise ValueError("scheduled execution pointer result is invalid")
+    return {
+        "record_path": record.relative_to(target.resolve(strict=True)).as_posix(),
+        "record_sha256": sha256_file(record),
+        "result": pointer_result,
+    }
+
+
 def scheduled_inventory(target: Path) -> dict[str, str]:
     root = require_descendant(
         target / "catalog/scheduled-runs", target, "scheduled record directory"
@@ -443,6 +461,7 @@ def validate_preserved_scheduled_records(
         value = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(value, Mapping):
             raise ValueError("preserved scheduled record is not an object")
+        validate_scheduled_record_structure(value)
         expected = {
             "plan_document_id": receiver.PLAN_DOCUMENT_ID,
             "plan_version": receiver.PLAN_VERSION,
@@ -459,6 +478,150 @@ def validate_preserved_scheduled_records(
             raise ValueError("preserved scheduled record candidate is invalid")
         if value.get("result") not in {"PASS", "FAIL", "BLOCKED"}:
             raise ValueError("preserved scheduled record result is invalid")
+
+
+def validate_scheduled_record_structure(value: Mapping[str, object]) -> None:
+    """Validate the immutable execution-record envelope, including legacy records."""
+    if value.get("schema_version") != 1:
+        raise ValueError("preserved scheduled record schema is invalid")
+    if value.get("plan_raw_sha256") not in receiver.PLAN_VALID_RAW_SHA256S:
+        raise ValueError("preserved scheduled record plan_raw_sha256 is invalid")
+    if value.get("plan_normalized_raw_sha256") != receiver.PLAN_NORMALIZED_RAW_SHA256:
+        raise ValueError("preserved scheduled record plan_normalized_raw_sha256 is invalid")
+    timestamps = value.get("timestamps")
+    completed_at = timestamps.get("completed_at") if isinstance(timestamps, Mapping) else None
+    if not isinstance(completed_at, str):
+        raise ValueError("preserved scheduled record timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("preserved scheduled record timestamp is invalid") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("preserved scheduled record timestamp is not timezone-aware")
+    commands = value.get("exact_commands")
+    if not isinstance(commands, list) or not commands or any(
+        not isinstance(command, str) or not command.strip() for command in commands
+    ):
+        raise ValueError("preserved scheduled record commands are invalid")
+    valid_outcomes = {
+        "PREFLIGHT_FAILED": {"BLOCKED"},
+        "NO_BACKUP_DATA_WRITE": {"PASS"},
+        "BACKUP_REQUIRED": {"BLOCKED"},
+        "BACKUP-LATEST": {"PASS", "FAIL"},
+        "BACKFILL": {"PASS", "FAIL"},
+        "POST_BACKUP_VERIFY": {"FAIL"},
+    }
+    action = value.get("action")
+    if not isinstance(action, str) or action not in valid_outcomes:
+        raise ValueError("preserved scheduled record action is invalid")
+    if value.get("result") not in valid_outcomes[action]:
+        raise ValueError("preserved scheduled record action/result is invalid")
+    if not isinstance(value.get("detail"), Mapping):
+        raise ValueError("preserved scheduled record detail is invalid")
+    previous = value.get("previous_execution")
+    if previous is not None and (
+        not isinstance(previous, Mapping)
+        or set(previous) != {"record_path", "record_sha256"}
+        or not isinstance(previous.get("record_path"), str)
+        or not str(previous["record_path"]).startswith("catalog/scheduled-runs/")
+        or not isinstance(previous.get("record_sha256"), str)
+        or not SHA256.fullmatch(str(previous["record_sha256"]))
+    ):
+        raise ValueError("preserved scheduled record lineage is invalid")
+
+
+def reconcile_scheduled_pointer(
+    target: Path,
+    baseline_pointer: bytes,
+    live_pointer: bytes,
+    records: Mapping[str, str],
+    *,
+    old_candidate_sha: str,
+    apply: bool = True,
+) -> dict[str, object]:
+    baseline_identity = scheduled_pointer_identity(target, baseline_pointer)
+    live_identity = scheduled_pointer_identity(target, live_pointer)
+    current_relative = str(baseline_identity["record_path"])
+    current_sha256 = str(baseline_identity["record_sha256"])
+    remaining = dict(records)
+    ordered: list[str] = []
+    legacy_unordered: list[str] = []
+    final_result = baseline_identity["result"]
+
+    def advance_linked_suffix() -> None:
+        nonlocal current_relative, current_sha256, final_result
+        while True:
+            matches: list[tuple[str, Mapping[str, object]]] = []
+            for relative, digest in remaining.items():
+                path = safe_file(target, relative)
+                if sha256_file(path) != digest:
+                    raise ValueError("scheduled reconciliation record hash changed")
+                value = json.loads(path.read_text(encoding="utf-8"))
+                previous = value.get("previous_execution") if isinstance(value, Mapping) else None
+                if isinstance(previous, Mapping) and previous == {
+                    "record_path": current_relative,
+                    "record_sha256": current_sha256,
+                }:
+                    matches.append((relative, value))
+            if len(matches) > 1:
+                raise ValueError("scheduled execution append chain is ambiguous or incomplete")
+            if not matches:
+                return
+            current_relative, value = matches[0]
+            current_sha256 = remaining.pop(current_relative)
+            final_result = value.get("result")
+            ordered.append(current_relative)
+
+    advance_linked_suffix()
+    legacy = []
+    for relative in tuple(remaining):
+        value = json.loads(safe_file(target, relative).read_text(encoding="utf-8"))
+        if isinstance(value, Mapping) and value.get("previous_execution") is None:
+            legacy.append((relative, value))
+    if legacy:
+        if any(value.get("candidate_code_sha") != old_candidate_sha for _, value in legacy):
+            raise ValueError("unlinked scheduled record is not from the legacy candidate")
+        live_relative = str(live_identity["record_path"])
+        if live_relative not in {relative for relative, _ in legacy}:
+            raise ValueError("legacy scheduled records are not bound to the live pointer")
+        legacy_unordered = sorted(relative for relative, _ in legacy if relative != live_relative)
+        for relative, _ in legacy:
+            remaining.pop(relative)
+        live_value = next(value for relative, value in legacy if relative == live_relative)
+        current_relative = live_relative
+        current_sha256 = str(live_identity["record_sha256"])
+        final_result = live_value.get("result")
+        ordered.append(live_relative)
+        advance_linked_suffix()
+
+    if remaining:
+        raise ValueError("scheduled execution append chain is ambiguous or incomplete")
+    allowed_live = {
+        str(baseline_identity["record_path"]),
+        *records.keys(),
+    }
+    if str(live_identity["record_path"]) not in allowed_live:
+        raise ValueError("live scheduled pointer is outside the authenticated append chain")
+    if not isinstance(final_result, str):
+        raise ValueError("scheduled reconciliation result is invalid")
+    if apply:
+        receiver.atomic_replace(
+            target / "catalog/latest-scheduled.json",
+            canonical_json({
+                "record_path": current_relative,
+                "record_sha256": current_sha256,
+                "result": final_result,
+            }),
+        )
+    return {
+        "baseline_record": baseline_identity["record_path"],
+        "live_entry_record": live_identity["record_path"],
+        "ordered_appended_records": ordered,
+        "legacy_unordered_preserved": legacy_unordered,
+        "latest_record": current_relative,
+        "latest_record_sha256": current_sha256,
+        "result": final_result,
+    }
 
 
 def validate_component_status(detail: Mapping[str, object], expected_date: str) -> None:

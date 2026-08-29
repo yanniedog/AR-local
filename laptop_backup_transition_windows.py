@@ -87,7 +87,7 @@ class WindowsOps:
                 "-PlanGitCommit", config.plan_git_commit, "-Operator", config.operator,
                 "-PythonPath", str(config.python_path), "-TransitionId", transition_id,
             ))
-        if action == "Restore":
+        if action == "RestoreDisabled":
             if old_xml is None:
                 raise ValueError("task restore lacks preserved XML")
             command.extend(("-OldTaskXmlPath", str(old_xml)))
@@ -194,7 +194,8 @@ class WindowsOps:
             self._scheduled_command(config, check_only=False, transition_id=transition_id),
             self._task_command("Install", config, None, transition_id),
             self._scheduled_command(config, check_only=True, transition_id=transition_id),
-            self._task_command("Restore", config, config.old_task_xml),
+            self._task_command("RestoreDisabled", config, config.old_task_xml),
+            self._task_command("Enable", config, None),
         ]
         return tuple(subprocess.list2cmdline(value) for value in commands)
 

@@ -401,11 +401,56 @@ def validate_scheduled_result(
         record_path=path,
     )
     return path, record, bound
+def scheduled_recovery_plan(
+    config: TransitionConfig, evidence: Evidence
+) -> tuple[bytes, Mapping[str, str], dict[str, object]]:
+    """Authenticate the live scheduled pointer and its complete append set read-only."""
+    baseline = json.loads(
+        (evidence.path / "pre-transition-scheduled-inventory.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(baseline, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in baseline.items()
+    ):
+        raise ValueError("saved scheduled inventory is invalid")
+    live_pointer = (config.target / "catalog/latest-scheduled.json").read_bytes()
+    appended = contract.validate_scheduled_inventory(
+        config.target, baseline, expected_new=None
+    )
+    contract.validate_preserved_scheduled_records(
+        config.target,
+        appended,
+        candidate_shas=(config.old_candidate_code_sha, config.candidate_code_sha),
+        protected_sha=config.protected_code_sha,
+        plan_commit=config.plan_git_commit,
+        plan_sha256=config.plan_sha256,
+        operator=config.operator,
+    )
+    plan = contract.reconcile_scheduled_pointer(
+        config.target,
+        (evidence.path / "pre-transition-latest-scheduled.json").read_bytes(),
+        live_pointer,
+        appended,
+        old_candidate_sha=config.old_candidate_code_sha,
+        apply=False,
+    )
+    return live_pointer, appended, plan
+
+
 def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) -> dict[str, object]:
     saved = authenticate_saved(evidence)
     if saved.get("task_xml_sha256") != config.accepted_old_xml_sha256:
         raise ValueError("saved task XML is not the immutable accepted rollback artifact")
+    live_scheduled_pointer, appended_scheduled, scheduled_plan = scheduled_recovery_plan(
+        config, evidence
+    )
     listing = recovery_gate(config, ops, evidence)
+    if scheduled_recovery_plan(config, evidence) != (
+        live_scheduled_pointer,
+        appended_scheduled,
+        scheduled_plan,
+    ):
+        raise ValueError("scheduled execution state changed during recovery preflight")
     evidence.acquire_transition_guard()
     stages = evidence.stages()
     restored: list[str] = []
@@ -420,12 +465,13 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
             restored.append(name)
     if any(stage in {"TASK_DISABLE_ATTEMPTED", "FOREGROUND_STARTED", "INSTALL_ATTEMPTED"} for stage in stages):
         contract.validate_recovery_window(ops.now(), timedelta(minutes=15))
-        snapshot = ops.task("Restore", config, evidence.path / "pre-transition-live-task.xml")
-        contract.validate_accepted_task_snapshot(
+        snapshot = ops.task(
+            "RestoreDisabled", config, evidence.path / "pre-transition-live-task.xml"
+        )
+        contract.validate_task_snapshot(
             snapshot,
-            task_expectation(config, old=True, enabled=True),
-            accepted_xml=(evidence.path / "pre-transition-live-task.xml").read_bytes(),
-            accepted_sha256=str(saved["task_xml_sha256"]),
+            task_expectation(config, old=True, enabled=False),
+            last_result_zero=True,
         )
         restored.append("task")
     if snapshot is None:
@@ -442,7 +488,6 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
         final_listing, protected_sha=config.protected_code_sha, now=ops.now()
     )
     contract.validate_recovery_window(ops.now(), timedelta(minutes=2))
-    readback = evidence.persist_recovery_readback(snapshot, final_listing)
     baseline = (evidence.path / "pre-transition-generations.jsonl").read_bytes()
     catalog_path = config.target / "catalog/generations.jsonl"
     current = catalog_path.read_bytes()
@@ -457,24 +502,21 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
         protected_sha=config.protected_code_sha,
         plan_commit=config.plan_git_commit,
     )
-    scheduled_path = contract.scheduled_record_path(config.target)
-    baseline_scheduled = json.loads(
-        (evidence.path / "pre-transition-scheduled-inventory.json").read_text(encoding="utf-8")
-    )
-    if not isinstance(baseline_scheduled, Mapping):
-        raise ValueError("saved scheduled inventory is invalid")
-    appended_scheduled = contract.validate_scheduled_inventory(
-        config.target, baseline_scheduled, expected_new=None
-    )
-    contract.validate_preserved_scheduled_records(
-        config.target,
+    final_pointer, final_appended, final_plan = scheduled_recovery_plan(config, evidence)
+    if (final_pointer, final_appended, final_plan) != (
+        live_scheduled_pointer,
         appended_scheduled,
-        candidate_shas=(config.old_candidate_code_sha, config.candidate_code_sha),
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-        plan_sha256=config.plan_sha256,
-        operator=config.operator,
+        scheduled_plan,
+    ):
+        raise ValueError("scheduled execution state changed before pointer reconciliation")
+    scheduled_reconciliation = contract.reconcile_scheduled_pointer(
+        config.target,
+        (evidence.path / "pre-transition-latest-scheduled.json").read_bytes(),
+        final_pointer,
+        final_appended,
+        old_candidate_sha=config.old_candidate_code_sha,
     )
+    scheduled_path = contract.scheduled_record_path(config.target)
     receipt_paths = contract.validate_receipts(
         config.target,
         candidate_sha=config.old_candidate_code_sha,
@@ -482,6 +524,30 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
         plan_commit=config.plan_git_commit,
         expected_date=config.expected_observation_date,
     )
+    if "task" in restored:
+        contract.validate_recovery_window(ops.now(), timedelta(minutes=1))
+        snapshot = ops.task("Enable", config)
+        contract.validate_accepted_task_snapshot(
+            snapshot,
+            task_expectation(config, old=True, enabled=True),
+            accepted_xml=(evidence.path / "pre-transition-live-task.xml").read_bytes(),
+            accepted_sha256=str(saved["task_xml_sha256"]),
+        )
+        post_enable_pointer, post_enable_appended, _ = scheduled_recovery_plan(
+            config, evidence
+        )
+        post_enable_identity = contract.scheduled_pointer_identity(
+            config.target, post_enable_pointer
+        )
+        if post_enable_appended != final_appended or post_enable_identity != {
+            "record_path": scheduled_reconciliation["latest_record"],
+            "record_sha256": scheduled_reconciliation["latest_record_sha256"],
+            "result": scheduled_reconciliation["result"],
+        }:
+            raise RecoveryDeferred(
+                "scheduled execution changed while restoring the old task; recovery deferred"
+            )
+    readback = evidence.persist_recovery_readback(snapshot, final_listing)
     old_state = {
         "receipts": contract.receipt_evidence(receipt_paths),
         "source_latest_observation": listing.get("latest_observation"),
@@ -495,6 +561,7 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
         "latest_scheduled_path": str(scheduled_path),
         "latest_scheduled_sha256": contract.sha256_file(scheduled_path),
         "appended_scheduled_records": appended_scheduled,
+        "scheduled_reconciliation": scheduled_reconciliation,
         "old_candidate_state": old_state,
         "post_recovery_readback": readback,
         "hygiene": contract.validate_hygiene(
