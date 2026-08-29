@@ -3322,7 +3322,16 @@ if($startValues.active -ne 'active' -or [string]::IsNullOrWhiteSpace($startValue
    $startValues.lock -ne 'PRESENT' -or [int]$startValues.ingest_process_count -lt 1 -or
    $startValues.competing_process -ne 'ABSENT') { throw 'Natural start identity, cgroup, or lock gate failed.' }
 $startValues | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidenceRoot '0100-start-values.json')
-do { Start-Sleep -Seconds 30; $active=(ssh -o BatchMode=yes ar-local-pi5-lan "systemctl show ar-local-daily.service -p ActiveState --value").Trim() } while ($active -in @('active','activating'))
+$terminalDeadline=[datetimeoffset]'2026-08-30T03:00:00+10:00'
+do {
+  Start-Sleep -Seconds 30
+  $active=(ssh -o BatchMode=yes ar-local-pi5-lan "systemctl show ar-local-daily.service -p ActiveState --value").Trim()
+  if([datetimeoffset]::Now -ge $terminalDeadline -and $active -in @('active','activating')){
+    ssh -o BatchMode=yes ar-local-pi5-lan "date --iso-8601=seconds; systemctl show ar-local-daily.service -p ActiveState -p SubState -p InvocationID -p ExecMainStartTimestamp -p NRestarts; if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; else echo lock=ABSENT; fi" |
+      Set-Content -LiteralPath (Join-Path $evidenceRoot 'terminal-deadline-blocked.txt')
+    throw 'Natural ingest remained active at the 03:00 terminal deadline; preserve it and remain BLOCKED.'
+  }
+} while ($active -in @('active','activating'))
 $remoteTerminal = @'
 set -eu
 echo "observed_at=$(date --iso-8601=seconds)"
@@ -3460,7 +3469,8 @@ $evidenceParent=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NA
 $evidenceRoot=[IO.Path]::GetFullPath((Get-Content -Raw (Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt')).Trim())
 if(-not $evidenceRoot.StartsWith($evidenceParent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $evidenceRoot -PathType Container)){throw '05:15 evidence path escaped or is absent.'}
 $task=Get-ScheduledTask -TaskName $taskName;$info=Get-ScheduledTaskInfo -TaskName $taskName
-if($task.State -ne 'Ready' -or -not $task.Settings.Enabled -or $info.LastTaskResult -ne 0 -or $info.LastRunTime -lt [datetime]'2026-08-30T05:00:00'){throw 'Natural old task did not finish cleanly.'}
+if($task.State -ne 'Ready' -or -not $task.Settings.Enabled -or $info.LastTaskResult -ne 0 -or
+   $info.LastRunTime -lt [datetime]'2026-08-30T05:00:00' -or $info.LastRunTime -ge [datetime]'2026-08-30T05:05:00'){throw 'Natural old task did not run once in its expected 05:00 window.'}
 if((git -C $receiver rev-parse HEAD).Trim() -ne '88557b96d4a240dca640285bcb3457751b381667' -or @(git -C $receiver status --porcelain=v1).Count -ne 0){throw 'Candidate receiver drift.'}
 if((git -C $oldReceiver rev-parse HEAD).Trim() -ne 'f214e3249c7968d574e3449edb14792904e1cc1f' -or @(git -C $oldReceiver status --porcelain=v1).Count -ne 0){throw 'Old receiver drift.'}
 if((Get-FileHash $oldXml -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2' -or (Export-ScheduledTask -TaskName $taskName) -cne (Get-Content -Raw $oldXml)){throw 'Old task XML drift.'}
@@ -3469,6 +3479,7 @@ $residue=@((Join-Path $target 'catalog\.receiver.lock'),(Join-Path $transitionRo
 $helpers=Get-CimInstance Win32_Process | Where-Object {$_.ProcessId -ne $PID -and $_.CommandLine -match 'laptop_backup_(scheduled|transition|source)|laptop_pull_backup'}
 if((Get-Volume C).SizeRemaining -lt 53687091200 -or $residue -or $helpers){throw 'Capacity, operational lock, helper, or overlap gate failed.'}
 $env:AR_TARGET=$target
+$env:AR_TASK_START=$info.LastRunTime.ToUniversalTime().ToString('o')
 Push-Location $receiver
 try {
 @'
@@ -3477,32 +3488,36 @@ from datetime import datetime,timezone
 from pathlib import Path
 import laptop_backup_transition_contract as c
 import laptop_pull_backup as r
-root=Path(os.environ['AR_TARGET']).resolve(); cutoff=datetime(2026,8,29,19,0,tzinfo=timezone.utc)
+root=Path(os.environ['AR_TARGET']).resolve(); task_start=datetime.fromisoformat(os.environ['AR_TASK_START'].replace('Z','+00:00'))
 candidate='f214e3249c7968d574e3449edb14792904e1cc1f'; protected='9302890fcc752cbf90da97d597e972c157d913e3'
 hygiene=c.validate_hygiene(root,[])
+baseline_relative='catalog/scheduled-runs/20260828T191317Z-5b3033fc4db54962bb2fd53b9af5c1aa.json'; baseline_sha='2753be7b5d87af3d1ab5a581be83f1668a9695f2b5cce58822d675a920e42764'
+baseline=(root/baseline_relative).resolve(); baseline.relative_to(root); assert baseline.is_file() and c.sha256_file(baseline)==baseline_sha
+baseline_value=json.loads(baseline.read_text()); baseline_completed=datetime.fromisoformat(baseline_value['timestamps']['completed_at'].replace('Z','+00:00'))
 records=[]
 for path in (root/'catalog/scheduled-runs').glob('*.json'):
  value=json.loads(path.read_text()); ts=value.get('timestamps',{}).get('completed_at')
  if not isinstance(ts,str): raise ValueError(f'missing completed_at: {path}')
  completed=datetime.fromisoformat(ts.replace('Z','+00:00'))
- if completed>cutoff: records.append((completed,path.resolve(),value))
+ if completed>baseline_completed: records.append((completed,path.resolve(),value))
 records.sort(key=lambda x:(x[0],x[1].name)); assert records
-writes=[]; previous=None; evidence=[]
+writes=[]; previous=(baseline_relative,baseline_sha); evidence=[]; natural_records=[]
 for completed,path,record in records:
  action=record.get('action'); assert action in {'BACKFILL','BACKUP-LATEST','NO_BACKUP_DATA_WRITE'}
- c.validate_execution_record(record,action=action,candidate_sha=candidate,protected_sha=protected,plan_commit=r.PLAN_GIT_COMMIT,plan_sha256=r.PLAN_SHA256,operator='jkoka',expected_date='2026-08-30')
+ detail=record.get('detail') or {}; state=detail.get('after') if action in {'BACKFILL','BACKUP-LATEST'} else detail
+ observation=(state or {}).get('observation') or {}; record_date=observation.get('observation_date'); assert isinstance(record_date,str)
+ c.validate_execution_record(record,action=action,candidate_sha=candidate,protected_sha=protected,plan_commit=r.PLAN_GIT_COMMIT,plan_sha256=r.PLAN_SHA256,operator='jkoka',expected_date=record_date)
  digest=c.sha256_file(path); link=record.get('previous_execution')
- if previous is not None: assert link=={'record_path':previous[0],'record_sha256':previous[1]}
- elif link is not None:
-  parent=(root/link['record_path']).resolve(); parent.relative_to(root); assert parent.is_file() and c.sha256_file(parent)==link['record_sha256']
+ assert link=={'record_path':previous[0],'record_sha256':previous[1]}
  relative=path.relative_to(root).as_posix(); previous=(relative,digest)
- if action in {'BACKFILL','BACKUP-LATEST'}: writes.append(relative)
- evidence.append({'path':str(path),'sha256':digest,'action':action,'completed_at':record['timestamps']['completed_at']})
-assert writes
+ if action in {'BACKFILL','BACKUP-LATEST'}: writes.append({'path':relative,'observation_date':record_date})
+ if completed>=task_start: natural_records.append(relative)
+ evidence.append({'path':str(path),'sha256':digest,'action':action,'observation_date':record_date,'completed_at':record['timestamps']['completed_at']})
+assert any(x['observation_date']=='2026-08-30' for x in writes) and len(natural_records)==1
 pointer=json.loads((root/'catalog/latest-scheduled.json').read_text()); assert pointer['record_path']==previous[0] and pointer['record_sha256']==previous[1] and pointer['result']=='PASS'
 catalog=r.catalog_entries(root/'catalog/generations.jsonl'); assert catalog and all(x.get('result')=='PASS' for x in catalog)
 receipts=c.validate_receipts(root,candidate_sha=candidate,protected_sha=protected,plan_commit=r.PLAN_GIT_COMMIT,expected_date='2026-08-30')
-print(json.dumps({'result':'PASS','records':evidence,'write_records':writes,'latest_pointer':pointer,'catalog_entries':len(catalog),'receipts':c.receipt_evidence(receipts),'hygiene':hygiene},sort_keys=True,indent=2))
+print(json.dumps({'result':'PASS','baseline':{'path':str(baseline),'sha256':baseline_sha},'task_start':task_start.isoformat(),'natural_record':natural_records[0],'records':evidence,'write_records':writes,'latest_pointer':pointer,'catalog_entries':len(catalog),'receipts':c.receipt_evidence(receipts),'hygiene':hygiene},sort_keys=True,indent=2))
 '@ | & python - | Set-Content -LiteralPath (Join-Path $evidenceRoot '0500-old-task-continuity.json')
   if($LASTEXITCODE -ne 0){throw 'Old-task continuity record failed authentication.'}
 } finally { Pop-Location }
