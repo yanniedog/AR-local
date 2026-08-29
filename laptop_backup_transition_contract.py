@@ -600,16 +600,42 @@ def reconcile_scheduled_pointer(
         if any(value.get("candidate_code_sha") != old_candidate_sha for _, value in legacy):
             raise ValueError("unlinked scheduled record is not from the legacy candidate")
         live_relative = str(live_identity["record_path"])
-        if live_relative not in {relative for relative, _ in legacy}:
+        legacy_relatives = {relative for relative, _ in legacy}
+        anchors: list[str] = []
+        for anchor, _ in legacy:
+            cursor, cursor_sha = anchor, remaining[anchor]
+            reached, visited = cursor == live_relative, {cursor}
+            while not reached:
+                matches: list[tuple[str, str]] = []
+                for relative, digest in remaining.items():
+                    if relative in legacy_relatives or relative in visited:
+                        continue
+                    value = json.loads(safe_file(target, relative).read_text(encoding="utf-8"))
+                    if isinstance(value, Mapping) and value.get("previous_execution") == {
+                        "record_path": cursor,
+                        "record_sha256": cursor_sha,
+                    }:
+                        matches.append((relative, digest))
+                if len(matches) > 1:
+                    raise ValueError("scheduled execution append chain is ambiguous or incomplete")
+                if not matches:
+                    break
+                cursor, cursor_sha = matches[0]
+                visited.add(cursor)
+                reached = cursor == live_relative
+            if reached:
+                anchors.append(anchor)
+        if len(anchors) != 1:
             raise ValueError("legacy scheduled records are not bound to the live pointer")
-        legacy_unordered = sorted(relative for relative, _ in legacy if relative != live_relative)
+        anchor = anchors[0]
+        legacy_unordered = sorted(relative for relative, _ in legacy if relative != anchor)
         for relative, _ in legacy:
             remaining.pop(relative)
-        live_value = next(value for relative, value in legacy if relative == live_relative)
-        current_relative = live_relative
-        current_sha256 = str(live_identity["record_sha256"])
-        final_result = live_value.get("result")
-        ordered.append(live_relative)
+        anchor_value = next(value for relative, value in legacy if relative == anchor)
+        current_relative = anchor
+        current_sha256 = records[anchor]
+        final_result = anchor_value.get("result")
+        ordered.append(anchor)
         advance_linked_suffix()
 
     if remaining:

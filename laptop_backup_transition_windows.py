@@ -156,6 +156,7 @@ class WindowsOps:
             str(config.recovery_image), "--candidate-code-sha", config.candidate_code_sha,
             "--protected-code-sha", config.protected_code_sha, "--plan-git-commit",
             config.plan_git_commit, "--operator", config.operator, "--transition-id", transition_id,
+            "--allowed-predecessor-candidate-sha", config.old_candidate_code_sha,
         ]
         if check_only:
             command.append("--check-only")
