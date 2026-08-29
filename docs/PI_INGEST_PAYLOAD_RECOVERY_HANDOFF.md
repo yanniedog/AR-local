@@ -3176,7 +3176,7 @@ $runId = [datetimeoffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':','')
 $evidenceRoot = Join-Path $evidenceParent $runId
 New-Item -ItemType Directory -Path $evidenceRoot | Out-Null
 [IO.File]::WriteAllText($activePointer,$evidenceRoot,[Text.UTF8Encoding]::new($false))
-[ordered]@{plan=$planObject;authority_commit=$authorityCommit;handoff_sha256=$handoffSha;candidate=$candidate;source_date=$sourceDate;observed_at=[datetimeoffset]::Now.ToString('o')} |
+[ordered]@{plan=$planObject;authority_commit=$authorityCommit;handoff_sha256=$handoffSha;candidate=$candidate;source_date=$sourceDate;run_id=$runId;evidence_root=$evidenceRoot;observed_at=[datetimeoffset]::Now.ToString('o')} |
   ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidenceRoot 'authority.json')
 $remote0025 = @'
 set -eu
@@ -3236,11 +3236,21 @@ the natural timer exactly once; it never starts, restarts, forces, or reruns it.
 ```powershell
 $ErrorActionPreference = 'Stop'
 $expectedPi = '9302890fcc752cbf90da97d597e972c157d913e3'
+$candidate = '88557b96d4a240dca640285bcb3457751b381667'
 $date = '2026-08-30'
 $evidenceParent = 'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830'
 $activePointer = Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt'
-$evidenceRoot = [IO.Path]::GetFullPath((Get-Content -LiteralPath $activePointer -Raw).Trim())
-if (-not $evidenceRoot.StartsWith([IO.Path]::GetFullPath($evidenceParent)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Evidence path escaped.' }
+$parentFull=[IO.Path]::GetFullPath($evidenceParent);$pointerRoot=[IO.Path]::GetFullPath((Get-Content -LiteralPath $activePointer -Raw).Trim());$bound=@()
+foreach($dir in @(Get-ChildItem -LiteralPath $parentFull -Directory -ErrorAction Stop)){
+ $authorityPath=Join-Path $dir.FullName 'authority.json';if(-not(Test-Path -LiteralPath $authorityPath -PathType Leaf)){continue}
+ try{$authority=Get-Content -Raw -LiteralPath $authorityPath|ConvertFrom-Json}catch{continue}
+ $root=[IO.Path]::GetFullPath($dir.FullName)
+ if($root.StartsWith($parentFull+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -and $authority.evidence_root -ceq $root -and $authority.run_id -ceq $dir.Name -and $authority.source_date -ceq $date -and $authority.candidate -ceq $candidate){$bound+=,[pscustomobject]@{root=$root;authority_path=$authorityPath}}
+}
+if($bound.Count -ne 1 -or $pointerRoot -cne $bound[0].root){throw 'The active evidence pointer is not uniquely bound to the original 00:25 authority.'}
+$evidenceRoot=$bound[0].root;$authorityHash=(Get-FileHash -LiteralPath $bound[0].authority_path -Algorithm SHA256).Hash
+$recordedAuthority=@(Get-Content -Raw (Join-Path $evidenceRoot '0025-hashes.json')|ConvertFrom-Json|Where-Object {[IO.Path]::GetFullPath($_.Path) -ceq [IO.Path]::GetFullPath($bound[0].authority_path)})
+if($recordedAuthority.Count -ne 1 -or $recordedAuthority[0].Hash -cne $authorityHash){throw 'The 00:25 authority record is not hash-bound.'}
 $remote0055 = @'
 set -eu
 echo "observed_at=$(date --iso-8601=seconds)"
@@ -3419,15 +3429,15 @@ with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as con:
  assert counts['bank_items']==sum(int(banks.get(k) or 0) for k in ('fees','features','eligibility','constraints'))
 assert sum(int(x.get('failure_records') or 0) for x in states)==failures
 local_v1={}
-for key,folder,tag,roles in (
- ('dated','v1-dated',f'app-payload-{D}',{'core','details'}),
- ('rolling','v1-latest','app-payload-latest',{'bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'}),
+for key,folder,tag,required,allowed in (
+ ('dated','v1-dated',f'app-payload-{D}',{'core','details'},{'core','details'}),
+ ('rolling','v1-latest','app-payload-latest',{'core','details'},{'bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'}),
 ):
  root=(state/'app-payload/v1'/folder).resolve(); root.relative_to(state)
  manifest_path=(root/'manifest.json').resolve(); manifest_path.relative_to(root)
  payload=json.loads(manifest_path.read_text())
  assert payload.get('schema_version')==1 and payload.get('run_date')==D and payload.get('tag')==tag
- assert set((payload.get('files') or {}).keys())==roles
+ roles=set((payload.get('files') or {}).keys()); assert required<=roles<=allowed
  assets={}
  for role,meta in payload['files'].items():
   name=meta['name']; assert Path(name).name==name
@@ -3450,7 +3460,7 @@ foreach($tag in @("app-payload-$date",'app-payload-latest')){
  $m=Get-Content -Raw $manifestPath|ConvertFrom-Json; if($m.schema_version -ne 1 -or $m.run_date -ne $date -or $m.tag -ne $tag){throw "$tag identity mismatch"}
  $localKey=if($tag -eq "app-payload-$date"){'dated'}else{'rolling'};$producer=$local.local_v1.$localKey
  $publicManifestSha=(Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant();if($publicManifestSha -cne $producer.manifest_sha256){throw "$tag public manifest differs from the independently recorded Pi staging manifest"}
- $requiredRoles=if($tag -eq "app-payload-$date"){@('core','details')}else{@('bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index')};$actualRoles=@($m.files.PSObject.Properties.Name|Sort-Object);if(($actualRoles -join ',') -cne (($requiredRoles|Sort-Object)-join ',')){throw "$tag v1 asset role set mismatch"}
+ $requiredRoles=@($producer.assets.PSObject.Properties.Name|Sort-Object);$actualRoles=@($m.files.PSObject.Properties.Name|Sort-Object);if(($actualRoles -join ',') -cne ($requiredRoles -join ',')){throw "$tag public role set differs from independently recorded Pi staging"}
  foreach($n in $local.banks.PSObject.Properties.Name){if([int64]$m.counts.$n -ne [int64]$local.banks.$n){throw "$tag count mismatch: $n"}}
  $assets=@(); foreach($f in $m.files.PSObject.Properties){$a=$f.Value;$producerAsset=$producer.assets.PSObject.Properties[$f.Name].Value;if($null -eq $producerAsset){throw "$tag has no independently recorded Pi staging asset: $($f.Name)"};$roleName=$f.Name.Replace('_','-');if($a.sha256 -notmatch '^[0-9a-f]{64}$'){throw "$tag unsafe asset digest: $($f.Name)"};$expectedName="${roleName}-${date}-$($a.sha256.Substring(0,12)).json.gz";if($a.name -cne $expectedName -or [IO.Path]::GetFileName($a.name) -cne $a.name){throw "$tag unsafe asset identity: $($f.Name)"};if($a.name -cne $producerAsset.name -or $a.sha256 -cne $producerAsset.sha256 -or [int64]$a.bytes -ne [int64]$producerAsset.bytes){throw "$tag manifest asset differs from independently recorded Pi staging: $($f.Name)"};$canonicalUrl="https://github.com/yanniedog/AR-local/releases/download/$tag/$expectedName";if($a.url -cne $canonicalUrl){throw "$tag noncanonical asset URL: $($f.Name)"};$out=[IO.Path]::GetFullPath((Join-Path $tagRoot $expectedName));if(-not $out.StartsWith([IO.Path]::GetFullPath($tagRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'asset path escaped evidence root'};Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri $canonicalUrl -OutFile $out;$sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant();$bytes=(Get-Item $out).Length;if($sha -ne $a.sha256 -or $bytes -ne [int64]$a.bytes -or $sha -cne $producerAsset.sha256 -or $bytes -ne [int64]$producerAsset.bytes){throw "$tag public asset mismatch: $($a.name)"};$env:AR_PUBLIC_ASSET=$out;$env:AR_PUBLIC_DATE=$date;python -c "import gzip,json,os; x=json.load(gzip.open(os.environ['AR_PUBLIC_ASSET'],'rt',encoding='utf-8')); assert isinstance(x,(dict,list)); assert not isinstance(x,dict) or x.get('run_date',os.environ['AR_PUBLIC_DATE'])==os.environ['AR_PUBLIC_DATE']";if($LASTEXITCODE -ne 0){throw 'asset schema/date failure'};$assets+=[ordered]@{role=$f.Name;name=$a.name;sha256=$sha;bytes=$bytes}}
  $report.manifests[$tag]=[ordered]@{sha256=$publicManifestSha;producer_manifest_sha256=$producer.manifest_sha256;assets=$assets}
@@ -3490,8 +3500,17 @@ $taskName='AR-local laptop backup';$target='C:\code\backups\AR-local-pi5'
 $receiver='C:\code\backups\AR-local-pi5-receiver-88557b9';$oldReceiver='C:\code\backups\AR-local-pi5-receiver-f214e32'
 $oldXml='C:\code\backups\AR-local-pi5\evidence\A3-V14-TASK-TRANSITION-20260828\20260828T080004+1000\installed-task.xml'
 $evidenceParent=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830')
-$evidenceRoot=[IO.Path]::GetFullPath((Get-Content -Raw (Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt')).Trim())
-if(-not $evidenceRoot.StartsWith($evidenceParent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $evidenceRoot -PathType Container)){throw '05:15 evidence path escaped or is absent.'}
+$activePointer=Join-Path $evidenceParent 'ACTIVE_EVIDENCE_PATH.txt';$pointerRoot=[IO.Path]::GetFullPath((Get-Content -Raw $activePointer).Trim());$bound=@()
+foreach($dir in @(Get-ChildItem -LiteralPath $evidenceParent -Directory -ErrorAction Stop)){
+ $authorityPath=Join-Path $dir.FullName 'authority.json';if(-not(Test-Path -LiteralPath $authorityPath -PathType Leaf)){continue}
+ try{$authority=Get-Content -Raw -LiteralPath $authorityPath|ConvertFrom-Json}catch{continue}
+ $root=[IO.Path]::GetFullPath($dir.FullName)
+ if($root.StartsWith($evidenceParent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -and $authority.evidence_root -ceq $root -and $authority.run_id -ceq $dir.Name -and $authority.source_date -ceq '2026-08-30' -and $authority.candidate -ceq '88557b96d4a240dca640285bcb3457751b381667'){$bound+=,[pscustomobject]@{root=$root;authority_path=$authorityPath}}
+}
+if($bound.Count -ne 1 -or $pointerRoot -cne $bound[0].root){throw '05:15 evidence pointer is not uniquely bound to the original 00:25 authority.'}
+$evidenceRoot=$bound[0].root;$authorityHash=(Get-FileHash -LiteralPath $bound[0].authority_path -Algorithm SHA256).Hash
+$recordedAuthority=@(Get-Content -Raw (Join-Path $evidenceRoot '0025-hashes.json')|ConvertFrom-Json|Where-Object {[IO.Path]::GetFullPath($_.Path) -ceq [IO.Path]::GetFullPath($bound[0].authority_path)})
+if($recordedAuthority.Count -ne 1 -or $recordedAuthority[0].Hash -cne $authorityHash){throw '05:15 authority record is not hash-bound.'}
 $task=Get-ScheduledTask -TaskName $taskName;$info=Get-ScheduledTaskInfo -TaskName $taskName
 if($task.State -ne 'Ready' -or -not $task.Settings.Enabled -or $info.LastTaskResult -ne 0 -or
    $info.LastRunTime -lt [datetime]'2026-08-30T05:00:00' -or $info.LastRunTime -ge [datetime]'2026-08-30T05:05:00'){throw 'Natural old task did not run once in its expected 05:00 window.'}
