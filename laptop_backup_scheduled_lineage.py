@@ -39,7 +39,7 @@ def safe_path(target: Path, relative: str, *, must_exist: bool = True) -> Path:
     candidate = root
     for part in PurePosixPath(relative).parts:
         candidate = candidate / part
-        if candidate.exists() and _is_link(candidate):
+        if _is_link(candidate):
             raise ValueError("scheduled lineage path contains a link or reparse point")
     resolved = candidate.resolve(strict=must_exist)
     if resolved != root and root not in resolved.parents:
@@ -52,7 +52,7 @@ def scheduled_record_mutex(target: Path) -> Iterator[None]:
     """Serialize every new-code writer of the scheduled record pointer."""
     catalog = safe_path(target, "catalog")
     path = catalog / ".scheduled-record.mutex"
-    if path.exists() and _is_link(path):
+    if _is_link(path):
         raise ValueError("scheduled record mutex is a link or reparse point")
     with path.open("a+b") as stream:
         if stream.seek(0, os.SEEK_END) == 0:
@@ -99,7 +99,9 @@ def _pointer_identity(target: Path, payload: bytes) -> dict[str, str]:
     return {"record_path": relative, "record_sha256": digest, "result": result}
 
 
-def _validate_owned_record(value: Mapping[str, object], expected: Mapping[str, object]) -> None:
+def _validate_owned_record(
+    value: Mapping[str, object], expected: Mapping[str, object], *, predecessor: bool = False
+) -> None:
     fixed = {
         "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
@@ -107,7 +109,6 @@ def _validate_owned_record(value: Mapping[str, object], expected: Mapping[str, o
         "plan_git_commit": expected["plan_git_commit"],
         "plan_sha256": receiver.PLAN_SHA256,
         "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
-        "candidate_code_sha": expected["candidate_code_sha"],
         "protected_code_sha": expected["protected_code_sha"],
         "operator": expected["operator"],
         "deviations": [],
@@ -115,6 +116,11 @@ def _validate_owned_record(value: Mapping[str, object], expected: Mapping[str, o
     }
     if any(value.get(key) != item for key, item in fixed.items()):
         raise ValueError("orphaned scheduled record identity is invalid")
+    allowed_candidates = {expected["candidate_code_sha"]}
+    if predecessor:
+        allowed_candidates.update(expected.get("allowed_predecessor_candidates", ()))
+    if value.get("candidate_code_sha") not in allowed_candidates:
+        raise ValueError("orphaned scheduled record candidate is invalid")
     timestamp = value.get("timestamps")
     completed = timestamp.get("completed_at") if isinstance(timestamp, Mapping) else None
     commands = value.get("exact_commands")
@@ -163,6 +169,11 @@ def repair_orphaned_suffix(target: Path, expected: Mapping[str, object]) -> dict
         receiver.atomic_replace(pointer_path, receiver.canonical_json_bytes(current))
     else:
         current = _pointer_identity(target, pointer_path.read_bytes())
+        pointed = safe_path(target, current["record_path"])
+        pointed_value = json.loads(pointed.read_text(encoding="utf-8"))
+        if not isinstance(pointed_value, Mapping):
+            raise ValueError("pointed scheduled predecessor is invalid")
+        _validate_owned_record(pointed_value, expected, predecessor=True)
     seen = {current["record_path"]}
     while True:
         matches: list[tuple[str, str, Mapping[str, object]]] = []

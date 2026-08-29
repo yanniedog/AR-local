@@ -23,19 +23,13 @@ def _args() -> Namespace:
 
 
 def _baseline(target: Path) -> dict[str, str]:
-    root = target / "catalog/scheduled-runs"
-    root.mkdir(parents=True)
-    record = root / "baseline.json"
-    record.write_text(json.dumps({"result": "PASS"}), encoding="utf-8")
-    pointer = {
-        "record_path": record.relative_to(target).as_posix(),
-        "record_sha256": receiver.sha256_file(record),
-        "result": "PASS",
-    }
-    (target / "catalog/latest-scheduled.json").write_bytes(
-        receiver.canonical_json_bytes(pointer)
+    (target / "catalog").mkdir(parents=True)
+    scheduled.record_execution(
+        target, _args(), "PASS", "NO_BACKUP_DATA_WRITE", {"status": "UP_TO_DATE"}
     )
-    return pointer
+    return json.loads(
+        (target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
 
 
 def test_record_execution_bootstraps_first_scheduled_record(tmp_path: Path) -> None:
@@ -79,7 +73,7 @@ def test_record_execution_rolls_forward_orphan_after_pointer_replace_crash(
         )
     orphan = next(
         path for path in (target / "catalog/scheduled-runs").glob("*.json")
-        if path.name != "baseline.json"
+        if path.relative_to(target).as_posix() != baseline["record_path"]
     )
     assert json.loads(pointer_path.read_text(encoding="utf-8")) == baseline
 

@@ -19,24 +19,21 @@ def test_record_execution_serializes_pointer_lineage_across_threads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     target = tmp_path / "backup"
-    runs = target / "catalog/scheduled-runs"
-    runs.mkdir(parents=True)
-    baseline = runs / "baseline.json"
-    baseline.write_text(json.dumps({"result": "PASS"}), encoding="utf-8")
-    baseline_pointer = {
-        "record_path": baseline.relative_to(target).as_posix(),
-        "record_sha256": receiver.sha256_file(baseline),
-        "result": "PASS",
-    }
-    (target / "catalog/latest-scheduled.json").write_bytes(
-        receiver.canonical_json_bytes(baseline_pointer)
-    )
     args = Namespace(
         plan_git_commit=receiver.PLAN_GIT_COMMIT,
         candidate_code_sha="c" * 40,
         protected_code_sha="9" * 40,
         operator="pytest",
     )
+    (target / "catalog").mkdir(parents=True)
+    scheduled.record_execution(
+        target, args, "PASS", "NO_BACKUP_DATA_WRITE", {"status": "UP_TO_DATE"}
+    )
+    runs = target / "catalog/scheduled-runs"
+    baseline_pointer = json.loads(
+        (target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    baseline = target / baseline_pointer["record_path"]
     original_create = receiver.atomic_create
     first_inside = threading.Event()
     release_first = threading.Event()
@@ -130,6 +127,21 @@ def test_open_transition_gate_accepts_only_live_owner_descendant(
     assert not allowed
     assert "authenticated A3 transition" in str(reason)
     assert not list((target / "catalog").glob("scheduled-runs/*.json"))
+
+
+def test_transition_only_predecessor_authority_requires_active_guard(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    (target / "catalog").mkdir(parents=True)
+    args = Namespace(
+        target=target,
+        transition_id="spoofed-transition",
+        allowed_predecessor_candidate_sha=["d" * 40],
+    )
+
+    allowed, reason = scheduled.open_transition_allows_invocation(args)
+
+    assert not allowed
+    assert "requires an active A3 transition" in str(reason)
 
 
 @pytest.mark.parametrize(

@@ -616,6 +616,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--operator")
     value.add_argument("--check-only", action="store_true")
     value.add_argument("--transition-id")
+    value.add_argument("--allowed-predecessor-candidate-sha", action="append", default=[])
     return value
 
 
@@ -641,6 +642,8 @@ def open_transition_allows_invocation(args: argparse.Namespace) -> tuple[bool, s
                     raise ValueError("transition guard identity differs from active pointer")
                 transition_id = guard_id
         if not guarded:
+            if args.transition_id or getattr(args, "allowed_predecessor_candidate_sha", ()):
+                return False, "transition-only lineage authority requires an active A3 transition"
             return True, None
         lease = json.loads((root / ".transition-runtime.lock").read_text(encoding="utf-8"))
         lease_pid = lease.get("pid") if isinstance(lease, Mapping) else None
@@ -718,6 +721,9 @@ def prepare_execution_lineage(target: Path, args: argparse.Namespace) -> None:
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
+            "allowed_predecessor_candidates": tuple(
+                getattr(args, "allowed_predecessor_candidate_sha", ())
+            ),
         })
 
 
@@ -737,6 +743,9 @@ def record_execution(
             "candidate_code_sha": args.candidate_code_sha,
             "protected_code_sha": args.protected_code_sha,
             "operator": args.operator or "scheduled-task",
+            "allowed_predecessor_candidates": tuple(
+                getattr(args, "allowed_predecessor_candidate_sha", ())
+            ),
         })
         previous_execution = (
             {key: previous[key] for key in ("record_path", "record_sha256")}
