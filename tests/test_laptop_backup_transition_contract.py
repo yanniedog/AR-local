@@ -403,6 +403,24 @@ def test_runtime_lease_allows_exact_stale_resume_only(tmp_path: Path) -> None:
         assert lock.exists()
 
 
+@pytest.mark.parametrize(
+    "transition_id",
+    ["../outside", "..", "a/b", "a\\b", "C:\\outside", ".hidden"],
+)
+def test_runtime_lease_rejects_unsafe_transition_id_before_writes(
+    tmp_path: Path, transition_id: str
+) -> None:
+    root = tmp_path / "evidence"
+    outside = tmp_path / "outside"
+
+    with pytest.raises(ValueError, match="unsafe path characters"):
+        with transition.runtime_lease(root, transition_id, resume=True):
+            pass
+
+    assert not outside.exists()
+    assert not root.exists()
+
+
 def test_runtime_lease_rejects_dead_lease_for_different_transition(tmp_path: Path) -> None:
     root = tmp_path / "evidence"
     evidence = root / "one"

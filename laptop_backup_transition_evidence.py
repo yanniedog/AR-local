@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import uuid
 from contextlib import contextmanager
@@ -15,6 +16,21 @@ import laptop_pull_backup as receiver
 
 
 _RECLAIM_THREAD_LOCK = threading.Lock()
+TRANSITION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_+-]{0,127}$")
+
+
+def validate_transition_id(transition_id: str) -> None:
+    if not TRANSITION_ID_RE.fullmatch(transition_id):
+        raise ValueError("transition ID contains unsafe path characters")
+
+
+def transition_path(root: Path, transition_id: str) -> Path:
+    validate_transition_id(transition_id)
+    resolved_root = root.resolve(strict=True)
+    candidate = (resolved_root / transition_id).resolve(strict=False)
+    if candidate.parent != resolved_root:
+        raise ValueError("transition evidence path escapes its controlled root")
+    return candidate
 
 
 class EvidenceConfig(Protocol):
@@ -28,7 +44,10 @@ def evidence_root(config: EvidenceConfig) -> Path:
 
 
 def _authenticated_resume_state(root: Path, transition_id: str) -> bool:
-    evidence = root / transition_id
+    try:
+        evidence = transition_path(root, transition_id)
+    except ValueError:
+        return False
     pointer = root / "ACTIVE_TRANSITION.json"
     if not evidence.is_dir():
         return False
@@ -104,7 +123,9 @@ def _reclamation_claim(root: Path) -> Iterator[None]:
         _RECLAIM_THREAD_LOCK.release()
 @contextmanager
 def runtime_lease(root: Path, transition_id: str, *, resume: bool) -> Iterator[None]:
+    validate_transition_id(transition_id)
     root.mkdir(parents=True, exist_ok=True)
+    transition_path(root, transition_id)
     lock = root / ".transition-runtime.lock"
     payload = contract.canonical_json({"pid": os.getpid(), "transition_id": transition_id})
     for _attempt in range(8):
@@ -162,15 +183,16 @@ class Evidence:
         guard_required: bool = True,
     ) -> None:
         self.config = config
+        validate_transition_id(transition_id)
         self.root = evidence_root(config)
         self.pointer = self.root / "ACTIVE_TRANSITION.json"
         self.guard = config.target / "catalog/.receiver.lock"
-        self.path = self.root / transition_id
         self.transition_id = transition_id
         self.closed_terminal: tuple[str, Path] | None = None
         self.guard_owned = False
         self.root.mkdir(parents=True, exist_ok=True)
         contract.require_descendant(self.root, config.target, "transition evidence root")
+        self.path = transition_path(self.root, transition_id)
         config_sha256 = contract.sha256_bytes(contract.canonical_json(config.public_record()))
         if resume:
             if not self.pointer.exists():
