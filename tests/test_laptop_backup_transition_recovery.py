@@ -533,7 +533,7 @@ def test_recovery_pointer_interruption_is_idempotently_resumable(
         transition.recover(value, ops, evidence)
     monkeypatch.setattr(receiver, "atomic_replace", original_replace)
     recovered = transition.recover(value, ops, evidence)
-    assert recovered["restored"] == [*contract.COMPONENT_POINTERS, "task"]
+    assert recovered["restored"] == ["task", *contract.COMPONENT_POINTERS]
     for name in contract.COMPONENT_POINTERS:
         assert (value.target / "catalog" / name).read_bytes() == (
             evidence.path / f"pre-transition-{name}"
@@ -806,7 +806,40 @@ def test_recovery_rechecks_budget_after_delayed_source_before_pointer_mutation(
         transition.recover(value, ops, evidence)
     for name, payload in before.items():
         assert (value.target / "catalog" / name).read_bytes() == payload
-    assert not any(call.startswith("task:Restore") for call in ops.calls)
+    assert ops.calls.count("task:RestoreDisabled") == 1
+
+
+def test_recovery_disables_task_then_defers_for_already_admitted_helper(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "admitted-helper", resume=False, commands=["pytest admitted helper"]
+    )
+    transition.write_prestate(
+        evidence,
+        value,
+        task_snapshot(transition.task_expectation(value, old=True, enabled=True)),
+        listing(),
+    )
+    evidence.checkpoint("TASK_DISABLE_ATTEMPTED")
+    evidence.checkpoint("FOREGROUND_STARTED")
+    before = {
+        name: (value.target / "catalog" / name).read_bytes()
+        for name in contract.COMPONENT_POINTERS
+    }
+    ops.process_override = [{"pid": 1234, "command_line": "legacy laptop backup"}]
+
+    with pytest.raises(transition.RecoveryDeferred, match="remained active"):
+        transition.recover(value, ops, evidence)
+
+    assert ops.disabled
+    assert ops.calls.count("task:RestoreDisabled") == 1
+    assert ops.calls.count("processes") == 1
+    for name, payload in before.items():
+        assert (value.target / "catalog" / name).read_bytes() == payload
 
 
 def test_resume_recovery_failure_is_not_retried_in_same_invocation(

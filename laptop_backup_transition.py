@@ -455,6 +455,20 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
     stages = evidence.stages()
     restored: list[str] = []
     snapshot: Mapping[str, object] | None = None
+    contract.validate_recovery_window(ops.now(), timedelta(minutes=15))
+    snapshot = ops.task(
+        "RestoreDisabled", config, evidence.path / "pre-transition-live-task.xml"
+    )
+    contract.validate_task_snapshot(
+        snapshot,
+        task_expectation(config, old=True, enabled=False),
+        last_result_zero=True,
+    )
+    restored.append("task")
+    if ops.active_backup_processes():
+        raise RecoveryDeferred(
+            "backup helper remained active after restoring the disabled task"
+        )
     if any(stage in {"FOREGROUND_STARTED", "INSTALL_ATTEMPTED"} for stage in stages):
         for name in contract.COMPONENT_POINTERS:
             contract.validate_recovery_window(ops.now(), timedelta(minutes=20))
@@ -463,25 +477,6 @@ def recover(config: TransitionConfig, ops: TransitionOps, evidence: Evidence) ->
                 (evidence.path / f"pre-transition-{name}").read_bytes(),
             )
             restored.append(name)
-    if any(stage in {"TASK_DISABLE_ATTEMPTED", "FOREGROUND_STARTED", "INSTALL_ATTEMPTED"} for stage in stages):
-        contract.validate_recovery_window(ops.now(), timedelta(minutes=15))
-        snapshot = ops.task(
-            "RestoreDisabled", config, evidence.path / "pre-transition-live-task.xml"
-        )
-        contract.validate_task_snapshot(
-            snapshot,
-            task_expectation(config, old=True, enabled=False),
-            last_result_zero=True,
-        )
-        restored.append("task")
-    if snapshot is None:
-        snapshot = ops.task("Snapshot", config)
-        contract.validate_accepted_task_snapshot(
-            snapshot,
-            task_expectation(config, old=True, enabled=True),
-            accepted_xml=(evidence.path / "pre-transition-live-task.xml").read_bytes(),
-            accepted_sha256=str(saved["task_xml_sha256"]),
-        )
     contract.validate_recovery_window(ops.now(), timedelta(minutes=5))
     final_listing = ops.source_listing(config)
     contract.validate_recovery_source_listing(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,95 @@ import pytest
 
 import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
+
+
+def test_record_execution_serializes_pointer_lineage_across_threads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "backup"
+    runs = target / "catalog/scheduled-runs"
+    runs.mkdir(parents=True)
+    baseline = runs / "baseline.json"
+    baseline.write_text(json.dumps({"result": "PASS"}), encoding="utf-8")
+    baseline_pointer = {
+        "record_path": baseline.relative_to(target).as_posix(),
+        "record_sha256": receiver.sha256_file(baseline),
+        "result": "PASS",
+    }
+    (target / "catalog/latest-scheduled.json").write_bytes(
+        receiver.canonical_json_bytes(baseline_pointer)
+    )
+    args = Namespace(
+        plan_git_commit=receiver.PLAN_GIT_COMMIT,
+        candidate_code_sha="c" * 40,
+        protected_code_sha="9" * 40,
+        operator="pytest",
+    )
+    original_create = receiver.atomic_create
+    first_inside = threading.Event()
+    release_first = threading.Event()
+    second_created = threading.Event()
+    count_lock = threading.Lock()
+    create_count = 0
+
+    def delayed_create(path: Path, payload: bytes) -> None:
+        nonlocal create_count
+        if path.parent == runs:
+            with count_lock:
+                create_count += 1
+                current = create_count
+            if current == 1:
+                first_inside.set()
+                assert release_first.wait(timeout=5)
+            else:
+                second_created.set()
+        original_create(path, payload)
+
+    monkeypatch.setattr(receiver, "atomic_create", delayed_create)
+    errors: list[BaseException] = []
+
+    def writer() -> None:
+        try:
+            scheduled.record_execution(
+                target, args, "PASS", "NO_BACKUP_DATA_WRITE", {"status": "UP_TO_DATE"}
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    first = threading.Thread(target=writer)
+    second = threading.Thread(target=writer)
+    first.start()
+    assert first_inside.wait(timeout=5)
+    second.start()
+    assert not second_created.wait(timeout=0.2)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not errors
+    assert not first.is_alive() and not second.is_alive()
+    records = [path for path in runs.glob("*.json") if path != baseline]
+    assert len(records) == 2
+    values = {
+        path.relative_to(target).as_posix(): json.loads(path.read_text(encoding="utf-8"))
+        for path in records
+    }
+    first_record = next(
+        relative
+        for relative, value in values.items()
+        if value["previous_execution"] == {
+            "record_path": baseline_pointer["record_path"],
+            "record_sha256": baseline_pointer["record_sha256"],
+        }
+    )
+    latest = json.loads(
+        (target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    assert latest["record_path"] != first_record
+    assert values[latest["record_path"]]["previous_execution"] == {
+        "record_path": first_record,
+        "record_sha256": receiver.sha256_file(target / first_record),
+    }
 
 
 def test_open_transition_gate_accepts_only_live_owner_descendant(
@@ -662,6 +752,7 @@ def test_main_invokes_and_records_selected_request(
     records: list[tuple[str, str, object]] = []
     monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
     monkeypatch.setattr(scheduled, "scheduled_status", lambda *_args: next(statuses))
+    monkeypatch.setattr(scheduled, "prepare_execution_lineage", lambda *_args: None)
     monkeypatch.setattr(
         scheduled,
         "record_execution",
@@ -683,6 +774,36 @@ def test_main_invokes_and_records_selected_request(
     assert calls == [("preflight", ()), (expected_command, expected_dates), ("preflight", ())]
     assert records[0][:2] == ("PASS", expected_action)
     assert f'"action": "{expected_action}"' in capsys.readouterr().out
+
+
+def test_main_rejects_missing_predecessor_before_backup_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "backup"
+    runs = target / "catalog/scheduled-runs"
+    runs.mkdir(parents=True)
+    (runs / "unpointed.json").write_text('{"result":"PASS"}', encoding="utf-8")
+    recovery = tmp_path / "recovery.img"
+    recovery.write_bytes(b"")
+    calls: list[str] = []
+
+    def invoke(_args: object, command: str, *_extra: object) -> tuple[int, str, str]:
+        calls.append(command)
+        return 0, json.dumps({"target": str(target)}), ""
+
+    monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
+    monkeypatch.setattr(scheduled, "scheduled_status", lambda *_args: {
+        "status": "STALE", "backup_command": "backup-latest", "backfill_dates": [],
+    })
+
+    code = scheduled.main([
+        "--target", str(target), "--recovery-image", str(recovery),
+        "--candidate-code-sha", CANDIDATE, "--protected-code-sha", PROTECTED,
+        "--plan-git-commit", receiver.PLAN_GIT_COMMIT,
+    ])
+
+    assert code == 1
+    assert calls == ["preflight"]
 
 
 def test_main_current_state_records_no_write_without_backup(
@@ -762,6 +883,7 @@ def test_main_records_post_backup_metadata_failure(
     records: list[tuple[str, str, object]] = []
     monkeypatch.setattr(scheduled, "invoke_receiver", invoke)
     monkeypatch.setattr(scheduled, "scheduled_status", status)
+    monkeypatch.setattr(scheduled, "prepare_execution_lineage", lambda *_args: None)
     monkeypatch.setattr(
         scheduled,
         "record_execution",

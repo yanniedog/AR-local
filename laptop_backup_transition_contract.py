@@ -539,6 +539,24 @@ def reconcile_scheduled_pointer(
     old_candidate_sha: str,
     apply: bool = True,
 ) -> dict[str, object]:
+    if apply:
+        with scheduled.scheduled_record_mutex(target):
+            current = (target / "catalog/latest-scheduled.json").read_bytes()
+            if current != live_pointer:
+                raise ValueError("scheduled execution pointer changed before reconciliation")
+            result = reconcile_scheduled_pointer(
+                target, baseline_pointer, current, records,
+                old_candidate_sha=old_candidate_sha, apply=False,
+            )
+            receiver.atomic_replace(
+                target / "catalog/latest-scheduled.json",
+                canonical_json({
+                    "record_path": result["latest_record"],
+                    "record_sha256": result["latest_record_sha256"],
+                    "result": result["result"],
+                }),
+            )
+            return result
     baseline_identity = scheduled_pointer_identity(target, baseline_pointer)
     live_identity = scheduled_pointer_identity(target, live_pointer)
     current_relative = str(baseline_identity["record_path"])
@@ -604,15 +622,6 @@ def reconcile_scheduled_pointer(
         raise ValueError("live scheduled pointer is outside the authenticated append chain")
     if not isinstance(final_result, str):
         raise ValueError("scheduled reconciliation result is invalid")
-    if apply:
-        receiver.atomic_replace(
-            target / "catalog/latest-scheduled.json",
-            canonical_json({
-                "record_path": current_relative,
-                "record_sha256": current_sha256,
-                "result": final_result,
-            }),
-        )
     return {
         "baseline_record": baseline_identity["record_path"],
         "live_entry_record": live_identity["record_path"],
