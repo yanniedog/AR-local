@@ -472,6 +472,16 @@ def test_transition_path_rejects_existing_reparse_child_inside_root(
         transition_evidence.transition_path(root, "safe-id")
 
 
+def test_transition_path_rejects_dangling_child_symlink(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    child = root / "safe-id"
+    child.symlink_to(root / "missing-sibling", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="link or reparse"):
+        transition_evidence.transition_path(root, "safe-id")
+
+
 def test_runtime_lease_rejects_dead_lease_for_different_transition(tmp_path: Path) -> None:
     root = tmp_path / "evidence"
     evidence = root / "one"
