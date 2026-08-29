@@ -23,7 +23,7 @@ import tarfile
 import tempfile
 import urllib.request
 from contextlib import closing
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
@@ -39,6 +39,26 @@ WINDOWS_RESERVED = {
     *(f"LPT{number}" for number in range(1, 10)),
 }
 CHUNK = 1024 * 1024
+TIMER_NEXT_RE = re.compile(
+    r"^(?P<weekday>[A-Z][a-z]{2}) (?P<date>\d{4}-\d{2}-\d{2}) "
+    r"01:00:00 (?P<zone>AEST|AEDT)$"
+)
+
+
+def validate_next_daily_timer(value: str, now: datetime) -> None:
+    match = TIMER_NEXT_RE.fullmatch(value)
+    local_now = now.astimezone(WINDOW_TZ)
+    expected_date = local_now.date()
+    if local_now.timetz().replace(tzinfo=None) >= time(1, 0):
+        expected_date += timedelta(days=1)
+    expected = datetime.combine(expected_date, time(1, 0), WINDOW_TZ)
+    if (
+        match is None
+        or date.fromisoformat(match["date"]) != expected_date
+        or match["weekday"] != expected.strftime("%a")
+        or match["zone"] != expected.tzname()
+    ):
+        raise ValueError("daily ingest timer is not scheduled for the exact next 01:00 in Australia/Hobart")
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -159,10 +179,19 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     ).stdout.strip()
     if timer_active != "active":
         raise ValueError(f"daily ingest timer is not active: {timer_active}")
+    timer_next = command(
+        "systemctl",
+        "show",
+        "ar-local-daily.timer",
+        "--property=NextElapseUSecRealtime",
+        "--value",
+    ).stdout.strip()
+    checked_at = datetime.now(WINDOW_TZ)
+    validate_next_daily_timer(timer_next, checked_at)
     if not http_healthy(args.dashboard_url):
         raise ValueError("dashboard health endpoint is not HTTP 200")
     return {
-        "checked_at": datetime.now(WINDOW_TZ).isoformat(),
+        "checked_at": checked_at.isoformat(),
         "production": current,
         "runs_root": str(runs),
         "state_root": str(state),
@@ -170,6 +199,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "terminal_failure_authorization": terminal_failure,
         "daily_timer": timer,
         "daily_timer_active": timer_active,
+        "daily_timer_next": timer_next,
         "ingest_lock_absent": True,
         "dashboard_url": args.dashboard_url,
         "dashboard_healthy": True,

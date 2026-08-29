@@ -11,6 +11,8 @@ on:
       - 'cdr_*.py'
       - 'pi_*.py'
       - 'laptop_*.py'
+      - 'process_safety.py'
+      - 'laptop_*.ps1'
       - 'install_laptop_backup_task*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'payload_crypto.py'
@@ -28,6 +30,8 @@ on:
       - 'cdr_*.py'
       - 'pi_*.py'
       - 'laptop_*.py'
+      - 'process_safety.py'
+      - 'laptop_*.ps1'
       - 'install_laptop_backup_task*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'payload_crypto.py'
@@ -53,6 +57,22 @@ jobs:
         run: python -m pip install --quiet -r requirements.txt cryptography openpyxl pytest
       - name: Verify PowerShell 7 for installer regression
         run: pwsh --version
+      - name: Parse laptop backup PowerShell helpers
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath . -Filter 'laptop_*.ps1' | ForEach-Object {
+            $parseErrors = $null
+            $tokens = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $($_.FullName)"
+            }
+          }
       - name: Test
         # Run the whole server-side suite (payload, ribbon kernel, ledger
         # enforce/integrity, CDR retry/version-cache/breaker, budget probes, ...) so

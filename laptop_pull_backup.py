@@ -30,6 +30,14 @@ from ar_local_restore_verification import (
     _completion_marker_valid,
     _pointer_matches_marker,
 )
+from process_safety import process_alive, process_descends_from
+from laptop_backup_atomic import (
+    ReceiverLock,
+    atomic_create,
+    atomic_replace,
+    durable_move,
+    fsync_directory,
+)
 from laptop_backup_archive import (
     extract_archive as extract_tar_archive,
     extracted_entries,
@@ -129,81 +137,6 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(CHUNK), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def fsync_directory(path: Path) -> None:
-    """Persist directory metadata where POSIX exposes a directory fsync."""
-    if os.name == "nt":
-        return
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def durable_move(source: Path, destination: Path, *, replace: bool) -> None:
-    """Atomically promote a same-volume file with write-through on Windows."""
-    if destination.exists() and not replace:
-        raise FileExistsError(destination)
-    if os.name == "nt":
-        import ctypes
-
-        flags = 0x8  # MOVEFILE_WRITE_THROUGH
-        if replace:
-            flags |= 0x1  # MOVEFILE_REPLACE_EXISTING
-        move = ctypes.windll.kernel32.MoveFileExW
-        move.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
-        move.restype = ctypes.c_int
-        if not move(str(source), str(destination), flags):
-            raise ctypes.WinError()
-        return
-    if replace:
-        source.replace(destination)
-    else:
-        os.link(source, destination)
-        fsync_directory(destination.parent)
-        source.unlink()
-    fsync_directory(destination.parent)
-
-
-def atomic_create(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-        try:
-            with os.fdopen(descriptor, "wb", closefd=False) as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-        finally:
-            os.close(descriptor)
-        fsync_directory(path.parent)
-        return
-    if path.exists():
-        raise FileExistsError(path)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("xb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        durable_move(temporary, path, replace=False)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def atomic_replace(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("xb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        durable_move(temporary, path, replace=True)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
@@ -951,27 +884,12 @@ def backup_one(args: argparse.Namespace, remote: str, helper_sha: str, kind: str
         raise RuntimeError(f"backup failed; evidence={failure_path}") from exc
 
 
-class ReceiverLock:
-    def __init__(self, target: Path) -> None:
-        self.path = target / "catalog/.receiver.lock"
-        self.nonce = uuid.uuid4().hex
-
-    def __enter__(self) -> "ReceiverLock":
-        atomic_create(self.path, canonical_json_bytes({"pid": os.getpid(), "nonce": self.nonce, "started_at": utc_now()}))
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        value = json.loads(self.path.read_text(encoding="utf-8"))
-        if value.get("nonce") != self.nonce:
-            raise RuntimeError("receiver lock ownership changed; refusing removal")
-        self.path.unlink()
-
-
 def backup_jobs(
     retained: Sequence[Mapping[str, object]],
     command: str,
     after_date: str,
     include_dates: Sequence[str] = (),
+    include_diagnostic_dates: Sequence[str] | None = None,
 ) -> tuple[str | None, list[tuple[str, str | None]]]:
     completed = [str(item["date"]) for item in retained if item["status"] == "completed"]
     diagnostic = [str(item["date"]) for item in retained if item["status"] == "diagnostic"]
@@ -979,7 +897,17 @@ def backup_jobs(
     jobs: list[tuple[str, str | None]] = []
     if latest is not None:
         jobs.append(("observation", latest))
-    jobs.extend(("diagnostic", date) for date in diagnostic)
+    selected_diagnostics = (
+        diagnostic
+        if include_diagnostic_dates is None
+        else list(include_diagnostic_dates)
+    )
+    unknown_diagnostics = set(selected_diagnostics) - set(diagnostic)
+    if unknown_diagnostics:
+        raise ValueError(
+            f"requested diagnostic dates are not retained: {sorted(unknown_diagnostics)}"
+        )
+    jobs.extend(("diagnostic", date) for date in selected_diagnostics)
     jobs.extend((("control", None), ("macro", None)))
     selected = set(include_dates)
     if command == "backfill":
@@ -1007,6 +935,8 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--plan-git-commit", required=True)
     value.add_argument("--after-date", default="2026-05-21")
     value.add_argument("--include-date", action="append", default=[])
+    value.add_argument("--include-diagnostic-date", action="append", default=[])
+    value.add_argument("--select-diagnostics", action="store_true")
     value.add_argument("--operator", default=getpass.getuser())
     return value
 
@@ -1023,6 +953,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--after-date must be YYYY-MM-DD")
         if any(not DATE_RE.fullmatch(date) for date in args.include_date):
             raise ValueError("--include-date must be YYYY-MM-DD")
+        if any(not DATE_RE.fullmatch(date) for date in args.include_diagnostic_date):
+            raise ValueError("--include-diagnostic-date must be YYYY-MM-DD")
         target = canonical_target(args.target)
         args.target = target
         plan = verify_plan_document()
@@ -1039,7 +971,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps({"ok": True, "result": "PASS", "target": str(target), "capacity": capacity(target), "plan": plan, "recovery_base": recovery_base, "source_helper_sha256": helper_sha, **listing}, indent=2, sort_keys=True))
             return 0
         retained = [dict(item) for item in listing["retained_runs"]]
-        latest, jobs = backup_jobs(retained, args.command, args.after_date, args.include_date)
+        latest, jobs = backup_jobs(
+            retained,
+            args.command,
+            args.after_date,
+            args.include_date,
+            args.include_diagnostic_date if args.select_diagnostics else None,
+        )
         results = []
         with ReceiverLock(target):
             for kind, date in jobs:

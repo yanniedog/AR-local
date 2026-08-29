@@ -6,10 +6,12 @@ import argparse
 import hashlib
 import io
 import json
+import os
+import re
 import sys
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo
@@ -18,6 +20,26 @@ import laptop_pull_backup as receiver
 
 
 HOBART_TZ = ZoneInfo("Australia/Hobart")
+TIMER_NEXT_RE = re.compile(
+    r"^(?P<weekday>[A-Z][a-z]{2}) (?P<date>\d{4}-\d{2}-\d{2}) "
+    r"01:00:00 (?P<zone>AEST|AEDT)$"
+)
+
+
+def validate_next_daily_timer(value: object, checked_at: datetime) -> None:
+    match = TIMER_NEXT_RE.fullmatch(value) if isinstance(value, str) else None
+    local_checked_at = checked_at.astimezone(HOBART_TZ)
+    expected_date = local_checked_at.date()
+    if local_checked_at.timetz().replace(tzinfo=None) >= time(1, 0):
+        expected_date += timedelta(days=1)
+    expected = datetime.combine(expected_date, time(1, 0), HOBART_TZ)
+    if (
+        match is None
+        or date.fromisoformat(match["date"]) != expected_date
+        or match["weekday"] != expected.strftime("%a")
+        or match["zone"] != expected.tzname()
+    ):
+        raise ValueError("Pi timer is not scheduled for the exact next 01:00 in Australia/Hobart")
 
 
 def local_path(target: Path, relative: str) -> Path:
@@ -437,6 +459,7 @@ def validate_source_listing(
         raise ValueError("Pi daily timer identity is invalid")
     if preflight.get("daily_timer_active") != "active":
         raise ValueError("Pi active daily timer identity is invalid")
+    validate_next_daily_timer(preflight.get("daily_timer_next"), checked_at_hobart)
     if preflight.get("ingest_lock_absent") is not True:
         raise ValueError("Pi ingest lock identity is invalid")
     if preflight.get("dashboard_healthy") is not True:
@@ -591,11 +614,55 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--plan-git-commit", required=True)
     value.add_argument("--operator")
     value.add_argument("--check-only", action="store_true")
+    value.add_argument("--transition-id")
     return value
 
 
+def open_transition_allows_invocation(args: argparse.Namespace) -> tuple[bool, str | None]:
+    """Block Task Scheduler during an OPEN A3 transition without writing evidence."""
+    try:
+        target = receiver.canonical_target(args.target)
+        root = target / "evidence/A3-LAPTOP-TASK-TRANSITION"
+        pointer = root / "ACTIVE_TRANSITION.json"
+        guard = target / "catalog/.receiver.lock"
+        active = json.loads(pointer.read_text(encoding="utf-8")) if pointer.exists() else {}
+        guarded = False
+        transition_id: object = None
+        if isinstance(active, Mapping) and active.get("state") == "OPEN":
+            guarded = True
+            transition_id = active.get("transition_id")
+        if guard.exists():
+            guard_value = json.loads(guard.read_text(encoding="utf-8"))
+            if isinstance(guard_value, Mapping) and guard_value.get("kind") == "A3_TRANSITION_GUARD":
+                guarded = True
+                guard_id = guard_value.get("transition_id")
+                if transition_id not in (None, guard_id):
+                    raise ValueError("transition guard identity differs from active pointer")
+                transition_id = guard_id
+        if not guarded:
+            return True, None
+        lease = json.loads((root / ".transition-runtime.lock").read_text(encoding="utf-8"))
+        lease_pid = lease.get("pid") if isinstance(lease, Mapping) else None
+        lease_owned = type(lease_pid) is int and receiver.process_descends_from(
+            os.getpid(), lease_pid
+        )
+        authorised = (
+            isinstance(transition_id, str)
+            and args.transition_id == transition_id
+            and isinstance(lease, Mapping)
+            and lease.get("transition_id") == transition_id
+            and lease_owned
+        )
+        return authorised, None if authorised else "an authenticated A3 transition is active"
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return False, f"transition gate is invalid: {exc}"
+
+
 def receiver_arguments(
-    args: argparse.Namespace, command: str, include_dates: Sequence[str] = ()
+    args: argparse.Namespace,
+    command: str,
+    include_dates: Sequence[str] = (),
+    include_diagnostic_dates: Sequence[str] = (),
 ) -> list[str]:
     values = [
         command,
@@ -612,16 +679,29 @@ def receiver_arguments(
         values.extend(("--operator", args.operator))
     for date in include_dates:
         values.extend(("--include-date", date))
+    values.append("--select-diagnostics")
+    for date in include_diagnostic_dates:
+        values.extend(("--include-diagnostic-date", date))
     return values
 
 
 def invoke_receiver(
-    args: argparse.Namespace, command: str, include_dates: Sequence[str] = ()
+    args: argparse.Namespace,
+    command: str,
+    include_dates: Sequence[str] = (),
+    include_diagnostic_dates: Sequence[str] = (),
 ) -> tuple[int, str, str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
-        code = receiver.main(receiver_arguments(args, command, include_dates))
+        code = receiver.main(
+            receiver_arguments(
+                args,
+                command,
+                include_dates,
+                include_diagnostic_dates,
+            )
+        )
     return code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -687,6 +767,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "error": "plan commit does not match the controlled runbook",
         }, indent=2), file=sys.stderr)
         return 1
+    allowed, gate_error = open_transition_allows_invocation(args)
+    if not allowed:
+        print(json.dumps({"ok": False, "result": "BLOCKED", "error": gate_error}, indent=2), file=sys.stderr)
+        return 1
     preflight_code, preflight_stdout, preflight_stderr = invoke_receiver(args, "preflight")
     if preflight_code:
         error = preflight_stderr or preflight_stdout
@@ -741,7 +825,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     command = str(status["backup_command"])
     missing_dates = status.get("backfill_dates", [])
     backup_code, backup_stdout, backup_stderr = invoke_receiver(
-        args, command, missing_dates if command == "backfill" else ()
+        args,
+        command,
+        missing_dates if command == "backfill" else (),
+        status.get("inventory", {}).get("stale_diagnostics", []),
     )
     if backup_code:
         error = backup_stderr or backup_stdout
