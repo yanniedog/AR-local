@@ -48,7 +48,12 @@ function Get-ScheduledTaskInfo {
   [pscustomobject]@{ LastTaskResult = 0; NextRunTime = [datetime]'2026-08-30T05:00:00' }
 }
 
-function Export-ScheduledTask { [CmdletBinding()] param([string]$TaskName) '<Task>accepted</Task>' }
+function Export-ScheduledTask {
+  [CmdletBinding()]
+  param([string]$TaskName)
+  if ($null -ne $script:registeredXml) { return $script:registeredXml }
+  return '<Task>accepted</Task>'
+}
 
 function Disable-ScheduledTask {
   [CmdletBinding()]
@@ -72,6 +77,11 @@ function Enable-ScheduledTask {
   param([string]$TaskName)
   $script:enabled = $true
   $script:state = 'Ready'
+  if ($null -ne $script:registeredXml) {
+    [xml]$enabledXml = $script:registeredXml
+    $enabledXml.Task.Settings.Enabled = 'true'
+    $script:registeredXml = $enabledXml.OuterXml
+  }
 }
 
 $snapshot = Invoke-ArTransitionTaskAction -Action Snapshot -TaskName 'test'
@@ -83,10 +93,16 @@ $disabled = Invoke-ArTransitionTaskAction -Action Disable -TaskName 'test'
 if ($disabled.state -ne 'Disabled' -or $disabled.enabled) { throw 'Disable did not prove disabled read-back.' }
 
 $oldXml = Join-Path $TestDrive 'old-task.xml'
-Set-Content -LiteralPath $oldXml -Value '<Task>old exact</Task>' -NoNewline
-$restored = Invoke-ArTransitionTaskAction -Action Restore -TaskName 'test' -OldTaskXmlPath $oldXml
-if ($restored.state -ne 'Ready' -or -not $restored.enabled) { throw 'Restore did not prove Ready/enabled.' }
-if ($script:registeredXml -ne '<Task>old exact</Task>') { throw 'Restore did not register exact XML.' }
+$oldExact = '<Task><RegistrationInfo><Description>old exact</Description></RegistrationInfo><Settings><Enabled>true</Enabled></Settings></Task>'
+Set-Content -LiteralPath $oldXml -Value $oldExact -NoNewline
+$restored = Invoke-ArTransitionTaskAction -Action RestoreDisabled -TaskName 'test' -OldTaskXmlPath $oldXml
+if ($restored.state -ne 'Disabled' -or $restored.enabled) { throw 'Restore did not remain disabled.' }
+[xml]$disabledXml = $script:registeredXml
+if ($disabledXml.Task.Settings.Enabled -ne 'false') { throw 'Restore registered an enabled task.' }
+if ($disabledXml.Task.RegistrationInfo.Description -ne 'old exact') { throw 'Restore changed task identity.' }
+$enabled = Invoke-ArTransitionTaskAction -Action Enable -TaskName 'test'
+if ($enabled.state -ne 'Ready' -or -not $enabled.enabled) { throw 'Enable did not prove Ready/enabled.' }
+if ($script:registeredXml -ne $oldExact) { throw 'Enable did not restore accepted XML identity.' }
 
 $receiver = Join-Path $TestDrive 'receiver'
 New-Item -ItemType Directory -Path $receiver | Out-Null
@@ -120,7 +136,7 @@ if (-not $disableFailed) { throw 'Partial disable did not fail closed.' }
 
 $script:registrationFails = $true
 $restoreFailed = $false
-try { Invoke-ArTransitionTaskAction -Action Restore -TaskName 'test' -OldTaskXmlPath $oldXml } catch {
+try { Invoke-ArTransitionTaskAction -Action RestoreDisabled -TaskName 'test' -OldTaskXmlPath $oldXml } catch {
   if ($_.Exception.Message -notmatch 'injected registration failure') { throw }
   $restoreFailed = $true
 }

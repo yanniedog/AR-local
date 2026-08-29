@@ -17,6 +17,7 @@ from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import laptop_pull_backup as receiver
+import laptop_backup_scheduled_lineage as lineage
 
 
 HOBART_TZ = ZoneInfo("Australia/Hobart")
@@ -705,6 +706,21 @@ def invoke_receiver(
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+scheduled_record_mutex = lineage.scheduled_record_mutex
+
+
+def prepare_execution_lineage(target: Path, args: argparse.Namespace) -> None:
+    """Authenticate or repair the predecessor before any backup-data mutation."""
+    receiver.verify_plan_document()
+    with scheduled_record_mutex(target):
+        lineage.repair_orphaned_suffix(target, {
+            "plan_git_commit": args.plan_git_commit,
+            "candidate_code_sha": args.candidate_code_sha,
+            "protected_code_sha": args.protected_code_sha,
+            "operator": args.operator or "scheduled-task",
+        })
+
+
 def record_execution(
     target: Path,
     args: argparse.Namespace,
@@ -714,38 +730,51 @@ def record_execution(
 ) -> Path:
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     plan = receiver.verify_plan_document()
-    record = {
-        "schema_version": 1,
-        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
-        "plan_version": receiver.PLAN_VERSION,
-        "plan_git_commit": args.plan_git_commit,
-        "plan_sha256": receiver.PLAN_SHA256,
-        "plan_raw_sha256": plan["plan_raw_sha256"],
-        "plan_normalized_raw_sha256": plan["plan_normalized_raw_sha256"],
-        "candidate_code_sha": args.candidate_code_sha,
-        "protected_code_sha": args.protected_code_sha,
-        "operator": args.operator or "scheduled-task",
-        "timestamps": {"completed_at": now},
-        "exact_commands": [" ".join(json.dumps(value) for value in [sys.executable, *sys.argv])],
-        "action": action,
-        "detail": detail,
-        "deviations": [],
-        "deviation_authorization": None,
-        "result": result,
-    }
-    root = target / "catalog/scheduled-runs"
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / f"{now.replace(':', '').replace('-', '')}-{uuid.uuid4().hex}.json"
-    receiver.atomic_create(path, receiver.canonical_json_bytes(record))
-    receiver.atomic_replace(
-        target / "catalog/latest-scheduled.json",
-        receiver.canonical_json_bytes({
-            "record_path": path.relative_to(target).as_posix(),
-            "record_sha256": receiver.sha256_file(path),
+    with scheduled_record_mutex(target):
+        pointer_path = target / "catalog/latest-scheduled.json"
+        previous = lineage.repair_orphaned_suffix(target, {
+            "plan_git_commit": args.plan_git_commit,
+            "candidate_code_sha": args.candidate_code_sha,
+            "protected_code_sha": args.protected_code_sha,
+            "operator": args.operator or "scheduled-task",
+        })
+        previous_execution = (
+            {key: previous[key] for key in ("record_path", "record_sha256")}
+            if previous else None
+        )
+        record = {
+            "schema_version": 1,
+            "plan_document_id": receiver.PLAN_DOCUMENT_ID,
+            "plan_version": receiver.PLAN_VERSION,
+            "plan_git_commit": args.plan_git_commit,
+            "plan_sha256": receiver.PLAN_SHA256,
+            "plan_raw_sha256": plan["plan_raw_sha256"],
+            "plan_normalized_raw_sha256": plan["plan_normalized_raw_sha256"],
+            "candidate_code_sha": args.candidate_code_sha,
+            "protected_code_sha": args.protected_code_sha,
+            "operator": args.operator or "scheduled-task",
+            "timestamps": {"completed_at": now},
+            "exact_commands": [" ".join(json.dumps(value) for value in [sys.executable, *sys.argv])],
+            "action": action,
+            "detail": detail,
+            "deviations": [],
+            "deviation_authorization": None,
             "result": result,
-        }),
-    )
-    return path
+            "previous_execution": previous_execution,
+        }
+        root = target / "catalog/scheduled-runs"
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / f"{now.replace(':', '').replace('-', '')}-{uuid.uuid4().hex}.json"
+        receiver.atomic_create(path, receiver.canonical_json_bytes(record))
+        receiver.atomic_replace(
+            pointer_path,
+            receiver.canonical_json_bytes({
+                "record_path": path.relative_to(target).as_posix(),
+                "record_sha256": receiver.sha256_file(path),
+                "result": result,
+            }),
+        )
+        return path
 
 
 def safe_record(args: argparse.Namespace, result: str, action: str, detail: object) -> Path | None:
@@ -821,6 +850,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "execution_record": str(path),
             **status,
         }, indent=2, sort_keys=True))
+        return 1
+    try:
+        prepare_execution_lineage(target, args)
+    except (OSError, ValueError) as exc:
+        print(f"Scheduled execution lineage is invalid: {exc}", file=sys.stderr)
         return 1
     command = str(status["backup_command"])
     missing_dates = status.get("backfill_dates", [])

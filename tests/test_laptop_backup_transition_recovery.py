@@ -4,6 +4,7 @@ import copy
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 
@@ -11,7 +12,7 @@ import laptop_backup_transition as transition
 import laptop_backup_transition_contract as contract
 import laptop_pull_backup as receiver
 from test_laptop_backup_transition_contract import listing, task_snapshot
-from test_laptop_backup_transition_flow import FakeOps, config, patch_flow
+from test_laptop_backup_transition_flow import FakeOps, config, execution_record, patch_flow
 
 
 class ReceiverLockCheckingOps(FakeOps):
@@ -28,6 +29,441 @@ class ReceiverLockCheckingOps(FakeOps):
         return super().run_scheduled(
             config, check_only=check_only, transition_id=transition_id
         )
+
+
+class AppendOnEnableOps(FakeOps):
+    def task(
+        self,
+        action: str,
+        config: transition.TransitionConfig,
+        old_xml: Path | None = None,
+        transition_id: str | None = None,
+    ) -> Mapping[str, object]:
+        snapshot = super().task(action, config, old_xml, transition_id)
+        if action == "Enable":
+            record = execution_record("NO_BACKUP_DATA_WRITE")
+            record["candidate_code_sha"] = config.old_candidate_code_sha
+            record["previous_execution"] = None
+            path = config.target / "catalog/scheduled-runs/enable-race.json"
+            path.write_bytes(contract.canonical_json(record))
+            receiver.atomic_replace(
+                config.target / "catalog/latest-scheduled.json",
+                contract.canonical_json({
+                    "record_path": path.relative_to(config.target).as_posix(),
+                    "record_sha256": contract.sha256_file(path),
+                    "result": "PASS",
+                }),
+            )
+        return snapshot
+
+
+def test_recovery_advances_pointer_to_authenticated_orphan_scheduled_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "scheduled-pointer-orphan", resume=False, commands=["pytest pointer"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    baseline_pointer = json.loads(
+        (value.target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    orphan = value.target / "catalog/scheduled-runs/orphan-after-pointer-crash.json"
+    record = execution_record("BACKUP-LATEST")
+    record["previous_execution"] = {
+        "record_path": baseline_pointer["record_path"],
+        "record_sha256": baseline_pointer["record_sha256"],
+    }
+    orphan.write_bytes(contract.canonical_json(record))
+
+    recovered = transition.recover(value, ops, evidence)
+
+    latest = json.loads(
+        (value.target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    assert latest == {
+        "record_path": orphan.relative_to(value.target).as_posix(),
+        "record_sha256": contract.sha256_file(orphan),
+        "result": "PASS",
+    }
+    assert recovered["scheduled_reconciliation"]["ordered_appended_records"] == [
+        orphan.relative_to(value.target).as_posix()
+    ]
+
+
+def test_recovery_rejects_branched_scheduled_append_chain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "scheduled-pointer-branch", resume=False, commands=["pytest pointer branch"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    baseline_bytes = (value.target / "catalog/latest-scheduled.json").read_bytes()
+    baseline = json.loads(baseline_bytes)
+    for name in ("branch-a.json", "branch-b.json"):
+        record = execution_record("BACKUP-LATEST")
+        record["previous_execution"] = {
+            "record_path": baseline["record_path"],
+            "record_sha256": baseline["record_sha256"],
+        }
+        (value.target / "catalog/scheduled-runs" / name).write_bytes(
+            contract.canonical_json(record)
+        )
+
+    with pytest.raises(ValueError, match="ambiguous or incomplete"):
+        transition.recover(value, ops, evidence)
+
+    assert (value.target / "catalog/latest-scheduled.json").read_bytes() == baseline_bytes
+
+
+@pytest.mark.parametrize("damage", ["missing", "bad-hash", "bad-result"])
+def test_recovery_rejects_unauthenticated_live_scheduled_pointer_before_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, damage: str
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, f"scheduled-live-{damage}", resume=False, commands=["pytest live pointer"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    pointer_path = value.target / "catalog/latest-scheduled.json"
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    if damage == "missing":
+        pointer["record_path"] = "catalog/scheduled-runs/missing.json"
+        pointer["record_sha256"] = "0" * 64
+    elif damage == "bad-hash":
+        pointer["record_sha256"] = "0" * 64
+    else:
+        pointer["result"] = "FAIL"
+    pointer_path.write_bytes(contract.canonical_json(pointer))
+    component_before = {
+        name: (value.target / "catalog" / name).read_bytes()
+        for name in contract.COMPONENT_POINTERS
+        if name != "latest-scheduled.json"
+    }
+
+    with pytest.raises((ValueError, FileNotFoundError)):
+        transition.recover(value, ops, evidence)
+
+    for name, payload in component_before.items():
+        assert (value.target / "catalog" / name).read_bytes() == payload
+    assert "task:RestoreDisabled" not in ops.calls
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("candidate_code_sha", "e" * 40),
+        ("plan_git_commit", "f" * 40),
+        ("operator", "intruder"),
+    ],
+)
+def test_recovery_rejects_unauthorised_live_scheduled_record_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value,
+        f"scheduled-authority-{field}",
+        resume=False,
+        commands=["pytest authority"],
+        guard_required=False,
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    record = execution_record("NO_BACKUP_DATA_WRITE")
+    record[field] = replacement
+    path = value.target / "catalog/scheduled-runs/unauthorised.json"
+    path.write_bytes(contract.canonical_json(record))
+    receiver.atomic_replace(
+        value.target / "catalog/latest-scheduled.json",
+        contract.canonical_json({
+            "record_path": path.relative_to(value.target).as_posix(),
+            "record_sha256": contract.sha256_file(path),
+            "result": "PASS",
+        }),
+    )
+    component_before = {
+        name: (value.target / "catalog" / name).read_bytes()
+        for name in contract.COMPONENT_POINTERS
+    }
+
+    with pytest.raises(ValueError, match="identity|candidate"):
+        transition.recover(value, ops, evidence)
+
+    assert not evidence.guard.exists()
+    assert not (value.target / "catalog/.receiver.lock").exists()
+    assert not ops.calls
+    for name, payload in component_before.items():
+        assert (value.target / "catalog" / name).read_bytes() == payload
+
+
+def test_recovery_rejects_live_pointer_to_other_baseline_record_before_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    other = value.target / "catalog/scheduled-runs/other-historical.json"
+    other.write_bytes(contract.canonical_json({"result": "PASS"}))
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value,
+        "scheduled-outside-append",
+        resume=False,
+        commands=["pytest membership"],
+        guard_required=False,
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    receiver.atomic_replace(
+        value.target / "catalog/latest-scheduled.json",
+        contract.canonical_json({
+            "record_path": other.relative_to(value.target).as_posix(),
+            "record_sha256": contract.sha256_file(other),
+            "result": "PASS",
+        }),
+    )
+
+    with pytest.raises(ValueError, match="outside the authenticated append chain"):
+        transition.recover(value, ops, evidence)
+
+    assert not evidence.guard.exists()
+    assert not (value.target / "catalog/.receiver.lock").exists()
+    assert not ops.calls
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["schema_version", "timestamps", "exact_commands", "action", "detail"],
+)
+def test_recovery_rejects_malformed_legacy_scheduled_record_before_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value,
+        f"scheduled-malformed-{field}",
+        resume=False,
+        commands=["pytest malformed"],
+        guard_required=False,
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    record = execution_record("NO_BACKUP_DATA_WRITE")
+    record["candidate_code_sha"] = value.old_candidate_code_sha
+    record.pop(field)
+    path = value.target / "catalog/scheduled-runs/malformed-legacy.json"
+    path.write_bytes(contract.canonical_json(record))
+    receiver.atomic_replace(
+        value.target / "catalog/latest-scheduled.json",
+        contract.canonical_json({
+            "record_path": path.relative_to(value.target).as_posix(),
+            "record_sha256": contract.sha256_file(path),
+            "result": "PASS",
+        }),
+    )
+
+    with pytest.raises(ValueError, match="preserved scheduled record"):
+        transition.recover(value, ops, evidence)
+
+    assert not evidence.guard.exists()
+    assert not (value.target / "catalog/.receiver.lock").exists()
+    assert not ops.calls
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"plan_raw_sha256": "f" * 64},
+        {"plan_normalized_raw_sha256": "e" * 64},
+        {"action": "PREFLIGHT_FAILED", "result": "PASS"},
+        {"action": "NO_BACKUP_DATA_WRITE", "result": "FAIL"},
+        {"action": "POST_BACKUP_VERIFY", "result": "PASS"},
+    ],
+)
+def test_recovery_rejects_forged_legacy_identity_or_outcome_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    changes: dict[str, object],
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value,
+        "scheduled-forged-" + "-".join(changes),
+        resume=False,
+        commands=["pytest forged"],
+        guard_required=False,
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    record = execution_record("NO_BACKUP_DATA_WRITE")
+    record["candidate_code_sha"] = value.old_candidate_code_sha
+    record.update(changes)
+    path = value.target / "catalog/scheduled-runs/forged-legacy.json"
+    path.write_bytes(contract.canonical_json(record))
+    receiver.atomic_replace(
+        value.target / "catalog/latest-scheduled.json",
+        contract.canonical_json({
+            "record_path": path.relative_to(value.target).as_posix(),
+            "record_sha256": contract.sha256_file(path),
+            "result": record["result"],
+        }),
+    )
+
+    with pytest.raises(ValueError, match="preserved scheduled record"):
+        transition.recover(value, ops, evidence)
+
+    assert not evidence.guard.exists()
+    assert not (value.target / "catalog/.receiver.lock").exists()
+    assert not ops.calls
+
+
+def test_recovery_never_overwrites_execution_appended_while_old_task_enables(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = AppendOnEnableOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "scheduled-enable-race", resume=False, commands=["pytest enable race"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("TASK_DISABLE_ATTEMPTED")
+    evidence.checkpoint("FOREGROUND_STARTED")
+
+    with pytest.raises(transition.RecoveryDeferred, match="changed while restoring"):
+        transition.recover(value, ops, evidence)
+
+    latest = json.loads(
+        (value.target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    assert latest["record_path"] == "catalog/scheduled-runs/enable-race.json"
+    assert ops.calls.index("task:RestoreDisabled") < ops.calls.index("task:Enable")
+
+
+def test_cross_day_recovery_accepts_live_hash_bound_legacy_scheduled_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "scheduled-legacy-cross-day", resume=False, commands=["pytest legacy"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    legacy = value.target / "catalog/scheduled-runs/legacy-old-candidate.json"
+    record = execution_record("NO_BACKUP_DATA_WRITE")
+    record["candidate_code_sha"] = value.old_candidate_code_sha
+    legacy.write_bytes(contract.canonical_json(record))
+    receiver.atomic_replace(
+        value.target / "catalog/latest-scheduled.json",
+        contract.canonical_json({
+            "record_path": legacy.relative_to(value.target).as_posix(),
+            "record_sha256": contract.sha256_file(legacy),
+            "result": "PASS",
+        }),
+    )
+    next_day_listing = copy.deepcopy(listing())
+    next_day_listing["preflight"]["checked_at"] = "2026-08-30T06:00:00+10:00"
+    next_day_listing["preflight"]["daily_timer_next"] = "Mon 2026-08-31 01:00:00 AEST"
+    next_day_listing["retained_runs"].append({"date": "2026-08-30", "status": "completed"})
+    next_day_listing["completed_dates"].append("2026-08-30")
+    next_day_listing["latest_observation"]["observation_date"] = "2026-08-30"
+    ops.source_override = next_day_listing
+    ops.now_override = datetime.fromisoformat("2026-08-30T06:00:01+10:00")
+
+    recovered = transition.recover(value, ops, evidence)
+
+    assert recovered["scheduled_reconciliation"]["latest_record"] == (
+        legacy.relative_to(value.target).as_posix()
+    )
+    assert recovered["scheduled_reconciliation"]["legacy_unordered_preserved"] == []
+
+
+def test_recovery_replay_accepts_new_verified_source_readback_after_pointer_reconcile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "scheduled-replay-readback", resume=False, commands=["pytest replay"]
+    )
+    snapshot = task_snapshot(transition.task_expectation(value, old=True, enabled=True))
+    transition.write_prestate(evidence, value, snapshot, listing())
+    evidence.bind_prestate()
+    evidence.checkpoint("FOREGROUND_STARTED")
+    baseline = json.loads(
+        (value.target / "catalog/latest-scheduled.json").read_text(encoding="utf-8")
+    )
+    orphan = value.target / "catalog/scheduled-runs/replay-orphan.json"
+    record = execution_record("BACKUP-LATEST")
+    record["previous_execution"] = {
+        "record_path": baseline["record_path"],
+        "record_sha256": baseline["record_sha256"],
+    }
+    orphan.write_bytes(contract.canonical_json(record))
+    real_validate_hygiene = contract.validate_hygiene
+    calls = 0
+
+    def fail_after_readback(*args: object, **kwargs: object) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("injected crash after recovery readback")
+        return real_validate_hygiene(*args, **kwargs)
+
+    monkeypatch.setattr(contract, "validate_hygiene", fail_after_readback)
+    with pytest.raises(OSError, match="injected crash"):
+        transition.recover(value, ops, evidence)
+    newer = copy.deepcopy(listing())
+    newer["preflight"]["checked_at"] = "2026-08-29T19:01:00+10:00"
+    ops.source_override = newer
+    monkeypatch.setattr(contract, "validate_hygiene", real_validate_hygiene)
+
+    recovered = transition.recover(value, ops, evidence)
+
+    assert recovered["scheduled_reconciliation"]["latest_record"] == (
+        orphan.relative_to(value.target).as_posix()
+    )
+    assert len(list((evidence.path / "post-recovery-readbacks").iterdir())) == 2
 
 
 def test_full_harness_releases_transition_guard_before_real_receiver_lock(
@@ -62,7 +498,7 @@ def test_recovery_uses_authenticated_saved_task_xml_when_external_copy_changes(
         value.old_task_xml.write_bytes(b"<Task tampered='true' />")
     recovered = transition.recover(value, ops, evidence)
     assert recovered["restored"] == ["task"]
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 @pytest.mark.parametrize("fail_after", [1, 2, 3])
@@ -97,7 +533,7 @@ def test_recovery_pointer_interruption_is_idempotently_resumable(
         transition.recover(value, ops, evidence)
     monkeypatch.setattr(receiver, "atomic_replace", original_replace)
     recovered = transition.recover(value, ops, evidence)
-    assert recovered["restored"] == [*contract.COMPONENT_POINTERS, "task"]
+    assert recovered["restored"] == ["task", *contract.COMPONENT_POINTERS]
     for name in contract.COMPONENT_POINTERS:
         assert (value.target / "catalog" / name).read_bytes() == (
             evidence.path / f"pre-transition-{name}"
@@ -258,7 +694,7 @@ def test_full_resume_uses_sealed_xml_without_external_artifact(
         value, ops, transition_id=f"resume-saved-{external_state}", resume=True
     )
     assert result == "ROLLED_BACK"
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 @pytest.mark.parametrize("authority_failure", ["dirty receiver", "bad handoff", "wrong candidate"])
@@ -370,7 +806,40 @@ def test_recovery_rechecks_budget_after_delayed_source_before_pointer_mutation(
         transition.recover(value, ops, evidence)
     for name, payload in before.items():
         assert (value.target / "catalog" / name).read_bytes() == payload
-    assert not any(call.startswith("task:Restore") for call in ops.calls)
+    assert ops.calls.count("task:RestoreDisabled") == 1
+
+
+def test_recovery_disables_task_then_defers_for_already_admitted_helper(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    patch_flow(monkeypatch, value)
+    evidence = transition.Evidence(
+        value, "admitted-helper", resume=False, commands=["pytest admitted helper"]
+    )
+    transition.write_prestate(
+        evidence,
+        value,
+        task_snapshot(transition.task_expectation(value, old=True, enabled=True)),
+        listing(),
+    )
+    evidence.checkpoint("TASK_DISABLE_ATTEMPTED")
+    evidence.checkpoint("FOREGROUND_STARTED")
+    before = {
+        name: (value.target / "catalog" / name).read_bytes()
+        for name in contract.COMPONENT_POINTERS
+    }
+    ops.process_override = [{"pid": 1234, "command_line": "legacy laptop backup"}]
+
+    with pytest.raises(transition.RecoveryDeferred, match="remained active"):
+        transition.recover(value, ops, evidence)
+
+    assert ops.disabled
+    assert ops.calls.count("task:RestoreDisabled") == 1
+    assert ops.calls.count("processes") == 1
+    for name, payload in before.items():
+        assert (value.target / "catalog" / name).read_bytes() == payload
 
 
 def test_resume_recovery_failure_is_not_retried_in_same_invocation(
@@ -389,12 +858,12 @@ def test_resume_recovery_failure_is_not_retried_in_same_invocation(
         listing(),
     )
     evidence.checkpoint("TASK_DISABLE_ATTEMPTED")
-    ops.fail_action = "Restore"
+    ops.fail_action = "RestoreDisabled"
     with pytest.raises(transition.RecoveryDeferred, match="remains incomplete"):
         transition.run_transition(
             value, ops, transition_id="single-recovery-attempt", resume=True
         )
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     assert json.loads(evidence.pointer.read_text(encoding="utf-8"))["state"] == "OPEN"
 
     retry_ops = FakeOps(value)
@@ -405,7 +874,7 @@ def test_resume_recovery_failure_is_not_retried_in_same_invocation(
     assert result == "ROLLED_BACK"
     payload = json.loads(terminal.read_text(encoding="utf-8"))
     assert len(payload["evidence"]["attempt_records"]) == 2
-    assert payload["exact_commands"].count("task:Restore") == 2
+    assert payload["exact_commands"].count("task:RestoreDisabled") == 2
 
 
 def test_resume_rejects_deleted_attempt_chain_tail(tmp_path: Path) -> None:

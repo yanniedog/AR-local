@@ -507,16 +507,21 @@ class Evidence:
         source_listing: Mapping[str, object],
     ) -> dict[str, object]:
         xml = contract.decode_task_xml(task_snapshot)
+        task_payload = contract.canonical_json(task_snapshot)
+        source_payload = contract.canonical_json(source_listing)
+        bundle_sha256 = contract.sha256_bytes(xml + task_payload + source_payload)
+        root = f"post-recovery-readbacks/{bundle_sha256}"
         files = {
-            "post-recovery-live-task.xml": xml,
-            "post-recovery-task.json": contract.canonical_json(task_snapshot),
-            "post-recovery-source.json": contract.canonical_json(source_listing),
+            f"{root}/live-task.xml": xml,
+            f"{root}/task.json": task_payload,
+            f"{root}/source.json": source_payload,
         }
         hashes = {
             name: contract.sha256_file(self.create_or_verify(name, payload))
             for name, payload in files.items()
         }
         return {
+            "bundle_sha256": bundle_sha256,
             "task_snapshot": dict(task_snapshot),
             "source_listing": dict(source_listing),
             "files": hashes,

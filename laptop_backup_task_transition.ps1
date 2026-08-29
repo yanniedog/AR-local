@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)][ValidateSet('Snapshot', 'Disable', 'Install', 'Restore')][string]$Action,
+  [Parameter(Mandatory = $true)][ValidateSet('Snapshot', 'Disable', 'Install', 'RestoreDisabled', 'Enable')][string]$Action,
   [string]$TaskName = 'AR-local laptop backup',
   [string]$Receiver,
   [string]$Target,

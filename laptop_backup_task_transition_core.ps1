@@ -53,7 +53,7 @@ function Get-ArTransitionTaskSnapshot {
 
 function Invoke-ArTransitionTaskAction {
   param(
-    [Parameter(Mandatory = $true)][ValidateSet('Snapshot', 'Disable', 'Install', 'Restore')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Snapshot', 'Disable', 'Install', 'RestoreDisabled', 'Enable')][string]$Action,
     [Parameter(Mandatory = $true)][string]$TaskName,
     [string]$Receiver,
     [string]$Target,
@@ -93,10 +93,17 @@ function Invoke-ArTransitionTaskAction {
         installer_stdout = ($output -join [Environment]::NewLine)
       }
     }
-    'Restore' {
+    'RestoreDisabled' {
       if ([string]::IsNullOrWhiteSpace($OldTaskXmlPath)) { throw 'Restore action lacks old task XML.' }
-      $oldXml = Get-Content -LiteralPath $OldTaskXmlPath -Raw -ErrorAction Stop
-      Register-ScheduledTask -TaskName $TaskName -Xml $oldXml -Force -ErrorAction Stop | Out-Null
+      [xml]$oldXml = Get-Content -LiteralPath $OldTaskXmlPath -Raw -ErrorAction Stop
+      $oldXml.Task.Settings.Enabled = 'false'
+      Register-ScheduledTask -TaskName $TaskName -Xml $oldXml.OuterXml -Force -ErrorAction Stop | Out-Null
+      Disable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
+      $snapshot = Get-ArTransitionTaskSnapshot -Name $TaskName
+      if ($snapshot.state -ne 'Disabled' -or $snapshot.enabled) { throw 'Restored task disable read-back failed.' }
+      return $snapshot
+    }
+    'Enable' {
       Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
       return Get-ArTransitionTaskSnapshot -Name $TaskName
     }

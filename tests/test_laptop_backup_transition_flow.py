@@ -37,6 +37,15 @@ class FakeOps:
     def _record(self, action: str) -> str:
         self.serial += 1
         record = execution_record(action)
+        previous_pointer = json.loads(
+            (self.config.target / "catalog/latest-scheduled.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        record["previous_execution"] = {
+            "record_path": previous_pointer["record_path"],
+            "record_sha256": previous_pointer["record_sha256"],
+        }
         path = self.config.target / f"catalog/scheduled-runs/{self.serial:03d}-{action}.json"
         path.write_bytes(contract.canonical_json(record))
         pointer = {
@@ -82,10 +91,10 @@ class FakeOps:
             if self.malformed_installer_output:
                 self._installer_output += "\nnot-json"
             return task_snapshot(transition.task_expectation(config, old=False, enabled=True))
-        if action == "Restore":
+        if action == "RestoreDisabled":
             self.installed = False
-            self.disabled = False
-            return task_snapshot(transition.task_expectation(config, old=True, enabled=True))
+            self.disabled = True
+            return task_snapshot(transition.task_expectation(config, old=True, enabled=False))
         if action == "Enable":
             self.disabled = False
             return task_snapshot(transition.task_expectation(config, old=True, enabled=True))
@@ -135,7 +144,15 @@ class FakeOps:
         self, _config: transition.TransitionConfig, transition_id: str
     ) -> list[str]:
         assert transition_id
-        return ["snapshot", "disable", "foreground", "install", "check-only", "restore"]
+        return [
+            "snapshot",
+            "disable",
+            "foreground",
+            "install",
+            "check-only",
+            "restore-disabled",
+            "enable",
+        ]
 
     def now(self) -> datetime:
         return self.now_override or HOBART_NOW
@@ -147,7 +164,7 @@ def config(tmp_path: Path) -> transition.TransitionConfig:
     (target / "restore-drills").mkdir()
     (target / "catalog/generations.jsonl").write_bytes(b"")
     record = target / "catalog/scheduled-runs/existing.json"
-    record.write_text("{}", encoding="utf-8")
+    record.write_text(json.dumps({"result": "PASS"}), encoding="utf-8")
     (target / "catalog/latest-scheduled.json").write_text(json.dumps({
         "record_path": "catalog/scheduled-runs/existing.json",
         "record_sha256": contract.sha256_file(record),
@@ -214,18 +231,24 @@ def execution_record(action: str) -> dict[str, object]:
             "after": state,
         }
     return {
+        "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
         "plan_version": receiver.PLAN_VERSION,
         "plan_git_commit": receiver.PLAN_GIT_COMMIT,
         "plan_sha256": receiver.PLAN_SHA256,
+        "plan_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
+        "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
         "candidate_code_sha": "c" * 40,
         "protected_code_sha": "9" * 40,
         "operator": "jkoka",
+        "timestamps": {"completed_at": "2026-08-29T09:00:00Z"},
+        "exact_commands": ["python laptop_backup_scheduled.py --check-only"],
         "action": action,
         "result": "PASS",
         "detail": detail,
         "deviations": [],
         "deviation_authorization": None,
+        "previous_execution": None,
     }
 
 
@@ -268,11 +291,12 @@ def test_success_calls_foreground_once_and_never_restores(
     assert ops.calls.count("scheduled:foreground") == 1
     assert ops.calls.count("scheduled:check") == 1
     payload = json.loads(terminal.read_text(encoding="utf-8"))
-    assert "restore" in payload["evidence"]["authorized_commands"]
+    assert "restore-disabled" in payload["evidence"]["authorized_commands"]
+    assert "enable" in payload["evidence"]["authorized_commands"]
     assert payload["exact_commands"][1:] == ops.calls
-    assert "task:Restore" not in payload["exact_commands"]
+    assert "task:RestoreDisabled" not in payload["exact_commands"]
     assert ops.calls.count("task:Install") == 1
-    assert "task:Restore" not in ops.calls
+    assert "task:RestoreDisabled" not in ops.calls
     assert payload["result"] == "PASS"
 
 
@@ -448,7 +472,7 @@ def test_foreground_rejection_never_installs_and_restores_old_task(
     assert result == "ROLLED_BACK"
     assert ops.calls.count("scheduled:foreground") == 1
     assert "task:Install" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     payload = json.loads(terminal.read_text(encoding="utf-8"))
     assert payload["exact_commands"][1:] == ops.calls
     assert payload["evidence"]["recovery"]["post_recovery_readback"]["files"]
@@ -465,7 +489,7 @@ def test_disable_failure_enters_recovery_without_backup(
     result, _terminal = transition.run_transition(value, ops, transition_id="disable-fail")
     assert result == "ROLLED_BACK"
     assert "scheduled:foreground" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 def test_installer_failure_restores_component_pointers_and_old_task(
@@ -497,7 +521,7 @@ def test_installer_failure_restores_component_pointers_and_old_task(
     monkeypatch.setattr(contract, "validate_receipts", change_pointers)
     result, _terminal = transition.run_transition(value, ops, transition_id="install-fail")
     assert result == "ROLLED_BACK"
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     for name, payload in original.items():
         assert (value.target / "catalog" / name).read_bytes() == payload
     latest = json.loads((value.target / "catalog/latest-scheduled.json").read_text(encoding="utf-8"))
@@ -523,7 +547,7 @@ def test_crash_after_disable_resumes_recovery_without_new_backup(
     assert result == "ROLLED_BACK"
     assert "scheduled:foreground" not in ops.calls
     assert "task:Install" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     assert json.loads(terminal.read_text(encoding="utf-8"))["result"] == "ROLLED_BACK"
 
 
@@ -578,7 +602,7 @@ def test_final_task_drift_rolls_back_instead_of_passing(
     patch_flow(monkeypatch, value)
     result, terminal = transition.run_transition(value, ops, transition_id="final-drift")
     assert result == "ROLLED_BACK"
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     assert json.loads(terminal.read_text(encoding="utf-8"))["result"] == "ROLLED_BACK"
 
 
@@ -598,7 +622,7 @@ def test_final_deadline_overrun_rolls_back_instead_of_passing(
     monkeypatch.setattr(contract, "validate_deadline", deadline)
     result, _terminal = transition.run_transition(value, ops, transition_id="deadline-overrun")
     assert result == "ROLLED_BACK"
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 def test_malformed_installer_internal_gate_rolls_back(
@@ -611,7 +635,7 @@ def test_malformed_installer_internal_gate_rolls_back(
     result, _terminal = transition.run_transition(value, ops, transition_id="bad-installer-output")
     assert result == "ROLLED_BACK"
     assert "scheduled:check" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 @pytest.mark.parametrize("completed_components", [1, 2, 3])
@@ -663,7 +687,7 @@ def test_partial_disable_failure_restores_exact_old_task_without_backup(
     result, _terminal = transition.run_transition(value, ops, transition_id="partial-disable")
     assert result == "ROLLED_BACK"
     assert "scheduled:foreground" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 def test_interrupted_recovery_keeps_lock_open_then_exact_resume_succeeds(
@@ -679,7 +703,7 @@ def test_interrupted_recovery_keeps_lock_open_then_exact_resume_succeeds(
     evidence.checkpoint("TASK_DISABLE_ATTEMPTED")
     evidence.checkpoint("TASK_DISABLED")
     ops.disabled = True
-    ops.fail_action = "Restore"
+    ops.fail_action = "RestoreDisabled"
     with pytest.raises(transition.RecoveryDeferred, match="incomplete"):
         transition.run_transition(value, ops, transition_id="recovery-retry", resume=True)
     assert json.loads(evidence.pointer.read_text(encoding="utf-8"))["state"] == "OPEN"
@@ -705,7 +729,7 @@ def test_tampered_saved_pointer_blocks_recovery_before_task_mutation(
     (evidence.path / "pre-transition-latest-verified.json").write_text("tampered", encoding="utf-8")
     with pytest.raises(transition.RecoveryDeferred, match="incomplete"):
         transition.run_transition(value, ops, transition_id="bad-saved", resume=True)
-    assert not any(call in {"task:Restore", "task:Install"} for call in ops.calls)
+    assert not any(call in {"task:RestoreDisabled", "task:Install"} for call in ops.calls)
     assert json.loads(evidence.pointer.read_text(encoding="utf-8"))["state"] == "OPEN"
 
 
@@ -797,7 +821,7 @@ def test_runtime_preflight_task_failures_have_zero_mutating_calls(
     )
     with pytest.raises(ValueError):
         transition.runtime_preflight(value, ops)
-    assert not any(call in {"task:Disable", "task:Install", "task:Restore"} for call in ops.calls)
+    assert not any(call in {"task:Disable", "task:Install", "task:RestoreDisabled"} for call in ops.calls)
     assert not any(call.startswith("scheduled:") for call in ops.calls)
 
 
@@ -830,7 +854,7 @@ def test_runtime_preflight_pi_failures_have_zero_mutating_calls(
     )
     with pytest.raises(ValueError):
         transition.runtime_preflight(value, ops)
-    assert not any(call in {"task:Disable", "task:Install", "task:Restore"} for call in ops.calls)
+    assert not any(call in {"task:Disable", "task:Install", "task:RestoreDisabled"} for call in ops.calls)
     assert not any(call.startswith("scheduled:") for call in ops.calls)
 
 
@@ -889,7 +913,7 @@ def test_malformed_standalone_check_rolls_back(
     result, _terminal = transition.run_transition(value, ops, transition_id="bad-check-output")
     assert result == "ROLLED_BACK"
     assert ops.calls.count("scheduled:check") == 1
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
 
 
 @pytest.mark.parametrize(
@@ -930,5 +954,5 @@ def test_authenticated_restart_at_each_mutation_stage_never_runs_new_backup_or_i
     assert "scheduled:foreground" not in ops.calls
     assert "scheduled:check" not in ops.calls
     assert "task:Install" not in ops.calls
-    assert ops.calls.count("task:Restore") == 1
+    assert ops.calls.count("task:RestoreDisabled") == 1
     assert json.loads(terminal.read_text(encoding="utf-8"))["result"] == "ROLLED_BACK"
