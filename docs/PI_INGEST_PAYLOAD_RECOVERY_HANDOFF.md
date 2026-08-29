@@ -2585,16 +2585,21 @@ authorization.
 
 The overall result is `BLOCKED`, rather than `PASS`, because the corrected code
 has not replaced the installed receiver or task, no natural run has exercised
-it, and the Pi became unreachable during the post-merge read-only health check.
-This entry does not authorize a Pi deployment, task replacement, manual backup,
+it, and exact-head review found source-identity inputs that the merged candidate
+does not yet reject before transfer. The Pi later recovered after the operator
+restored power; that recovery does not remove the source-identity blocker. This
+entry does not authorize a Pi deployment, task replacement, manual backup,
 manual ingest, publication manipulation, or A4 work.
 
 ### Append-only corrections to the preceding entry
 
 The 2026-08-29 producer observation retains raw value `partial`; its controlled
 ARL-OPS-001 state is `degraded`. It remains acceptable v1 data because all
-bounded-degraded thresholds, provenance, provider accounting, SQLite, ledger,
-contract, public-byte, and disclosure checks passed.
+available provenance, provider accounting, SQLite, ledger, contract,
+public-byte, and protected-runtime disclosure checks passed. Numeric failure
+counts and ratios remain disclosure and alerting metrics only; D-003 supersedes
+them as publication eligibility thresholds. Future product-scoped publication
+still requires D-003 membership reconciliation and whole-observation controls.
 
 Both timed pre-start gates were missed. The evidence directory timestamp proves
 that the nominal 00:25 block began at 00:27:09, and the nominal 00:58 block began
@@ -2611,10 +2616,12 @@ The combined-action decision is now explicit and non-conversational:
   `BACKFILL`, only the older dates are supplied as `--include-date`, and the
   receiver captures the newest observation first in that same invocation;
 - a fully current target remains `NO_BACKUP_DATA_WRITE`;
-- absent, malformed, unordered, duplicate, future, or internally inconsistent
-  source identity is `BLOCKED` before transfer;
-- post-transfer invalid verification metadata is immutable
-  `FAIL/POST_BACKUP_VERIFY`, retaining the attempted action.
+- malformed, unordered, duplicate, or internally inconsistent date lists that
+  the merged validator recognizes are `BLOCKED` before transfer;
+- a blocked or malformed post-transfer verification is immutable
+  `FAIL/POST_BACKUP_VERIFY`, retaining the attempted action; and
+- a structurally valid post-transfer verification that remains `STALE` is
+  immutable `FAIL` under the attempted `BACKUP-LATEST` or `BACKFILL` action.
 
 Reason: this preserves one atomic receiver invocation and existing restore,
 capacity, catalog, and lock controls while distinguishing normal daily advance
@@ -2625,6 +2632,15 @@ processes latest first, and success requires terminal `UP_TO_DATE` for latest,
 inventory, diagnostics, control, and macro. Revised acceptance: latest-only
 must record `BACKUP-LATEST`; mixed or historical-only may record `BACKFILL` only
 with exact older `backfill_dates` and full post-verification.
+
+The merged validator does **not** yet prove the broader fail-closed statement
+that appeared in the first version of this proposed entry. In particular, a
+source listing with no completed observation and empty component identities can
+reach `backup-latest`, and syntactically valid future dates are not compared
+with the source preflight time. These are active A3 blockers. Before any receiver
+or task transition, a separate focused code PR must reject absent latest
+identity, zero completed observations, empty or malformed component identities,
+and future retained/latest/diagnostic dates before any receiver transfer call.
 
 ### Corrected code and exact-merge verification
 
@@ -2672,38 +2688,50 @@ Catalog sequence receipts required by the preceding schema correction are:
 The installed receiver, task, catalog, receipts, archives, completed evidence,
 Pi production data, and public payload were not changed by this slice.
 
-### Pi reachability stop condition
+### Pi power recovery and evidence boundary
 
-The last successful Pi preflight was `2026-08-29T05:20:12+10:00`: production
-was clean at protected SHA `9302890`, the ingest service was inactive, the
-timer was enabled, the lock was absent, and the dashboard was healthy. Current
-cleanliness cannot be asserted. From approximately 10:42 through at least 11:07
-Australia/Hobart, both LAN `192.168.20.19:22` and Tailscale
-`100.78.28.10:22` were unreachable; Tailscale reported the Pi offline. No
-restart, wake, power, service, filesystem, task, or publication action was
-attempted.
+The Pi was physically powered off. The original approximately 10:42 through
+11:07 Australia/Hobart reachability output was not written to a create-once
+artifact. That is an immutable evidence deficiency: this entry does not
+reconstruct the outage, assign a reboot cause beyond the operator's statement,
+or use the undurable output as an acceptance fact.
 
-Pi unreachability is an active stop condition for receiver transition and must
-be resolved well before the 00:30 freeze. Until a fresh read-only Pi preflight
-proves clean protected SHA, inactive ingest, absent lock, enabled timer,
-dashboard health, storage, memory, and source identity, the only authorized
-actions are read-only reachability checks and preservation of existing state.
+After the operator restored power, two recovery probes were preserved as
+`BLOCKED`: LAN SSH timed out during banner exchange, then Tailscale SSH required
+an interactive additional check. Their result records are:
+
+- `C:\code\backups\AR-local-pi5\evidence\PI-POWER-RECOVERY-20260829\20260829T174808+1000\recovery-result.json`, 1,072 bytes, SHA-256 `7a8ae22fa3f7c2e255f95279bf73011746d36d9428cf4985b9df7cff6f37802a`;
+- `C:\code\backups\AR-local-pi5\evidence\PI-POWER-RECOVERY-20260829\20260829T174909+1000\recovery-result.json`, 1,098 bytes, SHA-256 `4562e01da342f36dd135e9be1b7e8fafb06b7257d454827652cfd8506c93c14b`.
+
+The terminal read-only recovery record is
+`C:\code\backups\AR-local-pi5\evidence\PI-POWER-RECOVERY-20260829\20260829T175037+1000\recovery-result.json`,
+1,616 bytes, SHA-256
+`28519a5b3da79720f9e981c30e793031a5ed9faa69c5303f1c914e817e4a8a85`.
+Its bound `reachability.txt` is 223 bytes, SHA-256
+`06ba9d0c62f647ed3f9749415702240da5016df6cee6213387e29851b6dcadcd`;
+its `pi-health.txt` is 1,110 bytes, SHA-256
+`4efb9d984e357c74d64f8c369c7a64237de33875b4c45cd6cc59be05c38484c9`.
+Strict known-host SSH passed, production was clean at protected `9302890`, the
+ingest service was inactive, the lock absent, the timer enabled and active for
+01:00, the dashboard healthy for 2026-08-29, and storage/memory healthy. This
+proves recovery only; every later action still requires a fresh preflight.
 
 ### Mandatory next resume point
 
-Resume this entry at A3; do not start A4. First restore and prove Pi
-reachability using read-only checks. Then, only in daylight and outside the
-00:30 freeze, create a clean detached receiver checkout at exact merge
-`9643b2e22a342ef106025377f02b0179501db1ca`, prove it clean, and run the
-corrected classification against isolated temporary backup state. Preserve
-pre/post SHA-256 for accepted task XML, installed receiver, catalog, receipts,
-and real backup root. Do not point an isolated test at the real target.
+Resume this entry at A3; do not start A4. Merge this corrected documentation
+entry only after exact-head checks and all substantive review threads pass.
+Then create one fresh, focused code PR from the new `origin/main` to implement
+the source-identity and future-date blockers above. Its tests must use isolated
+temporary backup state and must prove no receiver call occurs for every rejected
+input. Do not point a test at the real backup target or change the installed
+task, receiver, catalog, Pi, or publication.
 
-A later append-only decision may authorize one controlled Windows task
-transition only after Pi reachability and all isolated gates pass. That
+After that code PR passes exact-head tests, review, thread closure, guarded
+merge, and a clean detached exact-merge proof, append another decision entry.
+Only that later entry may authorize a controlled Windows task transition. The
 transition must not deploy or modify Pi production and must retain an immediate
 rollback to the currently accepted task XML and receiver `f214e324`. The first
-natural corrected task run must then be observed without manual triggering.
+corrected task proof must be natural and must not be manually triggered.
 
 D-006 remains overriding. For 2026-08-30, begin the full preflight at 00:25 and
 the final gate no later than 00:55 so it completes before 01:00. The 00:30
