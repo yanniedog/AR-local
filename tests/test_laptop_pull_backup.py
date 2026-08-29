@@ -948,8 +948,9 @@ def test_scheduled_receiver_arguments_forward_missing_dates(tmp_path: Path) -> N
     values = scheduled.receiver_arguments(
         args, "backfill", ["2026-08-24", "2026-08-25"]
     )
-    assert values[-4:] == [
-        "--include-date", "2026-08-24", "--include-date", "2026-08-25"
+    assert values[-5:] == [
+        "--include-date", "2026-08-24", "--include-date", "2026-08-25",
+        "--select-diagnostics",
     ]
 
 

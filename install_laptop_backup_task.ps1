@@ -6,7 +6,8 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ProtectedCodeSha,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$PlanGitCommit,
   [string]$Operator = $env:USERNAME,
-  [string]$PythonPath = (Get-Command python -ErrorAction Stop).Source
+  [string]$PythonPath = (Get-Command python -ErrorAction Stop).Source,
+  [string]$TransitionId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,9 +32,11 @@ $arguments = @(
   '-Operator', ('"{0}"' -f $Operator)
 ) -join ' '
 
+$gateArguments = @()
+if (-not [string]::IsNullOrWhiteSpace($TransitionId)) { $gateArguments = @('--transition-id', $TransitionId) }
 & $PythonPath $script --target $Target --recovery-image $RecoveryImage `
   --candidate-code-sha $CandidateCodeSha --protected-code-sha $ProtectedCodeSha `
-  --plan-git-commit $PlanGitCommit --operator $Operator --check-only
+  --plan-git-commit $PlanGitCommit --operator $Operator --check-only @gateArguments
 if ($LASTEXITCODE -ne 0) { throw 'Manual backup and restore gate is not current; task was not registered.' }
 
 $daily = New-ScheduledTaskTrigger -Daily -At '05:00'

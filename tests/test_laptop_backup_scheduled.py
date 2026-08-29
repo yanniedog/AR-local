@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+from argparse import Namespace
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,73 @@ import pytest
 
 import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
+
+
+def test_open_transition_gate_accepts_only_live_owner_descendant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "target"
+    root = target / "evidence/A3-LAPTOP-TASK-TRANSITION"
+    (target / "catalog").mkdir(parents=True)
+    root.mkdir(parents=True)
+    transition_id = "controlled-transition"
+    (root / "ACTIVE_TRANSITION.json").write_text(
+        json.dumps({"state": "OPEN", "transition_id": transition_id}), encoding="utf-8"
+    )
+    (root / ".transition-runtime.lock").write_text(
+        json.dumps({"pid": 12345, "transition_id": transition_id}), encoding="utf-8"
+    )
+    (target / "catalog/.receiver.lock").write_text(
+        json.dumps({"kind": "A3_TRANSITION_GUARD", "transition_id": transition_id}),
+        encoding="utf-8",
+    )
+    args = Namespace(target=target, transition_id=transition_id)
+    monkeypatch.setattr(receiver, "process_descends_from", lambda child, owner: True)
+    assert scheduled.open_transition_allows_invocation(args) == (True, None)
+    monkeypatch.setattr(receiver, "process_descends_from", lambda child, owner: False)
+    allowed, reason = scheduled.open_transition_allows_invocation(args)
+    assert not allowed
+    assert "authenticated A3 transition" in str(reason)
+    assert not list((target / "catalog").glob("scheduled-runs/*.json"))
+
+
+@pytest.mark.parametrize(
+    "timer_value",
+    ["Sun 2026-08-30 02:00:00 AEST", "Mon 2026-08-31 01:00:00 AEST"],
+)
+def test_scheduled_gate_rejects_wrong_next_timer_time_or_date(timer_value: str) -> None:
+    with pytest.raises(ValueError, match="exact next 01:00"):
+        scheduled.validate_next_daily_timer(
+            timer_value, datetime.fromisoformat("2026-08-29T20:00:00+10:00")
+        )
+
+
+@pytest.mark.parametrize(
+    ("checked_at", "timer_value"),
+    [
+        ("2027-01-05T00:29:00+11:00", "Tue 2027-01-05 01:00:00 AEDT"),
+        ("2027-01-05T01:00:00+11:00", "Wed 2027-01-06 01:00:00 AEDT"),
+        ("2026-08-29T00:29:00+10:00", "Sat 2026-08-29 01:00:00 AEST"),
+    ],
+)
+def test_scheduled_gate_accepts_exact_hobart_timer(
+    checked_at: str, timer_value: str
+) -> None:
+    scheduled.validate_next_daily_timer(timer_value, datetime.fromisoformat(checked_at))
+
+
+@pytest.mark.parametrize(
+    ("checked_at", "timer_value"),
+    [
+        ("2027-01-05T00:29:00+11:00", "Tue 2027-01-05 01:00:00 AEST"),
+        ("2026-08-29T20:00:00+10:00", "Sun 2026-08-30 01:00:00 AEDT"),
+    ],
+)
+def test_scheduled_gate_rejects_wrong_hobart_season_zone(
+    checked_at: str, timer_value: str
+) -> None:
+    with pytest.raises(ValueError, match="exact next 01:00"):
+        scheduled.validate_next_daily_timer(timer_value, datetime.fromisoformat(checked_at))
 
 
 CANDIDATE = "c" * 40
@@ -32,6 +100,7 @@ def source_listing() -> dict[str, object]:
             "terminal_failure_authorization": None,
             "daily_timer": "enabled",
             "daily_timer_active": "active",
+            "daily_timer_next": "Sun 2026-08-30 01:00:00 AEST",
             "ingest_lock_absent": True,
             "dashboard_healthy": True,
             "state_root": "/srv/ar-local/data/state",
@@ -580,7 +649,12 @@ def test_main_invokes_and_records_selected_request(
     listing = json.dumps({"target": str(target)})
     calls: list[tuple[str, tuple[str, ...]]] = []
 
-    def invoke(_args: object, command: str, include_dates: tuple[str, ...] = ()) -> tuple[int, str, str]:
+    def invoke(
+        _args: object,
+        command: str,
+        include_dates: tuple[str, ...] = (),
+        _include_diagnostics: tuple[str, ...] = (),
+    ) -> tuple[int, str, str]:
         calls.append((command, tuple(include_dates)))
         return (0, listing if command == "preflight" else "{}", "")
 
@@ -663,7 +737,12 @@ def test_main_records_post_backup_metadata_failure(
     listing = json.dumps({"target": str(target)})
     calls: list[str] = []
 
-    def invoke(_args: object, command: str, _dates: tuple[str, ...] = ()) -> tuple[int, str, str]:
+    def invoke(
+        _args: object,
+        command: str,
+        _dates: tuple[str, ...] = (),
+        _diagnostics: tuple[str, ...] = (),
+    ) -> tuple[int, str, str]:
         calls.append(command)
         return (0, listing if command == "preflight" else "{}", "")
 
