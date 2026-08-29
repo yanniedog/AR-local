@@ -691,6 +691,7 @@ def validate_execution_record(
     operator: str,
     expected_date: str,
 ) -> None:
+    validate_scheduled_record_structure(record)
     expected = {
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
         "plan_version": receiver.PLAN_VERSION,
@@ -724,6 +725,26 @@ def validate_execution_record(
         if not isinstance(detail, Mapping):
             raise ValueError("no-write execution detail is invalid")
         validate_component_status(detail, expected_date)
+    elif action == "BACKFILL":
+        if not isinstance(detail, Mapping):
+            raise ValueError("legacy backfill execution detail is invalid")
+        before = detail.get("before")
+        after = detail.get("after")
+        if not isinstance(before, Mapping) or before.get("status") != "STALE":
+            raise ValueError("legacy backfill before state is invalid")
+        inventory = before.get("inventory")
+        missing_dates = inventory.get("missing_completed_dates") if isinstance(inventory, Mapping) else None
+        if (
+            before.get("backfill_required") is not True
+            or not isinstance(inventory, Mapping)
+            or inventory.get("status") != "STALE"
+            or not isinstance(missing_dates, list)
+            or expected_date not in missing_dates
+        ):
+            raise ValueError("legacy backfill source gap is invalid")
+        if not isinstance(after, Mapping):
+            raise ValueError("legacy backfill after state is invalid")
+        validate_component_status(after, expected_date)
     else:
         raise ValueError("transition execution action is invalid")
 

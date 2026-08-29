@@ -187,6 +187,7 @@ def validate_backup_state(
     candidate_sha: str,
     require_scheduled: bool,
     scheduled_candidates: Sequence[str] | None = None,
+    allow_legacy_backfill: bool = False,
 ) -> dict[str, object]:
     latest = scheduled.latest_status(
         config.target,
@@ -231,15 +232,25 @@ def validate_backup_state(
     if require_scheduled:
         path = contract.scheduled_record_path(config.target)
         value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, Mapping) or value.get("action") not in {"BACKUP-LATEST", "NO_BACKUP_DATA_WRITE"}:
+        if not isinstance(value, Mapping):
             raise ValueError("current scheduled record action is invalid")
+        action = value.get("action")
         record_candidate = value.get("candidate_code_sha")
         allowed_candidates = set(scheduled_candidates or (candidate_sha,))
         if not isinstance(record_candidate, str) or record_candidate not in allowed_candidates:
             raise ValueError("current scheduled record candidate is not an authorised preserved candidate")
+        allowed_actions = {"BACKUP-LATEST", "NO_BACKUP_DATA_WRITE"}
+        if (
+            allow_legacy_backfill
+            and candidate_sha == config.old_candidate_code_sha
+            and record_candidate == config.old_candidate_code_sha
+        ):
+            allowed_actions.add("BACKFILL")
+        if not isinstance(action, str) or action not in allowed_actions:
+            raise ValueError("current scheduled record action is invalid")
         contract.validate_execution_record(
             value,
-            action=str(value["action"]),
+            action=action,
             candidate_sha=record_candidate,
             protected_sha=config.protected_code_sha,
             plan_commit=config.plan_git_commit,
@@ -308,6 +319,7 @@ def runtime_preflight(
         candidate_sha=config.old_candidate_code_sha,
         require_scheduled=True,
         scheduled_candidates=(config.old_candidate_code_sha, config.candidate_code_sha),
+        allow_legacy_backfill=True,
     )
     return snapshot, listing, old_state
 

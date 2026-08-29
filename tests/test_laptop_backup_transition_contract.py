@@ -139,18 +139,24 @@ def valid_execution(action: str) -> dict[str, object]:
             "after": detail,
         }
     return {
+        "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
         "plan_version": receiver.PLAN_VERSION,
         "plan_git_commit": PLAN,
         "plan_sha256": PLAN_SHA,
+        "plan_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
+        "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
         "candidate_code_sha": CANDIDATE,
         "protected_code_sha": PROTECTED,
         "operator": "jkoka",
+        "timestamps": {"completed_at": "2026-08-29T09:00:00Z"},
+        "exact_commands": ["python laptop_backup_scheduled.py --check-only"],
         "action": action,
         "result": "PASS",
         "detail": detail,
         "deviations": [],
         "deviation_authorization": None,
+        "previous_execution": None,
     }
 
 

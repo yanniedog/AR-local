@@ -230,6 +230,19 @@ def execution_record(action: str) -> dict[str, object]:
             "before": {"status": "STALE", "backup_command": "backup-latest", "backfill_required": False},
             "after": state,
         }
+    elif action == "BACKFILL":
+        detail = {
+            "before": {
+                "status": "STALE",
+                "backfill_required": True,
+                "inventory": {
+                    "status": "STALE",
+                    "missing_completed_dates": ["2026-08-29"],
+                    "stale_diagnostics": [],
+                },
+            },
+            "after": state,
+        }
     return {
         "schema_version": 1,
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
