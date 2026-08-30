@@ -4607,36 +4607,125 @@ gate must finish by 00:30. The second gate starts at 00:55 and must finish befor
 kill deadline. The natural backup validation starts at 05:15 and must not
 trigger the task.
 
+Materialize the following fenced block byte-for-byte as
+`timed-preflight.ps1` inside the unique evidence directory. Invoke it first with
+`-Phase 0025`, then invoke that same hash-bound file with `-Phase 0055`. Both
+invocations persist their complete local and Pi results and SHA-256 manifests;
+console-only evidence is invalid.
+
 ```powershell
-$Task = Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
-$TaskInfo = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
-if ($Task.State -ne 'Ready' -or -not $Task.Settings.Enabled -or $TaskInfo.LastTaskResult -ne 0) { throw 'Task preflight failed.' }
-if ((Get-FileHash 'C:\code\backups\AR-local-pi5-receiver-f214e32\run_laptop_backup_task.ps1' -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8') { throw 'Managed runner drift.' }
-if ((Get-PSDrive C).Free -lt 50GB) { throw 'Laptop free-space gate failed.' }
-$Remote = @'
-set -euo pipefail
+param(
+  [Parameter(Mandatory=$true)][ValidateSet('0025','0055')][string]$Phase,
+  [Parameter(Mandatory=$true)][string]$EvidenceRoot
+)
+$ErrorActionPreference='Stop'
+$EvidenceRoot=[IO.Path]::GetFullPath($EvidenceRoot)
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831'
+$active=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt'
+if(-not $EvidenceRoot.StartsWith([IO.Path]::GetFullPath($parent)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Evidence root escaped its parent.'}
+if([IO.Path]::GetFullPath((Get-Content -LiteralPath $active -Raw).Trim()) -cne $EvidenceRoot){throw 'Active evidence pointer mismatch.'}
+$scriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if($Phase -eq '0055'){
+  $recorded=Get-Content -LiteralPath (Join-Path $EvidenceRoot '0025-hashes.json') -Raw|ConvertFrom-Json
+  if($recorded.script_sha256 -cne $scriptHash){throw 'Timed-preflight source changed between gates.'}
+}
+function Hash-Bytes([byte[]]$Bytes){$h=[Security.Cryptography.SHA256]::Create();try{([BitConverter]::ToString($h.ComputeHash($Bytes))-replace'-','').ToLowerInvariant()}finally{$h.Dispose()}}
+function Hash-Text([string]$Text){Hash-Bytes ([Text.UTF8Encoding]::new($false).GetBytes($Text))}
+function Exact-Checkout([string]$Path,[string]$Head){
+  if((git -C $Path rev-parse HEAD).Trim() -cne $Head -or @(git -C $Path status --porcelain=v1).Count -ne 0){throw "Checkout drift: $Path"}
+  git -C $Path symbolic-ref -q HEAD 2>$null|Out-Null;if($LASTEXITCODE -ne 1){throw "Checkout not detached: $Path"}
+}
+$implementation='C:\code\backups\AR-local-pi5-receiver-68faf7e'
+$candidate='C:\code\backups\AR-local-pi5-candidate-f214e32-d008'
+$receiver='C:\code\backups\AR-local-pi5-receiver-f214e32'
+$control='C:\code\backups\AR-local-pi5\dispatcher-control'
+Exact-Checkout $implementation '68faf7e13c650af7b1d713f4a604f9978897ce79'
+Exact-Checkout $candidate 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$receiverStatus=@(git -C $receiver status --porcelain=v1)
+if($receiverStatus.Count-ne 1-or$receiverStatus[0]-cne ' M run_laptop_backup_task.ps1'){throw 'Legacy receiver drift beyond managed runner.'}
+$task=Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$taskInfo=Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xml=Export-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xmlHash=Hash-Bytes ([byte[]](0xff,0xfe)+[Text.Encoding]::Unicode.GetBytes($xml))
+$svc=New-Object -ComObject 'Schedule.Service';$svc.Connect();$sddl=$svc.GetFolder('\').GetTask('\AR-local laptop backup').GetSecurityDescriptor(7)
+$sddlHash=Hash-Text $sddl
+$runner=Join-Path $receiver 'run_laptop_backup_task.ps1'
+$manifestHash='af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092'
+$config=Join-Path $control 'runner-config.json';$manifest=Join-Path $control "manifests\$manifestHash.json";$pointer=Join-Path $control 'active-runner.json'
+$receipt=Join-Path $control 'activation-receipts\00000001-37f93247c88144699631d364c6ac0dee-pass.json'
+if([string]$task.State -cne 'Ready' -or -not $task.Settings.Enabled -or $taskInfo.LastTaskResult -ne 0 -or
+   $xmlHash -cne 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2' -or
+   $sddlHash -cne '6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b' -or
+   (Get-FileHash $runner -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8' -or
+   (Get-FileHash $config -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00' -or
+   (Get-FileHash $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestHash -or
+   (Get-FileHash $receipt -Algorithm SHA256).Hash.ToLowerInvariant() -cne '7d122e9f96ec22940081fe6ddaa4e54c22a89fea0187cee906b2a09e26233e8b') {throw 'Authenticated task/dispatcher state drift.'}
+$p=Get-Content $pointer -Raw|ConvertFrom-Json;$m=Get-Content $manifest -Raw|ConvertFrom-Json;$r=Get-Content $receipt -Raw|ConvertFrom-Json
+if($p.manifest_sha256 -cne $manifestHash -or $p.sequence -ne 1 -or $r.status -cne 'PASS' -or $r.manifest_sha256 -cne $manifestHash -or
+   $m.candidate_code_sha -cne 'f214e3249c7968d574e3449edb14792904e1cc1f' -or $m.protected_code_sha -cne '9302890fcc752cbf90da97d597e972c157d913e3'){throw 'Authenticated activation state drift.'}
+$helpers=@(Get-CimInstance Win32_Process|Where-Object{$_.ProcessId-ne$PID-and$_.CommandLine-and$_.CommandLine-match'(laptop_backup_(scheduled|dispatcher|atomic)|run_laptop_backup_task)'})
+$free=(Get-PSDrive C).Free;if($helpers.Count-ne 0-or$free-lt 50GB){throw 'Laptop process or capacity gate failed.'}
+$local=[ordered]@{observed_at=[DateTimeOffset]::Now.ToString('o');phase=$Phase;task_state=[string]$task.State;last_result=[int]$taskInfo.LastTaskResult;task_xml_sha256=$xmlHash;task_sddl_sha256=$sddlHash;runner_sha256=(Get-FileHash $runner -Algorithm SHA256).Hash.ToLowerInvariant();config_sha256=(Get-FileHash $config -Algorithm SHA256).Hash.ToLowerInvariant();manifest_sha256=$manifestHash;receipt_sha256=(Get-FileHash $receipt -Algorithm SHA256).Hash.ToLowerInvariant();implementation='68faf7e13c650af7b1d713f4a604f9978897ce79';candidate='f214e3249c7968d574e3449edb14792904e1cc1f';free_bytes=[int64]$free;helper_count=$helpers.Count}
+$local|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $EvidenceRoot "$Phase-local.json")
+$remote=@'
+set -eu
 cd /srv/ar-local/AR-local
-test "$(git rev-parse HEAD)" = "9302890fcc752cbf90da97d597e972c157d913e3"
-test -z "$(git status --porcelain)"
-test "$(systemctl is-active ar-local-daily.service)" = "inactive"
-test ! -e /srv/ar-local/data/state/daily-ingest.lock
-test "$(systemctl is-enabled ar-local-daily.timer)" = "enabled"
-test "$(systemctl is-active ar-local-daily.timer)" = "active"
-curl -fsS http://127.0.0.1:8808/api/latest >/dev/null
-df -B1 /srv/ar-local/data
-free -b
-swapon --show --bytes
-journalctl -k --since '24 hours ago' --no-pager | grep -Ei 'oom|out of memory|killed process' || true
-git ls-remote https://github.com/yanniedog/AR-local.git HEAD >/dev/null
-printf 'AR_PI_NATURAL_PREFLIGHT_PASS\n'
-'@ -replace "`r", ''
-$Remote | ssh ar-local-pi5-lan bash -s
-if ($LASTEXITCODE -ne 0) { throw 'Pi natural-ingest preflight failed.' }
+echo "observed_at=$(date --iso-8601=seconds)"
+echo "head=$(git rev-parse HEAD)"
+if test -z "$(git status --porcelain=v1)";then echo checkout_clean=true;else echo checkout_clean=false;exit 40;fi
+echo "timer_enabled=$(systemctl is-enabled ar-local-daily.timer)"
+echo "timer_active=$(systemctl is-active ar-local-daily.timer)"
+echo "timer_next=$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)"
+echo "timer_last=$(systemctl show ar-local-daily.timer -p LastTriggerUSec --value)"
+echo "service_active=$(systemctl is-active ar-local-daily.service)"
+echo "service_invocation=$(systemctl show ar-local-daily.service -p InvocationID --value)"
+echo "service_restarts=$(systemctl show ar-local-daily.service -p NRestarts --value)"
+if test -e /srv/ar-local/data/state/daily-ingest.lock;then echo lock=PRESENT;exit 42;else echo lock=ABSENT;fi
+if pgrep -f '[p]i_daily_sync.py|[c]dr_daily.py' >/dev/null;then echo competing_process=PRESENT;exit 43;else echo competing_process=ABSENT;fi
+disk=$(df -B1 --output=avail /srv/ar-local/data|tail -1|tr -d ' ');mem=$(free -b|awk '/^Mem:/ {print $7}');swap=$(free -b|awk '/^Swap:/ {print $4}')
+echo "disk_available_bytes=$disk";echo "memory_available_bytes=$mem";echo "swap_free_bytes=$swap"
+test "$disk" -ge 10737418240;test "$mem" -ge 268435456;test "$swap" -ge 67108864
+if journalctl -k --since '24 hours ago' --no-pager|grep -Eiq 'oom|out of memory|killed process';then echo oom_recent=PRESENT;exit 44;else echo oom_recent=ABSENT;fi
+test "$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)" = 'Mon 2026-08-31 01:00:00 AEST'
+curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest|python3 -c "import json,sys;v=json.load(sys.stdin);b=v.get('banks_counts')or{};assert v.get('run_date')=='2026-08-30';assert int(b.get('products',0))>0;assert int(b.get('rates',0))>0"
+echo dashboard=HEALTHY
+http=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://api.github.com/);echo "github_http=$http";test "$http" = 200
+echo AR_PI_NATURAL_PREFLIGHT_PASS
+'@ -replace "`r",''
+$output=@($remote|ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan bash -s)
+$sshExit=$LASTEXITCODE;$output|Set-Content -LiteralPath (Join-Path $EvidenceRoot "$Phase-pi.txt")
+if($sshExit-ne 0-or($output-join"`n")-notmatch'AR_PI_NATURAL_PREFLIGHT_PASS'){throw "$Phase Pi gate failed."}
+$values=[ordered]@{};foreach($line in $output){$pair=$line-split'=',2;if($pair.Count-eq 2){$values[$pair[0]]=$pair[1]}}
+$observed=[DateTimeOffset]::Parse($values.observed_at)
+if($Phase-eq'0025'){$min=[DateTimeOffset]'2026-08-31T00:20:00+10:00';$max=[DateTimeOffset]'2026-08-31T00:30:00+10:00'}else{$min=[DateTimeOffset]'2026-08-31T00:55:00+10:00';$max=[DateTimeOffset]'2026-08-31T01:00:00+10:00'}
+if($observed-lt$min-or$observed-ge$max-or$values.head-cne'9302890fcc752cbf90da97d597e972c157d913e3'-or$values.checkout_clean-cne'true'-or
+   $values.timer_enabled-cne'enabled'-or$values.timer_active-cne'active'-or$values.timer_next-cne'Mon 2026-08-31 01:00:00 AEST'-or
+   $values.service_active-cne'inactive'-or[int]$values.service_restarts-ne 0-or$values.lock-cne'ABSENT'-or$values.competing_process-cne'ABSENT'-or
+   [int64]$values.disk_available_bytes-lt 10737418240-or[int64]$values.memory_available_bytes-lt 268435456-or[int64]$values.swap_free_bytes-lt 67108864-or
+   $values.oom_recent-cne'ABSENT'-or$values.dashboard-cne'HEALTHY'-or$values.github_http-cne'200'){throw "$Phase fail-closed value gate failed."}
+if($Phase-eq'0055'){$baseline=Get-Content (Join-Path $EvidenceRoot '0025-values.json') -Raw|ConvertFrom-Json;if($values.timer_last-cne$baseline.timer_last-or$values.service_invocation-cne$baseline.service_invocation){throw 'Timer/service baseline changed before natural start.'}}
+$values|ConvertTo-Json -Depth 5|Set-Content -LiteralPath (Join-Path $EvidenceRoot "$Phase-values.json")
+$hashes=[ordered]@{script_sha256=$scriptHash;local_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-local.json") -Algorithm SHA256).Hash.ToLowerInvariant();pi_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-pi.txt") -Algorithm SHA256).Hash.ToLowerInvariant();values_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-values.json") -Algorithm SHA256).Hash.ToLowerInvariant();completed_at=[DateTimeOffset]::Now.ToString('o');result='PASS'}
+$hashes|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $EvidenceRoot "$Phase-hashes.json")
+$hashes|ConvertTo-Json
 ```
 
-At 00:55 repeat the Pi block and then observe without starting or restarting:
+Before the first invocation, create the evidence generation and active pointer
+exactly once; never reuse a previous directory:
 
 ```powershell
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';New-Item -ItemType Directory -Force $parent|Out-Null
+$root=Join-Path $parent ([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''));if(Test-Path (Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt')){throw 'Active evidence already exists.'};New-Item -ItemType Directory $root|Out-Null
+[IO.File]::WriteAllText((Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt'),$root,[Text.UTF8Encoding]::new($false))
+# Save the exact preceding block as $root\timed-preflight.ps1, then:
+& "$root\timed-preflight.ps1" -Phase 0025 -EvidenceRoot $root
+```
+
+At 00:55 recover the one active pointer and run the same authenticated file:
+
+```powershell
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';$root=(Get-Content (Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt') -Raw).Trim()
+& "$root\timed-preflight.ps1" -Phase 0055 -EvidenceRoot $root
 ssh ar-local-pi5-lan systemctl show ar-local-daily.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p InvocationID -p ActiveEnterTimestamp -p InactiveEnterTimestamp
 ssh ar-local-pi5-lan journalctl -fu ar-local-daily.service --since '2026-08-31 00:55:00' --no-pager
 ```
