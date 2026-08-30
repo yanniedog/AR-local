@@ -24,6 +24,10 @@ if (-not $failed) { throw 'PowerShell production action was accepted.' }
 
 $remote = "set -eu`nexit 0`n"
 if ($remote.Contains("`r")) { throw 'Test remote script unexpectedly contains CR.' }
+$core = Get-Content -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_core.ps1') -Raw
+if ($core -notmatch "HostName\.Length -gt 253" -or $core -notmatch "HostName\.Contains\('\.\.'\)") {
+  throw 'Strict SSH hostname validation is absent.'
+}
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltInRole]::Administrator

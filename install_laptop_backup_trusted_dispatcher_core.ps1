@@ -76,6 +76,9 @@ function Invoke-ArTrustedSshScript {
     [Parameter(Mandatory = $true)][string]$Script
   )
   if ($Script.Contains("`r")) { throw 'Remote script must contain LF only.' }
+  if ($HostName.Length -gt 253 -or $HostName -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or $HostName.Contains('..')) {
+    throw 'SSH host must be one strict hostname or IPv4 token.'
+  }
   $start = New-Object Diagnostics.ProcessStartInfo
   $start.FileName = $SshPath
   $start.Arguments = "-o BatchMode=yes -o ConnectTimeout=10 $HostName bash -s"

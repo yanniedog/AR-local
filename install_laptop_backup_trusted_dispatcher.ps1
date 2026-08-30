@@ -68,20 +68,19 @@ if (-not $isAdmin -or $identity.User.Value -cne $OperatorSid) { throw 'Trusted b
 $local = [DateTimeOffset]::Now
 if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [TimeSpan]::FromHours(22)) { throw 'Trusted bootstrap is outside the D-006 daylight window.' }
 if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) { throw 'Trusted package is absent.' }
-foreach ($path in @($Target,$ControlRoot,$EvidenceRoot)) { if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is absent: $path" } }
-foreach ($path in @($PackagePath,$Target,$ControlRoot,$EvidenceRoot,([IO.Path]::GetDirectoryName($InstallRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
+foreach ($path in @($Target,$ControlRoot)) { if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is absent: $path" } }
+foreach ($path in @($PackagePath,$Target,$ControlRoot,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
 $expectedControl = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
 if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($expectedControl)) { throw 'ControlRoot must be exactly Target\dispatcher-control.' }
-$targetPrefix = [IO.Path]::GetFullPath($Target).TrimEnd('\') + '\'
-$controlPrefix = [IO.Path]::GetFullPath($ControlRoot).TrimEnd('\') + '\'
-$evidenceFull = [IO.Path]::GetFullPath($EvidenceRoot)
-if (-not $evidenceFull.StartsWith($targetPrefix,[StringComparison]::OrdinalIgnoreCase) -or
-    $evidenceFull.StartsWith($controlPrefix,[StringComparison]::OrdinalIgnoreCase)) {
-  throw 'EvidenceRoot must be within Target but outside dispatcher-control.'
-}
 $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
 $installFull = [IO.Path]::GetFullPath($InstallRoot)
 if (-not $installFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'InstallRoot must be below Program Files.' }
+$evidenceFull = [IO.Path]::GetFullPath($EvidenceRoot)
+if (-not $evidenceFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'EvidenceRoot must be below Program Files.' }
+if ([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($installFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles) -or
+    [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($evidenceFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles)) {
+  throw 'InstallRoot and EvidenceRoot must be direct children of the protected Program Files directory.'
+}
 if (Test-Path -LiteralPath $InstallRoot) { throw 'Trusted content-addressed install root already exists.' }
 if ((Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
 $active = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
@@ -96,9 +95,23 @@ if ($piResult.ExitCode -ne 0 -or $piOutput[-1] -cne 'AR_PI_PREFLIGHT_PASS') { th
 
 $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $script:exactCommand = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine
+if (-not (Test-Path -LiteralPath $EvidenceRoot)) {
+  try {
+    New-Item -ItemType Directory -Path $EvidenceRoot -ErrorAction Stop | Out-Null
+    Set-ArTrustedRootAcl -Root $EvidenceRoot -OperatorSid $OperatorSid
+    Assert-ArTrustedRootAcl -Root $EvidenceRoot
+  } catch {
+    if (Test-Path -LiteralPath $EvidenceRoot) { Remove-Item -LiteralPath $EvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    throw
+  }
+} else {
+  Assert-ArTrustedRootAcl -Root $EvidenceRoot
+}
 $executionId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [guid]::NewGuid().ToString('N')
 $script:executionRoot = Join-Path $EvidenceRoot $executionId
 New-Item -ItemType Directory -Path $script:executionRoot -ErrorAction Stop | Out-Null
+Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+Assert-ArTrustedRootAcl -Root $script:executionRoot
 [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pi-preflight.txt'), (($piOutput -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 
 $oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
