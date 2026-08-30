@@ -141,7 +141,23 @@ void lower_integrity_to_medium(HANDLE token) {
   }
 }
 
-Handle restricted_token(HANDLE current) {
+void grant_child_token_access(HANDLE token, const std::wstring& operator_sid) {
+  std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x0000008a;;;" + operator_sid + L")";
+  PSECURITY_DESCRIPTOR descriptor = nullptr;
+  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+          sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) {
+    throw win_error("ConvertStringSecurityDescriptorToSecurityDescriptorW(token DACL)");
+  }
+  struct DescriptorGuard {
+    PSECURITY_DESCRIPTOR value;
+    ~DescriptorGuard() { if (value) LocalFree(value); }
+  } guard{descriptor};
+  if (!SetKernelObjectSecurity(token, DACL_SECURITY_INFORMATION, descriptor)) {
+    throw win_error("SetKernelObjectSecurity(token DACL)");
+  }
+}
+
+Handle restricted_token(HANDLE current, const std::wstring& operator_sid) {
   SID_IDENTIFIER_AUTHORITY nt = SECURITY_NT_AUTHORITY;
   PSID administrators = nullptr;
   if (!AllocateAndInitializeSid(&nt, 2, SECURITY_BUILTIN_DOMAIN_RID,
@@ -157,6 +173,7 @@ Handle restricted_token(HANDLE current) {
                              0, nullptr, restricted.put())) {
     throw win_error("CreateRestrictedToken");
   }
+  grant_child_token_access(restricted.get(), operator_sid);
   return restricted;
 }
 
@@ -366,8 +383,9 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
   auto current = current_process_token(
-      TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE);
-  auto limited = restricted_token(current.get());
+      TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE | WRITE_DAC);
+  std::wstring operator_sid = read_operator_sid(root);
+  auto limited = restricted_token(current.get(), operator_sid);
   validate_token(limited.get(), root, false);
   std::wstring command = quote(self);
   for (const auto& argument : child_arguments) command += L" " + quote(argument);

@@ -77,6 +77,8 @@ def test_source_has_no_general_command_channel() -> None:
     assert "CreateRestrictedToken" in text
     assert "LUA_TOKEN" not in text
     assert "DOMAIN_ALIAS_RID_ADMINS" in text
+    assert "0x0000008a" in text
+    assert "SetKernelObjectSecurity(token" in text
     assert "TokenHasRestrictions" in text
     assert "lower_integrity_to_medium(token.get())" in text
     assert "validate_token(token.get(), root, true)" in text
