@@ -4,8 +4,10 @@ import ctypes
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import uuid
 
 import pytest
 
@@ -102,21 +104,24 @@ def test_production_build_is_reproducible(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only token integration")
-def test_elevated_origin_produces_restricted_child(tmp_path: Path) -> None:
+def test_elevated_origin_produces_restricted_child() -> None:
     if not ctypes.windll.shell32.IsUserAnAdmin():
         pytest.skip("integration requires the elevated Windows CI token")
-    install = tmp_path / "protected"
+    install = Path(os.environ["ProgramFiles"]) / f"AR-local-launcher-test-{uuid.uuid4().hex}"
     install.mkdir()
-    launcher = install / "launcher-test.exe"
-    build(launcher, testing=True)
-    (install / "operator.sid").write_text(current_sid(), encoding="ascii", newline="")
-    (install / "protected.sentinel").write_bytes(b"AR-local trusted launcher sentinel\n")
-    (install / "run_laptop_backup_trusted_child.ps1").write_text("exit 0\n", encoding="ascii", newline="")
-    (install / "trusted-child.json").write_text("{}\n", encoding="ascii", newline="")
-    (install / "probe.enabled").write_bytes(b"PROBE")
-    protect_install(install, current_sid())
-    result = subprocess.run([str(launcher), "--probe"], capture_output=True, text=True, check=False)
-    assert result.returncode == 0, result.stderr
+    try:
+        launcher = install / "launcher-test.exe"
+        build(launcher, testing=True)
+        (install / "operator.sid").write_text(current_sid(), encoding="ascii", newline="")
+        (install / "protected.sentinel").write_bytes(b"AR-local trusted launcher sentinel\n")
+        (install / "run_laptop_backup_trusted_child.ps1").write_text("exit 0\n", encoding="ascii", newline="")
+        (install / "trusted-child.json").write_text("{}\n", encoding="ascii", newline="")
+        (install / "probe.enabled").write_bytes(b"PROBE")
+        protect_install(install, current_sid())
+        result = subprocess.run([str(launcher), "--probe"], capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
+    finally:
+        shutil.rmtree(install, ignore_errors=False)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only command rejection")
