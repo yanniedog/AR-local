@@ -100,7 +100,7 @@ function Invoke-ArLimitedProbe {
       $state = (Get-ScheduledTask -TaskName $probeName -ErrorAction Stop).State.ToString()
     } while ($state -eq 'Running' -and [DateTimeOffset]::Now -lt $deadline)
     if ($state -eq 'Running' -or $info.LastTaskResult -ne 0) { throw 'Limited semantic probe did not complete successfully.' }
-    $value = Get-Content -LiteralPath $ProbeOutput -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
+    $value = Get-Content -LiteralPath $ProbeOutput -Raw -ErrorAction Stop | ConvertFrom-Json
     if ($value.ok -ne $true -or $value.result -ne 'PASS' -or $value.is_admin -ne $false -or
         ([string]$value.operator_sid).ToLowerInvariant() -ne $OperatorSid.ToLowerInvariant() -or
         $value.manifest_sha256 -ne $ManifestSha256) {
@@ -137,7 +137,7 @@ foreach ($path in @($ManifestPath, $PythonPath)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required file is missing: $path" }
 }
 if ((Get-ArSha256 $ManifestPath) -cne $ManifestSha256) { throw 'Initial manifest hash mismatch.' }
-$script:manifest = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
+$script:manifest = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
 $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $script:exactCommand = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine
 if ((git -C $Receiver rev-parse HEAD).Trim() -ne $CandidateCodeSha -or (git -C $Receiver status --porcelain)) {
