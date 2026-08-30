@@ -5346,3 +5346,153 @@ ledger/provider/public-byte evidence plus a natural dispatcher execution that
 proves the restricted identity and creates `PASS/BACKUP-LATEST` for observation
 date `2026-09-01`. Only a later append-only entry may mark A3 `PASS` and begin
 A4 planning.
+
+## Entry `HANDOFF-20260831T080717+1000-A3-FAIL-CLOSED-AUTHORITY-CORRECTION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T080717+1000-A3-FAIL-CLOSED-AUTHORITY-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260831T074200+1000-A3-NATURAL-BACKUP-FAIL-SAFER-REPAIR` |
+| Created | `2026-08-31T08:07:17+10:00` / `2026-08-30T22:07:17Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; Git-blob 115868 bytes, SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684`; CRLF checkout 117749 bytes, SHA-256 `d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4` |
+| Source repository | clean detached `C:\code\backups\AR-local-plan-control-20260831` at merged `origin/main` `211e6055ca0a21c35d2a1ea06ae4a1197acadafe`; pre-append handoff Git-blob 372477 bytes, SHA-256 `bc3786b12ec0bf9050a5257921a057d9c9f451678c53cd1bd70d6197995dfc4d`; CRLF checkout 377825 bytes, SHA-256 `7d1b6cf95f4190ed3a802ae53548db831a383f03f67157ad421174023ae445b5` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; daily service inactive, timer enabled/active, lock absent, dashboard API HTTP 200; no deployment or production mutation |
+| Overall result | `BLOCKED` |
+| A3 / A4 | A3 `RUNNING` but transition blocked; A4 `BLOCKED` |
+| Deviations | `D-010` below withdraws the unsafe D-009 execution authority; no transition is authorized by this entry |
+| Authorization source | Operator instructions require safe unattended execution without repeated elevation and permit at most one future elevated PowerShell command. This append-only decision narrows that authorization: elevation is not authorized until reviewed implementation has merged and a later exact transition-authority entry authenticates every byte and command. |
+
+### Corrected component outcomes
+
+The preceding entry's natural-ingest `PASS` is too broad and is corrected
+without rewriting that historical entry:
+
+| Component | Result | Evidence or limitation |
+|---|---|---|
+| 00:20/00:55 timed preflight | `BLOCKED` | It did not run and is not reconstructed. |
+| Natural systemd invocation | `PASS` | Exactly one invocation `d546b15b377f4415a3ea7db81bd96025`; `Result=success`, `ExecMainStatus=0`, `NRestarts=0`, terminal lock absent, dashboard returned. |
+| Dashboard latest pointer | `PASS` | Read-only API returned HTTP 200 and `run_date=2026-08-31`, 2980 products, 16671 rates and 17 failures. |
+| Raw attempts, completion marker, export contract and ledger binding | `UNVERIFIED` | No controlled 31 August evidence set proves these gates. |
+| SQLite quick check, schema and population/provider accounting | `UNVERIFIED` | No controlled 31 August evidence set proves these gates. |
+| Dated v1, rolling v1, dates index and referenced public bytes | `UNVERIFIED` | They were not independently downloaded and hashed for this observation. |
+| v2 | `UNVERIFIED` and independent | No freshness claim is made. |
+| Natural 05:00 laptop task | `FAIL` | `LastTaskResult=1`; dispatcher failed closed before backup-data write. |
+| PR #581 implementation | `FAIL` / not accepted | Merged main is not runtime acceptance. Windows PowerShell 5.1 job `99327789650` failed three tests because the derived token still reported elevation. Late review also found unsafe pre-restriction execution and incomplete rollback. |
+
+No complete, rich, or publicly verified `2026-08-31` observation is claimed.
+The dashboard pointer proves that the producer advanced, but cannot substitute
+for the missing controlled gates.
+
+The latest accepted laptop observation remains
+`obs-2026-08-30-69a34aa4c745bb2e`, catalog sequence 332. Catalog control and
+macro records extend through sequence 336. This entry does not accept a
+31 August observation into the laptop backup catalog.
+
+### Immutable evidence and active baseline
+
+| Evidence or active input | Bytes | SHA-256 / identity |
+|---|---:|---|
+| `C:\code\backups\AR-local-pi5\dispatcher-control\dispatcher-executions\20260830T190002Z-0b43ff212991405890e7b2df662952b4.json` | 698 | `88031066d9228f3acd09d97304d239df3da8698d871eb18fdf76dea3900f4165` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-S4U-NATURAL-FAILURE-20260831\20260831T073928+1000\diagnostic-summary.json` | 2126 | `c994432dd4f278d7ec3ad5ebce41a4d04cdb4f64fa58321a92378bc68268d423` |
+| `C:\code\backups\AR-local-pi5\evidence\A3-S4U-TOKEN-PROBE-20260831\interactive-safer-token-2.json` | 2286 | `8ca90ab3023fd55de1d236b81d1863e268b2d73d56b22f168ef5be7c95ba8845` |
+| Active runner `C:\code\backups\AR-local-pi5-receiver-f214e32\run_laptop_backup_task.ps1` | 4797 | `dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8`; receiver HEAD `f214e3249c7968d574e3449edb14792904e1cc1f`, but runner modified and receiver not clean |
+| `C:\code\backups\AR-local-pi5\dispatcher-control\runner-config.json` | 572 | `b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00` |
+| `C:\code\backups\AR-local-pi5\dispatcher-control\active-runner.json` | 170 | `fd66311c66aad9a8f16643171fdb3de54f6582361d41ce3255c7da09a086e923` |
+| Active manifest `...\manifests\af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092.json` | 1861 | `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092` |
+| Active implementation dispatcher `C:\code\backups\AR-local-pi5-receiver-68faf7e\laptop_backup_dispatcher.py` | 43837 | `bb19cee620e8792dbc2eb015af8f53a7e46afda9414d048eebcd010db3fbdbfc`; clean detached implementation HEAD `68faf7e13c650af7b1d713f4a604f9978897ce79` |
+| Active implementation atomic module `C:\code\backups\AR-local-pi5-receiver-68faf7e\laptop_backup_atomic.py` | 3426 | `89615eb4350afda7e71e5f9c1123928e5434c12bef9ef5a20374a795d9166842` |
+| Active backup candidate | - | clean detached `C:\code\backups\AR-local-pi5-candidate-f214e32-d008` at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Accepted pre-failure task definition | - | `AR-local laptop backup`; S4U, Limited, Ready, enabled; daily 05:00 and startup +5 minutes; immutable XML SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`; SDDL SHA-256 `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b` |
+| Catalog generations `C:\code\backups\AR-local-pi5\catalog\generations.jsonl` | 236234 | `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511` |
+| Latest verified pointer `C:\code\backups\AR-local-pi5\catalog\latest-verified.json` | 316 | `737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389` |
+| Latest accepted receipt `...\observations\2026-08-30\f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d\receipt.json` | 3392 | `7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea` |
+
+The active scheduled action enters an operator-writable runner before any
+restriction is established. That is not an acceptable privileged boundary.
+
+### Append-only deviation decision `D-010`
+
+D-009 remains historical evidence but its repair and transition authority are
+withdrawn. PR #581 and merge `211e6055ca0a21c35d2a1ea06ae4a1197acadafe`
+must not be installed, activated or used as transition authority. The failed
+task must not be manually triggered, reinstalled or modified from this entry.
+The Pi, payloads and backup data remain unchanged.
+
+The reasons are independent fail-closed defects:
+
+1. the task executes operator-writable PowerShell under the scheduler token, so
+   restriction of a later child occurs after an unsafe trust boundary;
+2. active candidate `f214e3249c7968d574e3449edb14792904e1cc1f`
+   chooses `BACKFILL` whenever any completed date is missing, making the required
+   natural `BACKUP-LATEST` path unreachable in that state.
+
+The compensating control is to leave the task failed closed while implementing
+a trusted-parent replacement. A future task action must enter immutable,
+administrator-protected code before reading or executing any operator-writable
+runner, configuration, manifest or checkout. That trusted parent must derive
+and prove a standard/restricted token, then launch only hash-bound backup code
+under that token. Operator-owned paths may be consumed only as opaque,
+authenticated bytes after the restriction boundary. ACLs must prove the
+operator has read/execute but not write access to the trusted parent and its
+containing path.
+
+Implementation must also correct `BACKUP-LATEST` classification, transaction
+flags and exact rollback so interruption after either atomic replacement
+restores the authenticated prestate. PowerShell 5.1 compatibility, CRLF-safe SSH,
+leaf-file ACL semantics and canonical task-SDDL comparison are mandatory tests
+because each has already caused a real bootstrap failure.
+
+### Authorization and acceptance gates
+
+This entry authorizes only a code-and-test PR for the trusted-parent design and
+documentation recording its review. It does not authorize an administrator
+command, task mutation, foreground backup, manual trigger, Pi change, deployment
+or publication change.
+
+Before any live transition:
+
+1. the exact implementation head passes Linux and Windows CI, the full local
+   suite, security review, failure-injection rollback tests and all substantive
+   review threads;
+2. a clean detached checkout exists at the exact merged implementation SHA;
+3. a new append-only authority entry authenticates implementation, protected
+   launcher, installer, manifests, prestate, exact one-line elevated command and
+   rollback command by path, byte length and SHA-256;
+4. that entry proves elevation is required exactly once and all routine
+   operation, validation and recovery afterward is non-administrator;
+5. transition occurs in daylight outside D-006, with Pi idle, task Ready, no
+   helper/lock/partial, at least 50 GiB free and a current restorable backup;
+6. no backup task is manually triggered. Acceptance requires a natural 05:00
+   `PASS/BACKUP-LATEST` for the current observation, then natural no-write
+   idempotence only when all identities match.
+
+Only a later append-only terminal entry may mark A3 `PASS` and authorize A4.
+
+### Exact read-only commands used
+
+```powershell
+git fetch origin --prune
+git rev-parse origin/main
+gh pr view 580 --json number,state,mergeCommit,headRefOid,statusCheckRollup,reviewDecision,url
+gh pr view 581 --json number,state,mergeCommit,headRefOid,statusCheckRollup,reviewDecision,url
+gh run view 33337805852 --job 99327789650 --log-failed
+Get-ScheduledTask -TaskName 'AR-local laptop backup'
+Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup'
+Get-FileHash -Algorithm SHA256 -LiteralPath <each exact evidence and active-input path listed above>
+git -C 'C:\code\backups\AR-local-pi5-receiver-f214e32' rev-parse HEAD
+git -C 'C:\code\backups\AR-local-pi5-receiver-f214e32' status --porcelain=v1
+ssh ar-local-pi5-lan "cd /srv/ar-local/AR-local || exit 2; git rev-parse HEAD; git status --porcelain=v1; systemctl is-active ar-local-daily.service || true; systemctl is-enabled ar-local-daily.timer || true; systemctl is-active ar-local-daily.timer || true; test -e /srv/ar-local/data/state/daily-ingest.lock; curl -fsS http://127.0.0.1:8808/api/latest; systemctl show ar-local-daily.service -p Result -p ExecMainStatus -p NRestarts -p InvocationID -p InactiveEnterTimestamp"
+```
+
+### Stop and rollback conditions
+
+Stop on dirty protected checkout, Pi SHA drift, active ingest, D-006 freeze,
+changed evidence, review/CI failure, unresolved substantive thread,
+operator-writable trusted-parent path, token ambiguity, task drift, catalog
+failure or less than 50 GiB free. Before an authorized transition, rollback
+means no mutation. During a later authorized transition, rollback must restore
+the exact authenticated task, ACLs, protected files, runner, configuration and
+pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
