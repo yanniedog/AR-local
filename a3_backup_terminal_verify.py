@@ -396,8 +396,10 @@ def verify(args: argparse.Namespace, writer: EvidenceWriter) -> Mapping[str, obj
     task = collect_task_snapshot(args, writer)
     dispatcher = validate_dispatcher(args)
     records = validate_new_records(args)
-    dispatcher_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in dispatcher["executions"])
-    record_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in records["records"])
+    ordered_dispatcher = sorted(dispatcher["executions"], key=lambda item: (datetime.fromisoformat(str(item["completed_at"])), str(item["path"])))
+    ordered_records = sorted(records["records"], key=lambda item: (datetime.fromisoformat(str(item["completed_at"])), str(item["path"])))
+    dispatcher_times = [datetime.fromisoformat(str(item["completed_at"])) for item in ordered_dispatcher]
+    record_times = [datetime.fromisoformat(str(item["completed_at"])) for item in ordered_records]
     if len(dispatcher_times) != len(record_times) or any(
         dispatch_time < record_time or dispatch_time - record_time > timedelta(minutes=5)
         for dispatch_time, record_time in zip(dispatcher_times, record_times, strict=True)
@@ -406,13 +408,34 @@ def verify(args: argparse.Namespace, writer: EvidenceWriter) -> Mapping[str, obj
     last_run = datetime.fromisoformat(str(task["last_run_time"]))
     if last_run.tzinfo is None:
         last_run = last_run.replace(tzinfo=HOBART_OFFSET)
-    matching_starts = [
-        datetime.fromisoformat(str(item["started_at"]))
-        for item in dispatcher["executions"]
-        if timedelta(0) <= datetime.fromisoformat(str(item["started_at"])) - last_run <= timedelta(minutes=2)
+    paired = list(zip(ordered_dispatcher, ordered_records, strict=True))
+    matching_pairs = [
+        (dispatch, record)
+        for dispatch, record in paired
+        if timedelta(0) <= datetime.fromisoformat(str(dispatch["started_at"])) - last_run <= timedelta(minutes=2)
     ]
-    if len(matching_starts) != 1:
+    if len(matching_pairs) != 1:
         raise VerificationError("dispatcher history does not bind exactly one execution to the accepted Task Scheduler trigger")
+    boot_time = datetime.fromisoformat(str(task["boot_time"]))
+    if boot_time.tzinfo is None:
+        boot_time = boot_time.replace(tzinfo=HOBART_OFFSET)
+    daily_minimum = datetime.combine(args.date, time(5, 0), HOBART_OFFSET)
+    daily_maximum = datetime.combine(args.date, time(5, 5), HOBART_OFFSET)
+    startup_minimum = boot_time + timedelta(minutes=5)
+    startup_maximum = startup_minimum + timedelta(minutes=5)
+    natural_pairs = [
+        (dispatch, record)
+        for dispatch, record in paired
+        if (
+            daily_minimum <= datetime.fromisoformat(str(dispatch["started_at"])).astimezone(HOBART_OFFSET) < daily_maximum
+            or (
+                datetime.fromisoformat(str(dispatch["started_at"])).astimezone(HOBART_OFFSET).date() == args.date
+                and startup_minimum <= datetime.fromisoformat(str(dispatch["started_at"])) <= startup_maximum
+            )
+        )
+    ]
+    if sum(1 for _dispatch, record in natural_pairs if record.get("action") == "BACKUP-LATEST") != 1:
+        raise VerificationError("no unique BACKUP-LATEST record is bound to an authorized natural task trigger")
     catalog = validate_catalog_and_receipts(args)
     source = source_listing(args, writer)
     return {"date": args.date.isoformat(), "verifier": runtime, "task": task, "dispatcher": dispatcher, "scheduled_records": records, "catalog": catalog, "pi_source_equality": source}

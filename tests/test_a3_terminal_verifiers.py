@@ -13,7 +13,7 @@ import pytest
 
 import a3_backup_terminal_verify as backup
 import a3_ingest_terminal_verify as ingest
-from a3_verifier_common import EvidenceWriter, canonical_json, fail_closed_main, sha256_bytes, sha256_file, verify_handoff_authority
+from a3_verifier_common import EvidenceWriter, VerificationError, canonical_json, fail_closed_main, sha256_bytes, sha256_file, verify_handoff_authority
 
 
 COMMIT_A = "a" * 40
@@ -209,14 +209,18 @@ def test_backup_verifier_pairs_dispatcher_and_records_by_completion_time(monkeyp
     args = SimpleNamespace(date=datetime.fromisoformat("2026-08-31").date())
     writer = object()
     monkeypatch.setattr(backup, "verify_runtime_source", lambda *_: {"status": "PASS"})
-    monkeypatch.setattr(backup, "collect_task_snapshot", lambda *_: {"status": "PASS", "last_run_time": "2026-08-30T16:00:00+00:00"})
+    monkeypatch.setattr(backup, "collect_task_snapshot", lambda *_: {
+        "status": "PASS",
+        "last_run_time": "2026-08-30T19:00:00+00:00",
+        "boot_time": "2026-08-30T15:55:00+00:00",
+    })
     monkeypatch.setattr(backup, "validate_dispatcher", lambda *_: {"executions": [
-        {"started_at": "2026-08-30T19:00:00+00:00", "completed_at": "2026-08-30T19:01:00+00:00"},
-        {"started_at": "2026-08-30T16:00:00+00:00", "completed_at": "2026-08-30T16:01:00+00:00"},
+        {"path": "dispatcher-b.json", "started_at": "2026-08-30T19:00:00+00:00", "completed_at": "2026-08-30T19:01:00+00:00"},
+        {"path": "dispatcher-a.json", "started_at": "2026-08-30T16:00:00+00:00", "completed_at": "2026-08-30T16:01:00+00:00"},
     ]})
     monkeypatch.setattr(backup, "validate_new_records", lambda *_: {"records": [
-        {"completed_at": "2026-08-30T16:00:00+00:00"},
-        {"completed_at": "2026-08-30T19:00:00+00:00"},
+        {"path": "record-a.json", "action": "BACKUP-LATEST", "completed_at": "2026-08-30T16:00:00+00:00"},
+        {"path": "record-b.json", "action": "NO_BACKUP_DATA_WRITE", "completed_at": "2026-08-30T19:00:00+00:00"},
     ]})
     monkeypatch.setattr(backup, "validate_catalog_and_receipts", lambda *_: {"status": "PASS"})
     monkeypatch.setattr(backup, "source_listing", lambda *_: {"status": "PASS"})
@@ -330,6 +334,45 @@ def test_powershell_wrapper_records_preinvocation_digest_failure(tmp_path: Path)
 
 def test_handoff_authority_requires_exact_source_binding(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     args = identity_args(tmp_path)
+    wrapper_blob = b"authenticated wrapper source\n"
+    args.preflight_wrapper_sha256 = sha256_bytes(wrapper_blob)
+    args.preflight_script_sha256 = DIGEST_B
+    authorization = {
+        "schema_version": 1,
+        "plan_document_id": args.plan_document_id,
+        "plan_version": args.plan_version,
+        "plan_git_commit": args.plan_git_commit,
+        "plan_sha256": args.plan_sha256,
+        "verifier_code_sha": args.verifier_code_sha,
+        "candidate_code_sha": args.candidate_code_sha,
+        "protected_code_sha": args.protected_code_sha,
+        "operator": args.operator,
+        "sources": {
+            "a3_ingest_terminal_verify.py": args.verifier_source_sha256,
+            "run_a3_timed_preflight.ps1": args.preflight_wrapper_sha256,
+            "timed-preflight.ps1": args.preflight_script_sha256,
+        },
+        "authorization": "AUTHORIZED",
+        "result": "PASS",
+        "deviations": [],
+        "deviation_authorization": None,
+    }
+    handoff = f"## Entry `HANDOFF-TEST`\n\n<!-- A3-VERIFIER-AUTHORIZATION {json.dumps(authorization, separators=(',', ':'))} -->\n".encode()
+    args.authority_handoff_sha256 = sha256_bytes(handoff)
+    responses = iter([
+        subprocess.CompletedProcess([], 0, handoff, b""),
+        subprocess.CompletedProcess([], 0, b"", b""),
+        subprocess.CompletedProcess([], 0, (args.authority_commit + "\n").encode(), b""),
+        subprocess.CompletedProcess([], 0, wrapper_blob, b""),
+    ])
+    monkeypatch.setattr("a3_verifier_common.run_capture", lambda *_args, **_kwargs: next(responses))
+    result = verify_handoff_authority(args, tmp_path, "a3_ingest_terminal_verify.py")
+    assert result["authorized_source_sha256"] == args.verifier_source_sha256
+    assert result["authorized_sources"]["run_a3_timed_preflight.ps1"] == args.preflight_wrapper_sha256
+
+
+def test_handoff_authority_ignores_markers_before_final_entry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    args = identity_args(tmp_path)
     authorization = {
         "schema_version": 1,
         "plan_document_id": args.plan_document_id,
@@ -346,12 +389,16 @@ def test_handoff_authority_requires_exact_source_binding(monkeypatch: pytest.Mon
         "deviations": [],
         "deviation_authorization": None,
     }
-    handoff = f"<!-- A3-VERIFIER-AUTHORIZATION {json.dumps(authorization, separators=(',', ':'))} -->\n".encode()
+    handoff = (
+        f"## Entry `HANDOFF-OLD`\n<!-- A3-VERIFIER-AUTHORIZATION {json.dumps(authorization, separators=(',', ':'))} -->\n"
+        "## Entry `HANDOFF-NEW-BLOCKED`\n\nResult: BLOCKED\n"
+    ).encode()
     args.authority_handoff_sha256 = sha256_bytes(handoff)
     responses = iter([
         subprocess.CompletedProcess([], 0, handoff, b""),
         subprocess.CompletedProcess([], 0, b"", b""),
+        subprocess.CompletedProcess([], 0, (args.authority_commit + "\n").encode(), b""),
     ])
     monkeypatch.setattr("a3_verifier_common.run_capture", lambda *_args, **_kwargs: next(responses))
-    result = verify_handoff_authority(args, tmp_path, "a3_ingest_terminal_verify.py")
-    assert result["authorized_source_sha256"] == args.verifier_source_sha256
+    with pytest.raises(VerificationError, match="uniquely authorize"):
+        verify_handoff_authority(args, tmp_path, "a3_ingest_terminal_verify.py")
