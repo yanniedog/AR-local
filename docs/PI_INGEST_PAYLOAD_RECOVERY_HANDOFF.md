@@ -4175,3 +4175,25 @@ work non-elevated. A3 remains `RUNNING` until the next protected natural 01:00
 ingest and first natural dispatcher-backed 05:00 or startup backup both pass.
 Only a later append-only terminal A3 `PASS` authorizes progression to A4
 planning; physical A4 implementation and Pi deployment remain unauthorized.
+
+## Entry `HANDOFF-20260830T165000+1000-A3-XML-HASH-CORRECTION`
+
+This append-only correction supersedes one malformed value in the immediately
+preceding entry without editing or relabelling that completed entry.
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `35a9903acde4c8ef29158105738d6644f7205c93` |
+| Previous complete handoff Git-blob SHA-256 | `363182933a95832c37781d95ee697895e85598aa6e51841e37e13409620bf08b` |
+| Incorrect value | The post-failure task row recorded the 65-character string `aa539fb4bb2f176b8b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`. It is not a SHA-256 digest and is revoked. |
+| Correct accepted task XML SHA-256 | `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2` |
+| Independent live readback | The task remained Ready and enabled with `LastTaskResult=0`; `Get-ArTaskXmlBytes` produced the correct digest above; SDDL remained `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376`; dispatcher install root remained absent and dispatcher control root empty. |
+| Discovery result | `BLOCKED` before gate preparation, manifest preparation, elevation or mutation. |
+| A3 result | `RUNNING` |
+| A4 result | `BLOCKED` pending terminal A3 natural proof |
+
+Every continuation must use only the corrected 64-character digest. After this
+entry merges, Codex must create a fresh authority checkout and unique evidence
+generation, repeat all preflights, use a new activation ID and manifest, and
+preserve this safely blocked preflight as immutable diagnostic evidence. No Pi
+deployment, manual ingest, task trigger or publication operation is authorized.
