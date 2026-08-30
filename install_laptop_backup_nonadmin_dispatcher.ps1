@@ -220,11 +220,11 @@ $controlChanged = $false
 try {
   $unexpected = @(Get-ChildItem -LiteralPath $ControlRoot -Force)
   if ($unexpected.Count -ne 0) { throw 'Dispatcher control root is not empty before initial D-008 transition.' }
+  $controlChanged = $true
   $activationLog = Join-Path $script:executionRoot 'manifest-activation.txt'
   & $PythonPath $dispatcherPath activate --control-root $ControlRoot --manifest $ManifestPath *> $activationLog
   $activationExit = $LASTEXITCODE
   if ($activationExit -ne 0) { throw "Initial non-administrator manifest activation failed with exit $activationExit." }
-  $controlChanged = $true
   if (Test-Path -LiteralPath $installedConfig) { throw 'Runner configuration unexpectedly exists after activation.' }
   $configTemporary = Join-Path $ControlRoot ('.runner-config-' + [guid]::NewGuid().ToString('N') + '.tmp')
   [IO.File]::WriteAllBytes($configTemporary, [IO.File]::ReadAllBytes($RunnerConfigPath))
