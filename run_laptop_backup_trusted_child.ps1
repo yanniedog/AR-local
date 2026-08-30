@@ -114,6 +114,7 @@ try {
   }
   $env:PATH = (($tools | ForEach-Object { [IO.Path]::GetDirectoryName($_.Path) } | Select-Object -Unique) -join ';')
   $env:AR_TRUSTED_ROOT = $trustedRoot
+  $env:GIT_OPTIONAL_LOCKS = '0'
   $env:PYTHONNOUSERSITE = '1'
   $env:PYTHONDONTWRITEBYTECODE = '1'
   & $python -s -E $dispatcher run --control-root $control
