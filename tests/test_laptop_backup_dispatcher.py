@@ -113,7 +113,7 @@ def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     result = dispatcher.activate(control, proposed)
     assert result["manifest_sha256"] == digest
     monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
-    monkeypatch.delenv("AR_DISPATCHER_TEST_ADMIN", raising=False)
+    monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "0")
     probe = dispatcher.probe(control)
     assert probe == {
         "ok": True,
@@ -139,6 +139,9 @@ def test_probe_rejects_elevated_or_wrong_sid(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "1")
     with pytest.raises(ValueError, match="must not run elevated"):
         dispatcher.probe(control)
+    monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "invalid")
+    with pytest.raises(ValueError, match="must be 0 or 1"):
+        dispatcher.is_admin()
 
 
 def test_duplicate_and_unknown_fields_fail_closed(tmp_path: Path) -> None:

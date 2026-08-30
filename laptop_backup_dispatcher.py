@@ -552,7 +552,9 @@ def current_sid() -> str:
 def is_admin() -> bool:
     override = os.environ.get("AR_DISPATCHER_TEST_ADMIN") if "PYTEST_CURRENT_TEST" in os.environ else None
     if override is not None:
-        return bool(override)
+        if override not in {"0", "1"}:
+            raise ValueError("AR_DISPATCHER_TEST_ADMIN must be 0 or 1")
+        return override == "1"
     if os.name != "nt":
         return False
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
