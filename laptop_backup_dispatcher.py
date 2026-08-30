@@ -30,7 +30,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ACTIVATION_ID = re.compile(r"^[0-9a-f]{32}$")
 PLAN_ID = "ARL-OPS-001"
 MANIFEST_KEYS = frozenset({
-    "schema_version", "sequence", "activation_id", "created_at", "expires_at",
+    "schema_version", "sequence", "activation_id", "created_at", "activation_expires_at",
     "previous_manifest_sha256", "plan_document_id", "plan_version",
     "plan_git_commit", "plan_sha256", "authority_commit", "handoff_sha256",
     "authority_repo", "authority_handoff_path",
@@ -163,9 +163,12 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
         raise ValueError("manifest sequence is invalid")
     require_hash(value.get("activation_id"), ACTIVATION_ID, "activation ID")
     created = parse_time(value.get("created_at"), "created_at")
-    expires = parse_time(value.get("expires_at"), "expires_at")
+    expires = parse_time(value.get("activation_expires_at"), "activation_expires_at")
     if expires <= created or (activation and datetime.now(timezone.utc) >= expires):
-        raise ValueError("manifest authority is expired or inverted")
+        raise ValueError("manifest activation authority is expired or inverted")
+    # Expiry prevents stale authorization from being activated.  Once the exact
+    # bytes have a terminal PASS receipt, that immutable active runner remains
+    # durable; daily backups must not acquire a new authorization every day.
     previous = value.get("previous_manifest_sha256")
     if previous is not None:
         require_hash(previous, SHA256, "previous manifest digest")
@@ -486,10 +489,12 @@ def run(control_root: Path) -> int:
         "-PlanGitCommit", str(manifest["scheduled_plan_git_commit"]),
         "-Operator", str(manifest["operator"]),
     ]
-    completed = subprocess.run(command, shell=False)
-    result["child_exit_code"] = completed.returncode
+    # spawnv passes an exact argv vector to the fixed executable and never
+    # invokes cmd.exe or PowerShell command parsing for manifest values.
+    child_exit_code = os.spawnv(os.P_WAIT, command[0], command)
+    result["child_exit_code"] = child_exit_code
     print(json.dumps(result, sort_keys=True), flush=True)
-    return completed.returncode
+    return child_exit_code
 
 
 def activate(control_root: Path, manifest_path: Path) -> dict[str, object]:
@@ -561,7 +566,7 @@ def prepare_manifest(args: argparse.Namespace) -> dict[str, object]:
         "sequence": args.sequence,
         "activation_id": args.activation_id,
         "created_at": created.isoformat().replace("+00:00", "Z"),
-        "expires_at": args.expires_at,
+        "activation_expires_at": args.activation_expires_at,
         "previous_manifest_sha256": args.previous_manifest_sha256,
         "plan_document_id": PLAN_ID,
         "plan_version": "1.5",
@@ -613,7 +618,7 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--output", type=Path, required=True)
     item.add_argument("--sequence", type=int, required=True)
     item.add_argument("--activation-id", required=True)
-    item.add_argument("--expires-at", required=True)
+    item.add_argument("--activation-expires-at", required=True)
     item.add_argument("--previous-manifest-sha256")
     item.add_argument("--plan-git-commit", required=True)
     item.add_argument("--plan-sha256", required=True)

@@ -212,9 +212,9 @@ try {
     $_.ProcessId -ne $PID -and $_.CommandLine -match 'laptop_backup_(scheduled|transition)|laptop_pull_backup'
   })
   if ($activeAfterDisable.Count -gt 0) { throw 'A laptop backup process appeared during task quiescence.' }
+  $installedFiles = $true
   Install-ArProtectedDispatcherFiles -SourceRoot $SourceRoot -InstallRoot $InstallRoot `
     -OperatorSid $OperatorSid -ExpectedHashes $fileHashes
-  $installedFiles = $true
 
   & $PythonPath $dispatcherPath activate --control-root $ControlRoot --manifest $ManifestPath
   if ($LASTEXITCODE -ne 0) { throw 'Initial dispatcher manifest activation failed.' }

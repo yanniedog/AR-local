@@ -54,7 +54,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "sequence": 1,
         "activation_id": "1" * 32,
         "created_at": now.isoformat().replace("+00:00", "Z"),
-        "expires_at": (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+        "activation_expires_at": (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
         "previous_manifest_sha256": None,
         "plan_document_id": "ARL-OPS-001",
         "plan_version": "1.5",
