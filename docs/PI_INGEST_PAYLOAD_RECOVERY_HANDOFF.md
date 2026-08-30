@@ -4246,3 +4246,133 @@ administrator command is authorized. On `PASS`, Codex performs all readback and
 continuation work non-elevated. A3 still requires the next protected natural
 01:00 ingest and first natural dispatcher-backed 05:00 or startup backup before
 a later append-only entry may record terminal `PASS` and authorize A4 planning.
+
+## Entry `HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN` |
+| Previous handoff entry | `HANDOFF-20260830T165000+1000-A3-XML-HASH-CORRECTION` |
+| Created, Australia/Hobart | `2026-08-30T17:06:00+10:00` |
+| Created, UTC | `2026-08-30T07:06:00Z` |
+| Author | Codex unattended for AR-local operator `jkoka` |
+| Previous authority merge | `0efa20cc94be52fd545b0503206eee8e99ff40e9` |
+| Previous complete handoff Git-blob SHA-256 | `5ca406ae2fbb989a2476704b465e6fa1ec66ab4664cf27d4e3abc7295b28be8b` |
+| Controlling plan | `ARL-OPS-001` v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean, idle, lock absent and dashboard healthy after the incident; no Pi production change or deployment authorized |
+| Failed bootstrap result | `FAIL`; never relabelled `PASS` or `ROLLED_BACK` |
+| Continuity recovery | `PASS_FOR_CONTINUITY`: legacy task Ready/enabled, `LastTaskResult=0`, next run 2026-08-31 05:00, exact prior XML, original action/triggers/settings and S4U/Limited principal |
+| Recovery deviation | `RECOVERED_WITH_SDDL_CANONICALIZATION_DRIFT`; effective ACE set is preserved, but Task Scheduler reordered it and added the auto-inherited descriptor flag |
+| A3 result | `RUNNING`; fixed non-administrator runner transition and natural proof remain outstanding |
+| A4 result | `BLOCKED` pending terminal A3 `PASS` |
+| Operator authorization | “Do whatever is required to NOT require run as administrator” and “I'm not going to hang around to do it multiple times”; the one corrected elevated attempt has been consumed and no further administrator command is authorized |
+
+### Immutable incident evidence
+
+Evidence root:
+`C:\code\backups\AR-local-pi5\evidence\A3-FIXED-DISPATCHER-PS51-REPAIR-20260830\20260830T165400+1000`.
+
+- `bootstrap-incident-recovery.json`: SHA-256
+  `9bbc5f3d21962b4814a0ab5ee09881f990249fbc23023548c1308bfdf80490b1`;
+- terminal failed `bootstrap-result.json`: SHA-256
+  `731537206f678ccc42d0e4d0c58ed38472f14d3bc9a99e2fdea949f07ce388d7`;
+- authenticated pre-task and restored-task XML: identical SHA-256
+  `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`;
+- authenticated pre-task SDDL: SHA-256
+  `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376`;
+- restored live SDDL: SHA-256
+  `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`.
+
+The pre/post descriptors have the same owner, group and four ACE identities,
+types, masks and inherited flags. The only descriptor difference is canonical
+ACE ordering plus `DiscretionaryAclAutoInherited`. The task action still points
+to `C:\code\backups\AR-local-pi5-receiver-f214e32`, candidate
+`f214e3249c7968d574e3449edb14792904e1cc1f`, and protected Pi
+`9302890fcc752cbf90da97d597e972c157d913e3`.
+
+### Root cause and retained residue
+
+Three independent defects are recorded:
+
+1. the elevated installer's PowerShell here-string crossed SSH with CRLF line
+   endings; Bash reported invalid `set`/`cd` input, and the script did not fail
+   closed on that malformed remote program;
+2. `icacls` applied container/object-inherit ACEs directly to leaf files after
+   removing inheritance, leaving the protected dispatcher files unreadable;
+3. rollback incorrectly required raw SDDL string identity after Task Scheduler
+   canonicalized the restored descriptor.
+
+`C:\Program Files\AR-local Backup Dispatcher` contains the unreadable failed
+installation. It is not referenced by the live task. Dispatcher control state
+is empty. The residue must not be used, edited, deleted, or described as an
+installed dispatcher. It may be removed only by a later separately authorized
+maintenance action; its presence does not affect the legacy task or Pi ingest.
+
+### Append-only deviation decision `D-008`
+
+D-007's administrator-protected fixed dispatcher is withdrawn as the live A3
+route. Repeating elevation is prohibited. The replacement preserves the live
+task definition and its privilege level and changes only the existing
+user-owned runner file that the task already trusts. This does not introduce a
+new privilege boundary: the legacy task already executes code from the same
+operator-writable checkout.
+
+The non-administrator design shall:
+
+1. leave Task Scheduler XML, SDDL, triggers, principal, action and settings
+   unchanged;
+2. build and review a small PowerShell 5.1-compatible runner shim plus a
+   non-elevated transactional installer in a separate exact-main code PR;
+3. hard-bind the shim to an exact clean detached dispatcher checkout, Python
+   executable, dispatcher/atomic-module hashes, control root, candidate and
+   protected-Pi identities; no manifest may redirect dispatcher code;
+4. prepare and activate the strict content-addressed dispatcher manifest before
+   replacing the runner, so the legacy runner remains functional until the
+   final atomic file replacement;
+5. replace only `run_laptop_backup_task.ps1` using same-volume atomic replace,
+   retain and hash the exact original as rollback evidence, and make the shim
+   fall back to the authenticated original only while no active manifest exists;
+6. run a foreground limited-user semantic probe without starting the scheduled
+   task; on any failure atomically restore the exact original runner;
+7. record the intentional managed checkout modification explicitly instead of
+   claiming the legacy receiver is clean; all candidate receivers and the
+   dispatcher implementation checkout remain exact, clean and detached;
+8. make future candidate changes manifest-only and non-administrator, with
+   sequence/replay/expiry/authority/lease/hash/receipt controls unchanged; and
+9. add independent drift checks for the shim, implementation bytes, active
+   pointer, task XML/SDDL, candidate receiver, residue, catalog and free space.
+
+The primary risk is that the runner and dispatcher launcher are protected from
+accidental drift by content hashes and receipts rather than by an administrator
+ACL. Compensating controls are the unchanged S4U/Limited task, hard-coded exact
+dispatcher hashes, clean detached implementation and candidate checkouts,
+atomic replacement and rollback, fail-closed pointer validation, append-only
+activation receipts, daily drift evidence and the 50 GiB floor. This trade-off
+is explicitly accepted to achieve genuinely unattended operation without UAC.
+
+### Exact continuation and acceptance
+
+After this documentation-only decision merges, create the non-administrator
+implementation PR from that exact `origin/main`. Tests must cover PowerShell
+5.1, CRLF/LF inputs, unreadable or drifted dispatcher files, malformed and
+replayed manifests, missing/partial control state, failure before and after
+atomic runner replacement, exact rollback, concurrent task start, laptop
+restart boundaries, dirty candidate checkout, stale authority, protected Pi
+mismatch, active ingest/lock, freeze, and disk floor.
+
+Outside D-006 freeze, prepare fresh authority, gate, manifest and evidence. The
+transition is acceptable only if no backup/task process is active, the Pi is
+clean/pinned/idle, the task is Ready and exact, the original runner hash is
+authenticated, the manifest activation and foreground semantic probe pass, the
+new runner is atomically installed, and a second probe passes through the
+installed runner. No task trigger, manual backup, manual ingest, Pi deployment
+or publication manipulation is authorized.
+
+A3 remains `RUNNING` after transition. It becomes terminal `PASS` only after
+the unchanged task survives the next D-006-protected natural 01:00 ingest and
+then produces a verified natural 05:00 or startup dispatcher-backed backup for
+that observation. On terminal A3 `PASS`, append a fresh handoff entry and begin
+A4 planning automatically; A4 physical implementation remains separately
+gated.
