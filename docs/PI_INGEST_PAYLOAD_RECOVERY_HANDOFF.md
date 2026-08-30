@@ -4879,9 +4879,15 @@ additional fail-closed authentication against the unique active evidence root:
 
 ```powershell
 $ErrorActionPreference='Stop'
-$root=[IO.Path]::GetFullPath((Get-Content 'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831\ACTIVE_EVIDENCE_PATH.txt' -Raw).Trim())
+$parent=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831')
+$pointer=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt';$root=[IO.Path]::GetFullPath((Get-Content $pointer -Raw).Trim())
+if(-not$root.StartsWith($parent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or(Split-Path $root -Leaf)-notmatch'^20260831T[0-9]{6}\+1000-[0-9a-f]{32}$'){throw 'Active evidence root escaped or has an invalid generation identity.'}
+$generations=@(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction Stop|Where-Object{Test-Path (Join-Path $_.FullName '0025-hashes.json') -PathType Leaf})
+if($generations.Count-ne 1-or[IO.Path]::GetFullPath($generations[0].FullName)-cne$root){throw 'Active evidence generation is not uniquely bound.'}
 $manifestPath=Join-Path $root '0025-hashes.json';$manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
 if($manifest.result-cne'PASS'-or$manifest.script_sha256-cne'd3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a'){throw '00:25 manifest identity failed.'}
+$completed=[DateTimeOffset]::Parse([string]$manifest.completed_at)
+if($completed-lt[DateTimeOffset]'2026-08-31T00:20:00+10:00'-or$completed-ge[DateTimeOffset]'2026-08-31T00:30:00+10:00'){throw '00:25 manifest completion is outside the authorized window.'}
 $expected=@{'0025-local.json'=$manifest.local_sha256;'0025-pi.txt'=$manifest.pi_sha256;'0025-values.json'=$manifest.values_sha256}
 foreach($name in $expected.Keys){$path=Join-Path $root $name;if(-not(Test-Path $path -PathType Leaf)-or(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()-cne$expected[$name]){throw "00:25 evidence authentication failed: $name"}}
 ```
