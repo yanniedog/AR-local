@@ -72,6 +72,13 @@ foreach ($path in @($Target,$ControlRoot,$EvidenceRoot)) { if (-not (Test-Path -
 foreach ($path in @($PackagePath,$Target,$ControlRoot,$EvidenceRoot,([IO.Path]::GetDirectoryName($InstallRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
 $expectedControl = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
 if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($expectedControl)) { throw 'ControlRoot must be exactly Target\dispatcher-control.' }
+$targetPrefix = [IO.Path]::GetFullPath($Target).TrimEnd('\') + '\'
+$controlPrefix = [IO.Path]::GetFullPath($ControlRoot).TrimEnd('\') + '\'
+$evidenceFull = [IO.Path]::GetFullPath($EvidenceRoot)
+if (-not $evidenceFull.StartsWith($targetPrefix,[StringComparison]::OrdinalIgnoreCase) -or
+    $evidenceFull.StartsWith($controlPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+  throw 'EvidenceRoot must be within Target but outside dispatcher-control.'
+}
 $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
 $installFull = [IO.Path]::GetFullPath($InstallRoot)
 if (-not $installFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'InstallRoot must be below Program Files.' }
@@ -146,7 +153,7 @@ try {
       [IO.Path]::GetFullPath([string]$dispatcherManifest.allowed_receiver_root) -cne [IO.Path]::GetFullPath($InstallRoot)) {
     throw 'Protected dispatcher manifest does not match the authorised bootstrap identity.'
   }
-  $trustedConfig = Get-Content -LiteralPath (Join-Path $InstallRoot 'trusted-child.json') -Raw | ConvertFrom-Json
+  $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
   $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
   $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
   $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'

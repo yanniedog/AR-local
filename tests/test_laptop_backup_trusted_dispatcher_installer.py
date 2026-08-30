@@ -31,6 +31,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "$stream.Position = 0" in core
     assert "ZipArchive" in core
     assert "Set-ArTrustedTaskSddl" in source
+    assert "Assert-ArTrustedChildConfiguration" in source
     assert "New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited" in source
     assert "ConvertFrom-Json -AsHashtable" not in source + core
 

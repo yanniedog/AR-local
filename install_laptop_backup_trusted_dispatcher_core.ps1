@@ -167,6 +167,53 @@ function Assert-ArTrustedPackageManifest {
   $manifest
 }
 
+function Assert-ArTrustedChildConfiguration {
+  param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$ControlRoot)
+  $path = Join-Path $Root 'trusted-child.json'
+  $config = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
+  $fields = @(
+    'atomic_path','atomic_sha256','control_root','dispatcher_path','dispatcher_sha256',
+    'git_path','git_sha256','python_path','python_sha256','schema_version',
+    'scp_path','scp_sha256','ssh_path','ssh_sha256','whoami_path','whoami_sha256'
+  )
+  if ($config.schema_version -ne 2 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
+      [IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($ControlRoot)) {
+    throw 'Trusted child configuration identity is invalid.'
+  }
+  $internal = @(
+    @('python_path','python_sha256','python\python.exe'),
+    @('dispatcher_path','dispatcher_sha256','laptop_backup_dispatcher.py'),
+    @('atomic_path','atomic_sha256','laptop_backup_atomic.py')
+  )
+  foreach ($item in $internal) {
+    $actualPath = Assert-ArTrustedPlainPath ([string]$config.($item[0]))
+    if ($actualPath -cne (Join-Path $Root $item[2]) -or (Get-ArTrustedSha256 $actualPath) -cne [string]$config.($item[1])) {
+      throw "Trusted internal dependency is invalid: $($item[0])"
+    }
+  }
+  $system = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
+  $programRoots = @([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles),[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) | Where-Object { $_ }
+  $tools = @(
+    @('git_path','git_sha256','git.exe',$programRoots),
+    @('ssh_path','ssh_sha256','ssh.exe',@($system)),
+    @('scp_path','scp_sha256','scp.exe',@($system)),
+    @('whoami_path','whoami_sha256','whoami.exe',@($system))
+  )
+  foreach ($item in $tools) {
+    $actualPath = Assert-ArTrustedPlainPath ([string]$config.($item[0]))
+    $allowed = $false
+    foreach ($allowedRoot in $item[3]) {
+      $prefix = [IO.Path]::GetFullPath([string]$allowedRoot).TrimEnd('\') + '\'
+      if ($actualPath.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) { $allowed = $true }
+    }
+    if (-not $allowed -or [IO.Path]::GetFileName($actualPath) -ine $item[2] -or
+        (Get-ArTrustedSha256 $actualPath) -cne [string]$config.($item[1])) {
+      throw "Trusted external tool is invalid: $($item[2])"
+    }
+  }
+  $config
+}
+
 function Set-ArTrustedRootAcl {
   param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$OperatorSid)
   $icacls = "$env:SystemRoot\System32\icacls.exe"
