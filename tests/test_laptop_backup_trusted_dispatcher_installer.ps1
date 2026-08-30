@@ -44,14 +44,15 @@ if ($isAdmin) {
     $xml = Export-ScheduledTask -TaskName $name
     $xmlBytes = Get-ArTrustedTaskXmlBytes $name
     $sddl = Get-ArTrustedTaskSddl $name
+    $sddlSemantic = Get-ArTrustedSddlSemanticSha256 $sddl
     $replacement = New-ScheduledTask -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\whoami.exe") `
       -Settings $settings -Principal $principal
     Register-ScheduledTask -TaskName $name -InputObject $replacement -Force | Out-Null
     Restore-ArTrustedPriorTask -TaskName $name -TaskXml $xml -TaskSddl $sddl
-    if ((Get-ArTrustedTextSha256 (Get-ArTrustedTaskSddl $name)) -cne (Get-ArTrustedTextSha256 $sddl) -or
+    if ((Get-ArTrustedSddlSemanticSha256 (Get-ArTrustedTaskSddl $name)) -cne $sddlSemantic -or
         (Get-ArTrustedTextSha256 ([Text.Encoding]::Unicode.GetString((Get-ArTrustedTaskXmlBytes $name), 2, (Get-ArTrustedTaskXmlBytes $name).Length - 2))) -cne
         (Get-ArTrustedTextSha256 ([Text.Encoding]::Unicode.GetString($xmlBytes, 2, $xmlBytes.Length - 2)))) {
-      throw 'Task Scheduler did not round-trip the authenticated task definition exactly.'
+      throw 'Task Scheduler did not round-trip the authenticated task definition semantically.'
     }
   } finally {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue

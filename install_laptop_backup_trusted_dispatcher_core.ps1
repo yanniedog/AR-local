@@ -27,6 +27,30 @@ function Get-ArTrustedTaskSddl {
   $service.GetFolder('\').GetTask("\$TaskName").GetSecurityDescriptor(7)
 }
 
+function Get-ArTrustedSddlSemanticSha256 {
+  param([Parameter(Mandatory = $true)][string]$Sddl)
+  $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
+  $aces = @()
+  foreach ($ace in $descriptor.DiscretionaryAcl) {
+    if ($ace -isnot [Security.AccessControl.QualifiedAce] -or $ace -isnot [Security.AccessControl.KnownAce]) {
+      throw 'Task SDDL contains an unsupported ACE type.'
+    }
+    $flags = [int]$ace.AceFlags -band (-bnot [int][Security.AccessControl.AceFlags]::Inherited)
+    $objectType = if ($ace -is [Security.AccessControl.ObjectAce]) { [string]$ace.ObjectAceType } else { '' }
+    $inheritedType = if ($ace -is [Security.AccessControl.ObjectAce]) { [string]$ace.InheritedObjectAceType } else { '' }
+    $opaque = if ($ace.OpaqueLength -gt 0) { [BitConverter]::ToString($ace.GetOpaque()) -replace '-', '' } else { '' }
+    $aces += '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $ace.AceQualifier,$flags,$ace.AccessMask,
+      $ace.SecurityIdentifier.Value,$objectType,$inheritedType,$opaque
+  }
+  $value = [ordered]@{
+    owner = if ($null -ne $descriptor.Owner) { $descriptor.Owner.Value } else { $null }
+    group = if ($null -ne $descriptor.Group) { $descriptor.Group.Value } else { $null }
+    dacl_protected = (($descriptor.ControlFlags -band [Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -ne 0)
+    aces = @($aces | Sort-Object)
+  }
+  Get-ArTrustedTextSha256 (($value | ConvertTo-Json -Depth 5 -Compress))
+}
+
 function Set-ArTrustedTaskSddl {
   param([Parameter(Mandatory = $true)][string]$TaskName, [Parameter(Mandatory = $true)][string]$OperatorSid)
   $sddl = "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;$OperatorSid)"

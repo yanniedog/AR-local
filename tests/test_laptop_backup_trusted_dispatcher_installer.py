@@ -24,6 +24,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Restore-ArTrustedPriorTask" in source
     assert "ExpectedOldTaskXmlSha256" in source
     assert "ExpectedOldTaskSddlSha256" in source
+    assert "ExpectedOldTaskSddlSemanticSha256" in source
     assert "PlanGitCommit" in source
     assert "PlanSha256" in source
     assert "HandoffSha256" in source

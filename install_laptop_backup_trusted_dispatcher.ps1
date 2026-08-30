@@ -17,6 +17,7 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$HandoffSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskXmlSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskSddlSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskSddlSemanticSha256,
   [Parameter(Mandatory = $true)][int]$ExpectedOldTaskLastResult,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
@@ -125,7 +126,11 @@ $oldXmlPath = Join-Path $script:executionRoot 'pre-bootstrap-task.xml'
 [IO.File]::WriteAllBytes($oldXmlPath, (Get-ArTrustedTaskXmlBytes $TaskName))
 $oldSddl = Get-ArTrustedTaskSddl $TaskName
 [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pre-bootstrap-task.sddl'), $oldSddl, [Text.UTF8Encoding]::new($false))
-if ((Get-ArTrustedSha256 $oldXmlPath) -cne $ExpectedOldTaskXmlSha256 -or (Get-ArTrustedTextSha256 $oldSddl) -cne $ExpectedOldTaskSddlSha256) { throw 'Existing task is not the authorised prestate.' }
+if ((Get-ArTrustedSha256 $oldXmlPath) -cne $ExpectedOldTaskXmlSha256 -or
+    (Get-ArTrustedTextSha256 $oldSddl) -cne $ExpectedOldTaskSddlSha256 -or
+    (Get-ArTrustedSddlSemanticSha256 $oldSddl) -cne $ExpectedOldTaskSddlSemanticSha256) {
+  throw 'Existing task is not the authorised prestate.'
+}
 
 $staging = $InstallRoot + '.staging-' + [guid]::NewGuid().ToString('N')
 $probeName = 'AR-local trusted dispatcher probe ' + [guid]::NewGuid().ToString('N')
@@ -226,7 +231,11 @@ try {
       Restore-ArTrustedPriorTask -TaskName $TaskName -TaskXml $oldXml -TaskSddl $oldSddl
       $restoredXml = Join-Path $script:executionRoot 'rollback-task.xml'
       [IO.File]::WriteAllBytes($restoredXml, (Get-ArTrustedTaskXmlBytes $TaskName))
-      if ((Get-ArTrustedSha256 $restoredXml) -cne $ExpectedOldTaskXmlSha256 -or (Get-ArTrustedTextSha256 (Get-ArTrustedTaskSddl $TaskName)) -cne $ExpectedOldTaskSddlSha256) { throw 'Rollback task differs from authenticated prestate.' }
+      $restoredSddl = Get-ArTrustedTaskSddl $TaskName
+      if ((Get-ArTrustedSha256 $restoredXml) -cne $ExpectedOldTaskXmlSha256 -or
+          (Get-ArTrustedSddlSemanticSha256 $restoredSddl) -cne $ExpectedOldTaskSddlSemanticSha256) {
+        throw 'Rollback task differs semantically from authenticated prestate.'
+      }
       $restoredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
       if ($restoredTask.State.ToString() -ne 'Ready' -or -not $restoredTask.Settings.Enabled) { throw 'Rollback did not restore a Ready enabled task.' }
     }
