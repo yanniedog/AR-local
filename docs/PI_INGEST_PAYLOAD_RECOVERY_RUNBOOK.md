@@ -13,7 +13,7 @@
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `c614dee4e83f5652b301f2d8baf62a88f4fb619125e0e3eaadb56be77bdf063c` |
+| Controlled plan SHA-256 | `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -96,15 +96,22 @@ The fixed dispatcher shall:
   result, and evidence hashes.
 
 Active-manifest replacement shall be same-volume and atomic. The transition
-tool shall fully validate and dry-run the proposed manifest before activation,
-retain the last accepted manifest by content digest, append and durably flush a
-`PASS` activation receipt, activate the pointer last by atomic rename, then read
-back and revalidate the live bytes. An interrupted write must leave either the
-old complete pointer or the new complete pointer, never a hybrid. Any failure
-before pointer replacement leaves the old candidate active; any failed readback
-restores the previous pointer and runs its check-only path. Reused activation
-IDs, sequence gaps or regression, expired authority, predecessor mismatch,
-dirty or linked receivers, and absent activation receipts are rejected.
+tool shall fully validate and dry-run the proposed manifest, retain the last
+accepted manifest by content digest, then durably append a `PENDING` activation
+intent. It shall atomically replace the pointer, read back and revalidate the
+live bytes, and only then append a separate terminal `PASS` receipt. An
+interrupted write must leave either the old complete pointer or the new complete
+pointer, never a hybrid. Recovery shall reconcile every non-terminal intent
+against the authoritative active pointer: finalize it only when the pointer and
+all candidate evidence match, otherwise record `ROLLED_BACK` or `ABANDONED`
+without deleting the intent. Terminal receipts for a non-active manifest are
+inert history and never become the predecessor implicitly. Sequence allocation
+uses the complete append-only receipt ledger, while predecessor validation uses
+the active pointer, so an orphaned intent or receipt cannot block the next safe
+transition. Any failed readback restores the prior pointer and runs its
+check-only path. Reused activation IDs, sequence gaps or regression, expired
+authority, predecessor mismatch, dirty or linked receivers, and absent or
+unreconciled intents are rejected.
 
 Normal transition uses a short-lived exclusive lease containing the transition
 ID, old manifest digest, evidence root, and strict expiry. A simultaneous daily
@@ -117,9 +124,13 @@ The operator has authorised exactly one attended command from an elevated
 PowerShell window. That command may perform only this bounded transaction:
 
 1. Verify its own content digest and the exact plan and handoff authority.
-2. Verify the old task XML and security descriptor, current receiver commit,
-   protected Pi identity, idle ingest and absent lock, dashboard return, free
-   space, deadline, and absence of transition residue.
+2. First check for the complete expected dispatcher, task and manifest identity.
+   If every byte, ACL, setting, pointer and receipt matches, report the bootstrap
+   as already installed and finish successfully; reject partial or drifted
+   installed state. Only when no installed state exists, verify the old task XML
+   and security descriptor, current receiver commit, protected Pi identity,
+   idle ingest and absent lock, dashboard return, free space, deadline, and
+   absence of unexplained transition residue.
 3. Install the content-addressed fixed dispatcher into a dedicated directory
    whose code and configuration are writable only by Administrators and SYSTEM
    and readable/executable by `jkoka`.
@@ -130,11 +141,20 @@ PowerShell window. That command may perform only this bounded transaction:
    its action to the fixed dispatcher.
 6. Export and hash the resulting task XML and security descriptor and verify the
    installed dispatcher and manifest byte-for-byte.
-7. Run a fresh **non-elevated** semantic probe that loads and validates the live
-   manifest and dispatcher contract without triggering a backup.
+7. Create a uniquely named temporary probe task that runs as the exact operator
+   SID with S4U and `Limited`, invokes only the content-addressed semantic probe,
+   and has no boot or daily trigger. Require the probe to record its SID and
+   non-elevated token state, load and validate the live manifest and dispatcher
+   contract without triggering a backup, then remove the probe task after its
+   immutable evidence is captured. A child process that merely inherits the
+   bootstrap's elevated token is not an acceptable proof.
 8. On any failed gate, restore the authenticated prior task XML and security
-   descriptor, re-enable and read back the prior limited S4U task, and remove
-   only bootstrap-created incomplete dispatcher state before elevation exits.
+   descriptor, re-enable and read back the prior limited S4U task, restore the
+   prior active pointer, and quarantine every bootstrap-created dispatcher,
+   manifest, intent, receipt, probe-task, and temporary artifact as one hashed
+   rollback generation before elevation exits. A later rerun may accept only a
+   complete already-installed identity or a clean pre-bootstrap state; it may
+   never silently adopt orphaned installation state.
 
 The bootstrap must be idempotent: an exact rerun after confirmed success reports
 the already-installed identity without widening rights or changing semantics.
@@ -1858,4 +1878,4 @@ This table is append-only.
 | 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
 | 1.3 | 2026-08-25 | Resolve from Git history after merge | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` | Added D-005 before first transfer: full retained/failed-run scope, simultaneous archive-and-scratch capacity, complete tar metadata verification, durable file/directory commit barriers, independent observation/control/macro freshness, explicit mounted-storage supersession, and unambiguous DOC-03 execution identity. |
 | 1.4 | 2026-08-27 | Resolve from Git history after merge | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` | Added D-006 and the normative multi-day continuity model: daily 01:00 current-day-only capture takes precedence over remediation, repeating freeze/validation/backup cadence, independent daily outcomes, immutable source-gap handling, same-day recovery limits, cross-day phase resumption, and an explicit transition for the in-flight v1.3 A3 proof. |
-| 1.5 | 2026-08-30 | Resolve from Git history after merge | `c614dee4e83f5652b301f2d8baf62a88f4fb619125e0e3eaadb56be77bdf063c` | Added D-007 and DOC-05: one bounded elevated bootstrap installs a fixed non-elevated, hash-bound laptop-backup dispatcher; future candidate transitions atomically switch validated manifests without Task Scheduler changes, while A3 natural proof and all D-006 controls remain mandatory. |
+| 1.5 | 2026-08-30 | Resolve from Git history after merge | `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada` | Added D-007 and DOC-05: one bounded elevated bootstrap installs a fixed non-elevated, hash-bound laptop-backup dispatcher; future candidate transitions atomically switch validated manifests without Task Scheduler changes, while A3 natural proof and all D-006 controls remain mandatory. |
