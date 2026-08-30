@@ -4489,6 +4489,11 @@ authorize automatic progression to A4 planning.
 | Implementation | PR `#566`; merge `68faf7e13c650af7b1d713f4a604f9978897ce79`; clean detached checkout `C:\code\backups\AR-local-pi5-receiver-68faf7e` |
 | Candidate | Clean detached checkout `C:\code\backups\AR-local-pi5-candidate-f214e32-d008` at `f214e3249c7968d574e3449edb14792904e1cc1f` |
 | Protected Pi | Clean, pinned and unchanged at `9302890fcc752cbf90da97d597e972c157d913e3`; ingest inactive; lock absent; timer enabled/active; dashboard healthy |
+| In-flight scheduled plan identity | `ARL-OPS-001` v1.4; commit `14dd066099bba393cccf61a280243e43162eedc9`; controlled SHA-256 `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`; normalized raw SHA-256 `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Current phase | `A3 — non-administrator transition complete; first natural dispatcher-backed proof pending` |
+| Completed gates | D-008 design and implementation merged/reviewed; non-admin transactional transition `PASS`; independent post-transition validation `PASS` |
+| Open gates | Natural `2026-08-31` 01:00 ingest; first subsequent natural dispatcher-backed backup; append-only A3 terminal decision |
+| Prohibited advancement | A4 planning and implementation, and all Pi deployment/runtime remediation, remain blocked until terminal A3 `PASS` |
 | Transition result | `PASS` under the ordinary non-administrator token; Task Scheduler was not changed or triggered |
 | A3 result | `RUNNING`; transition passed, but the first D-006-protected natural ingest and natural dispatcher-backed backup remain mandatory |
 | A4 result | `BLOCKED` pending terminal A3 `PASS` |
@@ -4505,15 +4510,15 @@ activated the authenticated manifest, wrote the `PASS` activation receipt,
 executed a real installed-runner `PROBE`, and proved that the scheduled task
 remained byte-for-byte and security-descriptor equivalent to its prestate.
 
-| Evidence | SHA-256 |
-|---|---|
-| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\transition-result.json` | `7b8a8c6eb8a1465fa25e97f57077f84c014ddd3a5a7dfc7e8ccc6034f898cb05` |
-| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\installed-runner-probe.txt` | `76334d6008997542742469570ef6bbe60f70899ea7340611ee5428b0db1938d4` |
-| `post-transition-validation.json` | `5929c550e9b99c3f16f1a4c5456a52c22f7d2ec991f1df0abf99019764a534ba` |
-| `post-transition-validate.ps1` | `c3ea20afb0ee7a4ecfba2dbcaef34e6ba581bafe7e2621f78142e93dff2a15d9` |
-| `initial-manifest.json` | `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092` |
-| `runner-config.json` | `b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00` |
-| `gate-evidence.json` | `9a7943550de7cfd5c8ced37414be78aa300e898ca1b5d103ab25d5c659c986a3` |
+| Evidence | Bytes | SHA-256 |
+|---|---:|---|
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\transition-result.json` | `8844` | `7b8a8c6eb8a1465fa25e97f57077f84c014ddd3a5a7dfc7e8ccc6034f898cb05` |
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\installed-runner-probe.txt` | `284` | `76334d6008997542742469570ef6bbe60f70899ea7340611ee5428b0db1938d4` |
+| `post-transition-validation.json` | `3201` | `5929c550e9b99c3f16f1a4c5456a52c22f7d2ec991f1df0abf99019764a534ba` |
+| `post-transition-validate.ps1` | `8893` | `c3ea20afb0ee7a4ecfba2dbcaef34e6ba581bafe7e2621f78142e93dff2a15d9` |
+| `initial-manifest.json` | `1861` | `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092` |
+| `runner-config.json` | `572` | `b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00` |
+| `gate-evidence.json` | `619` | `9a7943550de7cfd5c8ced37414be78aa300e898ca1b5d103ab25d5c659c986a3` |
 
 The independent post-transition validation at
 `2026-08-30T17:40:06.9811842+10:00` returned `PASS` and proved:
@@ -4542,7 +4547,107 @@ lacked a local byte-array hashing helper. Both stopped before writing a result,
 made no runtime transition, and were corrected in the hashed validation script
 above. The underlying transition and both installed-runner probes passed.
 
+### Latest validated observation, catalog and independent states
+
+The latest validated laptop observation remains the independently proven
+natural `2026-08-30` observation
+`obs-2026-08-30-69a34aa4c745bb2e`. The ingest's late-timed procedure remains
+`BLOCKED` because its pre-start gate was not contemporaneous; the captured
+observation itself remains valid and is not relabelled.
+
+| State | Exact current identity and result |
+|---|---|
+| Capture | `PASS`, one natural systemd invocation; 3,841 raw attempts; 119/119 providers attempted; 112 complete, seven partial, zero failed; 17 attributable failures; zero corrupt/unattributed |
+| Finalization | `PASS`; generation `obs-2026-08-30-69a34aa4c745bb2e`; 3,012 products; 17,050 rates; SQLite SHA-256 `f246fd77d3215ac631e7c0255ba550f9bfb6e49f0e9c866041040f740fa6f834`; `quick_check=ok` |
+| Publication | Dated v1, rolling v1, every referenced asset and dates index independently matched Pi staging; individual gaps disclosed; v2 remains an independent stale/failing state and is not relabelled |
+| Dashboard | `PASS`; automatically returned after ingest and is currently healthy |
+| Backup | Observation `PASS` at catalog sequence `332`; archive SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b`; old-task natural backup already passed, while first managed-dispatcher natural backup is `NOT_STARTED` |
+| Current control | `PASS` at catalog sequence `335`; source manifest `14acb3481a4a103ecff9f0a8d259b75c01f404def127305bc7e40ed3391d4d64` |
+| Current macro | `PASS` at catalog sequence `336`; source manifest `1949485d4f1c1e5b294eb4914d84967b6689a4f8221d1f7dba9ef3e2b5ad0381` |
+| Catalog | Append-only through sequence `336`; `generations.jsonl` is `236234` bytes, SHA-256 `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511` |
+| Latest check-only record | `PASS/NO_BACKUP_DATA_WRITE`, completed `2026-08-30T07:35:43Z`; candidate `f214e3249c7968d574e3449edb14792904e1cc1f`; protected SHA `9302890fcc752cbf90da97d597e972c157d913e3`; scheduled plan commit `14dd066099bba393cccf61a280243e43162eedc9` |
+
+The authoritative observation receipt is
+`C:\code\backups\AR-local-pi5\observations\2026-08-30\f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d\receipt.json`,
+`3392` bytes, SHA-256
+`7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea`.
+The current pointer hashes are: `latest-verified.json`
+`737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`,
+`latest-control.json`
+`1ae3cf71760511dd49ded2c50f13632ac519058c0fb7600e59be4aeb5386b4e7`,
+`latest-macro.json`
+`d63bd59482dbac9b7a76efe5aa960e5cfe6085cafc6242c7d49b7bd3ed307135`,
+and `latest-scheduled.json`
+`d18ea4b6f29008a00d810b86be656ce1dfaa7f854b3e50c437d8ac72f2bca1f4`.
+
+### Exact completed commands and mutation boundary
+
+The exact non-administrator transition command, LF-only Pi preflight command,
+timestamps, operator, plan/candidate/protected identities, deviations and all
+evidence paths are embedded without abbreviation in `exact_commands` within
+the immutable `transition-result.json` above. The exact independent validation
+command was:
+
+```powershell
+& 'C:\code\backups\AR-local-pi5\evidence\A3-NONADMIN-DISPATCHER-TRANSITION-20260830\20260830T173300+1000\post-transition-validate.ps1'
+```
+
+No task trigger, backup run, ingest, service change, deployment or publication
+mutation was performed by validation. The only authorized live mutation was
+the transactional, same-volume replacement of the operator-owned runner and
+activation of its append-only dispatcher control records.
+
 ### Mandatory natural proof and next authority
+
+Exact next action: at `2026-08-31T00:25:00+10:00`, create one unique evidence
+generation, record `ACTIVE_EVIDENCE_PATH.txt`, and execute these read-only
+preflight commands under the ordinary token. Earliest start is 00:20; the first
+gate must finish by 00:30. The second gate starts at 00:55 and must finish before
+01:00. The natural ingest may run to terminal completion; there is no arbitrary
+kill deadline. The natural backup validation starts at 05:15 and must not
+trigger the task.
+
+```powershell
+$Task = Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$TaskInfo = Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
+if ($Task.State -ne 'Ready' -or -not $Task.Settings.Enabled -or $TaskInfo.LastTaskResult -ne 0) { throw 'Task preflight failed.' }
+if ((Get-FileHash 'C:\code\backups\AR-local-pi5-receiver-f214e32\run_laptop_backup_task.ps1' -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8') { throw 'Managed runner drift.' }
+if ((Get-PSDrive C).Free -lt 50GB) { throw 'Laptop free-space gate failed.' }
+$Remote = @'
+set -euo pipefail
+cd /srv/ar-local/AR-local
+test "$(git rev-parse HEAD)" = "9302890fcc752cbf90da97d597e972c157d913e3"
+test -z "$(git status --porcelain)"
+test "$(systemctl is-active ar-local-daily.service)" = "inactive"
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+test "$(systemctl is-enabled ar-local-daily.timer)" = "enabled"
+test "$(systemctl is-active ar-local-daily.timer)" = "active"
+curl -fsS http://127.0.0.1:8808/api/latest >/dev/null
+df -B1 /srv/ar-local/data
+free -b
+swapon --show --bytes
+journalctl -k --since '24 hours ago' --no-pager | grep -Ei 'oom|out of memory|killed process' || true
+git ls-remote https://github.com/yanniedog/AR-local.git HEAD >/dev/null
+printf 'AR_PI_NATURAL_PREFLIGHT_PASS\n'
+'@ -replace "`r", ''
+$Remote | ssh ar-local-pi5-lan bash -s
+if ($LASTEXITCODE -ne 0) { throw 'Pi natural-ingest preflight failed.' }
+```
+
+At 00:55 repeat the Pi block and then observe without starting or restarting:
+
+```powershell
+ssh ar-local-pi5-lan systemctl show ar-local-daily.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p InvocationID -p ActiveEnterTimestamp -p InactiveEnterTimestamp
+ssh ar-local-pi5-lan journalctl -fu ar-local-daily.service --since '2026-08-31 00:55:00' --no-pager
+```
+
+After terminal service completion, use fresh, hash-recorded verifier source to
+run the repository's observation, ledger, SQLite/provider and public-byte
+verification paths against date `2026-08-31`; never infer publication success
+from producer logs. At 05:15 inspect `Get-ScheduledTaskInfo`, every immutable
+`catalog\scheduled-runs\*.json` after the recorded baseline, dispatcher
+execution records and activation receipt; do not call `Start-ScheduledTask` or
+the managed runner.
 
 D-006 remains absolute. From `2026-08-31T00:30:00+10:00` through terminal
 validation of the natural ingest, perform no deployment, canary, manual or
@@ -4575,3 +4680,39 @@ terminal `PASS` and immediately begin A4 planning under the controlled runbook.
 On any failure or uncertainty, preserve the previous verified payload and
 backup, record `FAIL` or `BLOCKED`, and keep A4 blocked. No administrator action
 is authorized or required.
+
+### Acceptance, stop, rollback and preservation controls
+
+Accept only one natural 01:00 invocation with successful terminal service,
+absent lock, automatic dashboard return, valid raw/marker/contract/ledger/
+pointer/database/provider accounting, and independent dated/rolling/index
+public bytes. Accept the backup only when a natural task invocation selects the
+exact active manifest, produces `PASS/BACKUP-LATEST` for `2026-08-31`, verifies
+receipts, restore checks and catalog lineage, and leaves no lock, partial,
+helper or overlap with at least 50 GiB free.
+
+Stop immediately and make no mutation if any preflight identity differs, the
+lock or service is active before the natural start, the Pi is dirty or not at
+the protected SHA, the task/runner/manifest/config differs, disk is below its
+floor, a helper exists, or the evidence directory is ambiguous. During the
+freeze, observe only. On ingest failure preserve raw attempts, the failed
+generation and previous verified rolling payload; do not force or rerun. On
+publication-only failure retry no ingest. On backup failure preserve the
+existing backup, catalog, dispatcher records, active pointer, exact legacy
+runner backup and failed evidence; do not manually trigger.
+
+No automatic rollback is authorized after this recorded transition `PASS`.
+Restoring the preserved legacy runner or changing dispatcher activation now
+requires a new append-only controlled decision with authenticated bytes and
+acceptance criteria. The inert unreadable Program Files residue remains
+unreferenced and must not be used or removed during A3.
+
+Known risks are: upstream current-day data disappears at midnight; stable Pi
+code lacks later unproven safeguards; the timed preflight has previously been
+missed; v2 remains stale independently of v1; the operator-owned managed runner
+is intentionally the sole dirty file in its legacy receiver; and the first
+natural managed-dispatcher invocation is not yet proven. Deviation D-008 is
+explicitly authorized by
+`HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN` and the exact
+transition authority in the preceding entry. There are no conversational or
+unrecorded deviations.
