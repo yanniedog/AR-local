@@ -376,7 +376,8 @@ std::vector<wchar_t> minimal_environment() {
 class PrivateDesktop {
  public:
   explicit PrivateDesktop(const std::wstring& operator_sid) {
-    std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + operator_sid + L")";
+    std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + operator_sid +
+                        L")S:(ML;;NW;;;ME)";
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) {
