@@ -4,11 +4,17 @@ param(
   [Parameter(Mandatory = $true)][string]$ControlRoot
 )
 
-$ErrorActionPreference = 'Continue'
-& $PythonPath $DispatcherPath run --control-root $ControlRoot
-$code = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+$code = 1
+try {
+  & $PythonPath $DispatcherPath run --control-root $ControlRoot
+  if ($null -eq $LASTEXITCODE) { throw 'Dispatcher process did not return an exit code.' }
+  $code = [int]$LASTEXITCODE
+} catch {
+  $code = 1
+}
 if ($code -ne 0) {
   $message = "AR-local laptop backup dispatcher failed (exit $code). Check dispatcher activation and scheduled-run evidence."
-  & "$env:SystemRoot\System32\msg.exe" $env:USERNAME $message 2>$null
+  try { & "$env:SystemRoot\System32\msg.exe" $env:USERNAME $message 2>$null } catch { }
 }
 exit $code

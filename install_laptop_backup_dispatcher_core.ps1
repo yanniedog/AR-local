@@ -19,7 +19,12 @@ function Get-ArTaskSddl {
 function Get-ArTextSha256 {
   param([Parameter(Mandatory = $true)][string]$Text)
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Text)
-  [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    ([BitConverter]::ToString($algorithm.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
+  } finally {
+    $algorithm.Dispose()
+  }
 }
 
 function Get-ArDispatcherTaskArguments {

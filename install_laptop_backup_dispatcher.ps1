@@ -17,13 +17,20 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$DispatcherSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$AtomicModuleSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$RunnerSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
   [Parameter(Mandatory = $true)][string]$EvidenceRoot,
   [string]$InstallRoot = "$env:ProgramFiles\AR-local Backup Dispatcher",
   [string]$PiHost = 'ar-local-pi5-lan'
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'install_laptop_backup_dispatcher_core.ps1')
+$corePath = Join-Path $PSScriptRoot 'install_laptop_backup_dispatcher_core.ps1'
+if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256 -or
+    (Get-FileHash -LiteralPath $corePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $CoreSha256) {
+  throw 'Elevated bootstrap implementation hash mismatch.'
+}
+. $corePath
 
 function Write-ArBootstrapResult {
   param([string]$Result, [string]$ErrorText, [hashtable]$Evidence)
@@ -81,8 +88,10 @@ function Invoke-ArLimitedProbe {
   $principal = New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited
   $task = New-ScheduledTask -Action $action -Settings $settings -Principal $principal `
     -Description 'One-time limited-token AR-local dispatcher semantic probe.'
+  $registered = $false
   try {
     Register-ScheduledTask -TaskName $probeName -InputObject $task -Force -ErrorAction Stop | Out-Null
+    $registered = $true
     Start-ScheduledTask -TaskName $probeName -ErrorAction Stop
     $deadline = [DateTimeOffset]::Now.AddMinutes(2)
     do {
@@ -99,7 +108,12 @@ function Invoke-ArLimitedProbe {
     }
     return $value
   } finally {
-    Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction SilentlyContinue
+    if ($registered) {
+      Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop
+      if (Get-ScheduledTask -TaskName $probeName -ErrorAction SilentlyContinue) {
+        throw 'Temporary limited-token probe task remains registered.'
+      }
+    }
   }
 }
 
@@ -175,6 +189,13 @@ try {
     Assert-ArProtectedDispatcherAcl -InstallRoot $InstallRoot -OperatorSid $OperatorSid
     Assert-ArDispatcherTask -TaskName $TaskName -ExpectedArguments $taskArguments `
       -ExpectedWorkingDirectory $InstallRoot -ExpectedPrincipalSid $OperatorSid -ExpectedEnabled $true | Out-Null
+    $sddlSeal = Join-Path $InstallRoot 'installed-task-sddl.sha256'
+    if (-not (Test-Path -LiteralPath $sddlSeal -PathType Leaf)) { throw 'Installed task SDDL seal is absent.' }
+    $sealedSddlHash = (Get-Content -LiteralPath $sddlSeal -Raw -ErrorAction Stop).Trim()
+    if ($sealedSddlHash -notmatch '^[0-9a-f]{64}$' -or
+        (Get-ArTextSha256 (Get-ArTaskSddl -TaskName $TaskName)) -cne $sealedSddlHash) {
+      throw 'Installed task SDDL differs from its administrator-protected seal.'
+    }
     $probe = Invoke-ArLimitedProbe -DispatcherPath $dispatcherPath -ProbeOutput $probeOutput
     $resultPath = Write-ArBootstrapResult -Result 'PASS' -ErrorText $null -Evidence @{
       mode = 'ALREADY_INSTALLED'; probe = $probe; free_bytes = $free
@@ -233,6 +254,12 @@ try {
   [IO.File]::WriteAllBytes($postXml, (Get-ArTaskXmlBytes -TaskName $TaskName))
   $postSddl = Get-ArTaskSddl -TaskName $TaskName
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'installed-task.sddl'), $postSddl, [Text.UTF8Encoding]::new($false))
+  $sddlSeal = Join-Path $InstallRoot 'installed-task-sddl.sha256'
+  [IO.File]::WriteAllText($sddlSeal, (Get-ArTextSha256 $postSddl) + "`n", [Text.UTF8Encoding]::new($false))
+  & "$env:SystemRoot\System32\icacls.exe" $sddlSeal '/inheritance:r' '/grant:r' `
+    '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' "*$OperatorSid`:(RX)" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the installed task SDDL seal.' }
+  Assert-ArProtectedDispatcherAcl -InstallRoot $InstallRoot -OperatorSid $OperatorSid
   $evidence = @{
     mode = 'INSTALLED'; probe = $probe; free_bytes = $free
     old_task_xml_sha256 = $ExpectedOldTaskXmlSha256

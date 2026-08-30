@@ -1,6 +1,10 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_dispatcher_core.ps1')
 
+if ((Get-ArTextSha256 'abc') -cne 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') {
+  throw 'Windows PowerShell-compatible SHA-256 helper returned the wrong digest.'
+}
+
 $script:registered = [pscustomobject]@{
   Actions = @([pscustomobject]@{
     Execute = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"

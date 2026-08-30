@@ -374,6 +374,18 @@ def recover_expired_lease(paths: Mapping[str, Path]) -> None:
     fsync_directory(paths["root"])
 
 
+def require_activation_window() -> None:
+    """Keep the complete transition lease outside the protected ingest window."""
+    local = datetime.now().astimezone()
+    minutes = local.hour * 60 + local.minute
+    # D-006 freezes changes from 00:30 until the natural ingest has been
+    # validated.  A transition lease lasts 15 minutes, so stop admitting new
+    # activations at 00:15.  The conservative 03:30 end avoids guessing that a
+    # slow ingest has completed.
+    if 15 <= minutes < 210:
+        raise ValueError("candidate activation is inside the protected ingest window")
+
+
 def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     recover_expired_lease(paths)
@@ -429,20 +441,36 @@ def active(paths: Mapping[str, Path]) -> tuple[dict[str, object], dict[str, obje
 
 def reconcile(paths: Mapping[str, Path]) -> None:
     """Finish or roll back an activation interrupted after pointer replacement."""
-    if not paths["pointer"].exists():
-        return
-    pointer = parse_json(paths["pointer"].read_bytes(), "recovery pointer")
-    if set(pointer) != POINTER_KEYS:
-        raise ValueError("recovery pointer fields are invalid")
-    digest = require_hash(pointer.get("manifest_sha256"), SHA256, "recovery manifest digest")
+    pointer: Mapping[str, object] | None = None
+    digest: str | None = None
+    if paths["pointer"].exists():
+        pointer = parse_json(paths["pointer"].read_bytes(), "recovery pointer")
+        if set(pointer) != POINTER_KEYS:
+            raise ValueError("recovery pointer fields are invalid")
+        digest = require_hash(pointer.get("manifest_sha256"), SHA256, "recovery manifest digest")
     pending_files = sorted(paths["receipts"].glob(f"*-*-pending.json"))
     pending: Mapping[str, object] | None = None
     for path in pending_files:
         candidate = parse_json(path.read_bytes(), "PENDING receipt")
-        if candidate.get("manifest_sha256") == digest:
+        candidate_digest = require_hash(
+            candidate.get("manifest_sha256"), SHA256, "PENDING manifest digest"
+        )
+        terminal = any(
+            receipt_path(paths, candidate, status).exists()
+            for status in ("PASS", "ROLLED_BACK", "ABANDONED")
+        )
+        if terminal:
+            continue
+        if candidate_digest == digest:
             if pending is not None:
                 raise ValueError("activation has duplicate PENDING receipts")
             pending = candidate
+        else:
+            abandoned = dict(candidate)
+            abandoned["status"] = "ABANDONED"
+            immutable_write(
+                receipt_path(paths, candidate, "ABANDONED"), canonical_json(abandoned)
+            )
     if pending is None:
         return
     pass_path = receipt_path(paths, pending, "PASS")
@@ -645,8 +673,9 @@ def run(control_root: Path) -> int:
     manifest: Mapping[str, object] | None = None
     digest: str | None = None
     command: list[str] = []
+    lease_payload: bytes | None = None
     try:
-        recover_expired_lease(paths)
+        lease_payload = acquire_lease(paths, uuid.uuid4().hex)
         if pending_activation(paths) is not None:
             finalize_pending(paths)
         result.update(probe(control_root))
@@ -672,6 +701,14 @@ def run(control_root: Path) -> int:
     except Exception as exc:
         error = str(exc)
         result.update({"ok": False, "result": "FAIL", "error": error})
+    finally:
+        if lease_payload is not None:
+            try:
+                release_lease(paths, lease_payload)
+            except Exception as exc:
+                error = f"{error}; {exc}" if error else str(exc)
+                child_exit_code = 1
+                result.update({"ok": False, "result": "FAIL", "error": error})
     completed = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     record = {
         "schema_version": 1,
@@ -699,6 +736,7 @@ def activate(
     control_root: Path, manifest_path: Path, *, defer_proof: bool = False
 ) -> dict[str, object]:
     paths = layout(control_root)
+    require_activation_window()
     lease_payload = acquire_lease(paths, uuid.uuid4().hex)
     old_pointer = paths["pointer"].read_bytes() if paths["pointer"].exists() else None
     pointer_replaced = False

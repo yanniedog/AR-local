@@ -106,26 +106,6 @@ def write_manifest(path: Path, value: dict[str, object]) -> str:
     return dispatcher.sha256_bytes(payload)
 
 
-def refresh_gate(manifest: dict[str, object]) -> None:
-    gate = {
-        "schema_version": 1,
-        "result": "PASS",
-        "activation_id": manifest["activation_id"],
-        "candidate_code_sha": manifest["candidate_code_sha"],
-        "protected_code_sha": manifest["protected_code_sha"],
-        "plan_git_commit": manifest["plan_git_commit"],
-        "plan_sha256": manifest["plan_sha256"],
-        "authority_commit": manifest["authority_commit"],
-        "handoff_sha256": manifest["handoff_sha256"],
-        "operator_sid": manifest["operator_sid"],
-        "foreground_result": "PASS",
-        "check_only_result": "PASS",
-    }
-    gate_path = Path(str(manifest["gate_evidence_path"]))
-    gate_path.write_bytes(dispatcher.canonical_json(gate))
-    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
-
-
 def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     control, _target, manifest = fixture(tmp_path)
     proposed = tmp_path / "manifest.json"
@@ -295,6 +275,21 @@ def test_expired_dead_lease_is_preserved_and_recovered(tmp_path: Path) -> None:
     assert (paths["lease_recoveries"] / f"{dispatcher.sha256_bytes(lease)}.json").read_bytes() == lease
 
 
+def test_activation_lease_cannot_enter_ingest_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_datetime = dispatcher.datetime
+    local_zone = real_datetime.now().astimezone().tzinfo
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            value = real_datetime(2026, 8, 30, 0, 15, tzinfo=local_zone)
+            return value if tz is None else value.astimezone(tz)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(dispatcher, "datetime", FrozenDateTime)
+    with pytest.raises(ValueError, match="protected ingest window"):
+        dispatcher.require_activation_window()
+
+
 def test_run_writes_content_addressed_execution_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -310,3 +305,43 @@ def test_run_writes_content_addressed_execution_evidence(
     assert record["result"] == "PASS"
     assert record["candidate_code_sha"] == manifest["candidate_code_sha"]
     assert record["deviations"] == []
+
+
+def test_reconcile_marks_pre_pointer_intent_abandoned(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    paths = dispatcher.layout(control)
+    raw = dispatcher.canonical_json(manifest)
+    digest = dispatcher.sha256_bytes(raw)
+    dispatcher.immutable_write(paths["manifests"] / f"{digest}.json", raw)
+    pending = {
+        "schema_version": 1,
+        "sequence": 1,
+        "activation_id": manifest["activation_id"],
+        "manifest_sha256": digest,
+        "previous_manifest_sha256": None,
+        "status": "PENDING",
+    }
+    dispatcher.immutable_write(
+        dispatcher.receipt_path(paths, manifest, "PENDING"), dispatcher.canonical_json(pending)
+    )
+    dispatcher.reconcile(paths)
+    abandoned = dispatcher.receipt_path(paths, manifest, "ABANDONED")
+    assert json.loads(abandoned.read_text(encoding="utf-8"))["status"] == "ABANDONED"
+
+
+def test_run_holds_transition_guard_until_child_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    dispatcher.activate(control, proposed)
+    paths = dispatcher.layout(control)
+
+    def child(*_args: object) -> int:
+        with pytest.raises(ValueError, match="lease is active"):
+            dispatcher.acquire_lease(paths, "b" * 32)
+        return 0
+
+    monkeypatch.setattr(dispatcher.os, "spawnv", child)
+    assert dispatcher.run(control) == 0
