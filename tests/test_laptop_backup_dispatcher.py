@@ -139,6 +139,9 @@ def test_probe_rejects_elevated_or_wrong_sid(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "1")
     with pytest.raises(ValueError, match="must not run elevated"):
         dispatcher.probe(control)
+    monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "invalid")
+    with pytest.raises(ValueError, match="must be 0 or 1"):
+        dispatcher.is_admin()
 
 
 def test_duplicate_and_unknown_fields_fail_closed(tmp_path: Path) -> None:

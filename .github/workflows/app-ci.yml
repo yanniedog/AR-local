@@ -101,6 +101,10 @@ jobs:
           }
       - name: Run dispatcher and dual-host installer contracts
         shell: powershell
+        env:
+          # GitHub's Windows runner token is elevated; dispatcher tests use the
+          # guarded pytest-only override to exercise the required limited token.
+          AR_DISPATCHER_TEST_ADMIN: '0'
         run: >-
           python -m pytest -q
           tests/test_laptop_backup_dispatcher.py
