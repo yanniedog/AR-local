@@ -36,7 +36,8 @@ MANIFEST_KEYS = frozenset({
     "authority_repo", "authority_handoff_path",
     "candidate_code_sha", "protected_code_sha", "operator", "operator_sid",
     "receiver", "allowed_receiver_root", "entrypoint", "entrypoint_sha256",
-    "python_path", "python_sha256", "scheduled_plan_git_commit", "target", "recovery_image",
+    "python_path", "python_sha256", "scheduled_plan_git_commit", "target",
+    "allowed_target_root", "recovery_image", "allowed_recovery_root",
     "gate_evidence_path", "gate_evidence_sha256",
 })
 POINTER_KEYS = frozenset({"schema_version", "sequence", "activation_id", "manifest_sha256"})
@@ -147,6 +148,28 @@ def git_detached(repo: Path) -> bool:
     return result.returncode == 1
 
 
+def latest_authority_commit(repo: Path) -> str:
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return git_state(repo)[0]
+    remote = subprocess.run(
+        ("git", "-C", str(repo), "remote", "get-url", "origin"),
+        check=True, capture_output=True, text=True,
+    ).stdout.strip().lower().removesuffix(".git")
+    allowed = {
+        "https://github.com/yanniedog/ar-local",
+        "git@github.com:yanniedog/ar-local",
+    }
+    if remote not in allowed:
+        raise ValueError("authority origin is not the canonical repository")
+    output = subprocess.run(
+        ("git", "-C", str(repo), "ls-remote", "--exit-code", "origin", "refs/heads/main"),
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    if len(output) != 2 or output[1] != "refs/heads/main":
+        raise ValueError("canonical authority main ref is unavailable")
+    return require_hash(output[0].lower(), SHA40, "canonical authority commit")
+
+
 def require_hash(value: object, pattern: re.Pattern[str], label: str) -> str:
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise ValueError(f"{label} is invalid")
@@ -200,8 +223,12 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     handoff = require_within(
         authority_repo / str(value["authority_handoff_path"]), authority_repo, "authority handoff"
     )
-    target = canonical_unlinked(Path(str(value["target"])), "backup target", file=False)
-    recovery = canonical_unlinked(Path(str(value["recovery_image"])), "recovery image")
+    target = require_within(
+        Path(str(value["target"])), Path(str(value["allowed_target_root"])), "backup target"
+    )
+    recovery = require_within(
+        Path(str(value["recovery_image"])), Path(str(value["allowed_recovery_root"])), "recovery image"
+    )
     gate = require_within(Path(str(value["gate_evidence_path"])), target, "gate evidence")
     commit, clean = git_state(receiver)
     if not clean or commit != value["candidate_code_sha"] or not git_detached(receiver):
@@ -209,6 +236,8 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     authority_head, authority_clean = git_state(authority_repo)
     if not authority_clean or authority_head != value["authority_commit"] or not git_detached(authority_repo):
         raise ValueError("authority repo is dirty, attached, or not at the authority commit")
+    if activation and latest_authority_commit(authority_repo) != value["authority_commit"]:
+        raise ValueError("manifest authority is not the current canonical main commit")
     plan_commit = subprocess.run(
         ("git", "-C", str(authority_repo), "log", "-1", "--format=%H", "HEAD", "--",
          "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"),
@@ -230,6 +259,23 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
         raise ValueError("Python interpreter digest mismatch")
     if sha256_file(gate) != value["gate_evidence_sha256"]:
         raise ValueError("activation gate evidence digest mismatch")
+    gate_value = parse_json(gate.read_bytes(), "activation gate evidence")
+    expected_gate = {
+        "schema_version": 1,
+        "result": "PASS",
+        "activation_id": value["activation_id"],
+        "candidate_code_sha": value["candidate_code_sha"],
+        "protected_code_sha": value["protected_code_sha"],
+        "plan_git_commit": value["plan_git_commit"],
+        "plan_sha256": value["plan_sha256"],
+        "authority_commit": value["authority_commit"],
+        "handoff_sha256": value["handoff_sha256"],
+        "operator_sid": value["operator_sid"],
+        "foreground_result": "PASS",
+        "check_only_result": "PASS",
+    }
+    if gate_value != expected_gate:
+        raise ValueError("activation gate evidence is not an exact bound PASS")
     result = dict(value)
     result.update({
         "receiver": str(receiver), "entrypoint_path": str(entrypoint),
@@ -245,9 +291,10 @@ def layout(control_root: Path) -> dict[str, Path]:
     result = {
         "root": root, "manifests": root / "manifests", "receipts": root / "activation-receipts",
         "lease_recoveries": root / "lease-recoveries",
+        "executions": root / "dispatcher-executions",
         "pointer": root / "active-runner.json", "lease": root / "transition.lease",
     }
-    for name in ("manifests", "receipts", "lease_recoveries"):
+    for name in ("manifests", "receipts", "lease_recoveries", "executions"):
         result[name].mkdir(exist_ok=True)
     return result
 
@@ -303,27 +350,33 @@ def process_alive(pid: int) -> bool:
         return False
 
 
+def recover_expired_lease(paths: Mapping[str, Path]) -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    if not paths["lease"].exists():
+        return
+    stale_payload = paths["lease"].read_bytes()
+    stale = parse_json(stale_payload, "transition lease")
+    if set(stale) != {"schema_version", "pid", "activation_id", "created_at", "expires_at"}:
+        raise ValueError("transition lease fields are invalid")
+    expires = parse_time(stale.get("expires_at"), "lease expires_at")
+    pid = stale.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        raise ValueError("transition lease PID is invalid")
+    if expires > now or process_alive(pid):
+        raise ValueError("candidate transition lease is active")
+    recovery = paths["lease_recoveries"] / f"{sha256_bytes(stale_payload)}.json"
+    if recovery.exists():
+        if recovery.read_bytes() != stale_payload:
+            raise ValueError("lease recovery artifact changed")
+        paths["lease"].unlink()
+    else:
+        paths["lease"].replace(recovery)
+    fsync_directory(paths["root"])
+
+
 def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    if paths["lease"].exists():
-        stale_payload = paths["lease"].read_bytes()
-        stale = parse_json(stale_payload, "transition lease")
-        if set(stale) != {"schema_version", "pid", "activation_id", "created_at", "expires_at"}:
-            raise ValueError("transition lease fields are invalid")
-        expires = parse_time(stale.get("expires_at"), "lease expires_at")
-        pid = stale.get("pid")
-        if not isinstance(pid, int) or isinstance(pid, bool):
-            raise ValueError("transition lease PID is invalid")
-        if expires > now or process_alive(pid):
-            raise ValueError("candidate transition lease is active")
-        recovery = paths["lease_recoveries"] / f"{sha256_bytes(stale_payload)}.json"
-        if recovery.exists():
-            if recovery.read_bytes() != stale_payload:
-                raise ValueError("lease recovery artifact changed")
-            paths["lease"].unlink()
-        else:
-            paths["lease"].replace(recovery)
-        fsync_directory(paths["root"])
+    recover_expired_lease(paths)
     payload = canonical_json({
         "schema_version": 1, "pid": os.getpid(), "activation_id": activation_id,
         "created_at": now.isoformat().replace("+00:00", "Z"),
@@ -402,9 +455,9 @@ def reconcile(paths: Mapping[str, Path]) -> None:
         manifest = validate_manifest(parse_json(raw, "interrupted manifest"), activation=False)
         if pointer.get("sequence") != manifest["sequence"] or pointer.get("activation_id") != manifest["activation_id"]:
             raise ValueError("interrupted pointer identity mismatch")
-        passed = dict(pending)
-        passed["status"] = "PASS"
-        immutable_write(pass_path, canonical_json(passed))
+        # A valid interrupted pointer remains PENDING until the exact operator
+        # token performs the live check-only proof in finalize_pending().
+        return
     except Exception:
         previous = pending.get("previous_manifest_sha256")
         if previous is None:
@@ -425,6 +478,33 @@ def reconcile(paths: Mapping[str, Path]) -> None:
         rolled_back = dict(pending)
         rolled_back["status"] = "ROLLED_BACK"
         immutable_write(receipt_path(paths, pending, "ROLLED_BACK"), canonical_json(rolled_back))
+
+
+def pending_activation(
+    paths: Mapping[str, Path],
+) -> tuple[dict[str, object], dict[str, object], str, dict[str, object]] | None:
+    reconcile(paths)
+    if not paths["pointer"].exists():
+        return None
+    pointer = parse_json(paths["pointer"].read_bytes(), "pending pointer")
+    digest = require_hash(pointer.get("manifest_sha256"), SHA256, "pending manifest digest")
+    raw = (paths["manifests"] / f"{digest}.json").read_bytes()
+    if sha256_bytes(raw) != digest:
+        raise ValueError("pending manifest hash mismatch")
+    manifest = validate_manifest(parse_json(raw, "pending manifest"), activation=False)
+    pass_path = receipt_path(paths, manifest, "PASS")
+    if pass_path.exists():
+        return None
+    pending_path = receipt_path(paths, manifest, "PENDING")
+    pending = parse_json(pending_path.read_bytes(), "PENDING receipt")
+    expected = {
+        "schema_version": 1, "sequence": manifest["sequence"],
+        "activation_id": manifest["activation_id"], "manifest_sha256": digest,
+        "previous_manifest_sha256": manifest["previous_manifest_sha256"], "status": "PENDING",
+    }
+    if pending != expected:
+        raise ValueError("PENDING receipt is invalid")
+    return dict(pointer), manifest, digest, dict(pending)
 
 
 def current_sid() -> str:
@@ -450,6 +530,86 @@ def is_admin() -> bool:
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
 
 
+def require_limited_identity(manifest: Mapping[str, object]) -> str:
+    sid = current_sid()
+    if sid.lower() != str(manifest["operator_sid"]).lower():
+        raise ValueError("dispatcher token SID differs from the manifest")
+    if is_admin():
+        raise ValueError("dispatcher must not run elevated")
+    return sid
+
+
+def check_only_proof(manifest: Mapping[str, object]) -> None:
+    command = [
+        str(manifest["python_path"]),
+        str(Path(str(manifest["receiver"])) / "laptop_backup_scheduled.py"),
+        "--target", str(manifest["target"]),
+        "--recovery-image", str(manifest["recovery_image"]),
+        "--candidate-code-sha", str(manifest["candidate_code_sha"]),
+        "--protected-code-sha", str(manifest["protected_code_sha"]),
+        "--plan-git-commit", str(manifest["scheduled_plan_git_commit"]),
+        "--operator", str(manifest["operator"]), "--check-only",
+    ]
+    if os.spawnv(os.P_WAIT, command[0], command) != 0:
+        raise ValueError("fresh non-elevated check-only proof failed")
+
+
+def restore_pending_predecessor(
+    paths: Mapping[str, Path], manifest: Mapping[str, object], pending: Mapping[str, object]
+) -> None:
+    previous = manifest["previous_manifest_sha256"]
+    if previous is None:
+        paths["pointer"].unlink(missing_ok=True)
+        fsync_directory(paths["root"])
+    else:
+        previous_digest = require_hash(previous, SHA256, "pending predecessor digest")
+        raw = (paths["manifests"] / f"{previous_digest}.json").read_bytes()
+        if sha256_bytes(raw) != previous_digest:
+            raise ValueError("pending predecessor hash mismatch")
+        prior = validate_manifest(parse_json(raw, "pending predecessor"), activation=False)
+        prior_pointer = {
+            "schema_version": 1, "sequence": prior["sequence"],
+            "activation_id": prior["activation_id"], "manifest_sha256": previous_digest,
+        }
+        atomic_replace(paths["pointer"], canonical_json(prior_pointer))
+        active(paths)
+    rolled_back = dict(pending)
+    rolled_back["status"] = "ROLLED_BACK"
+    immutable_write(receipt_path(paths, manifest, "ROLLED_BACK"), canonical_json(rolled_back))
+
+
+def finalize_pending(paths: Mapping[str, Path]) -> dict[str, object]:
+    state = pending_activation(paths)
+    if state is None:
+        current = active(paths)
+        if current is None:
+            raise ValueError("dispatcher has no activation to finalize")
+        pointer, manifest, digest = current
+        sid = require_limited_identity(manifest)
+        return {
+            "ok": True, "result": "PASS", "mode": "ALREADY_FINALIZED",
+            "is_admin": False, "operator_sid": sid, "sequence": pointer["sequence"],
+            "candidate_code_sha": manifest["candidate_code_sha"], "manifest_sha256": digest,
+        }
+    pointer, manifest, digest, pending = state
+    sid = require_limited_identity(manifest)
+    try:
+        check_only_proof(manifest)
+        passed = dict(pending)
+        passed["status"] = "PASS"
+        immutable_write(receipt_path(paths, manifest, "PASS"), canonical_json(passed))
+        active(paths)
+    except BaseException:
+        restore_pending_predecessor(paths, manifest, pending)
+        raise
+    return {
+        "ok": True, "result": "PASS", "mode": "FINALIZE", "is_admin": False,
+        "operator_sid": sid,
+        "sequence": pointer["sequence"], "candidate_code_sha": manifest["candidate_code_sha"],
+        "manifest_sha256": digest,
+    }
+
+
 def probe(control_root: Path) -> dict[str, object]:
     paths = layout(control_root)
     reconcile(paths)
@@ -457,11 +617,7 @@ def probe(control_root: Path) -> dict[str, object]:
     if state is None:
         raise ValueError("dispatcher has no active manifest")
     pointer, manifest, digest = state
-    sid = current_sid()
-    if sid.lower() != str(manifest["operator_sid"]).lower():
-        raise ValueError("dispatcher token SID differs from the manifest")
-    if is_admin():
-        raise ValueError("dispatcher must not run elevated")
+    sid = require_limited_identity(manifest)
     return {
         "ok": True, "result": "PASS", "mode": "PROBE", "is_admin": False,
         "operator_sid": sid, "sequence": pointer["sequence"],
@@ -470,34 +626,78 @@ def probe(control_root: Path) -> dict[str, object]:
     }
 
 
+def write_dispatcher_execution(
+    paths: Mapping[str, Path], payload: Mapping[str, object]
+) -> tuple[Path, str]:
+    raw = canonical_json(payload)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = paths["executions"] / f"{stamp}-{uuid.uuid4().hex}.json"
+    immutable_write(path, raw)
+    return path, sha256_bytes(raw)
+
+
 def run(control_root: Path) -> int:
-    result = probe(control_root)
+    started = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     paths = layout(control_root)
-    if paths["lease"].exists():
-        raise ValueError("candidate transition lease is active")
-    _, manifest, _ = active(paths) or (None, None, None)
-    assert manifest is not None
-    command = [
-        os.environ.get("SystemRoot", r"C:\WINDOWS") + r"\System32\WindowsPowerShell\v1.0\powershell.exe",
-        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(manifest["entrypoint_path"]),
-        "-PythonPath", str(manifest["python_path"]),
-        "-ScriptPath", str(Path(str(manifest["receiver"])) / "laptop_backup_scheduled.py"),
-        "-Target", str(manifest["target"]), "-RecoveryImage", str(manifest["recovery_image"]),
-        "-CandidateCodeSha", str(manifest["candidate_code_sha"]),
-        "-ProtectedCodeSha", str(manifest["protected_code_sha"]),
-        "-PlanGitCommit", str(manifest["scheduled_plan_git_commit"]),
-        "-Operator", str(manifest["operator"]),
-    ]
-    # spawnv passes an exact argv vector to the fixed executable and never
-    # invokes cmd.exe or PowerShell command parsing for manifest values.
-    child_exit_code = os.spawnv(os.P_WAIT, command[0], command)
-    result["child_exit_code"] = child_exit_code
+    result: dict[str, object] = {"ok": False, "result": "FAIL", "mode": "RUN"}
+    child_exit_code = 1
+    error: str | None = None
+    manifest: Mapping[str, object] | None = None
+    digest: str | None = None
+    command: list[str] = []
+    try:
+        recover_expired_lease(paths)
+        if pending_activation(paths) is not None:
+            finalize_pending(paths)
+        result.update(probe(control_root))
+        result["mode"] = "RUN"
+        _, manifest, digest = active(paths) or (None, None, None)
+        assert manifest is not None and digest is not None
+        command = [
+            os.environ.get("SystemRoot", r"C:\WINDOWS") + r"\System32\WindowsPowerShell\v1.0\powershell.exe",
+            "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(manifest["entrypoint_path"]),
+            "-PythonPath", str(manifest["python_path"]),
+            "-ScriptPath", str(Path(str(manifest["receiver"])) / "laptop_backup_scheduled.py"),
+            "-Target", str(manifest["target"]), "-RecoveryImage", str(manifest["recovery_image"]),
+            "-CandidateCodeSha", str(manifest["candidate_code_sha"]),
+            "-ProtectedCodeSha", str(manifest["protected_code_sha"]),
+            "-PlanGitCommit", str(manifest["scheduled_plan_git_commit"]),
+            "-Operator", str(manifest["operator"]),
+        ]
+        # spawnv passes an exact argv vector to the fixed executable and never
+        # invokes cmd.exe or PowerShell command parsing for manifest values.
+        child_exit_code = os.spawnv(os.P_WAIT, command[0], command)
+        result.update({"ok": child_exit_code == 0, "result": "PASS" if child_exit_code == 0 else "FAIL"})
+    except Exception as exc:
+        error = str(exc)
+        result.update({"ok": False, "result": "FAIL", "error": error})
+    completed = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    record = {
+        "schema_version": 1,
+        "plan_document_id": manifest.get("plan_document_id") if manifest else None,
+        "plan_version": manifest.get("plan_version") if manifest else None,
+        "plan_git_commit": manifest.get("plan_git_commit") if manifest else None,
+        "plan_sha256": manifest.get("plan_sha256") if manifest else None,
+        "candidate_code_sha": manifest.get("candidate_code_sha") if manifest else None,
+        "protected_code_sha": manifest.get("protected_code_sha") if manifest else None,
+        "operator": manifest.get("operator") if manifest else None,
+        "manifest_sha256": digest,
+        "dispatcher_sha256": sha256_file(Path(__file__).resolve()),
+        "timestamps": {"started_at": started, "completed_at": completed},
+        "exact_arguments": list(sys.argv), "child_arguments": command,
+        "child_exit_code": child_exit_code, "result": result["result"], "error": error,
+        "deviations": [], "deviation_authorization": None,
+    }
+    record_path, record_sha = write_dispatcher_execution(paths, record)
+    result.update({"execution_record": str(record_path), "execution_record_sha256": record_sha})
     print(json.dumps(result, sort_keys=True), flush=True)
     return child_exit_code
 
 
-def activate(control_root: Path, manifest_path: Path) -> dict[str, object]:
+def activate(
+    control_root: Path, manifest_path: Path, *, defer_proof: bool = False
+) -> dict[str, object]:
     paths = layout(control_root)
     lease_payload = acquire_lease(paths, uuid.uuid4().hex)
     old_pointer = paths["pointer"].read_bytes() if paths["pointer"].exists() else None
@@ -506,9 +706,16 @@ def activate(control_root: Path, manifest_path: Path) -> dict[str, object]:
     digest: str | None = None
     try:
         reconcile(paths)
+        if pending_activation(paths) is not None:
+            if is_admin():
+                raise ValueError("an earlier activation remains pending limited-token proof")
+            finalize_pending(paths)
         current = active(paths)
         ledger_sequence, activation_ids = receipt_ledger(paths)
-        raw = canonical_json(parse_json(manifest_path.read_bytes(), "proposed manifest"))
+        supplied = manifest_path.read_bytes()
+        raw = canonical_json(parse_json(supplied, "proposed manifest"))
+        if supplied != raw:
+            raise ValueError("proposed manifest bytes are not canonical")
         manifest = validate_manifest(parse_json(raw, "proposed manifest"), activation=True)
         previous_digest = current[2] if current else None
         previous_sequence = int(current[0]["sequence"]) if current else 0
@@ -534,10 +741,11 @@ def activate(control_root: Path, manifest_path: Path) -> dict[str, object]:
         pointer_replaced = True
         if parse_json(paths["pointer"].read_bytes(), "activated pointer") != pointer:
             raise ValueError("activated pointer readback failed")
-        passed = dict(pending)
-        passed["status"] = "PASS"
-        immutable_write(receipt_path(paths, manifest, "PASS"), canonical_json(passed))
-        active(paths)
+        if defer_proof:
+            return {"ok": True, "result": "PENDING", **pointer}
+        final = finalize_pending(paths)
+        if final.get("result") != "PASS":
+            raise ValueError("fresh semantic proof did not pass")
         return {"ok": True, "result": "PASS", **pointer}
     except BaseException:
         if pointer_replaced:
@@ -588,7 +796,9 @@ def prepare_manifest(args: argparse.Namespace) -> dict[str, object]:
         "python_sha256": args.python_sha256,
         "scheduled_plan_git_commit": args.scheduled_plan_git_commit,
         "target": str(args.target),
+        "allowed_target_root": str(args.allowed_target_root),
         "recovery_image": str(args.recovery_image),
+        "allowed_recovery_root": str(args.allowed_recovery_root),
         "gate_evidence_path": str(args.gate_evidence_path),
         "gate_evidence_sha256": args.gate_evidence_sha256,
     }
@@ -614,6 +824,10 @@ def parser() -> argparse.ArgumentParser:
     item = sub.add_parser("activate")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--manifest", type=Path, required=True)
+    item.add_argument("--defer-proof", action="store_true")
+    item = sub.add_parser("finalize")
+    item.add_argument("--control-root", type=Path, required=True)
+    item.add_argument("--output", type=Path)
     item = sub.add_parser("prepare")
     item.add_argument("--output", type=Path, required=True)
     item.add_argument("--sequence", type=int, required=True)
@@ -637,7 +851,9 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--python-sha256", required=True)
     item.add_argument("--scheduled-plan-git-commit", required=True)
     item.add_argument("--target", type=Path, required=True)
+    item.add_argument("--allowed-target-root", type=Path, required=True)
     item.add_argument("--recovery-image", type=Path, required=True)
+    item.add_argument("--allowed-recovery-root", type=Path, required=True)
     item.add_argument("--gate-evidence-path", type=Path, required=True)
     item.add_argument("--gate-evidence-sha256", required=True)
     return result
@@ -647,7 +863,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.command == "activate":
-            value = activate(args.control_root, args.manifest)
+            value = activate(args.control_root, args.manifest, defer_proof=args.defer_proof)
+        elif args.command == "finalize":
+            value = finalize_pending(layout(args.control_root))
         elif args.command == "prepare":
             value = prepare_manifest(args)
         elif args.command == "probe":
@@ -655,13 +873,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             return run(args.control_root)
         payload = canonical_json(value)
-        if args.command == "probe" and getattr(args, "output", None):
+        if args.command in {"probe", "finalize"} and getattr(args, "output", None):
             atomic_replace(args.output, payload)
         sys.stdout.buffer.write(payload)
         return 0
     except Exception as exc:
         payload = canonical_json({"ok": False, "result": "FAIL", "error": str(exc)})
-        if args.command == "probe" and getattr(args, "output", None):
+        if args.command in {"probe", "finalize"} and getattr(args, "output", None):
             atomic_replace(args.output, payload)
         sys.stdout.buffer.write(payload)
         return 1

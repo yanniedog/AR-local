@@ -47,6 +47,22 @@ try {
 }
 if (-not $failed) { throw 'Mismatched dispatcher action did not fail closed.' }
 
+$script:registered.Actions[0].Arguments = '-expected'
+$script:registered.Triggers += [pscustomobject]@{
+  CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskTimeTrigger' }
+  StartBoundary = '2026-08-30T06:00:00+10:00'
+}
+$failed = $false
+try {
+  Assert-ArDispatcherTask -TaskName 'test' -ExpectedArguments '-expected' `
+    -ExpectedWorkingDirectory 'C:\Program Files\AR-local Backup Dispatcher' `
+    -ExpectedPrincipalSid 'S-1-test' -ExpectedEnabled $true -ResolvePrincipalSid $resolve | Out-Null
+} catch {
+  if ($_.Exception.Message -notmatch 'trigger count') { throw }
+  $failed = $true
+}
+if (-not $failed) { throw 'Unexpected dispatcher trigger did not fail closed.' }
+
 $arguments = Get-ArDispatcherTaskArguments `
   -InstallRoot 'C:\Program Files\AR-local Backup Dispatcher' `
   -PythonPath 'C:\Python\python.exe' -ControlRoot 'C:\backup\dispatcher-control'

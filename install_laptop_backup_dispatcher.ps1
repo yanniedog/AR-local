@@ -67,10 +67,11 @@ function Write-ArBootstrapResult {
 }
 
 function Invoke-ArLimitedProbe {
-  param([string]$DispatcherPath, [string]$ProbeOutput)
+  param([string]$DispatcherPath, [string]$ProbeOutput, [switch]$FinalizePending)
   $probeName = "AR-local dispatcher probe $([guid]::NewGuid().ToString('N'))"
+  $mode = if ($FinalizePending) { 'finalize' } else { 'probe' }
   $probeArgs = @(
-    ('"{0}"' -f $DispatcherPath), 'probe',
+    ('"{0}"' -f $DispatcherPath), $mode,
     '--control-root', ('"{0}"' -f $ControlRoot),
     '--output', ('"{0}"' -f $ProbeOutput)
   ) -join ' '
@@ -182,7 +183,7 @@ try {
     exit 0
   }
 
-  foreach ($name in @('manifests', 'activation-receipts', 'lease-recoveries', 'active-runner.json', 'transition.lease')) {
+  foreach ($name in @('manifests', 'activation-receipts', 'lease-recoveries', 'dispatcher-executions', 'active-runner.json', 'transition.lease')) {
     if (Test-Path -LiteralPath (Join-Path $ControlRoot $name)) {
       throw 'Unexplained dispatcher control state exists before initial bootstrap.'
     }
@@ -216,15 +217,15 @@ try {
   Install-ArProtectedDispatcherFiles -SourceRoot $SourceRoot -InstallRoot $InstallRoot `
     -OperatorSid $OperatorSid -ExpectedHashes $fileHashes
 
-  & $PythonPath $dispatcherPath activate --control-root $ControlRoot --manifest $ManifestPath
-  if ($LASTEXITCODE -ne 0) { throw 'Initial dispatcher manifest activation failed.' }
   $activated = $true
+  & $PythonPath $dispatcherPath activate --control-root $ControlRoot --manifest $ManifestPath --defer-proof
+  if ($LASTEXITCODE -ne 0) { throw 'Initial dispatcher manifest activation failed.' }
 
   $definition = New-ArDispatcherTaskDefinition -InstallRoot $InstallRoot -Arguments $taskArguments -Operator $Principal
   Register-ScheduledTask -TaskName $TaskName -InputObject $definition -Force -ErrorAction Stop | Out-Null
   Assert-ArDispatcherTask -TaskName $TaskName -ExpectedArguments $taskArguments `
     -ExpectedWorkingDirectory $InstallRoot -ExpectedPrincipalSid $OperatorSid -ExpectedEnabled $false | Out-Null
-  $probe = Invoke-ArLimitedProbe -DispatcherPath $dispatcherPath -ProbeOutput $probeOutput
+  $probe = Invoke-ArLimitedProbe -DispatcherPath $dispatcherPath -ProbeOutput $probeOutput -FinalizePending
   Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
   Assert-ArDispatcherTask -TaskName $TaskName -ExpectedArguments $taskArguments `
     -ExpectedWorkingDirectory $InstallRoot -ExpectedPrincipalSid $OperatorSid -ExpectedEnabled $true | Out-Null
@@ -247,6 +248,27 @@ try {
   if ($mutated -and $null -ne $oldXml -and $null -ne $oldSddl) {
     try {
       Restore-ArPriorTask -TaskName $TaskName -TaskXml $oldXml -TaskSddl $oldSddl
+      $restoredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+      $restoredSid = ([Security.Principal.NTAccount]$restoredTask.Principal.UserId).Translate(
+        [Security.Principal.SecurityIdentifier]
+      ).Value
+      if ($restoredTask.State.ToString() -ne 'Ready' -or -not $restoredTask.Settings.Enabled -or
+          $restoredTask.Principal.LogonType.ToString() -ne 'S4U' -or
+          $restoredTask.Principal.RunLevel.ToString() -ne 'Limited' -or $restoredSid -ne $OperatorSid) {
+        throw 'Restored task principal, enabled state, or readiness is invalid.'
+      }
+      $restoredXmlPath = Join-Path $script:executionRoot 'rollback-restored-task.xml'
+      [IO.File]::WriteAllBytes($restoredXmlPath, (Get-ArTaskXmlBytes -TaskName $TaskName))
+      $restoredSddl = Get-ArTaskSddl -TaskName $TaskName
+      [IO.File]::WriteAllText(
+        (Join-Path $script:executionRoot 'rollback-restored-task.sddl'),
+        $restoredSddl,
+        [Text.UTF8Encoding]::new($false)
+      )
+      if ((Get-ArSha256 $restoredXmlPath) -cne $ExpectedOldTaskXmlSha256 -or
+          (Get-ArTextSha256 $restoredSddl) -cne $ExpectedOldTaskSddlSha256) {
+        throw 'Restored task XML or SDDL differs from the authenticated prestate.'
+      }
       $rollback = Join-Path $script:executionRoot 'rollback'
       New-Item -ItemType Directory -Path $rollback -Force | Out-Null
       if ($installedFiles -and (Test-Path -LiteralPath $InstallRoot)) {
@@ -255,12 +277,16 @@ try {
       if ($activated) {
         $controlRollback = Join-Path $rollback 'dispatcher-control'
         New-Item -ItemType Directory -Path $controlRollback -Force | Out-Null
-        foreach ($name in @('manifests', 'activation-receipts', 'lease-recoveries', 'active-runner.json', 'transition.lease')) {
+        foreach ($name in @('manifests', 'activation-receipts', 'lease-recoveries', 'dispatcher-executions', 'active-runner.json', 'transition.lease')) {
           $item = Join-Path $ControlRoot $name
           if (Test-Path -LiteralPath $item) { Move-Item -LiteralPath $item -Destination $controlRollback -ErrorAction Stop }
         }
       }
-      $resultPath = Write-ArBootstrapResult -Result 'ROLLED_BACK' -ErrorText $failure -Evidence @{ rollback_path = $rollback }
+      $resultPath = Write-ArBootstrapResult -Result 'ROLLED_BACK' -ErrorText $failure -Evidence @{
+        rollback_path = $rollback
+        restored_task_xml_sha256 = $ExpectedOldTaskXmlSha256
+        restored_task_sddl_sha256 = $ExpectedOldTaskSddlSha256
+      }
       Get-Content -LiteralPath $resultPath -Raw
     } catch {
       $rollbackFailure = $_.Exception.Message

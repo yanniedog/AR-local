@@ -72,6 +72,7 @@ function Assert-ArDispatcherTask {
       $task.Settings.RestartInterval -ne 'PT30M' -or
       $task.Settings.ExecutionTimeLimit -ne 'PT6H' -or
       -not $task.Settings.StartWhenAvailable) { $mismatch += 'settings' }
+  if ($triggers.Count -ne 2) { $mismatch += 'trigger count' }
   if ($daily.Count -ne 1 -or ([datetimeoffset]$daily[0].StartBoundary).TimeOfDay -ne [timespan]::FromHours(5)) {
     $mismatch += 'daily trigger'
   }
@@ -121,8 +122,9 @@ function Assert-ArProtectedDispatcherAcl {
     foreach ($rule in $acl.Access) {
       $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-          $sid -eq $OperatorSid -and ($rule.FileSystemRights -band $dangerous)) {
-        throw "Operator retains dispatcher write or ownership rights: $path"
+          ($rule.FileSystemRights -band $dangerous) -and
+          $sid -notin @('S-1-5-18', 'S-1-5-32-544')) {
+        throw "A nonprivileged principal retains dispatcher write or ownership rights: $sid on $path"
       }
     }
   }

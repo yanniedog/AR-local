@@ -44,7 +44,6 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
     control = target / "dispatcher-control"
     evidence = target / "evidence" / "gate.json"
     evidence.parent.mkdir(parents=True)
-    evidence.write_text('{"result":"PASS"}\n', encoding="utf-8")
     control.mkdir(parents=True)
     recovery = tmp_path / "recovery.img"
     recovery.write_bytes(b"recovery")
@@ -67,7 +66,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "candidate_code_sha": candidate,
         "protected_code_sha": "e" * 40,
         "operator": "jkoka",
-        "operator_sid": "S-1-test",
+        "operator_sid": dispatcher.current_sid(),
         "receiver": str(receiver),
         "allowed_receiver_root": str(receiver.parent),
         "entrypoint": entrypoint.name,
@@ -76,10 +75,28 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "python_sha256": dispatcher.sha256_file(Path(sys.executable).resolve()),
         "scheduled_plan_git_commit": "f" * 40,
         "target": str(target),
+        "allowed_target_root": str(tmp_path),
         "recovery_image": str(recovery),
+        "allowed_recovery_root": str(tmp_path),
         "gate_evidence_path": str(evidence),
-        "gate_evidence_sha256": dispatcher.sha256_file(evidence),
+        "gate_evidence_sha256": "0" * 64,
     }
+    gate = {
+        "schema_version": 1,
+        "result": "PASS",
+        "activation_id": manifest["activation_id"],
+        "candidate_code_sha": manifest["candidate_code_sha"],
+        "protected_code_sha": manifest["protected_code_sha"],
+        "plan_git_commit": manifest["plan_git_commit"],
+        "plan_sha256": manifest["plan_sha256"],
+        "authority_commit": manifest["authority_commit"],
+        "handoff_sha256": manifest["handoff_sha256"],
+        "operator_sid": manifest["operator_sid"],
+        "foreground_result": "PASS",
+        "check_only_result": "PASS",
+    }
+    evidence.write_bytes(dispatcher.canonical_json(gate))
+    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(evidence)
     return control, target, manifest
 
 
@@ -89,13 +106,33 @@ def write_manifest(path: Path, value: dict[str, object]) -> str:
     return dispatcher.sha256_bytes(payload)
 
 
+def refresh_gate(manifest: dict[str, object]) -> None:
+    gate = {
+        "schema_version": 1,
+        "result": "PASS",
+        "activation_id": manifest["activation_id"],
+        "candidate_code_sha": manifest["candidate_code_sha"],
+        "protected_code_sha": manifest["protected_code_sha"],
+        "plan_git_commit": manifest["plan_git_commit"],
+        "plan_sha256": manifest["plan_sha256"],
+        "authority_commit": manifest["authority_commit"],
+        "handoff_sha256": manifest["handoff_sha256"],
+        "operator_sid": manifest["operator_sid"],
+        "foreground_result": "PASS",
+        "check_only_result": "PASS",
+    }
+    gate_path = Path(str(manifest["gate_evidence_path"]))
+    gate_path.write_bytes(dispatcher.canonical_json(gate))
+    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
+
+
 def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     control, _target, manifest = fixture(tmp_path)
     proposed = tmp_path / "manifest.json"
     digest = write_manifest(proposed, manifest)
     result = dispatcher.activate(control, proposed)
     assert result["manifest_sha256"] == digest
-    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", "S-1-test")
+    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
     monkeypatch.delenv("AR_DISPATCHER_TEST_ADMIN", raising=False)
     probe = dispatcher.probe(control)
     assert probe == {
@@ -103,7 +140,7 @@ def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         "result": "PASS",
         "mode": "PROBE",
         "is_admin": False,
-        "operator_sid": "S-1-test",
+        "operator_sid": manifest["operator_sid"],
         "sequence": 1,
         "candidate_code_sha": manifest["candidate_code_sha"],
         "manifest_sha256": digest,
@@ -118,7 +155,7 @@ def test_probe_rejects_elevated_or_wrong_sid(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setenv("AR_DISPATCHER_TEST_SID", "S-1-wrong")
     with pytest.raises(ValueError, match="token SID"):
         dispatcher.probe(control)
-    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", "S-1-test")
+    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
     monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "1")
     with pytest.raises(ValueError, match="must not run elevated"):
         dispatcher.probe(control)
@@ -190,7 +227,8 @@ def test_reconcile_finishes_crash_after_pointer_replace(
             "manifest_sha256": digest,
         }),
     )
-    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", "S-1-test")
+    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
+    dispatcher.finalize_pending(paths)
     dispatcher.probe(control)
     assert dispatcher.receipt_path(paths, manifest, "PASS").exists()
 
@@ -207,3 +245,68 @@ def test_sequence_and_activation_replay_are_rejected(tmp_path: Path) -> None:
     write_manifest(replay_path, replay)
     with pytest.raises(ValueError, match="activation ID is a replay"):
         dispatcher.activate(control, replay_path)
+
+
+def test_noncanonical_manifest_is_rejected_without_pointer(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    proposed.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not canonical"):
+        dispatcher.activate(control, proposed)
+    assert not (control / "active-runner.json").exists()
+
+
+def test_gate_must_be_exactly_bound_and_passed(tmp_path: Path) -> None:
+    _control, _target, manifest = fixture(tmp_path)
+    gate_path = Path(str(manifest["gate_evidence_path"]))
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    gate["check_only_result"] = "FAIL"
+    gate_path.write_bytes(dispatcher.canonical_json(gate))
+    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
+    with pytest.raises(ValueError, match="not an exact bound PASS"):
+        dispatcher.validate_manifest(manifest, activation=True)
+
+
+def test_target_and_recovery_must_remain_in_approved_roots(tmp_path: Path) -> None:
+    _control, _target, manifest = fixture(tmp_path)
+    manifest["allowed_target_root"] = str(tmp_path / "receivers")
+    with pytest.raises(ValueError, match="backup target escapes"):
+        dispatcher.validate_manifest(manifest, activation=True)
+    manifest["allowed_target_root"] = str(tmp_path)
+    manifest["allowed_recovery_root"] = str(tmp_path / "receivers")
+    with pytest.raises(ValueError, match="recovery image escapes"):
+        dispatcher.validate_manifest(manifest, activation=True)
+
+
+def test_expired_dead_lease_is_preserved_and_recovered(tmp_path: Path) -> None:
+    control, _target, _manifest = fixture(tmp_path)
+    paths = dispatcher.layout(control)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    lease = dispatcher.canonical_json({
+        "schema_version": 1,
+        "pid": 2_147_483_647,
+        "activation_id": "a" * 32,
+        "created_at": (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "expires_at": (now - timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+    })
+    paths["lease"].write_bytes(lease)
+    dispatcher.recover_expired_lease(paths)
+    assert not paths["lease"].exists()
+    assert (paths["lease_recoveries"] / f"{dispatcher.sha256_bytes(lease)}.json").read_bytes() == lease
+
+
+def test_run_writes_content_addressed_execution_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    dispatcher.activate(control, proposed)
+    monkeypatch.setattr(dispatcher.os, "spawnv", lambda *_args: 0)
+    assert dispatcher.run(control) == 0
+    records = list((control / "dispatcher-executions").glob("*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text(encoding="utf-8"))
+    assert record["result"] == "PASS"
+    assert record["candidate_code_sha"] == manifest["candidate_code_sha"]
+    assert record["deviations"] == []
