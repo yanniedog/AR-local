@@ -4376,3 +4376,97 @@ then produces a verified natural 05:00 or startup dispatcher-backed backup for
 that observation. On terminal A3 `PASS`, append a fresh handoff entry and begin
 A4 planning automatically; A4 physical implementation remains separately
 gated.
+
+## Entry `HANDOFF-20260830T173100+1000-A3-NONADMIN-TRANSITION-AUTHORITY`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T173100+1000-A3-NONADMIN-TRANSITION-AUTHORITY` |
+| Previous handoff entry | `HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN` |
+| Created, Australia/Hobart | `2026-08-30T17:31:00+10:00` |
+| Created, UTC | `2026-08-30T07:31:00Z` |
+| Author | Codex unattended for AR-local operator `jkoka` |
+| Previous authority merge | `572108ffb364ac008635a60c3add7a73bb3cf26e` |
+| Previous complete handoff Git-blob SHA-256 | `71c00337db62a7137afc4197c2defc4a46a8d3e6de130aed9f0d0152b64c15cf` |
+| Controlling plan | `ARL-OPS-001` v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Implementation PR | `#566`; reviewed head `46a267deaadcd6315b428ac96f5d8f9a6c38d452`; squash merge `68faf7e13c650af7b1d713f4a604f9978897ce79` |
+| Exact implementation checkout | `C:\code\backups\AR-local-pi5-receiver-68faf7e`; clean and detached at the implementation merge |
+| Exact candidate checkout | `C:\code\backups\AR-local-pi5-candidate-f214e32-d008`; clean and detached at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; no Pi production change or deployment authorized |
+| Live legacy task | `\AR-local laptop backup`; Ready/enabled, S4U/Limited, `LastTaskResult=0`; XML SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`; recovered SDDL SHA-256 `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b` |
+| Live legacy runner | `C:\code\backups\AR-local-pi5-receiver-f214e32\run_laptop_backup_task.ps1`; SHA-256 `e132454f7f206ac3e9e7d463dae74b5cbe0354a42ce70adb430dc48dfc4f7e16` |
+| Verification | Local full suite `1315 passed, 11 skipped`; final focused suites `22 passed`; exact-head Linux full product CI and Windows PowerShell 5.1 dispatcher CI passed; LF-only SSH program was executed read-only against the Pi and returned only `AR_PI_PREFLIGHT_PASS`; two substantive Sourcery findings were implemented and resolved; Gemini remained advisory and unavailable due external quota |
+| A3 result | `RUNNING`; live non-administrator transition and natural proof remain outstanding |
+| A4 result | `BLOCKED` pending terminal A3 `PASS` |
+
+### Authenticated implementation bytes
+
+The following SHA-256 values are measured from the clean Windows checkout at
+the exact implementation merge and are mandatory transition inputs:
+
+| File | SHA-256 |
+|---|---|
+| `install_laptop_backup_nonadmin_dispatcher.ps1` | `b04fdd59e5b200f712d6f989554ffb5d03065c4b7f24a00694554914b52880a5` |
+| `install_laptop_backup_nonadmin_dispatcher_core.ps1` | `28e30fe8680d83de883e104f0d87364cd16d9572da5b9b5357f2704e303aaaaa` |
+| `install_laptop_backup_dispatcher_core.ps1` | `e6ddfabc9d20830b24f820bbd720599e94f56a01ac1daf1a1230c96f10713ea3` |
+| `run_laptop_backup_nonadmin_dispatcher.ps1` template | `48eed68e1e172aebad810d40de0eae8f5f57076036ac531e6aab8bc2cf2421e7` |
+| `laptop_backup_dispatcher.py` | `bb19cee620e8792dbc2eb015af8f53a7e46afda9414d048eebcd010db3fbdbfc` |
+| `laptop_backup_atomic.py` | `89615eb4350afda7e71e5f9c1123928e5434c12bef9ef5a20374a795d9166842` |
+| Python 3.10.9 executable | `53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f` |
+
+### Exact transition authority
+
+After this documentation-only entry merges, Codex shall perform every command
+itself in the ordinary, non-administrator `yanniedog\jkoka` token. No UAC,
+administrator PowerShell, task registration, task trigger, service restart,
+manual backup, manual ingest, Pi deployment or publication manipulation is
+authorized.
+
+Codex must create a fresh clean detached authority checkout at the exact new
+`origin/main` and calculate both the complete handoff Git-blob SHA-256 and the
+working-file SHA-256. It must then create a new unique append-only evidence
+generation, activation ID, exact gate, strict initial manifest and canonical
+runner configuration. No artifact from either failed elevated attempt may be
+reactivated or reused.
+
+The manifest must bind:
+
+- candidate checkout
+  `C:\code\backups\AR-local-pi5-candidate-f214e32-d008` at
+  `f214e3249c7968d574e3449edb14792904e1cc1f`;
+- protected Pi `9302890fcc752cbf90da97d597e972c157d913e3`;
+- scheduled plan commit `14dd066099bba393cccf61a280243e43162eedc9`;
+- exact non-shim Python and launcher hashes;
+- target `C:\code\backups\AR-local-pi5`, recovery image and their existing
+  allowed roots; and
+- the fresh v1.5 authority merge, handoff working-file digest, gate and expiry.
+
+The runner configuration must bind only the implementation checkout and hashes
+above, the non-shim Python bytes, and
+`C:\code\backups\AR-local-pi5\dispatcher-control`. Its exact file digest must
+be embedded once into the generated managed runner; the generated runner digest
+must be calculated before transition and supplied to the transactional
+installer.
+
+Immediately before transition, require the Pi clean/pinned/idle with absent
+lock and healthy dashboard, task Ready and exact, no backup/dispatcher helper,
+control root empty, implementation and candidate checkouts exact/clean/detached,
+fresh check-only `PASS`, at least 50 GiB free, current authority unchanged, and
+daylight outside D-006 freeze. The retained unreadable Program Files residue is
+inert and must remain unreferenced.
+
+The installer must run non-elevated and return terminal `PASS` or
+`ROLLED_BACK`. `PASS` requires manifest activation, a `PASS` receipt, canonical
+runner configuration, same-volume atomic replacement of only the legacy runner,
+an exact preserved legacy-runner backup, a real installed-runner `PROBE` under
+the ordinary token, and unchanged task XML/SDDL/state. Any failure restores the
+exact legacy runner and empties live dispatcher control state while preserving
+diagnostic evidence. A mismatch or ambiguous state is `BLOCKED`; it is never
+worked around.
+
+After transition `PASS`, append its exact evidence in a fresh documentation-only
+entry and bind the next natural 01:00 ingest plus first natural 05:00 or startup
+dispatcher-backed backup. Only those natural proofs make A3 terminal `PASS` and
+authorize automatic progression to A4 planning.
