@@ -3948,3 +3948,86 @@ UAC denial remains `BLOCKED`; no privilege workaround is authorized. A3 still
 becomes terminal `PASS` only after the 2026-08-31 natural ingest and first
 natural candidate-task 05:00 proof. Only then may A4 planning begin. This entry
 does not authorize A4 implementation or any Pi production deployment.
+
+## Entry `HANDOFF-20260830T120000+1000-A3-FIXED-DISPATCHER-AUTHORIZATION`
+
+This append-only decision supersedes only the preceding statement that no
+privilege workaround is authorised. It does not edit or relabel the prior UAC
+attempts, launcher failure, completed ingest/publication/backup evidence, or the
+A3 and A4 phase outcomes.
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `8640ccbbcf9453ada3fc5a28071044d7667c32a5` |
+| Previous complete handoff Git-blob SHA-256 | `43ffa1b7d0379d88ecda76fc82831f175140b03e676d9c13a7eb612dd78ad545` |
+| New controlled plan | ARL-OPS-001 v1.5 / DOC-05; document-containing commit and controlled digest resolve after this documentation-only PR merges |
+| Existing installed receiver | `C:\code\backups\AR-local-pi5-receiver-f214e32` at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Existing task | `\AR-local laptop backup`; operator `jkoka`; `S4U`; `Limited`; Ready, enabled, `LastTaskResult=0` at last verified inspection |
+| Existing task XML SHA-256 | `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2` |
+| Existing task SDDL SHA-256 | `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; no Pi deployment authorised |
+| Operator authorisation | `jkoka`, 2026-08-30: “Do whatever is required to NOT require run as administrator ... unless you can set the privileges permanently once” and “If you want me to run ONE command from admin elevated powershell, I can. But I'm not going to hang around to do it multiple times.” |
+| A3 result | `RUNNING`; prior repeated-UAC transition route remains `BLOCKED` and must not be retried |
+| A4 result | `BLOCKED` pending terminal A3 natural-run evidence |
+
+### Finding and revised decision
+
+The task already runs without elevation, but its definition contains a boot
+trigger. Windows can require administrator membership when a boot-trigger task
+is created or replaced. Merely adding write permission to this task therefore
+does not prove that later definition updates will work non-elevated. A durable
+SYSTEM service, highest-privilege task, stored credential, disabled UAC, broad
+Task Scheduler ACL, or arbitrary privileged command broker would solve the
+wrong problem and create a larger security and recovery boundary.
+
+The controlled solution is the fixed non-elevated dispatcher specified by
+ARL-OPS-001 v1.5 D-007. One final elevated, content-addressed bootstrap may
+install administrator-write-protected dispatcher bytes and update this exact
+task once. The task continues to execute as ordinary `jkoka` using S4U and
+`Limited`. All future candidate transitions atomically activate a validated,
+hash-bound manifest and never alter Task Scheduler.
+
+### Mandatory implementation order
+
+1. Merge this documentation-only v1.5 authority and calculate its controlled
+   digest, document-containing commit, merge commit, and complete handoff hash.
+2. From that exact `origin/main`, implement the fixed dispatcher, immutable
+   manifests and receipts, atomic pointer, transition lease, one-time bootstrap,
+   rollback, non-elevated probe, and tests in a separate code PR.
+3. Pass exact-head product CI, security review, substantive feedback disposition,
+   thread resolution, and repository merge gates. Recalculate the candidate SHA.
+4. Append a new documentation-only execution authorization binding the exact
+   merged code, bootstrap bytes and hash, old task XML/SDDL, initial manifest,
+   plan and handoff authority, Pi preconditions, deadline, rollback, and one
+   self-contained elevated PowerShell command.
+5. Outside D-006 freeze, the operator runs that one command once. No preliminary
+   or follow-up administrator command may be delegated to the operator.
+6. The same transaction must prove the installed state and a fresh non-elevated
+   semantic probe or restore the exact old task before its elevated process exits.
+7. Codex then performs all routine manifest activation, verification, evidence,
+   and recovery commands itself without UAC.
+
+The bootstrap is not authorised during an active ingest, while
+`daily-ingest.lock` exists, during the 00:30-through-terminal-validation freeze,
+or without a clean/pinned Pi, healthy dashboard, exact old task, at least 50 GiB
+free, and rollback evidence. It must never trigger a backup or ingest merely to
+test privileges.
+
+### Acceptance and continuation
+
+Implementation is acceptable only when malformed/duplicate-key manifests,
+hash and Git mismatches, traversal/reparse paths, replay/downgrade/sequence
+errors, expired authority, transition collisions, partial writes, crashes at
+each commit boundary, dispatcher/ACL drift, bootstrap failure, and rollback are
+tested. The live task must read back with the accepted daily and boot triggers,
+S4U/Limited principal, overlap/retry/timeout settings, fixed action, enabled
+state, and no privilege increase. Dispatcher code must be non-user-writable;
+the active manifest must bind an immutable receiver and launcher and contain no
+secret.
+
+A successful bootstrap advances A3 only to the natural-run proof. A3 becomes
+terminal `PASS` only after the fixed dispatcher survives the next protected
+natural 01:00 ingest boundary and then produces a verified natural 05:00 or
+startup backup execution with exact candidate, observation, control, macro,
+catalog, restore, residue, Pi-identity, and free-space evidence. A4 begins only
+after a later append-only handoff entry records that terminal result.

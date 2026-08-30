@@ -5,15 +5,15 @@
 | Field | Value |
 |---|---|
 | Document ID | `ARL-OPS-001` |
-| Version | `1.4` |
+| Version | `1.5` |
 | Status | Controlled execution plan |
-| Effective date | `2026-08-27` |
+| Effective date | `2026-08-30` |
 | Owner | AR-local operator |
 | Time zone | Australia/Hobart |
 | Implementation model | `gpt-5.6-sol`, Max reasoning |
 | Source baseline commit | `97c8311e4e14c5cd6ca2aeec7bd406909f502c05` |
 | Document-containing commit | Resolve with `git log -1 --format=%H -- docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md`; record the returned immutable commit in every execution record |
-| Controlled plan SHA-256 | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Controlled plan SHA-256 | `c614dee4e83f5652b301f2d8baf62a88f4fb619125e0e3eaadb56be77bdf063c` |
 
 The controlled plan SHA-256 is calculated over UTF-8 text without a byte-order
 mark after normalising CRLF/CR to LF and replacing exactly two occurrences of
@@ -46,6 +46,125 @@ not override it. Read it fully before any covered operation.
 | D-004 | 2026-08-25 | Use the physically separate Windows laptop as the primary off-device pull-backup target, while preserving the existing 32 GB historical recovery-image candidate for later boot proof. Maintain a strict 50 GiB laptop free-space floor and store immutable, compressed, hash-manifested observation packs plus current control/configuration packs instead of thirty full physical-disk images. | The Pi has no adequate separate mounted disk: its 59.7 GB USB and 29.7 GB MMC devices are smaller than the 72.7 GiB authoritative data set. The laptop has enough measured capacity, already holds recovery material, and avoids writing credentials or network shares onto the Pi. Risks are laptop unavailability, single-site loss, ransomware, interrupted network transfer, and divergence between the historical boot image and current data layer. | Laptop initiates every pull over SSH; the Pi never receives laptop credentials. Use immutable per-observation packs, canonical source and archive hashes, atomic `.partial` promotion, continuous free-space enforcement, SQLite-consistent copies, secret exclusion, restore drills, freshness receipts, and a fail-closed scheduler. Preserve but quarantine the known-short failed image; do not call the exact-size historical image current or bootable until A4 proves it. A later independent site remains required for full disaster resilience. | Explicit operator direction to use the existing laptop backup and retain approximately 50 GB free. |
 | D-005 | 2026-08-25 | Correct the laptop backup bootstrap before its first data transfer: preserve every retained completed and terminal-failed run plus `runs-archive`; reserve archive and scratch space simultaneously; verify every canonical manifest metadata field; durably flush every commit boundary; and make observation, control, and macro freshness independent scheduler gates. | Late review of v1.2 found that a latest-completed-only interpretation could lose older or failed raw evidence, that the stated capacity check omitted simultaneous archive bytes, that restore comparison omitted mode/time/ownership metadata, and that an observation-only no-op could leave control or macro recovery data stale. The same review found ambiguous DOC-02/DOC-03 and mounted-storage wording. | No backup transfer or schedule is accepted under v1.2 alone. Use DOC-03 for this document lineage; D-004/D-005 explicitly supersede the retained mounted-storage instruction. The receiver inventories all retained run namespaces, treats terminal failures as diagnostic evidence rather than publishable observations, uses worst-case dual-copy capacity, compares tar metadata and extracted bytes, flushes file and directory metadata in dependency order, and records independent freshness identities. | Mandatory safety correction from the repository's post-merge substantive review before first execution. |
 | D-006 | 2026-08-27 | Treat recovery as a multi-day controlled program while preserving the natural 01:00 ingest as an independent, non-negotiable daily production obligation. Daily capture takes precedence over every development, remediation, canary, deployment, backup, and recovery-proof activity. | The upstream CDR exposes only the current Australia/Hobart calendar day's data. At midnight that source data disappears and the next day's data replaces it. A missed capture therefore creates an irreversible source gap; later development success, a forced rerun on another day, or a reconstructed payload cannot recover the lost source observation. Multi-day work also creates repeated collision risk around the daily timer. | Use the v1.4 daily operating cycle, immutable per-day evidence, an enforced pre-ingest freeze, independent capture/finalization/publication outcomes, and same-day-only controlled recovery. Pause phase work whenever required to protect the natural ingest. Never disable or repurpose the production timer for development. Record a missed day as an immutable source gap rather than substituting stale or next-day data. | Direct operator instruction on 2026-08-27. |
+| D-007 | 2026-08-30 | Replace repeated Task Scheduler definition changes with one administrator-authorised installation of a fixed, non-elevated laptop-backup dispatcher. Thereafter, candidate transitions change only a validated, hash-bound active manifest and never update the scheduled task. | Windows restricts creation or replacement of tasks containing boot triggers to administrators. Granting task-file write access alone therefore cannot reliably make future task-definition transitions non-elevated. Repeated UAC attendance is operationally unacceptable, while a privileged broker or service would create an unnecessary durable elevation boundary. | The one elevated transaction is limited to installing an administrator-write-protected dispatcher and changing the exact existing task once. The task remains S4U, `Limited`, and owned by `jkoka`; the dispatcher runs with no administrative or SYSTEM privilege. Future manifests are schema-validated, content-addressed, atomically activated, rollback-capable, and accepted only after a fresh non-elevated proof. No UAC disablement, stored administrator credential, privileged service, SYSTEM task, `Highest` run level, folder-wide ACL delegation, or arbitrary command interface is permitted. | Direct operator authorisation on 2026-08-30: one elevated PowerShell command is acceptable, but repeated elevation is not. |
+
+## Version 1.5 fixed non-elevated dispatcher amendment
+
+This section is normative for the A3 laptop-backup task transition and all
+later candidate transitions. Its document-control execution ID is `DOC-05`.
+It changes only the Windows laptop scheduling mechanism; D-006, the Pi
+production pin, the daily ingest freeze, publication controls, completed
+evidence, and every phase acceptance gate remain unchanged.
+
+### Root cause and permanent design
+
+The existing task `\AR-local laptop backup` contains both a 05:00 daily trigger
+and a startup-plus-five-minute boot trigger. Windows may require administrator
+authority whenever that task definition is replaced, even when the task runs as
+the ordinary operator. Task-specific write ACL delegation is therefore not a
+sufficient permanent solution.
+
+One final elevated bootstrap shall replace the task action with a stable,
+administrator-write-protected dispatcher. The task shall continue to run as
+`jkoka`, with `S4U` logon and `Limited` run level. The dispatcher itself shall
+never elevate, impersonate, store a password, expose a general command channel,
+or run as `SYSTEM`. After bootstrap, candidate selection occurs exclusively
+through an ordinary-user-writable active manifest. Task Scheduler is not
+modified during candidate activation, rollback, routine backup, or later
+recovery phases.
+
+The fixed dispatcher shall:
+
+- accept only the single AR-local laptop-backup operation;
+- load one versioned active manifest from an exact configured path;
+- reject an absent, malformed, partial, future-version, or non-canonical
+  manifest, including duplicate or unknown fields;
+- require a monotonic sequence, unique activation ID, predecessor manifest and
+  pointer digests, expiry, exact plan identity, authority commit and handoff
+  digest, candidate Git commit, protected Pi commit, operator SID, receiver
+  path, backup target, recovery-image path, launcher name and launcher digest;
+- prove that the receiver is clean and detached at the declared immutable
+  commit and contains the launcher bytes named by the manifest;
+- reject a receiver, launcher, target, or recovery-image path that escapes its
+  allowed root or resolves through an unsafe link or reparse point;
+- invoke the fixed launcher contract without evaluating manifest text as
+  PowerShell, shell, or command-line syntax;
+- preserve overlap prevention, timeout, free-space, Pi ingest/freeze, backup,
+  restore, receipt, catalog, and evidence gates already required by A3; and
+- emit an immutable execution record binding the manifest and dispatcher
+  digests, task and plan identities, candidate, exact arguments, timestamps,
+  result, and evidence hashes.
+
+Active-manifest replacement shall be same-volume and atomic. The transition
+tool shall fully validate and dry-run the proposed manifest before activation,
+retain the last accepted manifest by content digest, append and durably flush a
+`PASS` activation receipt, activate the pointer last by atomic rename, then read
+back and revalidate the live bytes. An interrupted write must leave either the
+old complete pointer or the new complete pointer, never a hybrid. Any failure
+before pointer replacement leaves the old candidate active; any failed readback
+restores the previous pointer and runs its check-only path. Reused activation
+IDs, sequence gaps or regression, expired authority, predecessor mismatch,
+dirty or linked receivers, and absent activation receipts are rejected.
+
+Normal transition uses a short-lived exclusive lease containing the transition
+ID, old manifest digest, evidence root, and strict expiry. A simultaneous daily
+or startup trigger must refuse or retry without overlap. The lease may never
+extend into the D-006 freeze, and a skipped natural backup is never success.
+
+### One-time elevated bootstrap boundary
+
+The operator has authorised exactly one attended command from an elevated
+PowerShell window. That command may perform only this bounded transaction:
+
+1. Verify its own content digest and the exact plan and handoff authority.
+2. Verify the old task XML and security descriptor, current receiver commit,
+   protected Pi identity, idle ingest and absent lock, dashboard return, free
+   space, deadline, and absence of transition residue.
+3. Install the content-addressed fixed dispatcher into a dedicated directory
+   whose code and configuration are writable only by Administrators and SYSTEM
+   and readable/executable by `jkoka`.
+4. Create and validate the initial active manifest without any secret.
+5. Replace only `\AR-local laptop backup`, preserving its user, S4U/Limited
+   principal, daily and boot triggers, `IgnoreNew` overlap policy, retries,
+   six-hour limit, enabled state, and all other accepted settings, while changing
+   its action to the fixed dispatcher.
+6. Export and hash the resulting task XML and security descriptor and verify the
+   installed dispatcher and manifest byte-for-byte.
+7. Run a fresh **non-elevated** semantic probe that loads and validates the live
+   manifest and dispatcher contract without triggering a backup.
+8. On any failed gate, restore the authenticated prior task XML and security
+   descriptor, re-enable and read back the prior limited S4U task, and remove
+   only bootstrap-created incomplete dispatcher state before elevation exits.
+
+The bootstrap must be idempotent: an exact rerun after confirmed success reports
+the already-installed identity without widening rights or changing semantics.
+This permits recovery from an uncertain console result; it is not authorisation
+for routine repeated elevation.
+
+Explicitly prohibited are weakening UAC; adding the operator to Administrators;
+storing administrator credentials; installing a Windows service,
+SYSTEM/highest-privilege broker, or general privileged dispatcher; granting
+operator write access to dispatcher code; delegating folder-wide Task Scheduler
+rights; or granting task delete, `WRITE_DAC`, or `WRITE_OWNER` rights.
+
+### Controlled implementation and acceptance
+
+DOC-05 must merge as a documentation-only pull request before implementation.
+Implementation then uses a separate exact-`main` code pull request and a newly
+calculated immutable candidate SHA. Required tests cover manifest schema and
+canonicalisation, digest and Git binding, path containment and link rejection,
+replay and downgrade rejection, atomic activation and crash rollback,
+dispatcher argument safety, transition-lease collisions, exact task-definition
+generation, bootstrap rollback and idempotence, dispatcher ACL drift, and the
+fresh non-elevated semantic probe.
+
+The single elevated command is not issued until the implementation PR is
+merged, exact bytes and hashes are recorded, current Pi and Task Scheduler
+preconditions pass, and the command is self-contained. A3 remains `RUNNING`
+until the resulting fixed-dispatcher task survives the next natural 01:00 ingest
+boundary and its first natural 05:00 or startup backup proof. A4 remains
+`BLOCKED` until that A3 evidence is terminal `PASS`. D-007 authorises no Pi
+production deployment or publication manipulation.
 
 ## Version 1.4 multi-day continuity and daily capture amendment
 
@@ -1739,3 +1858,4 @@ This table is append-only.
 | 1.2 | 2026-08-25 | Resolve from Git history after merge | `94b089741670e4d8949b28f698f59b5851797bcf22b58d47ba57d15bdc687194` | Added D-004 and the controlled laptop pull-backup architecture: classified the historical recovery-image candidate, immutable compressed per-observation generations, 50 GiB free-space floor, SQLite-consistent macro capture, atomic transfer/catalog protocol, restore drills, scheduling, and residual-risk boundaries. |
 | 1.3 | 2026-08-25 | Resolve from Git history after merge | `8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d` | Added D-005 before first transfer: full retained/failed-run scope, simultaneous archive-and-scratch capacity, complete tar metadata verification, durable file/directory commit barriers, independent observation/control/macro freshness, explicit mounted-storage supersession, and unambiguous DOC-03 execution identity. |
 | 1.4 | 2026-08-27 | Resolve from Git history after merge | `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` | Added D-006 and the normative multi-day continuity model: daily 01:00 current-day-only capture takes precedence over remediation, repeating freeze/validation/backup cadence, independent daily outcomes, immutable source-gap handling, same-day recovery limits, cross-day phase resumption, and an explicit transition for the in-flight v1.3 A3 proof. |
+| 1.5 | 2026-08-30 | Resolve from Git history after merge | `c614dee4e83f5652b301f2d8baf62a88f4fb619125e0e3eaadb56be77bdf063c` | Added D-007 and DOC-05: one bounded elevated bootstrap installs a fixed non-elevated, hash-bound laptop-backup dispatcher; future candidate transitions atomically switch validated manifests without Task Scheduler changes, while A3 natural proof and all D-006 controls remain mandatory. |
