@@ -233,25 +233,46 @@ void require_restricted(HANDLE token) {
   require_no_admin_membership(token);
 }
 
-void require_sentinel_read_only(HANDLE token, const std::wstring& root) {
-  std::wstring sentinel = join(root, L"protected.sentinel");
-  require_plain_path(sentinel, false);
+void require_write_denied(HANDLE token, const std::wstring& path, bool directory) {
+  require_plain_path(path, directory);
   if (!ImpersonateLoggedOnUser(token)) throw win_error("ImpersonateLoggedOnUser");
-  HANDLE attempted = CreateFileW(sentinel.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
-                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  DWORD failure = GetLastError();
-  if (attempted != INVALID_HANDLE_VALUE) CloseHandle(attempted);
-  if (!RevertToSelf()) throw win_error("RevertToSelf");
-  if (attempted != INVALID_HANDLE_VALUE) {
-    throw std::runtime_error("restricted token can write the protected sentinel");
+  DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
+  if (directory) flags |= FILE_FLAG_BACKUP_SEMANTICS;
+  bool writable = false;
+  DWORD failure = ERROR_ACCESS_DENIED;
+  for (DWORD access : {GENERIC_WRITE, DELETE, WRITE_DAC, WRITE_OWNER}) {
+    HANDLE attempted = CreateFileW(path.c_str(), access,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, flags, nullptr);
+    failure = GetLastError();
+    if (attempted != INVALID_HANDLE_VALUE) {
+      CloseHandle(attempted);
+      writable = true;
+      break;
+    }
+    if (failure != ERROR_ACCESS_DENIED) break;
   }
-  if (failure != ERROR_ACCESS_DENIED) throw std::runtime_error("sentinel write failed for an unexpected reason");
+  if (!RevertToSelf()) throw win_error("RevertToSelf");
+  if (writable) {
+    throw std::runtime_error("restricted token can modify a protected launcher dependency");
+  }
+  if (failure != ERROR_ACCESS_DENIED) {
+    throw std::runtime_error("protected dependency write check failed for an unexpected reason");
+  }
 }
 
 void validate_token(HANDLE token, const std::wstring& root) {
   require_user_sid(token, read_operator_sid(root));
   require_restricted(token);
-  require_sentinel_read_only(token, root);
+  require_write_denied(token, root, true);
+  for (const wchar_t* name : {L"operator.sid", L"protected.sentinel",
+                              L"run_laptop_backup_trusted_child.ps1", L"trusted-child.json"}) {
+    require_write_denied(token, join(root, name), false);
+  }
+  std::wstring probe = join(root, L"probe.enabled");
+  if (GetFileAttributesW(probe.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    require_write_denied(token, probe, false);
+  }
 }
 
 std::wstring quote(const std::wstring& value) {

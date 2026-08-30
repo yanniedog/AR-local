@@ -12,6 +12,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "native" / "laptop_backup_trusted_launcher.cpp"
+TRUSTED_CHILD = ROOT / "run_laptop_backup_trusted_child.ps1"
+DISPATCHER = ROOT / "laptop_backup_dispatcher.py"
 
 
 def windows_only() -> None:
@@ -72,7 +74,21 @@ def test_source_has_no_general_command_channel() -> None:
     assert "CreateRestrictedToken" in text
     assert "TokenHasRestrictions" in text
     assert "startup.lpDesktop = noninteractive_desktop" in text
+    assert "require_write_denied(token, root, true)" in text
     assert "--restricted-child" in text
+
+
+def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
+    child = TRUSTED_CHILD.read_text(encoding="utf-8")
+    dispatcher = DISPATCHER.read_text(encoding="utf-8")
+    assert "$config.schema_version -ne 2" in child
+    assert "Assert-ArTrustedWithinRoot $python" in child
+    assert "Assert-ArTrustedWithinRoot $dispatcher" in child
+    assert "Assert-ArTrustedWithinRoot $atomic" in child
+    assert "Assert-ArTrustedWriteDenied $tool.Path" in child
+    assert "$env:PATH =" in child
+    assert "$env:AR_TRUSTED_ROOT = $trustedRoot" in child
+    assert 'os.environ.get("AR_TRUSTED_ROOT")' in dispatcher
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only reproducible build")
