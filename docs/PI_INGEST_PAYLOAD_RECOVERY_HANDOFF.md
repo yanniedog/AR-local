@@ -5183,3 +5183,67 @@ acceptance gates, stop controls and evidence requirements remain unchanged.
 A3 remains incomplete until the natural ingest and backup verifiers both return
 controlled `PASS`. A4 remains blocked until the next append-only entry records
 that dual result.
+
+## Entry `HANDOFF-20260830T201636+1000-A3-AUTHORITY-BLOCKED-EVIDENCE-CORRECTION`
+
+### Control record and late-review disposition
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T201636+1000-A3-AUTHORITY-BLOCKED-EVIDENCE-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260830T201249+1000-A3-AUTHORITY-REFRESH-CORRECTION` |
+| Created | `2026-08-30T20:16:36+10:00` / `2026-08-30T10:16:36Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Result | `RUNNING`; A3 and A4 status is unchanged |
+| Controlling plan | `ARL-OPS-001` v1.5; commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Late review | PR #578 Sourcery finding on unclassified authority-drift exception |
+| Disposition | `IMPLEMENTED`: reauthentication failure writes an immutable mandatory-schema `BLOCKED` record before rethrowing |
+
+PR #578 merged before its late review arrived and remains immutable. Replace
+the complete 00:55/05:15 reauthentication block from the preceding correction
+with the block below. Set `$Phase='0055'` at 00:55 or `$Phase='0515'` at 05:15
+before invoking it. The block fetches read-only, authenticates the frozen 00:20
+authority, and on any failure attempts exactly one controlled `BLOCKED` record
+inside the already-bound evidence generation before rethrowing. If evidence
+storage itself fails, it emits a separate process-level `BLOCKED` JSON to
+stderr containing both errors and remains fail-closed. Never retry a phase or
+overwrite a record.
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$P=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831')
+$started=[DateTimeOffset]::Now.ToString('o');$pointer=Join-Path $P 'ACTIVE_EVIDENCE_PATH.txt';$R=$null;$authorityPath=$null;$A=$null;$H=$null;$observedRemote=$null
+try{
+ if($Phase-cnotin@('0055','0515')){throw 'Authority phase is invalid.'};$R=[IO.Path]::GetFullPath((Get-Content -LiteralPath $pointer -Raw).Trim())
+ if(-not$R.StartsWith($P+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Evidence root escaped.'};$authorityPath=Join-Path $R 'authority.json'
+ $j=Get-Content -LiteralPath $authorityPath -Raw|ConvertFrom-Json;$A=[string]$j.authority_commit;$H=[string]$j.authority_handoff_sha256
+ git -C $V fetch origin main;if($LASTEXITCODE-ne 0){throw 'Authority refresh failed.'}
+ $observedRemote=(git -C $V rev-parse refs/remotes/origin/main).Trim();if($LASTEXITCODE-ne 0-or$observedRemote-cnotmatch'^[0-9a-f]{40}$'){throw 'Observed remote authority resolution failed.'}
+ if($j.result-cne'PASS'-or$A-cnotmatch'^[0-9a-f]{40}$'-or$H-cnotmatch'^[0-9a-f]{64}$'-or$observedRemote-cne$A){throw 'Persisted authority identity failed.'}
+ $actual=(python -c "import hashlib,subprocess,sys;print(hashlib.sha256(subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'])).hexdigest())" $V $A).Trim();if($LASTEXITCODE-ne 0-or$actual-cne$H){throw 'Persisted handoff blob authentication failed.'}
+}catch{
+ $original=$_.Exception;$errorText=$original.Message;$phaseValue=if($Phase-cin@('0055','0515')){$Phase}else{'UNKNOWN'};$source=if($Phase-ceq'0055'){'da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7'}elseif($Phase-ceq'0515'){'a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6'}else{$null}
+ try{
+  $recordRoot=if($null-ne$R-and$R.StartsWith($P+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-and(Test-Path -LiteralPath $R -PathType Container)){$R}else{$P};$evidence=@()
+  foreach($evidencePath in @($pointer,$authorityPath)){if($null-ne$evidencePath-and(Test-Path -LiteralPath $evidencePath -PathType Leaf)){$item=Get-Item -LiteralPath $evidencePath;if(-not$item.FullName.StartsWith($recordRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){continue};$relative=$item.FullName.Substring($recordRoot.Length+1).Replace('\','/');$evidence+=,[ordered]@{path=$relative;bytes=[int64]$item.Length;sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}}}
+  $record=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';plan_raw_sha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';plan_normalized_sha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';authority_commit=$A;authority_handoff_sha256=$H;verifier_code_sha='8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2';verifier_source_sha256=$source;candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';phase=$phaseValue;timestamps=[ordered]@{started_at=$started;completed_at=[DateTimeOffset]::Now.ToString('o')};exact_commands=@("git -C `"$V`" fetch origin main","git -C `"$V`" rev-parse refs/remotes/origin/main","git -C `"$V`" show `"$A`:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`" and SHA-256 authenticate");evidence=$evidence;result='BLOCKED';details=[ordered]@{authority_phase=$phaseValue;authority_evidence=$authorityPath;persisted_authority_commit=$A;observed_remote_commit=$observedRemote;reason='authority reauthentication failed'};error=$errorText;deviations=@();deviation_authorization=$null}
+  $name=if($recordRoot-ceq$R){"$phaseValue-authority-reauthentication-blocked.json"}else{([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''))+"-$phaseValue-authority-setup-blocked-"+[guid]::NewGuid().ToString('N')+'.json'};$raw=($record|ConvertTo-Json -Depth 8 -Compress)+"`n";$path=Join-Path $recordRoot $name;$s=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($raw);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+  $verified=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json;if($verified.result-cne'BLOCKED'-or$verified.phase-cne$phaseValue-or$verified.verifier_source_sha256-cne$source){throw 'BLOCKED record verification failed.'}
+ }catch{
+  $recordError=$_.Exception.Message;$fallback=([ordered]@{schema_version=1;phase=$Phase;result='BLOCKED';error=$errorText;evidence_record_error=$recordError}|ConvertTo-Json -Compress);[Console]::Error.WriteLine($fallback)
+  throw [InvalidOperationException]::new("Authority reauthentication blocked and its evidence record failed: $recordError",$original)
+ }
+ throw $original
+}
+```
+
+On success, continue the exact phase `0055` wrapper and ingest-verifier command
+or the exact `0515` backup-verifier command from the authorization entry. On
+`BLOCKED`, stop that verifier path; do not alter `authority.json`, do not select
+a newer commit, and do not use a manual fallback. Direct observation and
+preservation of an already-running natural ingest remain read-only and must not
+be interrupted merely because evidence tooling blocked.
+
+<!-- A3-VERIFIER-AUTHORIZATION {"schema_version":1,"plan_document_id":"ARL-OPS-001","plan_version":"1.5","plan_git_commit":"9094a8e115958fcaf2cb36525736bd5e297e6b04","plan_sha256":"a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada","observation_date":"2026-08-31","verifier_code_sha":"8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2","candidate_code_sha":"f214e3249c7968d574e3449edb14792904e1cc1f","protected_code_sha":"9302890fcc752cbf90da97d597e972c157d913e3","operator":"jkoka","sources":{"a3_ingest_terminal_verify.py":"da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7","a3_backup_terminal_verify.py":"a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6","a3_verifier_common.py":"f98d3279aa3bd6d4aafa8725f583d1b987626c6c4ad0033f90a543bbfbd28b19","run_a3_timed_preflight.ps1":"587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5","timed-preflight.ps1":"d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a","pi_laptop_backup_source.py":"e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17"},"authorization":"AUTHORIZED","result":"PASS","deviations":[],"deviation_authorization":null} -->
+
+All prior D-003, D-006, acceptance, stop, rollback and immutability controls
+remain unchanged. A3 still requires dual controlled `PASS`; A4 remains blocked.
