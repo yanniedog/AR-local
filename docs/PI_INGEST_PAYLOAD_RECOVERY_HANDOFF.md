@@ -4031,3 +4031,89 @@ natural 01:00 ingest boundary and then produces a verified natural 05:00 or
 startup backup execution with exact candidate, observation, control, macro,
 catalog, restore, residue, Pi-identity, and free-space evidence. A4 begins only
 after a later append-only handoff entry records that terminal result.
+
+## Entry `HANDOFF-20260830T161300+1000-A3-FIXED-DISPATCHER-IMPLEMENTED`
+
+This append-only execution authorization continues D-007 and DOC-05 after the
+fixed dispatcher implementation merged. It does not edit or relabel any prior
+UAC failure, natural-ingest result, backup result, completed evidence, A3
+outcome, or A4 gate.
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `9094a8e115958fcaf2cb36525736bd5e297e6b04` |
+| Previous complete handoff Git-blob SHA-256 | `5b434593c4d814569b74df5ee6b86fe740b14a36caff9187ed30fa63ec78936b` |
+| Controlled plan | ARL-OPS-001 v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Implementation PR | `#560`, squash-merged as `b3408a29add830836dc7ddf2e8016e7ed4a0e8dc` |
+| Reviewed implementation head | `cb814c08faaac769548d31b0afb3b60f2481f4b1` |
+| Dispatcher source | `laptop_backup_dispatcher.py`; laptop checkout SHA-256 `907772ad32b6b8aa1428f91ccc6ab007c928a1c59087d7352bdec3ed0f785924` |
+| Atomic-write module | `laptop_backup_atomic.py`; laptop checkout SHA-256 `89615eb4350afda7e71e5f9c1123928e5434c12bef9ef5a20374a795d9166842` |
+| Fixed task runner | `run_laptop_backup_dispatcher.ps1`; laptop checkout SHA-256 `0b021ae8a7c509ec7824e454a257a14af5cfd65477a92ca549f95e3c35be25ab` |
+| Elevated installer | `install_laptop_backup_dispatcher.ps1`; laptop checkout SHA-256 `7bd52efc2da79022445b1e20b4f3c831c157932a0c6097795ccc843eda8c0ff7` |
+| Installer core | `install_laptop_backup_dispatcher_core.ps1`; laptop checkout SHA-256 `e6ddfabc9d20830b24f820bbd720599e94f56a01ac1daf1a1230c96f10713ea3` |
+| Implementation receiver | `C:\code\backups\AR-local-pi5-receiver-b3408a2`, clean and detached at `b3408a29add830836dc7ddf2e8016e7ed4a0e8dc` |
+| Initial active runner | Existing proven receiver `C:\code\backups\AR-local-pi5-receiver-f214e32`, clean and detached at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Initial launcher SHA-256 | `run_laptop_backup_task.ps1`: `e132454f7f206ac3e9e7d463dae74b5cbe0354a42ce70adb430dc48dfc4f7e16` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; no Pi production change or deployment authorized |
+| Existing task identity | `\AR-local laptop backup`; `yanniedog\jkoka`; S4U; Limited; exact accepted XML SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`; exact accepted SDDL SHA-256 `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376` |
+| Operator SID | `S-1-5-21-689213601-40760280-3596424081-1001` |
+| Verification | Full local repository suite `1306 passed, 11 skipped`; final focused dispatcher/installer suite `16 passed`; exact-head payload-builder CI and bot-feedback gate passed; all substantive review threads received an `Implemented` or reasoned `Declined` disposition and were resolved. Gemini's advisory action exhausted its external quota and is not a deterministic or required gate. |
+| A3 result | `RUNNING`; implementation is merged, but bootstrap and natural dispatcher proof remain outstanding |
+| A4 result | `BLOCKED` pending terminal A3 evidence |
+
+### Exact continuation authority
+
+After this documentation-only entry merges, Codex shall perform every
+non-administrator operation itself. It shall create a fresh clean detached
+authority checkout at the exact new `origin/main`, calculate and retain the
+complete handoff Git-blob SHA-256, and prepare a canonical initial manifest
+whose authority commit is that exact current `origin/main`. No later commit may
+intervene before activation.
+
+The manifest is constrained to:
+
+- candidate `f214e3249c7968d574e3449edb14792904e1cc1f` and the initial launcher
+  digest above;
+- protected Pi `9302890fcc752cbf90da97d597e972c157d913e3`;
+- receiver root `C:\code\backups`;
+- backup target `C:\code\backups\AR-local-pi5` within allowed target root
+  `C:\code\backups`;
+- recovery image
+  `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`
+  within allowed recovery root `C:\code\AR-local-pi-image-2026-05-21`;
+- the exact non-shim Python executable and digest measured immediately before
+  preparation;
+- operator `jkoka`, principal `yanniedog\jkoka`, and the SID above; and
+- legacy scheduled-run plan commit
+  `14dd066099bba393cccf61a280243e43162eedc9`, required by the proven initial
+  runner while dispatcher authority itself remains ARL-OPS-001 v1.5.
+
+Before constructing the single elevated command, Codex must run and preserve a
+fresh foreground scheduled-backup gate and a separate `--check-only` gate with
+the existing proven receiver, require both to return `PASS`, verify the Pi is
+clean, pinned and idle with no ingest lock, verify the dashboard, current task,
+free-space floor, receiver cleanliness, Python bytes, old XML/SDDL, and absence
+of unexplained dispatcher control state, then write a canonical hash-bound gate
+record and manifest into a unique append-only evidence directory. A `FAIL`,
+`BLOCKED`, ambiguity, active backup, active ingest, freeze, source-identity
+mismatch, or less than 50 GiB free stops before elevation.
+
+The operator is then asked to run exactly one self-contained command from an
+already elevated Windows PowerShell. That command must authenticate the
+installer, installer core, dispatcher, atomic module, runner, manifest, old
+task XML/SDDL, authority and Pi preconditions before mutation. The installer
+must either return terminal `PASS` after exact task/ACL readback and a fresh
+S4U/Limited non-elevated semantic proof, or restore and reauthenticate the exact
+old task and quarantine all new state as `ROLLED_BACK`. A preliminary privilege
+probe, second elevated command, repeated UAC prompt, stored credential, SYSTEM
+task, privileged service, UAC change, broad ACL delegation, manual backup task
+trigger, Pi deployment, manual ingest, or publication manipulation is not
+authorized.
+
+After bootstrap `PASS`, Codex validates the installed fixed task and dispatcher
+without elevation and records the exact evidence and hashes. A3 remains
+`RUNNING` until the task survives the next D-006-protected natural 01:00 ingest
+and its first natural 05:00 or startup backup execution. A terminal append-only
+handoff entry then records A3 `PASS`, `FAIL`, or `BLOCKED`; only `PASS`
+authorizes automatic progression to A4 planning. Physical A4 work remains
+unauthorized by this entry.
