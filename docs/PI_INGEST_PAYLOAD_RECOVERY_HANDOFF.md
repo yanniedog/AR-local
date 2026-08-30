@@ -5247,3 +5247,102 @@ be interrupted merely because evidence tooling blocked.
 
 All prior D-003, D-006, acceptance, stop, rollback and immutability controls
 remain unchanged. A3 still requires dual controlled `PASS`; A4 remains blocked.
+
+## Entry `HANDOFF-20260831T074200+1000-A3-NATURAL-BACKUP-FAIL-SAFER-REPAIR`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T074200+1000-A3-NATURAL-BACKUP-FAIL-SAFER-REPAIR` |
+| Previous handoff entry | `HANDOFF-20260830T201636+1000-A3-AUTHORITY-BLOCKED-EVIDENCE-CORRECTION` |
+| Created | `2026-08-31T07:42:00+10:00` / `2026-08-30T21:42:00Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Previous authority | merge `ed6735783a2bcd3d1453d9aa5e4b7ec5adc5be28`; complete handoff Git-blob SHA-256 `d6f6b1a7262da1d5225688cc84f72715907783536952c298d95e0ff3b1428c63` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; no deployment or production mutation |
+| Natural ingest component result | `PASS`: exactly one natural invocation `d546b15b377f4415a3ea7db81bd96025` completed at 01:18:50 Australia/Hobart with systemd `Result=success`, `ExecMainStatus=0`, `NRestarts=0`, terminal lock absent and dashboard automatically returned for `2026-08-31` |
+| Timed procedure result | `BLOCKED`: the 00:20/00:55 controlled preflight generation was not created; it is not reconstructed or relabelled |
+| Natural laptop task result | `FAIL`: the unchanged 05:00 task ended with result `1` before any backup-data write |
+| A3 / A4 | A3 `RUNNING`; A4 `BLOCKED` until a later natural ingest and natural restricted-dispatcher backup both pass |
+
+### Immutable evidence and root cause
+
+The dispatcher execution record is
+`C:\code\backups\AR-local-pi5\dispatcher-control\dispatcher-executions\20260830T190002Z-0b43ff212991405890e7b2df662952b4.json`,
+SHA-256
+`88031066d9228f3acd09d97304d239df3da8698d871eb18fdf76dea3900f4165`.
+It records `FAIL`, child exit `1`, no candidate or manifest execution, and the
+exact error `dispatcher must not run elevated`.
+
+The controlled diagnostic summary is
+`C:\code\backups\AR-local-pi5\evidence\A3-S4U-NATURAL-FAILURE-20260831\20260831T073928+1000\diagnostic-summary.json`,
+SHA-256
+`c994432dd4f278d7ec3ad5ebce41a4d04cdb4f64fa58321a92378bc68268d423`.
+It binds the plan, candidate, protected Pi, task state, exact commands and
+supporting evidence. The production task was not manually triggered.
+
+The failure exposes an invalid assumption in D-008. The task definition still
+reports principal `jkoka`, `S4U` and `Limited`, but the natural scheduler token
+made `IsUserAnAdmin` return true. That API is an administrator-group-membership
+test, not a complete least-privilege-launch mechanism. The dispatcher correctly
+failed closed, but the runner cannot rely on Task Scheduler's declaration alone
+to establish the child process's effective restriction.
+
+A temporary same-principal `S4U` probe task could not be registered by the
+ordinary token (`Access is denied`), and no elevated or production-task probe
+was attempted. A foreground proof using Windows Software Restriction Policy's
+`SAFER_LEVELID_NORMALUSER` created a restricted child with
+`TokenElevationTypeLimited`, `TokenElevation=0`, administrator membership
+false, and only `SeChangeNotifyPrivilege` enabled. Its evidence is
+`interactive-safer-token-2.json`, SHA-256
+`8ca90ab3023fd55de1d236b81d1863e268b2d73d56b22f168ef5be7c95ba8845`.
+
+### Append-only deviation decision `D-009`
+
+D-008 remains historical evidence but its direct Python-dispatcher launch is
+withdrawn. No Task Scheduler definition, trigger, SDDL, principal, run level,
+Pi path, public payload or production service may be changed for this repair.
+No administrator action is authorized or required.
+
+The reviewed repair shall make the existing managed runner launch the exact
+dispatcher through a small hash-bound Windows restricted-process launcher. The
+launcher shall use `SaferCreateLevel` with `SAFER_SCOPEID_USER` and
+`SAFER_LEVELID_NORMALUSER`, derive the child token from the task process token,
+and call `CreateProcessAsUserW` only with that restricted token. It shall wait
+for and return the exact child exit code. The dispatcher retains its SID and
+non-administrator checks, so failure to create or prove the restricted child
+remains fail-closed.
+
+The runner must continue to authenticate the control configuration, exact clean
+detached implementation commit, Python executable, dispatcher, atomic module,
+new restricted launcher and active content-addressed manifest. Transition of
+the operator-owned runner and runner configuration must be same-volume,
+transactional, rollback-capable, evidence-bound and performed only while the
+task is Ready, no backup helper exists, the Pi ingest is idle and the D-006
+freeze is not in effect. The task itself must remain byte-for-byte unchanged.
+
+### Verification and continuation gates
+
+The implementation PR must add deterministic unit tests for Win32 call failure,
+restricted-token creation, exact argument quoting, child exit propagation,
+handle closure, configuration/launcher hash drift, transition interruption and
+exact rollback. Windows PowerShell 5.1 and the complete repository suite must
+pass at the exact PR head, with all substantive review threads dispositioned
+and resolved before merge.
+
+After merge, create a clean detached implementation checkout at the exact merge
+SHA. Outside the freeze, run the reviewed non-administrator transition and two
+foreground semantic probes. Require exact task XML/SDDL identity, immutable
+transition evidence, a clean candidate, an exact active manifest, no helpers,
+no partial files, catalog integrity and at least 50 GiB free. On any failure,
+restore the exact previous runner and configuration and record `ROLLED_BACK` or
+`FAIL`; never trigger the backup task as a fallback.
+
+The next terminal proof is the natural `2026-09-01` 01:00 ingest followed by
+the natural 05:00 backup. D-006 preflights must begin early enough to complete
+before 00:30 and 01:00. Acceptance requires complete ingest/database/contract/
+ledger/provider/public-byte evidence plus a natural dispatcher execution that
+proves the restricted identity and creates `PASS/BACKUP-LATEST` for observation
+date `2026-09-01`. Only a later append-only entry may mark A3 `PASS` and begin
+A4 planning.
