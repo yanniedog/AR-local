@@ -74,7 +74,7 @@ def test_source_has_no_general_command_channel() -> None:
     text = SOURCE.read_text(encoding="utf-8")
     assert "system(" not in text
     assert "ShellExecute" not in text
-    assert "CreateProcessAsUserW" in text
+    assert "CreateProcessWithTokenW" in text
     assert "CreateRestrictedToken" in text
     assert "LUA_TOKEN" not in text
     assert "DOMAIN_ALIAS_RID_ADMINS" in text

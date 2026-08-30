@@ -400,10 +400,10 @@ DWORD create_as(HANDLE token, const std::wstring& application, std::wstring comm
   startup.cb = sizeof(startup);
   startup.lpDesktop = private_desktop.startup_name();
   PROCESS_INFORMATION process{};
-  if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, FALSE,
-                            CREATE_NO_WINDOW, nullptr,
-                            working_directory.c_str(), &startup, &process)) {
-    throw win_error("CreateProcessAsUserW");
+  if (!CreateProcessWithTokenW(token, 0, application.c_str(), command.data(),
+                               CREATE_NO_WINDOW, nullptr, working_directory.c_str(),
+                               &startup, &process)) {
+    throw win_error("CreateProcessWithTokenW");
   }
   return wait_for(process);
 }
