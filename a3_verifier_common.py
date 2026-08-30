@@ -17,6 +17,9 @@ from typing import Any, Mapping, Sequence
 SHA256 = re.compile(r"[0-9a-f]{64}")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 RESULTS = {"NOT_STARTED", "RUNNING", "PASS", "FAIL", "BLOCKED", "ROLLED_BACK"}
+HANDOFF_PATH = "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
+AUTHORIZATION_PREFIX = "<!-- A3-VERIFIER-AUTHORIZATION "
+AUTHORIZATION_SUFFIX = " -->"
 
 
 class VerificationError(RuntimeError):
@@ -177,6 +180,84 @@ def controlled_identity(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def verify_handoff_authority(
+    args: argparse.Namespace, root: Path, relative_source: str
+) -> dict[str, object]:
+    handoff_blob = run_capture(
+        ("git", "-C", str(root), "show", f"{args.authority_commit}:{HANDOFF_PATH}"),
+        timeout=30,
+    )
+    ancestry = run_capture(
+        ("git", "-C", str(root), "merge-base", "--is-ancestor", args.verifier_code_sha, args.authority_commit),
+        timeout=30,
+    )
+    if (
+        handoff_blob.returncode != 0
+        or sha256_bytes(handoff_blob.stdout) != args.authority_handoff_sha256
+        or ancestry.returncode != 0
+    ):
+        raise VerificationError("handoff authority blob, digest, or ancestry is invalid")
+    try:
+        lines = handoff_blob.stdout.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise VerificationError("handoff authority is not UTF-8") from exc
+    expected_keys = {
+        "schema_version",
+        "plan_document_id",
+        "plan_version",
+        "plan_git_commit",
+        "plan_sha256",
+        "verifier_code_sha",
+        "candidate_code_sha",
+        "protected_code_sha",
+        "operator",
+        "sources",
+        "authorization",
+        "result",
+        "deviations",
+        "deviation_authorization",
+    }
+    matches: list[Mapping[str, Any]] = []
+    for line in lines:
+        if not (line.startswith(AUTHORIZATION_PREFIX) and line.endswith(AUTHORIZATION_SUFFIX)):
+            continue
+        raw = line[len(AUTHORIZATION_PREFIX) : -len(AUTHORIZATION_SUFFIX)].encode("utf-8")
+        value = require_mapping(load_json_bytes(raw, "A3 verifier authorization"), "A3 verifier authorization")
+        if set(value) != expected_keys:
+            raise VerificationError("A3 verifier authorization fields are incomplete")
+        sources = require_mapping(value.get("sources"), "authorized verifier sources")
+        for path, digest in sources.items():
+            if not isinstance(path, str) or not path or Path(path).is_absolute():
+                raise VerificationError("authorized verifier source path is unsafe")
+            require_sha256(digest, f"authorized source {path}")
+        expected = {
+            "schema_version": 1,
+            "plan_document_id": args.plan_document_id,
+            "plan_version": args.plan_version,
+            "plan_git_commit": args.plan_git_commit,
+            "plan_sha256": args.plan_sha256,
+            "verifier_code_sha": args.verifier_code_sha,
+            "candidate_code_sha": args.candidate_code_sha,
+            "protected_code_sha": args.protected_code_sha,
+            "operator": args.operator,
+            "authorization": "AUTHORIZED",
+            "result": "PASS",
+            "deviations": [],
+            "deviation_authorization": None,
+        }
+        if all(value.get(key) == item for key, item in expected.items()) and sources.get(relative_source) == args.verifier_source_sha256:
+            matches.append(value)
+    if len(matches) != 1:
+        raise VerificationError("handoff does not uniquely authorize this verifier source")
+    return {
+        "path": HANDOFF_PATH,
+        "blob_sha256": sha256_bytes(handoff_blob.stdout),
+        "authority_commit": args.authority_commit,
+        "authorized_source": relative_source,
+        "authorized_source_sha256": args.verifier_source_sha256,
+    }
+
+
 def verify_runtime_source(args: argparse.Namespace, source: Path) -> dict[str, object]:
     source = source.resolve(strict=True)
     root = source.parent
@@ -188,6 +269,7 @@ def verify_runtime_source(args: argparse.Namespace, source: Path) -> dict[str, o
         timeout=30,
     )
     relative_source = source.relative_to(root).as_posix()
+    authority = verify_handoff_authority(args, root, relative_source)
     source_blob = run_capture(
         ("git", "-C", str(root), "show", f"{args.verifier_code_sha}:{relative_source}"), timeout=30
     )
@@ -227,6 +309,7 @@ def verify_runtime_source(args: argparse.Namespace, source: Path) -> dict[str, o
         "plan_path": str(plan_path),
         "plan_commit": args.plan_git_commit,
         "plan_normalized_sha256": args.plan_normalized_sha256,
+        "handoff_authority": authority,
     }
 
 

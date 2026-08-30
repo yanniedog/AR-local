@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ import pytest
 
 import a3_backup_terminal_verify as backup
 import a3_ingest_terminal_verify as ingest
-from a3_verifier_common import EvidenceWriter, canonical_json, fail_closed_main, sha256_bytes, sha256_file
+from a3_verifier_common import EvidenceWriter, canonical_json, fail_closed_main, sha256_bytes, sha256_file, verify_handoff_authority
 
 
 COMMIT_A = "a" * 40
@@ -104,7 +105,15 @@ def test_public_verifier_accepts_attributable_partial_gaps(monkeypatch: pytest.M
         producer[local_key] = {"manifest_sha256": sha256_bytes(manifest_content), "assets": producer_assets}
     index_url = f"https://github.com/{repository}/releases/download/app-payload-latest/dates-index.json"
     v2_url = f"https://github.com/{repository}/releases/download/app-payload-latest/manifest-v2.json"
-    downloads[index_url] = payload_bytes({"schema_version": 1, "latest_date": run_date, "dates": [run_date]})
+    downloads[index_url] = payload_bytes({
+        "schema_version": 1,
+        "dates": [run_date],
+        "count": 1,
+        "min_date": "2026-05-13",
+        "latest_date": run_date,
+        "dates_index_url": f"https://github.com/{repository}/releases/download/app-payload-latest/dates-index.json",
+        "dated_manifest_url_pattern": f"https://github.com/{repository}/releases/download/app-payload-{{run_date}}/manifest.json",
+    })
     downloads[v2_url] = payload_bytes({"run_date": "2026-08-21"})
     monkeypatch.setattr(ingest, "download", lambda url, _timeout: downloads[url])
     args = SimpleNamespace(date=datetime.fromisoformat(run_date).date(), github_repository=repository, http_timeout=1)
@@ -170,7 +179,12 @@ def test_scheduled_verifier_accepts_startup_write_then_daily_no_write(tmp_path: 
     first = runs / "20260830T160000Z-first.json"
     second = runs / "20260830T191000Z-second.json"
     first.write_bytes(canonical_json(scheduled_record("2026-08-31", "2026-08-30T16:00:00Z", "BACKUP-LATEST")))
-    second.write_bytes(canonical_json(scheduled_record("2026-08-31", "2026-08-30T19:10:00Z", "NO_BACKUP_DATA_WRITE")))
+    second_record = scheduled_record("2026-08-31", "2026-08-30T19:10:00Z", "NO_BACKUP_DATA_WRITE")
+    second_record["previous_execution"] = {
+        "record_path": first.relative_to(tmp_path).as_posix(),
+        "record_sha256": sha256_file(first),
+    }
+    second.write_bytes(canonical_json(second_record))
     (tmp_path / "catalog/latest-scheduled.json").write_bytes(
         canonical_json({"record_path": second.relative_to(tmp_path).as_posix(), "record_sha256": sha256_file(second), "result": "PASS"})
     )
@@ -191,6 +205,25 @@ def test_scheduled_verifier_accepts_startup_write_then_daily_no_write(tmp_path: 
     assert report["write_count"] == 1
     assert report["natural_daily_count"] == 1
     assert len(report["records"]) == 2
+
+
+def test_backup_verifier_pairs_dispatcher_and_records_by_completion_time(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    args = SimpleNamespace(date=datetime.fromisoformat("2026-08-31").date())
+    writer = object()
+    monkeypatch.setattr(backup, "verify_runtime_source", lambda *_: {"status": "PASS"})
+    monkeypatch.setattr(backup, "collect_task_snapshot", lambda *_: {"status": "PASS", "last_run_time": "2026-08-30T16:00:00+00:00"})
+    monkeypatch.setattr(backup, "validate_dispatcher", lambda *_: {"executions": [
+        {"started_at": "2026-08-30T19:00:00+00:00", "completed_at": "2026-08-30T19:01:00+00:00"},
+        {"started_at": "2026-08-30T16:00:00+00:00", "completed_at": "2026-08-30T16:01:00+00:00"},
+    ]})
+    monkeypatch.setattr(backup, "validate_new_records", lambda *_: {"records": [
+        {"completed_at": "2026-08-30T16:00:00+00:00"},
+        {"completed_at": "2026-08-30T19:00:00+00:00"},
+    ]})
+    monkeypatch.setattr(backup, "validate_catalog_and_receipts", lambda *_: {"status": "PASS"})
+    monkeypatch.setattr(backup, "source_listing", lambda *_: {"status": "PASS"})
+    result = backup.verify(args, writer)
+    assert result["date"] == "2026-08-31"
 
 
 @pytest.mark.skipif(not Path("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe").is_file(), reason="Windows PowerShell 5.1 required")
@@ -215,6 +248,8 @@ $m|ConvertTo-Json -Compress
     assert result.returncode == 0, result.stderr
     record = json.loads((tmp_path / "0025-execution.json").read_text())
     assert record["result"] == "PASS"
+    wrapper_copy = tmp_path / "run_a3_timed_preflight.ps1"
+    assert wrapper_copy.read_bytes() == wrapper.read_bytes()
     assert {item["path"] for item in record["evidence"]} == {
         "0025-stdout.txt", "0025-stderr.txt", "0025-local.json", "0025-pi.txt", "0025-values.json", "0025-hashes.json"
     }
@@ -222,6 +257,38 @@ $m|ConvertTo-Json -Compress
     verify_args.preflight_wrapper_sha256 = sha256_file(wrapper)
     verify_args.preflight_script_sha256 = sha256_file(script)
     ingest.verify_execution_record(tmp_path / "0025-execution.json", verify_args, "0025")
+
+
+def test_ingest_parser_defaults_to_captured_wrapper_name() -> None:
+    action = next(item for item in ingest.parser()._actions if item.dest == "preflight_wrapper_path")
+    assert action.default == "run_a3_timed_preflight.ps1"
+
+
+@pytest.mark.skipif(not Path("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe").is_file(), reason="Windows PowerShell 5.1 required")
+def test_powershell_wrapper_rejects_reparse_evidence_root(tmp_path: Path) -> None:
+    real_root = tmp_path / "real-evidence"
+    real_root.mkdir()
+    script = real_root / "timed-preflight.ps1"
+    script.write_text("param([string]$Phase,[string]$EvidenceRoot)\n", encoding="utf-8")
+    linked_root = tmp_path / "linked-evidence"
+    environment = dict(os.environ, AR_TEST_LINK=str(linked_root), AR_TEST_TARGET=str(real_root))
+    junction = subprocess.run(
+        [
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+            "New-Item -ItemType Junction -Path $env:AR_TEST_LINK -Target $env:AR_TEST_TARGET | Out-Null",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=environment,
+    )
+    if junction.returncode != 0:
+        pytest.skip(f"junction creation unavailable: {junction.stderr}")
+    wrapper = Path(__file__).resolve().parents[1] / "run_a3_timed_preflight.ps1"
+    result = subprocess.run(wrapper_command(linked_root, script, wrapper), capture_output=True, text=True, timeout=60)
+    assert result.returncode != 0
+    assert "reparse point" in result.stderr
+    assert not (real_root / "0025-execution.json").exists()
 
 
 def wrapper_command(tmp_path: Path, script: Path, wrapper: Path) -> list[str]:
@@ -247,3 +314,46 @@ def test_powershell_wrapper_records_failure_before_rethrow(tmp_path: Path) -> No
     assert record["error"]
     assert (tmp_path / "0025-stdout.txt").is_file()
     assert (tmp_path / "0025-stderr.txt").is_file()
+
+
+@pytest.mark.skipif(not Path("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe").is_file(), reason="Windows PowerShell 5.1 required")
+def test_powershell_wrapper_records_preinvocation_digest_failure(tmp_path: Path) -> None:
+    script = tmp_path / "timed-preflight.ps1"
+    script.write_text("param([string]$Phase,[string]$EvidenceRoot)\n", encoding="utf-8")
+    wrapper = Path(__file__).resolve().parents[1] / "run_a3_timed_preflight.ps1"
+    command = wrapper_command(tmp_path, script, wrapper)
+    command[command.index("-ScriptSha256") + 1] = DIGEST_A
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    assert result.returncode != 0
+    record = json.loads((tmp_path / "0025-execution.json").read_text())
+    assert record["result"] == "FAIL"
+    assert "unauthenticated" in record["error"]
+
+
+def test_handoff_authority_requires_exact_source_binding(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    args = identity_args(tmp_path)
+    authorization = {
+        "schema_version": 1,
+        "plan_document_id": args.plan_document_id,
+        "plan_version": args.plan_version,
+        "plan_git_commit": args.plan_git_commit,
+        "plan_sha256": args.plan_sha256,
+        "verifier_code_sha": args.verifier_code_sha,
+        "candidate_code_sha": args.candidate_code_sha,
+        "protected_code_sha": args.protected_code_sha,
+        "operator": args.operator,
+        "sources": {"a3_ingest_terminal_verify.py": args.verifier_source_sha256},
+        "authorization": "AUTHORIZED",
+        "result": "PASS",
+        "deviations": [],
+        "deviation_authorization": None,
+    }
+    handoff = f"<!-- A3-VERIFIER-AUTHORIZATION {json.dumps(authorization, separators=(',', ':'))} -->\n".encode()
+    args.authority_handoff_sha256 = sha256_bytes(handoff)
+    responses = iter([
+        subprocess.CompletedProcess([], 0, handoff, b""),
+        subprocess.CompletedProcess([], 0, b"", b""),
+    ])
+    monkeypatch.setattr("a3_verifier_common.run_capture", lambda *_args, **_kwargs: next(responses))
+    result = verify_handoff_authority(args, tmp_path, "a3_ingest_terminal_verify.py")
+    assert result["authorized_source_sha256"] == args.verifier_source_sha256

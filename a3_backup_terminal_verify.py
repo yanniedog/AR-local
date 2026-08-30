@@ -52,8 +52,9 @@ $algorithm=[Security.Cryptography.SHA256]::Create();try{{$xmlHash=([BitConverter
 $svc=New-Object -ComObject 'Schedule.Service';$svc.Connect();$slash=[string][char]92;$sddl=$svc.GetFolder($slash).GetTask($slash+{literal['task']}).GetSecurityDescriptor(7)
 $algorithm=[Security.Cryptography.SHA256]::Create();try{{$sddlHash=([BitConverter]::ToString($algorithm.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($sddl)))-replace'-','').ToLowerInvariant()}}finally{{$algorithm.Dispose()}}
 $helpers=@(Get-CimInstance Win32_Process|Where-Object{{$_.ProcessId-ne$PID-and$_.CommandLine-and$_.CommandLine-match'(laptop_backup_(scheduled|dispatcher|atomic)|run_laptop_backup_task)'}}|ForEach-Object{{[ordered]@{{pid=$_.ProcessId;command_line=$_.CommandLine}}}})
+$triggers=@($task.Triggers|ForEach-Object{{[ordered]@{{type=$_.CimClass.CimClassName;start_boundary=[string]$_.StartBoundary;delay=[string]$_.Delay}}}})
 [ordered]@{{
- observed_at=[DateTimeOffset]::Now.ToString('o');state=[string]$task.State;enabled=[bool]$task.Settings.Enabled;last_task_result=[int]$info.LastTaskResult;last_run_time=$info.LastRunTime.ToString('o');next_run_time=$info.NextRunTime.ToString('o');xml_sha256=$xmlHash;sddl_sha256=$sddlHash
+ observed_at=[DateTimeOffset]::Now.ToString('o');state=[string]$task.State;enabled=[bool]$task.Settings.Enabled;last_task_result=[int]$info.LastTaskResult;last_run_time=$info.LastRunTime.ToString('o');next_run_time=$info.NextRunTime.ToString('o');boot_time=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o');triggers=$triggers;xml_sha256=$xmlHash;sddl_sha256=$sddlHash
  runner_sha256=(Get-FileHash -LiteralPath {literal['runner']} -Algorithm SHA256).Hash.ToLowerInvariant()
  config_sha256=(Get-FileHash -LiteralPath {literal['config']} -Algorithm SHA256).Hash.ToLowerInvariant()
  manifest_sha256=(Get-FileHash -LiteralPath {literal['manifest']} -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -89,12 +90,29 @@ def collect_task_snapshot(args: argparse.Namespace, writer: EvidenceWriter) -> M
     if any(snapshot.get(key) != value for key, value in expected.items()):
         raise VerificationError("live task or dispatcher identity differs from the accepted state")
     last_run = datetime.fromisoformat(str(snapshot.get("last_run_time")))
-    minimum = datetime.combine(args.date, time(5, 0), HOBART_OFFSET)
-    maximum = datetime.combine(args.date, time(5, 5), HOBART_OFFSET)
+    boot_time = datetime.fromisoformat(str(snapshot.get("boot_time")))
     if last_run.tzinfo is None:
         last_run = last_run.replace(tzinfo=HOBART_OFFSET)
-    if not minimum <= last_run.astimezone(HOBART_OFFSET) < maximum:
-        raise VerificationError("last task execution is not the natural 05:00 run")
+    if boot_time.tzinfo is None:
+        boot_time = boot_time.replace(tzinfo=HOBART_OFFSET)
+    local_last_run = last_run.astimezone(HOBART_OFFSET)
+    daily_minimum = datetime.combine(args.date, time(5, 0), HOBART_OFFSET)
+    daily_maximum = datetime.combine(args.date, time(5, 5), HOBART_OFFSET)
+    startup_minimum = boot_time + timedelta(minutes=5)
+    startup_maximum = startup_minimum + timedelta(minutes=5)
+    trigger_rows = snapshot.get("triggers")
+    if not isinstance(trigger_rows, list):
+        raise VerificationError("Task Scheduler trigger evidence is missing")
+    daily_triggers = [item for item in trigger_rows if isinstance(item, Mapping) and item.get("type") == "MSFT_TaskDailyTrigger" and "T05:00:00" in str(item.get("start_boundary"))]
+    boot_triggers = [item for item in trigger_rows if isinstance(item, Mapping) and item.get("type") == "MSFT_TaskBootTrigger" and item.get("delay") == "PT5M"]
+    if len(daily_triggers) != 1 or len(boot_triggers) != 1:
+        raise VerificationError("Task Scheduler daily/startup trigger contract is invalid")
+    if daily_minimum <= local_last_run < daily_maximum:
+        snapshot["accepted_trigger"] = "DAILY_05_00"
+    elif local_last_run.date() == args.date and startup_minimum <= last_run <= startup_maximum:
+        snapshot["accepted_trigger"] = "STARTUP_PLUS_5_MINUTES"
+    else:
+        raise VerificationError("last task execution matches neither authorized natural trigger")
     if int(snapshot.get("free_bytes", 0)) < 50 * 1024**3 or snapshot.get("helpers"):
         raise VerificationError("laptop capacity, helper, or overlap gate failed")
     writer.write_json("task-snapshot.json", snapshot)
@@ -187,7 +205,13 @@ def validate_dispatcher(args: argparse.Namespace) -> dict[str, Any]:
             raise VerificationError(f"dispatcher execution identity is invalid: {path}")
         if not isinstance(value.get("exact_arguments"), list) or not value["exact_arguments"] or not isinstance(value.get("child_arguments"), list) or not value["child_arguments"]:
             raise VerificationError(f"dispatcher execution lacks exact arguments: {path}")
-        executions.append({"path": str(path), "sha256": sha256_file(path), "completed_at": completed.isoformat()})
+        try:
+            started = datetime.fromisoformat(str(timestamps["started_at"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError) as exc:
+            raise VerificationError(f"dispatcher execution start timestamp is invalid: {path}") from exc
+        if started.tzinfo is None or completed.tzinfo is None or started > completed:
+            raise VerificationError(f"dispatcher execution timestamp envelope is invalid: {path}")
+        executions.append({"path": str(path), "sha256": sha256_file(path), "started_at": started.isoformat(), "completed_at": completed.isoformat()})
     if not executions:
         raise VerificationError("no managed-dispatcher execution exists after the ingest baseline")
     if (control / "transition.lease").exists():
@@ -292,7 +316,7 @@ def validate_new_records(args: argparse.Namespace) -> dict[str, Any]:
             predecessor = (target / str(link["record_path"])).resolve(strict=True);predecessor.relative_to(target)
             if sha256_file(predecessor) != link.get("record_sha256"):
                 raise VerificationError("first new scheduled predecessor digest changed")
-        elif previous is not None and link not in (None, previous):
+        elif previous is not None and link != previous:
             raise VerificationError("new scheduled execution chain is gapped or branched")
         previous = {"record_path": relative, "record_sha256": digest}
         local_completed = completed.astimezone(HOBART_OFFSET)
@@ -301,8 +325,6 @@ def validate_new_records(args: argparse.Namespace) -> dict[str, Any]:
         evidence.append({"path": relative, "sha256": digest, "action": action, "completed_at": completed.isoformat()})
     if writes < 1:
         raise VerificationError("no BACKUP-LATEST PASS exists for the natural observation")
-    if natural_daily != 1:
-        raise VerificationError("scheduled records do not prove exactly one natural 05:00 execution")
     pointer_path = target / "catalog/latest-scheduled.json"
     pointer = require_mapping(load_json_bytes(pointer_path.read_bytes(), str(pointer_path)), "latest scheduled pointer")
     if pointer != {**previous, "result": "PASS"}:
@@ -374,13 +396,23 @@ def verify(args: argparse.Namespace, writer: EvidenceWriter) -> Mapping[str, obj
     task = collect_task_snapshot(args, writer)
     dispatcher = validate_dispatcher(args)
     records = validate_new_records(args)
-    dispatcher_times = [datetime.fromisoformat(str(item["completed_at"])) for item in dispatcher["executions"]]
-    record_times = [datetime.fromisoformat(str(item["completed_at"])) for item in records["records"]]
+    dispatcher_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in dispatcher["executions"])
+    record_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in records["records"])
     if len(dispatcher_times) != len(record_times) or any(
         dispatch_time < record_time or dispatch_time - record_time > timedelta(minutes=5)
         for dispatch_time, record_time in zip(dispatcher_times, record_times, strict=True)
     ):
         raise VerificationError("dispatcher and scheduled execution records are not one-to-one")
+    last_run = datetime.fromisoformat(str(task["last_run_time"]))
+    if last_run.tzinfo is None:
+        last_run = last_run.replace(tzinfo=HOBART_OFFSET)
+    matching_starts = [
+        datetime.fromisoformat(str(item["started_at"]))
+        for item in dispatcher["executions"]
+        if timedelta(0) <= datetime.fromisoformat(str(item["started_at"])) - last_run <= timedelta(minutes=2)
+    ]
+    if len(matching_starts) != 1:
+        raise VerificationError("dispatcher history does not bind exactly one execution to the accepted Task Scheduler trigger")
     catalog = validate_catalog_and_receipts(args)
     source = source_listing(args, writer)
     return {"date": args.date.isoformat(), "verifier": runtime, "task": task, "dispatcher": dispatcher, "scheduled_records": records, "catalog": catalog, "pi_source_equality": source}

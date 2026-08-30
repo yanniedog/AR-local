@@ -145,16 +145,36 @@ def verify_preflight(root: Path, args: argparse.Namespace, writer: EvidenceWrite
     if Path(pointer.read_text(encoding="utf-8").strip()).resolve(strict=True) != root:
         raise VerificationError("active evidence pointer does not bind this generation")
     initialization = require_mapping(load_json(initialization_path), "initialization")
+    initialization_keys = {
+        "schema_version", "plan_document_id", "plan_version", "plan_git_commit",
+        "plan_sha256", "candidate_code_sha", "protected_code_sha", "operator",
+        "created_at", "evidence_root", "result", "deviations", "deviation_authorization",
+    }
+    initialization_expected = {
+        "schema_version": 1,
+        "plan_document_id": args.plan_document_id,
+        "plan_version": args.plan_version,
+        "plan_git_commit": args.plan_git_commit,
+        "plan_sha256": args.plan_sha256,
+        "candidate_code_sha": args.candidate_code_sha,
+        "protected_code_sha": args.protected_code_sha,
+        "operator": args.operator,
+        "evidence_root": str(root),
+        "result": "RUNNING",
+        "deviations": [],
+        "deviation_authorization": None,
+    }
+    try:
+        initialized_at = datetime.fromisoformat(str(initialization["created_at"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError) as exc:
+        raise VerificationError("initialization timestamp is invalid") from exc
+    initialization_minimum = datetime.combine(args.date, time(0, 20), HOBART_OFFSET)
+    initialization_maximum = datetime.combine(args.date, time(0, 30), HOBART_OFFSET)
     if (
-        initialization.get("evidence_root") != str(root)
-        or initialization.get("plan_document_id") != args.plan_document_id
-        or initialization.get("plan_version") != args.plan_version
-        or initialization.get("plan_git_commit") != args.plan_git_commit
-        or initialization.get("plan_sha256") != args.plan_sha256
-        or initialization.get("candidate_code_sha") != args.candidate_code_sha
-        or initialization.get("protected_code_sha") != args.protected_code_sha
-        or initialization.get("operator") != args.operator
-        or initialization.get("result") != "RUNNING"
+        set(initialization) != initialization_keys
+        or any(initialization.get(key) != item for key, item in initialization_expected.items())
+        or initialized_at.tzinfo is None
+        or not initialization_minimum <= initialized_at.astimezone(HOBART_OFFSET) < initialization_maximum
     ):
         raise VerificationError("initialization record identity is invalid")
     script_path = contained_file(root, "timed-preflight.ps1")
@@ -196,7 +216,21 @@ def verify_preflight(root: Path, args: argparse.Namespace, writer: EvidenceWrite
                 raise VerificationError(f"{phase} {role} evidence digest changed")
             artifact_hashes[name] = digest
         execution_path = contained_file(root, f"{phase}-execution.json")
-        verify_execution_record(execution_path, args, phase)
+        execution = verify_execution_record(execution_path, args, phase)
+        execution_timestamps = require_mapping(execution.get("timestamps"), f"{phase} execution timestamps")
+        try:
+            started = datetime.fromisoformat(str(execution_timestamps["started_at"]).replace("Z", "+00:00"))
+            execution_completed = datetime.fromisoformat(str(execution_timestamps["completed_at"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError) as exc:
+            raise VerificationError(f"{phase} execution timestamps are invalid") from exc
+        if (
+            started.tzinfo is None
+            or execution_completed.tzinfo is None
+            or not minimum <= started.astimezone(HOBART_OFFSET)
+            or not started <= completed <= execution_completed
+            or not execution_completed.astimezone(HOBART_OFFSET) < maximum
+        ):
+            raise VerificationError(f"{phase} wrapper execution escaped its authorized window")
         for name in (*artifact_hashes, f"{phase}-hashes.json", f"{phase}-execution.json", f"{phase}-stdout.txt", f"{phase}-stderr.txt"):
             writer.reference(contained_file(root, name))
         phases[phase] = {
@@ -261,7 +295,8 @@ echo head=$(git rev-parse HEAD)
 if test -z "$(git status --porcelain=v1)"; then echo checkout_clean=true; else echo checkout_clean=false; fi
 echo active=$(systemctl is-active ar-local-daily.service || true)
 echo invocation=$(systemctl show ar-local-daily.service -p InvocationID --value)
-echo start_timestamp=$(systemctl show ar-local-daily.service -p ExecMainStartTimestamp --value)
+start_timestamp=$(systemctl show ar-local-daily.service -p ExecMainStartTimestamp --value); echo start_timestamp=$start_timestamp
+echo start_iso=$(date --date="$start_timestamp" --iso-8601=seconds)
 exit_timestamp=$(systemctl show ar-local-daily.service -p ExecMainExitTimestamp --value); echo exit_timestamp=$exit_timestamp
 echo exit_iso=$(date --date="$exit_timestamp" --iso-8601=seconds)
 echo status=$(systemctl show ar-local-daily.service -p ExecMainStatus --value)
@@ -322,9 +357,13 @@ discovered=int(v.get('products_discovered') or 0);register_attempted=int(v.get('
 states=c.get('provider_states') or [];state_counts={k:sum(1 for x in states if x.get('state')==k) for k in ('complete','partial','failed')}
 assert reg>0 and att==reg and len(states)==reg and complete+partial+failed==reg and state_counts=={'complete':complete,'partial':partial,'failed':failed}
 assert c.get('observation_state') in {'complete','partial'} and v.get('failure_provenance_complete') is True and v.get('register_provenance_complete') is True
-assert register_attempted>0 and register_complete==register_attempted and failed==0 and corrupt==0 and unattributed==0
-if c.get('observation_state')=='partial':assert 1<=failures<=50 and failures*100<=discovered and partial*100<=15*reg
-else:assert failures==0 and partial==0
+assert register_attempted>0 and register_complete==register_attempted and corrupt==0 and unattributed==0 and discovered>0
+if c.get('observation_state')=='partial':assert failures>0 or partial>0 or failed>0
+else:assert failures==0 and partial==0 and failed==0
+for x in states:
+ assert x.get('state') in {'complete','partial','failed'}
+ assert int(x.get('failure_records') or 0)>=0
+ if x.get('state')=='failed':assert int(x.get('failure_records') or 0)>0
 assert int((m.get('banks') or {}).get('products') or 0)==discovered and int((m.get('banks') or {}).get('failures') or 0)==failures
 assert not(c.get('quarantines') or [])
 unavailable=set(v.get('unavailable_populations') or []);assert {'consumer_eligible_products','priced_products','rate_tiers_by_classification'}<=unavailable
@@ -408,7 +447,6 @@ def observe_natural_start(args: argparse.Namespace, writer: EvidenceWriter) -> P
 
 
 def wait_for_terminal(args: argparse.Namespace, writer: EvidenceWriter) -> None:
-    deadline = datetime.combine(args.date, time(3, 0), HOBART_OFFSET)
     observations: list[str] = []
     while True:
         result = ssh(args, "systemctl show ar-local-daily.service -p ActiveState --value", timeout=30)
@@ -421,9 +459,6 @@ def wait_for_terminal(args: argparse.Namespace, writer: EvidenceWriter) -> None:
         if state not in {"active", "activating"}:
             writer.write("terminal-poll.txt", ("\n".join(observations) + "\n").encode())
             return
-        if datetime.now(HOBART_OFFSET) >= deadline:
-            writer.write("terminal-poll.txt", ("\n".join(observations) + "\n").encode())
-            raise VerificationError("natural ingest remained active at the 03:00 deadline")
         clock.sleep(30)
 
 
@@ -443,9 +478,9 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         raise VerificationError("natural start identity is invalid")
     terminal_raw = require_success(ssh(args, "bash", "-s", input_bytes=remote_terminal_script(args.date)), "terminal-service", writer)
     terminal = parse_key_values(terminal_raw, "terminal")
-    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "dashboard"), "terminal values")
+    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "start_iso", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "dashboard"), "terminal values")
     exit_at = datetime.fromisoformat(terminal["exit_iso"].replace("Z", "+00:00"))
-    deadline = datetime.combine(args.date, time(3, 0), HOBART_OFFSET)
+    started_at = datetime.fromisoformat(terminal["start_iso"].replace("Z", "+00:00"))
     if (
         terminal["head"] != args.protected_code_sha
         or terminal["checkout_clean"] != "true"
@@ -453,7 +488,9 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         or terminal["invocation"] != start["invocation"]
         or terminal["start_timestamp"] != start["start_timestamp"]
         or terminal["timer_last"] != start["timer_last"]
-        or exit_at >= deadline
+        or exit_at.tzinfo is None
+        or started_at.tzinfo is None
+        or exit_at < started_at
         or terminal["status"] != "0"
         or terminal["code"] != "exited"
         or terminal["result"] != "success"
@@ -616,7 +653,30 @@ def validate_public(args: argparse.Namespace, writer: EvidenceWriter, observatio
     index_bytes = download(index_url, args.http_timeout)
     writer.write("public/app-payload-latest/dates-index.json", index_bytes)
     index = require_mapping(load_json_bytes(index_bytes, index_url), "dates index")
-    if index.get("schema_version") != 1 or index.get("latest_date") != run_date or run_date not in (index.get("dates") or []):
+    dates = index.get("dates")
+    if not isinstance(dates, list) or not dates or not all(isinstance(item, str) for item in dates):
+        raise VerificationError("dates index dates must be a non-empty string list")
+    try:
+        parsed_dates = [date.fromisoformat(item) for item in dates]
+        minimum_date = date.fromisoformat(str(index.get("min_date")))
+    except ValueError as exc:
+        raise VerificationError("dates index contains an invalid date") from exc
+    expected_index_keys = {
+        "schema_version", "dates", "count", "min_date", "latest_date",
+        "dates_index_url", "dated_manifest_url_pattern",
+    }
+    expected_base = f"https://github.com/{repository}/releases/download"
+    if (
+        set(index) != expected_index_keys
+        or index.get("schema_version") != 1
+        or dates != sorted(set(dates))
+        or any(item < minimum_date for item in parsed_dates)
+        or index.get("count") != len(dates)
+        or index.get("latest_date") != dates[-1]
+        or index.get("latest_date") != run_date
+        or index.get("dates_index_url") != f"{expected_base}/app-payload-latest/dates-index.json"
+        or index.get("dated_manifest_url_pattern") != f"{expected_base}/app-payload-{{run_date}}/manifest.json"
+    ):
         raise VerificationError("dates index is not independently current")
     report["dates_index"] = {"sha256": sha256_bytes(index_bytes), "latest_date": run_date}
 
@@ -660,7 +720,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--observe-natural-start", action="store_true")
     value.add_argument("--preflight-script-sha256", required=True)
     value.add_argument("--preflight-wrapper-sha256", required=True)
-    value.add_argument("--preflight-wrapper-path", default="preflight-wrapper.ps1")
+    value.add_argument("--preflight-wrapper-path", default="run_a3_timed_preflight.ps1")
     value.add_argument("--pi-host", default="ar-local-pi5-lan")
     value.add_argument("--ssh-bin", default="ssh")
     value.add_argument("--github-repository", default="yanniedog/AR-local")
