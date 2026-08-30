@@ -4175,3 +4175,74 @@ work non-elevated. A3 remains `RUNNING` until the next protected natural 01:00
 ingest and first natural dispatcher-backed 05:00 or startup backup both pass.
 Only a later append-only terminal A3 `PASS` authorizes progression to A4
 planning; physical A4 implementation and Pi deployment remain unauthorized.
+
+## Entry `HANDOFF-20260830T165000+1000-A3-XML-HASH-CORRECTION`
+
+This append-only correction supersedes one malformed value in the immediately
+preceding entry without editing or relabelling that completed entry.
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T165000+1000-A3-XML-HASH-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260830T164500+1000-A3-PS51-BOOTSTRAP-REPAIR` |
+| Created, Australia/Hobart | `2026-08-30T16:50:00+10:00` |
+| Created, UTC | `2026-08-30T06:50:00Z` |
+| Author | Codex unattended for AR-local operator `jkoka` |
+| Repository | `yanniedog/AR-local`; documentation-only branch `codex/correct-dispatcher-xml-hash-authority`; reviewed head resolves from this entry's PR and its squash merge becomes the next authority commit |
+| Controlling plan | `ARL-OPS-001` v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Candidate implementation | Compatibility merge `b852f272438083489ff75d61b785e7374954b8bc`; corrected dispatcher `bb19cee620e8792dbc2eb015af8f53a7e46afda9414d048eebcd010db3fbdbfc`; corrected installer `c25446c3490f74b758a448167d814973a3446ea83c3f9c4d2c36efaa50c1795f` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; no Pi production change or deployment authorized |
+| Correction result | `PASS`; the malformed value is revoked and the correct live-read task digest is authoritative |
+| Interrupted preparation result | `BLOCKED` safely before gate preparation, manifest creation, elevation, task mutation, dispatcher installation, or control-state activation |
+| A3 result | `RUNNING`; corrected bootstrap and subsequent natural dispatcher proof remain outstanding |
+| A4 result | `BLOCKED` pending terminal A3 natural proof |
+| Authorization | D-007 and the operator's one-command fixed-dispatcher authorization; this entry authorizes only fresh non-administrator preparation followed by the single corrected bootstrap invocation already allowed by the preceding entry |
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `35a9903acde4c8ef29158105738d6644f7205c93` |
+| Previous complete handoff Git-blob SHA-256 | `363182933a95832c37781d95ee697895e85598aa6e51841e37e13409620bf08b` |
+| Incorrect value | The post-failure task row recorded the 65-character string `aa539fb4bb2f176b8b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`. It is not a SHA-256 digest and is revoked. |
+| Correct accepted task XML SHA-256 | `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2` |
+| Independent live readback | The task remained Ready and enabled with `LastTaskResult=0`; `Get-ArTaskXmlBytes` produced the correct digest above; SDDL remained `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376`; dispatcher install root remained absent and dispatcher control root empty. |
+| Discovery result | `BLOCKED` before gate preparation, manifest preparation, elevation or mutation. |
+| A3 result | `RUNNING` |
+| A4 result | `BLOCKED` pending terminal A3 natural proof |
+
+Every continuation must use only the corrected 64-character digest. After this
+entry merges, Codex must create a fresh authority checkout and unique evidence
+generation, repeat all preflights, use a new activation ID and manifest, and
+preserve this safely blocked preflight as immutable diagnostic evidence. No Pi
+deployment, manual ingest, task trigger or publication operation is authorized.
+
+### Current gate state, evidence and exact next action
+
+The accepted legacy task remains `\AR-local laptop backup`, Ready and enabled,
+S4U/Limited, with `LastTaskResult=0`. The protected dispatcher install root is
+absent and `C:\code\backups\AR-local-pi5\dispatcher-control` is empty. These
+read-only observations are the evidence for the safely blocked preparation;
+they are not bootstrap evidence and must be measured again into a new unique
+evidence generation.
+
+The exact next action after this documentation-only entry is merged is:
+
+1. create a fresh clean detached authority checkout at that exact merge and
+   calculate both the complete handoff Git-blob digest and working-file digest;
+2. rerun the full Pi, task, disk, process, receiver, Python, authority, deadline
+   and D-006 freeze preflights using the corrected 64-character XML digest;
+3. reauthenticate the already completed foreground-backup evidence, run a fresh
+   `--check-only` gate, and require `PASS`;
+4. create a new activation ID, canonical gate record, canonical manifest,
+   expiry and unique append-only evidence generation; and
+5. provide the operator one final self-contained corrected Windows PowerShell
+   invocation using only compatibility merge `b852f272438083489ff75d61b785e7374954b8bc`.
+
+Any mismatch remains `BLOCKED` before elevation. The revoked manifest, command,
+activation ID, expiry and malformed digest must never be reused. The corrected
+bootstrap must return terminal `PASS` or authenticated `ROLLED_BACK`; no later
+administrator command is authorized. On `PASS`, Codex performs all readback and
+continuation work non-elevated. A3 still requires the next protected natural
+01:00 ingest and first natural dispatcher-backed 05:00 or startup backup before
+a later append-only entry may record terminal `PASS` and authorize A4 planning.
