@@ -13,12 +13,14 @@ on:
       - 'laptop_*.py'
       - 'process_safety.py'
       - 'laptop_*.ps1'
+      - 'native/**'
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
       - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
+      - 'run_laptop_backup_trusted_child.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -36,12 +38,14 @@ on:
       - 'laptop_*.py'
       - 'process_safety.py'
       - 'laptop_*.ps1'
+      - 'native/**'
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
       - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
+      - 'run_laptop_backup_trusted_child.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -103,6 +107,24 @@ jobs:
           if ($PSVersionTable.PSVersion.Major -ne 5) {
             throw "Expected Windows PowerShell 5.1, found $($PSVersionTable.PSVersion)."
           }
+      - name: Configure the MSVC x64 toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Parse trusted child with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'run_laptop_backup_trusted_child.ps1'),
+            [ref]$tokens,
+            [ref]$parseErrors
+          )
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw 'Trusted child PowerShell parse failed.'
+          }
       - name: Run dispatcher and dual-host installer contracts
         shell: powershell
         env:
@@ -115,3 +137,4 @@ jobs:
           tests/test_laptop_backup_dispatcher_installer.py
           tests/test_laptop_backup_nonadmin_dispatcher.py
           tests/test_laptop_backup_restricted_process.py
+          tests/test_laptop_backup_trusted_launcher.py
