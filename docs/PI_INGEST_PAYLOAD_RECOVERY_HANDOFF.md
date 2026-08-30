@@ -4117,3 +4117,61 @@ and its first natural 05:00 or startup backup execution. A terminal append-only
 handoff entry then records A3 `PASS`, `FAIL`, or `BLOCKED`; only `PASS`
 authorizes automatic progression to A4 planning. Physical A4 work remains
 unauthorized by this entry.
+
+## Entry `HANDOFF-20260830T164500+1000-A3-PS51-BOOTSTRAP-REPAIR`
+
+This append-only entry records the terminal result of the first fixed-dispatcher
+bootstrap attempt and authorizes the exact Windows PowerShell 5.1 compatibility
+repair. It does not rewrite the preceding implementation entry, reuse its
+manifest or command, relabel the failed attempt, weaken D-006/D-007, or advance
+A3 or A4.
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `815919d65a95fbb42c3e1e69b96fd5ceeffb8cb3` |
+| Previous complete handoff Git-blob SHA-256 | `647510de4f6325fce2b23f12cf63ccb3edae9d6fc5a6e9e785a44ac7b5cf78e9` |
+| Failed manifest | `initial-manifest-v2.json`; SHA-256 `87d1a1a1e2e7626c5e62c191e740dd2657ca78dd4e90ee90a152b22593b304bc`; permanently revoked |
+| Failed command evidence | `C:\code\backups\AR-local-pi5\evidence\A3-FIXED-DISPATCHER-BOOTSTRAP-20260830\20260830T161622+1000`; prior command SHA-256 `5f818f2364395ad73c35eb6959ff279995e0213cccedabf6bb57b316182d7dac`; permanently revoked |
+| Failed-attempt result | `FAIL` before the first mutation: Windows PowerShell 5.1 rejected the PowerShell 7-only `ConvertFrom-Json -AsHashtable` parameter while parsing the authenticated manifest. |
+| Post-failure task | Ready and enabled; S4U/Limited; `LastTaskResult=0`; exact XML SHA-256 `aa539fb4bb2f176b8b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`; exact SDDL SHA-256 `029938b17a9fa24fcb50cf31e870aec61e787f6fc91b92f3b04d6505d7287376`. |
+| Post-failure filesystem | Protected dispatcher install root absent; dispatcher control root empty; 143.63 GiB free at inspection. |
+| Compatibility PR | `#562`, squash-merged as `b852f272438083489ff75d61b785e7374954b8bc` |
+| Reviewed compatibility head | `9ce2c8e0e3737bb8348dce2be2986451053a9a5b` |
+| Corrected dispatcher SHA-256 | `bb19cee620e8792dbc2eb015af8f53a7e46afda9414d048eebcd010db3fbdbfc` |
+| Corrected installer SHA-256 | `c25446c3490f74b758a448167d814973a3446ea83c3f9c4d2c36efaa50c1795f` |
+| Unchanged atomic module SHA-256 | `89615eb4350afda7e71e5f9c1123928e5434c12bef9ef5a20374a795d9166842` |
+| Unchanged task runner SHA-256 | `0b021ae8a7c509ec7824e454a257a14af5cfd65477a92ca549f95e3c35be25ab` |
+| Unchanged installer core SHA-256 | `e6ddfabc9d20830b24f820bbd720599e94f56a01ac1daf1a1230c96f10713ea3` |
+| Verification | Full local suite `1310 passed, 11 skipped`; focused dual-host suite `17 passed`; exact-head Linux payload CI passed; exact-head Windows job required Windows PowerShell major version 5 and passed the dispatcher plus dual-host installer contracts; bot-feedback and Sourcery gates passed; every substantive thread was dispositioned and resolved. Gemini remained advisory and unavailable due its external quota. |
+| A3 result | `RUNNING`; no dispatcher was installed and no task transition occurred |
+| A4 result | `BLOCKED` pending terminal A3 natural proof |
+
+After this entry merges, Codex shall perform every non-administrator operation
+itself. It must create a clean detached implementation receiver at
+`b852f272438083489ff75d61b785e7374954b8bc`, a clean detached authority checkout
+at the exact new `origin/main`, a new activation ID, a new canonical gate record,
+a new canonical manifest, a new unique evidence generation and a new
+authenticated command. It must not edit, reactivate or pass forward any prior
+gate, activation ID, manifest, command, expiry or failed evidence.
+
+The fresh gate may reuse the completed 2026-08-30 foreground result only after
+its source files and execution record are rehash-verified, current
+observation/control/macro identities remain equal, and a fresh `--check-only`
+run passes. A new data-writing backup is not required merely because the
+installer defect occurred after those gates. All Pi, task, receiver, disk,
+process, authority, deadline and freeze preflights must be repeated immediately
+before preparation and are repeated again inside the corrected installer.
+
+Only the corrected checkout hashes in this entry may be supplied to the
+installer. The replacement remains one self-contained invocation in an already
+elevated Windows PowerShell. It must return terminal `PASS` after a real
+S4U/Limited non-elevated semantic proof, or exact authenticated `ROLLED_BACK`.
+The prior attempt made no mutation; this entry nevertheless recognizes the
+operator's one-command limit and forbids exploratory or staged elevated probes.
+No further administrator command is authorized after the corrected bootstrap.
+
+After corrected bootstrap `PASS`, Codex performs all readback and continuation
+work non-elevated. A3 remains `RUNNING` until the next protected natural 01:00
+ingest and first natural dispatcher-backed 05:00 or startup backup both pass.
+Only a later append-only terminal A3 `PASS` authorizes progression to A4
+planning; physical A4 implementation and Pi deployment remain unauthorized.
