@@ -162,15 +162,6 @@ Handle restricted_token(HANDLE current) {
   return restricted;
 }
 
-Handle inheritable_child_token(HANDLE token) {
-  Handle inherited;
-  if (!DuplicateHandle(GetCurrentProcess(), token, GetCurrentProcess(), inherited.put(),
-                       TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT, TRUE, 0)) {
-    throw win_error("DuplicateHandle(child token)");
-  }
-  return inherited;
-}
-
 HANDLE parse_inherited_handle(const wchar_t* text) {
   if (!text || !*text || *text == L'+' || *text == L'-') {
     throw std::runtime_error("inherited token handle is invalid");
@@ -180,16 +171,6 @@ HANDLE parse_inherited_handle(const wchar_t* text) {
   unsigned long long value = _wcstoui64(text, &end, 10);
   if (errno || !end || *end || !value) throw std::runtime_error("inherited token handle is invalid");
   return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(value));
-}
-
-void require_same_token(HANDLE expected, HANDLE current) {
-  auto first = token_information(expected, TokenStatistics);
-  auto second = token_information(current, TokenStatistics);
-  auto* a = reinterpret_cast<TOKEN_STATISTICS*>(first.data());
-  auto* b = reinterpret_cast<TOKEN_STATISTICS*>(second.data());
-  if (a->TokenId.LowPart != b->TokenId.LowPart || a->TokenId.HighPart != b->TokenId.HighPart) {
-    throw std::runtime_error("inherited token handle is not the child primary token");
-  }
 }
 
 void require_user_sid(HANDLE token, const std::wstring& expected) {
@@ -340,6 +321,12 @@ DWORD wait_for(PROCESS_INFORMATION& process) {
 
 DWORD create_as(HANDLE token, const std::wstring& application, std::wstring command,
                 const std::wstring& working_directory) {
+  SECURITY_ATTRIBUTES inherited_security{sizeof(inherited_security), nullptr, TRUE};
+  Handle ready(CreateEventW(&inherited_security, TRUE, FALSE, nullptr));
+  Handle proceed(CreateEventW(&inherited_security, TRUE, FALSE, nullptr));
+  if (!ready || !proceed) throw win_error("CreateEventW(integrity handshake)");
+  command += L" " + std::to_wstring(reinterpret_cast<uintptr_t>(ready.get()));
+  command += L" " + std::to_wstring(reinterpret_cast<uintptr_t>(proceed.get()));
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
@@ -347,7 +334,29 @@ DWORD create_as(HANDLE token, const std::wstring& application, std::wstring comm
                             0, nullptr, working_directory.c_str(), &startup, &process)) {
     throw win_error("CreateProcessAsUserW");
   }
-  return wait_for(process);
+  Handle thread(process.hThread);
+  Handle child(process.hProcess);
+  try {
+    HANDLE waits[] = {ready.get(), child.get()};
+    DWORD state = WaitForMultipleObjects(2, waits, FALSE, 30000);
+    if (state != WAIT_OBJECT_0) {
+      throw std::runtime_error("restricted child did not reach the integrity handshake");
+    }
+    Handle child_token;
+    if (!OpenProcessToken(child.get(), TOKEN_QUERY | TOKEN_ADJUST_DEFAULT, child_token.put())) {
+      throw win_error("OpenProcessToken(child)");
+    }
+    lower_integrity_to_medium(child_token.get());
+    if (!SetEvent(proceed.get())) throw win_error("SetEvent(integrity handshake)");
+  } catch (...) {
+    TerminateProcess(child.get(), 1);
+    WaitForSingleObject(child.get(), 30000);
+    throw;
+  }
+  if (WaitForSingleObject(child.get(), INFINITE) != WAIT_OBJECT_0) throw win_error("WaitForSingleObject");
+  DWORD code = 1;
+  if (!GetExitCodeProcess(child.get(), &code)) throw win_error("GetExitCodeProcess");
+  return code;
 }
 
 DWORD create_inherited(const std::wstring& application, std::wstring command,
@@ -363,14 +372,20 @@ DWORD create_inherited(const std::wstring& application, std::wstring command,
   return wait_for(process);
 }
 
-DWORD restricted_child(HANDLE inherited_token) {
+void complete_integrity_handshake(HANDLE ready, HANDLE proceed) {
+  if (!SetEvent(ready)) throw win_error("SetEvent(child ready)");
+  if (WaitForSingleObject(proceed, 30000) != WAIT_OBJECT_0) {
+    throw std::runtime_error("parent did not complete the integrity handshake");
+  }
+}
+
+DWORD restricted_child(HANDLE ready, HANDLE proceed) {
   std::wstring self = module_path();
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
-  auto current = current_process_token(TOKEN_QUERY);
-  require_same_token(inherited_token, current.get());
-  lower_integrity_to_medium(inherited_token);
-  validate_token(inherited_token, root, true);
+  complete_integrity_handshake(ready, proceed);
+  auto current = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE);
+  validate_token(current.get(), root, true);
 
   wchar_t system[MAX_PATH + 1]{};
   UINT length = GetSystemDirectoryW(system, MAX_PATH);
@@ -386,12 +401,11 @@ DWORD restricted_child(HANDLE inherited_token) {
   return create_inherited(powershell, command, root);
 }
 
-DWORD restricted_probe(HANDLE inherited_token) {
+DWORD restricted_probe(HANDLE ready, HANDLE proceed) {
   std::wstring root = directory_of(module_path());
-  auto current = current_process_token(TOKEN_QUERY);
-  require_same_token(inherited_token, current.get());
-  lower_integrity_to_medium(inherited_token);
-  validate_token(inherited_token, root, true);
+  complete_integrity_handshake(ready, proceed);
+  auto current = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE);
+  validate_token(current.get(), root, true);
   return 0;
 }
 
@@ -403,10 +417,8 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
       TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE);
   auto limited = restricted_token(current.get());
   validate_token(limited.get(), root, false);
-  auto inherited = inheritable_child_token(limited.get());
   std::wstring command = quote(self);
   for (const auto& argument : child_arguments) command += L" " + quote(argument);
-  command += L" " + std::to_wstring(reinterpret_cast<uintptr_t>(inherited.get()));
   return create_as(limited.get(), self, command, root);
 }
 
@@ -425,8 +437,9 @@ DWORD scheduled_parent() {
 int wmain(int argc, wchar_t** argv) {
   try {
     if (argc == 1) return static_cast<int>(scheduled_parent());
-    if (argc == 3 && std::wstring(argv[1]) == L"--restricted-child") {
-      return static_cast<int>(restricted_child(parse_inherited_handle(argv[2])));
+    if (argc == 4 && std::wstring(argv[1]) == L"--restricted-child") {
+      return static_cast<int>(restricted_child(parse_inherited_handle(argv[2]),
+                                               parse_inherited_handle(argv[3])));
     }
     if (argc == 2 && std::wstring(argv[1]) == L"--probe") {
 #ifdef AR_LAUNCHER_TESTING
@@ -436,10 +449,11 @@ int wmain(int argc, wchar_t** argv) {
       return 64;
 #endif
     }
-    if (argc == 3 && std::wstring(argv[1]) == L"--restricted-probe") {
+    if (argc == 4 && std::wstring(argv[1]) == L"--restricted-probe") {
       std::wstring root = directory_of(module_path());
       require_plain_path(join(root, L"probe.enabled"), false);
-      return static_cast<int>(restricted_probe(parse_inherited_handle(argv[2])));
+      return static_cast<int>(restricted_probe(parse_inherited_handle(argv[2]),
+                                               parse_inherited_handle(argv[3])));
     }
     std::cerr << "trusted launcher accepts no operator-supplied command\n";
     return 64;
