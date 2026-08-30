@@ -5063,3 +5063,82 @@ No rollback, reinstall, relabel, administrator action, Pi mutation, or public
 payload mutation is authorized. Completed evidence is immutable. After both
 verifiers terminate, append a new entry. Only dual `PASS` may close A3 and
 authorize A4 planning; otherwise record `FAIL` or `BLOCKED` and keep A4 blocked.
+
+## Entry `HANDOFF-20260830T200822+1000-A3-AUTHORITY-RESOLUTION-CORRECTION`
+
+### Control record and review disposition
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T200822+1000-A3-AUTHORITY-RESOLUTION-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260830T195500+1000-A3-TERMINAL-VERIFIER-AUTHORIZATION` |
+| Created | `2026-08-30T20:08:22+10:00` / `2026-08-30T10:08:22Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Result | `RUNNING`; A3 and A4 status is unchanged |
+| Controlling plan | `ARL-OPS-001` v1.5; commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Late review | PR #576 Sourcery finding at the former placeholder initialization |
+| Disposition | `IMPLEMENTED`: literal authority placeholders are forbidden and superseded by the exact authenticated resolution below |
+
+PR #576 merged before its late Sourcery review arrived. Its historical entry is
+immutable. The finding is correct: copying `<authority merge>` and `<handoff
+blob SHA-256>` would fail closed rather than run unattended. This entry keeps
+the source authorization unchanged, repeats it in the final chronological
+entry as required by the verifier, and replaces every placeholder initialization
+with deterministic post-merge resolution. No Pi, task, backup, or payload state
+is changed.
+
+<!-- A3-VERIFIER-AUTHORIZATION {"schema_version":1,"plan_document_id":"ARL-OPS-001","plan_version":"1.5","plan_git_commit":"9094a8e115958fcaf2cb36525736bd5e297e6b04","plan_sha256":"a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada","observation_date":"2026-08-31","verifier_code_sha":"8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2","candidate_code_sha":"f214e3249c7968d574e3449edb14792904e1cc1f","protected_code_sha":"9302890fcc752cbf90da97d597e972c157d913e3","operator":"jkoka","sources":{"a3_ingest_terminal_verify.py":"da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7","a3_backup_terminal_verify.py":"a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6","a3_verifier_common.py":"f98d3279aa3bd6d4aafa8725f583d1b987626c6c4ad0033f90a543bbfbd28b19","run_a3_timed_preflight.ps1":"587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5","timed-preflight.ps1":"d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a","pi_laptop_backup_source.py":"e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17"},"authorization":"AUTHORIZED","result":"PASS","deviations":[],"deviation_authorization":null} -->
+
+### Exact authority resolution and persistence
+
+At 00:20, before the freeze, use this exact self-contained preamble. It fetches
+`origin/main`, requires the reviewed detached verifier checkout, resolves the
+document-containing authority commit from the fetched remote-tracking ref,
+hashes the exact Git blob bytes, and persists both values create-new inside the
+unique evidence generation. The verifier independently revalidates the final
+authorization marker, ancestry, origin/main equality, source bytes, and working
+checkout. Therefore neither a conversational substitution nor a literal
+placeholder is accepted.
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342'
+git -C $V fetch origin main;if($LASTEXITCODE-ne 0){throw 'Authority fetch failed.'}
+if((git -C $V rev-parse HEAD).Trim()-cne'8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2'-or(git -C $V status --porcelain)-or(git -C $V symbolic-ref -q HEAD)){throw 'Verifier checkout is not exact, clean, and detached.'}
+$A=(git -C $V rev-parse refs/remotes/origin/main).Trim();if($A-cnotmatch'^[0-9a-f]{40}$'){throw 'Authority commit resolution failed.'}
+$H=(python -c "import hashlib,subprocess,sys;print(hashlib.sha256(subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'])).hexdigest())" $V $A).Trim();if($LASTEXITCODE-ne 0-or$H-cnotmatch'^[0-9a-f]{64}$'){throw 'Authority handoff digest resolution failed.'}
+$P='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';New-Item -ItemType Directory -LiteralPath $P -Force|Out-Null
+$R=Join-Path $P (([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''))+'-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -LiteralPath $R|Out-Null
+$s=[IO.File]::Open((Join-Path $P 'ACTIVE_EVIDENCE_PATH.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($R);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+$j=([ordered]@{schema_version=1;authority_commit=$A;authority_handoff_sha256=$H;resolved_at=[DateTimeOffset]::Now.ToString('o');verifier_code_sha='8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2';result='PASS'}|ConvertTo-Json -Compress)+"`n";$s=[IO.File]::Open((Join-Path $R 'authority.json'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($j);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+```
+
+After this preamble, continue the preceding entry's 00:20 block from its
+`python -c` timed-preflight extraction command onward, using the already
+resolved `$V`, `$A`, `$H`, `$P`, and `$R`. Do not execute the superseded first
+three lines containing angle-bracket placeholders.
+
+At 00:55 and again at 05:15, start each new PowerShell process with this exact
+self-contained preamble. It performs no fetch or write, recovers only the one
+active generation, rejects path escape, rehashes the same authority blob, and
+restores `$V`, `$A`, `$H`, `$P`, and `$R` for the corresponding exact verifier
+block in the preceding entry:
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$P=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831')
+$R=[IO.Path]::GetFullPath((Get-Content -LiteralPath (Join-Path $P 'ACTIVE_EVIDENCE_PATH.txt') -Raw).Trim());if(-not$R.StartsWith($P+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Evidence root escaped.'}
+$j=Get-Content -LiteralPath (Join-Path $R 'authority.json') -Raw|ConvertFrom-Json;$A=[string]$j.authority_commit;$H=[string]$j.authority_handoff_sha256
+if($j.result-cne'PASS'-or$A-cnotmatch'^[0-9a-f]{40}$'-or$H-cnotmatch'^[0-9a-f]{64}$'-or(git -C $V rev-parse refs/remotes/origin/main).Trim()-cne$A){throw 'Persisted authority identity failed.'}
+$actual=(python -c "import hashlib,subprocess,sys;print(hashlib.sha256(subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'])).hexdigest())" $V $A).Trim();if($LASTEXITCODE-ne 0-or$actual-cne$H){throw 'Persisted handoff blob authentication failed.'}
+```
+
+At 00:55 continue the preceding entry's second block from `$W=Join-Path ...`,
+including phase `0055` and the ingest verifier. At 05:15 continue its third
+block from `Set-Location -LiteralPath $V`, including the backup verifier. The
+resolved values are never edited after 00:20. If any resolution or comparison
+fails, record `BLOCKED`, preserve evidence, and perform no mutation or manual
+fallback.
+
+All D-003, D-006, acceptance, stop, rollback, immutability and A3/A4 controls in
+the preceding authorization entry remain unchanged. A3 still requires both
+reviewed verifiers to return controlled `PASS`; only then may the next
+append-only entry close A3 and begin A4 planning.
