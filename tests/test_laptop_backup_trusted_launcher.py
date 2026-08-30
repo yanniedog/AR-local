@@ -47,6 +47,7 @@ def build(output: Path, *, testing: bool = False) -> None:
         f"/Fe:{output}",
         "/link",
         "advapi32.lib",
+        "user32.lib",
         "/DYNAMICBASE",
         "/NXCOMPAT",
         "/guard:cf",
@@ -76,7 +77,9 @@ def test_source_has_no_general_command_channel() -> None:
     assert "CreateProcessAsUserW" in text
     assert "CreateRestrictedToken" in text
     assert "TokenHasRestrictions" in text
-    assert "startup.lpDesktop = noninteractive_desktop" in text
+    assert "CreateWindowStationW" in text
+    assert "CreateDesktopW" in text
+    assert "startup.lpDesktop = private_desktop.startup_name()" in text
     assert "require_write_denied(token, root, true)" in text
     assert "--restricted-child" in text
 

@@ -37,6 +37,47 @@ class Handle {
   HANDLE value_ = nullptr;
 };
 
+class WindowStation {
+ public:
+  WindowStation() = default;
+  explicit WindowStation(HWINSTA value) : value_(value) {}
+  ~WindowStation() { if (value_) CloseWindowStation(value_); }
+  WindowStation(const WindowStation&) = delete;
+  WindowStation& operator=(const WindowStation&) = delete;
+  WindowStation(WindowStation&& other) noexcept : value_(other.value_) { other.value_ = nullptr; }
+  WindowStation& operator=(WindowStation&& other) noexcept {
+    if (this != &other) {
+      if (value_) CloseWindowStation(value_);
+      value_ = other.value_;
+      other.value_ = nullptr;
+    }
+    return *this;
+  }
+  HWINSTA get() const { return value_; }
+ private:
+  HWINSTA value_ = nullptr;
+};
+
+class Desktop {
+ public:
+  Desktop() = default;
+  explicit Desktop(HDESK value) : value_(value) {}
+  ~Desktop() { if (value_) CloseDesktop(value_); }
+  Desktop(const Desktop&) = delete;
+  Desktop& operator=(const Desktop&) = delete;
+  Desktop(Desktop&& other) noexcept : value_(other.value_) { other.value_ = nullptr; }
+  Desktop& operator=(Desktop&& other) noexcept {
+    if (this != &other) {
+      if (value_) CloseDesktop(value_);
+      value_ = other.value_;
+      other.value_ = nullptr;
+    }
+    return *this;
+  }
+ private:
+  HDESK value_ = nullptr;
+};
+
 std::runtime_error win_error(const char* operation) {
   DWORD code = GetLastError();
   std::ostringstream message;
@@ -331,6 +372,52 @@ std::vector<wchar_t> minimal_environment() {
   return block;
 }
 
+class PrivateDesktop {
+ public:
+  explicit PrivateDesktop(const std::wstring& operator_sid) {
+    std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + operator_sid + L")";
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) {
+      throw win_error("ConvertStringSecurityDescriptorToSecurityDescriptorW(private desktop)");
+    }
+    struct DescriptorGuard {
+      PSECURITY_DESCRIPTOR value;
+      ~DescriptorGuard() { if (value) LocalFree(value); }
+    } guard{descriptor};
+    SECURITY_ATTRIBUTES security{sizeof(security), descriptor, FALSE};
+    name_ = L"ARLocalBackup-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+            std::to_wstring(GetTickCount64());
+    WindowStation station(CreateWindowStationW(name_.c_str(), CWF_CREATE_ONLY,
+                                                WINSTA_ALL_ACCESS, &security));
+    if (!station.get()) throw win_error("CreateWindowStationW");
+    HWINSTA original = GetProcessWindowStation();
+    if (!original) throw win_error("GetProcessWindowStation");
+    if (!SetProcessWindowStation(station.get())) throw win_error("SetProcessWindowStation(private)");
+    HDESK created = CreateDesktopW(L"default", nullptr, nullptr, 0, GENERIC_ALL, &security);
+    DWORD create_failure = GetLastError();
+    if (!SetProcessWindowStation(original)) {
+      if (created) CloseDesktop(created);
+      throw win_error("SetProcessWindowStation(original)");
+    }
+    if (!created) {
+      SetLastError(create_failure);
+      throw win_error("CreateDesktopW");
+    }
+    station_ = std::move(station);
+    desktop_ = Desktop(created);
+    startup_name_ = name_ + L"\\default";
+  }
+
+  wchar_t* startup_name() { return startup_name_.data(); }
+
+ private:
+  std::wstring name_;
+  std::wstring startup_name_;
+  WindowStation station_;
+  Desktop desktop_;
+};
+
 DWORD wait_for(PROCESS_INFORMATION& process) {
   Handle thread(process.hThread);
   Handle child(process.hProcess);
@@ -341,15 +428,12 @@ DWORD wait_for(PROCESS_INFORMATION& process) {
 }
 
 DWORD create_as(HANDLE token, const std::wstring& application, std::wstring command,
-                const std::wstring& working_directory) {
+                const std::wstring& working_directory, const std::wstring& operator_sid) {
   auto environment = minimal_environment();
+  PrivateDesktop private_desktop(operator_sid);
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
-  // Do not inherit the privileged parent's window station and desktop.  An
-  // empty desktop name asks Windows to connect the restricted child to the
-  // noninteractive station selected for its logon session.
-  wchar_t noninteractive_desktop[] = L"";
-  startup.lpDesktop = noninteractive_desktop;
+  startup.lpDesktop = private_desktop.startup_name();
   PROCESS_INFORMATION process{};
   if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, FALSE,
                             CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, environment.data(),
@@ -410,7 +494,7 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
   validate_token(limited.get(), root);
   std::wstring command = quote(self);
   for (const auto& argument : child_arguments) command += L" " + quote(argument);
-  return create_as(limited.get(), self, command, root);
+  return create_as(limited.get(), self, command, root, read_operator_sid(root));
 }
 
 DWORD scheduled_parent() {
