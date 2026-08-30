@@ -159,7 +159,6 @@ Handle restricted_token(HANDLE current) {
                              0, nullptr, restricted.put())) {
     throw win_error("CreateRestrictedToken");
   }
-  lower_integrity_to_medium(restricted.get());
   return restricted;
 }
 
@@ -198,7 +197,7 @@ void require_no_admin_membership(HANDLE token) {
   if (member) throw std::runtime_error("restricted token retains enabled Administrators membership");
 }
 
-void require_restricted(HANDLE token) {
+void require_restricted(HANDLE token, bool require_medium_integrity) {
   DWORD restricted = 0;
   DWORD returned = 0;
   if (!GetTokenInformation(token, TokenHasRestrictions, &restricted, sizeof(restricted), &returned)) {
@@ -210,7 +209,7 @@ void require_restricted(HANDLE token) {
   auto* label = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(integrity.data());
   auto* count = GetSidSubAuthorityCount(label->Label.Sid);
   DWORD rid = *GetSidSubAuthority(label->Label.Sid, *count - 1);
-  if (rid > SECURITY_MANDATORY_MEDIUM_RID) {
+  if (require_medium_integrity && rid > SECURITY_MANDATORY_MEDIUM_RID) {
     throw std::runtime_error("restricted token integrity is above Medium");
   }
 
@@ -262,9 +261,7 @@ void require_write_denied(HANDLE token, const std::wstring& path, bool directory
   }
 }
 
-void validate_token(HANDLE token, const std::wstring& root) {
-  require_user_sid(token, read_operator_sid(root));
-  require_restricted(token);
+void require_protected_dependencies(HANDLE token, const std::wstring& root) {
   require_write_denied(token, root, true);
   for (const wchar_t* name : {L"operator.sid", L"protected.sentinel",
                               L"run_laptop_backup_trusted_child.ps1", L"trusted-child.json"}) {
@@ -274,6 +271,12 @@ void validate_token(HANDLE token, const std::wstring& root) {
   if (GetFileAttributesW(probe.c_str()) != INVALID_FILE_ATTRIBUTES) {
     require_write_denied(token, probe, false);
   }
+}
+
+void validate_token(HANDLE token, const std::wstring& root, bool require_medium_integrity) {
+  require_user_sid(token, read_operator_sid(root));
+  require_restricted(token, require_medium_integrity);
+  require_protected_dependencies(token, root);
 }
 
 std::wstring quote(const std::wstring& value) {
@@ -335,7 +338,8 @@ DWORD restricted_child() {
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
   auto token = current_process_token();
-  validate_token(token.get(), root);
+  lower_integrity_to_medium(token.get());
+  validate_token(token.get(), root, true);
 
   wchar_t system[MAX_PATH + 1]{};
   UINT length = GetSystemDirectoryW(system, MAX_PATH);
@@ -354,7 +358,8 @@ DWORD restricted_child() {
 DWORD restricted_probe() {
   std::wstring root = directory_of(module_path());
   auto token = current_process_token();
-  validate_token(token.get(), root);
+  lower_integrity_to_medium(token.get());
+  validate_token(token.get(), root, true);
   return 0;
 }
 
@@ -364,7 +369,7 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
   require_plain_path(root, true);
   auto current = current_process_token();
   auto limited = restricted_token(current.get());
-  validate_token(limited.get(), root);
+  validate_token(limited.get(), root, false);
   std::wstring command = quote(self);
   for (const auto& argument : child_arguments) command += L" " + quote(argument);
   return create_as(limited.get(), self, command, root);
