@@ -4877,19 +4877,44 @@ read-only Pi/task/resource/timer/process gates in the previous entry remain in
 force. Before invoking its 0055 phase, the unattended caller must execute this
 additional fail-closed authentication against the unique active evidence root:
 
+Replace the previous entry's evidence bootstrap with this exact exclusive
+bootstrap. The retained initialization record is the concurrency lock; never
+delete or reuse it.
+
+```powershell
+$ErrorActionPreference='Stop';$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831'
+New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop|Out-Null
+$lockPath=Join-Path $parent 'INITIALIZATION.json';$lock=[IO.File]::Open($lockPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+try{
+ $runId=([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''))+'-'+[guid]::NewGuid().ToString('N');$root=Join-Path $parent $runId
+ New-Item -ItemType Directory -Path $root -ErrorAction Stop|Out-Null
+ $record=([ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';created_at=[DateTimeOffset]::Now.ToString('o');evidence_root=$root;result='RUNNING';deviations=@();deviation_authorization=$null}|ConvertTo-Json -Compress)+"`n"
+ $bytes=[Text.UTF8Encoding]::new($false).GetBytes($record);$lock.Write($bytes,0,$bytes.Length);$lock.Flush($true)
+ $pointer=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt';$stream=[IO.File]::Open($pointer,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+ try{$value=[Text.UTF8Encoding]::new($false).GetBytes($root);$stream.Write($value,0,$value.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+}finally{$lock.Dispose()}
+```
+
 ```powershell
 $ErrorActionPreference='Stop'
 $parent=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831')
-$pointer=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt';$root=[IO.Path]::GetFullPath((Get-Content $pointer -Raw).Trim())
-if(-not$root.StartsWith($parent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or(Split-Path $root -Leaf)-notmatch'^20260831T[0-9]{6}\+1000-[0-9a-f]{32}$'){throw 'Active evidence root escaped or has an invalid generation identity.'}
-$generations=@(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction Stop|Where-Object{Test-Path (Join-Path $_.FullName '0025-hashes.json') -PathType Leaf})
-if($generations.Count-ne 1-or[IO.Path]::GetFullPath($generations[0].FullName)-cne$root){throw 'Active evidence generation is not uniquely bound.'}
-$manifestPath=Join-Path $root '0025-hashes.json';$manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
-if($manifest.result-cne'PASS'-or$manifest.script_sha256-cne'd3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a'){throw '00:25 manifest identity failed.'}
-$completed=[DateTimeOffset]::Parse([string]$manifest.completed_at)
-if($completed-lt[DateTimeOffset]'2026-08-31T00:20:00+10:00'-or$completed-ge[DateTimeOffset]'2026-08-31T00:30:00+10:00'){throw '00:25 manifest completion is outside the authorized window.'}
-$expected=@{'0025-local.json'=$manifest.local_sha256;'0025-pi.txt'=$manifest.pi_sha256;'0025-values.json'=$manifest.values_sha256}
-foreach($name in $expected.Keys){$path=Join-Path $root $name;if(-not(Test-Path $path -PathType Leaf)-or(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()-cne$expected[$name]){throw "00:25 evidence authentication failed: $name"}}
+$failurePath=Join-Path $parent (('0055-auth-failure-'+[guid]::NewGuid().ToString('N')+'.json'))
+try{
+ $pointer=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt';$root=[IO.Path]::GetFullPath((Get-Content $pointer -Raw).Trim())
+ if(-not$root.StartsWith($parent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or(Split-Path $root -Leaf)-notmatch'^20260831T[0-9]{6}\+1000-[0-9a-f]{32}$'){throw 'Active evidence root escaped or has an invalid generation identity.'}
+ $generations=@(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction Stop|Where-Object{Test-Path (Join-Path $_.FullName '0025-hashes.json') -PathType Leaf})
+ if($generations.Count-ne 1-or[IO.Path]::GetFullPath($generations[0].FullName)-cne$root){throw 'Active evidence generation is not uniquely bound.'}
+ $scriptPath=Join-Path $root 'timed-preflight.ps1';$approved='d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a'
+ if((Get-FileHash $scriptPath -Algorithm SHA256).Hash.ToLowerInvariant()-cne$approved){throw 'Current timed-preflight source is unauthenticated.'}
+ $manifestPath=Join-Path $root '0025-hashes.json';$manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
+ if($manifest.result-cne'PASS'-or$manifest.script_sha256-cne$approved){throw '00:25 manifest identity failed.'}
+ $completed=[DateTimeOffset]::Parse([string]$manifest.completed_at);if($completed.Offset.TotalHours-ne 10-or$completed-lt[DateTimeOffset]'2026-08-31T00:20:00+10:00'-or$completed-ge[DateTimeOffset]'2026-08-31T00:30:00+10:00'){throw '00:25 manifest completion is outside the authorized window.'}
+ $expected=@{'0025-local.json'=$manifest.local_sha256;'0025-pi.txt'=$manifest.pi_sha256;'0025-values.json'=$manifest.values_sha256};foreach($name in $expected.Keys){$path=Join-Path $root $name;if(-not(Test-Path $path -PathType Leaf)-or(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()-cne$expected[$name]){throw "00:25 evidence authentication failed: $name"}}
+ $result=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';plan_normalized_sha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';timestamps=@{completed_at=[DateTimeOffset]::Now.ToString('o')};exact_commands=@('Authenticate 00:25 manifest, artifacts, completion window and current timed-preflight bytes before phase 0055.');evidence_paths=@($manifestPath,$scriptPath)+@($expected.Keys|ForEach-Object{Join-Path $root $_});result='PASS';deviations=@();deviation_authorization=$null}
+ $success=Join-Path $root '0055-baseline-authentication.json';$raw=($result|ConvertTo-Json -Depth 8 -Compress)+"`n";$s=[IO.File]::Open($success,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($raw);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+}catch{
+ $record=([ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';timestamps=@{failed_at=[DateTimeOffset]::Now.ToString('o')};exact_commands=@('Authenticate 00:25 baseline before phase 0055.');evidence_paths=@();result='FAIL';error=$_.Exception.Message;deviations=@();deviation_authorization=$null}|ConvertTo-Json -Depth 8 -Compress)+"`n";$s=[IO.File]::Open($failurePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($record);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()};throw
+}
 ```
 
 The caller must wrap each phase invocation, redirecting stdout and stderr to
