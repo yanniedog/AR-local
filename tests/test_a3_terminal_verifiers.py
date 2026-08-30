@@ -29,6 +29,7 @@ DIGEST_D = "4" * 64
 def identity_args(root: Path) -> argparse.Namespace:
     return argparse.Namespace(
         evidence_root=str(root),
+        date=datetime.fromisoformat("2026-08-31").date(),
         plan_document_id="ARL-OPS-001",
         plan_version="1.5",
         plan_git_commit=COMMIT_A,
@@ -343,6 +344,7 @@ def test_handoff_authority_requires_exact_source_binding(monkeypatch: pytest.Mon
         "plan_version": args.plan_version,
         "plan_git_commit": args.plan_git_commit,
         "plan_sha256": args.plan_sha256,
+        "observation_date": args.date.isoformat(),
         "verifier_code_sha": args.verifier_code_sha,
         "candidate_code_sha": args.candidate_code_sha,
         "protected_code_sha": args.protected_code_sha,
@@ -379,6 +381,7 @@ def test_handoff_authority_ignores_markers_before_final_entry(monkeypatch: pytes
         "plan_version": args.plan_version,
         "plan_git_commit": args.plan_git_commit,
         "plan_sha256": args.plan_sha256,
+        "observation_date": args.date.isoformat(),
         "verifier_code_sha": args.verifier_code_sha,
         "candidate_code_sha": args.candidate_code_sha,
         "protected_code_sha": args.protected_code_sha,
