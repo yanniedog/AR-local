@@ -5203,9 +5203,11 @@ PR #578 merged before its late review arrived and remains immutable. Replace
 the complete 00:55/05:15 reauthentication block from the preceding correction
 with the block below. Set `$Phase='0055'` at 00:55 or `$Phase='0515'` at 05:15
 before invoking it. The block fetches read-only, authenticates the frozen 00:20
-authority, and on any failure creates exactly one controlled `BLOCKED` record
-inside the already-bound evidence generation before rethrowing. Never retry a
-phase and never overwrite that record.
+authority, and on any failure attempts exactly one controlled `BLOCKED` record
+inside the already-bound evidence generation before rethrowing. If evidence
+storage itself fails, it emits a separate process-level `BLOCKED` JSON to
+stderr containing both errors and remains fail-closed. Never retry a phase or
+overwrite a record.
 
 ```powershell
 $ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$P=[IO.Path]::GetFullPath('C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831')
@@ -5213,15 +5215,22 @@ if($Phase-cnotin@('0055','0515')){throw 'Authority phase is invalid.'};$pointer=
 if(-not$R.StartsWith($P+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Evidence root escaped.'}
 $started=[DateTimeOffset]::Now.ToString('o');$authorityPath=Join-Path $R 'authority.json'
 try{
- git -C $V fetch origin main;if($LASTEXITCODE-ne 0){throw 'Authority refresh failed.'}
  $j=Get-Content -LiteralPath $authorityPath -Raw|ConvertFrom-Json;$A=[string]$j.authority_commit;$H=[string]$j.authority_handoff_sha256
+ git -C $V fetch origin main;if($LASTEXITCODE-ne 0){throw 'Authority refresh failed.'}
  if($j.result-cne'PASS'-or$A-cnotmatch'^[0-9a-f]{40}$'-or$H-cnotmatch'^[0-9a-f]{64}$'-or(git -C $V rev-parse refs/remotes/origin/main).Trim()-cne$A){throw 'Persisted authority identity failed.'}
  $actual=(python -c "import hashlib,subprocess,sys;print(hashlib.sha256(subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'])).hexdigest())" $V $A).Trim();if($LASTEXITCODE-ne 0-or$actual-cne$H){throw 'Persisted handoff blob authentication failed.'}
 }catch{
- $errorText=$_.Exception.Message;$aValue=if($null-ne$A){$A}else{$null};$hValue=if($null-ne$H){$H}else{$null}
- $hashes=[ordered]@{};foreach($path in @($pointer,$authorityPath)){if(Test-Path -LiteralPath $path -PathType Leaf){$hashes[$path]=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}}
- $record=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';plan_normalized_sha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';authority_commit=$aValue;authority_handoff_sha256=$hValue;verifier_code_sha='8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2';candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';timestamps=[ordered]@{started_at=$started;blocked_at=[DateTimeOffset]::Now.ToString('o')};exact_commands=@("git -C `"$V`" fetch origin main","git -C `"$V`" show `"$A`:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`" and SHA-256 authenticate");evidence_paths=@($pointer,$authorityPath);evidence_hashes=$hashes;result='BLOCKED';error=$errorText;deviations=@();deviation_authorization=$null}
- $raw=($record|ConvertTo-Json -Depth 8 -Compress)+"`n";$path=Join-Path $R "$Phase-authority-reauthentication-blocked.json";$s=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($raw);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()};throw
+ $original=$_.Exception;$errorText=$original.Message;$source=if($Phase-ceq'0055'){'da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7'}else{'a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6'}
+ try{
+  $evidence=@();if(Test-Path -LiteralPath $authorityPath -PathType Leaf){$item=Get-Item -LiteralPath $authorityPath;$evidence+=,[ordered]@{path='authority.json';bytes=[int64]$item.Length;sha256=(Get-FileHash -LiteralPath $authorityPath -Algorithm SHA256).Hash.ToLowerInvariant()}}
+  $record=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit='9094a8e115958fcaf2cb36525736bd5e297e6b04';plan_sha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';plan_normalized_sha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';authority_commit=$A;authority_handoff_sha256=$H;verifier_code_sha='8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2';verifier_source_sha256=$source;candidate_code_sha='f214e3249c7968d574e3449edb14792904e1cc1f';protected_code_sha='9302890fcc752cbf90da97d597e972c157d913e3';operator='jkoka';phase=$Phase;timestamps=[ordered]@{started_at=$started;completed_at=[DateTimeOffset]::Now.ToString('o')};exact_commands=@("git -C `"$V`" fetch origin main","git -C `"$V`" show `"$A`:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`" and SHA-256 authenticate");evidence=$evidence;result='BLOCKED';details=[ordered]@{authority_phase=$Phase;authority_evidence='authority.json';reason='authority reauthentication failed'};error=$errorText;deviations=@();deviation_authorization=$null}
+  $raw=($record|ConvertTo-Json -Depth 8 -Compress)+"`n";$path=Join-Path $R "$Phase-authority-reauthentication-blocked.json";$s=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($raw);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+  $verified=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json;if($verified.result-cne'BLOCKED'-or$verified.phase-cne$Phase-or$verified.verifier_source_sha256-cne$source){throw 'BLOCKED record verification failed.'}
+ }catch{
+  $recordError=$_.Exception.Message;$fallback=([ordered]@{schema_version=1;phase=$Phase;result='BLOCKED';error=$errorText;evidence_record_error=$recordError}|ConvertTo-Json -Compress);[Console]::Error.WriteLine($fallback)
+  throw [InvalidOperationException]::new("Authority reauthentication blocked and its evidence record failed: $recordError",$original)
+ }
+ throw $original
 }
 ```
 
