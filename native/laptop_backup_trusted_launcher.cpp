@@ -109,10 +109,8 @@ std::vector<unsigned char> token_information(HANDLE token, TOKEN_INFORMATION_CLA
   return value;
 }
 
-Handle current_process_token() {
+Handle current_process_token(DWORD access) {
   Handle token;
-  DWORD access = TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE |
-                 TOKEN_ADJUST_DEFAULT;
   if (!OpenProcessToken(GetCurrentProcess(), access, token.put())) {
     throw win_error("OpenProcessToken");
   }
@@ -337,7 +335,7 @@ DWORD restricted_child() {
   std::wstring self = module_path();
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
-  auto token = current_process_token();
+  auto token = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT);
   lower_integrity_to_medium(token.get());
   validate_token(token.get(), root, true);
 
@@ -357,7 +355,7 @@ DWORD restricted_child() {
 
 DWORD restricted_probe() {
   std::wstring root = directory_of(module_path());
-  auto token = current_process_token();
+  auto token = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT);
   lower_integrity_to_medium(token.get());
   validate_token(token.get(), root, true);
   return 0;
@@ -367,7 +365,8 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
   std::wstring self = module_path();
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
-  auto current = current_process_token();
+  auto current = current_process_token(
+      TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE);
   auto limited = restricted_token(current.get());
   validate_token(limited.get(), root, false);
   std::wstring command = quote(self);
