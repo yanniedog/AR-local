@@ -114,3 +114,4 @@ jobs:
           tests/test_laptop_backup_dispatcher.py
           tests/test_laptop_backup_dispatcher_installer.py
           tests/test_laptop_backup_nonadmin_dispatcher.py
+          tests/test_laptop_backup_restricted_process.py

@@ -27,6 +27,16 @@ function Get-ArTextSha256 {
   }
 }
 
+function Get-ArBytesSha256 {
+  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    ([BitConverter]::ToString($algorithm.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant()
+  } finally {
+    $algorithm.Dispose()
+  }
+}
+
 function Get-ArDispatcherTaskArguments {
   param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,

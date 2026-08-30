@@ -44,14 +44,21 @@ function Assert-ArNoReparsePath {
 function New-ArManagedRunnerText {
   param(
     [Parameter(Mandatory = $true)][string]$TemplatePath,
-    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ConfigSha256
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ConfigSha256,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$RestrictedLauncherSha256
   )
-  $token = '__AR_CONFIG_SHA256__'
-  $template = [IO.File]::ReadAllText($TemplatePath)
-  if (($template.Split(@($token), [StringSplitOptions]::None).Count - 1) -ne 1) {
-    throw 'Managed runner template does not contain exactly one configuration token.'
+  $tokens = [ordered]@{
+    '__AR_CONFIG_SHA256__' = $ConfigSha256
+    '__AR_RESTRICTED_LAUNCHER_SHA256__' = $RestrictedLauncherSha256
   }
-  $template.Replace($token, $ConfigSha256)
+  $template = [IO.File]::ReadAllText($TemplatePath)
+  foreach ($token in $tokens.Keys) {
+    if (($template.Split(@($token), [StringSplitOptions]::None).Count - 1) -ne 1) {
+      throw "Managed runner template does not contain exactly one $token token."
+    }
+    $template = $template.Replace($token, $tokens[$token])
+  }
+  $template
 }
 
 function Install-ArManagedRunnerAtomic {
