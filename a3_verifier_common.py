@@ -191,12 +191,18 @@ def verify_handoff_authority(
         ("git", "-C", str(root), "merge-base", "--is-ancestor", args.verifier_code_sha, args.authority_commit),
         timeout=30,
     )
+    current_main = run_capture(
+        ("git", "-C", str(root), "rev-parse", "refs/remotes/origin/main"),
+        timeout=30,
+    )
     if (
         handoff_blob.returncode != 0
         or sha256_bytes(handoff_blob.stdout) != args.authority_handoff_sha256
         or ancestry.returncode != 0
+        or current_main.returncode != 0
+        or current_main.stdout.decode().strip() != args.authority_commit
     ):
-        raise VerificationError("handoff authority blob, digest, or ancestry is invalid")
+        raise VerificationError("handoff authority blob, digest, ancestry, or current-main identity is invalid")
     try:
         lines = handoff_blob.stdout.decode("utf-8").splitlines()
     except UnicodeDecodeError as exc:
@@ -217,8 +223,12 @@ def verify_handoff_authority(
         "deviations",
         "deviation_authorization",
     }
+    entry_offsets = [index for index, line in enumerate(lines) if line.startswith("## Entry `HANDOFF-")]
+    if not entry_offsets:
+        raise VerificationError("handoff authority contains no chronological entry")
+    final_entry = lines[entry_offsets[-1] :]
     matches: list[Mapping[str, Any]] = []
-    for line in lines:
+    for line in final_entry:
         if not (line.startswith(AUTHORIZATION_PREFIX) and line.endswith(AUTHORIZATION_SUFFIX)):
             continue
         raw = line[len(AUTHORIZATION_PREFIX) : -len(AUTHORIZATION_SUFFIX)].encode("utf-8")
@@ -245,16 +255,30 @@ def verify_handoff_authority(
             "deviations": [],
             "deviation_authorization": None,
         }
-        if all(value.get(key) == item for key, item in expected.items()) and sources.get(relative_source) == args.verifier_source_sha256:
+        required_sources = {relative_source: args.verifier_source_sha256}
+        if hasattr(args, "preflight_wrapper_sha256"):
+            required_sources["run_a3_timed_preflight.ps1"] = args.preflight_wrapper_sha256
+            required_sources["timed-preflight.ps1"] = args.preflight_script_sha256
+        if all(value.get(key) == item for key, item in expected.items()) and all(
+            sources.get(path) == digest for path, digest in required_sources.items()
+        ):
             matches.append(value)
     if len(matches) != 1:
         raise VerificationError("handoff does not uniquely authorize this verifier source")
+    if hasattr(args, "preflight_wrapper_sha256"):
+        wrapper_blob = run_capture(
+            ("git", "-C", str(root), "show", f"{args.verifier_code_sha}:run_a3_timed_preflight.ps1"),
+            timeout=30,
+        )
+        if wrapper_blob.returncode != 0 or sha256_bytes(wrapper_blob.stdout) != args.preflight_wrapper_sha256:
+            raise VerificationError("authorized preflight wrapper differs from its verifier-code Git blob")
     return {
         "path": HANDOFF_PATH,
         "blob_sha256": sha256_bytes(handoff_blob.stdout),
         "authority_commit": args.authority_commit,
         "authorized_source": relative_source,
         "authorized_source_sha256": args.verifier_source_sha256,
+        "authorized_sources": dict(require_mapping(matches[0]["sources"], "authorized verifier sources")),
     }
 
 
