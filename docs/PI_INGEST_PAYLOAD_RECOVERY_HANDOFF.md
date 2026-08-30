@@ -4470,3 +4470,353 @@ After transition `PASS`, append its exact evidence in a fresh documentation-only
 entry and bind the next natural 01:00 ingest plus first natural 05:00 or startup
 dispatcher-backed backup. Only those natural proofs make A3 terminal `PASS` and
 authorize automatic progression to A4 planning.
+
+## Entry `HANDOFF-20260830T174043+1000-A3-NONADMIN-TRANSITION-PASS`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T174043+1000-A3-NONADMIN-TRANSITION-PASS` |
+| Previous handoff entry | `HANDOFF-20260830T173100+1000-A3-NONADMIN-TRANSITION-AUTHORITY` |
+| Created, Australia/Hobart | `2026-08-30T17:40:43+10:00` |
+| Created, UTC | `2026-08-30T07:40:43Z` |
+| Author | Codex unattended for AR-local operator `jkoka` |
+| Previous authority merge | `2d5ce74eb22fdb5aacaf27b2fe4ea2f6acbacc7b` |
+| Previous complete handoff Git-blob SHA-256 | `bd3eb04c1e8175c1756700a064a81e22f3ce49896d73bbd297e44a19667ba059` |
+| Previous complete handoff checkout SHA-256 | `a614387ed6620811352d11ce68fa6e8a028f1944104666b8a3c322b05e4a471c` |
+| Controlling plan | `ARL-OPS-001` v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Implementation | PR `#566`; merge `68faf7e13c650af7b1d713f4a604f9978897ce79`; clean detached checkout `C:\code\backups\AR-local-pi5-receiver-68faf7e` |
+| Candidate | Clean detached checkout `C:\code\backups\AR-local-pi5-candidate-f214e32-d008` at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi | Clean, pinned and unchanged at `9302890fcc752cbf90da97d597e972c157d913e3`; ingest inactive; lock absent; timer enabled/active; dashboard healthy |
+| In-flight scheduled plan identity | `ARL-OPS-001` v1.4; commit `14dd066099bba393cccf61a280243e43162eedc9`; controlled SHA-256 `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`; normalized raw SHA-256 `c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4` |
+| Current phase | `A3 — non-administrator transition complete; first natural dispatcher-backed proof pending` |
+| Completed gates | D-008 design and implementation merged/reviewed; non-admin transactional transition `PASS`; independent post-transition validation `PASS` |
+| Open gates | Natural `2026-08-31` 01:00 ingest; first subsequent natural dispatcher-backed backup; append-only A3 terminal decision |
+| Prohibited advancement | A4 planning and implementation, and all Pi deployment/runtime remediation, remain blocked until terminal A3 `PASS` |
+| Transition result | `PASS` under the ordinary non-administrator token; Task Scheduler was not changed or triggered |
+| A3 result | `RUNNING`; transition passed, but the first D-006-protected natural ingest and natural dispatcher-backed backup remain mandatory |
+| A4 result | `BLOCKED` pending terminal A3 `PASS` |
+
+### Immutable transition evidence
+
+The unique evidence root is:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-NONADMIN-DISPATCHER-TRANSITION-20260830\20260830T173300+1000`
+
+The transactional installer ran non-elevated and returned `PASS`. It atomically
+replaced only the operator-owned legacy runner, preserved the exact old runner,
+activated the authenticated manifest, wrote the `PASS` activation receipt,
+executed a real installed-runner `PROBE`, and proved that the scheduled task
+remained byte-for-byte and security-descriptor equivalent to its prestate.
+
+| Evidence | Bytes | SHA-256 |
+|---|---:|---|
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\transition-result.json` | `8844` | `7b8a8c6eb8a1465fa25e97f57077f84c014ddd3a5a7dfc7e8ccc6034f898cb05` |
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\installed-runner-probe.txt` | `284` | `76334d6008997542742469570ef6bbe60f70899ea7340611ee5428b0db1938d4` |
+| `post-transition-validation.json` | `3201` | `5929c550e9b99c3f16f1a4c5456a52c22f7d2ec991f1df0abf99019764a534ba` |
+| `post-transition-validate.ps1` | `8893` | `c3ea20afb0ee7a4ecfba2dbcaef34e6ba581bafe7e2621f78142e93dff2a15d9` |
+| `initial-manifest.json` | `1861` | `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092` |
+| `runner-config.json` | `572` | `b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00` |
+| `gate-evidence.json` | `619` | `9a7943550de7cfd5c8ced37414be78aa300e898ca1b5d103ab25d5c659c986a3` |
+
+The independent post-transition validation at
+`2026-08-30T17:40:06.9811842+10:00` returned `PASS` and proved:
+
+- task `\AR-local laptop backup` is Ready/enabled with `LastTaskResult=0`;
+- task XML SHA-256 remains
+  `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`;
+- task SDDL SHA-256 remains
+  `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`;
+- the managed runner SHA-256 is
+  `dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8`;
+- the live activation points to manifest
+  `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092`,
+  sequence `1`, with a `PASS` receipt;
+- the real installed-runner probe returned `PASS`, `is_admin=false`, candidate
+  `f214e3249c7968d574e3449edb14792904e1cc1f`, and the exact manifest above;
+- implementation and candidate checkouts are clean, detached and exact;
+- no backup or dispatcher helper remained active;
+- laptop free space was `156235186176` bytes, above the 50 GiB floor; and
+- Pi production remained pinned, clean, idle, unlocked, timer-active and
+  dashboard-healthy.
+
+Two non-mutating verification-wrapper defects are retained, not relabelled: the
+first wrapper used invalid `Select-Object -Single`; the corrected wrapper first
+lacked a local byte-array hashing helper. Both stopped before writing a result,
+made no runtime transition, and were corrected in the hashed validation script
+above. The underlying transition and both installed-runner probes passed.
+
+### Latest validated observation, catalog and independent states
+
+The latest validated laptop observation remains the independently proven
+natural `2026-08-30` observation
+`obs-2026-08-30-69a34aa4c745bb2e`. The ingest's late-timed procedure remains
+`BLOCKED` because its pre-start gate was not contemporaneous; the captured
+observation itself remains valid and is not relabelled.
+
+| State | Exact current identity and result |
+|---|---|
+| Capture | `PASS`, one natural systemd invocation; 3,841 raw attempts; 119/119 providers attempted; 112 complete, seven partial, zero failed; 17 attributable failures; zero corrupt/unattributed |
+| Finalization | `PASS`; generation `obs-2026-08-30-69a34aa4c745bb2e`; 3,012 products; 17,050 rates; SQLite SHA-256 `f246fd77d3215ac631e7c0255ba550f9bfb6e49f0e9c866041040f740fa6f834`; `quick_check=ok` |
+| Publication | Dated v1, rolling v1, every referenced asset and dates index independently matched Pi staging; individual gaps disclosed; v2 remains an independent stale/failing state and is not relabelled |
+| Dashboard | `PASS`; automatically returned after ingest and is currently healthy |
+| Backup | Observation `PASS` at catalog sequence `332`; archive SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b`; old-task natural backup already passed, while first managed-dispatcher natural backup is `NOT_STARTED` |
+| Current control | `PASS` at catalog sequence `335`; source manifest `14acb3481a4a103ecff9f0a8d259b75c01f404def127305bc7e40ed3391d4d64` |
+| Current macro | `PASS` at catalog sequence `336`; source manifest `1949485d4f1c1e5b294eb4914d84967b6689a4f8221d1f7dba9ef3e2b5ad0381` |
+| Catalog | Append-only through sequence `336`; `generations.jsonl` is `236234` bytes, SHA-256 `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511` |
+| Latest check-only record | `PASS/NO_BACKUP_DATA_WRITE`, completed `2026-08-30T07:35:43Z`; candidate `f214e3249c7968d574e3449edb14792904e1cc1f`; protected SHA `9302890fcc752cbf90da97d597e972c157d913e3`; scheduled plan commit `14dd066099bba393cccf61a280243e43162eedc9` |
+
+The authoritative observation receipt is
+`C:\code\backups\AR-local-pi5\observations\2026-08-30\f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d\receipt.json`,
+`3392` bytes, SHA-256
+`7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea`.
+The current pointer hashes are: `latest-verified.json`
+`737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`,
+`latest-control.json`
+`1ae3cf71760511dd49ded2c50f13632ac519058c0fb7600e59be4aeb5386b4e7`,
+`latest-macro.json`
+`d63bd59482dbac9b7a76efe5aa960e5cfe6085cafc6242c7d49b7bd3ed307135`,
+and `latest-scheduled.json`
+`d18ea4b6f29008a00d810b86be656ce1dfaa7f854b3e50c437d8ac72f2bca1f4`.
+
+### Exact completed commands and mutation boundary
+
+The exact non-administrator transition command, LF-only Pi preflight command,
+timestamps, operator, plan/candidate/protected identities, deviations and all
+evidence paths are embedded without abbreviation in `exact_commands` within
+the immutable `transition-result.json` above. The exact independent validation
+command was:
+
+```powershell
+& 'C:\code\backups\AR-local-pi5\evidence\A3-NONADMIN-DISPATCHER-TRANSITION-20260830\20260830T173300+1000\post-transition-validate.ps1'
+```
+
+No task trigger, backup run, ingest, service change, deployment or publication
+mutation was performed by validation. The only authorized live mutation was
+the transactional, same-volume replacement of the operator-owned runner and
+activation of its append-only dispatcher control records.
+
+### Mandatory natural proof and next authority
+
+Exact next action: at `2026-08-31T00:25:00+10:00`, create one unique evidence
+generation, record `ACTIVE_EVIDENCE_PATH.txt`, and execute these read-only
+preflight commands under the ordinary token. Earliest start is 00:20; the first
+gate must finish by 00:30. The second gate starts at 00:55 and must finish before
+01:00. The natural ingest may run to terminal completion; there is no arbitrary
+kill deadline. The natural backup validation starts at 05:15 and must not
+trigger the task.
+
+The approved LF-terminated UTF-8 bytes of the following fenced block are
+`10702` bytes with SHA-256
+`d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a`.
+Do not copy it manually. Extract it from this file in the exact authority merge
+using the authenticated command below, require that published digest, and
+create `timed-preflight.ps1` exclusively inside the unique evidence directory.
+Invoke it first with `-Phase 0025`, then invoke that same hash-bound file with
+`-Phase 0055`. Both invocations persist their complete local and Pi results and
+SHA-256 manifests; console-only evidence is invalid.
+
+```powershell
+param(
+  [Parameter(Mandatory=$true)][ValidateSet('0025','0055')][string]$Phase,
+  [Parameter(Mandatory=$true)][string]$EvidenceRoot
+)
+$ErrorActionPreference='Stop'
+$EvidenceRoot=[IO.Path]::GetFullPath($EvidenceRoot)
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831'
+$active=Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt'
+if(-not $EvidenceRoot.StartsWith([IO.Path]::GetFullPath($parent)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Evidence root escaped its parent.'}
+if([IO.Path]::GetFullPath((Get-Content -LiteralPath $active -Raw).Trim()) -cne $EvidenceRoot){throw 'Active evidence pointer mismatch.'}
+$scriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+function Write-NewText([string]$Path,[string]$Text){
+  $stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try{$writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false));try{$writer.Write($Text)}finally{$writer.Dispose()}}finally{if($stream){$stream.Dispose()}}
+}
+$phasePaths=@("$Phase-local.json","$Phase-pi.txt","$Phase-values.json","$Phase-hashes.json")|ForEach-Object{Join-Path $EvidenceRoot $_}
+if(@($phasePaths|Where-Object{Test-Path -LiteralPath $_}).Count-ne 0){throw "Evidence for phase $Phase already exists; never overwrite or retry in place."}
+if($Phase -eq '0055'){
+  $recorded=Get-Content -LiteralPath (Join-Path $EvidenceRoot '0025-hashes.json') -Raw|ConvertFrom-Json
+  if($recorded.script_sha256 -cne $scriptHash){throw 'Timed-preflight source changed between gates.'}
+}
+function Hash-Bytes([byte[]]$Bytes){$h=[Security.Cryptography.SHA256]::Create();try{([BitConverter]::ToString($h.ComputeHash($Bytes))-replace'-','').ToLowerInvariant()}finally{$h.Dispose()}}
+function Hash-Text([string]$Text){Hash-Bytes ([Text.UTF8Encoding]::new($false).GetBytes($Text))}
+function Exact-Checkout([string]$Path,[string]$Head){
+  if((git -C $Path rev-parse HEAD).Trim() -cne $Head -or @(git -C $Path status --porcelain=v1).Count -ne 0){throw "Checkout drift: $Path"}
+  git -C $Path symbolic-ref -q HEAD 2>$null|Out-Null;if($LASTEXITCODE -ne 1){throw "Checkout not detached: $Path"}
+}
+$implementation='C:\code\backups\AR-local-pi5-receiver-68faf7e'
+$candidate='C:\code\backups\AR-local-pi5-candidate-f214e32-d008'
+$receiver='C:\code\backups\AR-local-pi5-receiver-f214e32'
+$control='C:\code\backups\AR-local-pi5\dispatcher-control'
+Exact-Checkout $implementation '68faf7e13c650af7b1d713f4a604f9978897ce79'
+Exact-Checkout $candidate 'f214e3249c7968d574e3449edb14792904e1cc1f'
+$receiverStatus=@(git -C $receiver status --porcelain=v1)
+if($receiverStatus.Count-ne 1-or$receiverStatus[0]-cne ' M run_laptop_backup_task.ps1'){throw 'Legacy receiver drift beyond managed runner.'}
+$task=Get-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$taskInfo=Get-ScheduledTaskInfo -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xml=Export-ScheduledTask -TaskName 'AR-local laptop backup' -ErrorAction Stop
+$xmlHash=Hash-Bytes ([byte[]](0xff,0xfe)+[Text.Encoding]::Unicode.GetBytes($xml))
+$svc=New-Object -ComObject 'Schedule.Service';$svc.Connect();$sddl=$svc.GetFolder('\').GetTask('\AR-local laptop backup').GetSecurityDescriptor(7)
+$sddlHash=Hash-Text $sddl
+$runner=Join-Path $receiver 'run_laptop_backup_task.ps1'
+$manifestHash='af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092'
+$config=Join-Path $control 'runner-config.json';$manifest=Join-Path $control "manifests\$manifestHash.json";$pointer=Join-Path $control 'active-runner.json'
+$receipt=Join-Path $control 'activation-receipts\00000001-37f93247c88144699631d364c6ac0dee-pass.json'
+if([string]$task.State -cne 'Ready' -or -not $task.Settings.Enabled -or $taskInfo.LastTaskResult -ne 0 -or
+   $xmlHash -cne 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2' -or
+   $sddlHash -cne '6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b' -or
+   (Get-FileHash $runner -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8' -or
+   (Get-FileHash $config -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00' -or
+   (Get-FileHash $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestHash -or
+   (Get-FileHash $receipt -Algorithm SHA256).Hash.ToLowerInvariant() -cne '7d122e9f96ec22940081fe6ddaa4e54c22a89fea0187cee906b2a09e26233e8b') {throw 'Authenticated task/dispatcher state drift.'}
+$p=Get-Content $pointer -Raw|ConvertFrom-Json;$m=Get-Content $manifest -Raw|ConvertFrom-Json;$r=Get-Content $receipt -Raw|ConvertFrom-Json
+if($p.manifest_sha256 -cne $manifestHash -or $p.sequence -ne 1 -or $r.status -cne 'PASS' -or $r.manifest_sha256 -cne $manifestHash -or
+   $m.candidate_code_sha -cne 'f214e3249c7968d574e3449edb14792904e1cc1f' -or $m.protected_code_sha -cne '9302890fcc752cbf90da97d597e972c157d913e3'){throw 'Authenticated activation state drift.'}
+$helpers=@(Get-CimInstance Win32_Process|Where-Object{$_.ProcessId-ne$PID-and$_.CommandLine-and$_.CommandLine-match'(laptop_backup_(scheduled|dispatcher|atomic)|run_laptop_backup_task)'})
+$free=(Get-PSDrive C).Free;if($helpers.Count-ne 0-or$free-lt 50GB){throw 'Laptop process or capacity gate failed.'}
+$local=[ordered]@{observed_at=[DateTimeOffset]::Now.ToString('o');phase=$Phase;task_state=[string]$task.State;last_result=[int]$taskInfo.LastTaskResult;task_xml_sha256=$xmlHash;task_sddl_sha256=$sddlHash;runner_sha256=(Get-FileHash $runner -Algorithm SHA256).Hash.ToLowerInvariant();config_sha256=(Get-FileHash $config -Algorithm SHA256).Hash.ToLowerInvariant();manifest_sha256=$manifestHash;receipt_sha256=(Get-FileHash $receipt -Algorithm SHA256).Hash.ToLowerInvariant();implementation='68faf7e13c650af7b1d713f4a604f9978897ce79';candidate='f214e3249c7968d574e3449edb14792904e1cc1f';free_bytes=[int64]$free;helper_count=$helpers.Count}
+Write-NewText (Join-Path $EvidenceRoot "$Phase-local.json") (($local|ConvertTo-Json -Depth 8)+"`n")
+$remote=@'
+set -eu
+cd /srv/ar-local/AR-local
+echo "observed_at=$(date --iso-8601=seconds)"
+echo "head=$(git rev-parse HEAD)"
+if test -z "$(git status --porcelain=v1)";then echo checkout_clean=true;else echo checkout_clean=false;exit 40;fi
+echo "timer_enabled=$(systemctl is-enabled ar-local-daily.timer)"
+echo "timer_active=$(systemctl is-active ar-local-daily.timer)"
+echo "timer_next=$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)"
+echo "timer_last=$(systemctl show ar-local-daily.timer -p LastTriggerUSec --value)"
+echo "service_active=$(systemctl is-active ar-local-daily.service)"
+echo "service_invocation=$(systemctl show ar-local-daily.service -p InvocationID --value)"
+echo "service_restarts=$(systemctl show ar-local-daily.service -p NRestarts --value)"
+if test -e /srv/ar-local/data/state/daily-ingest.lock;then echo lock=PRESENT;exit 42;else echo lock=ABSENT;fi
+if pgrep -f '[p]i_daily_sync.py|[c]dr_daily.py' >/dev/null;then echo competing_process=PRESENT;exit 43;else echo competing_process=ABSENT;fi
+disk=$(df -B1 --output=avail /srv/ar-local/data|tail -1|tr -d ' ');mem=$(free -b|awk '/^Mem:/ {print $7}');swap=$(free -b|awk '/^Swap:/ {print $4}')
+echo "disk_available_bytes=$disk";echo "memory_available_bytes=$mem";echo "swap_free_bytes=$swap"
+test "$disk" -ge 10737418240;test "$mem" -ge 268435456;test "$swap" -ge 67108864
+journal_file=$(mktemp);trap 'rm -f "$journal_file"' EXIT
+if ! journalctl -k --since '24 hours ago' --no-pager >"$journal_file";then echo journal_read=FAILED;exit 45;fi
+echo journal_read=PASS
+if grep -Eiq 'oom|out of memory|killed process' "$journal_file";then echo oom_recent=PRESENT;exit 44;else echo oom_recent=ABSENT;fi
+test "$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)" = 'Mon 2026-08-31 01:00:00 AEST'
+curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest|python3 -c "import json,sys;v=json.load(sys.stdin);b=v.get('banks_counts')or{};assert v.get('run_date')=='2026-08-30';assert int(b.get('products',0))>0;assert int(b.get('rates',0))>0"
+echo dashboard=HEALTHY
+http=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://api.github.com/);echo "github_http=$http";test "$http" = 200
+echo AR_PI_NATURAL_PREFLIGHT_PASS
+'@ -replace "`r",''
+$output=@($remote|ssh -o BatchMode=yes -o ConnectTimeout=10 ar-local-pi5-lan bash -s)
+$sshExit=$LASTEXITCODE;Write-NewText (Join-Path $EvidenceRoot "$Phase-pi.txt") (($output-join"`n")+"`n")
+if($sshExit-ne 0-or($output-join"`n")-notmatch'AR_PI_NATURAL_PREFLIGHT_PASS'){throw "$Phase Pi gate failed."}
+$values=[ordered]@{};foreach($line in $output){$pair=$line-split'=',2;if($pair.Count-eq 2){$values[$pair[0]]=$pair[1]}}
+$observed=[DateTimeOffset]::Parse($values.observed_at)
+if($Phase-eq'0025'){$min=[DateTimeOffset]'2026-08-31T00:20:00+10:00';$max=[DateTimeOffset]'2026-08-31T00:30:00+10:00'}else{$min=[DateTimeOffset]'2026-08-31T00:55:00+10:00';$max=[DateTimeOffset]'2026-08-31T01:00:00+10:00'}
+if($observed-lt$min-or$observed-ge$max-or$values.head-cne'9302890fcc752cbf90da97d597e972c157d913e3'-or$values.checkout_clean-cne'true'-or
+   $values.timer_enabled-cne'enabled'-or$values.timer_active-cne'active'-or$values.timer_next-cne'Mon 2026-08-31 01:00:00 AEST'-or
+   $values.service_active-cne'inactive'-or[int]$values.service_restarts-ne 0-or$values.lock-cne'ABSENT'-or$values.competing_process-cne'ABSENT'-or
+   [int64]$values.disk_available_bytes-lt 10737418240-or[int64]$values.memory_available_bytes-lt 268435456-or[int64]$values.swap_free_bytes-lt 67108864-or
+   $values.journal_read-cne'PASS'-or$values.oom_recent-cne'ABSENT'-or$values.dashboard-cne'HEALTHY'-or$values.github_http-cne'200'){throw "$Phase fail-closed value gate failed."}
+if($Phase-eq'0055'){$baseline=Get-Content (Join-Path $EvidenceRoot '0025-values.json') -Raw|ConvertFrom-Json;if($values.timer_last-cne$baseline.timer_last-or$values.service_invocation-cne$baseline.service_invocation){throw 'Timer/service baseline changed before natural start.'}}
+Write-NewText (Join-Path $EvidenceRoot "$Phase-values.json") (($values|ConvertTo-Json -Depth 5)+"`n")
+$hashes=[ordered]@{script_sha256=$scriptHash;local_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-local.json") -Algorithm SHA256).Hash.ToLowerInvariant();pi_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-pi.txt") -Algorithm SHA256).Hash.ToLowerInvariant();values_sha256=(Get-FileHash (Join-Path $EvidenceRoot "$Phase-values.json") -Algorithm SHA256).Hash.ToLowerInvariant();completed_at=[DateTimeOffset]::Now.ToString('o');result='PASS'}
+Write-NewText (Join-Path $EvidenceRoot "$Phase-hashes.json") (($hashes|ConvertTo-Json)+"`n")
+$hashes|ConvertTo-Json
+```
+
+Before the first invocation, create the evidence generation and active pointer
+exactly once; never reuse a previous directory:
+
+```powershell
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';New-Item -ItemType Directory -Force $parent|Out-Null
+$root=Join-Path $parent ([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''));if(Test-Path (Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt')){throw 'Active evidence already exists.'};New-Item -ItemType Directory $root|Out-Null
+[IO.File]::WriteAllText((Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt'),$root,[Text.UTF8Encoding]::new($false))
+$authorityRepo='<clean authority checkout>';$authorityCommit='<document-containing merge commit>';$scriptPath=Join-Path $root 'timed-preflight.ps1'
+python -c "import hashlib,re,subprocess,sys;b=subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md']).replace(b'\r\n',b'\n');m=re.findall(br'```powershell\n(param\(.*?AR_PI_NATURAL_PREFLIGHT_PASS.*?)(?=\n```)',b,re.S);assert len(m)==1;out=m[0]+b'\n';assert len(out)==10702 and hashlib.sha256(out).hexdigest()=='d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a';open(sys.argv[3],'xb').write(out)" $authorityRepo $authorityCommit $scriptPath
+if($LASTEXITCODE-ne 0){throw 'Approved timed-preflight extraction failed.'}
+& "$root\timed-preflight.ps1" -Phase 0025 -EvidenceRoot $root
+```
+
+At 00:55 recover the one active pointer and run the same authenticated file:
+
+```powershell
+$parent='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';$root=(Get-Content (Join-Path $parent 'ACTIVE_EVIDENCE_PATH.txt') -Raw).Trim()
+& "$root\timed-preflight.ps1" -Phase 0055 -EvidenceRoot $root
+ssh ar-local-pi5-lan systemctl show ar-local-daily.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p InvocationID -p ActiveEnterTimestamp -p InactiveEnterTimestamp
+ssh ar-local-pi5-lan journalctl -fu ar-local-daily.service --since '2026-08-31 00:55:00' --no-pager
+```
+
+After terminal service completion, use fresh, hash-recorded verifier source to
+run the repository's observation, ledger, SQLite/provider and public-byte
+verification paths against date `2026-08-31`; never infer publication success
+from producer logs. At 05:15 inspect `Get-ScheduledTaskInfo`, every immutable
+`catalog\scheduled-runs\*.json` after the recorded baseline, dispatcher
+execution records and activation receipt; do not call `Start-ScheduledTask` or
+the managed runner.
+
+D-006 remains absolute. From `2026-08-31T00:30:00+10:00` through terminal
+validation of the natural ingest, perform no deployment, canary, manual or
+forced ingest, service restart, task change or trigger, package change, backup,
+or publication manipulation. Execute the established fail-closed read-only
+preflight before the freeze and again before 01:00, observe exactly one natural
+`ar-local-daily.service` invocation, and preserve complete raw-attempt,
+completion, contract, ledger, pointer, SQLite/provider-accounting, dashboard,
+and independently downloaded public GitHub evidence. Product- or
+provider-specific gaps must remain attributable and disclosed; they must not
+invalidate otherwise valid products. Never rerun ingest for publication-only
+failure and never overwrite the previous verified rolling payload.
+
+After the natural ingest terminally validates, do not trigger the Windows task.
+Observe its natural 05:00 or startup-plus-five-minute execution. Acceptance
+requires the unchanged task to invoke the managed runner above, the dispatcher
+to select manifest
+`af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092`,
+and at least one immutable `BACKUP-LATEST` `PASS` for observation date
+`2026-08-31`. Validate every intervening scheduled-run record, exact candidate,
+protected and scheduled-plan identities, receipts, catalog append-only hash
+chain, restoration checks, Pi source identity equality, absence of locks,
+partials, helpers and overlap, Ready/enabled task state with zero result, and at
+least 50 GiB free. A later `NO_BACKUP_DATA_WRITE` is acceptable only after the
+same observation was already backed up and all identities prove unchanged.
+
+After terminal evidence, append a new documentation-only entry. If both the
+natural ingest and first natural dispatcher-backed backup pass, mark A3
+terminal `PASS` and immediately begin A4 planning under the controlled runbook.
+On any failure or uncertainty, preserve the previous verified payload and
+backup, record `FAIL` or `BLOCKED`, and keep A4 blocked. No administrator action
+is authorized or required.
+
+### Acceptance, stop, rollback and preservation controls
+
+Accept only one natural 01:00 invocation with successful terminal service,
+absent lock, automatic dashboard return, valid raw/marker/contract/ledger/
+pointer/database/provider accounting, and independent dated/rolling/index
+public bytes. Accept the backup only when a natural task invocation selects the
+exact active manifest, produces `PASS/BACKUP-LATEST` for `2026-08-31`, verifies
+receipts, restore checks and catalog lineage, and leaves no lock, partial,
+helper or overlap with at least 50 GiB free.
+
+Stop immediately and make no mutation if any preflight identity differs, the
+lock or service is active before the natural start, the Pi is dirty or not at
+the protected SHA, the task/runner/manifest/config differs, disk is below its
+floor, a helper exists, or the evidence directory is ambiguous. During the
+freeze, observe only. On ingest failure preserve raw attempts, the failed
+generation and previous verified rolling payload; do not force or rerun. On
+publication-only failure retry no ingest. On backup failure preserve the
+existing backup, catalog, dispatcher records, active pointer, exact legacy
+runner backup and failed evidence; do not manually trigger.
+
+No automatic rollback is authorized after this recorded transition `PASS`.
+Restoring the preserved legacy runner or changing dispatcher activation now
+requires a new append-only controlled decision with authenticated bytes and
+acceptance criteria. The inert unreadable Program Files residue remains
+unreferenced and must not be used or removed during A3.
+
+Known risks are: upstream current-day data disappears at midnight; stable Pi
+code lacks later unproven safeguards; the timed preflight has previously been
+missed; v2 remains stale independently of v1; the operator-owned managed runner
+is intentionally the sole dirty file in its legacy receiver; and the first
+natural managed-dispatcher invocation is not yet proven. Deviation D-008 is
+explicitly authorized by
+`HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN` and the exact
+transition authority in the preceding entry. There are no conversational or
+unrecorded deviations.
