@@ -26,6 +26,7 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedTaskSddlSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$DispatcherSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$AtomicModuleSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$RestrictedLauncherSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SharedCoreSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$NonAdminCoreSha256,
@@ -75,8 +76,8 @@ function Write-ArNonAdminResult {
           [ordered]@{ path = $_.FullName; sha256 = Get-ArSha256 $_.FullName; size = $_.Length }
         }
     )
-    deviations = @('The existing operator-writable task runner is intentionally managed outside Git cleanliness under D-008.')
-    deviation_authorization = 'HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN'
+    deviations = @('The operator-writable managed task runner now creates a SAFER normal-user child under D-009.')
+    deviation_authorization = 'HANDOFF-20260831T074200+1000-A3-NATURAL-BACKUP-FAIL-SAFER-REPAIR'
   }
   $path = Join-Path $script:executionRoot 'transition-result.json'
   Write-ArUtf8NoBom -Path $path -Text (($payload | ConvertTo-Json -Depth 12 -Compress) + "`n")
@@ -86,7 +87,7 @@ function Write-ArNonAdminResult {
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltInRole]::Administrator
 )
-if ($isAdmin) { throw 'D-008 transition must run without administrator elevation.' }
+if ($isAdmin) { throw 'D-009 transition must run without administrator elevation.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if ($identity.Name.ToLowerInvariant() -ne $Principal.ToLowerInvariant() -or $identity.User.Value -ne $OperatorSid) {
   throw 'Non-administrator transition identity is not the authorised operator.'
@@ -138,27 +139,32 @@ git -C $ImplementationRoot symbolic-ref -q HEAD 2>$null | Out-Null
 if ($LASTEXITCODE -ne 1) { throw 'Dispatcher implementation checkout is not detached.' }
 $dispatcherPath = Join-Path $ImplementationRoot 'laptop_backup_dispatcher.py'
 $atomicPath = Join-Path $ImplementationRoot 'laptop_backup_atomic.py'
+$restrictedLauncherPath = Join-Path $ImplementationRoot 'laptop_backup_restricted_process.py'
 if ((Get-ArSha256 $dispatcherPath) -cne $DispatcherSha256 -or
     (Get-ArSha256 $atomicPath) -cne $AtomicModuleSha256 -or
+    (Get-ArSha256 $restrictedLauncherPath) -cne $RestrictedLauncherSha256 -or
     (Get-ArSha256 $PythonPath) -cne ((Get-Content -LiteralPath $RunnerConfigPath -Raw | ConvertFrom-Json).python_sha256)) {
   throw 'Dispatcher implementation or Python hash mismatch.'
 }
 $config = Get-Content -LiteralPath $RunnerConfigPath -Raw | ConvertFrom-Json
 $expectedConfigFields = @(
   'atomic_module_sha256', 'control_root', 'dispatcher_sha256', 'implementation_commit',
-  'implementation_root', 'python_path', 'python_sha256', 'schema_version'
+  'implementation_root', 'python_path', 'python_sha256', 'restricted_launcher_sha256',
+  'schema_version'
 )
 if (@(Compare-Object $expectedConfigFields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
-    $config.schema_version -ne 1 -or
+    $config.schema_version -ne 2 -or
     [IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($ControlRoot) -or
     [IO.Path]::GetFullPath([string]$config.implementation_root) -cne [IO.Path]::GetFullPath($ImplementationRoot) -or
     [string]$config.implementation_commit -cne $ImplementationCommit -or
     [string]$config.dispatcher_sha256 -cne $DispatcherSha256 -or
     [string]$config.atomic_module_sha256 -cne $AtomicModuleSha256 -or
+    [string]$config.restricted_launcher_sha256 -cne $RestrictedLauncherSha256 -or
     [IO.Path]::GetFullPath([string]$config.python_path) -cne [IO.Path]::GetFullPath($PythonPath)) {
   throw 'Runner configuration is not exactly bound to the transition inputs.'
 }
-$runnerText = New-ArManagedRunnerText -TemplatePath $RunnerTemplatePath -ConfigSha256 $RunnerConfigSha256
+$runnerText = New-ArManagedRunnerText -TemplatePath $RunnerTemplatePath -ConfigSha256 $RunnerConfigSha256 `
+  -RestrictedLauncherSha256 $RestrictedLauncherSha256
 $runnerBytes = [Text.UTF8Encoding]::new($false).GetBytes($runnerText)
 $algorithm = [Security.Cryptography.SHA256]::Create()
 try { $generatedRunnerHash = ([BitConverter]::ToString($algorithm.ComputeHash($runnerBytes)) -replace '-', '').ToLowerInvariant() } finally { $algorithm.Dispose() }
@@ -225,7 +231,7 @@ $controlChanged = $false
 
 try {
   $unexpected = @(Get-ChildItem -LiteralPath $ControlRoot -Force)
-  if ($unexpected.Count -ne 0) { throw 'Dispatcher control root is not empty before initial D-008 transition.' }
+  if ($unexpected.Count -ne 0) { throw 'Dispatcher control root is not empty before initial D-009 transition.' }
   $controlChanged = $true
   $activationLog = Join-Path $script:executionRoot 'manifest-activation.txt'
   & $PythonPath $dispatcherPath activate --control-root $ControlRoot --manifest $ManifestPath *> $activationLog

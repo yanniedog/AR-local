@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $expectedConfigSha256 = '__AR_CONFIG_SHA256__'
+$expectedRestrictedLauncherSha256 = '__AR_RESTRICTED_LAUNCHER_SHA256__'
 $code = 1
 function Get-ArManagedSha256 {
   param([Parameter(Mandatory = $true)][string]$Path)
@@ -47,10 +48,11 @@ try {
   $config = Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop | ConvertFrom-Json
   $expectedFields = @(
     'atomic_module_sha256', 'control_root', 'dispatcher_sha256', 'implementation_commit',
-    'implementation_root', 'python_path', 'python_sha256', 'schema_version'
+    'implementation_root', 'python_path', 'python_sha256', 'restricted_launcher_sha256',
+    'schema_version'
   )
   $actualFields = @($config.PSObject.Properties.Name | Sort-Object)
-  if (@(Compare-Object $expectedFields $actualFields).Count -ne 0 -or $config.schema_version -ne 1) {
+  if (@(Compare-Object $expectedFields $actualFields).Count -ne 0 -or $config.schema_version -ne 2) {
     throw 'Managed dispatcher configuration schema is invalid.'
   }
   if ([IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($controlRoot)) {
@@ -59,9 +61,10 @@ try {
   $implementationRoot = Assert-ArManagedNoReparsePath ([string]$config.implementation_root)
   $dispatcherPath = Join-Path $implementationRoot 'laptop_backup_dispatcher.py'
   $atomicPath = Join-Path $implementationRoot 'laptop_backup_atomic.py'
+  $restrictedLauncherPath = Join-Path $implementationRoot 'laptop_backup_restricted_process.py'
   Assert-ArManagedNoReparsePath $controlRoot | Out-Null
   Assert-ArManagedNoReparsePath ([string]$config.python_path) | Out-Null
-  foreach ($path in @($implementationRoot, $dispatcherPath, $atomicPath, [string]$config.python_path)) {
+  foreach ($path in @($implementationRoot, $dispatcherPath, $atomicPath, $restrictedLauncherPath, [string]$config.python_path)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Managed dispatcher dependency is absent: $path" }
   }
   $head = (git -C $implementationRoot rev-parse HEAD).Trim()
@@ -73,6 +76,8 @@ try {
   }
   if ((Get-ArManagedSha256 $dispatcherPath) -cne [string]$config.dispatcher_sha256 -or
       (Get-ArManagedSha256 $atomicPath) -cne [string]$config.atomic_module_sha256 -or
+      (Get-ArManagedSha256 $restrictedLauncherPath) -cne [string]$config.restricted_launcher_sha256 -or
+      [string]$config.restricted_launcher_sha256 -cne $expectedRestrictedLauncherSha256 -or
       (Get-ArManagedSha256 ([string]$config.python_path)) -cne [string]$config.python_sha256) {
     throw 'Managed dispatcher dependency hash mismatch.'
   }
@@ -83,7 +88,8 @@ try {
   } else {
     throw 'Managed dispatcher mode is invalid.'
   }
-  & ([string]$config.python_path) $dispatcherPath $mode --control-root $controlRoot
+  & ([string]$config.python_path) $restrictedLauncherPath -- ([string]$config.python_path) `
+    $dispatcherPath $mode --control-root $controlRoot
   if ($null -eq $LASTEXITCODE) { throw 'Managed dispatcher did not return an exit code.' }
   $code = [int]$LASTEXITCODE
 } catch {
