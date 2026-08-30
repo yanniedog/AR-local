@@ -76,6 +76,8 @@ def test_source_has_no_general_command_channel() -> None:
     assert "ShellExecute" not in text
     assert "CreateProcessAsUserW" in text
     assert "CreateRestrictedToken" in text
+    assert "LUA_TOKEN" not in text
+    assert "DOMAIN_ALIAS_RID_ADMINS" in text
     assert "TokenHasRestrictions" in text
     assert "CreateWindowStationW" in text
     assert "CreateDesktopW" in text

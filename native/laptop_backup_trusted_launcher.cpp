@@ -159,15 +159,6 @@ Handle current_process_token() {
   return token;
 }
 
-Handle primary_copy(HANDLE source) {
-  Handle primary;
-  if (!DuplicateTokenEx(source, MAXIMUM_ALLOWED, nullptr, SecurityImpersonation, TokenPrimary,
-                        primary.put())) {
-    throw win_error("DuplicateTokenEx(primary)");
-  }
-  return primary;
-}
-
 void lower_integrity_to_medium(HANDLE token) {
   auto current = token_information(token, TokenIntegrityLevel);
   auto* current_label = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(current.data());
@@ -193,14 +184,23 @@ void lower_integrity_to_medium(HANDLE token) {
 }
 
 Handle restricted_token(HANDLE current) {
+  SID_IDENTIFIER_AUTHORITY nt = SECURITY_NT_AUTHORITY;
+  PSID administrators = nullptr;
+  if (!AllocateAndInitializeSid(&nt, 2, SECURITY_BUILTIN_DOMAIN_RID,
+                                DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
+                                &administrators)) {
+    throw win_error("AllocateAndInitializeSid(restriction)");
+  }
+  struct SidGuard { PSID value; ~SidGuard() { if (value) FreeSid(value); } } guard{administrators};
+  SID_AND_ATTRIBUTES disabled{};
+  disabled.Sid = administrators;
   Handle restricted;
-  if (!CreateRestrictedToken(current, LUA_TOKEN | DISABLE_MAX_PRIVILEGE, 0, nullptr, 0, nullptr,
+  if (!CreateRestrictedToken(current, DISABLE_MAX_PRIVILEGE, 1, &disabled, 0, nullptr,
                              0, nullptr, restricted.put())) {
     throw win_error("CreateRestrictedToken");
   }
-  auto result = primary_copy(restricted.get());
-  lower_integrity_to_medium(result.get());
-  return result;
+  lower_integrity_to_medium(restricted.get());
+  return restricted;
 }
 
 void require_user_sid(HANDLE token, const std::wstring& expected) {
