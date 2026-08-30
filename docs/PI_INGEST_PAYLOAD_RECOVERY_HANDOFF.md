@@ -4820,3 +4820,101 @@ explicitly authorized by
 `HANDOFF-20260830T170600+1000-A3-NONADMIN-RUNNER-REDESIGN` and the exact
 transition authority in the preceding entry. There are no conversational or
 unrecorded deviations.
+
+## Entry `HANDOFF-20260830T181625+1000-A3-LATE-REVIEW-CORRECTION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T181625+1000-A3-LATE-REVIEW-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260830T174043+1000-A3-NONADMIN-TRANSITION-PASS` |
+| Created, Australia/Hobart | `2026-08-30T18:16:25+10:00` |
+| Created, UTC | `2026-08-30T08:16:25Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Result | `RUNNING`; natural capture remains protected, but A3 terminal acceptance is blocked pending authenticated terminal verifier source |
+| Controlling plan | `ARL-OPS-001` v1.5; commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Previous authority merge | `e6be1eb6127fe290c0c74d56612d99e293c3d3b4` |
+| Previous handoff Git-blob bytes/SHA-256 | `320778` / `ca580125605e16c062f016a4b38d60d65d544ecc24f9c7c25674b88786e1c7ec` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; no deployment or Pi mutation authorized |
+| Candidate/managed dispatcher | `f214e3249c7968d574e3449edb14792904e1cc1f`; transition remains independently `PASS` |
+| Current phase | A3 natural ingest and first managed-dispatcher backup proof |
+| Prohibited advancement | A3 may not be declared `PASS`; A4 may not begin until the verifier gate below is implemented and passed against preserved natural evidence |
+
+### Reason for correction and immutable prior state
+
+Codex review completed after PR #568 merged and produced five substantive late
+findings. The merge and the prior entry are never rewritten. These findings do
+not invalidate the non-administrator transition, alter the Pi, or justify
+missing the irreplaceable current-day capture. They invalidate only use of the
+prior resume procedure as sufficient evidence for terminal A3 acceptance.
+
+The latest validated observation remains `obs-2026-08-30-69a34aa4c745bb2e`,
+with capture/finalization/v1 publication/dashboard/old-task backup components
+independently `PASS`, observation catalog sequence `332`, catalog through
+sequence `336`, and v2 independently stale. The prior transition evidence and
+hashes remain authoritative and unchanged.
+
+### Late findings, decision and compensating controls
+
+| Finding | Decision | Immediate control |
+|---|---|---|
+| The 00:55 phase trusted `0025-values.json` without rehashing every 00:25 artifact and requiring the recorded `PASS` | `IMPLEMENTED BY THIS DECISION` | Before phase 0055, rehash the 0025 local, Pi and values files; compare every digest with `0025-hashes.json`; require its `result=PASS`, exact script digest and completion timestamp. Any mismatch is `BLOCKED` before 01:00. |
+| A failing SSH/value gate could throw before authenticated failure evidence existed | `IMPLEMENTED BY THIS DECISION` | The unattended caller must capture stdout and stderr separately with create-new files, then create a phase execution record and hash manifest with `FAIL` before throwing. It must never retry the same phase or overwrite evidence. |
+| Timed phase records lacked complete controlled execution identity | `IMPLEMENTED BY THIS DECISION` | Each phase execution record must bind plan ID/version/commit/controlled and normalized hashes, this document-containing authority commit and handoff digest, candidate/protected SHA, operator, timestamps, exact command, evidence paths/hashes, result, deviations and authorization. |
+| Terminal ingest/public-byte and 05:15 backup instructions were not packaged as approved, machine-checkable verifier source | `DEFERRED, FAIL CLOSED` | Preserve all natural evidence, but do not declare A3 `PASS` from ad-hoc inspection. After capture, add exact verifier source on a reviewed PR, publish its digest in a new entry, then run it against the immutable evidence. |
+| Evidence-root creation used check-then-write and non-terminating PowerShell defaults | `IMPLEMENTED BY THIS DECISION` | Set `$ErrorActionPreference='Stop'`; create both generation directory and active pointer with `FileMode.CreateNew`; use a GUID-bearing generation name; reject any existing active pointer and any existing phase artifact. |
+
+The late review comments are evidence on merged PR #568. Their dispositions are
+append-only and do not authorize editing completed evidence. The terminal
+verifier deferral changes no Pi or public state; it tightens acceptance by
+making `BLOCKED` the only lawful outcome until exact source exists.
+
+### Exact unattended capture boundary for 2026-08-31
+
+D-006 and the natural timer remain controlling. The 00:30 freeze and all
+read-only Pi/task/resource/timer/process gates in the previous entry remain in
+force. Before invoking its 0055 phase, the unattended caller must execute this
+additional fail-closed authentication against the unique active evidence root:
+
+```powershell
+$ErrorActionPreference='Stop'
+$root=[IO.Path]::GetFullPath((Get-Content 'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831\ACTIVE_EVIDENCE_PATH.txt' -Raw).Trim())
+$manifestPath=Join-Path $root '0025-hashes.json';$manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
+if($manifest.result-cne'PASS'-or$manifest.script_sha256-cne'd3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a'){throw '00:25 manifest identity failed.'}
+$expected=@{'0025-local.json'=$manifest.local_sha256;'0025-pi.txt'=$manifest.pi_sha256;'0025-values.json'=$manifest.values_sha256}
+foreach($name in $expected.Keys){$path=Join-Path $root $name;if(-not(Test-Path $path -PathType Leaf)-or(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()-cne$expected[$name]){throw "00:25 evidence authentication failed: $name"}}
+```
+
+The caller must wrap each phase invocation, redirecting stdout and stderr to
+new files, and on either success or failure create a new controlled execution
+record before returning. The record schema is the runbook's mandatory schema;
+omitting a field is `BLOCKED`. Never mark a failed preflight `PASS` merely
+because the natural ingest subsequently succeeds.
+
+The natural 01:00 ingest must still be observed and all terminal, database,
+provider/product and public-byte evidence must still be collected and hashed.
+The natural 05:00 task must still run without manual trigger and its dispatcher,
+scheduled record, receipts, catalog, restoration, source identities and residue
+must still be collected and hashed. These collected artifacts are diagnostic
+and preservation evidence until the reviewed verifier gate passes.
+
+### Stop, preservation and next action
+
+No failure in evidence tooling authorizes interference with the natural ingest.
+If a preflight detects an unsafe Pi state before 01:00, record `BLOCKED` and do
+not start anything manually. If only the observer/evidence wrapper fails while
+the Pi remains safe, continue direct read-only observation, preserve all output,
+and retain a procedural `BLOCKED` result. On ingest or publication failure,
+preserve raw state and the previous verified rolling payload; never force or
+rerun for publication-only failure. On backup failure, preserve the existing
+backup/catalog/dispatcher state and never trigger the task manually.
+
+Immediately after the 2026-08-31 evidence is preserved, implement the exact
+terminal-ingest/public-byte and natural-backup verifiers as a separate reviewed
+non-production tooling PR. The verifier must create its results exclusively,
+validate every acceptance condition listed in the previous entry, bind all
+controlled identities, and include failure evidence. Append and merge a new
+entry containing its source digest before executing it. If both verifiers then
+return `PASS`, append A3 terminal `PASS` and begin A4 planning. Until then A4
+remains `BLOCKED`.
