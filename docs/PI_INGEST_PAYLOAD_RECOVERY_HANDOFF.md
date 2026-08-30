@@ -3873,3 +3873,78 @@ documentation-only slice and bind the 2026-08-31 natural ingest plus first
 natural candidate-task 05:00 proof. Only after that proof may A3 be declared
 terminal `PASS` and A4 planning begin. No A4 implementation or Pi deployment
 is authorized by this addendum.
+
+## Entry `HANDOFF-20260830T101500+1000-A3-LAUNCHER-REPAIR-AUTHORIZATION`
+
+This append-only entry records the exact failure of the first compensated A3
+launcher and authorizes a mechanically repaired launcher. It does not edit or
+relabel the preceding authorization, the two UAC `BLOCKED` attempts, or any
+completed ingest, publication, or backup evidence.
+
+| Field | Value |
+|---|---|
+| Previous authority merge | `92c6e9969119ba19807ddf2d4222f3b357aa5e7e` |
+| Previous complete handoff Git-blob SHA-256 | `e6f33b976e8252302f93d249687f565d856dcbe12ec64eaf56c87fd781be653e` |
+| Controlled plan | ARL-OPS-001 v1.4; commit `14dd066099bba393cccf61a280243e43162eedc9`; SHA-256 `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713` |
+| Candidate | `88557b96d4a240dca640285bcb3457751b381667` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Failed launcher | `run-compensated-a3-transition.ps1`; SHA-256 `b0d2ab393b35cf2251c4a8c01706061c75cbbeecfe6661a98f30e7f171ee95c6` |
+| Failure transcript | `compensated-transition-launch-20260830T100742+1000.txt`; SHA-256 `f364db502ecc8d3ed2d0ed73c571c1c93156cd7e8f6cec2cd9d5d643110e1346` |
+| Failed-launch result | `FAIL`, before transition-harness invocation and before mutation |
+| Operator authorization | AR-local operator `jkoka`, renewed by the controlled task instruction `resume` after the prior UAC boundary was disclosed |
+| Result | `RUNNING` until the repaired launcher produces terminal transition evidence |
+
+The failure is reproducible and narrow: the first launcher passed a Python
+program through `python.bat -c`. Windows shim argument handling removed the
+program's embedded double quotes, producing a Python `SyntaxError` during
+authority resolution. The installed task remained Ready and enabled at
+candidate `f214e3249c7968d574e3449edb14792904e1cc1f`, with `LastTaskResult=0`;
+Pi production remained clean, pinned, idle, and without `daily-ingest.lock`.
+No recovery or rollback action was necessary because no mutation began.
+
+The repair replaces only inline `python -c` authority resolution with this
+content-addressed helper:
+
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\resolve-compensated-authority.py`
+
+Required helper SHA-256:
+`04478d68491360db2128c6e0417d21b8646122868e1422e3236ed6415893fd19`.
+The helper was executed against the preceding marker and reproduced authority
+commit `92c6e9969119ba19807ddf2d4222f3b357aa5e7e` and complete handoff digest
+`e6f33b976e8252302f93d249687f565d856dcbe12ec64eaf56c87fd781be653e`.
+
+The only authorized repaired launcher is:
+
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\run-compensated-a3-transition-v2.ps1`
+
+Required launcher SHA-256:
+`edf636c63b67e96d08b86b9c886c5b08bfd928a16a7cc69d0c8c2173558f732c`.
+It preserves the candidate, protected Pi, plan, deadline, prior-task XML,
+receivers, observation date, evidence hashes, transition harness, rollback,
+disk, residue, and acceptance gates from the preceding decision. It adds the
+failed-attempt evidence, pins and invokes the helper as a file, resolves this
+entry's first document-containing commit, and requires that commit to equal
+current `origin/main` before any transition mutation.
+
+Exact execution block:
+
+```powershell
+$ErrorActionPreference='Stop'
+$script='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260830-LATE-VALIDATION\20260830T013500+1000\run-compensated-a3-transition-v2.ps1'
+$expected='edf636c63b67e96d08b86b9c886c5b08bfd928a16a7cc69d0c8c2173558f732c'
+if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected){throw 'Authorized A3 v2 launcher hash mismatch.'}
+if(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+  & $script
+  if($LASTEXITCODE -ne 0){throw "A3 v2 transition failed with exit code $LASTEXITCODE."}
+}else{
+  $command='$ErrorActionPreference=''Stop'';$script='''+$script.Replace("'","''")+''';$expected='''+$expected+''';if((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected){throw ''Authorized A3 v2 launcher hash mismatch inside elevated process.''};& $script'
+  $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  $process=Start-Process -FilePath 'C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded)
+  if($process.ExitCode -ne 0){throw "A3 v2 transition failed with exit code $($process.ExitCode)."}
+}
+```
+
+UAC denial remains `BLOCKED`; no privilege workaround is authorized. A3 still
+becomes terminal `PASS` only after the 2026-08-31 natural ingest and first
+natural candidate-task 05:00 proof. Only then may A4 planning begin. This entry
+does not authorize A4 implementation or any Pi production deployment.
