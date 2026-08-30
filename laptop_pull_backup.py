@@ -54,15 +54,24 @@ from laptop_backup_transport import (
 
 PROTOCOL = "ar-local-laptop-backup-stream-v1"
 PLAN_DOCUMENT_ID = "ARL-OPS-001"
-PLAN_VERSION = "1.4"
-PLAN_GIT_COMMIT = "14dd066099bba393cccf61a280243e43162eedc9"
-PLAN_SHA256 = "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713"
-PLAN_NORMALIZED_RAW_SHA256 = "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4"
+PLAN_VERSION = "1.5"
+PLAN_GIT_COMMIT = "9094a8e115958fcaf2cb36525736bd5e297e6b04"
+PLAN_SHA256 = "a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada"
+PLAN_NORMALIZED_RAW_SHA256 = "f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684"
 PLAN_VALID_RAW_SHA256S = frozenset({
     PLAN_NORMALIZED_RAW_SHA256,
-    "a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d",
+    "d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4",
 })
 LEGACY_PLAN_IDENTITIES = {
+    (
+        PLAN_DOCUMENT_ID,
+        "1.4",
+        "14dd066099bba393cccf61a280243e43162eedc9",
+        "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713",
+    ): frozenset({
+        "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4",
+        "a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d",
+    }),
     (
         PLAN_DOCUMENT_ID,
         "1.3",
@@ -148,7 +157,7 @@ def verify_plan_document(path: Path = PLAN_PATH) -> dict[str, str]:
     canonical = text.replace(PLAN_SHA256, "PLAN_SHA256_PENDING").encode("utf-8")
     if hashlib.sha256(canonical).hexdigest() != PLAN_SHA256:
         raise ValueError("controlled runbook checksum mismatch")
-    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.4` |" not in text:
+    if "| Document ID | `ARL-OPS-001` |" not in text or "| Version | `1.5` |" not in text:
         raise ValueError("controlled runbook identity mismatch")
     normalized_raw = text.encode("utf-8")
     if hashlib.sha256(normalized_raw).hexdigest() != PLAN_NORMALIZED_RAW_SHA256:

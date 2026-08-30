@@ -124,8 +124,8 @@ def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object
 def test_controlled_runbook_checksum_is_current() -> None:
     result = receiver.verify_plan_document()
     assert result["plan_document_id"] == "ARL-OPS-001"
-    assert result["plan_version"] == "1.4"
-    assert result["plan_git_commit"] == "14dd066099bba393cccf61a280243e43162eedc9"
+    assert result["plan_version"] == "1.5"
+    assert result["plan_git_commit"] == "9094a8e115958fcaf2cb36525736bd5e297e6b04"
     assert result["plan_sha256"] == receiver.PLAN_SHA256
     assert result["plan_raw_sha256"] in receiver.PLAN_VALID_RAW_SHA256S
     assert result["plan_normalized_raw_sha256"] == receiver.PLAN_NORMALIZED_RAW_SHA256

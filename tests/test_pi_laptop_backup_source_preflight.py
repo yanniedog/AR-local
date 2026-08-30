@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from argparse import Namespace
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -65,6 +65,11 @@ def test_source_preflight_requires_enabled_and_active_timer(
     for path in (Path(args.production_repo), Path(args.runs_root), Path(args.state_root)):
         path.mkdir(parents=True)
     timer_active = ["active"]
+    local_now = datetime.now(source.WINDOW_TZ)
+    timer_date = local_now.date() + (timedelta(days=1) if local_now.time() >= time(1) else timedelta())
+    timer_next = datetime.combine(timer_date, time(1), source.WINDOW_TZ).strftime(
+        "%a %Y-%m-%d %H:%M:%S %Z"
+    )
 
     def command(*parts: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         del check
@@ -84,7 +89,7 @@ def test_source_preflight_requires_enabled_and_active_timer(
             "--value",
         ):
             return subprocess.CompletedProcess(
-                parts, 0, stdout="Sun 2026-08-30 01:00:00 AEST\n", stderr=""
+                parts, 0, stdout=f"{timer_next}\n", stderr=""
             )
         raise AssertionError(parts)
 
@@ -104,7 +109,7 @@ def test_source_preflight_requires_enabled_and_active_timer(
 
     preflight = source.production_preflight(args)
     assert preflight["daily_timer_active"] == "active"
-    assert preflight["daily_timer_next"] == "Sun 2026-08-30 01:00:00 AEST"
+    assert preflight["daily_timer_next"] == timer_next
     timer_active[0] = "inactive"
     with pytest.raises(ValueError, match="timer is not active"):
         source.production_preflight(args)
