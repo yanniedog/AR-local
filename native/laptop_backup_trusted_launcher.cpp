@@ -152,7 +152,8 @@ std::vector<unsigned char> token_information(HANDLE token, TOKEN_INFORMATION_CLA
 
 Handle current_process_token() {
   Handle token;
-  DWORD access = TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE;
+  DWORD access = TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE |
+                 TOKEN_ADJUST_DEFAULT;
   if (!OpenProcessToken(GetCurrentProcess(), access, token.put())) {
     throw win_error("OpenProcessToken");
   }
