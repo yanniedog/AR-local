@@ -30,6 +30,12 @@ def test_cli_requires_explicit_command_boundary() -> None:
         restricted.main([sys.executable])
 
 
+@pytest.mark.skipif(not elevated_windows(), reason="requires elevated Windows CI token")
+def test_real_elevated_parent_is_quarantined() -> None:
+    with pytest.raises(RuntimeError, match="protected native launcher"):
+        restricted.run_restricted([sys.executable, "-c", "raise SystemExit(0)"])
+
+
 @pytest.mark.skipif(elevated_windows(), reason="PR581 elevated-parent route is quarantined")
 def test_real_restricted_child_propagates_streams_and_exit() -> None:
     windows_only()

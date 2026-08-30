@@ -221,6 +221,10 @@ def run_restricted(command: Sequence[str], api: WindowsSaferApi | None = None) -
         raise RuntimeError("restricted backup child launching is Windows-only")
     if not command or not os.path.isabs(command[0]) or not os.path.isfile(command[0]):
         raise ValueError("restricted child executable must be an existing absolute file")
+    if api is None and bool(ctypes.windll.shell32.IsUserAnAdmin()):
+        raise RuntimeError(
+            "elevated SAFER backup launching is quarantined; use the protected native launcher"
+        )
     api = api or WindowsSaferApi()
     token = api.restricted_token()
     try:
