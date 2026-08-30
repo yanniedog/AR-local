@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
 import json
 import os
@@ -198,6 +199,10 @@ def create_fake_implementation(path: Path) -> tuple[str, str, str, str]:
     return commit, sha256(dispatcher), sha256(atomic), sha256(restricted)
 
 
+@pytest.mark.skipif(
+    os.name == "nt" and bool(ctypes.windll.shell32.IsUserAnAdmin()),
+    reason="PR581 user-writable elevated-parent route is quarantined",
+)
 def test_rendered_runner_executes_hash_bound_detached_dispatcher(tmp_path: Path) -> None:
     implementation = tmp_path / "implementation"
     commit, dispatcher_hash, atomic_hash, restricted_hash = create_fake_implementation(implementation)

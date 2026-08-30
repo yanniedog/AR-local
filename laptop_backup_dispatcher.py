@@ -218,6 +218,14 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     entrypoint = require_within(receiver / str(value["entrypoint"]), receiver, "entrypoint")
     python_path = canonical_unlinked(Path(str(value["python_path"])), "Python path", file=True)
     authority_repo = require_within(Path(str(value["authority_repo"])), receiver_root, "authority repo")
+    trusted_root_value = os.environ.get("AR_TRUSTED_ROOT")
+    if trusted_root_value:
+        trusted_root = canonical_unlinked(Path(trusted_root_value), "trusted launcher root", file=False)
+        receiver_root = require_within(receiver_root, trusted_root, "receiver root")
+        receiver = require_within(receiver, trusted_root, "receiver")
+        entrypoint = require_within(entrypoint, trusted_root, "entrypoint")
+        python_path = require_within(python_path, trusted_root, "Python path")
+        authority_repo = require_within(authority_repo, trusted_root, "authority repo")
     if value["authority_handoff_path"] != "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md":
         raise ValueError("authority handoff path is not exact")
     handoff = require_within(

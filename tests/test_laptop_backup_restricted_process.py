@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ctypes
 import os
 import subprocess
 import sys
@@ -20,11 +21,22 @@ def windows_only() -> None:
         pytest.skip("restricted process integration is Windows-only")
 
 
+def elevated_windows() -> bool:
+    return os.name == "nt" and bool(ctypes.windll.shell32.IsUserAnAdmin())
+
+
 def test_cli_requires_explicit_command_boundary() -> None:
     with pytest.raises(SystemExit, match="usage"):
         restricted.main([sys.executable])
 
 
+@pytest.mark.skipif(not elevated_windows(), reason="requires elevated Windows CI token")
+def test_real_elevated_parent_is_quarantined() -> None:
+    with pytest.raises(RuntimeError, match="protected native launcher"):
+        restricted.run_restricted([sys.executable, "-c", "raise SystemExit(0)"])
+
+
+@pytest.mark.skipif(elevated_windows(), reason="PR581 elevated-parent route is quarantined")
 def test_real_restricted_child_propagates_streams_and_exit() -> None:
     windows_only()
     command = [
@@ -41,6 +53,7 @@ def test_real_restricted_child_propagates_streams_and_exit() -> None:
     assert result.stderr == "child-error\n"
 
 
+@pytest.mark.skipif(elevated_windows(), reason="PR581 elevated-parent route is quarantined")
 def test_real_restricted_child_is_limited(tmp_path: Path) -> None:
     windows_only()
     child = tmp_path / "child.py"
