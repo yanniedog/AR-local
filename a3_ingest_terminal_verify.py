@@ -663,9 +663,7 @@ def validate_public(args: argparse.Namespace, writer: EvidenceWriter, observatio
         raise VerificationError("dates index contains an invalid date") from exc
     expected_index_keys = {
         "schema_version", "dates", "count", "min_date", "latest_date",
-        "dates_index_url", "dated_manifest_url_pattern",
     }
-    expected_base = f"https://github.com/{repository}/releases/download"
     if (
         set(index) != expected_index_keys
         or index.get("schema_version") != 1
@@ -674,8 +672,6 @@ def validate_public(args: argparse.Namespace, writer: EvidenceWriter, observatio
         or index.get("count") != len(dates)
         or index.get("latest_date") != dates[-1]
         or index.get("latest_date") != run_date
-        or index.get("dates_index_url") != f"{expected_base}/app-payload-latest/dates-index.json"
-        or index.get("dated_manifest_url_pattern") != f"{expected_base}/app-payload-{{run_date}}/manifest.json"
     ):
         raise VerificationError("dates index is not independently current")
     report["dates_index"] = {"sha256": sha256_bytes(index_bytes), "latest_date": run_date}
