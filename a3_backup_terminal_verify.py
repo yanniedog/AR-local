@@ -423,17 +423,25 @@ def verify(args: argparse.Namespace, writer: EvidenceWriter) -> Mapping[str, obj
     daily_maximum = datetime.combine(args.date, time(5, 5), HOBART_OFFSET)
     startup_minimum = boot_time + timedelta(minutes=5)
     startup_maximum = startup_minimum + timedelta(minutes=5)
-    natural_pairs = [
-        (dispatch, record)
-        for dispatch, record in paired
-        if (
-            daily_minimum <= datetime.fromisoformat(str(dispatch["started_at"])).astimezone(HOBART_OFFSET) < daily_maximum
-            or (
-                datetime.fromisoformat(str(dispatch["started_at"])).astimezone(HOBART_OFFSET).date() == args.date
-                and startup_minimum <= datetime.fromisoformat(str(dispatch["started_at"])) <= startup_maximum
-            )
-        )
-    ]
+    daily_pairs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    startup_pairs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    for pair in paired:
+        dispatch, _record = pair
+        started = datetime.fromisoformat(str(dispatch["started_at"]))
+        local_started = started.astimezone(HOBART_OFFSET)
+        is_daily = daily_minimum <= local_started < daily_maximum
+        is_startup = local_started.date() == args.date and startup_minimum <= started <= startup_maximum
+        if is_daily and is_startup:
+            raise VerificationError("dispatcher execution ambiguously matches both natural task triggers")
+        if is_daily:
+            daily_pairs.append(pair)
+        if is_startup:
+            startup_pairs.append(pair)
+    if len(daily_pairs) > 1 or len(startup_pairs) > 1:
+        raise VerificationError("dispatcher history contains duplicate executions in a natural trigger window")
+    natural_pairs = [*startup_pairs, *daily_pairs]
+    if matching_pairs[0] not in natural_pairs:
+        raise VerificationError("accepted Task Scheduler execution is not in an authorized natural trigger window")
     if sum(1 for _dispatch, record in natural_pairs if record.get("action") == "BACKUP-LATEST") != 1:
         raise VerificationError("no unique BACKUP-LATEST record is bound to an authorized natural task trigger")
     catalog = validate_catalog_and_receipts(args)

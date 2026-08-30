@@ -205,7 +205,7 @@ def test_scheduled_verifier_accepts_startup_write_then_daily_no_write(tmp_path: 
     assert len(report["records"]) == 2
 
 
-def test_backup_verifier_pairs_dispatcher_and_records_by_completion_time(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_backup_verifier_accepts_startup_write_then_daily_no_write_across_utc_midnight(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     args = SimpleNamespace(date=datetime.fromisoformat("2026-08-31").date())
     writer = object()
     monkeypatch.setattr(backup, "verify_runtime_source", lambda *_: {"status": "PASS"})
