@@ -57,6 +57,7 @@ function Write-ArNonAdminResult {
     handoff_sha256 = $script:manifest.handoff_sha256
     candidate_code_sha = $CandidateCodeSha
     protected_code_sha = $ProtectedCodeSha
+    scheduled_plan_git_commit = $ScheduledPlanGitCommit
     operator = $Operator
     task_name = $TaskName
     implementation_commit = $ImplementationCommit
@@ -98,6 +99,10 @@ if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [Ti
 foreach ($path in @($ImplementationRoot, $Target, $ControlRoot, $EvidenceRoot)) {
   if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is missing: $path" }
 }
+$derivedControlRoot = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
+if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($derivedControlRoot)) {
+  throw 'ControlRoot must be exactly Target\dispatcher-control.'
+}
 foreach ($path in @(
   $RunnerTemplatePath, $RunnerConfigPath, $LegacyRunnerPath, $LegacyPythonPath,
   $LegacyScriptPath, $ManifestPath, $PythonPath
@@ -121,6 +126,7 @@ $script:manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Jso
 if ($script:manifest.plan_document_id -cne 'ARL-OPS-001' -or $script:manifest.plan_version -cne '1.5' -or
     $script:manifest.candidate_code_sha -cne $CandidateCodeSha -or
     $script:manifest.protected_code_sha -cne $ProtectedCodeSha -or
+    $script:manifest.scheduled_plan_git_commit -cne $ScheduledPlanGitCommit -or
     $script:manifest.operator -cne $Operator -or $script:manifest.operator_sid -cne $OperatorSid) {
   throw 'Manifest identity does not match the transition inputs.'
 }

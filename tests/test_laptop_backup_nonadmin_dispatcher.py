@@ -59,6 +59,8 @@ def test_installer_never_mutates_or_triggers_task_scheduler() -> None:
     assert "New-ArLfRemoteScript" in source
     assert "Install-ArManagedRunnerAtomic" in source
     assert "Restore-ArManagedRunnerAtomic" in source
+    assert "ControlRoot must be exactly Target\\dispatcher-control" in source
+    assert "$script:manifest.scheduled_plan_git_commit -cne $ScheduledPlanGitCommit" in source
 
 
 def test_runner_fails_closed_and_binds_every_dependency() -> None:
