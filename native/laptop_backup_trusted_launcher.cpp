@@ -301,10 +301,24 @@ std::vector<wchar_t> minimal_environment() {
   if (!length || length >= MAX_PATH) throw win_error("GetWindowsDirectoryW");
   std::vector<std::wstring> values = {
       L"SystemRoot=" + std::wstring(windows),
+      L"SystemDrive=" + std::wstring(windows, 2),
       L"TEMP=" + std::wstring(windows) + L"\\Temp",
       L"TMP=" + std::wstring(windows) + L"\\Temp",
       L"WINDIR=" + std::wstring(windows),
   };
+  // Retain only identity/profile locations needed by OpenSSH and normal user
+  // data lookup.  PATH and all code-selection variables are intentionally not
+  // inherited; the protected child constructs its authenticated PATH.
+  for (const wchar_t* name : {L"APPDATA", L"HOME", L"HOMEDRIVE", L"HOMEPATH",
+                              L"LOCALAPPDATA", L"USERDOMAIN", L"USERNAME", L"USERPROFILE"}) {
+    DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
+    if (!needed) continue;
+    std::wstring value(needed - 1, L'\0');
+    if (GetEnvironmentVariableW(name, value.data(), needed) != needed - 1) {
+      throw win_error("GetEnvironmentVariableW");
+    }
+    values.push_back(std::wstring(name) + L"=" + value);
+  }
   std::sort(values.begin(), values.end());
   std::vector<wchar_t> block;
   for (const auto& value : values) {
