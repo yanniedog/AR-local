@@ -71,6 +71,7 @@ def test_source_has_no_general_command_channel() -> None:
     assert "CreateProcessAsUserW" in text
     assert "CreateRestrictedToken" in text
     assert "TokenHasRestrictions" in text
+    assert "startup.lpDesktop = noninteractive_desktop" in text
     assert "--restricted-child" in text
 
 

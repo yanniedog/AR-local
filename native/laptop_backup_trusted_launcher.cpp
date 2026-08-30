@@ -308,6 +308,11 @@ DWORD create_as(HANDLE token, const std::wstring& application, std::wstring comm
   auto environment = minimal_environment();
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
+  // Do not inherit the privileged parent's window station and desktop.  An
+  // empty desktop name asks Windows to connect the restricted child to the
+  // noninteractive station selected for its logon session.
+  wchar_t noninteractive_desktop[] = L"";
+  startup.lpDesktop = noninteractive_desktop;
   PROCESS_INFORMATION process{};
   if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, FALSE,
                             CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, environment.data(),
