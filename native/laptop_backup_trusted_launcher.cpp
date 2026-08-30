@@ -313,10 +313,12 @@ std::vector<wchar_t> minimal_environment() {
                               L"LOCALAPPDATA", L"USERDOMAIN", L"USERNAME", L"USERPROFILE"}) {
     DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
     if (!needed) continue;
-    std::wstring value(needed - 1, L'\0');
-    if (GetEnvironmentVariableW(name, value.data(), needed) != needed - 1) {
+    std::wstring value(needed, L'\0');
+    DWORD copied = GetEnvironmentVariableW(name, value.data(), needed);
+    if (copied != needed - 1) {
       throw win_error("GetEnvironmentVariableW");
     }
+    value.resize(copied);
     values.push_back(std::wstring(name) + L"=" + value);
   }
   std::sort(values.begin(), values.end());
