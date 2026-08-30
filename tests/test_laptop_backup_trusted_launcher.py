@@ -61,6 +61,7 @@ def current_sid() -> str:
 
 
 def protect_install(root: Path, sid: str) -> None:
+    subprocess.run(["icacls", str(root), "/setowner", "*S-1-5-32-544", "/T", "/C"], check=True, capture_output=True)
     subprocess.run(["icacls", str(root), "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)(F)", "*S-1-5-32-544:(OI)(CI)(F)", f"*{sid}:(OI)(CI)(RX)"], check=True, capture_output=True)
     for path in root.iterdir():
         subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", "*S-1-5-18:(F)", "*S-1-5-32-544:(F)", f"*{sid}:(RX)"], check=True, capture_output=True)
@@ -110,6 +111,8 @@ def test_elevated_origin_produces_restricted_child(tmp_path: Path) -> None:
     build(launcher, testing=True)
     (install / "operator.sid").write_text(current_sid(), encoding="ascii", newline="")
     (install / "protected.sentinel").write_bytes(b"AR-local trusted launcher sentinel\n")
+    (install / "run_laptop_backup_trusted_child.ps1").write_text("exit 0\n", encoding="ascii", newline="")
+    (install / "trusted-child.json").write_text("{}\n", encoding="ascii", newline="")
     (install / "probe.enabled").write_bytes(b"PROBE")
     protect_install(install, current_sid())
     result = subprocess.run([str(launcher), "--probe"], capture_output=True, text=True, check=False)
