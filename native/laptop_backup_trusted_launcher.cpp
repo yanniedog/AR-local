@@ -337,42 +337,6 @@ std::wstring quote(const std::wstring& value) {
   return result;
 }
 
-std::vector<wchar_t> minimal_environment() {
-  wchar_t windows[MAX_PATH + 1]{};
-  UINT length = GetWindowsDirectoryW(windows, MAX_PATH);
-  if (!length || length >= MAX_PATH) throw win_error("GetWindowsDirectoryW");
-  std::vector<std::wstring> values = {
-      L"SystemRoot=" + std::wstring(windows),
-      L"SystemDrive=" + std::wstring(windows, 2),
-      L"TEMP=" + std::wstring(windows) + L"\\Temp",
-      L"TMP=" + std::wstring(windows) + L"\\Temp",
-      L"WINDIR=" + std::wstring(windows),
-  };
-  // Retain only identity/profile locations needed by OpenSSH and normal user
-  // data lookup.  PATH and all code-selection variables are intentionally not
-  // inherited; the protected child constructs its authenticated PATH.
-  for (const wchar_t* name : {L"APPDATA", L"HOME", L"HOMEDRIVE", L"HOMEPATH",
-                              L"LOCALAPPDATA", L"USERDOMAIN", L"USERNAME", L"USERPROFILE"}) {
-    DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
-    if (!needed) continue;
-    std::wstring value(needed, L'\0');
-    DWORD copied = GetEnvironmentVariableW(name, value.data(), needed);
-    if (copied != needed - 1) {
-      throw win_error("GetEnvironmentVariableW");
-    }
-    value.resize(copied);
-    values.push_back(std::wstring(name) + L"=" + value);
-  }
-  std::sort(values.begin(), values.end());
-  std::vector<wchar_t> block;
-  for (const auto& value : values) {
-    block.insert(block.end(), value.begin(), value.end());
-    block.push_back(L'\0');
-  }
-  block.push_back(L'\0');
-  return block;
-}
-
 class PrivateDesktop {
  public:
   explicit PrivateDesktop(const std::wstring& operator_sid) {
@@ -431,14 +395,13 @@ DWORD wait_for(PROCESS_INFORMATION& process) {
 
 DWORD create_as(HANDLE token, const std::wstring& application, std::wstring command,
                 const std::wstring& working_directory, const std::wstring& operator_sid) {
-  auto environment = minimal_environment();
   PrivateDesktop private_desktop(operator_sid);
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   startup.lpDesktop = private_desktop.startup_name();
   PROCESS_INFORMATION process{};
   if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, FALSE,
-                            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, environment.data(),
+                            CREATE_NO_WINDOW, nullptr,
                             working_directory.c_str(), &startup, &process)) {
     throw win_error("CreateProcessAsUserW");
   }
@@ -447,12 +410,11 @@ DWORD create_as(HANDLE token, const std::wstring& application, std::wstring comm
 
 DWORD create_inherited(const std::wstring& application, std::wstring command,
                        const std::wstring& working_directory) {
-  auto environment = minimal_environment();
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
   if (!CreateProcessW(application.c_str(), command.data(), nullptr, nullptr, FALSE,
-                      CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, environment.data(),
+                      CREATE_NO_WINDOW, nullptr,
                       working_directory.c_str(), &startup, &process)) {
     throw win_error("CreateProcessW");
   }
