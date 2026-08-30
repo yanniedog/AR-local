@@ -113,7 +113,7 @@ def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     result = dispatcher.activate(control, proposed)
     assert result["manifest_sha256"] == digest
     monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
-    monkeypatch.delenv("AR_DISPATCHER_TEST_ADMIN", raising=False)
+    monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "0")
     probe = dispatcher.probe(control)
     assert probe == {
         "ok": True,
