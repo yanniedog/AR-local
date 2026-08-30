@@ -4470,3 +4470,108 @@ After transition `PASS`, append its exact evidence in a fresh documentation-only
 entry and bind the next natural 01:00 ingest plus first natural 05:00 or startup
 dispatcher-backed backup. Only those natural proofs make A3 terminal `PASS` and
 authorize automatic progression to A4 planning.
+
+## Entry `HANDOFF-20260830T174043+1000-A3-NONADMIN-TRANSITION-PASS`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T174043+1000-A3-NONADMIN-TRANSITION-PASS` |
+| Previous handoff entry | `HANDOFF-20260830T173100+1000-A3-NONADMIN-TRANSITION-AUTHORITY` |
+| Created, Australia/Hobart | `2026-08-30T17:40:43+10:00` |
+| Created, UTC | `2026-08-30T07:40:43Z` |
+| Author | Codex unattended for AR-local operator `jkoka` |
+| Previous authority merge | `2d5ce74eb22fdb5aacaf27b2fe4ea2f6acbacc7b` |
+| Previous complete handoff Git-blob SHA-256 | `bd3eb04c1e8175c1756700a064a81e22f3ce49896d73bbd297e44a19667ba059` |
+| Previous complete handoff checkout SHA-256 | `a614387ed6620811352d11ce68fa6e8a028f1944104666b8a3c322b05e4a471c` |
+| Controlling plan | `ARL-OPS-001` v1.5 / DOC-05; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Implementation | PR `#566`; merge `68faf7e13c650af7b1d713f4a604f9978897ce79`; clean detached checkout `C:\code\backups\AR-local-pi5-receiver-68faf7e` |
+| Candidate | Clean detached checkout `C:\code\backups\AR-local-pi5-candidate-f214e32-d008` at `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Protected Pi | Clean, pinned and unchanged at `9302890fcc752cbf90da97d597e972c157d913e3`; ingest inactive; lock absent; timer enabled/active; dashboard healthy |
+| Transition result | `PASS` under the ordinary non-administrator token; Task Scheduler was not changed or triggered |
+| A3 result | `RUNNING`; transition passed, but the first D-006-protected natural ingest and natural dispatcher-backed backup remain mandatory |
+| A4 result | `BLOCKED` pending terminal A3 `PASS` |
+
+### Immutable transition evidence
+
+The unique evidence root is:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-NONADMIN-DISPATCHER-TRANSITION-20260830\20260830T173300+1000`
+
+The transactional installer ran non-elevated and returned `PASS`. It atomically
+replaced only the operator-owned legacy runner, preserved the exact old runner,
+activated the authenticated manifest, wrote the `PASS` activation receipt,
+executed a real installed-runner `PROBE`, and proved that the scheduled task
+remained byte-for-byte and security-descriptor equivalent to its prestate.
+
+| Evidence | SHA-256 |
+|---|---|
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\transition-result.json` | `7b8a8c6eb8a1465fa25e97f57077f84c014ddd3a5a7dfc7e8ccc6034f898cb05` |
+| `executions\20260830T073534Z-0c1227d91c934fa093ed8c0c2f09da1b\installed-runner-probe.txt` | `76334d6008997542742469570ef6bbe60f70899ea7340611ee5428b0db1938d4` |
+| `post-transition-validation.json` | `5929c550e9b99c3f16f1a4c5456a52c22f7d2ec991f1df0abf99019764a534ba` |
+| `post-transition-validate.ps1` | `c3ea20afb0ee7a4ecfba2dbcaef34e6ba581bafe7e2621f78142e93dff2a15d9` |
+| `initial-manifest.json` | `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092` |
+| `runner-config.json` | `b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00` |
+| `gate-evidence.json` | `9a7943550de7cfd5c8ced37414be78aa300e898ca1b5d103ab25d5c659c986a3` |
+
+The independent post-transition validation at
+`2026-08-30T17:40:06.9811842+10:00` returned `PASS` and proved:
+
+- task `\AR-local laptop backup` is Ready/enabled with `LastTaskResult=0`;
+- task XML SHA-256 remains
+  `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`;
+- task SDDL SHA-256 remains
+  `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`;
+- the managed runner SHA-256 is
+  `dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8`;
+- the live activation points to manifest
+  `af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092`,
+  sequence `1`, with a `PASS` receipt;
+- the real installed-runner probe returned `PASS`, `is_admin=false`, candidate
+  `f214e3249c7968d574e3449edb14792904e1cc1f`, and the exact manifest above;
+- implementation and candidate checkouts are clean, detached and exact;
+- no backup or dispatcher helper remained active;
+- laptop free space was `156235186176` bytes, above the 50 GiB floor; and
+- Pi production remained pinned, clean, idle, unlocked, timer-active and
+  dashboard-healthy.
+
+Two non-mutating verification-wrapper defects are retained, not relabelled: the
+first wrapper used invalid `Select-Object -Single`; the corrected wrapper first
+lacked a local byte-array hashing helper. Both stopped before writing a result,
+made no runtime transition, and were corrected in the hashed validation script
+above. The underlying transition and both installed-runner probes passed.
+
+### Mandatory natural proof and next authority
+
+D-006 remains absolute. From `2026-08-31T00:30:00+10:00` through terminal
+validation of the natural ingest, perform no deployment, canary, manual or
+forced ingest, service restart, task change or trigger, package change, backup,
+or publication manipulation. Execute the established fail-closed read-only
+preflight before the freeze and again before 01:00, observe exactly one natural
+`ar-local-daily.service` invocation, and preserve complete raw-attempt,
+completion, contract, ledger, pointer, SQLite/provider-accounting, dashboard,
+and independently downloaded public GitHub evidence. Product- or
+provider-specific gaps must remain attributable and disclosed; they must not
+invalidate otherwise valid products. Never rerun ingest for publication-only
+failure and never overwrite the previous verified rolling payload.
+
+After the natural ingest terminally validates, do not trigger the Windows task.
+Observe its natural 05:00 or startup-plus-five-minute execution. Acceptance
+requires the unchanged task to invoke the managed runner above, the dispatcher
+to select manifest
+`af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092`,
+and at least one immutable `BACKUP-LATEST` `PASS` for observation date
+`2026-08-31`. Validate every intervening scheduled-run record, exact candidate,
+protected and scheduled-plan identities, receipts, catalog append-only hash
+chain, restoration checks, Pi source identity equality, absence of locks,
+partials, helpers and overlap, Ready/enabled task state with zero result, and at
+least 50 GiB free. A later `NO_BACKUP_DATA_WRITE` is acceptable only after the
+same observation was already backed up and all identities prove unchanged.
+
+After terminal evidence, append a new documentation-only entry. If both the
+natural ingest and first natural dispatcher-backed backup pass, mark A3
+terminal `PASS` and immediately begin A4 planning under the controlled runbook.
+On any failure or uncertainty, preserve the previous verified payload and
+backup, record `FAIL` or `BLOCKED`, and keep A4 blocked. No administrator action
+is authorized or required.
