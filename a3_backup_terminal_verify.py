@@ -374,8 +374,8 @@ def verify(args: argparse.Namespace, writer: EvidenceWriter) -> Mapping[str, obj
     task = collect_task_snapshot(args, writer)
     dispatcher = validate_dispatcher(args)
     records = validate_new_records(args)
-    dispatcher_times = [datetime.fromisoformat(str(item["completed_at"])) for item in dispatcher["executions"]]
-    record_times = [datetime.fromisoformat(str(item["completed_at"])) for item in records["records"]]
+    dispatcher_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in dispatcher["executions"])
+    record_times = sorted(datetime.fromisoformat(str(item["completed_at"])) for item in records["records"])
     if len(dispatcher_times) != len(record_times) or any(
         dispatch_time < record_time or dispatch_time - record_time > timedelta(minutes=5)
         for dispatch_time, record_time in zip(dispatcher_times, record_times, strict=True)

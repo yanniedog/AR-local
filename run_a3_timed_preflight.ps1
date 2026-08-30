@@ -17,7 +17,28 @@ param(
 $ErrorActionPreference='Stop'
 Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
 
+function Assert-NoReparsePath([string]$Path,[bool]$AllowMissingLeaf=$false) {
+  $full=[IO.Path]::GetFullPath($Path)
+  $volume=[IO.Path]::GetPathRoot($full)
+  $current=$volume
+  $parts=$full.Substring($volume.Length) -split '[\\/]'
+  for($index=0;$index -lt $parts.Count;$index++) {
+    if([string]::IsNullOrEmpty($parts[$index])) { continue }
+    $current=Join-Path $current $parts[$index]
+    if(Test-Path -LiteralPath $current) {
+      $item=Get-Item -LiteralPath $current -Force -ErrorAction Stop
+      if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Controlled path traverses a reparse point: $current"
+      }
+    } elseif(-not($AllowMissingLeaf -and $index -eq ($parts.Count-1))) {
+      throw "Controlled path component is missing: $current"
+    }
+  }
+  return $full
+}
+
 function Write-NewBytes([string]$Path,[byte[]]$Bytes) {
+  [void](Assert-NoReparsePath $Path $true)
   $stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
   try {$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)} finally {$stream.Dispose()}
 }
@@ -27,7 +48,7 @@ function Write-NewText([string]$Path,[string]$Text) {
 }
 
 function File-Evidence([string]$Root,[string]$Path) {
-  $resolved=[IO.Path]::GetFullPath($Path)
+  $resolved=Assert-NoReparsePath $Path $false
   if(-not $resolved.StartsWith($Root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
     throw "Evidence path escaped root: $Path"
   }
@@ -50,11 +71,23 @@ if($PlanDocumentId -cne 'ARL-OPS-001' -or [string]::IsNullOrWhiteSpace($PlanVers
   throw 'Controlled execution identity is incomplete.'
 }
 
-$root=[IO.Path]::GetFullPath($EvidenceRoot)
+$root=Assert-NoReparsePath $EvidenceRoot $false
 if(-not(Test-Path -LiteralPath $root -PathType Container)) { throw 'Evidence root is missing.' }
 $scriptPath=Join-Path $root 'timed-preflight.ps1'
+if((Assert-NoReparsePath $scriptPath $false) -cne [IO.Path]::GetFullPath($scriptPath)) { throw 'Timed preflight path resolution failed.' }
 if((Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ScriptSha256) {
   throw 'Timed preflight source is unauthenticated.'
+}
+$wrapperSource=Assert-NoReparsePath $PSCommandPath $false
+$wrapperCopy=Join-Path $root 'run_a3_timed_preflight.ps1'
+$wrapperDigest=(Get-FileHash -LiteralPath $wrapperSource -Algorithm SHA256).Hash.ToLowerInvariant()
+if(Test-Path -LiteralPath $wrapperCopy) {
+  [void](Assert-NoReparsePath $wrapperCopy $false)
+  if((Get-FileHash -LiteralPath $wrapperCopy -Algorithm SHA256).Hash.ToLowerInvariant() -cne $wrapperDigest) {
+    throw 'Immutable preflight wrapper evidence changed.'
+  }
+} else {
+  Write-NewBytes $wrapperCopy ([IO.File]::ReadAllBytes($wrapperSource))
 }
 $stdoutPath=Join-Path $root "$Phase-stdout.txt"
 $stderrPath=Join-Path $root "$Phase-stderr.txt"
@@ -112,7 +145,7 @@ try {
     protected_code_sha=$ProtectedCodeSha
     operator=$Operator
     phase=$Phase
-    wrapper_sha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    wrapper_sha256=$wrapperDigest
     preflight_script_sha256=$ScriptSha256
     timestamps=[ordered]@{started_at=$started;completed_at=[DateTimeOffset]::Now.ToString('o')}
     exact_commands=@($effectiveCommand)

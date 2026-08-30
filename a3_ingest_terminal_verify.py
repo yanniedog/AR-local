@@ -660,7 +660,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--observe-natural-start", action="store_true")
     value.add_argument("--preflight-script-sha256", required=True)
     value.add_argument("--preflight-wrapper-sha256", required=True)
-    value.add_argument("--preflight-wrapper-path", default="preflight-wrapper.ps1")
+    value.add_argument("--preflight-wrapper-path", default="run_a3_timed_preflight.ps1")
     value.add_argument("--pi-host", default="ar-local-pi5-lan")
     value.add_argument("--ssh-bin", default="ssh")
     value.add_argument("--github-repository", default="yanniedog/AR-local")
