@@ -2,6 +2,8 @@
 #include <sddl.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cwctype>
 #include <fstream>
 #include <iostream>
@@ -141,23 +143,7 @@ void lower_integrity_to_medium(HANDLE token) {
   }
 }
 
-void grant_child_token_access(HANDLE token, const std::wstring& operator_sid) {
-  std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x0000008a;;;" + operator_sid + L")";
-  PSECURITY_DESCRIPTOR descriptor = nullptr;
-  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-          sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) {
-    throw win_error("ConvertStringSecurityDescriptorToSecurityDescriptorW(token DACL)");
-  }
-  struct DescriptorGuard {
-    PSECURITY_DESCRIPTOR value;
-    ~DescriptorGuard() { if (value) LocalFree(value); }
-  } guard{descriptor};
-  if (!SetKernelObjectSecurity(token, DACL_SECURITY_INFORMATION, descriptor)) {
-    throw win_error("SetKernelObjectSecurity(token DACL)");
-  }
-}
-
-Handle restricted_token(HANDLE current, const std::wstring& operator_sid) {
+Handle restricted_token(HANDLE current) {
   SID_IDENTIFIER_AUTHORITY nt = SECURITY_NT_AUTHORITY;
   PSID administrators = nullptr;
   if (!AllocateAndInitializeSid(&nt, 2, SECURITY_BUILTIN_DOMAIN_RID,
@@ -173,8 +159,37 @@ Handle restricted_token(HANDLE current, const std::wstring& operator_sid) {
                              0, nullptr, restricted.put())) {
     throw win_error("CreateRestrictedToken");
   }
-  grant_child_token_access(restricted.get(), operator_sid);
   return restricted;
+}
+
+Handle inheritable_child_token(HANDLE token) {
+  Handle inherited;
+  if (!DuplicateHandle(GetCurrentProcess(), token, GetCurrentProcess(), inherited.put(),
+                       TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT, TRUE, 0)) {
+    throw win_error("DuplicateHandle(child token)");
+  }
+  return inherited;
+}
+
+HANDLE parse_inherited_handle(const wchar_t* text) {
+  if (!text || !*text || *text == L'+' || *text == L'-') {
+    throw std::runtime_error("inherited token handle is invalid");
+  }
+  errno = 0;
+  wchar_t* end = nullptr;
+  unsigned long long value = _wcstoui64(text, &end, 10);
+  if (errno || !end || *end || !value) throw std::runtime_error("inherited token handle is invalid");
+  return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(value));
+}
+
+void require_same_token(HANDLE expected, HANDLE current) {
+  auto first = token_information(expected, TokenStatistics);
+  auto second = token_information(current, TokenStatistics);
+  auto* a = reinterpret_cast<TOKEN_STATISTICS*>(first.data());
+  auto* b = reinterpret_cast<TOKEN_STATISTICS*>(second.data());
+  if (a->TokenId.LowPart != b->TokenId.LowPart || a->TokenId.HighPart != b->TokenId.HighPart) {
+    throw std::runtime_error("inherited token handle is not the child primary token");
+  }
 }
 
 void require_user_sid(HANDLE token, const std::wstring& expected) {
@@ -328,7 +343,7 @@ DWORD create_as(HANDLE token, const std::wstring& application, std::wstring comm
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
-  if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, FALSE,
+  if (!CreateProcessAsUserW(token, application.c_str(), command.data(), nullptr, nullptr, TRUE,
                             0, nullptr, working_directory.c_str(), &startup, &process)) {
     throw win_error("CreateProcessAsUserW");
   }
@@ -348,13 +363,14 @@ DWORD create_inherited(const std::wstring& application, std::wstring command,
   return wait_for(process);
 }
 
-DWORD restricted_child() {
+DWORD restricted_child(HANDLE inherited_token) {
   std::wstring self = module_path();
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
-  auto token = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT);
-  lower_integrity_to_medium(token.get());
-  validate_token(token.get(), root, true);
+  auto current = current_process_token(TOKEN_QUERY);
+  require_same_token(inherited_token, current.get());
+  lower_integrity_to_medium(inherited_token);
+  validate_token(inherited_token, root, true);
 
   wchar_t system[MAX_PATH + 1]{};
   UINT length = GetSystemDirectoryW(system, MAX_PATH);
@@ -370,11 +386,12 @@ DWORD restricted_child() {
   return create_inherited(powershell, command, root);
 }
 
-DWORD restricted_probe() {
+DWORD restricted_probe(HANDLE inherited_token) {
   std::wstring root = directory_of(module_path());
-  auto token = current_process_token(TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT);
-  lower_integrity_to_medium(token.get());
-  validate_token(token.get(), root, true);
+  auto current = current_process_token(TOKEN_QUERY);
+  require_same_token(inherited_token, current.get());
+  lower_integrity_to_medium(inherited_token);
+  validate_token(inherited_token, root, true);
   return 0;
 }
 
@@ -383,12 +400,13 @@ DWORD parent(const std::vector<std::wstring>& child_arguments) {
   std::wstring root = directory_of(self);
   require_plain_path(root, true);
   auto current = current_process_token(
-      TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE | WRITE_DAC);
-  std::wstring operator_sid = read_operator_sid(root);
-  auto limited = restricted_token(current.get(), operator_sid);
+      TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE);
+  auto limited = restricted_token(current.get());
   validate_token(limited.get(), root, false);
+  auto inherited = inheritable_child_token(limited.get());
   std::wstring command = quote(self);
   for (const auto& argument : child_arguments) command += L" " + quote(argument);
+  command += L" " + std::to_wstring(reinterpret_cast<uintptr_t>(inherited.get()));
   return create_as(limited.get(), self, command, root);
 }
 
@@ -407,8 +425,8 @@ DWORD scheduled_parent() {
 int wmain(int argc, wchar_t** argv) {
   try {
     if (argc == 1) return static_cast<int>(scheduled_parent());
-    if (argc == 2 && std::wstring(argv[1]) == L"--restricted-child") {
-      return static_cast<int>(restricted_child());
+    if (argc == 3 && std::wstring(argv[1]) == L"--restricted-child") {
+      return static_cast<int>(restricted_child(parse_inherited_handle(argv[2])));
     }
     if (argc == 2 && std::wstring(argv[1]) == L"--probe") {
 #ifdef AR_LAUNCHER_TESTING
@@ -418,10 +436,10 @@ int wmain(int argc, wchar_t** argv) {
       return 64;
 #endif
     }
-    if (argc == 2 && std::wstring(argv[1]) == L"--restricted-probe") {
+    if (argc == 3 && std::wstring(argv[1]) == L"--restricted-probe") {
       std::wstring root = directory_of(module_path());
       require_plain_path(join(root, L"probe.enabled"), false);
-      return static_cast<int>(restricted_probe());
+      return static_cast<int>(restricted_probe(parse_inherited_handle(argv[2])));
     }
     std::cerr << "trusted launcher accepts no operator-supplied command\n";
     return 64;
