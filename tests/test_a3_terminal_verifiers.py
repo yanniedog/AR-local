@@ -111,8 +111,6 @@ def test_public_verifier_accepts_attributable_partial_gaps(monkeypatch: pytest.M
         "count": 1,
         "min_date": "2026-05-13",
         "latest_date": run_date,
-        "dates_index_url": f"https://github.com/{repository}/releases/download/app-payload-latest/dates-index.json",
-        "dated_manifest_url_pattern": f"https://github.com/{repository}/releases/download/app-payload-{{run_date}}/manifest.json",
     })
     downloads[v2_url] = payload_bytes({"run_date": "2026-08-21"})
     monkeypatch.setattr(ingest, "download", lambda url, _timeout: downloads[url])
