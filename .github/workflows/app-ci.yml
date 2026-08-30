@@ -15,8 +15,10 @@ on:
       - 'laptop_*.ps1'
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
+      - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
+      - 'run_laptop_backup_nonadmin_dispatcher.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -36,8 +38,10 @@ on:
       - 'laptop_*.ps1'
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
+      - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
+      - 'run_laptop_backup_nonadmin_dispatcher.ps1'
       - 'payload_crypto.py'
       - 'ar_local_pi_runtime.py'
       - 'cleanup_removed_cdr_sector.py'
@@ -109,3 +113,4 @@ jobs:
           python -m pytest -q
           tests/test_laptop_backup_dispatcher.py
           tests/test_laptop_backup_dispatcher_installer.py
+          tests/test_laptop_backup_nonadmin_dispatcher.py
