@@ -5142,3 +5142,44 @@ All D-003, D-006, acceptance, stop, rollback, immutability and A3/A4 controls in
 the preceding authorization entry remain unchanged. A3 still requires both
 reviewed verifiers to return controlled `PASS`; only then may the next
 append-only entry close A3 and begin A4 planning.
+
+## Entry `HANDOFF-20260830T201249+1000-A3-AUTHORITY-REFRESH-CORRECTION`
+
+### Control record and late-review disposition
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T201249+1000-A3-AUTHORITY-REFRESH-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260830T200822+1000-A3-AUTHORITY-RESOLUTION-CORRECTION` |
+| Created | `2026-08-30T20:12:49+10:00` / `2026-08-30T10:12:49Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Result | `RUNNING`; A3 and A4 status is unchanged |
+| Controlling plan | `ARL-OPS-001` v1.5; commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Late review | PR #577 Sourcery finding on stale remote-tracking authority |
+| Disposition | `IMPLEMENTED`: each 00:55 and 05:15 authority reauthentication must first fetch `origin/main` and require it still equals the persisted 00:20 authority |
+
+PR #577 merged before the late review arrived, so its entry remains immutable.
+The final authorization is repeated below. The 00:20 authority resolution is
+unchanged. The 00:55 and 05:15 reauthentication block in the preceding entry is
+superseded only by inserting the exact two lines below immediately after its
+first line, before reading the active pointer or persisted authority:
+
+```powershell
+git -C $V fetch origin main
+if($LASTEXITCODE-ne 0){throw 'Authority refresh failed.'}
+```
+
+This fetch is read-only with respect to Pi production, services, tasks, backups,
+and public payloads and is permitted during the D-006 observation window. If
+remote `main` advanced after the 00:20 authority was persisted, the existing
+strict equality check must return `BLOCKED`; do not update `authority.json`, do
+not select the newer commit, and do not use a manual fallback. This makes the
+00:20 authority an explicit frozen invariant while still detecting remote
+drift. At 05:15 the same rule applies. All other exact commands, hashes,
+acceptance gates, stop controls and evidence requirements remain unchanged.
+
+<!-- A3-VERIFIER-AUTHORIZATION {"schema_version":1,"plan_document_id":"ARL-OPS-001","plan_version":"1.5","plan_git_commit":"9094a8e115958fcaf2cb36525736bd5e297e6b04","plan_sha256":"a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada","observation_date":"2026-08-31","verifier_code_sha":"8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2","candidate_code_sha":"f214e3249c7968d574e3449edb14792904e1cc1f","protected_code_sha":"9302890fcc752cbf90da97d597e972c157d913e3","operator":"jkoka","sources":{"a3_ingest_terminal_verify.py":"da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7","a3_backup_terminal_verify.py":"a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6","a3_verifier_common.py":"f98d3279aa3bd6d4aafa8725f583d1b987626c6c4ad0033f90a543bbfbd28b19","run_a3_timed_preflight.ps1":"587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5","timed-preflight.ps1":"d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a","pi_laptop_backup_source.py":"e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17"},"authorization":"AUTHORIZED","result":"PASS","deviations":[],"deviation_authorization":null} -->
+
+A3 remains incomplete until the natural ingest and backup verifiers both return
+controlled `PASS`. A4 remains blocked until the next append-only entry records
+that dual result.
