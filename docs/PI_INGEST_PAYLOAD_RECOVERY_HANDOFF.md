@@ -4949,3 +4949,117 @@ controlled identities, and include failure evidence. Append and merge a new
 entry containing its source digest before executing it. If both verifiers then
 return `PASS`, append A3 terminal `PASS` and begin A4 planning. Until then A4
 remains `BLOCKED`.
+
+## Entry `HANDOFF-20260830T195500+1000-A3-TERMINAL-VERIFIER-AUTHORIZATION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260830T195500+1000-A3-TERMINAL-VERIFIER-AUTHORIZATION` |
+| Previous handoff entry | `HANDOFF-20260830T181625+1000-A3-LATE-REVIEW-CORRECTION` |
+| Created | `2026-08-30T19:55:00+10:00` / `2026-08-30T09:55:00Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Result | `RUNNING`; verifier source is authorized, but A3 is incomplete until both natural verifiers return controlled `PASS` |
+| Controlling plan | `ARL-OPS-001` v1.5; commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Verifier code | `8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2`; clean detached checkout required |
+| Candidate / protected Pi | `f214e3249c7968d574e3449edb14792904e1cc1f` / `9302890fcc752cbf90da97d597e972c157d913e3` |
+| Observation date | `2026-08-31` only |
+| Advancement | A4 remains `BLOCKED` until a later immutable entry records terminal A3 `PASS` from both verifier results |
+
+The document-containing merge commit and complete handoff Git-blob SHA-256 are
+resolved only after this entry merges. They are mandatory runtime arguments.
+The verifier requires `refs/remotes/origin/main` to equal that merge while
+`HEAD` is clean, detached, and equal to the verifier code SHA.
+
+### Reviewed source authority
+
+PRs #570 through #575 implemented the verifiers and all substantive review
+corrections. Final CI passed with `1326 passed, 11 skipped`; only existing
+openpyxl warnings remained. Sourcery had no actionable final finding, Gemini
+was advisory and unavailable, and no unresolved thread existed on the final
+two PRs when this entry was created. Any later substantive finding requires a
+new append-only correction.
+
+| Authorized Git path | Git-blob SHA-256 |
+|---|---|
+| `a3_ingest_terminal_verify.py` | `da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7` |
+| `a3_backup_terminal_verify.py` | `a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6` |
+| `a3_verifier_common.py` | `f98d3279aa3bd6d4aafa8725f583d1b987626c6c4ad0033f90a543bbfbd28b19` |
+| `run_a3_timed_preflight.ps1` | `587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5` |
+| extracted `timed-preflight.ps1` | `d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a` |
+| `pi_laptop_backup_source.py` | `e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17` |
+
+<!-- A3-VERIFIER-AUTHORIZATION {"schema_version":1,"plan_document_id":"ARL-OPS-001","plan_version":"1.5","plan_git_commit":"9094a8e115958fcaf2cb36525736bd5e297e6b04","plan_sha256":"a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada","observation_date":"2026-08-31","verifier_code_sha":"8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2","candidate_code_sha":"f214e3249c7968d574e3449edb14792904e1cc1f","protected_code_sha":"9302890fcc752cbf90da97d597e972c157d913e3","operator":"jkoka","sources":{"a3_ingest_terminal_verify.py":"da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7","a3_backup_terminal_verify.py":"a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6","a3_verifier_common.py":"f98d3279aa3bd6d4aafa8725f583d1b987626c6c4ad0033f90a543bbfbd28b19","run_a3_timed_preflight.ps1":"587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5","timed-preflight.ps1":"d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a","pi_laptop_backup_source.py":"e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17"},"authorization":"AUTHORIZED","result":"PASS","deviations":[],"deviation_authorization":null} -->
+
+### Exact unattended sequence
+
+At 00:20 create one exclusive generation under
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831`. Extract the approved
+timed-preflight block from the authenticated handoff blob, requiring byte length
+`10702` and the digest above. Copy and authenticate the wrapper, then invoke its
+`0025` phase. Never reuse or delete an active pointer.
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$A='<authority merge>';$H='<handoff blob SHA-256>'
+$P='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';New-Item -ItemType Directory -LiteralPath $P -Force|Out-Null
+$R=Join-Path $P (([DateTimeOffset]::Now.ToString('yyyyMMddTHHmmsszzz').Replace(':',''))+'-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -LiteralPath $R|Out-Null
+$s=[IO.File]::Open((Join-Path $P 'ACTIVE_EVIDENCE_PATH.txt'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$b=[Text.UTF8Encoding]::new($false).GetBytes($R);$s.Write($b,0,$b.Length);$s.Flush($true)}finally{$s.Dispose()}
+python -c "import hashlib,re,subprocess,sys;b=subprocess.check_output(['git','-C',sys.argv[1],'show',sys.argv[2]+':docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md']).replace(b'\r\n',b'\n');m=[x+b'\n' for x in re.findall(br'```powershell\n(.*?)\n```',b,re.S) if len(x+b'\n')==10702 and hashlib.sha256(x+b'\n').hexdigest()=='d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a'];assert len(m)==1;open(sys.argv[3],'xb').write(m[0])" $V $A (Join-Path $R 'timed-preflight.ps1');if($LASTEXITCODE-ne 0){throw 'Timed preflight extraction failed.'}
+$W=Join-Path $V 'run_a3_timed_preflight.ps1';if((Get-FileHash $W -Algorithm SHA256).Hash.ToLowerInvariant()-cne'587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5'){throw 'Wrapper authentication failed.'}
+$args=@{EvidenceRoot=$R;ScriptSha256='d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a';PlanDocumentId='ARL-OPS-001';PlanVersion='1.5';PlanGitCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04';PlanSha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';PlanNormalizedSha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';AuthorityCommit=$A;AuthorityHandoffSha256=$H;CandidateCodeSha='f214e3249c7968d574e3449edb14792904e1cc1f';ProtectedCodeSha='9302890fcc752cbf90da97d597e972c157d913e3';Operator='jkoka'}
+& $W -Phase 0025 @args;if($LASTEXITCODE-ne 0){throw '00:20 controlled preflight failed.'}
+```
+
+At 00:55 recover the unique pointer and run `& $W -Phase 0055 @args`. At
+00:58 invoke the ingest verifier below. It observes but never starts, forces,
+restarts, or reruns the service.
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$A='<authority merge>';$H='<handoff blob SHA-256>'
+$P='C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831';$R=(Get-Content -LiteralPath (Join-Path $P 'ACTIVE_EVIDENCE_PATH.txt') -Raw).Trim()
+$W=Join-Path $V 'run_a3_timed_preflight.ps1';if((Get-FileHash $W -Algorithm SHA256).Hash.ToLowerInvariant()-cne'587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5'){throw 'Wrapper authentication failed.'}
+$args=@{EvidenceRoot=$R;ScriptSha256='d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a';PlanDocumentId='ARL-OPS-001';PlanVersion='1.5';PlanGitCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04';PlanSha256='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada';PlanNormalizedSha256='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684';AuthorityCommit=$A;AuthorityHandoffSha256=$H;CandidateCodeSha='f214e3249c7968d574e3449edb14792904e1cc1f';ProtectedCodeSha='9302890fcc752cbf90da97d597e972c157d913e3';Operator='jkoka'}
+& $W -Phase 0055 @args;if($LASTEXITCODE-ne 0){throw '00:55 controlled preflight failed.'}
+Set-Location -LiteralPath $V
+python .\a3_ingest_terminal_verify.py --date 2026-08-31 --evidence-root $R --observe-natural-start --preflight-script-sha256 d3b8600cac48b7336b0d39da0d6aa60a788ce68a702126de5a6a0f1921157c9a --preflight-wrapper-sha256 587b90cec7949726f372434108a24e52f25c0be422d6555020a195106c70b7f5 --preflight-wrapper-path .\run_a3_timed_preflight.ps1 --plan-document-id ARL-OPS-001 --plan-version 1.5 --plan-git-commit 9094a8e115958fcaf2cb36525736bd5e297e6b04 --plan-sha256 a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada --plan-normalized-sha256 f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684 --authority-commit $A --authority-handoff-sha256 $H --verifier-code-sha 8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2 --verifier-source-sha256 da3bfc8abce19279f7dbd9ea7cad30450f35b2a67b9e1eed716669d13074e8c7 --candidate-code-sha f214e3249c7968d574e3449edb14792904e1cc1f --protected-code-sha 9302890fcc752cbf90da97d597e972c157d913e3 --operator jkoka
+if($LASTEXITCODE-ne 0){throw 'Natural ingest verifier failed.'}
+```
+
+At 05:15, without manually triggering or reinstalling the task, invoke:
+
+```powershell
+$ErrorActionPreference='Stop';$V='C:\code\backups\AR-local-a3-terminal-verifier-8ab4342';$A='<authority merge>';$H='<handoff blob SHA-256>'
+$R=(Get-Content -LiteralPath 'C:\code\backups\AR-local-pi5\evidence\NATURAL-20260831\ACTIVE_EVIDENCE_PATH.txt' -Raw).Trim();Set-Location -LiteralPath $V
+python .\a3_backup_terminal_verify.py --date 2026-08-31 --evidence-root $R --target C:\code\backups\AR-local-pi5 --receiver C:\code\backups\AR-local-pi5-receiver-f214e32 --implementation-root C:\code\backups\AR-local-pi5-receiver-68faf7e --implementation-commit 68faf7e13c650af7b1d713f4a604f9978897ce79 --candidate-root C:\code\backups\AR-local-pi5-candidate-f214e32-d008 --source-helper .\pi_laptop_backup_source.py --source-helper-sha256 e4ee21639740ebcccdefdbdeb6291b398e5467a9c5359c84dc49b667df8a9a17 --task-xml-sha256 aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2 --task-sddl-sha256 6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b --runner-sha256 dd642c7ce8520494104abe9c66f2b0cab9ea9864bc7368e45396f618d67952b8 --dispatcher-config-sha256 b4597ca8c2e4bf205f2c92e904ee9a33b762fc0f5badfc012689635a3023dc00 --dispatcher-manifest-sha256 af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092 --dispatcher-sha256 bb19cee620e8792dbc2eb015af8f53a7e46afda9414d048eebcd010db3fbdbfc --activation-receipt C:\code\backups\AR-local-pi5\dispatcher-control\activation-receipts\00000001-37f93247c88144699631d364c6ac0dee-pass.json --activation-receipt-sha256 7d122e9f96ec22940081fe6ddaa4e54c22a89fea0187cee906b2a09e26233e8b --scheduled-plan-document-id ARL-OPS-001 --scheduled-plan-version 1.4 --scheduled-plan-git-commit 14dd066099bba393cccf61a280243e43162eedc9 --scheduled-plan-sha256 78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713 --scheduled-plan-normalized-sha256 c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4 --scheduled-plan-raw-sha256 a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d --plan-document-id ARL-OPS-001 --plan-version 1.5 --plan-git-commit 9094a8e115958fcaf2cb36525736bd5e297e6b04 --plan-sha256 a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada --plan-normalized-sha256 f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684 --authority-commit $A --authority-handoff-sha256 $H --verifier-code-sha 8ab4342fb8c9ef7b854988eb393c9a3284d0ebd2 --verifier-source-sha256 a6de7a2e86b0cfde725987cafd65a9d867c4e68ac2a278ff3896e1f274f213a6 --candidate-code-sha f214e3249c7968d574e3449edb14792904e1cc1f --protected-code-sha 9302890fcc752cbf90da97d597e972c157d913e3 --operator jkoka
+if($LASTEXITCODE-ne 0){throw 'Natural backup verifier failed.'}
+```
+
+### Acceptance, stop and preservation controls
+
+The ingest verifier must independently prove one natural invocation, terminal
+success, zero restarts/competitors, absent lock, dashboard return, hash-bound
+raw attempts, valid completion/contract/ledger/pointers, SQLite integrity and
+population accounting, attributable product gaps, and separately downloaded
+dated v1, rolling v1, dates-index and asset bytes. V2 remains independent.
+D-003 applies: exclude and disclose invalid individual products without
+discarding valid products; superseded numeric whole-day thresholds do not apply.
+
+The backup verifier must prove the unchanged enabled/Ready task with zero
+result, all authenticated dispatcher identities, the bounded natural trigger
+pair state machine, exactly one accepted `BACKUP-LATEST` for `2026-08-31`, all
+intervening records `PASS`, catalog/receipt/restore/SQLite integrity, Pi source
+identity equality, no lock/partial/helper/overlap, and at least 50 GiB free.
+
+D-006 is absolute from 00:30 through terminal ingest validation: no deployment,
+canary, manual/forced ingest, service restart, task change/trigger, package
+change, backup, or publication manipulation. Unsafe preflight means `BLOCKED`
+without starting anything. Preserve raw/generation state and the previous
+verified payload on failure; never rerun ingest for publication-only failure.
+Preserve existing backup/catalog/dispatcher state on backup failure and never
+trigger the task manually.
+
+No rollback, reinstall, relabel, administrator action, Pi mutation, or public
+payload mutation is authorized. Completed evidence is immutable. After both
+verifiers terminate, append a new entry. Only dual `PASS` may close A3 and
+authorize A4 planning; otherwise record `FAIL` or `BLOCKED` and keep A4 blocked.
