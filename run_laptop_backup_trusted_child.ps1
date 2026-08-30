@@ -55,11 +55,11 @@ try {
   $configFull = Assert-ArTrustedPlainPath $ConfigPath
   $config = Get-Content -LiteralPath $configFull -Raw -ErrorAction Stop | ConvertFrom-Json
   $fields = @(
-    'atomic_path', 'atomic_sha256', 'control_root', 'dispatcher_path', 'dispatcher_sha256',
+    'atomic_path', 'atomic_sha256', 'authority_path', 'control_root', 'dispatcher_path', 'dispatcher_sha256',
     'git_path', 'git_sha256', 'python_path', 'python_sha256', 'schema_version',
-    'scp_path', 'scp_sha256', 'ssh_path', 'ssh_sha256', 'whoami_path', 'whoami_sha256'
+    'receiver_path', 'scp_path', 'scp_sha256', 'ssh_path', 'ssh_sha256', 'whoami_path', 'whoami_sha256'
   )
-  if ($config.schema_version -ne 2 -or
+  if ($config.schema_version -ne 3 -or
       @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0) {
     throw 'Trusted child configuration schema is invalid.'
   }
@@ -68,9 +68,13 @@ try {
   $dispatcher = Assert-ArTrustedPlainPath ([string]$config.dispatcher_path)
   $atomic = Assert-ArTrustedPlainPath ([string]$config.atomic_path)
   $control = Assert-ArTrustedPlainPath ([string]$config.control_root)
+  $receiver = Assert-ArTrustedPlainPath ([string]$config.receiver_path)
+  $authority = Assert-ArTrustedPlainPath ([string]$config.authority_path)
   Assert-ArTrustedWithinRoot $python $trustedRoot 'Python interpreter'
   Assert-ArTrustedWithinRoot $dispatcher $trustedRoot 'Dispatcher'
   Assert-ArTrustedWithinRoot $atomic $trustedRoot 'Dispatcher atomic module'
+  Assert-ArTrustedWithinRoot $receiver $trustedRoot 'Receiver checkout'
+  Assert-ArTrustedWithinRoot $authority $trustedRoot 'Authority checkout'
   if ($atomic -cne (Join-Path ([IO.Path]::GetDirectoryName($dispatcher)) 'laptop_backup_atomic.py')) {
     throw 'Dispatcher atomic module path is not exact.'
   }
@@ -114,10 +118,21 @@ try {
   }
   $env:PATH = (($tools | ForEach-Object { [IO.Path]::GetDirectoryName($_.Path) } | Select-Object -Unique) -join ';')
   $env:AR_TRUSTED_ROOT = $trustedRoot
+  $env:GIT_CONFIG_COUNT = '2'
+  $env:GIT_CONFIG_KEY_0 = 'safe.directory'
+  $env:GIT_CONFIG_VALUE_0 = $receiver
+  $env:GIT_CONFIG_KEY_1 = 'safe.directory'
+  $env:GIT_CONFIG_VALUE_1 = $authority
+  $env:GIT_CONFIG_GLOBAL = 'NUL'
   $env:GIT_OPTIONAL_LOCKS = '0'
   $env:PYTHONNOUSERSITE = '1'
   $env:PYTHONDONTWRITEBYTECODE = '1'
-  & $python -s -E $dispatcher run --control-root $control
+  $finalizeMarker = Join-Path $trustedRoot 'finalize.enabled'
+  if (Test-Path -LiteralPath $finalizeMarker -PathType Leaf) {
+    & $python -B -s -E $dispatcher finalize --control-root $control --output (Join-Path $control 'bootstrap-finalize.json')
+  } else {
+    & $python -B -s -E $dispatcher run --control-root $control
+  }
   if ($null -eq $LASTEXITCODE) { throw 'Dispatcher returned no exit code.' }
   $code = [int]$LASTEXITCODE
 } catch {

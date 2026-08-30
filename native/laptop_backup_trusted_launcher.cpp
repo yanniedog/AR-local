@@ -282,6 +282,10 @@ void require_protected_dependencies(HANDLE token, const std::wstring& root) {
   if (GetFileAttributesW(probe.c_str()) != INVALID_FILE_ATTRIBUTES) {
     require_write_denied(token, probe, false);
   }
+  std::wstring finalize = join(root, L"finalize.enabled");
+  if (GetFileAttributesW(finalize.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    require_write_denied(token, finalize, false);
+  }
 }
 
 void validate_token(HANDLE token, const std::wstring& root, bool require_medium_integrity) {

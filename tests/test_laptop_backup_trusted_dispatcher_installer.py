@@ -38,6 +38,18 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "SSH host must be one strict hostname" in core
     assert "New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited" in source
     assert "ConvertFrom-Json -AsHashtable" not in source + core
+    assert "finalize.enabled" in source
+    assert "Protected semantic-finalization result is invalid" in source
+    assert "& $python -B -s -E $dispatcher activate" in source
+    assert "[ScriptBlock]::Create($coreText)" in source
+    assert "FileShare]::Read" in source
+    assert "ALREADY_INSTALLED" in source
+    assert "Restore-ArTrustedControlRootAtomic" in source
+    assert "rollbackErrors.Add" in source
+    assert "PRESTATE_REJECTED" in source
+    assert "GIT_CONFIG_VALUE_0" in source
+    task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
+    assert "& $PythonPath -B $ScriptPath" in task_runner
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell contract")

@@ -26,11 +26,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
-if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256 -or
-    (Get-FileHash -LiteralPath $corePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $CoreSha256) {
+if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'
 }
-. $corePath
+$coreStream = [IO.File]::Open($corePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+$coreAlgorithm = [Security.Cryptography.SHA256]::Create()
+try {
+  $coreActual = ([BitConverter]::ToString($coreAlgorithm.ComputeHash($coreStream)) -replace '-','').ToLowerInvariant()
+  if ($coreActual -cne $CoreSha256) { throw 'Trusted installer core hash mismatch.' }
+  $coreStream.Position = 0
+  $reader = New-Object IO.StreamReader($coreStream,[Text.UTF8Encoding]::new($false),$true,4096,$true)
+  try { $coreText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+  . ([ScriptBlock]::Create($coreText))
+} finally {
+  $coreAlgorithm.Dispose()
+  $coreStream.Dispose()
+}
 
 function Write-ArTrustedResult {
   param([string]$Result, [string]$ErrorText, [hashtable]$Detail)
@@ -63,6 +74,31 @@ function Write-ArMutationIntent {
   )
 }
 
+function Assert-ArExactInstalledBootstrap {
+  $launcher = Join-Path $InstallRoot 'launcher.exe'
+  if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
+  Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
+    -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+  Assert-ArTrustedRootAcl -Root $InstallRoot
+  Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
+  Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
+  Assert-ArTrustedTaskSddl -Sddl (Get-ArTrustedTaskSddl $TaskName)
+  if ((Test-Path -LiteralPath (Join-Path $InstallRoot 'finalize.enabled')) -or (Test-Path -LiteralPath (Join-Path $InstallRoot 'probe.enabled'))) {
+    throw 'Already-installed protected root retains a probe marker.'
+  }
+  $pointer = Get-Content -LiteralPath (Join-Path $ControlRoot 'active-runner.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+  $manifestHash = Get-ArTrustedSha256 (Join-Path $InstallRoot 'dispatcher-manifest.json')
+  if ([string]$pointer.manifest_sha256 -cne $manifestHash) { throw 'Active dispatcher pointer differs from the installed manifest.' }
+  $installedManifest = Get-Content -LiteralPath (Join-Path $InstallRoot 'dispatcher-manifest.json') -Raw | ConvertFrom-Json
+  $receiptName = '{0:d8}-{1}-pass.json' -f [int]$installedManifest.sequence,[string]$installedManifest.activation_id
+  $receipt = Get-Content -LiteralPath (Join-Path (Join-Path $ControlRoot 'activation-receipts') $receiptName) -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ($receipt.status -cne 'PASS' -or [string]$receipt.manifest_sha256 -cne $manifestHash) { throw 'Installed dispatcher lacks its terminal PASS receipt.' }
+  $prior = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter bootstrap-result.json -File -Recurse | Where-Object { $_.DirectoryName -ne $script:executionRoot } | ForEach-Object {
+    try { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } catch { $null }
+  } | Where-Object { $_.result -ceq 'PASS' -and $_.package_sha256 -ceq $PackageSha256 -and $_.candidate_code_sha -ceq $CandidateCodeSha -and $_.authority_commit -ceq $AuthorityCommit })
+  if ($prior.Count -lt 1) { throw 'Protected evidence has no matching prior bootstrap PASS.' }
+}
+
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $isAdmin = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin -or $identity.User.Value -cne $OperatorSid) { throw 'Trusted bootstrap requires the authorised elevated operator.' }
@@ -82,7 +118,6 @@ if ([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($installFull)) -cne [IO.P
     [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($evidenceFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles)) {
   throw 'InstallRoot and EvidenceRoot must be direct children of the protected Program Files directory.'
 }
-if (Test-Path -LiteralPath $InstallRoot) { throw 'Trusted content-addressed install root already exists.' }
 if ((Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
 $active = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
 if ($active.Count) { throw 'A laptop backup or dispatcher process is already active.' }
@@ -115,21 +150,38 @@ Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 Assert-ArTrustedRootAcl -Root $script:executionRoot
 [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pi-preflight.txt'), (($piOutput -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 
-$oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-$oldInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
-if ($oldTask.State.ToString() -ne 'Ready' -or -not $oldTask.Settings.Enabled -or $oldInfo.LastTaskResult -ne $ExpectedOldTaskLastResult -or
-    $oldTask.Principal.LogonType.ToString() -ne 'S4U' -or $oldTask.Principal.RunLevel.ToString() -ne 'Limited') {
-  throw 'Existing production task state differs from the authorised prestate.'
+if (Test-Path -LiteralPath $InstallRoot) {
+  try {
+    Assert-ArExactInstalledBootstrap
+    $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{ mode='ALREADY_INSTALLED'; install_root=$InstallRoot }
+    Get-Content -LiteralPath $already -Raw
+    exit 0
+  } catch {
+    Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='ALREADY_INSTALLED_REJECTED' } | Out-Null
+    throw
+  }
 }
-$oldXml = Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-$oldXmlPath = Join-Path $script:executionRoot 'pre-bootstrap-task.xml'
-[IO.File]::WriteAllBytes($oldXmlPath, (Get-ArTrustedTaskXmlBytes $TaskName))
-$oldSddl = Get-ArTrustedTaskSddl $TaskName
-[IO.File]::WriteAllText((Join-Path $script:executionRoot 'pre-bootstrap-task.sddl'), $oldSddl, [Text.UTF8Encoding]::new($false))
-if ((Get-ArTrustedSha256 $oldXmlPath) -cne $ExpectedOldTaskXmlSha256 -or
-    (Get-ArTrustedTextSha256 $oldSddl) -cne $ExpectedOldTaskSddlSha256 -or
-    (Get-ArTrustedSddlSemanticSha256 $oldSddl) -cne $ExpectedOldTaskSddlSemanticSha256) {
-  throw 'Existing task is not the authorised prestate.'
+
+try {
+  $oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $oldInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+  if ($oldTask.State.ToString() -ne 'Ready' -or -not $oldTask.Settings.Enabled -or $oldInfo.LastTaskResult -ne $ExpectedOldTaskLastResult -or
+      $oldTask.Principal.LogonType.ToString() -ne 'S4U' -or $oldTask.Principal.RunLevel.ToString() -ne 'Limited') {
+    throw 'Existing production task state differs from the authorised prestate.'
+  }
+  $oldXml = Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $oldXmlPath = Join-Path $script:executionRoot 'pre-bootstrap-task.xml'
+  [IO.File]::WriteAllBytes($oldXmlPath, (Get-ArTrustedTaskXmlBytes $TaskName))
+  $oldSddl = Get-ArTrustedTaskSddl $TaskName
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pre-bootstrap-task.sddl'), $oldSddl, [Text.UTF8Encoding]::new($false))
+  if ((Get-ArTrustedSha256 $oldXmlPath) -cne $ExpectedOldTaskXmlSha256 -or
+      (Get-ArTrustedTextSha256 $oldSddl) -cne $ExpectedOldTaskSddlSha256 -or
+      (Get-ArTrustedSddlSemanticSha256 $oldSddl) -cne $ExpectedOldTaskSddlSemanticSha256) {
+    throw 'Existing task is not the authorised prestate.'
+  }
+} catch {
+  Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='PRESTATE_REJECTED' } | Out-Null
+  throw
 }
 
 $staging = $InstallRoot + '.staging-' + [guid]::NewGuid().ToString('N')
@@ -146,6 +198,8 @@ try {
   Copy-Item -LiteralPath $ControlRoot -Destination $controlPrestate -Recurse -ErrorAction Stop
   Write-ArMutationIntent -Action 'CREATE_PACKAGE_STAGING' -TargetPath $staging
   New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
+  Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $staging
   Expand-ArAuthenticatedPackage -PackagePath $PackagePath -ExpectedSha256 $PackageSha256 -Destination $staging
   Assert-ArTrustedPackageManifest -Root $staging -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
@@ -174,10 +228,12 @@ try {
   $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
   $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
   $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
+  $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
+  $env:GIT_CONFIG_KEY_1 = 'safe.directory'; $env:GIT_CONFIG_VALUE_1 = [string]$trustedConfig.authority_path; $env:GIT_CONFIG_GLOBAL = 'NUL'
   $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'
   $controlChanged = $true
   Write-ArMutationIntent -Action 'ACTIVATE_DISPATCHER_MANIFEST' -TargetPath $ControlRoot
-  & $python -s -E $dispatcher activate --control-root $ControlRoot --manifest $manifest --defer-proof
+  & $python -B -s -E $dispatcher activate --control-root $ControlRoot --manifest $manifest --defer-proof
   if ($LASTEXITCODE -ne 0) { throw 'Protected dispatcher activation failed.' }
 
   $definition = New-ArTrustedTaskDefinition -LauncherPath $launcher -InstallRoot $InstallRoot -Principal $Principal -Enabled $false
@@ -186,8 +242,10 @@ try {
   $installedTaskSddl = Set-ArTrustedTaskSddl -TaskName $TaskName -OperatorSid $OperatorSid
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $false | Out-Null
 
-  $probeMarker = Join-Path $InstallRoot 'probe.enabled'
-  [IO.File]::WriteAllBytes($probeMarker, [Text.Encoding]::ASCII.GetBytes('PROBE'))
+  $probeMarker = Join-Path $InstallRoot 'finalize.enabled'
+  $probeOutput = Join-Path $ControlRoot 'bootstrap-finalize.json'
+  if (Test-Path -LiteralPath $probeOutput) { throw 'Semantic-finalization output already exists.' }
+  [IO.File]::WriteAllBytes($probeMarker, [Text.Encoding]::ASCII.GetBytes('FINALIZE'))
   Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   $probeSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
   $probeDefinition = New-ScheduledTask -Action (New-ScheduledTaskAction -Execute $launcher -WorkingDirectory $InstallRoot) -Settings $probeSettings `
@@ -203,10 +261,18 @@ try {
   $deadline = [DateTimeOffset]::Now.AddMinutes(2)
   do { Start-Sleep -Seconds 1; $probeTask = Get-ScheduledTask -TaskName $probeName; $probeInfo = Get-ScheduledTaskInfo -TaskName $probeName } while ($probeTask.State.ToString() -eq 'Running' -and [DateTimeOffset]::Now -lt $deadline)
   if ($probeTask.State.ToString() -eq 'Running' -or $probeInfo.LastTaskResult -ne 0) { throw 'Disposable protected-token probe failed.' }
+  $probe = Get-Content -LiteralPath $probeOutput -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ($probe.ok -ne $true -or $probe.result -cne 'PASS' -or $probe.is_admin -ne $false -or
+      [string]$probe.operator_sid -cne $OperatorSid -or [string]$probe.candidate_code_sha -cne $CandidateCodeSha) {
+    throw 'Protected semantic-finalization result is invalid.'
+  }
+  Copy-Item -LiteralPath $probeOutput -Destination (Join-Path $script:executionRoot 'semantic-finalization.json') -ErrorAction Stop
   Write-ArMutationIntent -Action 'REMOVE_DISPOSABLE_PROBE' -TargetPath $probeName
   Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop; $probeRegistered = $false
   Write-ArMutationIntent -Action 'REMOVE_PROBE_MARKER' -TargetPath $probeMarker
   Remove-Item -LiteralPath $probeMarker -Force -ErrorAction Stop
+  Write-ArMutationIntent -Action 'REMOVE_SEMANTIC_OUTPUT' -TargetPath $probeOutput
+  Remove-Item -LiteralPath $probeOutput -Force -ErrorAction Stop
   Assert-ArTrustedRootAcl -Root $InstallRoot
 
   Write-ArMutationIntent -Action 'ENABLE_PRODUCTION_TASK_WITHOUT_START' -TargetPath $TaskName
@@ -223,10 +289,21 @@ try {
   }
   Get-Content -LiteralPath $result -Raw
 } catch {
-  $failure = $_.Exception.Message; $rollbackFailure = $null
-  try {
-    if ($probeRegistered) { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_PROBE' -TargetPath $probeName; Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop }
-    if ($mutated) {
+  $failure = $_.Exception.Message
+  $rollbackErrors = New-Object Collections.Generic.List[string]
+  if ($probeRegistered) {
+    try { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_PROBE' -TargetPath $probeName; Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop }
+    catch { $rollbackErrors.Add("probe cleanup: $($_.Exception.Message)") }
+  }
+  if ($controlChanged) {
+    try {
+      Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_CONTROL' -TargetPath $ControlRoot
+      Restore-ArTrustedControlRootAtomic -ControlRoot $ControlRoot -Prestate $controlPrestate `
+        -EvidenceRoot $script:executionRoot -OperatorSid $OperatorSid
+    } catch { $rollbackErrors.Add("control restore: $($_.Exception.Message)") }
+  }
+  if ($mutated) {
+    try {
       Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_PRODUCTION_TASK' -TargetPath $TaskName
       Restore-ArTrustedPriorTask -TaskName $TaskName -TaskXml $oldXml -TaskSddl $oldSddl
       $restoredXml = Join-Path $script:executionRoot 'rollback-task.xml'
@@ -238,16 +315,16 @@ try {
       }
       $restoredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
       if ($restoredTask.State.ToString() -ne 'Ready' -or -not $restoredTask.Settings.Enabled) { throw 'Rollback did not restore a Ready enabled task.' }
+    } catch { $rollbackErrors.Add("task restore: $($_.Exception.Message)") }
+  }
+  foreach ($path in @($staging,$InstallRoot)) {
+    if (Test-Path -LiteralPath $path) {
+      try { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_NEW_ROOT' -TargetPath $path; Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }
+      catch { $rollbackErrors.Add("root cleanup $path`: $($_.Exception.Message)") }
     }
-    if ($controlChanged) {
-      Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_CONTROL' -TargetPath $ControlRoot
-      Remove-Item -LiteralPath $ControlRoot -Recurse -Force -ErrorAction Stop
-      Copy-Item -LiteralPath $controlPrestate -Destination $ControlRoot -Recurse -ErrorAction Stop
-    }
-    foreach ($path in @($staging,$InstallRoot)) { if (Test-Path -LiteralPath $path) { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_NEW_ROOT' -TargetPath $path; Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop } }
-  } catch { $rollbackFailure = $_.Exception.Message }
-  $outcome = if ($null -eq $rollbackFailure) { 'ROLLED_BACK' } else { 'FAIL' }
-  $message = if ($null -eq $rollbackFailure) { $failure } else { "$failure; rollback failed: $rollbackFailure" }
+  }
+  $outcome = if ($rollbackErrors.Count -eq 0) { 'ROLLED_BACK' } else { 'FAIL' }
+  $message = if ($rollbackErrors.Count -eq 0) { $failure } else { "$failure; rollback failures: $($rollbackErrors -join '; ')" }
   Write-ArTrustedResult -Result $outcome -ErrorText $message -Detail @{} | Out-Null
   throw $message
 }

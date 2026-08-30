@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-& $PythonPath $ScriptPath --target $Target --recovery-image $RecoveryImage `
+& $PythonPath -B $ScriptPath --target $Target --recovery-image $RecoveryImage `
   --candidate-code-sha $CandidateCodeSha --protected-code-sha $ProtectedCodeSha `
   --plan-git-commit $PlanGitCommit --operator $Operator
 $code = $LASTEXITCODE

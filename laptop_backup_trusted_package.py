@@ -122,7 +122,8 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
         tools = {name: Path(getattr(args, name)).resolve() for name in ("git", "ssh", "scp", "whoami")}
         trusted = {
-            "schema_version": 2,
+            "schema_version": 3,
+            "authority_path": installed("authority"),
             "atomic_path": installed("laptop_backup_atomic.py"),
             "atomic_sha256": sha256(root / "laptop_backup_atomic.py"),
             "control_root": str(Path(args.control_root)),
@@ -131,6 +132,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "git_path": str(tools["git"]), "git_sha256": sha256(tools["git"]),
             "python_path": installed(str(Path("python") / "python.exe")),
             "python_sha256": sha256(root / "python" / "python.exe"),
+            "receiver_path": installed("receiver"),
             "scp_path": str(tools["scp"]), "scp_sha256": sha256(tools["scp"]),
             "ssh_path": str(tools["ssh"]), "ssh_sha256": sha256(tools["ssh"]),
             "whoami_path": str(tools["whoami"]), "whoami_sha256": sha256(tools["whoami"]),

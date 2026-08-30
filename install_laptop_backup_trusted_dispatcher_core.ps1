@@ -199,11 +199,11 @@ function Assert-ArTrustedChildConfiguration {
   $path = Join-Path $Root 'trusted-child.json'
   $config = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
   $fields = @(
-    'atomic_path','atomic_sha256','control_root','dispatcher_path','dispatcher_sha256',
+    'atomic_path','atomic_sha256','authority_path','control_root','dispatcher_path','dispatcher_sha256',
     'git_path','git_sha256','python_path','python_sha256','schema_version',
-    'scp_path','scp_sha256','ssh_path','ssh_sha256','whoami_path','whoami_sha256'
+    'receiver_path','scp_path','scp_sha256','ssh_path','ssh_sha256','whoami_path','whoami_sha256'
   )
-  if ($config.schema_version -ne 2 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
+  if ($config.schema_version -ne 3 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
       [IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($ControlRoot)) {
     throw 'Trusted child configuration identity is invalid.'
   }
@@ -216,6 +216,13 @@ function Assert-ArTrustedChildConfiguration {
     $actualPath = Assert-ArTrustedPlainPath ([string]$config.($item[0]))
     if ($actualPath -cne (Join-Path $Root $item[2]) -or (Get-ArTrustedSha256 $actualPath) -cne [string]$config.($item[1])) {
       throw "Trusted internal dependency is invalid: $($item[0])"
+    }
+  }
+  foreach ($name in @('receiver_path','authority_path')) {
+    $checkout = Assert-ArTrustedPlainPath ([string]$config.$name)
+    $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    if (-not $checkout.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $checkout -PathType Container)) {
+      throw "Trusted checkout is invalid: $name"
     }
   }
   $system = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
@@ -265,6 +272,46 @@ function Assert-ArTrustedRootAcl {
         throw "Unprivileged write remains on trusted package: $sid"
       }
     }
+  }
+}
+
+function Get-ArTrustedTreeDigest {
+  param([Parameter(Mandatory = $true)][string]$Root)
+  $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+  $items = @()
+  foreach ($file in @(Get-ChildItem -LiteralPath $Root -File -Recurse | Sort-Object FullName)) {
+    $items += [ordered]@{ path = $file.FullName.Substring($rootFull.Length + 1).Replace('\','/'); sha256 = Get-ArTrustedSha256 $file.FullName }
+  }
+  Get-ArTrustedTextSha256 (($items | ConvertTo-Json -Depth 5 -Compress))
+}
+
+function Restore-ArTrustedControlRootAtomic {
+  param(
+    [Parameter(Mandatory = $true)][string]$ControlRoot,
+    [Parameter(Mandatory = $true)][string]$Prestate,
+    [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+    [Parameter(Mandatory = $true)][string]$OperatorSid
+  )
+  $expected = Get-ArTrustedTreeDigest $Prestate
+  $restore = $ControlRoot + '.restore-' + [guid]::NewGuid().ToString('N')
+  $failed = $ControlRoot + '.failed-' + [guid]::NewGuid().ToString('N')
+  Copy-Item -LiteralPath $Prestate -Destination $restore -Recurse -ErrorAction Stop
+  if ((Get-ArTrustedTreeDigest $restore) -cne $expected) { throw 'Control restore staging digest mismatch.' }
+  $movedCurrent = $false
+  try {
+    if (Test-Path -LiteralPath $ControlRoot) { Move-Item -LiteralPath $ControlRoot -Destination $failed -ErrorAction Stop; $movedCurrent = $true }
+    Move-Item -LiteralPath $restore -Destination $ControlRoot -ErrorAction Stop
+  } catch {
+    if (-not (Test-Path -LiteralPath $ControlRoot) -and $movedCurrent -and (Test-Path -LiteralPath $failed)) {
+      Move-Item -LiteralPath $failed -Destination $ControlRoot -ErrorAction SilentlyContinue
+    }
+    throw
+  }
+  if ((Get-ArTrustedTreeDigest $ControlRoot) -cne $expected) { throw 'Restored control digest mismatch.' }
+  if ($movedCurrent -and (Test-Path -LiteralPath $failed)) {
+    $destination = Join-Path $EvidenceRoot 'failed-dispatcher-control'
+    Move-Item -LiteralPath $failed -Destination $destination -ErrorAction Stop
+    Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
   }
 }
 
