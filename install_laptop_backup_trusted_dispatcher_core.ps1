@@ -8,7 +8,6 @@ public static class ArTrustedMoveFile {
 }
 '@
 }
-
 function Move-ArTrustedFileWriteThrough {
   param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Destination)
   if (Test-Path -LiteralPath $Destination) { throw "Write-through destination already exists: $Destination" }
@@ -16,7 +15,6 @@ function Move-ArTrustedFileWriteThrough {
     throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())
   }
 }
-
 function Get-ArTrustedSha256 {
   param([Parameter(Mandatory = $true)][string]$Path)
   $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
@@ -24,7 +22,6 @@ function Get-ArTrustedSha256 {
   try { ([BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
   finally { $algorithm.Dispose(); $stream.Dispose() }
 }
-
 function Get-ArTrustedTextSha256 {
   param([Parameter(Mandatory = $true)][string]$Text)
   $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -33,7 +30,6 @@ function Get-ArTrustedTextSha256 {
     ([BitConverter]::ToString($algorithm.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
   } finally { $algorithm.Dispose() }
 }
-
 function Get-ArTrustedSddlBinarySha256 {
   param([Parameter(Mandatory = $true)][string]$Sddl)
   $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
@@ -600,6 +596,10 @@ function Assert-ArTrustedShortQuarantineState {
           if ($createdName -match '^AR-local-backup-trusted-[0-9a-f]{40}-[0-9a-f]{40}\.staging-[0-9a-f]{32}$') {
             if (Test-Path -LiteralPath $created) { throw 'Legacy long staging source still exists and cannot be reconciled safely.' }
             if ($legacySources.ContainsKey($created)) { throw 'Legacy long staging source is duplicated.' }
+            if ($index + 1 -ge $lines.Count) { throw 'Legacy long staging create lacks its matching rollback intent.' }
+            $rollback = $lines[$index + 1] | ConvertFrom-Json
+            if ([string]$rollback.action -cne 'ROLLBACK_QUARANTINE_NEW_ROOT' -or
+                [IO.Path]::GetFullPath([string]$rollback.target) -cne $created) { throw 'Legacy long staging create lacks its matching rollback intent.' }
             $failedRoots = @(Get-ChildItem -LiteralPath $execution.FullName -Force -Directory -ErrorAction Stop |
               Where-Object { $_.Name -match '^failed-protected-root-[0-9a-f]{32}$' })
             if ($failedRoots.Count -ne 1) { throw 'Legacy long staging journal lacks one exact preserved failed root.' }
@@ -619,7 +619,7 @@ function Assert-ArTrustedShortQuarantineState {
               if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
                   ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) { throw "Legacy preserved failed root grants unprivileged write: $sid" }
             }
-            $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 1))
+            $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 2))
             $legacyClosed += [ordered]@{
               source_path=$created; source_absent=$true; preserved_failed_root=$failedRoot
               preserved_content_trust='UNTRUSTED_OPAQUE_NOT_CONSUMED'

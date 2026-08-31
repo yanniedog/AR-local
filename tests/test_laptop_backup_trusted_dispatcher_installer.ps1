@@ -203,6 +203,7 @@ if ($isAdmin) {
     $legacyRecords = @($reconciliation.legacy_closed_staging)
     if ($legacyRecords.Count -ne 1 -or [string]$legacyRecords[0].source_path -cne $legacySource -or
         -not [bool]$legacyRecords[0].source_absent -or
+        [int]$legacyRecords[0].source_line -ne 2 -or
         [string]$legacyRecords[0].preserved_content_trust -cne 'UNTRUSTED_OPAQUE_NOT_CONSUMED') {
       throw 'Closed legacy long staging journal was not preserved in reconciliation evidence.'
     }
