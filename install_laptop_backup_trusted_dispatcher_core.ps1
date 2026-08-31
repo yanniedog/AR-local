@@ -335,6 +335,9 @@ function Assert-ArTrustedRootAcl {
   foreach ($path in @($Root) + @(Get-ChildItem -LiteralPath $Root -Force -Recurse | ForEach-Object FullName)) {
     $acl = Get-Acl -LiteralPath $path -ErrorAction Stop
     if (-not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $path" }
+    $ownerSid = $acl.Owner
+    try { $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
+    if ($ownerSid -cne 'S-1-5-32-544') { throw "Trusted package owner is not Administrators: $path" }
     $effective = @{
       'S-1-5-18' = [Security.AccessControl.FileSystemRights]0
       'S-1-5-32-544' = [Security.AccessControl.FileSystemRights]0
@@ -346,8 +349,8 @@ function Assert-ArTrustedRootAcl {
           ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) {
         throw "Unprivileged write remains on trusted package: $sid"
       }
-      if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny -and $effective.ContainsKey($sid)) {
-        throw "Required trusted principal has a deny ACE: $sid"
+      if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny) {
+        throw "Trusted package contains a deny ACE: $sid"
       }
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $effective.ContainsKey($sid)) {
         $effective[$sid] = $effective[$sid] -bor $rule.FileSystemRights
@@ -371,6 +374,32 @@ function Get-ArTrustedInvocationContractSha256 {
   Get-ArTrustedTextSha256 (($items | ConvertTo-Json -Depth 5 -Compress))
 }
 
+function ConvertTo-ArTrustedCanonicalJson {
+  param([Parameter(Mandatory = $false)]$Value)
+  if ($null -eq $Value) { return 'null' }
+  if ($Value -is [bool]) { if ($Value) { return 'true' } else { return 'false' } }
+  if ($Value -is [string]) { return ($Value | ConvertTo-Json -Compress) }
+  if ($Value -is [byte] -or $Value -is [sbyte] -or $Value -is [int16] -or $Value -is [uint16] -or
+      $Value -is [int32] -or $Value -is [uint32] -or $Value -is [int64] -or $Value -is [uint64] -or
+      $Value -is [single] -or $Value -is [double] -or $Value -is [decimal]) {
+    return ([Convert]::ToString($Value,[Globalization.CultureInfo]::InvariantCulture))
+  }
+  if ($Value -is [Collections.IDictionary]) {
+    $names = @($Value.Keys | ForEach-Object { [string]$_ } | Sort-Object)
+    $parts = @($names | ForEach-Object { (ConvertTo-ArTrustedCanonicalJson $_) + ':' + (ConvertTo-ArTrustedCanonicalJson $Value[$_]) })
+    return '{' + ($parts -join ',') + '}'
+  }
+  if ($Value -is [Management.Automation.PSCustomObject]) {
+    $names = @($Value.PSObject.Properties.Name | Sort-Object)
+    $parts = @($names | ForEach-Object { (ConvertTo-ArTrustedCanonicalJson $_) + ':' + (ConvertTo-ArTrustedCanonicalJson $Value.$_) })
+    return '{' + ($parts -join ',') + '}'
+  }
+  if ($Value -is [Collections.IEnumerable]) {
+    return '[' + (@($Value | ForEach-Object { ConvertTo-ArTrustedCanonicalJson $_ }) -join ',') + ']'
+  }
+  throw "Unsupported canonical JSON type: $($Value.GetType().FullName)"
+}
+
 function Assert-ArTrustedCatalogBaseline {
   param(
     [Parameter(Mandatory = $true)][string]$Target,
@@ -380,11 +409,13 @@ function Assert-ArTrustedCatalogBaseline {
     [Parameter(Mandatory = $true)][string]$ExpectedCatalogFinalEntrySha256,
     [Parameter(Mandatory = $true)][string]$ExpectedLatestVerifiedSha256,
     [Parameter(Mandatory = $true)][long]$ExpectedLatestVerifiedSize,
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedCatalogEntrySha256,
     [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptRelativePath,
     [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptSha256,
     [Parameter(Mandatory = $true)][long]$ExpectedAcceptedReceiptSize,
     [Parameter(Mandatory = $true)][string]$ExpectedAcceptedObservationId,
-    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedArchiveSha256
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedArchiveSha256,
+    [Parameter(Mandatory = $true)][long]$ExpectedAcceptedArchiveSize
   )
   if ([IO.Path]::IsPathRooted($ExpectedAcceptedReceiptRelativePath) -or
       $ExpectedAcceptedReceiptRelativePath -match '(^|[\\/])\.\.([\\/]|$)') {
@@ -394,39 +425,68 @@ function Assert-ArTrustedCatalogBaseline {
   $catalogPath = Join-Path $Target 'catalog\generations.jsonl'
   $latestPath = Join-Path $Target 'catalog\latest-verified.json'
   $receiptPath = Join-Path $Target $ExpectedAcceptedReceiptRelativePath
+  $archivePath = Join-Path ([IO.Path]::GetDirectoryName($receiptPath)) 'observation.tar.zst'
   if (-not [IO.Path]::GetFullPath($receiptPath).StartsWith($targetFull + '\',[StringComparison]::OrdinalIgnoreCase)) {
     throw 'Accepted receipt path escapes the backup target.'
   }
-  foreach ($path in @($catalogPath,$latestPath,$receiptPath)) {
+  foreach ($path in @($catalogPath,$latestPath,$receiptPath,$archivePath)) {
     Assert-ArTrustedPlainPath $path | Out-Null
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Catalog baseline file is absent: $path" }
   }
   $catalog = Get-Item -LiteralPath $catalogPath -ErrorAction Stop
   $latest = Get-Item -LiteralPath $latestPath -ErrorAction Stop
   $receipt = Get-Item -LiteralPath $receiptPath -ErrorAction Stop
+  $archive = Get-Item -LiteralPath $archivePath -ErrorAction Stop
   if ($catalog.Length -ne $ExpectedCatalogSize -or (Get-ArTrustedSha256 $catalogPath) -cne $ExpectedCatalogSha256 -or
       $latest.Length -ne $ExpectedLatestVerifiedSize -or (Get-ArTrustedSha256 $latestPath) -cne $ExpectedLatestVerifiedSha256 -or
-      $receipt.Length -ne $ExpectedAcceptedReceiptSize -or (Get-ArTrustedSha256 $receiptPath) -cne $ExpectedAcceptedReceiptSha256) {
+      $receipt.Length -ne $ExpectedAcceptedReceiptSize -or (Get-ArTrustedSha256 $receiptPath) -cne $ExpectedAcceptedReceiptSha256 -or
+      $archive.Length -ne $ExpectedAcceptedArchiveSize -or (Get-ArTrustedSha256 $archivePath) -cne $ExpectedAcceptedArchiveSha256) {
     throw 'Catalog baseline bytes differ from the authenticated prestate.'
   }
   $catalogLines = @([IO.File]::ReadAllLines($catalogPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
   if ($catalogLines.Count -lt 1) { throw 'Catalog baseline is empty.' }
-  $final = $catalogLines[-1] | ConvertFrom-Json
+  $entries = @()
+  $prior = $null
+  for ($index = 0; $index -lt $catalogLines.Count; $index++) {
+    $entry = $catalogLines[$index] | ConvertFrom-Json
+    if ($null -eq $entry -or $entry -is [Array] -or [int]$entry.sequence -ne ($index + 1) -or
+        (($null -eq $prior -and $null -ne $entry.previous_entry_sha256) -or ($null -ne $prior -and [string]$entry.previous_entry_sha256 -cne $prior))) {
+      throw 'Catalog baseline sequence or previous-entry link is invalid.'
+    }
+    $entryDigestPattern = [regex]'"entry_sha256":"(?<digest>[0-9a-f]{64})",'
+    $digestMatches = $entryDigestPattern.Matches($catalogLines[$index])
+    if ($digestMatches.Count -ne 1) { throw 'Catalog baseline entry digest field is not canonical.' }
+    $canonicalMaterial = $entryDigestPattern.Replace($catalogLines[$index],'',1)
+    $calculated = Get-ArTrustedTextSha256 ($canonicalMaterial + "`n")
+    if ([string]$entry.entry_sha256 -cne $calculated -or $digestMatches[0].Groups['digest'].Value -cne $calculated) {
+      throw 'Catalog baseline entry digest is invalid.'
+    }
+    $prior = $calculated
+    $entries += $entry
+  }
+  $final = $entries[-1]
   $pointer = Get-Content -LiteralPath $latestPath -Raw -ErrorAction Stop | ConvertFrom-Json
   $accepted = Get-Content -LiteralPath $receiptPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  $pointerMatches = @($entries | Where-Object {
+    [string]$_.entry_sha256 -ceq $ExpectedAcceptedCatalogEntrySha256 -and [string]$_.receipt_path -ceq $ExpectedAcceptedReceiptRelativePath.Replace('\','/') -and
+    [string]$_.receipt_sha256 -ceq $ExpectedAcceptedReceiptSha256 -and [string]$_.kind -ceq 'observation'
+  })
   if ([int]$final.sequence -ne $ExpectedCatalogFinalSequence -or [string]$final.entry_sha256 -cne $ExpectedCatalogFinalEntrySha256 -or
+      [string]$pointer.catalog_entry_sha256 -cne $ExpectedAcceptedCatalogEntrySha256 -or $pointerMatches.Count -ne 1 -or
       [string]$pointer.receipt_path -cne $ExpectedAcceptedReceiptRelativePath.Replace('\','/') -or
       [string]$pointer.receipt_sha256 -cne $ExpectedAcceptedReceiptSha256 -or
       [string]$accepted.checks.observation.latest_pointer.generation_id -cne $ExpectedAcceptedObservationId -or
-      [string]$accepted.archive_sha256 -cne $ExpectedAcceptedArchiveSha256) {
+      [string]$accepted.archive_sha256 -cne $ExpectedAcceptedArchiveSha256 -or [long]$accepted.archive_bytes -ne $ExpectedAcceptedArchiveSize) {
     throw 'Catalog baseline identities differ from the authenticated prestate.'
   }
   [ordered]@{
     catalog_path=$catalogPath; catalog_size=$catalog.Length; catalog_sha256=$ExpectedCatalogSha256
     final_sequence=$ExpectedCatalogFinalSequence; final_entry_sha256=$ExpectedCatalogFinalEntrySha256
     latest_verified_path=$latestPath; latest_verified_size=$latest.Length; latest_verified_sha256=$ExpectedLatestVerifiedSha256
+    accepted_catalog_entry_sha256=$ExpectedAcceptedCatalogEntrySha256
     accepted_receipt_path=$receiptPath; accepted_receipt_size=$receipt.Length; accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256
-    accepted_observation_id=$ExpectedAcceptedObservationId; accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
+    accepted_observation_id=$ExpectedAcceptedObservationId; accepted_archive_path=$archivePath
+    accepted_archive_size=$archive.Length; accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   }
 }
 

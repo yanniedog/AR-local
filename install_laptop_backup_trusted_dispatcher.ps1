@@ -26,11 +26,13 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedCatalogFinalEntrySha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedLatestVerifiedSha256,
   [Parameter(Mandatory = $true)][long]$ExpectedLatestVerifiedSize,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedCatalogEntrySha256,
   [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptRelativePath,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedReceiptSha256,
   [Parameter(Mandatory = $true)][long]$ExpectedAcceptedReceiptSize,
   [Parameter(Mandatory = $true)][string]$ExpectedAcceptedObservationId,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedArchiveSha256,
+  [Parameter(Mandatory = $true)][long]$ExpectedAcceptedArchiveSize,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
   [Parameter(Mandatory = $true)][string]$PreExecutionManifestPath,
@@ -39,6 +41,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$script:authorizedDeviations = @()
+$script:deviationAuthorization = $null
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'
@@ -72,8 +76,8 @@ function Write-ArTrustedResult {
     started_at = $script:startedAt; completed_at = [DateTimeOffset]::UtcNow.ToString('o')
     exact_commands = @($script:exactCommand); result = $Result; error = $ErrorText; evidence = $Detail
     evidence_files = $files
-    deviations = @('D-011','D-012')
-    deviation_authorization = [ordered]@{ authority_commit=$AuthorityCommit; handoff_sha256=$HandoffSha256 }
+    deviations = @($script:authorizedDeviations)
+    deviation_authorization = $script:deviationAuthorization
   }
   $path = Join-Path $script:executionRoot 'bootstrap-result.json'
   [IO.File]::WriteAllText($path, (($record | ConvertTo-Json -Depth 10 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
@@ -90,11 +94,29 @@ function Write-ArMutationIntent {
   )
 }
 
+function Set-ArTrustedDeviationAuthorization {
+  param([Parameter(Mandatory = $true)][string]$Root)
+  $handoffPath = Join-Path $Root 'authority\docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+  if (-not (Test-Path -LiteralPath $handoffPath -PathType Leaf) -or (Get-ArTrustedSha256 $handoffPath) -cne $HandoffSha256) {
+    throw 'Protected authority handoff does not match the authenticated digest.'
+  }
+  $handoffText = [IO.File]::ReadAllText($handoffPath,[Text.UTF8Encoding]::new($false))
+  foreach ($decision in @('D-011','D-012')) {
+    $heading = '(?m)^### Append-only deviation decision ' + [char]96 + [regex]::Escape($decision) + [char]96
+    if ($handoffText -notmatch $heading) {
+      throw "Protected authority handoff does not authorize $decision."
+    }
+  }
+  $script:authorizedDeviations = @('D-011','D-012')
+  $script:deviationAuthorization = [ordered]@{ authority_commit=$AuthorityCommit; handoff_sha256=$HandoffSha256 }
+}
+
 function Assert-ArExactInstalledBootstrap {
   $launcher = Join-Path $InstallRoot 'launcher.exe'
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+  Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
@@ -151,9 +173,11 @@ $invocationParameters = [ordered]@{
   expected_catalog_sha256=$ExpectedCatalogSha256; expected_catalog_size=$ExpectedCatalogSize
   expected_catalog_final_sequence=$ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256=$ExpectedCatalogFinalEntrySha256
   expected_latest_verified_sha256=$ExpectedLatestVerifiedSha256; expected_latest_verified_size=$ExpectedLatestVerifiedSize
+  expected_accepted_catalog_entry_sha256=$ExpectedAcceptedCatalogEntrySha256
   expected_accepted_receipt_relative_path=$ExpectedAcceptedReceiptRelativePath
   expected_accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size=$ExpectedAcceptedReceiptSize
   expected_accepted_observation_id=$ExpectedAcceptedObservationId; expected_accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
+  expected_accepted_archive_size=$ExpectedAcceptedArchiveSize
   installer_sha256=$InstallerSha256; core_sha256=$CoreSha256
   pre_execution_manifest_path=[IO.Path]::GetFullPath($PreExecutionManifestPath); pre_execution_manifest_sha256='<SELF_SHA256>'
   pi_host=$PiHost
@@ -174,9 +198,11 @@ $expectedPreExecution = [ordered]@{
   expected_catalog_sha256 = $ExpectedCatalogSha256; expected_catalog_size = $ExpectedCatalogSize
   expected_catalog_final_sequence = $ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256 = $ExpectedCatalogFinalEntrySha256
   expected_latest_verified_sha256 = $ExpectedLatestVerifiedSha256; expected_latest_verified_size = $ExpectedLatestVerifiedSize
+  expected_accepted_catalog_entry_sha256 = $ExpectedAcceptedCatalogEntrySha256
   expected_accepted_receipt_relative_path = $ExpectedAcceptedReceiptRelativePath
   expected_accepted_receipt_sha256 = $ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size = $ExpectedAcceptedReceiptSize
   expected_accepted_observation_id = $ExpectedAcceptedObservationId; expected_accepted_archive_sha256 = $ExpectedAcceptedArchiveSha256
+  expected_accepted_archive_size = $ExpectedAcceptedArchiveSize
   invocation_contract_schema = 1; invocation_host_path = [IO.Path]::GetFullPath((Join-Path $PSHOME 'powershell.exe'))
   invocation_script_path = [IO.Path]::GetFullPath($PSCommandPath); invocation_contract_sha256 = $invocationContractSha256
   rollback_procedure = 'RESTORE_TASK_CONTROL_AND_QUARANTINE_V1'; preflight_min_free_bytes = [long]50GB
@@ -188,9 +214,10 @@ $catalogArguments = @{
   Target=$Target; ExpectedCatalogSha256=$ExpectedCatalogSha256; ExpectedCatalogSize=$ExpectedCatalogSize
   ExpectedCatalogFinalSequence=$ExpectedCatalogFinalSequence; ExpectedCatalogFinalEntrySha256=$ExpectedCatalogFinalEntrySha256
   ExpectedLatestVerifiedSha256=$ExpectedLatestVerifiedSha256; ExpectedLatestVerifiedSize=$ExpectedLatestVerifiedSize
+  ExpectedAcceptedCatalogEntrySha256=$ExpectedAcceptedCatalogEntrySha256
   ExpectedAcceptedReceiptRelativePath=$ExpectedAcceptedReceiptRelativePath; ExpectedAcceptedReceiptSha256=$ExpectedAcceptedReceiptSha256
   ExpectedAcceptedReceiptSize=$ExpectedAcceptedReceiptSize; ExpectedAcceptedObservationId=$ExpectedAcceptedObservationId
-  ExpectedAcceptedArchiveSha256=$ExpectedAcceptedArchiveSha256
+  ExpectedAcceptedArchiveSha256=$ExpectedAcceptedArchiveSha256; ExpectedAcceptedArchiveSize=$ExpectedAcceptedArchiveSize
 }
 $catalogBaseline = Assert-ArTrustedCatalogBaseline @catalogArguments
 $freeBytes = [long](Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free
@@ -304,6 +331,7 @@ try {
   Expand-ArAuthenticatedPackage -PackagePath $PackagePath -ExpectedSha256 $PackageSha256 -Destination $staging
   Assert-ArTrustedPackageManifest -Root $staging -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+  Set-ArTrustedDeviationAuthorization -Root $staging
   Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Assert-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Write-ArMutationIntent -Action 'PUBLISH_PROTECTED_ROOT' -TargetPath $InstallRoot

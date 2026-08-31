@@ -27,6 +27,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ExpectedOldTaskSddlSemanticSha256" in source
     assert "ExpectedCatalogSha256" in source
     assert "ExpectedAcceptedReceiptSha256" in source
+    assert "ExpectedAcceptedCatalogEntrySha256" in source
+    assert "ExpectedAcceptedArchiveSize" in source
     assert "PreExecutionManifestPath" in source
     assert "PreExecutionManifestSha256" in source
     assert "RecoveryImage" in source
@@ -62,7 +64,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "post-bootstrap-catalog.json" in source
     assert "invocation_contract_sha256" in source
     assert "RESTORE_TASK_CONTROL_AND_QUARANTINE_V1" in source
-    assert "deviations = @('D-011','D-012')" in source
+    assert "Set-ArTrustedDeviationAuthorization" in source
+    assert "deviations = @($script:authorizedDeviations)" in source
     assert "ExpectedControlSddlSha256" in source
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
@@ -75,6 +78,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
     assert "Trusted operator lacks read and execute access" in core
     assert "Trusted administrator principal lacks full control" in core
+    assert "Trusted package owner is not Administrators" in core
+    assert "Catalog baseline entry digest is invalid" in core
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner

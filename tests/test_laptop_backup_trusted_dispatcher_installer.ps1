@@ -72,18 +72,27 @@ try {
   $receiptRelative = 'observations/2026-08-31/test/receipt.json'
   $receiptPath = Join-Path $catalogRoot $receiptRelative
   New-Item -ItemType Directory -Path $catalogDir,(Split-Path $receiptPath -Parent) -Force | Out-Null
-  [IO.File]::WriteAllText((Join-Path $catalogDir 'generations.jsonl'),('{"sequence":1,"entry_sha256":"' + ('c' * 64) + '"}' + "`n"),[Text.UTF8Encoding]::new($false))
-  [IO.File]::WriteAllText($receiptPath,('{"archive_sha256":"' + ('d' * 64) + '","checks":{"observation":{"latest_pointer":{"generation_id":"obs-test"}}}}' + "`n"),[Text.UTF8Encoding]::new($false))
+  $archivePath = Join-Path (Split-Path $receiptPath -Parent) 'observation.tar.zst'
+  [IO.File]::WriteAllBytes($archivePath,[Text.Encoding]::ASCII.GetBytes('archive'))
+  $archiveHash = Get-ArTrustedSha256 $archivePath
+  [IO.File]::WriteAllText($receiptPath,('{"archive_bytes":7,"archive_sha256":"' + $archiveHash + '","checks":{"observation":{"latest_pointer":{"generation_id":"obs-test"}}}}' + "`n"),[Text.UTF8Encoding]::new($false))
   $receiptHash = Get-ArTrustedSha256 $receiptPath
-  [IO.File]::WriteAllText((Join-Path $catalogDir 'latest-verified.json'),('{"receipt_path":"' + $receiptRelative + '","receipt_sha256":"' + $receiptHash + '"}' + "`n"),[Text.UTF8Encoding]::new($false))
+  $material = [ordered]@{ kind='observation'; previous_entry_sha256=$null; receipt_path=$receiptRelative; receipt_sha256=$receiptHash; sequence=1 }
+  $entryHash = Get-ArTrustedTextSha256 ((ConvertTo-ArTrustedCanonicalJson $material) + "`n")
+  $entry = [ordered]@{ entry_sha256=$entryHash; kind='observation'; previous_entry_sha256=$null; receipt_path=$receiptRelative; receipt_sha256=$receiptHash; sequence=1 }
+  [IO.File]::WriteAllText((Join-Path $catalogDir 'generations.jsonl'),((ConvertTo-ArTrustedCanonicalJson $entry) + "`n"),[Text.UTF8Encoding]::new($false))
+  $latest = [ordered]@{ catalog_entry_sha256=$entryHash; receipt_path=$receiptRelative; receipt_sha256=$receiptHash }
+  [IO.File]::WriteAllText((Join-Path $catalogDir 'latest-verified.json'),((ConvertTo-ArTrustedCanonicalJson $latest) + "`n"),[Text.UTF8Encoding]::new($false))
   $catalogPath = Join-Path $catalogDir 'generations.jsonl'
   $latestPath = Join-Path $catalogDir 'latest-verified.json'
   $baseline = @{
     Target=$catalogRoot; ExpectedCatalogSha256=Get-ArTrustedSha256 $catalogPath; ExpectedCatalogSize=(Get-Item $catalogPath).Length
-    ExpectedCatalogFinalSequence=1; ExpectedCatalogFinalEntrySha256=('c' * 64)
+    ExpectedCatalogFinalSequence=1; ExpectedCatalogFinalEntrySha256=$entryHash
     ExpectedLatestVerifiedSha256=Get-ArTrustedSha256 $latestPath; ExpectedLatestVerifiedSize=(Get-Item $latestPath).Length
+    ExpectedAcceptedCatalogEntrySha256=$entryHash
     ExpectedAcceptedReceiptRelativePath=$receiptRelative; ExpectedAcceptedReceiptSha256=$receiptHash
-    ExpectedAcceptedReceiptSize=(Get-Item $receiptPath).Length; ExpectedAcceptedObservationId='obs-test'; ExpectedAcceptedArchiveSha256=('d' * 64)
+    ExpectedAcceptedReceiptSize=(Get-Item $receiptPath).Length; ExpectedAcceptedObservationId='obs-test'
+    ExpectedAcceptedArchiveSha256=$archiveHash; ExpectedAcceptedArchiveSize=7
   }
   Assert-ArTrustedCatalogBaseline @baseline | Out-Null
   [IO.File]::AppendAllText($catalogPath,'drift',[Text.UTF8Encoding]::new($false))
