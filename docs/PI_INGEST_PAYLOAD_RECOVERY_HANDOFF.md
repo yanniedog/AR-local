@@ -5510,7 +5510,7 @@ pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
 | Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
 | Documentation source | clean `origin/main` worktree at `c40c57b39846866bd2b7c05c9255f50d31f9c755`; pre-append handoff Git-blob SHA-256 `330212f84565ba532373b486daa6045ed2f475c97c3cd880156f9555e016e4d8` |
 | Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; service inactive, timer enabled/active, lock absent and dashboard HTTP 200 at authorization preflight |
-| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; security hardening PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merged as final candidate `4428f12089576523e41de40fb08c29cbf8fe60ab` |
+| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merge `4428f12089576523e41de40fb08c29cbf8fe60ab`; final hardening PR #587 head `80b42b2dbd63a04d0e5006d23cd26d9ca7bd7042`, merged as candidate `8182ba8245569395ddab3c5fd1e2ee549c475eb8` |
 | Result | implementation and authority decision `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
 | Deviations | append-only decisions `D-011` and `D-012` below |
 
@@ -5518,7 +5518,10 @@ pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
 
 PR #584 replaced the withdrawn D-009 design with a trusted-parent bootstrap;
 PR #586 then preserved ACE inheritance provenance in semantic SDDL and enforced
-the exact candidate-and-authority-derived protected-root names.
+the exact candidate-and-authority-derived protected-root names. PR #587 made
+the installer consume a typed, hash-bound pre-execution manifest; moved package,
+canonical-manifest, authority-currentness and control-state checks before task
+mutation; preserved restored raw SDDL; and made package Git metadata reproducible.
 The scheduled task will enter an administrator-protected native launcher before
 it reads any operator-writable configuration or code. The launcher derives a
 restricted token with `CreateRestrictedToken`, proves the expected integrity
@@ -5538,18 +5541,24 @@ hosted Windows job passed those exact contracts. All substantive review
 findings were implemented and resolved. The advisory Gemini jobs failed
 independently and are not required gates. Merge alone is not runtime acceptance.
 
+PR #587's final head also passed the hosted Windows PowerShell 5.1 dispatcher
+contract, Linux payload-builder suite, `bot-feedback-gate` and Sourcery review.
+Its focused local installer/dispatcher suite passed 20 tests. Findings covering
+canonical JSON, pending/pointer/receipt state, expired idempotent recovery,
+future timestamps and typed manifest fields were implemented and resolved.
+
 Exact immutable source blobs at final candidate
-`4428f12089576523e41de40fb08c29cbf8fe60ab` are:
+`8182ba8245569395ddab3c5fd1e2ee549c475eb8` are:
 
 | Path | Bytes | Git-blob SHA-256 |
 |---|---:|---|
-| `install_laptop_backup_trusted_dispatcher.ps1` | 25051 | `158faa2ba8bfba3489aaeaffcbf76578f2177b163d3aa5b87d3e87fa48afb4b8` |
-| `install_laptop_backup_trusted_dispatcher_core.ps1` | 20653 | `845a6b77fb9c0d66350a218453eee9064b6ada1792dd6de2cfd45d9049fa8858` |
-| `laptop_backup_trusted_package.py` | 8480 | `0961a765d58c1b7dde8ab590b57fa8376faa3f369218cc34de60c9d186d44ad5` |
+| `install_laptop_backup_trusted_dispatcher.ps1` | 27897 | `5aaf70b7487b6bfbc2d0a3257ae88a1717f8eee9663e67d7fac018930c4f31e9` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 23253 | `e8f21d17abcbb286c6aa40ca4ebf1cf595c7208807338e6c58ad4c75a76fe668` |
+| `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
 | `native/laptop_backup_trusted_launcher.cpp` | 18969 | `03d359cdb1b3ba0e5763daad803d964a00cf25581d64088b56db86f83b140071` |
 | `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
 | `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
-| `laptop_backup_dispatcher.py` | 43497 | `4776c83a85eb80fbedecdc9c913aa246aecb7fe16fb36622d47e9bd53d7f33be` |
+| `laptop_backup_dispatcher.py` | 44905 | `1757d9eb4041802961d304b240c3c07799a2a45582deb055f9fe29d382be08db` |
 | `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
 
 ### Authenticated live prestate
@@ -5610,13 +5619,15 @@ This entry authorizes a two-stage, fail-closed binding:
 3. outside D-006, create clean detached candidate and authority checkouts, build
    the native launcher reproducibly, generate an expiring dispatcher manifest,
    and build one deterministic protected package using only candidate
-   `4428f12089576523e41de40fb08c29cbf8fe60ab` and that authority merge;
+   `8182ba8245569395ddab3c5fd1e2ee549c475eb8` and that authority merge;
 4. before elevation, write an immutable pre-execution manifest recording every
    input/output path, byte length and SHA-256, the complete installer command,
    rollback procedure, current task/Pi/space/process gates and plan identity;
 5. authenticate that pre-execution manifest and execute the installer exactly
    once with the operator's elevated token. No other elevated command is
-   authorized. The installer itself must reauthenticate all hashes and gates.
+   authorized. The installer must consume its exact path and SHA-256, require
+   typed agreement with every invocation parameter, preserve it in protected
+   evidence and reauthenticate all hashes and gates.
 
 Reason: eliminate an impossible self-hash while preserving exact byte binding.
 Risk: an operator-writable staging file could be replaced between validation
@@ -5648,6 +5659,21 @@ remains its `dispatcher-control`; the recovery image remains
 `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; operator
 SID remains `S-1-5-21-689213601-40760280-3596424081-1001`; plan and protected
 Pi identities remain those in this control record.
+
+The authenticated no-write catalog baseline captured at
+`2026-08-31T10:22:13+10:00` is:
+
+| Catalog item | Exact baseline |
+|---|---|
+| `catalog/generations.jsonl` | 236234 bytes; SHA-256 `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511`; final sequence 336, kind `macro`, entry SHA-256 `368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420` |
+| `catalog/latest-verified.json` | 316 bytes; SHA-256 `737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`; observation catalog entry SHA-256 `6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68` |
+| latest accepted receipt | `observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json`; 3392 bytes; SHA-256 `7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea` |
+| accepted observation | `obs-2026-08-30-69a34aa4c745bb2e`; date `2026-08-30`; archive SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b` |
+
+The bootstrap must hash these files immediately before and after transition and
+prove exact equality. Any startup trigger, helper or external write that changes
+the baseline blocks transition and requires fresh append-only authority; it
+cannot be accepted as installer activity.
 
 Terminal bootstrap acceptance requires a protected-root ACL denying the
 operator write access, exact package population, exact detached repositories,
