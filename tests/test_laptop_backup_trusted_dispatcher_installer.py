@@ -92,6 +92,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.count("Move-ArTrustedFailedRootToQuarantine -Path") >= 2
     assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in core
     assert "Set-ArTrustedRootAcl -Root $path -OperatorSid $OperatorSid" in core
+    assert core.index("'/grant:r' $treeGrants") < core.index("'/inheritance:r' '/T' '/C'")
     assert "Assert-ArTrustedShortQuarantineState" in source
     assert "RECOVERY_COMPLETE_SHORT_PROTECTED_QUARANTINE" in core
     assert "Unjournaled short bootstrap or quarantine root exists" in core

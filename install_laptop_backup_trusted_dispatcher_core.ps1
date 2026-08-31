@@ -346,12 +346,21 @@ function Set-ArTrustedRootAcl {
   & $icacls $Root '/setowner' '*S-1-5-32-544' '/T' '/C' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to set trusted package owner.' }
   $item = Get-Item -LiteralPath $Root -Force -ErrorAction Stop
-  $grants = if ($item.PSIsContainer) {
-    @('*S-1-5-18:(OI)(CI)(F)','*S-1-5-32-544:(OI)(CI)(F)',"*$OperatorSid`:(OI)(CI)(RX)")
+  if ($item.PSIsContainer) {
+    $treeGrants = @('*S-1-5-18:(OI)(CI)(F)','*S-1-5-32-544:(OI)(CI)(F)',"*$OperatorSid`:(OI)(CI)(RX)")
+    & $icacls $Root '/grant:r' $treeGrants '/T' '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to grant trusted package tree ACL.' }
+    if (@(Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop).Count -gt 0) {
+      $effectiveGrants = @('*S-1-5-18:(F)','*S-1-5-32-544:(F)',"*$OperatorSid`:(RX)")
+      & $icacls (Join-Path $Root '*') '/grant:r' $effectiveGrants '/T' '/C' | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'Failed to grant effective trusted descendant ACL.' }
+    }
   } else {
-    @('*S-1-5-18:(F)','*S-1-5-32-544:(F)',"*$OperatorSid`:(RX)")
+    $fileGrants = @('*S-1-5-18:(F)','*S-1-5-32-544:(F)',"*$OperatorSid`:(RX)")
+    & $icacls $Root '/grant:r' $fileGrants '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to grant trusted file ACL.' }
   }
-  & $icacls $Root '/inheritance:r' '/grant:r' $grants '/T' '/C' | Out-Null
+  & $icacls $Root '/inheritance:r' '/T' '/C' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to protect trusted package ACL.' }
 }
 

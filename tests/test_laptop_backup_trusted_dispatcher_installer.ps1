@@ -157,7 +157,6 @@ if ($isAdmin) {
     $priorJournal = Join-Path $priorExecution 'mutation-journal.jsonl'
     [IO.File]::WriteAllText($priorJournal,(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
     Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
-    Set-ArTrustedRootAcl -Root $priorJournal -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
     $script:OperatorSid = $operatorSidForAcl
     $script:executionRoot = $currentExecution
