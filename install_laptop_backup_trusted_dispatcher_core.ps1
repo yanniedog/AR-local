@@ -8,7 +8,6 @@ public static class ArTrustedMoveFile {
 }
 '@
 }
-
 function Move-ArTrustedFileWriteThrough {
   param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Destination)
   if (Test-Path -LiteralPath $Destination) { throw "Write-through destination already exists: $Destination" }
@@ -16,7 +15,6 @@ function Move-ArTrustedFileWriteThrough {
     throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())
   }
 }
-
 function Get-ArTrustedSha256 {
   param([Parameter(Mandatory = $true)][string]$Path)
   $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
@@ -24,7 +22,6 @@ function Get-ArTrustedSha256 {
   try { ([BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
   finally { $algorithm.Dispose(); $stream.Dispose() }
 }
-
 function Get-ArTrustedTextSha256 {
   param([Parameter(Mandatory = $true)][string]$Text)
   $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -33,7 +30,6 @@ function Get-ArTrustedTextSha256 {
     ([BitConverter]::ToString($algorithm.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
   } finally { $algorithm.Dispose() }
 }
-
 function Get-ArTrustedSddlBinarySha256 {
   param([Parameter(Mandatory = $true)][string]$Sddl)
   $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
@@ -457,29 +453,21 @@ function Assert-ArTrustedRecoverablePathAcl {
   }
   if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Recoverable operator lacks read and execute access at $Path" }
 }
-
 function Assert-ArTrustedRecoverableRootAcl {
-  param(
-    [Parameter(Mandatory = $true)][string]$Root,
-    [Parameter(Mandatory = $true)][string]$OperatorSid
-  )
+  param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$OperatorSid)
   foreach ($path in @($Root) + @(Get-ChildItem -LiteralPath $Root -Force -Recurse | ForEach-Object FullName)) {
     Assert-ArTrustedRecoverablePathAcl -Path $path -OperatorSid $OperatorSid
   }
 }
-
 function Get-ArTrustedJournalPrefixIdentity {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][int]$LineCount
-  )
+  param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][int]$LineCount)
   if ($LineCount -lt 1) { throw 'Journal prefix line count must be positive.' }
   $bytes = [IO.File]::ReadAllBytes($Path)
   $seen = 0
   $prefixLength = -1
   for ($index = 0; $index -lt $bytes.Length; $index++) {
     if ($bytes[$index] -eq 10) {
-      $seen++
+      $seen += 1
       if ($seen -eq $LineCount) { $prefixLength = $index + 1; break }
     }
   }
@@ -488,14 +476,10 @@ function Get-ArTrustedJournalPrefixIdentity {
   [Array]::Copy($bytes,0,$prefix,0,$prefixLength)
   $algorithm = [Security.Cryptography.SHA256]::Create()
   try {
-    [pscustomobject]@{
-      bytes = [long]$prefixLength
-      lines = [int]$LineCount
-      sha256 = ([BitConverter]::ToString($algorithm.ComputeHash($prefix)) -replace '-','').ToLowerInvariant()
-    }
+    [pscustomobject]@{ bytes=[long]$prefixLength; lines=[int]$LineCount;
+      sha256=([BitConverter]::ToString($algorithm.ComputeHash($prefix)) -replace '-','').ToLowerInvariant() }
   } finally { $algorithm.Dispose() }
 }
-
 function Assert-ArTrustedRootAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
@@ -505,7 +489,6 @@ function Assert-ArTrustedRootAcl {
     Assert-ArTrustedSinglePathAcl -Path $path -OperatorSid $OperatorSid
   }
 }
-
 function Get-ArTrustedQuarantineInventory {
   param([Parameter(Mandatory = $true)][string]$Root)
   $files = @()
@@ -518,7 +501,6 @@ function Get-ArTrustedQuarantineInventory {
   }
   $files
 }
-
 function Write-ArTrustedFailureObserved {
   param([Parameter(Mandatory = $true)][string]$Message)
   $path = Join-Path $script:executionRoot 'failure-observed.json'
@@ -537,19 +519,14 @@ function Write-ArTrustedFailureObserved {
   }
   $path
 }
-
 function Move-ArTrustedFailedRootToQuarantine {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
     [Parameter(Mandatory = $true)][string]$OperatorSid,
     [string]$ProgramFilesRoot = $env:ProgramFiles
   )
-  # The content-addressed install/evidence names deliberately exceed one
-  # hundred characters.  Nesting a failed package tree below the execution
-  # evidence root can cross legacy MAX_PATH in icacls/Get-Acl and prevent both
-  # rollback and the terminal result from being written.  Keep the tree intact
-  # under one short, protected Program Files sibling and bind every byte from
-  # the normal execution evidence instead.
+  # Avoid legacy MAX_PATH by keeping failed package trees under one short,
+  # protected Program Files sibling and binding every byte from normal evidence.
   $quarantine = Join-Path $ProgramFilesRoot ('ARLBQ-' + [guid]::NewGuid().ToString('N'))
   Assert-ArTrustedPlainPath $quarantine | Out-Null
   if (Test-Path -LiteralPath $quarantine) { throw 'Short protected quarantine path already exists.' }
@@ -577,7 +554,6 @@ function Move-ArTrustedFailedRootToQuarantine {
   }
   [pscustomobject]@{ quarantine_path=$quarantine; record_path=$recordPath; file_count=$files.Count }
 }
-
 function Assert-ArTrustedShortQuarantineState {
   param(
     [Parameter(Mandatory = $true)][string]$OperatorSid,
@@ -589,6 +565,8 @@ function Assert-ArTrustedShortQuarantineState {
   $destinations = @{}
   $sources = @{}
   $createdStaging = @{}
+  $legacySources = @{}; $legacyRoots = @{}
+  $legacyClosed = @()
   $evidenceRoots = @(Get-ChildItem -LiteralPath $programFiles -Force -Directory -ErrorAction Stop | Where-Object {
     $_.Name -match '^AR-local-backup-evidence-[0-9a-f]{40}-[0-9a-f]{40}$'
   })
@@ -607,13 +585,51 @@ function Assert-ArTrustedShortQuarantineState {
         Set-ArTrustedRootAcl -Root $journalPath -OperatorSid $OperatorSid
       }
       Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
-      $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
+      $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)))
+      if (@($lines | Where-Object { $_.Length -eq 0 }).Count -gt 0) { throw 'Mutation journal contains an empty physical line.' }
       for ($index = 0; $index -lt $lines.Count; $index++) {
         $entry = $lines[$index] | ConvertFrom-Json
         if ([string]$entry.action -ceq 'CREATE_PACKAGE_STAGING') {
           $created = [IO.Path]::GetFullPath([string]$entry.target)
-          if ([IO.Path]::GetDirectoryName($created) -cne $programFiles -or
-              [IO.Path]::GetFileName($created) -notmatch '^ARLBS-[0-9a-f]{32}$' -or $createdStaging.ContainsKey($created)) {
+          $createdName = [IO.Path]::GetFileName($created)
+          if ([IO.Path]::GetDirectoryName($created) -cne $programFiles) { throw 'Created staging root is outside the controlled Program Files root.' }
+          if ($createdName -match '^AR-local-backup-trusted-[0-9a-f]{40}-[0-9a-f]{40}\.staging-[0-9a-f]{32}$') {
+            if (Test-Path -LiteralPath $created) { throw 'Legacy long staging source still exists and cannot be reconciled safely.' }
+            if ($legacySources.ContainsKey($created)) { throw 'Legacy long staging source is duplicated.' }
+            if ($index + 1 -ge $lines.Count) { throw 'Legacy long staging create lacks its matching rollback intent.' }
+            $rollback = $lines[$index + 1] | ConvertFrom-Json
+            if ([string]$rollback.action -cne 'ROLLBACK_QUARANTINE_NEW_ROOT' -or
+                [IO.Path]::GetFullPath([string]$rollback.target) -cne $created) { throw 'Legacy long staging create lacks its matching rollback intent.' }
+            $failedRoots = @(Get-ChildItem -LiteralPath $execution.FullName -Force -Directory -ErrorAction Stop |
+              Where-Object { $_.Name -match '^failed-protected-root-[0-9a-f]{32}$' })
+            if ($failedRoots.Count -ne 1) { throw 'Legacy long staging journal lacks one exact preserved failed root.' }
+            $failedRoot = $failedRoots[0].FullName
+            if ($legacyRoots.ContainsKey($failedRoot)) { throw 'Legacy preserved failed root is duplicated.' }
+            Assert-ArTrustedPlainPath $failedRoot | Out-Null
+            $failedAcl = Get-Acl -LiteralPath $failedRoot -ErrorAction Stop
+            $failedOwner = $failedAcl.Owner
+            try { $failedOwner = ([Security.Principal.NTAccount]$failedAcl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
+            if (-not $failedAcl.AreAccessRulesProtected -or $failedOwner -cne 'S-1-5-32-544') { throw 'Legacy preserved failed root is not protected and administrator-owned.' }
+            $dangerous = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
+              [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+              [Security.AccessControl.FileSystemRights]::TakeOwnership
+            foreach ($rule in $failedAcl.Access) {
+              $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+              if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny) { throw "Legacy preserved failed root contains a deny ACE: $sid" }
+              if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+                  ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) { throw "Legacy preserved failed root grants unprivileged write: $sid" }
+            }
+            $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 2))
+            $legacyClosed += [ordered]@{
+              source_path=$created; source_absent=$true; preserved_failed_root=$failedRoot
+              preserved_content_trust='UNTRUSTED_OPAQUE_NOT_CONSUMED'
+              source_journal=$journalPath; source_journal_prefix_sha256=$prefix.sha256
+              source_journal_prefix_bytes=$prefix.bytes; source_line=$prefix.lines
+            }
+            $legacySources[$created]=$true; $legacyRoots[$failedRoot]=$true
+            continue
+          }
+          if ($createdName -notmatch '^ARLBS-[0-9a-f]{32}$' -or $createdStaging.ContainsKey($created)) {
             throw 'Created short staging root identity is invalid or duplicated.'
           }
           $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 1))
@@ -655,7 +671,6 @@ function Assert-ArTrustedShortQuarantineState {
       }
     }
   }
-
   foreach ($created in @($createdStaging.Values)) {
     if ($sources.ContainsKey([string]$created.source_path) -or
         -not (Test-Path -LiteralPath ([string]$created.source_path) -PathType Container)) { continue }
@@ -713,7 +728,10 @@ function Assert-ArTrustedShortQuarantineState {
       files=@(Get-ArTrustedQuarantineInventory -Root $transaction.quarantine_path)
     }
   }
-  $record = [ordered]@{ schema_version=1; verified_at=[DateTimeOffset]::UtcNow.ToString('o'); transactions=$verified }
+  $record = [ordered]@{
+    schema_version=1; verified_at=[DateTimeOffset]::UtcNow.ToString('o')
+    transactions=$verified; legacy_closed_staging=$legacyClosed
+  }
   $path = Join-Path $script:executionRoot 'short-quarantine-reconciliation.json'
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-ArTrustedCanonicalJson $record) + "`n")
   $stream = [IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)

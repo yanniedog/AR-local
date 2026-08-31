@@ -146,11 +146,12 @@ if ($isAdmin) {
   $priorExecution = Join-Path $evidenceRoot 'prior'
   $currentExecution = Join-Path $evidenceRoot 'current'
   $stagedExecution = Join-Path $evidenceRoot 'staged'
+  $legacyExecution = Join-Path $evidenceRoot 'legacy'
   $source = Join-Path $quarantineTestRoot ('ARLBS-' + ('c' * 32))
   $destination = Join-Path $quarantineTestRoot ('ARLBQ-' + ('d' * 32))
   $orphanedStage = Join-Path $quarantineTestRoot ('ARLBS-' + ('f' * 32))
   try {
-    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$stagedExecution,$source,$orphanedStage -Force | Out-Null
+    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$stagedExecution,$legacyExecution,$source,$orphanedStage -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $source 'preserved.txt'),'preserved',[Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText((Join-Path $orphanedStage 'orphaned.txt'),'orphaned',[Text.UTF8Encoding]::new($false))
     $journalLines = @(
@@ -162,6 +163,15 @@ if ($isAdmin) {
     $stagedJournal = Join-Path $stagedExecution 'mutation-journal.jsonl'
     $stagedLine = [ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$orphanedStage } | ConvertTo-Json -Compress
     [IO.File]::WriteAllText($stagedJournal,($stagedLine + "`n"),[Text.UTF8Encoding]::new($false))
+    $legacyFailedRoot = Join-Path $legacyExecution ('failed-protected-root-' + ('9' * 32))
+    New-Item -ItemType Directory -Path $legacyFailedRoot | Out-Null
+    $legacySource = Join-Path $quarantineTestRoot ('AR-local-backup-trusted-' + ('1' * 40) + '-' + ('2' * 40) + '.staging-' + ('3' * 32))
+    $legacyJournal = Join-Path $legacyExecution 'mutation-journal.jsonl'
+    $legacyLines = @(
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$legacySource } | ConvertTo-Json -Compress),
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='ROLLBACK_QUARANTINE_NEW_ROOT'; target=$legacySource } | ConvertTo-Json -Compress)
+    )
+    [IO.File]::WriteAllText($legacyJournal,(($legacyLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
     Set-ArTrustedRootAcl -Root $quarantineTestRoot -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
@@ -190,6 +200,19 @@ if ($isAdmin) {
     }
     Assert-ArTrustedSinglePathAcl -Path $priorJournal -OperatorSid $operatorSidForAcl
     $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
+    $legacyRecords = @($reconciliation.legacy_closed_staging)
+    $legacyRecord = $legacyRecords | Select-Object -First 1
+    $expectedLegacySource = [IO.Path]::GetFullPath($legacySource)
+    $legacyChecks = [ordered]@{
+      count=(@($legacyRecords).Count -eq 1)
+      source=[string]::Equals([string]($legacyRecord.source_path),$expectedLegacySource,[StringComparison]::Ordinal)
+      absent=([bool]($legacyRecord.source_absent) -eq $true); line=([int]($legacyRecord.source_line) -eq 2)
+      trust=[string]::Equals([string]($legacyRecord.preserved_content_trust),'UNTRUSTED_OPAQUE_NOT_CONSUMED',[StringComparison]::Ordinal)
+    }
+    if (@($legacyChecks.Values | Where-Object { -not $_ }).Count -gt 0) {
+      throw ('Closed legacy long staging journal was not preserved in reconciliation evidence: ' +
+        ([ordered]@{ checks=$legacyChecks; record=$legacyRecord; expected_source=$expectedLegacySource } | ConvertTo-Json -Compress -Depth 5))
+    }
     foreach ($item in @($reconciliation.transactions)) {
       if ([string]::IsNullOrWhiteSpace([string]$item.source_journal_prefix_sha256) -or [long]$item.source_journal_prefix_bytes -lt 1) {
         throw 'Reconciliation did not bind an immutable journal prefix.'
@@ -217,6 +240,21 @@ if ($isAdmin) {
       Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
     } catch { if ($_.Exception.Message -notmatch 'Unjournaled short bootstrap') { throw }; $rejected = $true }
     if (-not $rejected) { throw 'Unjournaled short bootstrap root was accepted.' }
+    Remove-Item -LiteralPath $orphan -Recurse -Force
+    $legacyJournalOriginal = [IO.File]::ReadAllBytes($legacyJournal)
+    $duplicateLine = ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$legacySource } | ConvertTo-Json -Compress)
+    [IO.File]::AppendAllText($legacyJournal,($duplicateLine + "`n"),[Text.UTF8Encoding]::new($false))
+    $script:executionRoot = $blockedExecution
+    $rejected = $false
+    try { Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'Legacy long staging source is duplicated') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Duplicated legacy staging source was accepted.' }
+    [IO.File]::WriteAllBytes($legacyJournal,$legacyJournalOriginal)
+    [IO.File]::AppendAllText($legacyJournal,"`n",[Text.UTF8Encoding]::new($false))
+    $rejected = $false
+    try { Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'empty physical line') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Blank physical journal line was accepted.' }
   } finally {
     Remove-Item -LiteralPath $quarantineTestRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
