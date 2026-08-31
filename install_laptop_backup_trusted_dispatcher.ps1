@@ -43,6 +43,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:authorizedDeviations = @()
 $script:deviationAuthorization = $null
+$script:bootstrapGate = $null
+$script:bootstrapGateName = 'Global\ARLocalTrustedBootstrapGate'
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'
@@ -94,6 +96,65 @@ function Write-ArMutationIntent {
   )
 }
 
+function Enter-ArTrustedBootstrapGate {
+  if ($null -ne $script:bootstrapGate) { throw 'Trusted bootstrap gate is already held by this process.' }
+  $createdNew = $false
+  $gate = [Threading.Mutex]::new($true, $script:bootstrapGateName, [ref]$createdNew)
+  if (-not $createdNew) {
+    $gate.Dispose()
+    throw 'Another trusted bootstrap gate already exists.'
+  }
+  $script:bootstrapGate = $gate
+  Write-ArMutationIntent -Action 'ACQUIRE_GLOBAL_BOOTSTRAP_GATE' -TargetPath $script:bootstrapGateName
+}
+
+function Exit-ArTrustedBootstrapGate {
+  if ($null -eq $script:bootstrapGate) { return }
+  try {
+    $script:bootstrapGate.ReleaseMutex()
+  } finally {
+    $script:bootstrapGate.Dispose()
+    $script:bootstrapGate = $null
+  }
+}
+
+function Assert-ArTrustedBackupQuiescence {
+  param([switch]$RequireReadyTask)
+  $processes = @(Get-CimInstance Win32_Process | Where-Object {
+    $_.ProcessId -ne $PID -and $_.CommandLine -and
+    $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher|trusted_child)|laptop_pull_backup|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'
+  })
+  $items = @((Join-Path $Target 'catalog\.receiver.lock'),(Join-Path $ControlRoot 'transition.lease')) | Where-Object { Test-Path -LiteralPath $_ }
+  $items += @(Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction Stop | Where-Object {
+    $_.Name -like '*.partial' -or $_.Name -like '.partial-*' -or $_.Name -like '*.partial-*'
+  } | ForEach-Object { $_.FullName })
+  if ($processes.Count -or $items.Count) { throw 'Backup process, lock, transition lease, or partial residue exists.' }
+  if ($RequireReadyTask) {
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    if ($task.State.ToString() -ne 'Ready' -or -not $task.Settings.Enabled) { throw 'Production task is not terminally Ready and enabled.' }
+  }
+  [ordered]@{ active_process_count=$processes.Count; residue_count=$items.Count; task_ready=[bool]$RequireReadyTask }
+}
+
+function Invoke-ArTrustedActiveControlValidation {
+  $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
+  $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
+  $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
+  $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
+  $env:GIT_CONFIG_KEY_1 = 'safe.directory'; $env:GIT_CONFIG_VALUE_1 = [string]$trustedConfig.authority_path; $env:GIT_CONFIG_GLOBAL = 'NUL'
+  $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'
+  $python = Join-Path $InstallRoot 'python\python.exe'
+  $dispatcher = Join-Path $InstallRoot 'laptop_backup_dispatcher.py'
+  $lines = @(& $python -B -s -E $dispatcher verify-active --control-root $ControlRoot 2>&1 | ForEach-Object { [string]$_ })
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -lt 1) { throw "Protected active-control validation failed: $($lines -join ' ')" }
+  $value = $lines[-1] | ConvertFrom-Json
+  $expectedManifestSha256 = Get-ArTrustedSha256 (Join-Path $InstallRoot 'dispatcher-manifest.json')
+  if ($value.ok -ne $true -or $value.result -cne 'PASS' -or $value.mode -cne 'VERIFY_ACTIVE' -or
+      [string]$value.candidate_code_sha -cne $CandidateCodeSha -or
+      [string]$value.manifest_sha256 -cne $expectedManifestSha256) { throw 'Protected active-control result is invalid.' }
+  $value
+}
+
 function Set-ArTrustedDeviationAuthorization {
   param([Parameter(Mandatory = $true)][string]$Root)
   $handoffPath = Join-Path $Root 'authority\docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
@@ -113,9 +174,15 @@ function Set-ArTrustedDeviationAuthorization {
 
 function Assert-ArExactInstalledBootstrap {
   $launcher = Join-Path $InstallRoot 'launcher.exe'
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  if (-not (Test-Path -LiteralPath $readyMarker -PathType Leaf) -or
+      [IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n") {
+    throw 'Installed bootstrap readiness marker is absent or invalid.'
+  }
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
-    -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+    -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
+    -AllowedRuntimeFiles @('bootstrap.ready') | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
@@ -131,6 +198,8 @@ function Assert-ArExactInstalledBootstrap {
   $receiptName = '{0:d8}-{1}-pass.json' -f [int]$installedManifest.sequence,[string]$installedManifest.activation_id
   $receipt = Get-Content -LiteralPath (Join-Path (Join-Path $ControlRoot 'activation-receipts') $receiptName) -Raw -ErrorAction Stop | ConvertFrom-Json
   if ($receipt.status -cne 'PASS' -or [string]$receipt.manifest_sha256 -cne $manifestHash) { throw 'Installed dispatcher lacks its terminal PASS receipt.' }
+  $activeValidation = Invoke-ArTrustedActiveControlValidation
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $prior = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter bootstrap-result.json -File -Recurse | Where-Object { $_.DirectoryName -ne $script:executionRoot } | ForEach-Object {
     try { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } catch { $null }
   } | Where-Object { $_.result -ceq 'PASS' -and $_.package_sha256 -ceq $PackageSha256 -and $_.candidate_code_sha -ceq $CandidateCodeSha -and $_.authority_commit -ceq $AuthorityCommit })
@@ -279,14 +348,21 @@ Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecu
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
 
 if (Test-Path -LiteralPath $InstallRoot) {
+  Enter-ArTrustedBootstrapGate
   try {
     Assert-ArExactInstalledBootstrap
-    $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{ mode='ALREADY_INSTALLED'; install_root=$InstallRoot }
+    $alreadyQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
+    $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
+      mode='ALREADY_INSTALLED'; install_root=$InstallRoot; bootstrap_gate_held=$true
+      terminal_quiescence=$alreadyQuiescence
+    }
     Get-Content -LiteralPath $already -Raw
     exit 0
   } catch {
     Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='ALREADY_INSTALLED_REJECTED' } | Out-Null
     throw
+  } finally {
+    Exit-ArTrustedBootstrapGate
   }
 }
 
@@ -422,6 +498,7 @@ try {
   Remove-Item -LiteralPath $probeOutput -Force -ErrorAction Stop
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
 
+  Enter-ArTrustedBootstrapGate
   Write-ArMutationIntent -Action 'ENABLE_PRODUCTION_TASK_WITHOUT_START' -TargetPath $TaskName
   Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
@@ -430,11 +507,29 @@ try {
   $installedSddl = Get-ArTrustedTaskSddl $TaskName
   if ($installedSddl -cne $installedTaskSddl) { throw 'Installed task SDDL changed after activation.' }
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'installed-task.sddl'), $installedSddl, [Text.UTF8Encoding]::new($false))
+  $activeValidation = Invoke-ArTrustedActiveControlValidation
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $catalogAfter = Assert-ArTrustedCatalogBaseline @catalogArguments
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'post-bootstrap-catalog.json'), (($catalogAfter | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $terminalQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
+  $terminalQuiescence['bootstrap_gate_held'] = $true
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'terminal-quiescence.json'), (($terminalQuiescence | ConvertTo-Json -Depth 5 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+  $readyStream = [IO.File]::Open($readyMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $readyBytes = [Text.Encoding]::ASCII.GetBytes("AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n")
+    $readyStream.Write($readyBytes,0,$readyBytes.Length)
+    $readyStream.Flush($true)
+  } finally {
+    $readyStream.Dispose()
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
     install_root = $InstallRoot; installed_task_xml_sha256 = Get-ArTrustedSha256 $installedXml
     installed_task_sddl_sha256 = Get-ArTrustedTextSha256 $installedSddl; probe_last_result = $probeInfo.LastTaskResult
+    bootstrap_gate_held = $true; bootstrap_ready_sha256 = Get-ArTrustedSha256 $readyMarker
   }
   Get-Content -LiteralPath $result -Raw
 } catch {
@@ -486,4 +581,6 @@ try {
   $message = if ($rollbackErrors.Count -eq 0) { $failure } else { "$failure; rollback failures: $($rollbackErrors -join '; ')" }
   Write-ArTrustedResult -Result $outcome -ErrorText $message -Detail @{} | Out-Null
   throw $message
+} finally {
+  Exit-ArTrustedBootstrapGate
 }

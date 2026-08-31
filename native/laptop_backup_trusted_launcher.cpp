@@ -14,6 +14,10 @@
 
 namespace {
 
+constexpr wchar_t kBootstrapGateName[] = L"Global\\ARLocalTrustedBootstrapGate";
+constexpr int kBootstrapGateActiveExitCode = 35;
+constexpr char kBootstrapReadyPayload[] = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1\n";
+
 class Handle {
  public:
   Handle() = default;
@@ -433,14 +437,46 @@ DWORD scheduled_parent() {
     require_plain_path(probe, false);
     return parent({L"--restricted-probe"});
   }
+  std::wstring ready = join(root, L"bootstrap.ready");
+  require_plain_path(ready, false);
+  Handle marker(CreateFileW(ready.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  if (!marker) throw win_error("CreateFileW(bootstrap.ready)");
+  LARGE_INTEGER marker_size{};
+  if (!GetFileSizeEx(marker.get(), &marker_size)) throw win_error("GetFileSizeEx(bootstrap.ready)");
+  constexpr DWORD expected_size = static_cast<DWORD>(sizeof(kBootstrapReadyPayload) - 1);
+  if (marker_size.QuadPart != expected_size) {
+    throw std::runtime_error("bootstrap.ready size is invalid");
+  }
+  std::string payload(expected_size, '\0');
+  DWORD read = 0;
+  if (!ReadFile(marker.get(), payload.data(), expected_size, &read, nullptr) || read != expected_size ||
+      payload != kBootstrapReadyPayload) {
+    throw std::runtime_error("bootstrap.ready content is invalid");
+  }
   return parent({L"--restricted-child"});
+}
+
+bool bootstrap_gate_active() {
+  Handle gate(OpenMutexW(SYNCHRONIZE, FALSE, kBootstrapGateName));
+  if (gate) return true;
+  DWORD error = GetLastError();
+  // Absence is the only state that authorizes a scheduled run.  Access denied
+  // or any other ambiguous kernel-object result fails closed.
+  return error != ERROR_FILE_NOT_FOUND;
 }
 
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
   try {
-    if (argc == 1) return static_cast<int>(scheduled_parent());
+    if (argc == 1) {
+      if (bootstrap_gate_active()) {
+        std::cerr << "trusted launcher blocked by active bootstrap gate\n";
+        return kBootstrapGateActiveExitCode;
+      }
+      return static_cast<int>(scheduled_parent());
+    }
     if (argc == 4 && std::wstring(argv[1]) == L"--restricted-child") {
       return static_cast<int>(restricted_child(parse_inherited_handle(argv[2]),
                                                parse_inherited_handle(argv[3])));

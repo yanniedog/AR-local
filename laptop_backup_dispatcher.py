@@ -29,6 +29,7 @@ SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ACTIVATION_ID = re.compile(r"^[0-9a-f]{32}$")
 PLAN_ID = "ARL-OPS-001"
+BOOTSTRAP_GATE_NAME = "Global\\ARLocalTrustedBootstrapGate"
 MANIFEST_KEYS = frozenset({
     "schema_version", "sequence", "activation_id", "created_at", "activation_expires_at",
     "previous_manifest_sha256", "plan_document_id", "plan_version",
@@ -294,7 +295,44 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     return result
 
 
-def layout(control_root: Path) -> dict[str, Path]:
+def validate_lineage_manifest(value: Mapping[str, object]) -> dict[str, object]:
+    """Validate immutable predecessor identity without reopening old live paths."""
+    if set(value) != MANIFEST_KEYS or value.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("lineage manifest fields or schema are invalid")
+    sequence = value.get("sequence")
+    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
+        raise ValueError("lineage manifest sequence is invalid")
+    require_hash(value.get("activation_id"), ACTIVATION_ID, "lineage activation ID")
+    created = parse_time(value.get("created_at"), "lineage created_at")
+    expires = parse_time(value.get("activation_expires_at"), "lineage activation_expires_at")
+    if expires <= created:
+        raise ValueError("lineage manifest authority interval is inverted")
+    previous = value.get("previous_manifest_sha256")
+    if previous is not None:
+        require_hash(previous, SHA256, "lineage predecessor digest")
+    if value.get("plan_document_id") != PLAN_ID or value.get("plan_version") != "1.5":
+        raise ValueError("lineage manifest plan identity is invalid")
+    for key in (
+        "plan_git_commit", "authority_commit", "candidate_code_sha",
+        "protected_code_sha", "scheduled_plan_git_commit",
+    ):
+        require_hash(value.get(key), SHA40, f"lineage {key}")
+    for key in (
+        "plan_sha256", "handoff_sha256", "entrypoint_sha256", "python_sha256",
+        "gate_evidence_sha256",
+    ):
+        require_hash(value.get(key), SHA256, f"lineage {key}")
+    for key in (
+        "operator", "operator_sid", "authority_repo", "authority_handoff_path",
+        "receiver", "allowed_receiver_root", "entrypoint", "python_path", "target",
+        "allowed_target_root", "recovery_image", "allowed_recovery_root", "gate_evidence_path",
+    ):
+        if not isinstance(value.get(key), str) or not str(value[key]).strip():
+            raise ValueError(f"lineage manifest {key} is invalid")
+    return dict(value)
+
+
+def layout(control_root: Path, *, create: bool = True) -> dict[str, Path]:
     root = canonical_unlinked(control_root, "control root", file=False)
     result = {
         "root": root, "manifests": root / "manifests", "receipts": root / "activation-receipts",
@@ -303,7 +341,10 @@ def layout(control_root: Path) -> dict[str, Path]:
         "pointer": root / "active-runner.json", "lease": root / "transition.lease",
     }
     for name in ("manifests", "receipts", "lease_recoveries", "executions"):
-        result[name].mkdir(exist_ok=True)
+        if create:
+            result[name].mkdir(exist_ok=True)
+        if not result[name].is_dir() or is_reparse(result[name]):
+            raise ValueError(f"active control directory is absent or linked: {name}")
     return result
 
 
@@ -314,6 +355,7 @@ def receipt_path(paths: Mapping[str, Path], manifest: Mapping[str, object], stat
 def receipt_ledger(paths: Mapping[str, Path]) -> tuple[int, set[str]]:
     maximum = 0
     identities: dict[str, int] = {}
+    outcomes: dict[str, list[dict[str, object]]] = {}
     for path in sorted(paths["receipts"].glob("*.json")):
         value = parse_json(path.read_bytes(), "activation receipt")
         if set(value) != {
@@ -336,7 +378,18 @@ def receipt_ledger(paths: Mapping[str, Path]) -> tuple[int, set[str]]:
         prior = identities.setdefault(str(activation_id), sequence)
         if prior != sequence:
             raise ValueError("activation ID was reused at another sequence")
+        outcomes.setdefault(str(activation_id), []).append(dict(value))
         maximum = max(maximum, sequence)
+    for receipts in outcomes.values():
+        pending = [item for item in receipts if item["status"] == "PENDING"]
+        terminal = [item for item in receipts if item["status"] != "PENDING"]
+        if len(pending) != 1 or len(terminal) > 1:
+            raise ValueError("activation must have one PENDING and at most one terminal receipt")
+        if terminal:
+            expected_terminal = dict(pending[0])
+            expected_terminal["status"] = terminal[0]["status"]
+            if terminal[0] != expected_terminal:
+                raise ValueError("activation terminal receipt differs from its PENDING receipt")
     return maximum, set(identities)
 
 
@@ -396,6 +449,8 @@ def require_activation_window() -> None:
 
 def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     now = datetime.now(timezone.utc).replace(microsecond=0)
+    if bootstrap_gate_active():
+        raise ValueError("trusted bootstrap gate blocks dispatcher activation")
     recover_expired_lease(paths)
     payload = canonical_json({
         "schema_version": 1, "pid": os.getpid(), "activation_id": activation_id,
@@ -404,6 +459,23 @@ def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     })
     atomic_create(paths["lease"], payload)
     return payload
+
+
+def bootstrap_gate_active() -> bool:
+    if os.name != "nt":
+        return False
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenMutexW.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p)
+    kernel32.OpenMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.restype = ctypes.c_int
+    handle = kernel32.OpenMutexW(0x00100000, 0, BOOTSTRAP_GATE_NAME)
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    # ERROR_FILE_NOT_FOUND is the only unambiguous absent state.  A security
+    # or kernel-object error must fail closed just like the native launcher.
+    return ctypes.get_last_error() != 2
 
 
 def release_lease(paths: Mapping[str, Path], payload: bytes) -> None:
@@ -774,6 +846,88 @@ def validate_activation_state(paths: Mapping[str, Path], manifest: Mapping[str, 
         raise ValueError("manifest activation ID is a replay")
 
 
+def verify_active_state(control_root: Path) -> dict[str, object]:
+    """Read-only proof that the complete active control lineage is runnable."""
+    paths = layout(control_root, create=False)
+    if paths["lease"].exists():
+        raise ValueError("active control tree retains a transition lease")
+    receipt_ledger(paths)
+    for pending_path in sorted(paths["receipts"].glob("*-*-pending.json")):
+        pending = parse_json(pending_path.read_bytes(), "PENDING receipt")
+        if not any(
+            receipt_path(paths, pending, status).exists()
+            for status in ("PASS", "ROLLED_BACK", "ABANDONED")
+        ):
+            raise ValueError("active control tree retains an unresolved PENDING receipt")
+    current = active(paths)
+    if current is None:
+        raise ValueError("active control tree has no active manifest")
+    pointer, manifest, digest = current
+    pass_receipts: dict[str, dict[str, object]] = {}
+    maximum_pass_sequence = 0
+    for pass_path in sorted(paths["receipts"].glob("*-*-pass.json")):
+        receipt = parse_json(pass_path.read_bytes(), "PASS receipt")
+        receipt_digest = require_hash(
+            receipt.get("manifest_sha256"), SHA256, "PASS receipt manifest digest"
+        )
+        if receipt_digest in pass_receipts:
+            raise ValueError("manifest has duplicate terminal PASS receipts")
+        pass_receipts[receipt_digest] = receipt
+        maximum_pass_sequence = max(maximum_pass_sequence, int(receipt["sequence"]))
+    if int(pointer["sequence"]) != maximum_pass_sequence:
+        raise ValueError("active pointer is stale behind a later PASS generation")
+
+    chain_length = 0
+    seen_digests: set[str] = set()
+    seen_activations: set[str] = set()
+    next_sequence = int(manifest["sequence"]) + 1
+    chain_digest: str | None = digest
+    while chain_digest is not None:
+        if chain_digest in seen_digests:
+            raise ValueError("active manifest lineage contains a digest cycle")
+        manifest_path = paths["manifests"] / f"{chain_digest}.json"
+        payload = manifest_path.read_bytes()
+        if sha256_bytes(payload) != chain_digest:
+            raise ValueError("active lineage manifest bytes do not match their digest")
+        parsed_manifest = parse_json(payload, "active lineage manifest")
+        chain_manifest = manifest if chain_digest == digest else validate_lineage_manifest(parsed_manifest)
+        sequence = int(chain_manifest["sequence"])
+        activation_id = str(chain_manifest["activation_id"])
+        if sequence >= next_sequence:
+            raise ValueError("active manifest lineage sequence is not strictly descending")
+        if activation_id in seen_activations:
+            raise ValueError("active manifest lineage reuses an activation ID")
+        receipt = pass_receipts.pop(chain_digest, None)
+        expected_receipt = {
+            "schema_version": 1,
+            "sequence": sequence,
+            "activation_id": activation_id,
+            "manifest_sha256": chain_digest,
+            "previous_manifest_sha256": chain_manifest["previous_manifest_sha256"],
+            "status": "PASS",
+        }
+        if receipt != expected_receipt:
+            raise ValueError("active manifest lineage lacks its exact PASS receipt")
+        seen_digests.add(chain_digest)
+        seen_activations.add(activation_id)
+        chain_length += 1
+        next_sequence = sequence
+        predecessor = chain_manifest["previous_manifest_sha256"]
+        chain_digest = str(predecessor) if predecessor is not None else None
+    if pass_receipts:
+        raise ValueError("terminal PASS receipt exists outside the active manifest lineage")
+    return {
+        "ok": True,
+        "result": "PASS",
+        "mode": "VERIFY_ACTIVE",
+        "sequence": pointer["sequence"],
+        "activation_id": pointer["activation_id"],
+        "manifest_sha256": digest,
+        "candidate_code_sha": manifest["candidate_code_sha"],
+        "verified_lineage_length": chain_length,
+    }
+
+
 def activate(
     control_root: Path, manifest_path: Path, *, defer_proof: bool = False
 ) -> dict[str, object]:
@@ -894,6 +1048,8 @@ def parser() -> argparse.ArgumentParser:
     item = sub.add_parser("validate")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--manifest", type=Path, required=True)
+    item = sub.add_parser("verify-active")
+    item.add_argument("--control-root", type=Path, required=True)
     item = sub.add_parser("finalize")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--output", type=Path)
@@ -941,6 +1097,8 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_code_sha": validated["candidate_code_sha"],
                 "sequence": validated["sequence"],
             }
+        elif args.command == "verify-active":
+            value = verify_active_state(args.control_root)
         elif args.command == "finalize":
             value = finalize_pending(layout(args.control_root))
         elif args.command == "prepare":

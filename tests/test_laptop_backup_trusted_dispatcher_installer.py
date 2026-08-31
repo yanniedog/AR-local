@@ -51,6 +51,17 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ConvertFrom-Json -AsHashtable" not in source + core
     assert "finalize.enabled" in source
     assert "Protected semantic-finalization result is invalid" in source
+    assert "verify-active --control-root $ControlRoot" in source
+    assert "active-control-validation.json" in source
+    assert "terminal-quiescence.json" in source
+    assert "Assert-ArTrustedBackupQuiescence -RequireReadyTask" in source
+    assert "Global\\ARLocalTrustedBootstrapGate" in source
+    assert "Enter-ArTrustedBootstrapGate" in source
+    assert "bootstrap_gate_held = $true" in source
+    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in source
+    assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
+    assert "-AllowedRuntimeFiles @('bootstrap.ready')" in source
+    assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert "& $python -B -s -E $dispatcher activate" in source
     assert "[ScriptBlock]::Create($coreText)" in source
     assert "FileShare]::Read" in source
@@ -76,6 +87,9 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.index("dispatcher validate --control-root $ControlRoot --manifest") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert source.index("$catalogBaseline = Assert-ArTrustedCatalogBaseline") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
+    assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
+    assert source.index("PUBLISH_TERMINAL_BOOTSTRAP_READINESS") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert "Trusted operator lacks read and execute access" in core
     assert "Trusted administrator principal lacks full control" in core
     assert "Trusted package owner is not Administrators" in core

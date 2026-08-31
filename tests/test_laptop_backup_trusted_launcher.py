@@ -84,6 +84,8 @@ def test_source_has_no_general_command_channel() -> None:
     assert "validate_token(current.get(), root, true)" in text
     assert "require_write_denied(token, root, true)" in text
     assert "--restricted-child" in text
+    assert "bootstrap.ready" in text
+    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in text
 
 
 def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
@@ -140,3 +142,22 @@ def test_production_binary_rejects_operator_command(tmp_path: Path) -> None:
     result = subprocess.run([str(launcher), "cmd.exe", "/c", "exit", "0"], capture_output=True, text=True, check=False)
     assert result.returncode == 64
     assert "accepts no operator-supplied command" in result.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only bootstrap gate")
+def test_production_binary_fails_closed_while_bootstrap_gate_exists(tmp_path: Path) -> None:
+    launcher = tmp_path / "launcher.exe"
+    build(launcher)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.restype = ctypes.c_int
+    gate = kernel32.CreateMutexW(None, 1, "Global\\ARLocalTrustedBootstrapGate")
+    assert gate, ctypes.get_last_error()
+    try:
+        result = subprocess.run([str(launcher)], capture_output=True, text=True, check=False)
+        assert result.returncode == 35
+        assert "blocked by active bootstrap gate" in result.stderr
+    finally:
+        assert kernel32.CloseHandle(gate)
