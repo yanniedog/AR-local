@@ -505,10 +505,12 @@ function Assert-ArTrustedShortQuarantineState {
     [Parameter(Mandatory = $true)][string]$OperatorSid,
     [string]$ProgramFilesRoot = $env:ProgramFiles
   )
+  if ($null -eq $script:bootstrapGate) { throw 'Short quarantine reconciliation requires the global bootstrap gate.' }
   $programFiles = [IO.Path]::GetFullPath($ProgramFilesRoot).TrimEnd('\')
   $transactions = @()
   $destinations = @{}
   $sources = @{}
+  $createdStaging = @{}
   $evidenceRoots = @(Get-ChildItem -LiteralPath $programFiles -Force -Directory -ErrorAction Stop | Where-Object {
     $_.Name -match '^AR-local-backup-evidence-[0-9a-f]{40}-[0-9a-f]{40}$'
   })
@@ -522,11 +524,26 @@ function Assert-ArTrustedShortQuarantineState {
       Assert-ArTrustedSinglePathAcl -Path $execution.FullName -OperatorSid $OperatorSid
       Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
       $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
-      for ($index = 1; $index -lt $lines.Count; $index++) {
+      for ($index = 0; $index -lt $lines.Count; $index++) {
         $entry = $lines[$index] | ConvertFrom-Json
+        if ([string]$entry.action -ceq 'CREATE_PACKAGE_STAGING') {
+          $created = [IO.Path]::GetFullPath([string]$entry.target)
+          if ([IO.Path]::GetDirectoryName($created) -cne $programFiles -or
+              [IO.Path]::GetFileName($created) -notmatch '^ARLBS-[0-9a-f]{32}$' -or $createdStaging.ContainsKey($created)) {
+            throw 'Created short staging root identity is invalid or duplicated.'
+          }
+          $createdStaging[$created] = [ordered]@{
+            source_path=$created; source_journal=$journalPath
+            source_journal_sha256=Get-ArTrustedSha256 $journalPath; source_line=[int]($index + 1)
+          }
+          continue
+        }
         if ([string]$entry.action -cne 'PUBLISH_SHORT_PROTECTED_QUARANTINE') { continue }
+        if ($index -eq 0) { throw 'Short quarantine publication lacks a preceding source intent.' }
         $prior = $lines[$index - 1] | ConvertFrom-Json
-        if ([string]$prior.action -notin @('ROLLBACK_QUARANTINE_NEW_ROOT','RECOVERY_QUARANTINE_INTERRUPTED_ROOT')) {
+        if ([string]$prior.action -notin @(
+          'ROLLBACK_QUARANTINE_NEW_ROOT','RECOVERY_QUARANTINE_INTERRUPTED_ROOT','RECOVERY_QUARANTINE_ORPHANED_STAGING'
+        )) {
           throw 'Short quarantine publication lacks its immediately preceding source intent.'
         }
         $source = [IO.Path]::GetFullPath([string]$prior.target)
@@ -549,6 +566,24 @@ function Assert-ArTrustedShortQuarantineState {
         $destinations[$destination] = $transaction
       }
     }
+  }
+
+  foreach ($created in @($createdStaging.Values)) {
+    if ($sources.ContainsKey([string]$created.source_path) -or
+        -not (Test-Path -LiteralPath ([string]$created.source_path) -PathType Container)) { continue }
+    Assert-ArTrustedPlainPath ([string]$created.source_path) | Out-Null
+    Assert-ArTrustedRootAcl -Root ([string]$created.source_path) -OperatorSid $OperatorSid
+    Write-ArMutationIntent -Action 'RECOVERY_QUARANTINE_ORPHANED_STAGING' -TargetPath ([string]$created.source_path)
+    $recovered = Move-ArTrustedFailedRootToQuarantine -Path ([string]$created.source_path) -OperatorSid $OperatorSid
+    $currentJournal = Join-Path $script:executionRoot 'mutation-journal.jsonl'
+    $transaction = [ordered]@{
+      source_path=[string]$created.source_path; quarantine_path=[string]$recovered.quarantine_path
+      source_journal=$currentJournal; source_journal_sha256=Get-ArTrustedSha256 $currentJournal
+      source_line=[int]@([IO.File]::ReadAllLines($currentJournal,[Text.UTF8Encoding]::new($false))).Count
+    }
+    $transactions += $transaction
+    $sources[$transaction.source_path] = $transaction
+    $destinations[$transaction.quarantine_path] = $transaction
   }
 
   $shortRoots = @(Get-ChildItem -LiteralPath $programFiles -Force -Directory -ErrorAction Stop | Where-Object {

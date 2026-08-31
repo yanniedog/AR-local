@@ -145,23 +145,33 @@ if ($isAdmin) {
   $evidenceRoot = Join-Path $quarantineTestRoot $evidenceName
   $priorExecution = Join-Path $evidenceRoot 'prior'
   $currentExecution = Join-Path $evidenceRoot 'current'
+  $stagedExecution = Join-Path $evidenceRoot 'staged'
   $source = Join-Path $quarantineTestRoot ('ARLBS-' + ('c' * 32))
   $destination = Join-Path $quarantineTestRoot ('ARLBQ-' + ('d' * 32))
+  $orphanedStage = Join-Path $quarantineTestRoot ('ARLBS-' + ('f' * 32))
   try {
-    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$source -Force | Out-Null
+    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$stagedExecution,$source,$orphanedStage -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $source 'preserved.txt'),'preserved',[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $orphanedStage 'orphaned.txt'),'orphaned',[Text.UTF8Encoding]::new($false))
     $journalLines = @(
       ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='ROLLBACK_QUARANTINE_NEW_ROOT'; target=$source } | ConvertTo-Json -Compress),
       ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='PUBLISH_SHORT_PROTECTED_QUARANTINE'; target=$destination } | ConvertTo-Json -Compress)
     )
     $priorJournal = Join-Path $priorExecution 'mutation-journal.jsonl'
     [IO.File]::WriteAllText($priorJournal,(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
+    $stagedJournal = Join-Path $stagedExecution 'mutation-journal.jsonl'
+    $stagedLine = [ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$orphanedStage } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($stagedJournal,($stagedLine + "`n"),[Text.UTF8Encoding]::new($false))
     Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $orphanedStage -OperatorSid $operatorSidForAcl
     $script:OperatorSid = $operatorSidForAcl
+    $script:bootstrapGate = [object]::new()
     $script:executionRoot = $currentExecution
     Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
     if ((Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')) -or
+        (Test-Path -LiteralPath $orphanedStage) -or
+        @(Get-ChildItem -LiteralPath $quarantineTestRoot -Directory | Where-Object { $_.Name -match '^ARLBQ-' }).Count -ne 2 -or
         -not (Test-Path -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json'))) {
       throw 'Journaled short quarantine was not recovered and sealed.'
     }

@@ -94,6 +94,11 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Set-ArTrustedRootAcl -Root $path -OperatorSid $OperatorSid" in core
     assert core.index("'/grant:r' $treeGrants") < core.index("'/inheritance:r' '/T' '/C'")
     assert "Assert-ArTrustedShortQuarantineState" in source
+    assert "Short quarantine reconciliation requires the global bootstrap gate" in core
+    assert "RECOVERY_QUARANTINE_ORPHANED_STAGING" in core
+    gate_after_evidence = source.index("Enter-ArTrustedBootstrapGate", source.index("$preservedPreExecution"))
+    assert gate_after_evidence < source.index("Assert-ArTrustedShortQuarantineState")
+    assert source.count("Enter-ArTrustedBootstrapGate") == 2
     assert "RECOVERY_COMPLETE_SHORT_PROTECTED_QUARANTINE" in core
     assert "Unjournaled short bootstrap or quarantine root exists" in core
     assert "Short quarantine source and destination both exist" in core
@@ -111,7 +116,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.index("$catalogBaseline = Assert-ArTrustedCatalogBaseline") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
     assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
-    assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
+    assert gate_after_evidence < source.index("Enable-ScheduledTask -TaskName $TaskName")
     terminal_pass = source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert source.index("Prepare-ArTrustedBootstrapPublication", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")) < terminal_pass
     assert terminal_pass < source.index("Publish-ArTrustedBootstrapReadiness -ResultPath $result")

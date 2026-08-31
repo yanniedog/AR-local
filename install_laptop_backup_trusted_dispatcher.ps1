@@ -595,10 +595,11 @@ Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 $preservedPreExecution = Join-Path $script:executionRoot 'pre-execution-manifest.json'
 Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecution -ErrorAction Stop
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
-Assert-ArTrustedShortQuarantineState -OperatorSid $OperatorSid | Out-Null
+Enter-ArTrustedBootstrapGate
+try {
+  Assert-ArTrustedShortQuarantineState -OperatorSid $OperatorSid | Out-Null
 
 if (Test-Path -LiteralPath $InstallRoot) {
-  Enter-ArTrustedBootstrapGate
   try {
     $interrupted = Read-ArTrustedInterruptedBootstrap
     if ($null -eq $interrupted) {
@@ -693,8 +694,6 @@ if (Test-Path -LiteralPath $InstallRoot) {
   } catch {
     Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='INSTALLED_OR_INTERRUPTED_RECOVERY_REJECTED' } | Out-Null
     throw
-  } finally {
-    Exit-ArTrustedBootstrapGate
   }
 }
 
@@ -866,7 +865,6 @@ try {
   Remove-Item -LiteralPath $probeOutput -Force -ErrorAction Stop
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
 
-  Enter-ArTrustedBootstrapGate
   Write-ArMutationIntent -Action 'ENABLE_PRODUCTION_TASK_WITHOUT_START' -TargetPath $TaskName
   Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
@@ -950,6 +948,7 @@ try {
   $message = if ($rollbackErrors.Count -eq 0) { $failure } else { "$failure; rollback failures: $($rollbackErrors -join '; ')" }
   Write-ArTrustedResult -Result $outcome -ErrorText $message -Detail @{} | Out-Null
   throw $message
+}
 } finally {
   Exit-ArTrustedBootstrapGate
 }
