@@ -54,8 +54,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "rollbackErrors.Add" in source
     assert "PRESTATE_REJECTED" in source
     assert "rollback-task.sddl" in source
-    assert "dispatcher validate --manifest" in source
-    assert source.index("dispatcher validate --manifest") < source.index("Disable-ScheduledTask -TaskName $TaskName")
+    assert "dispatcher validate --control-root $ControlRoot --manifest" in source
+    assert source.index("dispatcher validate --control-root $ControlRoot --manifest") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner

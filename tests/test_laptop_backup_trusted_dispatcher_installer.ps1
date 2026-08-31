@@ -54,6 +54,12 @@ try {
   $rejected = $false
   try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
   if (-not $rejected) { throw 'Null pre-execution integer field was accepted.' }
+  $loaded.schema_version = 1
+  $loaded.created_at = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o')
+  $loaded.expires_at = [DateTimeOffset]::UtcNow.AddMinutes(20).ToString('o')
+  $rejected = $false
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequireFresh } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Future pre-execution creation time was accepted.' }
 } finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(

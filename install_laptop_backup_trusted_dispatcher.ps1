@@ -188,6 +188,11 @@ if (Test-Path -LiteralPath $InstallRoot) {
   }
 }
 
+# Exact installed-state recovery is intentionally available after the short
+# bootstrap authorization expires.  A new installation, however, requires the
+# same manifest to be fresh immediately before any staging or task mutation.
+Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution -RequireFresh
+
 try {
   $oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
   $oldInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
@@ -253,7 +258,7 @@ try {
   $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
   $env:GIT_CONFIG_KEY_1 = 'safe.directory'; $env:GIT_CONFIG_VALUE_1 = [string]$trustedConfig.authority_path; $env:GIT_CONFIG_GLOBAL = 'NUL'
   $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'
-  & $python -B -s -E $dispatcher validate --manifest $manifest
+  & $python -B -s -E $dispatcher validate --control-root $ControlRoot --manifest $manifest
   if ($LASTEXITCODE -ne 0) { throw 'Protected dispatcher pre-mutation validation failed.' }
 
   Copy-Item -LiteralPath $ControlRoot -Destination $controlPrestate -Recurse -ErrorAction Stop

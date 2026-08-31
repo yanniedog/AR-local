@@ -113,6 +113,26 @@ def write_manifest(path: Path, value: dict[str, object]) -> str:
     return dispatcher.sha256_bytes(payload)
 
 
+def test_read_only_validation_rejects_noncanonical_and_control_drift(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    proposed.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not canonical"):
+        dispatcher.proposed_activation(proposed)
+    write_manifest(proposed, manifest)
+    _raw, validated, _digest = dispatcher.proposed_activation(proposed)
+    dispatcher.validate_activation_state(dispatcher.layout(control), validated)
+    paths = dispatcher.layout(control)
+    pending = {
+        "schema_version": 1, "sequence": manifest["sequence"],
+        "activation_id": manifest["activation_id"], "manifest_sha256": "f" * 64,
+        "previous_manifest_sha256": manifest["previous_manifest_sha256"], "status": "PENDING",
+    }
+    dispatcher.receipt_path(paths, pending, "PENDING").write_bytes(dispatcher.canonical_json(pending))
+    with pytest.raises(ValueError, match="remains pending"):
+        dispatcher.validate_activation_state(paths, validated)
+
+
 def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     control, _target, manifest = fixture(tmp_path)
     proposed = tmp_path / "manifest.json"

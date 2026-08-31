@@ -37,7 +37,8 @@ function Read-ArTrustedPreExecutionManifest {
 function Assert-ArTrustedPreExecutionManifest {
   param(
     [Parameter(Mandatory = $true)]$Manifest,
-    [Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Expected
+    [Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Expected,
+    [switch]$RequireFresh
   )
   $required = @($Expected.Keys | ForEach-Object { [string]$_ }) + @('created_at','expires_at')
   $actual = @($Manifest.PSObject.Properties.Name)
@@ -56,8 +57,12 @@ function Assert-ArTrustedPreExecutionManifest {
     $created = [DateTimeOffset]::ParseExact([string]$Manifest.created_at,'o',[Globalization.CultureInfo]::InvariantCulture)
     $expires = [DateTimeOffset]::ParseExact([string]$Manifest.expires_at,'o',[Globalization.CultureInfo]::InvariantCulture)
   } catch { throw 'Pre-execution manifest timestamps are invalid.' }
-  if ($created.Offset -ne [TimeSpan]::Zero -or $expires.Offset -ne [TimeSpan]::Zero -or $expires -le $created -or [DateTimeOffset]::UtcNow -ge $expires) {
-    throw 'Pre-execution manifest is expired or time-invalid.'
+  $now = [DateTimeOffset]::UtcNow
+  if ($created.Offset -ne [TimeSpan]::Zero -or $expires.Offset -ne [TimeSpan]::Zero -or $expires -le $created) {
+    throw 'Pre-execution manifest timestamps are structurally invalid.'
+  }
+  if ($RequireFresh -and ($created -gt $now.AddMinutes(5) -or $now -ge $expires)) {
+    throw 'Pre-execution manifest is expired or outside allowed clock skew.'
   }
 }
 
