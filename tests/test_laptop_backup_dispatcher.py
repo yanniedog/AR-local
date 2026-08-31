@@ -320,6 +320,32 @@ def test_activation_lease_cannot_enter_ingest_freeze(monkeypatch: pytest.MonkeyP
         dispatcher.require_activation_window()
 
 
+def test_bootstrap_gate_blocks_new_dispatcher_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control, _target, _manifest = fixture(tmp_path)
+    paths = dispatcher.layout(control)
+    monkeypatch.setattr(dispatcher, "bootstrap_gate_active", lambda: True)
+    with pytest.raises(ValueError, match="bootstrap gate blocks"):
+        dispatcher.acquire_lease(paths, "a" * 32)
+    assert not paths["lease"].exists()
+
+
+def test_read_only_layout_rejects_reparse_control_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control, _target, _manifest = fixture(tmp_path)
+    dispatcher.layout(control)
+    original = dispatcher.is_reparse
+    monkeypatch.setattr(
+        dispatcher,
+        "is_reparse",
+        lambda path: path.name == "manifests" or original(path),
+    )
+    with pytest.raises(ValueError, match="absent or linked: manifests"):
+        dispatcher.layout(control, create=False)
+
+
 def test_run_writes_content_addressed_execution_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -389,6 +415,24 @@ def test_verify_active_state_checks_complete_control_lineage(tmp_path: Path) -> 
     (control / "active-runner.json").write_bytes(dispatcher.canonical_json(current_pointer))
     (control / "manifests" / f"{digest}.json").unlink()
     with pytest.raises(FileNotFoundError):
+        dispatcher.verify_active_state(control)
+
+
+def test_verify_active_state_rejects_contradictory_terminal_receipts(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    dispatcher.activate(control, proposed)
+    paths = dispatcher.layout(control)
+    passed = json.loads(
+        dispatcher.receipt_path(paths, manifest, "PASS").read_text(encoding="utf-8")
+    )
+    passed["status"] = "ROLLED_BACK"
+    dispatcher.immutable_write(
+        dispatcher.receipt_path(paths, manifest, "ROLLED_BACK"),
+        dispatcher.canonical_json(passed),
+    )
+    with pytest.raises(ValueError, match="one PENDING and at most one terminal"):
         dispatcher.verify_active_state(control)
 
 

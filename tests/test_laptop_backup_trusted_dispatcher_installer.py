@@ -61,6 +61,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in source
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
     assert "-AllowedRuntimeFiles @('bootstrap.ready')" in source
+    assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert "& $python -B -s -E $dispatcher activate" in source
     assert "[ScriptBlock]::Create($coreText)" in source
     assert "FileShare]::Read" in source

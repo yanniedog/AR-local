@@ -29,6 +29,7 @@ SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ACTIVATION_ID = re.compile(r"^[0-9a-f]{32}$")
 PLAN_ID = "ARL-OPS-001"
+BOOTSTRAP_GATE_NAME = "Global\\ARLocalTrustedBootstrapGate"
 MANIFEST_KEYS = frozenset({
     "schema_version", "sequence", "activation_id", "created_at", "activation_expires_at",
     "previous_manifest_sha256", "plan_document_id", "plan_version",
@@ -342,7 +343,7 @@ def layout(control_root: Path, *, create: bool = True) -> dict[str, Path]:
     for name in ("manifests", "receipts", "lease_recoveries", "executions"):
         if create:
             result[name].mkdir(exist_ok=True)
-        elif not result[name].is_dir() or result[name].is_symlink():
+        if not result[name].is_dir() or is_reparse(result[name]):
             raise ValueError(f"active control directory is absent or linked: {name}")
     return result
 
@@ -354,6 +355,7 @@ def receipt_path(paths: Mapping[str, Path], manifest: Mapping[str, object], stat
 def receipt_ledger(paths: Mapping[str, Path]) -> tuple[int, set[str]]:
     maximum = 0
     identities: dict[str, int] = {}
+    outcomes: dict[str, list[dict[str, object]]] = {}
     for path in sorted(paths["receipts"].glob("*.json")):
         value = parse_json(path.read_bytes(), "activation receipt")
         if set(value) != {
@@ -376,7 +378,18 @@ def receipt_ledger(paths: Mapping[str, Path]) -> tuple[int, set[str]]:
         prior = identities.setdefault(str(activation_id), sequence)
         if prior != sequence:
             raise ValueError("activation ID was reused at another sequence")
+        outcomes.setdefault(str(activation_id), []).append(dict(value))
         maximum = max(maximum, sequence)
+    for receipts in outcomes.values():
+        pending = [item for item in receipts if item["status"] == "PENDING"]
+        terminal = [item for item in receipts if item["status"] != "PENDING"]
+        if len(pending) != 1 or len(terminal) > 1:
+            raise ValueError("activation must have one PENDING and at most one terminal receipt")
+        if terminal:
+            expected_terminal = dict(pending[0])
+            expected_terminal["status"] = terminal[0]["status"]
+            if terminal[0] != expected_terminal:
+                raise ValueError("activation terminal receipt differs from its PENDING receipt")
     return maximum, set(identities)
 
 
@@ -436,6 +449,8 @@ def require_activation_window() -> None:
 
 def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     now = datetime.now(timezone.utc).replace(microsecond=0)
+    if bootstrap_gate_active():
+        raise ValueError("trusted bootstrap gate blocks dispatcher activation")
     recover_expired_lease(paths)
     payload = canonical_json({
         "schema_version": 1, "pid": os.getpid(), "activation_id": activation_id,
@@ -444,6 +459,23 @@ def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     })
     atomic_create(paths["lease"], payload)
     return payload
+
+
+def bootstrap_gate_active() -> bool:
+    if os.name != "nt":
+        return False
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenMutexW.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p)
+    kernel32.OpenMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.restype = ctypes.c_int
+    handle = kernel32.OpenMutexW(0x00100000, 0, BOOTSTRAP_GATE_NAME)
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    # ERROR_FILE_NOT_FOUND is the only unambiguous absent state.  A security
+    # or kernel-object error must fail closed just like the native launcher.
+    return ctypes.get_last_error() != 2
 
 
 def release_lease(paths: Mapping[str, Path], payload: bytes) -> None:
