@@ -66,6 +66,25 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
   [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 if ($isAdmin) {
+  $rollbackRoot = Join-Path $env:TEMP ('ar-control-rollback-' + [guid]::NewGuid().ToString('N'))
+  $controlRoot = Join-Path $rollbackRoot 'control'
+  $prestateRoot = Join-Path $rollbackRoot 'prestate'
+  $evidenceRoot = Join-Path $rollbackRoot 'evidence'
+  New-Item -ItemType Directory -Path $controlRoot,$prestateRoot,$evidenceRoot -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $controlRoot 'old.txt'),'old',[Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText((Join-Path $prestateRoot 'new.txt'),'new',[Text.UTF8Encoding]::new($false))
+  $controlSddl = (Get-Acl -LiteralPath $controlRoot).Sddl
+  $operatorSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $failedAsExpected = $false
+  try {
+    Restore-ArTrustedControlRootAtomic -ControlRoot $controlRoot -Prestate $prestateRoot -EvidenceRoot $evidenceRoot `
+      -OperatorSid $operatorSid -ControlSddl $controlSddl -ExpectedControlSddlSha256 ('0' * 64)
+  } catch { $failedAsExpected = $true }
+  if (-not $failedAsExpected -or -not (Test-Path -LiteralPath (Join-Path $evidenceRoot 'failed-dispatcher-control'))) {
+    throw 'Control rollback failure did not preserve the displaced tree.'
+  }
+  Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -ErrorAction SilentlyContinue
+
   Remove-Item Function:\Get-ScheduledTask -ErrorAction SilentlyContinue
   $name = 'AR-local trusted rollback contract ' + [guid]::NewGuid().ToString('N')
   try {
