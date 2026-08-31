@@ -5819,3 +5819,109 @@ protected by D-006, and the first natural trusted 05:00 backup must independentl
 pass with a current observation, exact identities, catalog/receipt/archive and
 restoration evidence. Only a later append-only terminal `PASS` may close A3 and
 authorize A4 planning or implementation.
+
+## Entry `HANDOFF-20260831T120011+1000-A3-FINAL-AUTHORITY-CORRECTION`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T120011+1000-A3-FINAL-AUTHORITY-CORRECTION` |
+| Previous handoff entry | `HANDOFF-20260831T114941+1000-A3-FINAL-TRUSTED-CANDIDATE` |
+| Created | `2026-08-31T12:00:11+10:00` / `2026-08-31T02:00:11Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Pre-append handoff Git-blob SHA-256 | `cfa3c0e93c7fc2403de08c07cd7be9d5ca18910bd0398efdd33c67688807435a` |
+| Final implementation | PR #591 head `580d3ea001e7b379d795263ad9f4d34049cab5c5`; squash merge and sole candidate `bce4f705136992610a44f05856b94aca2e7605c1` |
+| Result | final implementation and corrected authority `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | D-011 and D-012 only; no new deviation |
+
+### Final authority-review corrections
+
+PR #591 closes the last two behavioral defects found while reviewing the prior
+authority entry. The trusted installer now runs the complete protected-Pi SHA,
+cleanliness, inactive-ingest-service, absent-ingest-lock and dashboard check a
+second time immediately before copying the control prestate and disabling the
+production task. The exact second result is preserved as
+`pi-immediate-pre-mutation.json`. A natural ingest that starts during package or
+authority validation therefore blocks before the first task/control mutation.
+
+If the disposable restricted-token probe times out, rollback now explicitly
+stops the probe task, waits for it to leave `Running`, and proves that no native
+launcher, dispatcher, trusted child or backup helper remains before unregistering
+the probe or touching control/task/protected-root state. If this quiescence proof
+fails, task/control/root rollback mutations are withheld, the protected evidence
+records the condition, and the outcome is `FAIL`, never `ROLLED_BACK` or `PASS`.
+
+The exact PR #591 head passed the hosted Linux payload-builder and Windows
+PowerShell 5.1 dispatcher-contract jobs, both required feedback-gate executions,
+and Sourcery with zero unresolved threads. Gemini again exhausted external quota
+and is advisory. The exact-head complete local suite under the MSVC x64 developer
+environment passed `1348` tests with `13` intentional skips and four existing
+OpenPyXL warnings; the focused installer/dispatcher set passed `24`.
+
+### Correct natural 05:00 acceptance
+
+The prior statement requiring only action `BACKUP-LATEST` is superseded. At this
+authority snapshot the laptop's latest accepted observation is `2026-08-30`,
+while the Pi has a completed `2026-08-31` observation. After the protected natural
+`2026-09-01` 01:00 ingest, the first trusted 05:00 scheduler may therefore
+correctly choose the combined action `BACKFILL`: it transfers the genuinely
+missing historical `2026-08-31` observation and the latest `2026-09-01`
+observation in one controlled execution. Rejecting that correct action would
+strand A3 and would encourage an unsafe manual pre-run backfill.
+
+Do not manually trigger or pre-run any backup. The first natural trusted 05:00
+execution is accepted only when every record is bound to this plan, final
+candidate, final authority, protected Pi and operator and one of these exact
+conditions holds:
+
+1. `BACKFILL/PASS`: pre-run inventory proves `2026-08-31` was genuinely missing;
+   both `2026-08-31` and the current `2026-09-01` observation are transferred,
+   content-addressed, receipted and restore-verified; the post-run missing-date
+   set is empty; latest-verified points to `2026-09-01`; and no existing
+   observation or completed evidence is overwritten.
+2. `BACKUP-LATEST/PASS`: accepted only if independent pre-run evidence proves
+   `2026-08-31` had already been transferred by a natural authorized execution,
+   so there was no historical gap to backfill, and the latest `2026-09-01`
+   observation is fully verified.
+3. `NO_BACKUP_DATA_WRITE/PASS`: accepted only if independent Pi/catalog/receipt,
+   control, macro, diagnostics and history identities prove both dates and the
+   latest observation were already present and unchanged. A failure of the Pi
+   observation to advance can never be reclassified as no-write success.
+
+For every accepted action, validate every intervening scheduled-run record,
+append-only catalog prefix and final chain, observation/control/macro receipts,
+archive hashes and sizes, SQLite restoration/integrity where required, exact Pi
+source identities, task Ready/enabled with `LastTaskResult=0`, no overlap, lock,
+lease, helper or partial residue, and at least 50 GiB free. Any other action,
+missing date, identity drift, failed restore or unexplained no-write is terminal
+`FAIL` or `BLOCKED`; A3 remains open.
+
+### Sole candidate byte binding and continuation
+
+The sole candidate is now
+`bce4f705136992610a44f05856b94aca2e7605c1`. It supersedes the PR #590 candidate
+in the immediately preceding entry. Exact Git-blob bytes are:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 45474 | `b0430a55141bf267f4311a84f3a99e82107687725039f773ec4d6f037cd75dab` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 34884 | `1fe2f2b38945066480343be4ec8ed622ce9693faa914943adb9c7e5ef320d1ea` |
+| `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
+| `native/laptop_backup_trusted_launcher.cpp` | 20669 | `d7a5fd39b47a68d65e7bd36e87e1d65768bece824b935f3f399fd016b4e20fcb` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
+| `laptop_backup_dispatcher.py` | 52997 | `6794266064f58a613547441100721ccbb2b3d385abe85ea027052dd08dc15dad` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+
+Merge this documentation-only authority through exact-head gates. Under D-012,
+the resulting current `origin/main` merge and complete handoff Git-blob SHA-256
+become the only allowed authority identity. Immediately before the single
+authorized elevation, repeat every task, process, residue, catalog, free-space
+and Pi gate and rebuild the deterministic package from clean detached candidate
+and authority checkouts. Any later `origin/main` advance or baseline drift
+expires this authority and requires another append-only decision. No manual
+backup, ingest, deployment or publication is authorized. A3 remains `RUNNING`
+until installer terminal `PASS` and the protected natural 01:00/05:00 proofs;
+A4 remains `BLOCKED`.
