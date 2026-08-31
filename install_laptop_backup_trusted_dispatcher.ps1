@@ -65,8 +65,11 @@ try {
 
 function Write-ArTrustedResult {
   param([string]$Result, [string]$ErrorText, [hashtable]$Detail)
+  $path = Join-Path $script:executionRoot 'bootstrap-result.json'
   $files = @()
-  foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Sort-Object FullName)) {
+  foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Where-Object {
+    [IO.Path]::GetFullPath($_.FullName) -cne [IO.Path]::GetFullPath($path)
+  } | Sort-Object FullName)) {
     $files += [ordered]@{ path = $file.FullName; sha256 = Get-ArTrustedSha256 $file.FullName; size = $file.Length }
   }
   $record = [ordered]@{
@@ -81,7 +84,6 @@ function Write-ArTrustedResult {
     deviations = @($script:authorizedDeviations)
     deviation_authorization = $script:deviationAuthorization
   }
-  $path = Join-Path $script:executionRoot 'bootstrap-result.json'
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Depth 10 -Compress) + "`n")
   $stream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
   try {
@@ -220,6 +222,7 @@ function Set-ArTrustedDeviationAuthorization {
 
 function Assert-ArTrustedBootstrapResultIdentity {
   param([Parameter(Mandatory = $true)][string]$Path)
+  Assert-ArTrustedPlainPath $Path | Out-Null
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Protected bootstrap result is absent.' }
   $value = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
   if ($value.schema_version -ne 1 -or $value.result -cne 'PASS' -or $null -ne $value.error -or
@@ -246,7 +249,7 @@ function Prepare-ArTrustedBootstrapPublication {
     try {
       Assert-ArTrustedBootstrapResultIdentity -Path $pendingResult | Out-Null
       Write-ArMutationIntent -Action 'RECOVER_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
-      Move-Item -LiteralPath $pendingResult -Destination $fixedResult -ErrorAction Stop
+      Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult
     } catch {
       $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-result-' + [guid]::NewGuid().ToString('N') + '.json')
       Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_RESULT' -TargetPath $pendingResult
@@ -266,9 +269,10 @@ function Prepare-ArTrustedBootstrapPublication {
   if (Test-Path -LiteralPath $fixedResult) {
     $expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$(Get-ArTrustedSha256 $fixedResult)`n"
     if (-not (Test-Path -LiteralPath $readyMarker) -and (Test-Path -LiteralPath $pendingReady)) {
+      Assert-ArTrustedPlainPath $pendingReady | Out-Null
       if ([IO.File]::ReadAllText($pendingReady,[Text.Encoding]::ASCII) -ceq $expectedReady) {
         Write-ArMutationIntent -Action 'RECOVER_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
-        Move-Item -LiteralPath $pendingReady -Destination $readyMarker -ErrorAction Stop
+        Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker
       } else {
         $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-readiness-' + [guid]::NewGuid().ToString('N'))
         Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_READINESS' -TargetPath $pendingReady
@@ -276,9 +280,11 @@ function Prepare-ArTrustedBootstrapPublication {
         Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
       }
     }
-    if ((Test-Path -LiteralPath $readyMarker) -and
-        [IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
-      throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
+    if (Test-Path -LiteralPath $readyMarker) {
+      Assert-ArTrustedPlainPath $readyMarker | Out-Null
+      if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
+        throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
+      }
     }
   } elseif (Test-Path -LiteralPath $pendingReady) {
     throw 'Pending bootstrap readiness exists without a durable PASS result.'
@@ -313,7 +319,7 @@ function Publish-ArTrustedBootstrapReadiness {
       $destination.Dispose()
       $source.Dispose()
     }
-    Move-Item -LiteralPath $pendingResult -Destination $fixedResult -ErrorAction Stop
+    Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult
   }
   Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
   if (Test-Path -LiteralPath $pendingResult) { throw 'Pending bootstrap result remains after publication.' }
@@ -328,9 +334,10 @@ function Publish-ArTrustedBootstrapReadiness {
     } finally {
       $readyStream.Dispose()
     }
-    Move-Item -LiteralPath $pendingReady -Destination $readyMarker -ErrorAction Stop
+    Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker
   }
   if (Test-Path -LiteralPath $pendingReady) { throw 'Pending bootstrap readiness remains after publication.' }
+  Assert-ArTrustedPlainPath $readyMarker | Out-Null
   if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
     throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
   }

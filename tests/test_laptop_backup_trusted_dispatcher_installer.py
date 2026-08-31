@@ -105,8 +105,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Write-ArMutationIntent" not in publish_function
     assert "bootstrap-result.json.pending" in source
     assert "bootstrap.ready.pending" in source
-    assert "Move-Item -LiteralPath $pendingResult -Destination $fixedResult" in source
-    assert "Move-Item -LiteralPath $pendingReady -Destination $readyMarker" in source
+    assert "Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult" in source
+    assert "Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker" in source
+    assert "ArTrustedMoveFile" in core
+    assert "0x00000008" in core
     assert "Assert-ArTrustedBootstrapResultIdentity" in source
     assert "Protected bootstrap readiness exists without its durable PASS result" in source
     assert source.count("Flush($true)") >= 4

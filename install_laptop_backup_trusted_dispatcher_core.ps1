@@ -1,3 +1,22 @@
+if (-not ('ArTrustedMoveFile' -as [type])) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ArTrustedMoveFile {
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  public static extern bool MoveFileEx(string existingName, string newName, uint flags);
+}
+'@
+}
+
+function Move-ArTrustedFileWriteThrough {
+  param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Destination)
+  if (Test-Path -LiteralPath $Destination) { throw "Write-through destination already exists: $Destination" }
+  if (-not [ArTrustedMoveFile]::MoveFileEx($Source,$Destination,0x00000008)) {
+    throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())
+  }
+}
+
 function Get-ArTrustedSha256 {
   param([Parameter(Mandatory = $true)][string]$Path)
   $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
