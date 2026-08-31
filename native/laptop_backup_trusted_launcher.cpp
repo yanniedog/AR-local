@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <sddl.h>
+#include <wincrypt.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -16,7 +17,7 @@ namespace {
 
 constexpr wchar_t kBootstrapGateName[] = L"Global\\ARLocalTrustedBootstrapGate";
 constexpr int kBootstrapGateActiveExitCode = 35;
-constexpr char kBootstrapReadyPayload[] = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1\n";
+constexpr char kBootstrapReadyPrefix[] = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2\n";
 
 class Handle {
  public:
@@ -41,6 +42,24 @@ class Handle {
 
  private:
   HANDLE value_ = nullptr;
+};
+
+class CryptProvider {
+ public:
+  ~CryptProvider() { if (value_) CryptReleaseContext(value_, 0); }
+  HCRYPTPROV* put() { return &value_; }
+  HCRYPTPROV get() const { return value_; }
+ private:
+  HCRYPTPROV value_ = 0;
+};
+
+class CryptHash {
+ public:
+  ~CryptHash() { if (value_) CryptDestroyHash(value_); }
+  HCRYPTHASH* put() { return &value_; }
+  HCRYPTHASH get() const { return value_; }
+ private:
+  HCRYPTHASH value_ = 0;
 };
 
 std::runtime_error win_error(const char* operation) {
@@ -78,6 +97,65 @@ void require_plain_path(const std::wstring& path, bool directory) {
   }
   bool is_directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
   if (is_directory != directory) throw std::runtime_error("trusted launcher path type mismatch");
+}
+
+std::string sha256_file(const std::wstring& path) {
+  require_plain_path(path, false);
+  Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                          FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  if (!file) throw win_error("CreateFileW(bootstrap-result.json)");
+  CryptProvider provider;
+  if (!CryptAcquireContextW(provider.put(), nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+    throw win_error("CryptAcquireContextW");
+  }
+  CryptHash hash;
+  if (!CryptCreateHash(provider.get(), CALG_SHA_256, 0, 0, hash.put())) {
+    throw win_error("CryptCreateHash");
+  }
+  std::vector<BYTE> block(64 * 1024);
+  while (true) {
+    DWORD read = 0;
+    if (!ReadFile(file.get(), block.data(), static_cast<DWORD>(block.size()), &read, nullptr)) {
+      throw win_error("ReadFile(bootstrap-result.json)");
+    }
+    if (!read) break;
+    if (!CryptHashData(hash.get(), block.data(), read, 0)) throw win_error("CryptHashData");
+  }
+  std::vector<BYTE> digest(32);
+  DWORD digest_size = static_cast<DWORD>(digest.size());
+  if (!CryptGetHashParam(hash.get(), HP_HASHVAL, digest.data(), &digest_size, 0) ||
+      digest_size != static_cast<DWORD>(digest.size())) {
+    throw win_error("CryptGetHashParam");
+  }
+  constexpr char hex[] = "0123456789abcdef";
+  std::string result;
+  result.reserve(digest.size() * 2);
+  for (BYTE byte : digest) {
+    result.push_back(hex[byte >> 4]);
+    result.push_back(hex[byte & 0x0f]);
+  }
+  return result;
+}
+
+void validate_bootstrap_readiness(const std::wstring& root) {
+  std::wstring result_path = join(root, L"bootstrap-result.json");
+  std::string expected = std::string(kBootstrapReadyPrefix) + sha256_file(result_path) + "\n";
+  std::wstring ready = join(root, L"bootstrap.ready");
+  require_plain_path(ready, false);
+  Handle marker(CreateFileW(ready.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  if (!marker) throw win_error("CreateFileW(bootstrap.ready)");
+  LARGE_INTEGER marker_size{};
+  if (!GetFileSizeEx(marker.get(), &marker_size)) throw win_error("GetFileSizeEx(bootstrap.ready)");
+  if (marker_size.QuadPart != static_cast<LONGLONG>(expected.size())) {
+    throw std::runtime_error("bootstrap.ready size is invalid");
+  }
+  std::string payload(expected.size(), '\0');
+  DWORD read = 0;
+  if (!ReadFile(marker.get(), payload.data(), static_cast<DWORD>(payload.size()), &read, nullptr) ||
+      read != static_cast<DWORD>(payload.size()) || payload != expected) {
+    throw std::runtime_error("bootstrap.ready result binding is invalid");
+  }
 }
 
 std::wstring read_operator_sid(const std::wstring& root) {
@@ -437,23 +515,7 @@ DWORD scheduled_parent() {
     require_plain_path(probe, false);
     return parent({L"--restricted-probe"});
   }
-  std::wstring ready = join(root, L"bootstrap.ready");
-  require_plain_path(ready, false);
-  Handle marker(CreateFileW(ready.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-  if (!marker) throw win_error("CreateFileW(bootstrap.ready)");
-  LARGE_INTEGER marker_size{};
-  if (!GetFileSizeEx(marker.get(), &marker_size)) throw win_error("GetFileSizeEx(bootstrap.ready)");
-  constexpr DWORD expected_size = static_cast<DWORD>(sizeof(kBootstrapReadyPayload) - 1);
-  if (marker_size.QuadPart != expected_size) {
-    throw std::runtime_error("bootstrap.ready size is invalid");
-  }
-  std::string payload(expected_size, '\0');
-  DWORD read = 0;
-  if (!ReadFile(marker.get(), payload.data(), expected_size, &read, nullptr) || read != expected_size ||
-      payload != kBootstrapReadyPayload) {
-    throw std::runtime_error("bootstrap.ready content is invalid");
-  }
+  validate_bootstrap_readiness(root);
   return parent({L"--restricted-child"});
 }
 
@@ -489,6 +551,12 @@ int wmain(int argc, wchar_t** argv) {
       return 64;
 #endif
     }
+#ifdef AR_LAUNCHER_TESTING
+    if (argc == 2 && std::wstring(argv[1]) == L"--verify-bootstrap") {
+      validate_bootstrap_readiness(directory_of(module_path()));
+      return 0;
+    }
+#endif
     if (argc == 4 && std::wstring(argv[1]) == L"--restricted-probe") {
       std::wstring root = directory_of(module_path());
       require_plain_path(join(root, L"probe.enabled"), false);

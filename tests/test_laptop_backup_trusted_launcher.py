@@ -85,7 +85,9 @@ def test_source_has_no_general_command_channel() -> None:
     assert "require_write_denied(token, root, true)" in text
     assert "--restricted-child" in text
     assert "bootstrap.ready" in text
-    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in text
+    assert "bootstrap-result.json" in text
+    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2" in text
+    assert "sha256_file(result_path)" in text
 
 
 def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
@@ -112,6 +114,24 @@ def test_production_build_is_reproducible(tmp_path: Path) -> None:
     build(first)
     build(second)
     assert sha256(first) == sha256(second)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only bootstrap binding")
+def test_launcher_rejects_result_bytes_not_bound_by_ready_marker(tmp_path: Path) -> None:
+    launcher = tmp_path / "launcher-test.exe"
+    build(launcher, testing=True)
+    result_path = tmp_path / "bootstrap-result.json"
+    result_path.write_bytes(b'{"result":"PASS"}\n')
+    digest = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    (tmp_path / "bootstrap.ready").write_text(
+        f"AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2\n{digest}\n", encoding="ascii", newline=""
+    )
+    accepted = subprocess.run([str(launcher), "--verify-bootstrap"], capture_output=True, text=True, check=False)
+    assert accepted.returncode == 0, accepted.stderr
+    result_path.write_bytes(b'{"result":"FAIL"}\n')
+    rejected = subprocess.run([str(launcher), "--verify-bootstrap"], capture_output=True, text=True, check=False)
+    assert rejected.returncode == 1
+    assert "result binding is invalid" in rejected.stderr
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only token integration")

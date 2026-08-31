@@ -58,9 +58,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Global\\ARLocalTrustedBootstrapGate" in source
     assert "Enter-ArTrustedBootstrapGate" in source
     assert "bootstrap_gate_held = $true" in source
-    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in source
+    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2" in source
+    assert '$expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$fixedResultSha256`n"' in source
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
-    assert "-AllowedRuntimeFiles @('bootstrap.ready')" in source
+    assert "-AllowedRuntimeFiles @('bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert source.count("Invoke-ArTrustedPiIdleCheck") >= 3
     assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
@@ -96,7 +97,31 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
     assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
-    assert source.index("PUBLISH_TERMINAL_BOOTSTRAP_READINESS") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    terminal_pass = source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    assert source.index("Prepare-ArTrustedBootstrapPublication", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")) < terminal_pass
+    assert terminal_pass < source.index("Publish-ArTrustedBootstrapReadiness -ResultPath $result")
+    assert "PUBLISH_DURABLE_BOOTSTRAP_RESULT" in source
+    publish_function = source[source.index("function Publish-ArTrustedBootstrapReadiness"):source.index("function Assert-ArExactInstalledBootstrap")]
+    assert "Write-ArMutationIntent" not in publish_function
+    assert "bootstrap-result.json.pending" in source
+    assert "bootstrap.ready.pending" in source
+    assert "Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult" in source
+    assert "Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker" in source
+    assert "ArTrustedMoveFile" in core
+    assert "0x00000008" in core
+    assert "Assert-ArTrustedBootstrapResultIdentity" in source
+    assert "Protected bootstrap readiness exists without its durable PASS result" in source
+    assert source.count("Flush($true)") >= 4
+    assert "installed-task-sddl-semantic.sha256" in source
+    assert "Installed task SDDL differs from its protected semantic seal" in source
+    assert "bootstrap.installing.json" in source
+    assert "Read-ArTrustedInterruptedBootstrap" in source
+    assert "RECOVERY_RESTORE_CONTROL_PRESTATE" in source
+    assert "RECOVERY_RESTORE_PRODUCTION_TASK_PRESTATE" in source
+    assert "RECOVERY_QUARANTINE_INTERRUPTED_ROOT" in source
+    assert source.index("REMOVE_INTERRUPTED_RECOVERY_MARKER") < source.index(
+        "Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")
+    )
     assert "Trusted operator lacks read and execute access" in core
     assert "Trusted administrator principal lacks full control" in core
     assert "Trusted package owner is not Administrators" in core
@@ -104,6 +129,23 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows write-through publication contract")
+def test_core_write_through_move_is_executable(tmp_path: Path) -> None:
+    source = tmp_path / "bootstrap-result.json.pending"
+    destination = tmp_path / "bootstrap-result.json"
+    source.write_bytes(b"PASS\n")
+    core = str(ROOT / "install_laptop_backup_trusted_dispatcher_core.ps1").replace("'", "''")
+    source_arg = str(source).replace("'", "''")
+    destination_arg = str(destination).replace("'", "''")
+    command = (
+        f". '{core}'; "
+        f"Move-ArTrustedFileWriteThrough -Source '{source_arg}' -Destination '{destination_arg}'"
+    )
+    subprocess.run(["powershell.exe", "-NoProfile", "-Command", command], check=True)
+    assert not source.exists()
+    assert destination.read_bytes() == b"PASS\n"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell contract")
