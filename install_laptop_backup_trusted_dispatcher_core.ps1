@@ -352,7 +352,8 @@ function Set-ArTrustedRootAcl {
 function Assert-ArTrustedSinglePathAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$OperatorSid
+    [Parameter(Mandatory = $true)][string]$OperatorSid,
+    [switch]$AllowSafeInherited
   )
   $dangerous = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
     [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
@@ -360,7 +361,7 @@ function Assert-ArTrustedSinglePathAcl {
   $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
   $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
   $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
-  if (-not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $Path" }
+  if (-not $AllowSafeInherited -and -not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $Path" }
     $ownerSid = $acl.Owner
     try { $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
   if ($ownerSid -cne 'S-1-5-32-544') { throw "Trusted package owner is not Administrators: $Path" }
@@ -373,19 +374,19 @@ function Assert-ArTrustedSinglePathAcl {
       $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
           ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) {
-        throw "Unprivileged write remains on trusted package: $sid"
+        throw "Unprivileged write remains on trusted package: $sid at $Path"
       }
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny) {
-        throw "Trusted package contains a deny ACE: $sid"
+        throw "Trusted package contains a deny ACE: $sid at $Path"
       }
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $effective.ContainsKey($sid)) {
         $effective[$sid] = $effective[$sid] -bor $rule.FileSystemRights
       }
     }
     foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
-      if (($effective[$sid] -band $fullControl) -ne $fullControl) { throw "Trusted administrator principal lacks full control: $sid" }
+      if (($effective[$sid] -band $fullControl) -ne $fullControl) { throw "Trusted administrator principal lacks full control: $sid at $Path" }
     }
-    if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw 'Trusted operator lacks read and execute access.' }
+    if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Trusted operator lacks read and execute access at $Path" }
 }
 
 function Assert-ArTrustedRootAcl {
@@ -489,7 +490,7 @@ function Assert-ArTrustedShortQuarantineState {
       if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
       Assert-ArTrustedPlainPath $execution.FullName | Out-Null
       Assert-ArTrustedSinglePathAcl -Path $execution.FullName -OperatorSid $OperatorSid
-      Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
+      Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid -AllowSafeInherited
       $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
       for ($index = 1; $index -lt $lines.Count; $index++) {
         $entry = $lines[$index] | ConvertFrom-Json
@@ -562,6 +563,8 @@ function Assert-ArTrustedShortQuarantineState {
   } finally {
     $stream.Dispose()
   }
+  Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
   [pscustomobject]@{ record_path=$path; transaction_count=$verified.Count }
 }
 
