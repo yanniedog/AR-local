@@ -106,10 +106,13 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "source_journal_prefix_bytes" in core
     assert "RECOVERY_SEAL_LEGACY_JOURNAL" in core
     assert "RECOVERY_SEAL_ORPHANED_STAGING" in core
+    assert "legacy_closed_staging" in core
+    assert "Legacy long staging source still exists" in core
     assert "short-quarantine-reconciliation.json" in core
     assert "quarantined-root-" in core
     assert "Write-ArTrustedFailureObserved" in core
-    assert "failed-protected-root-" not in combined
+    assert "failed-protected-root-" not in source
+    assert core.count("failed-protected-root-") == 1
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
     assert "Backup lock, transition lease, or partial residue exists" in source
     assert "dispatcherManifest.allowed_target_root" in source
