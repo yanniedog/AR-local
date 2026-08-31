@@ -14,6 +14,13 @@ import laptop_backup_dispatcher as dispatcher
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def deterministic_activation_window(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests independent of the runner's wall-clock D-006 window."""
+    if request.node.name != "test_activation_lease_cannot_enter_ingest_freeze":
+        monkeypatch.setattr(dispatcher, "require_activation_window", lambda: None)
+
+
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(("git", "-C", str(repo), *args), check=True, capture_output=True, text=True).stdout.strip()
 
@@ -104,6 +111,26 @@ def write_manifest(path: Path, value: dict[str, object]) -> str:
     payload = dispatcher.canonical_json(value)
     path.write_bytes(payload)
     return dispatcher.sha256_bytes(payload)
+
+
+def test_read_only_validation_rejects_noncanonical_and_control_drift(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    proposed.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not canonical"):
+        dispatcher.proposed_activation(proposed)
+    write_manifest(proposed, manifest)
+    _raw, validated, _digest = dispatcher.proposed_activation(proposed)
+    dispatcher.validate_activation_state(dispatcher.layout(control), validated)
+    paths = dispatcher.layout(control)
+    pending = {
+        "schema_version": 1, "sequence": manifest["sequence"],
+        "activation_id": manifest["activation_id"], "manifest_sha256": "f" * 64,
+        "previous_manifest_sha256": manifest["previous_manifest_sha256"], "status": "PENDING",
+    }
+    dispatcher.receipt_path(paths, pending, "PENDING").write_bytes(dispatcher.canonical_json(pending))
+    with pytest.raises(ValueError, match="remains pending"):
+        dispatcher.validate_activation_state(paths, validated)
 
 
 def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

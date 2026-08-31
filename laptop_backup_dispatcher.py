@@ -742,6 +742,38 @@ def run(control_root: Path) -> int:
     return child_exit_code
 
 
+def proposed_activation(manifest_path: Path) -> tuple[bytes, dict[str, object], str]:
+    supplied = manifest_path.read_bytes()
+    raw = canonical_json(parse_json(supplied, "proposed manifest"))
+    if supplied != raw:
+        raise ValueError("proposed manifest bytes are not canonical")
+    manifest = validate_manifest(parse_json(raw, "proposed manifest"), activation=True)
+    return raw, manifest, sha256_bytes(raw)
+
+
+def validate_activation_state(paths: Mapping[str, Path], manifest: Mapping[str, object]) -> None:
+    # This pre-mutation path is deliberately read-only: do not call reconcile()
+    # or pending_activation(), both of which may write terminal receipts.
+    receipt_ledger(paths)
+    for pending_path in sorted(paths["receipts"].glob("*-*-pending.json")):
+        pending = parse_json(pending_path.read_bytes(), "PENDING receipt")
+        if not any(
+            receipt_path(paths, pending, status).exists()
+            for status in ("PASS", "ROLLED_BACK", "ABANDONED")
+        ):
+            raise ValueError("an earlier activation remains pending limited-token proof")
+    current = active(paths)
+    ledger_sequence, activation_ids = receipt_ledger(paths)
+    previous_digest = current[2] if current else None
+    previous_sequence = int(current[0]["sequence"]) if current else 0
+    if manifest["previous_manifest_sha256"] != previous_digest:
+        raise ValueError("manifest predecessor does not match the active pointer")
+    if manifest["sequence"] != ledger_sequence + 1 or previous_sequence > ledger_sequence:
+        raise ValueError("manifest sequence is not the next ledger sequence")
+    if str(manifest["activation_id"]) in activation_ids:
+        raise ValueError("manifest activation ID is a replay")
+
+
 def activate(
     control_root: Path, manifest_path: Path, *, defer_proof: bool = False
 ) -> dict[str, object]:
@@ -758,22 +790,8 @@ def activate(
             if is_admin():
                 raise ValueError("an earlier activation remains pending limited-token proof")
             finalize_pending(paths)
-        current = active(paths)
-        ledger_sequence, activation_ids = receipt_ledger(paths)
-        supplied = manifest_path.read_bytes()
-        raw = canonical_json(parse_json(supplied, "proposed manifest"))
-        if supplied != raw:
-            raise ValueError("proposed manifest bytes are not canonical")
-        manifest = validate_manifest(parse_json(raw, "proposed manifest"), activation=True)
-        previous_digest = current[2] if current else None
-        previous_sequence = int(current[0]["sequence"]) if current else 0
-        if manifest["previous_manifest_sha256"] != previous_digest:
-            raise ValueError("manifest predecessor does not match the active pointer")
-        if manifest["sequence"] != ledger_sequence + 1 or previous_sequence > ledger_sequence:
-            raise ValueError("manifest sequence is not the next ledger sequence")
-        if str(manifest["activation_id"]) in activation_ids:
-            raise ValueError("manifest activation ID is a replay")
-        digest = sha256_bytes(raw)
+        raw, manifest, digest = proposed_activation(manifest_path)
+        validate_activation_state(paths, manifest)
         immutable_write(paths["manifests"] / f"{digest}.json", raw)
         pending = {
             "schema_version": 1, "sequence": manifest["sequence"],
@@ -873,6 +891,9 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--manifest", type=Path, required=True)
     item.add_argument("--defer-proof", action="store_true")
+    item = sub.add_parser("validate")
+    item.add_argument("--control-root", type=Path, required=True)
+    item.add_argument("--manifest", type=Path, required=True)
     item = sub.add_parser("finalize")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--output", type=Path)
@@ -912,6 +933,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "activate":
             value = activate(args.control_root, args.manifest, defer_proof=args.defer_proof)
+        elif args.command == "validate":
+            raw, validated, _digest = proposed_activation(args.manifest)
+            validate_activation_state(layout(args.control_root), validated)
+            value = {
+                "ok": True, "result": "PASS", "mode": "VALIDATE",
+                "candidate_code_sha": validated["candidate_code_sha"],
+                "sequence": validated["sequence"],
+            }
         elif args.command == "finalize":
             value = finalize_pending(layout(args.control_root))
         elif args.command == "prepare":

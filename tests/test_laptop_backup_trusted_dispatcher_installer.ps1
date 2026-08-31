@@ -33,6 +33,34 @@ $inheritedSddl = 'D:P(A;ID;FR;;;SY)'
 if ((Get-ArTrustedSddlSemanticSha256 $explicitSddl) -ceq (Get-ArTrustedSddlSemanticSha256 $inheritedSddl)) {
   throw 'Semantic SDDL digest discarded ACE inheritance provenance.'
 }
+$manifestPath = Join-Path $env:TEMP ('ar-preexecution-' + [guid]::NewGuid().ToString('N') + '.json')
+try {
+  $expected = [ordered]@{ schema_version=1; candidate_code_sha=('a' * 40) }
+  $manifest = [ordered]@{
+    schema_version=1; candidate_code_sha=('a' * 40)
+    created_at=[DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('o')
+    expires_at=[DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o')
+  }
+  [IO.File]::WriteAllText($manifestPath,(($manifest|ConvertTo-Json -Compress)+"`n"),[Text.UTF8Encoding]::new($false))
+  $manifestHash = Get-ArTrustedSha256 $manifestPath
+  $loaded = Read-ArTrustedPreExecutionManifest -Path $manifestPath -ExpectedSha256 $manifestHash
+  Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected
+  $loaded.candidate_code_sha = 'b' * 40
+  $rejected = $false
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Pre-execution identity drift was accepted.' }
+  $loaded.candidate_code_sha = 'a' * 40
+  $loaded.schema_version = $null
+  $rejected = $false
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Null pre-execution integer field was accepted.' }
+  $loaded.schema_version = 1
+  $loaded.created_at = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o')
+  $loaded.expires_at = [DateTimeOffset]::UtcNow.AddMinutes(20).ToString('o')
+  $rejected = $false
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequireFresh } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Future pre-execution creation time was accepted.' }
+} finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltInRole]::Administrator

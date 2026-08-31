@@ -50,6 +50,17 @@ def clone_exact(source: Path, destination: Path, commit: str) -> None:
     git(destination, "-c", "core.autocrlf=false", "checkout", "--quiet", "--detach", commit)
     if git(destination, "rev-parse", "HEAD").lower() != commit or git(destination, "status", "--porcelain"):
         raise ValueError("standalone protected checkout is not exact and clean")
+    # Clone reflogs and the checkout-populated index contain timestamps and file
+    # stat data.  Remove that nondeterministic metadata, rebuild a canonical
+    # tree-only index, and disable future reflogs.  GIT_OPTIONAL_LOCKS=0 in the
+    # protected runtime prevents read-only status checks from refreshing it.
+    metadata = destination / ".git"
+    shutil.rmtree(metadata / "logs", ignore_errors=True)
+    shutil.rmtree(metadata / "hooks", ignore_errors=True)
+    for name in ("index", "FETCH_HEAD", "ORIG_HEAD", "COMMIT_EDITMSG"):
+        (metadata / name).unlink(missing_ok=True)
+    git(destination, "config", "core.logAllRefUpdates", "false")
+    git(destination, "read-tree", "HEAD")
 
 
 def copy_plain_tree(source: Path, destination: Path) -> None:

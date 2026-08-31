@@ -25,6 +25,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ExpectedOldTaskXmlSha256" in source
     assert "ExpectedOldTaskSddlSha256" in source
     assert "ExpectedOldTaskSddlSemanticSha256" in source
+    assert "PreExecutionManifestPath" in source
+    assert "PreExecutionManifestSha256" in source
     assert "PlanGitCommit" in source
     assert "PlanSha256" in source
     assert "HandoffSha256" in source
@@ -51,6 +53,9 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Restore-ArTrustedControlRootAtomic" in source
     assert "rollbackErrors.Add" in source
     assert "PRESTATE_REJECTED" in source
+    assert "rollback-task.sddl" in source
+    assert "dispatcher validate --control-root $ControlRoot --manifest" in source
+    assert source.index("dispatcher validate --control-root $ControlRoot --manifest") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner
@@ -119,6 +124,16 @@ def test_package_builder_makes_standalone_exact_checkouts(tmp_path: Path) -> Non
         whoami=str(tools[3]), output=str(output),
     ))
     assert result["sha256"]
+    second = tmp_path / "trusted-second.zip"
+    second_result = build(argparse.Namespace(
+        candidate_repo=str(candidate), candidate_sha=candidate_sha,
+        authority_repo=str(authority), authority_sha=authority_sha,
+        python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
+        install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
+        operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
+        whoami=str(tools[3]), output=str(second),
+    ))
+    assert second_result["sha256"] == result["sha256"]
     with zipfile.ZipFile(output) as archive:
         names = set(archive.namelist())
         package = json.loads(archive.read("package-manifest.json"))
