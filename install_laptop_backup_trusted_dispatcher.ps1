@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory = $true)][string]$InstallRoot,
   [Parameter(Mandatory = $true)][string]$Target,
   [Parameter(Mandatory = $true)][string]$ControlRoot,
+  [Parameter(Mandatory = $true)][string]$RecoveryImage,
   [Parameter(Mandatory = $true)][string]$EvidenceRoot,
   [Parameter(Mandatory = $true)][string]$Principal,
   [Parameter(Mandatory = $true)][string]$Operator,
@@ -110,7 +111,7 @@ if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [Ti
 if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) { throw 'Trusted package is absent.' }
 if (-not (Test-Path -LiteralPath $PreExecutionManifestPath -PathType Leaf)) { throw 'Pre-execution manifest is absent.' }
 foreach ($path in @($Target,$ControlRoot)) { if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is absent: $path" } }
-foreach ($path in @($PackagePath,$PreExecutionManifestPath,$Target,$ControlRoot,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
+foreach ($path in @($PackagePath,$PreExecutionManifestPath,$Target,$ControlRoot,$RecoveryImage,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
 $expectedControl = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
 if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($expectedControl)) { throw 'ControlRoot must be exactly Target\dispatcher-control.' }
 $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
@@ -132,6 +133,7 @@ $expectedPreExecution = [ordered]@{
   schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; task_name = $TaskName
   package_path = [IO.Path]::GetFullPath($PackagePath); package_sha256 = $PackageSha256
   install_root = $installFull; target = [IO.Path]::GetFullPath($Target); control_root = [IO.Path]::GetFullPath($ControlRoot)
+  recovery_image = [IO.Path]::GetFullPath($RecoveryImage)
   evidence_root = $evidenceFull; principal = $Principal; operator = $Operator; operator_sid = $OperatorSid
   candidate_code_sha = $CandidateCodeSha; authority_commit = $AuthorityCommit; protected_code_sha = $ProtectedCodeSha
   plan_git_commit = $PlanGitCommit; plan_sha256 = $PlanSha256; handoff_sha256 = $HandoffSha256
@@ -144,6 +146,14 @@ Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expected
 if ((Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
 $active = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
 if ($active.Count) { throw 'A laptop backup or dispatcher process is already active.' }
+$residue = @()
+foreach ($path in @((Join-Path $Target 'catalog\.receiver.lock'),(Join-Path $ControlRoot 'transition.lease'))) {
+  if (Test-Path -LiteralPath $path) { $residue += $path }
+}
+$residue += @(Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction Stop | Where-Object {
+  $_.Name -like '*.partial' -or $_.Name -like '.partial-*' -or $_.Name -like '*.partial-*'
+} | ForEach-Object { $_.FullName })
+if ($residue.Count) { throw 'Backup lock, transition lease, or partial residue exists.' }
 
 $ssh = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
 $piLines = @('set -eu','cd /srv/ar-local/AR-local',('test "$(git rev-parse HEAD)" = ''{0}''' -f $ProtectedCodeSha),'test -z "$(git status --porcelain=v1)"','! systemctl is-active --quiet ar-local-daily.service','test ! -e /srv/ar-local/data/state/daily-ingest.lock','curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null','echo AR_PI_PREFLIGHT_PASS')
@@ -218,6 +228,9 @@ try {
 $staging = $InstallRoot + '.staging-' + [guid]::NewGuid().ToString('N')
 $probeName = 'AR-local trusted dispatcher probe ' + [guid]::NewGuid().ToString('N')
 $controlPrestate = Join-Path $script:executionRoot 'dispatcher-control-prestate'
+$controlSddl = (Get-Acl -LiteralPath $ControlRoot -ErrorAction Stop).Sddl
+$controlSddlSemanticSha256 = Get-ArTrustedSddlBinarySha256 $controlSddl
+[IO.File]::WriteAllText((Join-Path $script:executionRoot 'pre-bootstrap-control.sddl'), $controlSddl, [Text.UTF8Encoding]::new($false))
 $mutated = $false; $probeRegistered = $false; $installed = $false; $controlChanged = $false
 try {
   # Authenticate and publish the new protected bytes before the first task or
@@ -249,7 +262,11 @@ try {
       [IO.Path]::GetFullPath([string]$dispatcherManifest.receiver) -cne (Join-Path $InstallRoot 'receiver') -or
       [IO.Path]::GetFullPath([string]$dispatcherManifest.authority_repo) -cne (Join-Path $InstallRoot 'authority') -or
       [IO.Path]::GetFullPath([string]$dispatcherManifest.python_path) -cne $python -or
-      [IO.Path]::GetFullPath([string]$dispatcherManifest.allowed_receiver_root) -cne [IO.Path]::GetFullPath($InstallRoot)) {
+      [IO.Path]::GetFullPath([string]$dispatcherManifest.allowed_receiver_root) -cne [IO.Path]::GetFullPath($InstallRoot) -or
+      [IO.Path]::GetFullPath([string]$dispatcherManifest.target) -cne [IO.Path]::GetFullPath($Target) -or
+      [IO.Path]::GetFullPath([string]$dispatcherManifest.allowed_target_root) -cne [IO.Path]::GetFullPath($Target) -or
+      [IO.Path]::GetFullPath([string]$dispatcherManifest.recovery_image) -cne [IO.Path]::GetFullPath($RecoveryImage) -or
+      [IO.Path]::GetFullPath([string]$dispatcherManifest.allowed_recovery_root) -cne [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($RecoveryImage))) {
     throw 'Protected dispatcher manifest does not match the authorised bootstrap identity.'
   }
   $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
@@ -336,7 +353,8 @@ try {
     try {
       Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_CONTROL' -TargetPath $ControlRoot
       Restore-ArTrustedControlRootAtomic -ControlRoot $ControlRoot -Prestate $controlPrestate `
-        -EvidenceRoot $script:executionRoot -OperatorSid $OperatorSid
+        -EvidenceRoot $script:executionRoot -OperatorSid $OperatorSid -ControlSddl $controlSddl `
+        -ExpectedControlSddlSha256 $controlSddlSemanticSha256
     } catch { $rollbackErrors.Add("control restore: $($_.Exception.Message)") }
   }
   if ($mutated) {
@@ -358,8 +376,13 @@ try {
   }
   foreach ($path in @($staging,$InstallRoot)) {
     if (Test-Path -LiteralPath $path) {
-      try { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_NEW_ROOT' -TargetPath $path; Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }
-      catch { $rollbackErrors.Add("root cleanup $path`: $($_.Exception.Message)") }
+      try {
+        $destination = Join-Path $script:executionRoot ('failed-protected-root-' + [guid]::NewGuid().ToString('N'))
+        Write-ArMutationIntent -Action 'ROLLBACK_QUARANTINE_NEW_ROOT' -TargetPath $path
+        Move-Item -LiteralPath $path -Destination $destination -ErrorAction Stop
+        Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
+        Assert-ArTrustedRootAcl -Root $destination
+      } catch { $rollbackErrors.Add("root quarantine $path`: $($_.Exception.Message)") }
     }
   }
   $outcome = if ($rollbackErrors.Count -eq 0) { 'ROLLED_BACK' } else { 'FAIL' }

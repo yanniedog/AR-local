@@ -15,6 +15,16 @@ function Get-ArTrustedTextSha256 {
   } finally { $algorithm.Dispose() }
 }
 
+function Get-ArTrustedSddlBinarySha256 {
+  param([Parameter(Mandatory = $true)][string]$Sddl)
+  $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
+  $bytes = New-Object byte[] $descriptor.BinaryLength
+  $descriptor.GetBinaryForm($bytes,0)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try { ([BitConverter]::ToString($algorithm.ComputeHash($bytes)) -replace '-','').ToLowerInvariant() }
+  finally { $algorithm.Dispose() }
+}
+
 function Read-ArTrustedPreExecutionManifest {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -345,7 +355,9 @@ function Restore-ArTrustedControlRootAtomic {
     [Parameter(Mandatory = $true)][string]$ControlRoot,
     [Parameter(Mandatory = $true)][string]$Prestate,
     [Parameter(Mandatory = $true)][string]$EvidenceRoot,
-    [Parameter(Mandatory = $true)][string]$OperatorSid
+    [Parameter(Mandatory = $true)][string]$OperatorSid,
+    [Parameter(Mandatory = $true)][string]$ControlSddl,
+    [Parameter(Mandatory = $true)][string]$ExpectedControlSddlSha256
   )
   $expected = Get-ArTrustedTreeDigest $Prestate
   $restore = $ControlRoot + '.restore-' + [guid]::NewGuid().ToString('N')
@@ -363,6 +375,11 @@ function Restore-ArTrustedControlRootAtomic {
     throw
   }
   if ((Get-ArTrustedTreeDigest $ControlRoot) -cne $expected) { throw 'Restored control digest mismatch.' }
+  $restoredAcl = New-Object Security.AccessControl.DirectorySecurity
+  $restoredAcl.SetSecurityDescriptorSddlForm($ControlSddl)
+  Set-Acl -LiteralPath $ControlRoot -AclObject $restoredAcl -ErrorAction Stop
+  $actualSddl = (Get-Acl -LiteralPath $ControlRoot -ErrorAction Stop).Sddl
+  if ((Get-ArTrustedSddlBinarySha256 $actualSddl) -cne $ExpectedControlSddlSha256) { throw 'Restored control ACL differs from authenticated prestate.' }
   if ($movedCurrent -and (Test-Path -LiteralPath $failed)) {
     $destination = Join-Path $EvidenceRoot 'failed-dispatcher-control'
     Move-Item -LiteralPath $failed -Destination $destination -ErrorAction Stop
