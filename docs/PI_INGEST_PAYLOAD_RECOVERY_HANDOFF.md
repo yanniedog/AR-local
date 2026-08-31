@@ -5510,7 +5510,7 @@ pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
 | Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
 | Documentation source | clean `origin/main` worktree at `c40c57b39846866bd2b7c05c9255f50d31f9c755`; pre-append handoff Git-blob SHA-256 `330212f84565ba532373b486daa6045ed2f475c97c3cd880156f9555e016e4d8` |
 | Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; service inactive, timer enabled/active, lock absent and dashboard HTTP 200 at authorization preflight |
-| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merge `4428f12089576523e41de40fb08c29cbf8fe60ab`; PR #587 head `80b42b2dbd63a04d0e5006d23cd26d9ca7bd7042`, merge `8182ba8245569395ddab3c5fd1e2ee549c475eb8`; rollback/evidence hardening PR #588 head `42cef4e33d5a5120d736da5d90720b0d8132d2b7`, merged as candidate `5dee9e0334a7ad34b49e5b95099525d6218e1e6a` |
+| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merge `4428f12089576523e41de40fb08c29cbf8fe60ab`; PR #587 head `80b42b2dbd63a04d0e5006d23cd26d9ca7bd7042`, merge `8182ba8245569395ddab3c5fd1e2ee549c475eb8`; PR #588 head `42cef4e33d5a5120d736da5d90720b0d8132d2b7`, merge `5dee9e0334a7ad34b49e5b95099525d6218e1e6a`; final catalog/invocation/ACL hardening PR #589 head `69f8327a34aed31254a9276826d97306c5eb7bc9`, merged as candidate `87650e250a536c0920548a4db38aa76623eb6a9f` |
 | Result | implementation and authority decision `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
 | Deviations | append-only decisions `D-011` and `D-012` below |
 
@@ -5525,6 +5525,12 @@ mutation; preserved restored raw SDDL; and made package Git metadata reproducibl
 PR #588 bound the exact target and recovery paths, rejected backup residue,
 preserved/restored the dispatcher-control ACL, and quarantined failed protected
 roots and displaced control state into hashed evidence on every failure path.
+PR #589 then moved the authenticated catalog baseline fully inside the elevated
+boundary, validates every catalog chain link and pointer binding, hashes the
+accepted archive bytes, binds a typed canonical invocation contract and observed
+preflight, verifies the bound authority actually contains D-011/D-012 before
+recording them, and requires Administrators ownership, SYSTEM/Administrators
+full control, operator read/execute, no operator write and no deny ACE.
 The scheduled task will enter an administrator-protected native launcher before
 it reads any operator-writable configuration or code. The launcher derives a
 restricted token with `CreateRestrictedToken`, proves the expected integrity
@@ -5552,14 +5558,21 @@ future timestamps and typed manifest fields were implemented and resolved.
 PR #588's final head passed the same hosted Windows/Linux and feedback gates;
 its focused local installer/dispatcher suite passed 20 tests, including injected
 ACL-verification failure with displaced-control preservation.
+PR #589's final head passed the hosted Windows PowerShell 5.1 dispatcher
+contract, Linux payload-builder suite, `bot-feedback-gate` and Sourcery review.
+The complete local repository suite passed with 1343 tests and 13 skips when
+run inside the MSVC x64 environment; its focused installer and native-launcher
+contracts passed separately. All substantive PR #589 findings were implemented
+or, for the impossible manifest-self-hash, explicitly declined under D-012's
+non-circular outer-command binding and resolved. Advisory Gemini failed quota.
 
 Exact immutable source blobs at final candidate
-`5dee9e0334a7ad34b49e5b95099525d6218e1e6a` are:
+`87650e250a536c0920548a4db38aa76623eb6a9f` are:
 
 | Path | Bytes | Git-blob SHA-256 |
 |---|---:|---|
-| `install_laptop_backup_trusted_dispatcher.ps1` | 29677 | `6ecd1f4871004dd2ae1c8bc297dc8d0e2a3ab1444a988e42fe7022c8cfcf1c7d` |
-| `install_laptop_backup_trusted_dispatcher_core.ps1` | 24853 | `540952fee6e6ca1750e5a9c0e5194b7b9bfb4686bdf5e6eb9cddf006129c05e3` |
+| `install_laptop_backup_trusted_dispatcher.ps1` | 37668 | `501024d3220b2b113dc17e56f7bbfd09ab299d0512bb8af3d5d59f4cec45cd6f` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 34477 | `6e22b4a23c8227b995ad827b5547652412320d4a31eaab983d1ded86ba3c568a` |
 | `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
 | `native/laptop_backup_trusted_launcher.cpp` | 18969 | `03d359cdb1b3ba0e5763daad803d964a00cf25581d64088b56db86f83b140071` |
 | `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
@@ -5625,7 +5638,7 @@ This entry authorizes a two-stage, fail-closed binding:
 3. outside D-006, create clean detached candidate and authority checkouts, build
    the native launcher reproducibly, generate an expiring dispatcher manifest,
    and build one deterministic protected package using only candidate
-   `5dee9e0334a7ad34b49e5b95099525d6218e1e6a` and that authority merge;
+   `87650e250a536c0920548a4db38aa76623eb6a9f` and that authority merge;
 4. before elevation, write an immutable pre-execution manifest recording every
    input/output path, byte length and SHA-256, the complete installer command,
    rollback procedure, current task/Pi/space/process gates and plan identity;
@@ -5674,7 +5687,7 @@ The authenticated no-write catalog baseline captured at
 | `catalog/generations.jsonl` | 236234 bytes; SHA-256 `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511`; final sequence 336, kind `macro`, entry SHA-256 `368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420` |
 | `catalog/latest-verified.json` | 316 bytes; SHA-256 `737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`; observation catalog entry SHA-256 `6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68` |
 | latest accepted receipt | `observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json`; 3392 bytes; SHA-256 `7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea` |
-| accepted observation | `obs-2026-08-30-69a34aa4c745bb2e`; date `2026-08-30`; archive SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b` |
+| accepted observation | `obs-2026-08-30-69a34aa4c745bb2e`; date `2026-08-30`; archive 237101208 bytes; SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b` |
 
 The bootstrap must hash these files immediately before and after transition and
 prove exact equality. Any startup trigger, helper or external write that changes
@@ -5689,6 +5702,11 @@ control paths. Failed new roots are moved under protected execution evidence,
 not deleted. Control rollback must restore both exact tree bytes and the
 authenticated binary security descriptor; the displaced tree is preserved in
 evidence even when ACL restoration or verification fails.
+The typed manifest and installer arguments must also bind catalog entry
+`6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68`
+and the exact accepted archive size above. The installer must validate the full
+336-entry catalog hash chain, its observation pointer, receipt and actual
+archive bytes before and after transition.
 
 Terminal bootstrap acceptance requires a protected-root ACL denying the
 operator write access, exact package population, exact detached repositories,
