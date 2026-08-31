@@ -169,11 +169,17 @@ if ($isAdmin) {
     $script:bootstrapGate = [object]::new()
     $script:executionRoot = $currentExecution
     Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
-    if ((Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')) -or
-        (Test-Path -LiteralPath $orphanedStage) -or
-        @(Get-ChildItem -LiteralPath $quarantineTestRoot -Directory | Where-Object { $_.Name -match '^ARLBQ-' }).Count -ne 2 -or
-        -not (Test-Path -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json'))) {
-      throw 'Journaled short quarantine was not recovered and sealed.'
+    $recoveryState = [ordered]@{
+      source_exists=Test-Path -LiteralPath $source
+      destination_file_exists=Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')
+      orphaned_stage_exists=Test-Path -LiteralPath $orphanedStage
+      quarantine_roots=@(Get-ChildItem -LiteralPath $quarantineTestRoot -Directory | Where-Object { $_.Name -match '^ARLBQ-' } | ForEach-Object Name)
+      reconciliation_exists=Test-Path -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json')
+    }
+    if ($recoveryState.source_exists -or -not $recoveryState.destination_file_exists -or
+        $recoveryState.orphaned_stage_exists -or $recoveryState.quarantine_roots.Count -ne 2 -or
+        -not $recoveryState.reconciliation_exists) {
+      throw ('Journaled short quarantine was not recovered and sealed: ' + ($recoveryState | ConvertTo-Json -Compress))
     }
     $nextExecution = Join-Path $evidenceRoot 'next'
     New-Item -ItemType Directory -Path $nextExecution | Out-Null
