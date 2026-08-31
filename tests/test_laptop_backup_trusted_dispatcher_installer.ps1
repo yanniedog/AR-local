@@ -154,9 +154,12 @@ if ($isAdmin) {
       ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='ROLLBACK_QUARANTINE_NEW_ROOT'; target=$source } | ConvertTo-Json -Compress),
       ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='PUBLISH_SHORT_PROTECTED_QUARANTINE'; target=$destination } | ConvertTo-Json -Compress)
     )
-    [IO.File]::WriteAllText((Join-Path $priorExecution 'mutation-journal.jsonl'),(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
+    $priorJournal = Join-Path $priorExecution 'mutation-journal.jsonl'
+    [IO.File]::WriteAllText($priorJournal,(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
     Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $priorJournal -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
+    $script:OperatorSid = $operatorSidForAcl
     $script:executionRoot = $currentExecution
     Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
     if ((Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')) -or

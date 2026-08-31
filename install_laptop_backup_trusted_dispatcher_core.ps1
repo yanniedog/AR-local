@@ -345,15 +345,36 @@ function Set-ArTrustedRootAcl {
   $icacls = "$env:SystemRoot\System32\icacls.exe"
   & $icacls $Root '/setowner' '*S-1-5-32-544' '/T' '/C' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to set trusted package owner.' }
-  & $icacls $Root '/inheritance:r' '/grant:r' '*S-1-5-18:(OI)(CI)(F)' '*S-1-5-32-544:(OI)(CI)(F)' "*$OperatorSid`:(OI)(CI)(RX)" '/T' '/C' | Out-Null
+  $item = Get-Item -LiteralPath $Root -Force -ErrorAction Stop
+  $grants = if ($item.PSIsContainer) {
+    @('*S-1-5-18:(OI)(CI)(F)','*S-1-5-32-544:(OI)(CI)(F)',"*$OperatorSid`:(OI)(CI)(RX)")
+  } else {
+    @('*S-1-5-18:(F)','*S-1-5-32-544:(F)',"*$OperatorSid`:(RX)")
+  }
+  & $icacls $Root '/inheritance:r' '/grant:r' $grants '/T' '/C' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to protect trusted package ACL.' }
+}
+
+function Write-ArMutationIntent {
+  param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$TargetPath)
+  $entry = [ordered]@{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = $Action; target = $TargetPath }
+  $path = Join-Path $script:executionRoot 'mutation-journal.jsonl'
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($entry | ConvertTo-Json -Compress) + "`n")
+  $stream = [IO.File]::Open($path,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
+  Set-ArTrustedRootAcl -Root $path -OperatorSid $OperatorSid
+  Assert-ArTrustedSinglePathAcl -Path $path -OperatorSid $OperatorSid
 }
 
 function Assert-ArTrustedSinglePathAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$OperatorSid,
-    [switch]$AllowSafeInherited
+    [Parameter(Mandatory = $true)][string]$OperatorSid
   )
   $dangerous = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
     [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
@@ -361,7 +382,7 @@ function Assert-ArTrustedSinglePathAcl {
   $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
   $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
   $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
-  if (-not $AllowSafeInherited -and -not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $Path" }
+  if (-not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $Path" }
     $ownerSid = $acl.Owner
     try { $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
   if ($ownerSid -cne 'S-1-5-32-544') { throw "Trusted package owner is not Administrators: $Path" }
@@ -490,7 +511,7 @@ function Assert-ArTrustedShortQuarantineState {
       if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
       Assert-ArTrustedPlainPath $execution.FullName | Out-Null
       Assert-ArTrustedSinglePathAcl -Path $execution.FullName -OperatorSid $OperatorSid
-      Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid -AllowSafeInherited
+      Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
       $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
       for ($index = 1; $index -lt $lines.Count; $index++) {
         $entry = $lines[$index] | ConvertFrom-Json

@@ -95,20 +95,6 @@ function Write-ArTrustedResult {
   $path
 }
 
-function Write-ArMutationIntent {
-  param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$TargetPath)
-  $entry = [ordered]@{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = $Action; target = $TargetPath }
-  $path = Join-Path $script:executionRoot 'mutation-journal.jsonl'
-  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($entry | ConvertTo-Json -Compress) + "`n")
-  $stream = [IO.File]::Open($path,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::Read)
-  try {
-    $stream.Write($bytes,0,$bytes.Length)
-    $stream.Flush($true)
-  } finally {
-    $stream.Dispose()
-  }
-}
-
 function Enter-ArTrustedBootstrapGate {
   if ($null -ne $script:bootstrapGate) { throw 'Trusted bootstrap gate is already held by this process.' }
   $createdNew = $false
