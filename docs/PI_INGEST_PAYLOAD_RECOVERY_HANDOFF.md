@@ -5925,3 +5925,101 @@ expires this authority and requires another append-only decision. No manual
 backup, ingest, deployment or publication is authorized. A3 remains `RUNNING`
 until installer terminal `PASS` and the protected natural 01:00/05:00 proofs;
 A4 remains `BLOCKED`.
+
+## Entry `HANDOFF-20260831T125641+1000-A3-RECOVERY-SAFE-CANDIDATE`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T125641+1000-A3-RECOVERY-SAFE-CANDIDATE` |
+| Previous handoff entry | `HANDOFF-20260831T120011+1000-A3-FINAL-AUTHORITY-CORRECTION` |
+| Created | `2026-08-31T12:56:41+10:00` / `2026-08-31T02:56:41Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Pre-append handoff Git-blob SHA-256 | `815cc03c89b0a6e0152d54be448f9196a274bd129e7fb671d48fc689542c0160` |
+| Final implementation | PR #592 head `e6e92c782fb743dcb9913bf158582d0f5bd0143b`; squash merge and sole code candidate `0a444caab7624499bca7ffdbbc56189e152e53e9` |
+| Protected Pi | remains clean and pinned at `9302890fcc752cbf90da97d597e972c157d913e3`; this implementation performed no Pi deployment, ingest, publication or backup-task trigger |
+| Result | implementation and corrected authority `PASS`; live bootstrap `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | D-011 and D-012 only; no new deviation |
+
+### Correct predecessor provenance
+
+The digest `63263d0cdc69c81c01ec21b51f0dce5b372afb7c3b86beb096f52f221dec0da6`
+recorded by the `HANDOFF-20260831T114941+1000-A3-FINAL-TRUSTED-CANDIDATE`
+entry is reproducible from the raw Git blob
+`67723eee0d03dd8d25e68c2e748a0b4268353bc6:docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md`.
+That merge commit has first parent
+`8b077e6964616940feb3a84bfed0fbb82576ec7e` and second parent
+`64d0f4a09fdcf5a15ad28effe6b8b114fd9134ff`; its
+handoff blob is 400049 bytes and has the stated SHA-256. This append-only entry
+names the canonical source commit explicitly; it does not rewrite the earlier
+record.
+
+### Terminal behavioral corrections
+
+PR #592 closes every remaining authority-review defect before elevation.
+Ordinary manifest activation now creates and owns the same global bootstrap
+mutex before acquiring `transition.lease` and holds it until the lease is
+released. The installer and ordinary activator therefore cannot pass separate
+check-then-act windows or replace a pointer outside the state the installer
+validated.
+
+The protected task SDDL now has a semantic SHA-256 seal created before task
+activation and rechecked on every installed-state recovery. A changed positive
+SYSTEM, Administrators or operator grant cannot be reported as idempotent
+`PASS` merely because dangerous unprivileged rights remain absent.
+
+Terminal bootstrap publication is crash recoverable. A protected
+`bootstrap.installing.json`, authenticated prior task/control evidence and the
+append-only mutation journal distinguish an interrupted root publication. A
+rerun under the global mutex can stop only authenticated disposable helpers,
+restore the exact old task and changed control tree, recheck the immutable
+catalog and quarantine the partial root. Once terminal validation is complete,
+all publication intents and incomplete-sibling reconciliation finish before the
+execution record hashes its evidence. The PASS result and readiness marker are
+each written to a fixed sibling, flushed, and promoted with
+`MoveFileExW(MOVEFILE_WRITE_THROUGH)`. The native launcher hashes the exact
+durable result and accepts only the V2 readiness marker containing that digest;
+altered, stale, truncated, reparse-point or contradictory bytes fail before any
+backup child starts. The execution record excludes itself from its evidence
+inventory so a later failure rewrite cannot invalidate its own hashes.
+
+Exact-head hosted Linux payload-builder, Windows PowerShell 5.1 dispatcher
+contract, Gemini, Sourcery and required feedback gates passed with no unresolved
+threads. The complete local exact-head suite in the MSVC x64 environment passed
+`1352` tests with `13` intentional skips and four existing OpenPyXL warnings.
+
+### Exact sole-candidate source bytes
+
+The deterministic package and authenticated manifest must use Git-blob bytes
+from candidate `0a444caab7624499bca7ffdbbc56189e152e53e9` exactly:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 65914 | `cc2fa123166c36403b10fe097a10c06c793ea286324f170e56882b4c492843a9` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 35670 | `0199ff7d04090558cfd1f7c30532297ce145806589217935a970d68b171887ea` |
+| `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
+| `native/laptop_backup_trusted_launcher.cpp` | 23066 | `ce27291580f3a2e0a541849ded828576be1b90350f6a57f2713464fcf4f4ad02` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
+| `laptop_backup_dispatcher.py` | 54023 | `3c00cf2c0a101a34f3ab1d98af22348a648838d7dfe3419fa034fd3ae66b7a46` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+
+### Continuation authority
+
+Merge this documentation-only authority through exact-head CI and thread gates.
+Under D-012, that merge commit and the complete merged handoff Git-blob SHA-256
+become the only authority identity. Build from separate clean detached candidate
+and authority checkouts, compile the launcher twice with identical output,
+construct one deterministic package and one short-lived typed pre-execution
+manifest, and repeat the exact live task, catalog, process, residue, free-space
+and protected-Pi checks immediately before the one authorized elevation. Any
+identity or baseline change blocks and requires a new append-only entry.
+
+Installer `PASS` still does not close A3. D-006 protects the natural
+`2026-09-01` 01:00 ingest, and the first natural trusted 05:00 backup must meet
+the action-specific conditions in the immediately preceding entry with exact
+catalog, archive, restore and Pi-source equality. Never manually trigger the
+backup or ingest. Only a later append-only terminal `PASS` may complete A3 and
+authorize A4.
