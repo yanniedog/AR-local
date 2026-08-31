@@ -140,6 +140,87 @@ if ($isAdmin) {
   }
   Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -ErrorAction SilentlyContinue
 
+  $quarantineTestRoot = Join-Path $env:TEMP ('ar-short-quarantine-' + [guid]::NewGuid().ToString('N'))
+  $evidenceName = 'AR-local-backup-evidence-' + ('a' * 40) + '-' + ('b' * 40)
+  $evidenceRoot = Join-Path $quarantineTestRoot $evidenceName
+  $priorExecution = Join-Path $evidenceRoot 'prior'
+  $currentExecution = Join-Path $evidenceRoot 'current'
+  $stagedExecution = Join-Path $evidenceRoot 'staged'
+  $source = Join-Path $quarantineTestRoot ('ARLBS-' + ('c' * 32))
+  $destination = Join-Path $quarantineTestRoot ('ARLBQ-' + ('d' * 32))
+  $orphanedStage = Join-Path $quarantineTestRoot ('ARLBS-' + ('f' * 32))
+  try {
+    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$stagedExecution,$source,$orphanedStage -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $source 'preserved.txt'),'preserved',[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $orphanedStage 'orphaned.txt'),'orphaned',[Text.UTF8Encoding]::new($false))
+    $journalLines = @(
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='ROLLBACK_QUARANTINE_NEW_ROOT'; target=$source } | ConvertTo-Json -Compress),
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='PUBLISH_SHORT_PROTECTED_QUARANTINE'; target=$destination } | ConvertTo-Json -Compress)
+    )
+    $priorJournal = Join-Path $priorExecution 'mutation-journal.jsonl'
+    [IO.File]::WriteAllText($priorJournal,(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
+    $stagedJournal = Join-Path $stagedExecution 'mutation-journal.jsonl'
+    $stagedLine = [ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$orphanedStage } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($stagedJournal,($stagedLine + "`n"),[Text.UTF8Encoding]::new($false))
+    Set-ArTrustedRootAcl -Root $quarantineTestRoot -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $orphanedStage -OperatorSid $operatorSidForAcl
+    & "$env:SystemRoot\System32\icacls.exe" $priorJournal '/inheritance:e' '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0 -or (Get-Acl -LiteralPath $priorJournal).AreAccessRulesProtected) {
+      throw 'Failed to create inherited legacy-journal fixture.'
+    }
+    & "$env:SystemRoot\System32\icacls.exe" $orphanedStage '/inheritance:e' '/T' '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to create inherited staging fixture.' }
+    $script:OperatorSid = $operatorSidForAcl
+    $script:bootstrapGate = [object]::new()
+    $script:executionRoot = $currentExecution
+    Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    $recoveryState = [ordered]@{
+      source_exists=Test-Path -LiteralPath $source
+      destination_file_exists=Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')
+      orphaned_stage_exists=Test-Path -LiteralPath $orphanedStage
+      quarantine_roots=@(Get-ChildItem -LiteralPath $quarantineTestRoot -Directory | Where-Object { $_.Name -match '^ARLBQ-' } | ForEach-Object Name)
+      reconciliation_exists=Test-Path -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json')
+    }
+    if ($recoveryState.source_exists -or -not $recoveryState.destination_file_exists -or
+        $recoveryState.orphaned_stage_exists -or $recoveryState.quarantine_roots.Count -ne 2 -or
+        -not $recoveryState.reconciliation_exists) {
+      throw ('Journaled short quarantine was not recovered and sealed: ' + ($recoveryState | ConvertTo-Json -Compress))
+    }
+    Assert-ArTrustedSinglePathAcl -Path $priorJournal -OperatorSid $operatorSidForAcl
+    $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
+    foreach ($item in @($reconciliation.transactions)) {
+      if ([string]::IsNullOrWhiteSpace([string]$item.source_journal_prefix_sha256) -or [long]$item.source_journal_prefix_bytes -lt 1) {
+        throw 'Reconciliation did not bind an immutable journal prefix.'
+      }
+      $identity = Get-ArTrustedJournalPrefixIdentity -Path ([string]$item.source_journal) -LineCount ([int]$item.source_line)
+      if ($identity.sha256 -cne [string]$item.source_journal_prefix_sha256 -or
+          $identity.bytes -ne [long]$item.source_journal_prefix_bytes) {
+        throw 'Reconciliation journal prefix identity did not survive later appends.'
+      }
+    }
+    $nextExecution = Join-Path $evidenceRoot 'next'
+    New-Item -ItemType Directory -Path $nextExecution | Out-Null
+    Set-ArTrustedRootAcl -Root $nextExecution -OperatorSid $operatorSidForAcl
+    $script:executionRoot = $nextExecution
+    Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    $orphan = Join-Path $quarantineTestRoot ('ARLBS-' + ('e' * 32))
+    New-Item -ItemType Directory -Path $orphan | Out-Null
+    Set-ArTrustedRootAcl -Root $orphan -OperatorSid $operatorSidForAcl
+    $blockedExecution = Join-Path $evidenceRoot 'blocked'
+    New-Item -ItemType Directory -Path $blockedExecution | Out-Null
+    Set-ArTrustedRootAcl -Root $blockedExecution -OperatorSid $operatorSidForAcl
+    $script:executionRoot = $blockedExecution
+    $rejected = $false
+    try {
+      Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'Unjournaled short bootstrap') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Unjournaled short bootstrap root was accepted.' }
+  } finally {
+    Remove-Item -LiteralPath $quarantineTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
   Remove-Item Function:\Get-ScheduledTask -ErrorAction SilentlyContinue
   $name = 'AR-local trusted rollback contract ' + [guid]::NewGuid().ToString('N')
   try {

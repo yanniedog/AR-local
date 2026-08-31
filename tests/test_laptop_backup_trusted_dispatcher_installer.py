@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import argparse
@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> None:
     source = (ROOT / "install_laptop_backup_trusted_dispatcher.ps1").read_text(encoding="utf-8")
     core = (ROOT / "install_laptop_backup_trusted_dispatcher_core.ps1").read_text(encoding="utf-8")
+    combined = source + core
     assert "Start-ScheduledTask -TaskName $TaskName" not in source
     assert "Start-ScheduledTask -TaskName $probeName" in source
     assert "Restore-ArTrustedPriorTask" in source
@@ -87,6 +88,28 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "deviations = @($script:authorizedDeviations)" in source
     assert "ExpectedControlSddlSha256" in source
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
+    assert "Join-Path $env:ProgramFiles ('ARLBS-'" in source
+    assert source.count("Move-ArTrustedFailedRootToQuarantine -Path") >= 2
+    assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in core
+    assert "Set-ArTrustedRootAcl -Root $path -OperatorSid $OperatorSid" in core
+    assert core.index("'/grant:r' $treeGrants") < core.index("'/inheritance:r' '/T' '/C'")
+    assert "Assert-ArTrustedShortQuarantineState" in source
+    assert "Short quarantine reconciliation requires the global bootstrap gate" in core
+    assert "RECOVERY_QUARANTINE_ORPHANED_STAGING" in core
+    gate_after_evidence = source.index("Enter-ArTrustedBootstrapGate", source.index("$preservedPreExecution"))
+    assert gate_after_evidence < source.index("Assert-ArTrustedShortQuarantineState")
+    assert source.count("Enter-ArTrustedBootstrapGate") == 2
+    assert "RECOVERY_COMPLETE_SHORT_PROTECTED_QUARANTINE" in core
+    assert "Unjournaled short bootstrap or quarantine root exists" in core
+    assert "Short quarantine source and destination both exist" in core
+    assert "source_journal_prefix_sha256" in core
+    assert "source_journal_prefix_bytes" in core
+    assert "RECOVERY_SEAL_LEGACY_JOURNAL" in core
+    assert "RECOVERY_SEAL_ORPHANED_STAGING" in core
+    assert "short-quarantine-reconciliation.json" in core
+    assert "quarantined-root-" in core
+    assert "Write-ArTrustedFailureObserved" in core
+    assert "failed-protected-root-" not in combined
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
     assert "Backup lock, transition lease, or partial residue exists" in source
     assert "dispatcherManifest.allowed_target_root" in source
@@ -96,7 +119,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.index("$catalogBaseline = Assert-ArTrustedCatalogBaseline") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
     assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
-    assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
+    assert gate_after_evidence < source.index("Enable-ScheduledTask -TaskName $TaskName")
     terminal_pass = source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert source.index("Prepare-ArTrustedBootstrapPublication", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")) < terminal_pass
     assert terminal_pass < source.index("Publish-ArTrustedBootstrapReadiness -ResultPath $result")
@@ -129,6 +152,20 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner
+
+
+def test_short_protected_roots_fit_the_observed_package_under_legacy_max_path() -> None:
+    source = (ROOT / "install_laptop_backup_trusted_dispatcher.ps1").read_text(encoding="utf-8")
+    longest_observed_relative_path = PureWindowsPath(
+        "python/Lib/site-packages/jsonschema_specifications/schemas/draft202012/"
+        "vocabularies/format-annotation"
+    )
+    roots = (
+        PureWindowsPath("C:/Program Files") / ("ARLBS-" + "0" * 32),
+        PureWindowsPath("C:/Program Files") / ("ARLBQ-" + "0" * 32),
+    )
+    assert max(len(str(root / longest_observed_relative_path)) for root in roots) < 248
+    assert "$InstallRoot + '.staging-'" not in source
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows write-through publication contract")

@@ -95,16 +95,6 @@ function Write-ArTrustedResult {
   $path
 }
 
-function Write-ArMutationIntent {
-  param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$TargetPath)
-  $entry = [ordered]@{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = $Action; target = $TargetPath }
-  [IO.File]::AppendAllText(
-    (Join-Path $script:executionRoot 'mutation-journal.jsonl'),
-    (($entry | ConvertTo-Json -Compress) + "`n"),
-    [Text.UTF8Encoding]::new($false)
-  )
-}
-
 function Enter-ArTrustedBootstrapGate {
   if ($null -ne $script:bootstrapGate) { throw 'Trusted bootstrap gate is already held by this process.' }
   $createdNew = $false
@@ -605,9 +595,11 @@ Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 $preservedPreExecution = Join-Path $script:executionRoot 'pre-execution-manifest.json'
 Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecution -ErrorAction Stop
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
+Enter-ArTrustedBootstrapGate
+try {
+  Assert-ArTrustedShortQuarantineState -OperatorSid $OperatorSid | Out-Null
 
 if (Test-Path -LiteralPath $InstallRoot) {
-  Enter-ArTrustedBootstrapGate
   try {
     $interrupted = Read-ArTrustedInterruptedBootstrap
     if ($null -eq $interrupted) {
@@ -688,21 +680,20 @@ if (Test-Path -LiteralPath $InstallRoot) {
     $restoredPrior = Get-ArTrustedPriorTaskState -EvidencePrefix 'interrupted-recovery-restored'
     if (-not $restoredPrior.matches_authorized_prestate) { throw 'Interrupted-bootstrap task prestate was not restored exactly.' }
     Assert-ArTrustedCatalogBaseline @catalogArguments | Out-Null
-    $quarantine = Join-Path $script:executionRoot ('interrupted-protected-root-' + [guid]::NewGuid().ToString('N'))
     Write-ArMutationIntent -Action 'RECOVERY_QUARANTINE_INTERRUPTED_ROOT' -TargetPath $InstallRoot
-    Move-Item -LiteralPath $InstallRoot -Destination $quarantine -ErrorAction Stop
-    Set-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
-    Assert-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
+    $quarantine = Move-ArTrustedFailedRootToQuarantine -Path $InstallRoot -OperatorSid $OperatorSid
     [IO.File]::WriteAllText(
       (Join-Path $script:executionRoot 'interrupted-recovery.json'),
-      (([ordered]@{ result='PASS'; prior_execution_root=$interrupted.prior_root; quarantined_root=$quarantine; bootstrap_gate_held=$true } | ConvertTo-Json -Compress) + "`n"),
+      (([ordered]@{
+        result='PASS'; prior_execution_root=$interrupted.prior_root
+        quarantined_root=$quarantine.quarantine_path; quarantine_record=$quarantine.record_path
+        bootstrap_gate_held=$true
+      } | ConvertTo-Json -Compress) + "`n"),
       [Text.UTF8Encoding]::new($false)
     )
   } catch {
     Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='INSTALLED_OR_INTERRUPTED_RECOVERY_REJECTED' } | Out-Null
     throw
-  } finally {
-    Exit-ArTrustedBootstrapGate
   }
 }
 
@@ -733,7 +724,8 @@ try {
   throw
 }
 
-$staging = $InstallRoot + '.staging-' + [guid]::NewGuid().ToString('N')
+$staging = Join-Path $env:ProgramFiles ('ARLBS-' + [guid]::NewGuid().ToString('N'))
+Assert-ArTrustedPlainPath $staging | Out-Null
 $probeName = 'AR-local trusted dispatcher probe ' + [guid]::NewGuid().ToString('N')
 $controlPrestate = Join-Path $script:executionRoot 'dispatcher-control-prestate'
 $controlSddl = (Get-Acl -LiteralPath $ControlRoot -ErrorAction Stop).Sddl
@@ -873,7 +865,6 @@ try {
   Remove-Item -LiteralPath $probeOutput -Force -ErrorAction Stop
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
 
-  Enter-ArTrustedBootstrapGate
   Write-ArMutationIntent -Action 'ENABLE_PRODUCTION_TASK_WITHOUT_START' -TargetPath $TaskName
   Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
@@ -903,6 +894,7 @@ try {
   Get-Content -LiteralPath $result -Raw
 } catch {
   $failure = $_.Exception.Message
+  try { Write-ArTrustedFailureObserved -Message $failure | Out-Null } catch {}
   $rollbackErrors = New-Object Collections.Generic.List[string]
   $rollbackMayMutate = $true
   if ($probeRegistered) {
@@ -945,11 +937,8 @@ try {
   foreach ($path in $(if ($rollbackMayMutate) { @($staging,$InstallRoot) } else { @() })) {
     if (Test-Path -LiteralPath $path) {
       try {
-        $destination = Join-Path $script:executionRoot ('failed-protected-root-' + [guid]::NewGuid().ToString('N'))
         Write-ArMutationIntent -Action 'ROLLBACK_QUARANTINE_NEW_ROOT' -TargetPath $path
-        Move-Item -LiteralPath $path -Destination $destination -ErrorAction Stop
-        Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
-        Assert-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
+        Move-ArTrustedFailedRootToQuarantine -Path $path -OperatorSid $OperatorSid | Out-Null
       } catch { $rollbackErrors.Add("root quarantine $path`: $($_.Exception.Message)") }
     }
   }
@@ -959,6 +948,7 @@ try {
   $message = if ($rollbackErrors.Count -eq 0) { $failure } else { "$failure; rollback failures: $($rollbackErrors -join '; ')" }
   Write-ArTrustedResult -Result $outcome -ErrorText $message -Detail @{} | Out-Null
   throw $message
+}
 } finally {
   Exit-ArTrustedBootstrapGate
 }
