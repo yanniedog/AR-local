@@ -98,11 +98,15 @@ function Write-ArTrustedResult {
 function Write-ArMutationIntent {
   param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$TargetPath)
   $entry = [ordered]@{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = $Action; target = $TargetPath }
-  [IO.File]::AppendAllText(
-    (Join-Path $script:executionRoot 'mutation-journal.jsonl'),
-    (($entry | ConvertTo-Json -Compress) + "`n"),
-    [Text.UTF8Encoding]::new($false)
-  )
+  $path = Join-Path $script:executionRoot 'mutation-journal.jsonl'
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($entry | ConvertTo-Json -Compress) + "`n")
+  $stream = [IO.File]::Open($path,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
 }
 
 function Enter-ArTrustedBootstrapGate {
@@ -605,6 +609,7 @@ Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 $preservedPreExecution = Join-Path $script:executionRoot 'pre-execution-manifest.json'
 Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecution -ErrorAction Stop
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
+Assert-ArTrustedShortQuarantineState -OperatorSid $OperatorSid | Out-Null
 
 if (Test-Path -LiteralPath $InstallRoot) {
   Enter-ArTrustedBootstrapGate

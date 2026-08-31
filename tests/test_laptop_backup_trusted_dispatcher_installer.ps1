@@ -140,6 +140,50 @@ if ($isAdmin) {
   }
   Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -ErrorAction SilentlyContinue
 
+  $quarantineTestRoot = Join-Path $env:TEMP ('ar-short-quarantine-' + [guid]::NewGuid().ToString('N'))
+  $evidenceName = 'AR-local-backup-evidence-' + ('a' * 40) + '-' + ('b' * 40)
+  $evidenceRoot = Join-Path $quarantineTestRoot $evidenceName
+  $priorExecution = Join-Path $evidenceRoot 'prior'
+  $currentExecution = Join-Path $evidenceRoot 'current'
+  $source = Join-Path $quarantineTestRoot ('ARLBS-' + ('c' * 32))
+  $destination = Join-Path $quarantineTestRoot ('ARLBQ-' + ('d' * 32))
+  try {
+    New-Item -ItemType Directory -Path $priorExecution,$currentExecution,$source -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $source 'preserved.txt'),'preserved',[Text.UTF8Encoding]::new($false))
+    $journalLines = @(
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='ROLLBACK_QUARANTINE_NEW_ROOT'; target=$source } | ConvertTo-Json -Compress),
+      ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='PUBLISH_SHORT_PROTECTED_QUARANTINE'; target=$destination } | ConvertTo-Json -Compress)
+    )
+    [IO.File]::WriteAllText((Join-Path $priorExecution 'mutation-journal.jsonl'),(($journalLines -join "`n") + "`n"),[Text.UTF8Encoding]::new($false))
+    Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
+    Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
+    $script:executionRoot = $currentExecution
+    Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    if ((Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath (Join-Path $destination 'preserved.txt')) -or
+        -not (Test-Path -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json'))) {
+      throw 'Journaled short quarantine was not recovered and sealed.'
+    }
+    $nextExecution = Join-Path $evidenceRoot 'next'
+    New-Item -ItemType Directory -Path $nextExecution | Out-Null
+    Set-ArTrustedRootAcl -Root $nextExecution -OperatorSid $operatorSidForAcl
+    $script:executionRoot = $nextExecution
+    Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    $orphan = Join-Path $quarantineTestRoot ('ARLBS-' + ('e' * 32))
+    New-Item -ItemType Directory -Path $orphan | Out-Null
+    Set-ArTrustedRootAcl -Root $orphan -OperatorSid $operatorSidForAcl
+    $blockedExecution = Join-Path $evidenceRoot 'blocked'
+    New-Item -ItemType Directory -Path $blockedExecution | Out-Null
+    Set-ArTrustedRootAcl -Root $blockedExecution -OperatorSid $operatorSidForAcl
+    $script:executionRoot = $blockedExecution
+    $rejected = $false
+    try {
+      Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'Unjournaled short bootstrap') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Unjournaled short bootstrap root was accepted.' }
+  } finally {
+    Remove-Item -LiteralPath $quarantineTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
   Remove-Item Function:\Get-ScheduledTask -ErrorAction SilentlyContinue
   $name = 'AR-local trusted rollback contract ' + [guid]::NewGuid().ToString('N')
   try {

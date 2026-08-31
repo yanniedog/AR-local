@@ -91,6 +91,12 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Join-Path $env:ProgramFiles ('ARLBS-'" in source
     assert source.count("Move-ArTrustedFailedRootToQuarantine -Path") >= 2
     assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in core
+    assert "Assert-ArTrustedShortQuarantineState" in source
+    assert "RECOVERY_COMPLETE_SHORT_PROTECTED_QUARANTINE" in core
+    assert "Unjournaled short bootstrap or quarantine root exists" in core
+    assert "Short quarantine source and destination both exist" in core
+    assert "source_journal_sha256" in core
+    assert "short-quarantine-reconciliation.json" in core
     assert "quarantined-root-" in core
     assert "Write-ArTrustedFailureObserved" in core
     assert "failed-protected-root-" not in combined
