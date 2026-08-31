@@ -20,6 +20,19 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskSddlSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskSddlSemanticSha256,
   [Parameter(Mandatory = $true)][int]$ExpectedOldTaskLastResult,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedCatalogSha256,
+  [Parameter(Mandatory = $true)][long]$ExpectedCatalogSize,
+  [Parameter(Mandatory = $true)][int]$ExpectedCatalogFinalSequence,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedCatalogFinalEntrySha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedLatestVerifiedSha256,
+  [Parameter(Mandatory = $true)][long]$ExpectedLatestVerifiedSize,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedCatalogEntrySha256,
+  [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptRelativePath,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedReceiptSha256,
+  [Parameter(Mandatory = $true)][long]$ExpectedAcceptedReceiptSize,
+  [Parameter(Mandatory = $true)][string]$ExpectedAcceptedObservationId,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedAcceptedArchiveSha256,
+  [Parameter(Mandatory = $true)][long]$ExpectedAcceptedArchiveSize,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
   [Parameter(Mandatory = $true)][string]$PreExecutionManifestPath,
@@ -28,6 +41,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$script:authorizedDeviations = @()
+$script:deviationAuthorization = $null
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'
@@ -61,7 +76,8 @@ function Write-ArTrustedResult {
     started_at = $script:startedAt; completed_at = [DateTimeOffset]::UtcNow.ToString('o')
     exact_commands = @($script:exactCommand); result = $Result; error = $ErrorText; evidence = $Detail
     evidence_files = $files
-    deviations = @(); deviation_authorization = $null
+    deviations = @($script:authorizedDeviations)
+    deviation_authorization = $script:deviationAuthorization
   }
   $path = Join-Path $script:executionRoot 'bootstrap-result.json'
   [IO.File]::WriteAllText($path, (($record | ConvertTo-Json -Depth 10 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
@@ -78,12 +94,30 @@ function Write-ArMutationIntent {
   )
 }
 
+function Set-ArTrustedDeviationAuthorization {
+  param([Parameter(Mandatory = $true)][string]$Root)
+  $handoffPath = Join-Path $Root 'authority\docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+  if (-not (Test-Path -LiteralPath $handoffPath -PathType Leaf) -or (Get-ArTrustedSha256 $handoffPath) -cne $HandoffSha256) {
+    throw 'Protected authority handoff does not match the authenticated digest.'
+  }
+  $handoffText = [IO.File]::ReadAllText($handoffPath,[Text.UTF8Encoding]::new($false))
+  foreach ($decision in @('D-011','D-012')) {
+    $heading = '(?m)^### Append-only deviation decision ' + [char]96 + [regex]::Escape($decision) + [char]96
+    if ($handoffText -notmatch $heading) {
+      throw "Protected authority handoff does not authorize $decision."
+    }
+  }
+  $script:authorizedDeviations = @('D-011','D-012')
+  $script:deviationAuthorization = [ordered]@{ authority_commit=$AuthorityCommit; handoff_sha256=$HandoffSha256 }
+}
+
 function Assert-ArExactInstalledBootstrap {
   $launcher = Join-Path $InstallRoot 'launcher.exe'
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
-  Assert-ArTrustedRootAcl -Root $InstallRoot
+  Set-ArTrustedDeviationAuthorization -Root $InstallRoot
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
   Assert-ArTrustedTaskSddl -Sddl (Get-ArTrustedTaskSddl $TaskName)
@@ -128,6 +162,31 @@ if ([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($installFull)) -cne [IO.P
     [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($evidenceFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles)) {
   throw 'InstallRoot and EvidenceRoot must be direct children of the protected Program Files directory.'
 }
+$invocationParameters = [ordered]@{
+  task_name=$TaskName; package_path=[IO.Path]::GetFullPath($PackagePath); package_sha256=$PackageSha256
+  install_root=$installFull; target=[IO.Path]::GetFullPath($Target); control_root=[IO.Path]::GetFullPath($ControlRoot)
+  recovery_image=[IO.Path]::GetFullPath($RecoveryImage); evidence_root=$evidenceFull; principal=$Principal
+  operator=$Operator; operator_sid=$OperatorSid; candidate_code_sha=$CandidateCodeSha; authority_commit=$AuthorityCommit
+  protected_code_sha=$ProtectedCodeSha; plan_git_commit=$PlanGitCommit; plan_sha256=$PlanSha256; handoff_sha256=$HandoffSha256
+  expected_old_task_xml_sha256=$ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256=$ExpectedOldTaskSddlSha256
+  expected_old_task_sddl_semantic_sha256=$ExpectedOldTaskSddlSemanticSha256; expected_old_task_last_result=$ExpectedOldTaskLastResult
+  expected_catalog_sha256=$ExpectedCatalogSha256; expected_catalog_size=$ExpectedCatalogSize
+  expected_catalog_final_sequence=$ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256=$ExpectedCatalogFinalEntrySha256
+  expected_latest_verified_sha256=$ExpectedLatestVerifiedSha256; expected_latest_verified_size=$ExpectedLatestVerifiedSize
+  expected_accepted_catalog_entry_sha256=$ExpectedAcceptedCatalogEntrySha256
+  expected_accepted_receipt_relative_path=$ExpectedAcceptedReceiptRelativePath
+  expected_accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size=$ExpectedAcceptedReceiptSize
+  expected_accepted_observation_id=$ExpectedAcceptedObservationId; expected_accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
+  expected_accepted_archive_size=$ExpectedAcceptedArchiveSize
+  installer_sha256=$InstallerSha256; core_sha256=$CoreSha256
+  # A manifest cannot contain its own SHA-256. D-012 therefore binds every
+  # non-self invocation value here, while the separately authorized outer UAC
+  # command supplies the exact manifest SHA-256 that Read-ArTrusted... verifies
+  # under one locked stream and Write-ArTrustedResult preserves.
+  pre_execution_manifest_path=[IO.Path]::GetFullPath($PreExecutionManifestPath); pre_execution_manifest_sha256='<SELF_SHA256>'
+  pi_host=$PiHost
+}
+$invocationContractSha256 = Get-ArTrustedInvocationContractSha256 $invocationParameters
 $preExecution = Read-ArTrustedPreExecutionManifest -Path $PreExecutionManifestPath -ExpectedSha256 $PreExecutionManifestSha256
 $expectedPreExecution = [ordered]@{
   schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; task_name = $TaskName
@@ -140,10 +199,33 @@ $expectedPreExecution = [ordered]@{
   expected_old_task_xml_sha256 = $ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256 = $ExpectedOldTaskSddlSha256
   expected_old_task_sddl_semantic_sha256 = $ExpectedOldTaskSddlSemanticSha256
   expected_old_task_last_result = $ExpectedOldTaskLastResult; installer_sha256 = $InstallerSha256; core_sha256 = $CoreSha256
+  expected_catalog_sha256 = $ExpectedCatalogSha256; expected_catalog_size = $ExpectedCatalogSize
+  expected_catalog_final_sequence = $ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256 = $ExpectedCatalogFinalEntrySha256
+  expected_latest_verified_sha256 = $ExpectedLatestVerifiedSha256; expected_latest_verified_size = $ExpectedLatestVerifiedSize
+  expected_accepted_catalog_entry_sha256 = $ExpectedAcceptedCatalogEntrySha256
+  expected_accepted_receipt_relative_path = $ExpectedAcceptedReceiptRelativePath
+  expected_accepted_receipt_sha256 = $ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size = $ExpectedAcceptedReceiptSize
+  expected_accepted_observation_id = $ExpectedAcceptedObservationId; expected_accepted_archive_sha256 = $ExpectedAcceptedArchiveSha256
+  expected_accepted_archive_size = $ExpectedAcceptedArchiveSize
+  invocation_contract_schema = 1; invocation_host_path = [IO.Path]::GetFullPath((Join-Path $PSHOME 'powershell.exe'))
+  invocation_script_path = [IO.Path]::GetFullPath($PSCommandPath); invocation_contract_sha256 = $invocationContractSha256
+  rollback_procedure = 'RESTORE_TASK_CONTROL_AND_QUARANTINE_V1'; preflight_min_free_bytes = [long]50GB
+  preflight_expected_active_process_count = 0; preflight_expected_residue_count = 0; preflight_expected_pi_status = 'AR_PI_PREFLIGHT_PASS'
   pi_host = $PiHost
 }
 Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution
-if ((Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
+$catalogArguments = @{
+  Target=$Target; ExpectedCatalogSha256=$ExpectedCatalogSha256; ExpectedCatalogSize=$ExpectedCatalogSize
+  ExpectedCatalogFinalSequence=$ExpectedCatalogFinalSequence; ExpectedCatalogFinalEntrySha256=$ExpectedCatalogFinalEntrySha256
+  ExpectedLatestVerifiedSha256=$ExpectedLatestVerifiedSha256; ExpectedLatestVerifiedSize=$ExpectedLatestVerifiedSize
+  ExpectedAcceptedCatalogEntrySha256=$ExpectedAcceptedCatalogEntrySha256
+  ExpectedAcceptedReceiptRelativePath=$ExpectedAcceptedReceiptRelativePath; ExpectedAcceptedReceiptSha256=$ExpectedAcceptedReceiptSha256
+  ExpectedAcceptedReceiptSize=$ExpectedAcceptedReceiptSize; ExpectedAcceptedObservationId=$ExpectedAcceptedObservationId
+  ExpectedAcceptedArchiveSha256=$ExpectedAcceptedArchiveSha256; ExpectedAcceptedArchiveSize=$ExpectedAcceptedArchiveSize
+}
+$catalogBaseline = Assert-ArTrustedCatalogBaseline @catalogArguments
+$freeBytes = [long](Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free
+if ($freeBytes -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
 $active = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
 if ($active.Count) { throw 'A laptop backup or dispatcher process is already active.' }
 $residue = @()
@@ -168,20 +250,30 @@ if (-not (Test-Path -LiteralPath $EvidenceRoot)) {
   try {
     New-Item -ItemType Directory -Path $EvidenceRoot -ErrorAction Stop | Out-Null
     Set-ArTrustedRootAcl -Root $EvidenceRoot -OperatorSid $OperatorSid
-    Assert-ArTrustedRootAcl -Root $EvidenceRoot
+    Assert-ArTrustedRootAcl -Root $EvidenceRoot -OperatorSid $OperatorSid
   } catch {
     if (Test-Path -LiteralPath $EvidenceRoot) { Remove-Item -LiteralPath $EvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue }
     throw
   }
 } else {
-  Assert-ArTrustedRootAcl -Root $EvidenceRoot
+  Assert-ArTrustedRootAcl -Root $EvidenceRoot -OperatorSid $OperatorSid
 }
 $executionId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [guid]::NewGuid().ToString('N')
 $script:executionRoot = Join-Path $EvidenceRoot $executionId
 New-Item -ItemType Directory -Path $script:executionRoot -ErrorAction Stop | Out-Null
 Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
-Assert-ArTrustedRootAcl -Root $script:executionRoot
+Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pi-preflight.txt'), (($piOutput -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText(
+  (Join-Path $script:executionRoot 'pre-execution-observed.json'),
+  (([ordered]@{
+    invocation_contract_sha256=$invocationContractSha256; free_bytes=$freeBytes
+    active_process_count=$active.Count; residue_count=$residue.Count; pi_status=$piOutput[-1]
+    task_expected_last_result=$ExpectedOldTaskLastResult; catalog=$catalogBaseline
+    rollback_procedure='RESTORE_TASK_CONTROL_AND_QUARANTINE_V1'
+  } | ConvertTo-Json -Depth 8 -Compress) + "`n"),
+  [Text.UTF8Encoding]::new($false)
+)
 $preservedPreExecution = Join-Path $script:executionRoot 'pre-execution-manifest.json'
 Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecution -ErrorAction Stop
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
@@ -239,16 +331,17 @@ try {
   Write-ArMutationIntent -Action 'CREATE_PACKAGE_STAGING' -TargetPath $staging
   New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
   Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
-  Assert-ArTrustedRootAcl -Root $staging
+  Assert-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Expand-ArAuthenticatedPackage -PackagePath $PackagePath -ExpectedSha256 $PackageSha256 -Destination $staging
   Assert-ArTrustedPackageManifest -Root $staging -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+  Set-ArTrustedDeviationAuthorization -Root $staging
   Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
-  Assert-ArTrustedRootAcl -Root $staging
+  Assert-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Write-ArMutationIntent -Action 'PUBLISH_PROTECTED_ROOT' -TargetPath $InstallRoot
   Move-Item -LiteralPath $staging -Destination $InstallRoot -ErrorAction Stop
   $installed = $true
-  Assert-ArTrustedRootAcl -Root $InstallRoot
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   $launcher = Join-Path $InstallRoot 'launcher.exe'
   $manifest = Join-Path $InstallRoot 'dispatcher-manifest.json'
   $python = Join-Path $InstallRoot 'python\python.exe'
@@ -327,7 +420,7 @@ try {
   Remove-Item -LiteralPath $probeMarker -Force -ErrorAction Stop
   Write-ArMutationIntent -Action 'REMOVE_SEMANTIC_OUTPUT' -TargetPath $probeOutput
   Remove-Item -LiteralPath $probeOutput -Force -ErrorAction Stop
-  Assert-ArTrustedRootAcl -Root $InstallRoot
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
 
   Write-ArMutationIntent -Action 'ENABLE_PRODUCTION_TASK_WITHOUT_START' -TargetPath $TaskName
   Enable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
@@ -337,6 +430,8 @@ try {
   $installedSddl = Get-ArTrustedTaskSddl $TaskName
   if ($installedSddl -cne $installedTaskSddl) { throw 'Installed task SDDL changed after activation.' }
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'installed-task.sddl'), $installedSddl, [Text.UTF8Encoding]::new($false))
+  $catalogAfter = Assert-ArTrustedCatalogBaseline @catalogArguments
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'post-bootstrap-catalog.json'), (($catalogAfter | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
     install_root = $InstallRoot; installed_task_xml_sha256 = Get-ArTrustedSha256 $installedXml
     installed_task_sddl_sha256 = Get-ArTrustedTextSha256 $installedSddl; probe_last_result = $probeInfo.LastTaskResult
@@ -381,10 +476,12 @@ try {
         Write-ArMutationIntent -Action 'ROLLBACK_QUARANTINE_NEW_ROOT' -TargetPath $path
         Move-Item -LiteralPath $path -Destination $destination -ErrorAction Stop
         Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
-        Assert-ArTrustedRootAcl -Root $destination
+        Assert-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
       } catch { $rollbackErrors.Add("root quarantine $path`: $($_.Exception.Message)") }
     }
   }
+  try { Assert-ArTrustedCatalogBaseline @catalogArguments | Out-Null }
+  catch { $rollbackErrors.Add("catalog baseline: $($_.Exception.Message)") }
   $outcome = if ($rollbackErrors.Count -eq 0) { 'ROLLED_BACK' } else { 'FAIL' }
   $message = if ($rollbackErrors.Count -eq 0) { $failure } else { "$failure; rollback failures: $($rollbackErrors -join '; ')" }
   Write-ArTrustedResult -Result $outcome -ErrorText $message -Detail @{} | Out-Null
