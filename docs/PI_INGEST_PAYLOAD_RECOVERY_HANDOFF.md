@@ -6182,3 +6182,152 @@ Australia/Hobart freeze. Installer `PASS` still does not close A3: the natural
 action-specific acceptance criteria in the preceding entries. No manual backup,
 ingest, deployment or publication is authorized. Only a later append-only
 terminal `PASS` may complete A3 and authorize A4.
+
+## Entry `HANDOFF-20260831T220237+1000-A3-LEGACY-JOURNAL-AUTHORITY`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T220237+1000-A3-LEGACY-JOURNAL-AUTHORITY` |
+| Previous handoff entry | `HANDOFF-20260831T211140+1000-A3-MAXPATH-RECOVERY-AUTHORITY` |
+| Created | `2026-08-31T22:02:37+10:00` / `2026-08-31T12:02:37Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Documentation source | clean `origin/main` worktree at `12ea4407123843336934cc766383a89b9b69deb6`; pre-append handoff raw SHA-256 `b0324a6c14a62ea37917e977b40ab6ca717806b9e0e7c0ff7248a87002f7f085` |
+| Corrected implementation | PR #595 exact head `b2bca5d576ec9acf04192a0f45fbccdc860f42cb`; squash merge and sole code candidate `12ea4407123843336934cc766383a89b9b69deb6` |
+| Protected Pi | remains pinned to `9302890fcc752cbf90da97d597e972c157d913e3`; PR #595 performed no Pi deployment, ingest, publication, backup or production-task trigger |
+| Result | legacy-journal compatibility implementation and exact-head gates `PASS`; new live bootstrap `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | D-006, D-011, D-012 and D-013 remain; append-only D-014 below narrowly governs the one historical overlong failed tree |
+
+### Reason for this authority replacement
+
+The D-013 implementation correctly moved all new staging and quarantine trees
+to short protected Program Files roots. Its pre-mutation global reconciliation
+also scans the immutable journal from the earlier failed elevation. That
+historical journal intentionally names the former long staging layout, so the
+otherwise correct D-013 scanner rejected it before a corrected bootstrap could
+start. No new elevation was attempted with that mismatch.
+
+The exact historical state remains:
+
+- evidence root
+  `C:\Program Files\AR-local-backup-evidence-0a444caab7624499bca7ffdbbc56189e152e53e9-dc78b85368c020dcbcbb357b932e56110999f105\20260831T090802Z-5b12a8455b9b4c14b36071bc498eb8eb`;
+- journal 514 bytes, SHA-256
+  `2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3`;
+- exactly two non-empty physical records:
+  `CREATE_PACKAGE_STAGING` immediately followed by
+  `ROLLBACK_QUARANTINE_NEW_ROOT` for the identical normalized source;
+- the named source is absent;
+- exactly one preserved
+  `failed-protected-root-581f0969148949e885236eda24ae2e06` remains under that
+  execution evidence;
+- no direct `ARLBS-*` or `ARLBQ-*` root exists; and
+- task XML, task SDDL, dispatcher control, catalog and Pi production remain at
+  their authenticated pre-attempt state.
+
+### Append-only deviation decision `D-014` — opaque historical MAX_PATH tree
+
+D-013's recursive ACL and content-inventory requirement continues unchanged for
+every new `ARLBS-*` and `ARLBQ-*` staging or quarantine tree. It is narrowed only
+for the single historical nested failed tree identified above. That tree was
+created by the old layout whose descendant paths reach 330 characters and whose
+PowerShell 5.1 recursive ACL/evidence operation already failed. Repeating that
+same traversal is not an acceptance gate and its descendant bytes are not
+trusted evidence.
+
+The historical tree may be reconciled only as
+`UNTRUSTED_OPAQUE_NOT_CONSUMED`, and only when all of these conditions hold:
+
+- the evidence-root, execution-root, journal and failed-root names match their
+  exact controlled grammars and contain no reparse point at an accepted root;
+- the protected journal contains no empty physical line and parses completely;
+- exactly one matching legacy create exists globally; duplicate source or
+  preserved-root identity is an immediate failure;
+- the immediately following physical journal record is the matching rollback
+  intent for the byte-for-byte same normalized source path;
+- the immutable journal-prefix identity is bound through that rollback record,
+  including physical line count, byte length and SHA-256;
+- the named long staging source remains absent;
+- the execution contains exactly one grammar-valid preserved failed root;
+- that outer root is inheritance-protected, Administrator-owned, contains no
+  deny ACE, and grants no dangerous write right to any unprivileged principal;
+  and
+- neither installer, dispatcher, runtime, restore process nor acceptance
+  evidence enumerates, hashes, executes, restores, adopts or otherwise consumes
+  any descendant of the opaque tree.
+
+Reason: recursive PowerShell 5.1 traversal of the abandoned overlong tree is the
+operation already proven unsafe. Risk: its descendants might retain an unsafe
+ACL or change without detection. Compensating control: the descendants are
+explicitly untrusted and excluded from every code, package, runtime, restore and
+acceptance input; only the protected outer container, absent source and
+rollback-bound journal prefix are reconciled. This decision does not declare the
+old failed attempt successful, does not authorize its deletion, does not weaken
+the checks on any new short root, and does not widen task or operator privilege.
+
+### Implementation and verification
+
+PR #595 implements D-014. Reconciliation now accepts the controlled legacy
+grammar only after the exact matching rollback and binds evidence through that
+rollback line. Duplicate source/root identities and blank physical journal lines
+fail closed. The record labels descendants
+`UNTRUSTED_OPAQUE_NOT_CONSUMED`; normal short roots retain recursive ACL and
+content-inventory verification.
+
+All six substantive review findings were dispositioned and their threads
+resolved. Duplicate detection, physical-line binding and matching rollback were
+implemented. Recursive descendant trust and inventory were declined only for
+this opaque non-consumed historical tree for the D-014 reason above. The exact
+PR head passed the hosted Windows PowerShell 5.1 dispatcher contract, Linux
+payload-builder tests, Sourcery and required `bot-feedback-gate`. Gemini returned
+an advisory service-availability failure and no substantive unresolved finding.
+Local focused tests passed `6`; the non-administrator PowerShell contract passed;
+and the broader laptop-backup suite excluding compiler-dependent native-launcher
+tests passed `317` with one intentional skip.
+
+### Exact sole-candidate source bytes
+
+Only Git-blob bytes from candidate
+`12ea4407123843336934cc766383a89b9b69deb6` may be packaged:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 65214 | `8258f16b0c4fa65c8edf80a58216eb97c5340bbe3d341cac7d182c0503252c39` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 56839 | `543724ff7c0b4879aafdbdd9edf86e0ab5a726eaab8a04ebee2a3cbf2bbdf9a7` |
+| `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
+| `native/laptop_backup_trusted_launcher.cpp` | 23066 | `ce27291580f3a2e0a541849ded828576be1b90350f6a57f2713464fcf4f4ad02` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
+| `laptop_backup_dispatcher.py` | 54023 | `3c00cf2c0a101a34f3ab1d98af22348a648838d7dfe3419fa034fd3ae66b7a46` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+
+### Exact continuation authority
+
+Merge this documentation-only entry through exact-head gates. Under D-012, that
+merge commit and the complete merged handoff raw SHA-256 become the sole
+authority. Prior packages, manifests and expiring invocation contracts remain
+invalid and must not be elevated.
+
+From separate clean detached candidate and authority checkouts, compile the
+launcher twice and require identical bytes. Reuse only verified runtime source
+bytes, then build the deterministic package twice and require identical bytes.
+Create a fresh typed pre-execution manifest with a short expiry. It must bind the
+exact candidate, documentation authority, complete handoff hash, plan, protected
+Pi, operator, task XML/SDDL, catalog, package, target and recovery-image roots.
+
+Immediately before the single authorized elevation, repeat the complete live
+task, catalog-chain, process, residue, free-space, source-repository and
+protected-Pi preflight. The legacy journal must still have its exact bytes and
+state above. Any drift blocks and requires a new append-only entry.
+
+Exactly one fresh UAC approval is authorized solely for that authenticated
+installer invocation. It installs a fixed S4U/`Limited` ordinary-user dispatcher
+and grants no blanket administrator access. After terminal installer `PASS`, no
+routine backup or authorized candidate transition may require elevation.
+
+D-006 remains controlling. No mutation may start at or after the 00:30
+Australia/Hobart freeze. Installer `PASS` does not close A3. The natural
+`2026-09-01` 01:00 ingest and first natural trusted 05:00 backup must pass before
+A3 can become terminal `PASS` and before A4 may start. No manual task trigger,
+backup, ingest, deployment or publication is authorized.
