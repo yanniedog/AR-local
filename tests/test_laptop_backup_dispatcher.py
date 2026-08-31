@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 
@@ -320,15 +322,67 @@ def test_activation_lease_cannot_enter_ingest_freeze(monkeypatch: pytest.MonkeyP
         dispatcher.require_activation_window()
 
 
-def test_bootstrap_gate_blocks_new_dispatcher_lease(
+def test_bootstrap_gate_blocks_complete_dispatcher_activation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    control, _target, _manifest = fixture(tmp_path)
+    control, _target, manifest = fixture(tmp_path)
     paths = dispatcher.layout(control)
-    monkeypatch.setattr(dispatcher, "bootstrap_gate_active", lambda: True)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    monkeypatch.setattr(
+        dispatcher,
+        "acquire_bootstrap_gate",
+        lambda: (_ for _ in ()).throw(ValueError("trusted bootstrap gate blocks dispatcher activation")),
+    )
     with pytest.raises(ValueError, match="bootstrap gate blocks"):
-        dispatcher.acquire_lease(paths, "a" * 32)
+        dispatcher.activate(control, proposed)
     assert not paths["lease"].exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows named-mutex contract")
+def test_bootstrap_gate_is_exclusive_and_releasable() -> None:
+    gate = dispatcher.acquire_bootstrap_gate()
+    try:
+        with pytest.raises(ValueError, match="bootstrap gate blocks"):
+            dispatcher.acquire_bootstrap_gate()
+    finally:
+        dispatcher.release_bootstrap_gate(gate)
+    replacement = dispatcher.acquire_bootstrap_gate()
+    dispatcher.release_bootstrap_gate(replacement)
+
+
+def test_activation_holds_bootstrap_gate_until_transition_lease_released(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    events: list[str] = []
+    real_acquire_lease = dispatcher.acquire_lease
+    real_release_lease = dispatcher.release_lease
+
+    monkeypatch.setattr(dispatcher, "acquire_bootstrap_gate", lambda: events.append("gate-acquired") or 7)
+
+    def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
+        assert events == ["gate-acquired"]
+        events.append("lease-acquired")
+        return real_acquire_lease(paths, activation_id)
+
+    def release_lease(paths: Mapping[str, Path], payload: bytes) -> None:
+        assert events == ["gate-acquired", "lease-acquired"]
+        real_release_lease(paths, payload)
+        events.append("lease-released")
+
+    def release_gate(handle: int | None) -> None:
+        assert handle == 7
+        assert events == ["gate-acquired", "lease-acquired", "lease-released"]
+        events.append("gate-released")
+
+    monkeypatch.setattr(dispatcher, "acquire_lease", acquire_lease)
+    monkeypatch.setattr(dispatcher, "release_lease", release_lease)
+    monkeypatch.setattr(dispatcher, "release_bootstrap_gate", release_gate)
+    dispatcher.activate(control, proposed)
+    assert events == ["gate-acquired", "lease-acquired", "lease-released", "gate-released"]
 
 
 def test_read_only_layout_rejects_reparse_control_directory(
