@@ -5496,3 +5496,162 @@ failure or less than 50 GiB free. Before an authorized transition, rollback
 means no mutation. During a later authorized transition, rollback must restore
 the exact authenticated task, ACLs, protected files, runner, configuration and
 pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
+
+## Entry `HANDOFF-20260831T100733+1000-A3-TRUSTED-BOOTSTRAP-AUTHORITY`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T100733+1000-A3-TRUSTED-BOOTSTRAP-AUTHORITY` |
+| Previous handoff entry | `HANDOFF-20260831T080717+1000-A3-FAIL-CLOSED-AUTHORITY-CORRECTION` |
+| Created | `2026-08-31T10:07:33+10:00` / `2026-08-31T00:07:33Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Documentation source | clean `origin/main` worktree at `c40c57b39846866bd2b7c05c9255f50d31f9c755`; pre-append handoff Git-blob SHA-256 `330212f84565ba532373b486daa6045ed2f475c97c3cd880156f9555e016e4d8` |
+| Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; service inactive, timer enabled/active, lock absent and dashboard HTTP 200 at authorization preflight |
+| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merged as candidate `c40c57b39846866bd2b7c05c9255f50d31f9c755` |
+| Result | implementation and authority decision `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | append-only decisions `D-011` and `D-012` below |
+
+### Reviewed implementation outcome
+
+PR #584 replaced the withdrawn D-009 design with a trusted-parent bootstrap.
+The scheduled task will enter an administrator-protected native launcher before
+it reads any operator-writable configuration or code. The launcher derives a
+restricted token with `CreateRestrictedToken`, proves the expected integrity
+and token facts, and starts only hash-bound protected code. The one-time
+installer uses a protected staging root, exact package population, protected
+Python runtime, exact detached candidate and authority repositories, a disabled
+production task during control mutation, a disposable semantic probe, a
+mutation journal and independent rollback attempts.
+
+The exact PR head passed the hosted Windows PowerShell 5.1 dispatcher contract,
+the Linux payload-builder suite, `bot-feedback-gate` and Sourcery review. The
+complete local repository suite passed with 1342 tests and 13 skips. All
+substantive review findings were implemented and resolved. The advisory Gemini
+job failed independently and is not a required gate. Merge alone is not runtime
+acceptance.
+
+Exact immutable source blobs at candidate
+`c40c57b39846866bd2b7c05c9255f50d31f9c755` are:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 24495 | `06a880ce9abc7651ba5dc46199f3cb505ca8c1bf3006f47b771b2a6994674956` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 20431 | `9e15bbeeb250b9a4b261eae6e45887dd196146dbdc428e3bac15a3fd1984f389` |
+| `laptop_backup_trusted_package.py` | 8480 | `0961a765d58c1b7dde8ab590b57fa8376faa3f369218cc34de60c9d186d44ad5` |
+| `native/laptop_backup_trusted_launcher.cpp` | 18969 | `03d359cdb1b3ba0e5763daad803d964a00cf25581d64088b56db86f83b140071` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
+| `laptop_backup_dispatcher.py` | 43497 | `4776c83a85eb80fbedecdc9c913aa246aecb7fe16fb36622d47e9bd53d7f33be` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+
+### Authenticated live prestate
+
+The read-only preflight at 10:05 Australia/Hobart found the production task
+Ready and enabled, with `LastTaskResult=1`, last run
+`2026-08-31T05:00:01+10:00`, next run `2026-09-01T05:00:00+10:00`, and its
+old action still entering
+`C:\code\backups\AR-local-pi5-receiver-f214e32\run_laptop_backup_task.ps1`.
+The exact accepted prestate is:
+
+| Item | Value |
+|---|---|
+| UTF-16LE task XML, including BOM | 4774 bytes; SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2` |
+| raw Task Scheduler SDDL | `O:BAG:S-1-5-21-689213601-40760280-3596424081-1001D:AI(A;;FR;;;S-1-5-21-689213601-40760280-3596424081-1001)(A;ID;0x1f019f;;;BA)(A;ID;0x1f019f;;;SY)(A;ID;FA;;;BA)` |
+| raw SDDL SHA-256 | `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b` |
+| semantic SDDL SHA-256 | `835cd94cd77793b6087a8b62f9fbfeac28cb7700b9b400b56d98e6a96d8d573e` |
+| laptop free space | 144.31 GiB |
+
+### Append-only deviation decision `D-011` — Task Scheduler SDDL equivalence
+
+The earlier requirement that rollback reproduce the Task Scheduler SDDL text
+byte-for-byte is revised. Windows Task Scheduler canonicalizes equivalent SDDL
+when a task is registered, so raw-text equality after a genuine restore is not
+a reliable or achievable rollback gate. This does not weaken the pre-mutation
+gate: the installer must first observe the exact raw SDDL SHA-256 and the exact
+semantic SHA-256 above or stop before mutation.
+
+Rollback acceptance requires the exact authenticated XML, the same owner,
+group, protected-DACL state, sorted effective ACE identities, qualifiers,
+flags, masks, object types and opaque data, and therefore the exact semantic
+SDDL SHA-256 above. Both the original and restored raw SDDL strings and hashes
+must be preserved in immutable evidence. Any semantic difference, additional
+unprivileged mutation right, missing administrator/system right or XML drift is
+`FAIL` or `ROLLED_BACK`, never `PASS`.
+
+Reason: observed Task Scheduler canonicalization. Risk: a semantic normalizer
+could hide a meaningful permission change. Compensating controls: exact raw
+prestate binding, narrow explicit semantic fields, protected-DACL enforcement,
+dangerous-right rejection, raw before/after preservation and hosted Windows
+round-trip tests. Revised acceptance is semantic equality plus the unchanged
+task XML and explicit access-control assertions.
+
+### Append-only deviation decision `D-012` — post-merge bootstrap binding
+
+D-010 required a later entry to contain the final authority commit, complete
+handoff hash, protected package hash and an exact command hash. Those values are
+cryptographically self-referential if the package embeds the authority checkout
+and complete handoff containing its own package hash. The intent is retained
+without inventing a circular digest.
+
+This entry authorizes a two-stage, fail-closed binding:
+
+1. merge this documentation-only entry through normal exact-head gates;
+2. treat that merge as the sole authority commit only while it is the current
+   canonical `origin/main`, contains this entry, and its complete handoff
+   Git-blob hash is independently calculated;
+3. outside D-006, create clean detached candidate and authority checkouts, build
+   the native launcher reproducibly, generate an expiring dispatcher manifest,
+   and build one deterministic protected package using only candidate
+   `c40c57b39846866bd2b7c05c9255f50d31f9c755` and that authority merge;
+4. before elevation, write an immutable pre-execution manifest recording every
+   input/output path, byte length and SHA-256, the complete installer command,
+   rollback procedure, current task/Pi/space/process gates and plan identity;
+5. authenticate that pre-execution manifest and execute the installer exactly
+   once with the operator's elevated token. No other elevated command is
+   authorized. The installer itself must reauthenticate all hashes and gates.
+
+Reason: eliminate an impossible self-hash while preserving exact byte binding.
+Risk: an operator-writable staging file could be replaced between validation
+and elevation. Compensating controls: unique non-reused paths, `CreateNew`
+evidence, complete SHA-256 binding, a single authenticated command file,
+locked-stream package verification, protected staging before extraction,
+revalidation inside the elevated installer and removal of all probe markers.
+Revised acceptance requires the immutable pre-execution record and terminal
+protected `bootstrap-result.json` to agree on every identity and hash. Any main
+advance, input drift, expired manifest, ambiguous privilege, unexpected task
+state or evidence mismatch stops before mutation.
+
+### Exact transition authority
+
+After this entry merges, Codex may perform every routine non-administrator
+build, validation, SSH, Git, GitHub and evidence command unattended. Exactly one
+UAC elevation is authorized solely to run the authenticated installer command.
+It must occur in daylight outside D-006 while the Pi ingest is idle, the lock is
+absent, the task is Ready, no backup helper/lock/partial exists, the protected
+Pi is clean at `9302890fcc752cbf90da97d597e972c157d913e3`, and at least 50 GiB is
+free. No backup or ingest may be manually triggered.
+
+The protected install and bootstrap-evidence roots must be distinct direct
+children of `%ProgramFiles%\AR-local`, content-addressed by candidate and
+authority. The target remains `C:\code\backups\AR-local-pi5`; the control root
+remains its `dispatcher-control`; the recovery image remains
+`C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; operator
+SID remains `S-1-5-21-689213601-40760280-3596424081-1001`; plan and protected
+Pi identities remain those in this control record.
+
+Terminal bootstrap acceptance requires a protected-root ACL denying the
+operator write access, exact package population, exact detached repositories,
+restricted-token semantic probe, terminal activation receipt, enabled Ready
+task with the intended native-launcher action, no probe/finalize marker, no
+helper/lock/partial, catalog unchanged by transition, and a `PASS` execution
+record. On failure, the installer must attempt all rollback components,
+preserve evidence and report `ROLLED_BACK` or `FAIL`.
+
+Bootstrap `PASS` does not complete A3. The task must then pass the natural
+`2026-09-01` 05:00 run with `BACKUP-LATEST` for the current accepted observation
+and exact catalog/receipt/restore/source-identity validation. D-006 continues to
+protect the natural 01:00 capture. Only a later append-only terminal entry may
+mark A3 `PASS` and start A4.
