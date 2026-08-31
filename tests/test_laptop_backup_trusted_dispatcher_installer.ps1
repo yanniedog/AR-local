@@ -60,12 +60,67 @@ try {
   $rejected = $false
   try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequireFresh } catch { $rejected = $true }
   if (-not $rejected) { throw 'Future pre-execution creation time was accepted.' }
+  $contract = [ordered]@{ task_name='test'; expected_last_result=1; pre_execution_manifest_sha256='<SELF_SHA256>' }
+  $contractHash = Get-ArTrustedInvocationContractSha256 $contract
+  $contract.expected_last_result = 2
+  if ((Get-ArTrustedInvocationContractSha256 $contract) -ceq $contractHash) { throw 'Invocation contract drift was accepted.' }
 } finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
+
+$catalogRoot = Join-Path $env:TEMP ('ar-catalog-baseline-' + [guid]::NewGuid().ToString('N'))
+try {
+  $catalogDir = Join-Path $catalogRoot 'catalog'
+  $receiptRelative = 'observations/2026-08-31/test/receipt.json'
+  $receiptPath = Join-Path $catalogRoot $receiptRelative
+  New-Item -ItemType Directory -Path $catalogDir,(Split-Path $receiptPath -Parent) -Force | Out-Null
+  $archivePath = Join-Path (Split-Path $receiptPath -Parent) 'observation.tar.zst'
+  [IO.File]::WriteAllBytes($archivePath,[Text.Encoding]::ASCII.GetBytes('archive'))
+  $archiveHash = Get-ArTrustedSha256 $archivePath
+  [IO.File]::WriteAllText($receiptPath,('{"archive_bytes":7,"archive_sha256":"' + $archiveHash + '","checks":{"observation":{"latest_pointer":{"generation_id":"obs-test"}}}}' + "`n"),[Text.UTF8Encoding]::new($false))
+  $receiptHash = Get-ArTrustedSha256 $receiptPath
+  $material = [ordered]@{ kind='observation'; previous_entry_sha256=$null; receipt_path=$receiptRelative; receipt_sha256=$receiptHash; sequence=1 }
+  $entryHash = Get-ArTrustedTextSha256 ((ConvertTo-ArTrustedCanonicalJson $material) + "`n")
+  $entry = [ordered]@{ entry_sha256=$entryHash; kind='observation'; previous_entry_sha256=$null; receipt_path=$receiptRelative; receipt_sha256=$receiptHash; sequence=1 }
+  [IO.File]::WriteAllText((Join-Path $catalogDir 'generations.jsonl'),((ConvertTo-ArTrustedCanonicalJson $entry) + "`n"),[Text.UTF8Encoding]::new($false))
+  $latest = [ordered]@{ catalog_entry_sha256=$entryHash; receipt_path=$receiptRelative; receipt_sha256=$receiptHash }
+  [IO.File]::WriteAllText((Join-Path $catalogDir 'latest-verified.json'),((ConvertTo-ArTrustedCanonicalJson $latest) + "`n"),[Text.UTF8Encoding]::new($false))
+  $catalogPath = Join-Path $catalogDir 'generations.jsonl'
+  $latestPath = Join-Path $catalogDir 'latest-verified.json'
+  $baseline = @{
+    Target=$catalogRoot; ExpectedCatalogSha256=Get-ArTrustedSha256 $catalogPath; ExpectedCatalogSize=(Get-Item $catalogPath).Length
+    ExpectedCatalogFinalSequence=1; ExpectedCatalogFinalEntrySha256=$entryHash
+    ExpectedLatestVerifiedSha256=Get-ArTrustedSha256 $latestPath; ExpectedLatestVerifiedSize=(Get-Item $latestPath).Length
+    ExpectedAcceptedCatalogEntrySha256=$entryHash
+    ExpectedAcceptedReceiptRelativePath=$receiptRelative; ExpectedAcceptedReceiptSha256=$receiptHash
+    ExpectedAcceptedReceiptSize=(Get-Item $receiptPath).Length; ExpectedAcceptedObservationId='obs-test'
+    ExpectedAcceptedArchiveSha256=$archiveHash; ExpectedAcceptedArchiveSize=7
+  }
+  Assert-ArTrustedCatalogBaseline @baseline | Out-Null
+  [IO.File]::AppendAllText($catalogPath,'drift',[Text.UTF8Encoding]::new($false))
+  $rejected = $false
+  try { Assert-ArTrustedCatalogBaseline @baseline | Out-Null } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Catalog drift was accepted.' }
+} finally { Remove-Item -LiteralPath $catalogRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 if ($isAdmin) {
+  $aclRoot = Join-Path $env:TEMP ('ar-trusted-acl-' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $aclRoot -Force | Out-Null
+  $operatorSidForAcl = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  try {
+    Set-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl
+    Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl
+    & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/deny' '*S-1-1-0:(RX)' | Out-Null
+    $rejected = $false
+    try { Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Aggregate deny ACE was accepted.' }
+    & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/remove:d' '*S-1-1-0' | Out-Null
+    & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/remove:g' "*$operatorSidForAcl" | Out-Null
+    $rejected = $false
+    try { Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Missing operator read/execute access was accepted.' }
+  } finally { Remove-Item -LiteralPath $aclRoot -Recurse -Force -ErrorAction SilentlyContinue }
   $rollbackRoot = Join-Path $env:TEMP ('ar-control-rollback-' + [guid]::NewGuid().ToString('N'))
   $controlRoot = Join-Path $rollbackRoot 'control'
   $prestateRoot = Join-Path $rollbackRoot 'prestate'
