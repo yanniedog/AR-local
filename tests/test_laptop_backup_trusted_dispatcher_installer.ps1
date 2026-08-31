@@ -28,6 +28,11 @@ $core = Get-Content -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'inst
 if ($core -notmatch "HostName\.Length -gt 253" -or $core -notmatch "HostName\.Contains\('\.\.'\)") {
   throw 'Strict SSH hostname validation is absent.'
 }
+$explicitSddl = 'D:P(A;;FR;;;SY)'
+$inheritedSddl = 'D:P(A;ID;FR;;;SY)'
+if ((Get-ArTrustedSddlSemanticSha256 $explicitSddl) -ceq (Get-ArTrustedSddlSemanticSha256 $inheritedSddl)) {
+  throw 'Semantic SDDL digest discarded ACE inheritance provenance.'
+}
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltInRole]::Administrator

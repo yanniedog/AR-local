@@ -35,7 +35,11 @@ function Get-ArTrustedSddlSemanticSha256 {
     if ($ace -isnot [Security.AccessControl.QualifiedAce] -or $ace -isnot [Security.AccessControl.KnownAce]) {
       throw 'Task SDDL contains an unsupported ACE type.'
     }
-    $flags = [int]$ace.AceFlags -band (-bnot [int][Security.AccessControl.AceFlags]::Inherited)
+    # Inheritance provenance is security-significant even when the current
+    # effective access mask is identical.  Preserve every ACE flag so rollback
+    # cannot silently replace inherited rights with explicit rights (or vice
+    # versa) while retaining the same semantic digest.
+    $flags = [int]$ace.AceFlags
     $objectType = if ($ace -is [Security.AccessControl.ObjectAce]) { [string]$ace.ObjectAceType } else { '' }
     $inheritedType = if ($ace -is [Security.AccessControl.ObjectAce]) { [string]$ace.InheritedObjectAceType } else { '' }
     $opaque = if ($ace.OpaqueLength -gt 0) { [BitConverter]::ToString($ace.GetOpaque()) -replace '-', '' } else { '' }
