@@ -55,7 +55,7 @@ function Assert-ArTrustedPreExecutionManifest {
   if ((Compare-Object ($required | Sort-Object) ($actual | Sort-Object))) { throw 'Pre-execution manifest fields are not exact.' }
   foreach ($key in $Expected.Keys) {
     $value = $Manifest.$key
-    if ($Expected[$key] -is [int]) {
+    if ($Expected[$key] -is [int] -or $Expected[$key] -is [long]) {
       if ($null -eq $value -or ($value -isnot [int] -and $value -isnot [long]) -or [long]$value -ne [long]$Expected[$key]) {
         throw "Pre-execution manifest identity or type differs: $key"
       }
@@ -323,20 +323,110 @@ function Set-ArTrustedRootAcl {
 }
 
 function Assert-ArTrustedRootAcl {
-  param([Parameter(Mandatory = $true)][string]$Root)
+  param(
+    [Parameter(Mandatory = $true)][string]$Root,
+    [Parameter(Mandatory = $true)][string]$OperatorSid
+  )
   $dangerous = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
     [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
     [Security.AccessControl.FileSystemRights]::TakeOwnership
+  $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
+  $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
   foreach ($path in @($Root) + @(Get-ChildItem -LiteralPath $Root -Force -Recurse | ForEach-Object FullName)) {
     $acl = Get-Acl -LiteralPath $path -ErrorAction Stop
     if (-not $acl.AreAccessRulesProtected) { throw "Trusted package ACL inherits: $path" }
+    $effective = @{
+      'S-1-5-18' = [Security.AccessControl.FileSystemRights]0
+      'S-1-5-32-544' = [Security.AccessControl.FileSystemRights]0
+      $OperatorSid = [Security.AccessControl.FileSystemRights]0
+    }
     foreach ($rule in $acl.Access) {
       $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
       if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
           ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) {
         throw "Unprivileged write remains on trusted package: $sid"
       }
+      if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny -and $effective.ContainsKey($sid)) {
+        throw "Required trusted principal has a deny ACE: $sid"
+      }
+      if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $effective.ContainsKey($sid)) {
+        $effective[$sid] = $effective[$sid] -bor $rule.FileSystemRights
+      }
     }
+    foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
+      if (($effective[$sid] -band $fullControl) -ne $fullControl) { throw "Trusted administrator principal lacks full control: $sid" }
+    }
+    if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw 'Trusted operator lacks read and execute access.' }
+  }
+}
+
+function Get-ArTrustedInvocationContractSha256 {
+  param([Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Parameters)
+  $items = @()
+  foreach ($key in $Parameters.Keys) {
+    $value = $Parameters[$key]
+    $type = if ($value -is [int] -or $value -is [long]) { 'integer' } else { 'string' }
+    $items += [ordered]@{ name=[string]$key; type=$type; value=$value }
+  }
+  Get-ArTrustedTextSha256 (($items | ConvertTo-Json -Depth 5 -Compress))
+}
+
+function Assert-ArTrustedCatalogBaseline {
+  param(
+    [Parameter(Mandatory = $true)][string]$Target,
+    [Parameter(Mandatory = $true)][string]$ExpectedCatalogSha256,
+    [Parameter(Mandatory = $true)][long]$ExpectedCatalogSize,
+    [Parameter(Mandatory = $true)][int]$ExpectedCatalogFinalSequence,
+    [Parameter(Mandatory = $true)][string]$ExpectedCatalogFinalEntrySha256,
+    [Parameter(Mandatory = $true)][string]$ExpectedLatestVerifiedSha256,
+    [Parameter(Mandatory = $true)][long]$ExpectedLatestVerifiedSize,
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptRelativePath,
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedReceiptSha256,
+    [Parameter(Mandatory = $true)][long]$ExpectedAcceptedReceiptSize,
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedObservationId,
+    [Parameter(Mandatory = $true)][string]$ExpectedAcceptedArchiveSha256
+  )
+  if ([IO.Path]::IsPathRooted($ExpectedAcceptedReceiptRelativePath) -or
+      $ExpectedAcceptedReceiptRelativePath -match '(^|[\\/])\.\.([\\/]|$)') {
+    throw 'Accepted receipt path is not one safe relative path.'
+  }
+  $targetFull = [IO.Path]::GetFullPath($Target).TrimEnd('\')
+  $catalogPath = Join-Path $Target 'catalog\generations.jsonl'
+  $latestPath = Join-Path $Target 'catalog\latest-verified.json'
+  $receiptPath = Join-Path $Target $ExpectedAcceptedReceiptRelativePath
+  if (-not [IO.Path]::GetFullPath($receiptPath).StartsWith($targetFull + '\',[StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Accepted receipt path escapes the backup target.'
+  }
+  foreach ($path in @($catalogPath,$latestPath,$receiptPath)) {
+    Assert-ArTrustedPlainPath $path | Out-Null
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Catalog baseline file is absent: $path" }
+  }
+  $catalog = Get-Item -LiteralPath $catalogPath -ErrorAction Stop
+  $latest = Get-Item -LiteralPath $latestPath -ErrorAction Stop
+  $receipt = Get-Item -LiteralPath $receiptPath -ErrorAction Stop
+  if ($catalog.Length -ne $ExpectedCatalogSize -or (Get-ArTrustedSha256 $catalogPath) -cne $ExpectedCatalogSha256 -or
+      $latest.Length -ne $ExpectedLatestVerifiedSize -or (Get-ArTrustedSha256 $latestPath) -cne $ExpectedLatestVerifiedSha256 -or
+      $receipt.Length -ne $ExpectedAcceptedReceiptSize -or (Get-ArTrustedSha256 $receiptPath) -cne $ExpectedAcceptedReceiptSha256) {
+    throw 'Catalog baseline bytes differ from the authenticated prestate.'
+  }
+  $catalogLines = @([IO.File]::ReadAllLines($catalogPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
+  if ($catalogLines.Count -lt 1) { throw 'Catalog baseline is empty.' }
+  $final = $catalogLines[-1] | ConvertFrom-Json
+  $pointer = Get-Content -LiteralPath $latestPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  $accepted = Get-Content -LiteralPath $receiptPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ([int]$final.sequence -ne $ExpectedCatalogFinalSequence -or [string]$final.entry_sha256 -cne $ExpectedCatalogFinalEntrySha256 -or
+      [string]$pointer.receipt_path -cne $ExpectedAcceptedReceiptRelativePath.Replace('\','/') -or
+      [string]$pointer.receipt_sha256 -cne $ExpectedAcceptedReceiptSha256 -or
+      [string]$accepted.checks.observation.latest_pointer.generation_id -cne $ExpectedAcceptedObservationId -or
+      [string]$accepted.archive_sha256 -cne $ExpectedAcceptedArchiveSha256) {
+    throw 'Catalog baseline identities differ from the authenticated prestate.'
+  }
+  [ordered]@{
+    catalog_path=$catalogPath; catalog_size=$catalog.Length; catalog_sha256=$ExpectedCatalogSha256
+    final_sequence=$ExpectedCatalogFinalSequence; final_entry_sha256=$ExpectedCatalogFinalEntrySha256
+    latest_verified_path=$latestPath; latest_verified_size=$latest.Length; latest_verified_sha256=$ExpectedLatestVerifiedSha256
+    accepted_receipt_path=$receiptPath; accepted_receipt_size=$receipt.Length; accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256
+    accepted_observation_id=$ExpectedAcceptedObservationId; accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   }
 }
 

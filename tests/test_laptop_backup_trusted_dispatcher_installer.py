@@ -25,6 +25,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ExpectedOldTaskXmlSha256" in source
     assert "ExpectedOldTaskSddlSha256" in source
     assert "ExpectedOldTaskSddlSemanticSha256" in source
+    assert "ExpectedCatalogSha256" in source
+    assert "ExpectedAcceptedReceiptSha256" in source
     assert "PreExecutionManifestPath" in source
     assert "PreExecutionManifestSha256" in source
     assert "RecoveryImage" in source
@@ -56,6 +58,11 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "PRESTATE_REJECTED" in source
     assert "rollback-task.sddl" in source
     assert "pre-bootstrap-control.sddl" in source
+    assert "pre-execution-observed.json" in source
+    assert "post-bootstrap-catalog.json" in source
+    assert "invocation_contract_sha256" in source
+    assert "RESTORE_TASK_CONTROL_AND_QUARANTINE_V1" in source
+    assert "deviations = @('D-011','D-012')" in source
     assert "ExpectedControlSddlSha256" in source
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
@@ -64,6 +71,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "dispatcherManifest.allowed_recovery_root" in source
     assert "dispatcher validate --control-root $ControlRoot --manifest" in source
     assert source.index("dispatcher validate --control-root $ControlRoot --manifest") < source.index("Disable-ScheduledTask -TaskName $TaskName")
+    assert source.index("$catalogBaseline = Assert-ArTrustedCatalogBaseline") < source.index("Disable-ScheduledTask -TaskName $TaskName")
+    assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
+    assert "Trusted operator lacks read and execute access" in core
+    assert "Trusted administrator principal lacks full control" in core
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner
