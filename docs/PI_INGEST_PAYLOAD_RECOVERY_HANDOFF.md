@@ -6023,3 +6023,162 @@ the action-specific conditions in the immediately preceding entry with exact
 catalog, archive, restore and Pi-source equality. Never manually trigger the
 backup or ingest. Only a later append-only terminal `PASS` may complete A3 and
 authorize A4.
+
+## Entry `HANDOFF-20260831T211140+1000-A3-MAXPATH-RECOVERY-AUTHORITY`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T211140+1000-A3-MAXPATH-RECOVERY-AUTHORITY` |
+| Previous handoff entry | `HANDOFF-20260831T125641+1000-A3-RECOVERY-SAFE-CANDIDATE` |
+| Created | `2026-08-31T21:11:40+10:00` / `2026-08-31T11:11:40Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Documentation source | clean `origin/main` worktree at `c9a6465d9acf90cda324c04ee596ce200269566c`; pre-append handoff Git-blob SHA-256 `12f63010ca6db237a8bd1c98f0978213c426d335ce2a72446cdaf6fcc5ced027` |
+| Corrected implementation | PR #593 head `291b99ab6403bcc25773838fa22a248f5f1e002e`; squash merge and sole code candidate `c9a6465d9acf90cda324c04ee596ce200269566c` |
+| Protected Pi | remains pinned to `9302890fcc752cbf90da97d597e972c157d913e3`; PR #593 performed no Pi deployment, ingest, publication, backup or production-task trigger |
+| Result | prior live bootstrap `FAIL` with package staging quarantined before task/control mutation; corrected implementation and this authority `PASS`; new live bootstrap `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | D-011 and D-012 remain; append-only D-013 below authorizes only the corrected short staging/quarantine recovery mechanism |
+
+### Previous elevation outcome — immutable failure, not success
+
+The one elevated attempt against candidate
+`0a444caab7624499bca7ffdbbc56189e152e53e9` and authority
+`dc78b85368c020dcbcbb357b932e56110999f105` failed during protected package
+staging. Its immutable evidence root is:
+
+`C:\Program Files\AR-local-backup-evidence-0a444caab7624499bca7ffdbbc56189e152e53e9-dc78b85368c020dcbcbb357b932e56110999f105\20260831T090802Z-5b12a8455b9b4c14b36071bc498eb8eb`
+
+The mutation journal is 514 bytes with SHA-256
+`2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3`.
+It contains exactly `CREATE_PACKAGE_STAGING` followed by
+`ROLLBACK_QUARANTINE_NEW_ROOT`. The failed package tree remains preserved under
+`failed-protected-root-581f0969148949e885236eda24ae2e06`; it was not deleted
+or adopted. No `bootstrap-result.json` exists, so this attempt is permanently
+`FAIL`, never `PASS` or an inferred terminal `ROLLED_BACK`.
+
+The authenticated task XML remained 4774 bytes with SHA-256
+`aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`;
+its raw SDDL remained 160 bytes with SHA-256
+`6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`.
+The attempt did not replace or enable a new task action, activate dispatcher
+control, alter the backup catalog, trigger a backup, deploy to the Pi, run an
+ingest or manipulate publication. No direct `ARLBS-*` or `ARLBQ-*` root remains
+at this authority snapshot.
+
+The concrete failure was legacy Windows `MAX_PATH`: the old long staging root
+plus a content-addressed package entry produced a 265-character path. That
+prevented reliable ACL/evidence handling and, in turn, prevented the terminal
+result from being written. The corrected direct short-root layout has a maximum
+equivalent path of 157 characters. The failed attempt's generated dispatcher
+manifest also used the broad parent `C:\code\backups` as the allowed target
+root. That manifest is rejected and inert; the next manifest must bind the
+exact target `C:\code\backups\AR-local-pi5` and exact recovery-image root.
+
+### Append-only deviation decision `D-013` — short protected failure roots
+
+The D-011 instruction to move every failed new protected root beneath the
+already long execution-evidence path is revised only where that nesting can
+cross legacy `MAX_PATH`. Bootstrap package staging shall use a unique direct
+child `%ProgramFiles%\ARLBS-<32-lowercase-hex>`. A failed or interrupted tree
+shall be moved intact to a unique direct child
+`%ProgramFiles%\ARLBQ-<32-lowercase-hex>`, never deleted, flattened, silently
+adopted or placed outside Program Files.
+
+Reason: the authenticated live failure proved that the prior nested layout can
+make both rollback evidence and terminal status unavailable. Risk: a protected
+quarantine outside its originating execution directory could become orphaned,
+ambiguous, or omitted from later evidence. Compensating controls are:
+
+- one global bootstrap mutex is acquired before reconciliation and held through
+  terminal `PASS`, failure rollback, or process exit;
+- every staging creation, recovery seal, quarantine publication and recovery
+  completion is durably appended to a protected journal before its mutation;
+- startup scans every controlled Program Files evidence root and every direct
+  `ARLBS-*`/`ARLBQ-*` root, rejecting unknown, duplicate, both-present,
+  both-absent, mismatched or unjournaled state;
+- an interrupted inherited staging tree or legacy inherited journal is accepted
+  only after reparse-point, owner, deny-ACE, effective-right and unprivileged-
+  write validation, then sealed and revalidated before any move;
+- journal references bind the immutable byte prefix through the referenced
+  intent by line count, prefix byte length and SHA-256, so later durable appends
+  cannot invalidate completed reconciliation evidence; and
+- each quarantine is administrator-owned, inheritance-protected, recursively
+  verified and content-inventoried with exact relative paths, sizes and SHA-256
+  values in the normal protected execution evidence.
+
+Revised acceptance requires zero unexplained direct short roots, complete
+journal-prefix verification, complete quarantine inventory and ACL verification,
+and a durable terminal `bootstrap-result.json`. Any ambiguity is `FAIL` before
+task/control mutation. This deviation does not widen task privilege, weaken UAC,
+authorize deletion, alter D-006, or permit any Pi or publication change.
+
+### Corrected implementation and verification
+
+PR #593 implements D-013 and fixes the terminal-evidence failure. Protected
+staging and quarantine roots are short direct Program Files children. Failure
+is durably observed before rollback. The global gate covers complete
+reconciliation and transition. Every prior evidence journal participates in
+global recovery. An interruption immediately after staging creation is
+recoverable; an interrupted move is completed only from its authenticated
+journal state. Journal files are synchronously flushed and sealed. Quarantine
+inventories and reconciliation records are bound into terminal evidence.
+
+Three exact-head Codex findings were implemented and resolved: safe inherited
+staging trees are validated and sealed before quarantine; mutable journals are
+referenced by immutable prefix identities; and safe inherited legacy journals
+have an authenticated migration path. The exact PR head passed the hosted
+Windows PowerShell 5.1 dispatcher contract, Linux payload-builder tests and the
+required `bot-feedback-gate`, with zero unresolved review threads. Local focused
+installer tests passed `6`; the non-administrator PowerShell contract passed;
+and the broader suite excluding compiler-dependent native-launcher tests passed
+`1347` with `12` intentional skips and four existing OpenPyXL warnings. The
+hosted contract is the authoritative PowerShell 5.1/administrator recovery test.
+
+### Exact sole-candidate source bytes
+
+Only Git-blob bytes from candidate
+`c9a6465d9acf90cda324c04ee596ce200269566c` may be packaged:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 65214 | `8258f16b0c4fa65c8edf80a58216eb97c5340bbe3d341cac7d182c0503252c39` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 53504 | `7d1b1810dcb93f4fec63f9b383122b92c9ad5ed81c13c8e82d6213c5a91890a7` |
+| `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
+| `native/laptop_backup_trusted_launcher.cpp` | 23066 | `ce27291580f3a2e0a541849ded828576be1b90350f6a57f2713464fcf4f4ad02` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 7003 | `a61fa61efe1c9d16ad0d2c5dae4d69d973063e9ee981cf5d1bbc7772619872ef` |
+| `laptop_backup_dispatcher.py` | 54023 | `3c00cf2c0a101a34f3ab1d98af22348a648838d7dfe3419fa034fd3ae66b7a46` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+
+### Exact continuation authority
+
+Merge this documentation-only entry through exact-head gates. Under D-012, the
+resulting current `origin/main` merge and complete merged handoff Git-blob
+SHA-256 become the sole authority. From separate clean detached candidate and
+authority checkouts, rebuild the launcher twice with identical bytes, construct
+one deterministic package and one fresh expiring typed pre-execution manifest.
+The manifest and installer invocation must bind the exact target root
+`C:\code\backups\AR-local-pi5`, recovery-image root
+`C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`, candidate,
+authority, handoff, plan, protected Pi, operator, task, catalog and package
+identities.
+
+Immediately before elevation, reauthenticate current `origin/main`, exact task
+XML/SDDL/Ready state, full catalog chain and accepted bytes, free space,
+process/lock/lease/partial absence, clean protected Pi state, inactive ingest,
+absent ingest lock, enabled/active timer and dashboard HTTP health. Any drift
+requires another append-only authority; conversational substitution is invalid.
+
+Exactly one fresh UAC approval is authorized solely for the authenticated
+installer command. It installs a fixed S4U/`Limited` ordinary-user dispatcher;
+it does not grant blanket administrator permission. After installer terminal
+`PASS`, no routine backup or candidate transition may require elevation.
+
+D-006 remains controlling. No task change may begin at or after the 00:30
+Australia/Hobart freeze. Installer `PASS` still does not close A3: the natural
+`2026-09-01` 01:00 ingest and first natural trusted 05:00 backup must pass the
+action-specific acceptance criteria in the preceding entries. No manual backup,
+ingest, deployment or publication is authorized. Only a later append-only
+terminal `PASS` may complete A3 and authorize A4.
