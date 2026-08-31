@@ -131,6 +131,23 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "& $PythonPath -B $ScriptPath" in task_runner
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows write-through publication contract")
+def test_core_write_through_move_is_executable(tmp_path: Path) -> None:
+    source = tmp_path / "bootstrap-result.json.pending"
+    destination = tmp_path / "bootstrap-result.json"
+    source.write_bytes(b"PASS\n")
+    core = str(ROOT / "install_laptop_backup_trusted_dispatcher_core.ps1").replace("'", "''")
+    source_arg = str(source).replace("'", "''")
+    destination_arg = str(destination).replace("'", "''")
+    command = (
+        f". '{core}'; "
+        f"Move-ArTrustedFileWriteThrough -Source '{source_arg}' -Destination '{destination_arg}'"
+    )
+    subprocess.run(["powershell.exe", "-NoProfile", "-Command", command], check=True)
+    assert not source.exists()
+    assert destination.read_bytes() == b"PASS\n"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell contract")
 def test_trusted_installer_windows_powershell_contract() -> None:
     host = shutil.which("powershell")
