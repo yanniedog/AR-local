@@ -15,6 +15,47 @@ function Get-ArTrustedTextSha256 {
   } finally { $algorithm.Dispose() }
 }
 
+function Read-ArTrustedPreExecutionManifest {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$ExpectedSha256
+  )
+  $stream = [IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    $actual = ([BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-','').ToLowerInvariant()
+    if ($actual -cne $ExpectedSha256) { throw 'Pre-execution manifest hash mismatch.' }
+    $stream.Position = 0
+    $reader = New-Object IO.StreamReader($stream,[Text.UTF8Encoding]::new($false),$true,4096,$true)
+    try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+  } finally { $algorithm.Dispose(); $stream.Dispose() }
+  $value = $text | ConvertFrom-Json
+  if ($null -eq $value -or $value -is [Array]) { throw 'Pre-execution manifest is not one object.' }
+  $value
+}
+
+function Assert-ArTrustedPreExecutionManifest {
+  param(
+    [Parameter(Mandatory = $true)]$Manifest,
+    [Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Expected
+  )
+  $required = @($Expected.Keys | ForEach-Object { [string]$_ }) + @('created_at','expires_at')
+  $actual = @($Manifest.PSObject.Properties.Name)
+  if ((Compare-Object ($required | Sort-Object) ($actual | Sort-Object))) { throw 'Pre-execution manifest fields are not exact.' }
+  foreach ($key in $Expected.Keys) {
+    if ($key -eq 'expected_old_task_last_result') {
+      if ([int]$Manifest.$key -ne [int]$Expected[$key]) { throw "Pre-execution manifest identity differs: $key" }
+    } elseif ([string]$Manifest.$key -cne [string]$Expected[$key]) { throw "Pre-execution manifest identity differs: $key" }
+  }
+  try {
+    $created = [DateTimeOffset]::ParseExact([string]$Manifest.created_at,'o',[Globalization.CultureInfo]::InvariantCulture)
+    $expires = [DateTimeOffset]::ParseExact([string]$Manifest.expires_at,'o',[Globalization.CultureInfo]::InvariantCulture)
+  } catch { throw 'Pre-execution manifest timestamps are invalid.' }
+  if ($created.Offset -ne [TimeSpan]::Zero -or $expires.Offset -ne [TimeSpan]::Zero -or $expires -le $created -or [DateTimeOffset]::UtcNow -ge $expires) {
+    throw 'Pre-execution manifest is expired or time-invalid.'
+  }
+}
+
 function Get-ArTrustedTaskXmlBytes {
   param([Parameter(Mandatory = $true)][string]$TaskName)
   [byte[]](0xff, 0xfe) + [Text.Encoding]::Unicode.GetBytes((Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop))

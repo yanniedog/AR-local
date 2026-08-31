@@ -21,6 +21,8 @@ param(
   [Parameter(Mandatory = $true)][int]$ExpectedOldTaskLastResult,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
+  [Parameter(Mandatory = $true)][string]$PreExecutionManifestPath,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PreExecutionManifestSha256,
   [string]$PiHost = 'ar-local-pi5-lan'
 )
 
@@ -54,6 +56,7 @@ function Write-ArTrustedResult {
     plan_sha256 = $PlanSha256; authority_commit = $AuthorityCommit; handoff_sha256 = $HandoffSha256
     candidate_code_sha = $CandidateCodeSha; protected_code_sha = $ProtectedCodeSha
     operator = $Operator; operator_sid = $OperatorSid; package_sha256 = $PackageSha256; task_name = $TaskName
+    pre_execution_manifest_sha256 = $PreExecutionManifestSha256
     started_at = $script:startedAt; completed_at = [DateTimeOffset]::UtcNow.ToString('o')
     exact_commands = @($script:exactCommand); result = $Result; error = $ErrorText; evidence = $Detail
     evidence_files = $files
@@ -105,8 +108,9 @@ if (-not $isAdmin -or $identity.User.Value -cne $OperatorSid) { throw 'Trusted b
 $local = [DateTimeOffset]::Now
 if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [TimeSpan]::FromHours(22)) { throw 'Trusted bootstrap is outside the D-006 daylight window.' }
 if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) { throw 'Trusted package is absent.' }
+if (-not (Test-Path -LiteralPath $PreExecutionManifestPath -PathType Leaf)) { throw 'Pre-execution manifest is absent.' }
 foreach ($path in @($Target,$ControlRoot)) { if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is absent: $path" } }
-foreach ($path in @($PackagePath,$Target,$ControlRoot,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
+foreach ($path in @($PackagePath,$PreExecutionManifestPath,$Target,$ControlRoot,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
 $expectedControl = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
 if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($expectedControl)) { throw 'ControlRoot must be exactly Target\dispatcher-control.' }
 $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
@@ -123,6 +127,20 @@ if ([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($installFull)) -cne [IO.P
     [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($evidenceFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles)) {
   throw 'InstallRoot and EvidenceRoot must be direct children of the protected Program Files directory.'
 }
+$preExecution = Read-ArTrustedPreExecutionManifest -Path $PreExecutionManifestPath -ExpectedSha256 $PreExecutionManifestSha256
+$expectedPreExecution = [ordered]@{
+  schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; task_name = $TaskName
+  package_path = [IO.Path]::GetFullPath($PackagePath); package_sha256 = $PackageSha256
+  install_root = $installFull; target = [IO.Path]::GetFullPath($Target); control_root = [IO.Path]::GetFullPath($ControlRoot)
+  evidence_root = $evidenceFull; principal = $Principal; operator = $Operator; operator_sid = $OperatorSid
+  candidate_code_sha = $CandidateCodeSha; authority_commit = $AuthorityCommit; protected_code_sha = $ProtectedCodeSha
+  plan_git_commit = $PlanGitCommit; plan_sha256 = $PlanSha256; handoff_sha256 = $HandoffSha256
+  expected_old_task_xml_sha256 = $ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256 = $ExpectedOldTaskSddlSha256
+  expected_old_task_sddl_semantic_sha256 = $ExpectedOldTaskSddlSemanticSha256
+  expected_old_task_last_result = $ExpectedOldTaskLastResult; installer_sha256 = $InstallerSha256; core_sha256 = $CoreSha256
+  pi_host = $PiHost
+}
+Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution
 if ((Get-PSDrive -Name ([IO.Path]::GetPathRoot($Target).Substring(0,1))).Free -lt 50GB) { throw 'Laptop free space is below 50 GiB.' }
 $active = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
 if ($active.Count) { throw 'A laptop backup or dispatcher process is already active.' }
@@ -154,6 +172,9 @@ New-Item -ItemType Directory -Path $script:executionRoot -ErrorAction Stop | Out
 Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 Assert-ArTrustedRootAcl -Root $script:executionRoot
 [IO.File]::WriteAllText((Join-Path $script:executionRoot 'pi-preflight.txt'), (($piOutput -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+$preservedPreExecution = Join-Path $script:executionRoot 'pre-execution-manifest.json'
+Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecution -ErrorAction Stop
+if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
 
 if (Test-Path -LiteralPath $InstallRoot) {
   try {
@@ -194,13 +215,9 @@ $probeName = 'AR-local trusted dispatcher probe ' + [guid]::NewGuid().ToString('
 $controlPrestate = Join-Path $script:executionRoot 'dispatcher-control-prestate'
 $mutated = $false; $probeRegistered = $false; $installed = $false; $controlChanged = $false
 try {
-  Write-ArMutationIntent -Action 'DISABLE_PRODUCTION_TASK' -TargetPath $TaskName
-  $mutated = $true
-  Disable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
-  $disabled = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-  $activeAfterDisable = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
-  if ($disabled.State.ToString() -ne 'Disabled' -or $disabled.Settings.Enabled -or $activeAfterDisable.Count) { throw 'Production task did not become safely quiescent.' }
-  Copy-Item -LiteralPath $ControlRoot -Destination $controlPrestate -Recurse -ErrorAction Stop
+  # Authenticate and publish the new protected bytes before the first task or
+  # control mutation.  Package drift, expiry, or authority-main drift therefore
+  # stops with the production task untouched.
   Write-ArMutationIntent -Action 'CREATE_PACKAGE_STAGING' -TargetPath $staging
   New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
   Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
@@ -236,6 +253,16 @@ try {
   $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
   $env:GIT_CONFIG_KEY_1 = 'safe.directory'; $env:GIT_CONFIG_VALUE_1 = [string]$trustedConfig.authority_path; $env:GIT_CONFIG_GLOBAL = 'NUL'
   $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'
+  & $python -B -s -E $dispatcher validate --manifest $manifest
+  if ($LASTEXITCODE -ne 0) { throw 'Protected dispatcher pre-mutation validation failed.' }
+
+  Copy-Item -LiteralPath $ControlRoot -Destination $controlPrestate -Recurse -ErrorAction Stop
+  Write-ArMutationIntent -Action 'DISABLE_PRODUCTION_TASK' -TargetPath $TaskName
+  $mutated = $true
+  Disable-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
+  $disabled = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $activeAfterDisable = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher)|laptop_pull_backup' })
+  if ($disabled.State.ToString() -ne 'Disabled' -or $disabled.Settings.Enabled -or $activeAfterDisable.Count) { throw 'Production task did not become safely quiescent.' }
   $controlChanged = $true
   Write-ArMutationIntent -Action 'ACTIVATE_DISPATCHER_MANIFEST' -TargetPath $ControlRoot
   & $python -B -s -E $dispatcher activate --control-root $ControlRoot --manifest $manifest --defer-proof
@@ -314,6 +341,8 @@ try {
       $restoredXml = Join-Path $script:executionRoot 'rollback-task.xml'
       [IO.File]::WriteAllBytes($restoredXml, (Get-ArTrustedTaskXmlBytes $TaskName))
       $restoredSddl = Get-ArTrustedTaskSddl $TaskName
+      $restoredSddlPath = Join-Path $script:executionRoot 'rollback-task.sddl'
+      [IO.File]::WriteAllText($restoredSddlPath, $restoredSddl, [Text.UTF8Encoding]::new($false))
       if ((Get-ArTrustedSha256 $restoredXml) -cne $ExpectedOldTaskXmlSha256 -or
           (Get-ArTrustedSddlSemanticSha256 $restoredSddl) -cne $ExpectedOldTaskSddlSemanticSha256) {
         throw 'Rollback task differs semantically from authenticated prestate.'

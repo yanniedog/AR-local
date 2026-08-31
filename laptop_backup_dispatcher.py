@@ -873,6 +873,8 @@ def parser() -> argparse.ArgumentParser:
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--manifest", type=Path, required=True)
     item.add_argument("--defer-proof", action="store_true")
+    item = sub.add_parser("validate")
+    item.add_argument("--manifest", type=Path, required=True)
     item = sub.add_parser("finalize")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--output", type=Path)
@@ -912,6 +914,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "activate":
             value = activate(args.control_root, args.manifest, defer_proof=args.defer_proof)
+        elif args.command == "validate":
+            manifest = parse_json(args.manifest.read_bytes(), "dispatcher manifest")
+            validated = validate_manifest(manifest, activation=True)
+            value = {
+                "ok": True, "result": "PASS", "mode": "VALIDATE",
+                "candidate_code_sha": validated["candidate_code_sha"],
+                "sequence": validated["sequence"],
+            }
         elif args.command == "finalize":
             value = finalize_pending(layout(args.control_root))
         elif args.command == "prepare":
