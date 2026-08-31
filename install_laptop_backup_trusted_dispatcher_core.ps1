@@ -457,14 +457,12 @@ function Assert-ArTrustedRecoverablePathAcl {
   }
   if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Recoverable operator lacks read and execute access at $Path" }
 }
-
 function Assert-ArTrustedRecoverableRootAcl {
   param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$OperatorSid)
   foreach ($path in @($Root) + @(Get-ChildItem -LiteralPath $Root -Force -Recurse | ForEach-Object FullName)) {
     Assert-ArTrustedRecoverablePathAcl -Path $path -OperatorSid $OperatorSid
   }
 }
-
 function Get-ArTrustedJournalPrefixIdentity {
   param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][int]$LineCount)
   if ($LineCount -lt 1) { throw 'Journal prefix line count must be positive.' }
@@ -472,7 +470,10 @@ function Get-ArTrustedJournalPrefixIdentity {
   $seen = 0
   $prefixLength = -1
   for ($index = 0; $index -lt $bytes.Length; $index++) {
-    if ($bytes[$index] -eq 10 -and ++$seen -eq $LineCount) { $prefixLength = $index + 1; break }
+    if ($bytes[$index] -eq 10) {
+      $seen += 1
+      if ($seen -eq $LineCount) { $prefixLength = $index + 1; break }
+    }
   }
   if ($prefixLength -lt 0) { throw 'Journal prefix is incomplete or lacks a durable line terminator.' }
   $prefix = New-Object byte[] $prefixLength
@@ -483,7 +484,6 @@ function Get-ArTrustedJournalPrefixIdentity {
       sha256=([BitConverter]::ToString($algorithm.ComputeHash($prefix)) -replace '-','').ToLowerInvariant() }
   } finally { $algorithm.Dispose() }
 }
-
 function Assert-ArTrustedRootAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
@@ -493,7 +493,6 @@ function Assert-ArTrustedRootAcl {
     Assert-ArTrustedSinglePathAcl -Path $path -OperatorSid $OperatorSid
   }
 }
-
 function Get-ArTrustedQuarantineInventory {
   param([Parameter(Mandatory = $true)][string]$Root)
   $files = @()
@@ -506,7 +505,6 @@ function Get-ArTrustedQuarantineInventory {
   }
   $files
 }
-
 function Write-ArTrustedFailureObserved {
   param([Parameter(Mandatory = $true)][string]$Message)
   $path = Join-Path $script:executionRoot 'failure-observed.json'
@@ -525,7 +523,6 @@ function Write-ArTrustedFailureObserved {
   }
   $path
 }
-
 function Move-ArTrustedFailedRootToQuarantine {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -561,7 +558,6 @@ function Move-ArTrustedFailedRootToQuarantine {
   }
   [pscustomobject]@{ quarantine_path=$quarantine; record_path=$recordPath; file_count=$files.Count }
 }
-
 function Assert-ArTrustedShortQuarantineState {
   param(
     [Parameter(Mandatory = $true)][string]$OperatorSid,
@@ -573,6 +569,7 @@ function Assert-ArTrustedShortQuarantineState {
   $destinations = @{}
   $sources = @{}
   $createdStaging = @{}
+  $legacySources = @{}; $legacyRoots = @{}
   $legacyClosed = @()
   $evidenceRoots = @(Get-ChildItem -LiteralPath $programFiles -Force -Directory -ErrorAction Stop | Where-Object {
     $_.Name -match '^AR-local-backup-evidence-[0-9a-f]{40}-[0-9a-f]{40}$'
@@ -592,7 +589,8 @@ function Assert-ArTrustedShortQuarantineState {
         Set-ArTrustedRootAcl -Root $journalPath -OperatorSid $OperatorSid
       }
       Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
-      $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
+      $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)))
+      if (@($lines | Where-Object { $_.Length -eq 0 }).Count -gt 0) { throw 'Mutation journal contains an empty physical line.' }
       for ($index = 0; $index -lt $lines.Count; $index++) {
         $entry = $lines[$index] | ConvertFrom-Json
         if ([string]$entry.action -ceq 'CREATE_PACKAGE_STAGING') {
@@ -601,10 +599,12 @@ function Assert-ArTrustedShortQuarantineState {
           if ([IO.Path]::GetDirectoryName($created) -cne $programFiles) { throw 'Created staging root is outside the controlled Program Files root.' }
           if ($createdName -match '^AR-local-backup-trusted-[0-9a-f]{40}-[0-9a-f]{40}\.staging-[0-9a-f]{32}$') {
             if (Test-Path -LiteralPath $created) { throw 'Legacy long staging source still exists and cannot be reconciled safely.' }
+            if ($legacySources.ContainsKey($created)) { throw 'Legacy long staging source is duplicated.' }
             $failedRoots = @(Get-ChildItem -LiteralPath $execution.FullName -Force -Directory -ErrorAction Stop |
               Where-Object { $_.Name -match '^failed-protected-root-[0-9a-f]{32}$' })
             if ($failedRoots.Count -ne 1) { throw 'Legacy long staging journal lacks one exact preserved failed root.' }
             $failedRoot = $failedRoots[0].FullName
+            if ($legacyRoots.ContainsKey($failedRoot)) { throw 'Legacy preserved failed root is duplicated.' }
             Assert-ArTrustedPlainPath $failedRoot | Out-Null
             $failedAcl = Get-Acl -LiteralPath $failedRoot -ErrorAction Stop
             $failedOwner = $failedAcl.Owner
@@ -622,9 +622,11 @@ function Assert-ArTrustedShortQuarantineState {
             $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 1))
             $legacyClosed += [ordered]@{
               source_path=$created; source_absent=$true; preserved_failed_root=$failedRoot
+              preserved_content_trust='UNTRUSTED_OPAQUE_NOT_CONSUMED'
               source_journal=$journalPath; source_journal_prefix_sha256=$prefix.sha256
               source_journal_prefix_bytes=$prefix.bytes; source_line=$prefix.lines
             }
+            $legacySources[$created]=$true; $legacyRoots[$failedRoot]=$true
             continue
           }
           if ($createdName -notmatch '^ARLBS-[0-9a-f]{32}$' -or $createdStaging.ContainsKey($created)) {
@@ -669,7 +671,6 @@ function Assert-ArTrustedShortQuarantineState {
       }
     }
   }
-
   foreach ($created in @($createdStaging.Values)) {
     if ($sources.ContainsKey([string]$created.source_path) -or
         -not (Test-Path -LiteralPath ([string]$created.source_path) -PathType Container)) { continue }

@@ -200,9 +200,10 @@ if ($isAdmin) {
     }
     Assert-ArTrustedSinglePathAcl -Path $priorJournal -OperatorSid $operatorSidForAcl
     $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
-    if (@($reconciliation.legacy_closed_staging).Count -ne 1 -or
-        [string]$reconciliation.legacy_closed_staging[0].source_path -cne $legacySource -or
-        -not [bool]$reconciliation.legacy_closed_staging[0].source_absent) {
+    $legacyRecords = @($reconciliation.legacy_closed_staging)
+    if ($legacyRecords.Count -ne 1 -or [string]$legacyRecords[0].source_path -cne $legacySource -or
+        -not [bool]$legacyRecords[0].source_absent -or
+        [string]$legacyRecords[0].preserved_content_trust -cne 'UNTRUSTED_OPAQUE_NOT_CONSUMED') {
       throw 'Closed legacy long staging journal was not preserved in reconciliation evidence.'
     }
     foreach ($item in @($reconciliation.transactions)) {
@@ -232,6 +233,21 @@ if ($isAdmin) {
       Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
     } catch { if ($_.Exception.Message -notmatch 'Unjournaled short bootstrap') { throw }; $rejected = $true }
     if (-not $rejected) { throw 'Unjournaled short bootstrap root was accepted.' }
+    Remove-Item -LiteralPath $orphan -Recurse -Force
+    $legacyJournalOriginal = [IO.File]::ReadAllBytes($legacyJournal)
+    $duplicateLine = ([ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$legacySource } | ConvertTo-Json -Compress)
+    [IO.File]::AppendAllText($legacyJournal,($duplicateLine + "`n"),[Text.UTF8Encoding]::new($false))
+    $script:executionRoot = $blockedExecution
+    $rejected = $false
+    try { Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'Legacy long staging source is duplicated') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Duplicated legacy staging source was accepted.' }
+    [IO.File]::WriteAllBytes($legacyJournal,$legacyJournalOriginal)
+    [IO.File]::AppendAllText($legacyJournal,"`n",[Text.UTF8Encoding]::new($false))
+    $rejected = $false
+    try { Assert-ArTrustedShortQuarantineState -OperatorSid $operatorSidForAcl -ProgramFilesRoot $quarantineTestRoot | Out-Null
+    } catch { if ($_.Exception.Message -notmatch 'empty physical line') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Blank physical journal line was accepted.' }
   } finally {
     Remove-Item -LiteralPath $quarantineTestRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
