@@ -5510,7 +5510,7 @@ pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
 | Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
 | Documentation source | clean `origin/main` worktree at `c40c57b39846866bd2b7c05c9255f50d31f9c755`; pre-append handoff Git-blob SHA-256 `330212f84565ba532373b486daa6045ed2f475c97c3cd880156f9555e016e4d8` |
 | Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; service inactive, timer enabled/active, lock absent and dashboard HTTP 200 at authorization preflight |
-| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merge `4428f12089576523e41de40fb08c29cbf8fe60ab`; final hardening PR #587 head `80b42b2dbd63a04d0e5006d23cd26d9ca7bd7042`, merged as candidate `8182ba8245569395ddab3c5fd1e2ee549c475eb8` |
+| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merge `4428f12089576523e41de40fb08c29cbf8fe60ab`; PR #587 head `80b42b2dbd63a04d0e5006d23cd26d9ca7bd7042`, merge `8182ba8245569395ddab3c5fd1e2ee549c475eb8`; rollback/evidence hardening PR #588 head `42cef4e33d5a5120d736da5d90720b0d8132d2b7`, merged as candidate `5dee9e0334a7ad34b49e5b95099525d6218e1e6a` |
 | Result | implementation and authority decision `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
 | Deviations | append-only decisions `D-011` and `D-012` below |
 
@@ -5522,6 +5522,9 @@ the exact candidate-and-authority-derived protected-root names. PR #587 made
 the installer consume a typed, hash-bound pre-execution manifest; moved package,
 canonical-manifest, authority-currentness and control-state checks before task
 mutation; preserved restored raw SDDL; and made package Git metadata reproducible.
+PR #588 bound the exact target and recovery paths, rejected backup residue,
+preserved/restored the dispatcher-control ACL, and quarantined failed protected
+roots and displaced control state into hashed evidence on every failure path.
 The scheduled task will enter an administrator-protected native launcher before
 it reads any operator-writable configuration or code. The launcher derives a
 restricted token with `CreateRestrictedToken`, proves the expected integrity
@@ -5546,14 +5549,17 @@ contract, Linux payload-builder suite, `bot-feedback-gate` and Sourcery review.
 Its focused local installer/dispatcher suite passed 20 tests. Findings covering
 canonical JSON, pending/pointer/receipt state, expired idempotent recovery,
 future timestamps and typed manifest fields were implemented and resolved.
+PR #588's final head passed the same hosted Windows/Linux and feedback gates;
+its focused local installer/dispatcher suite passed 20 tests, including injected
+ACL-verification failure with displaced-control preservation.
 
 Exact immutable source blobs at final candidate
-`8182ba8245569395ddab3c5fd1e2ee549c475eb8` are:
+`5dee9e0334a7ad34b49e5b95099525d6218e1e6a` are:
 
 | Path | Bytes | Git-blob SHA-256 |
 |---|---:|---|
-| `install_laptop_backup_trusted_dispatcher.ps1` | 27897 | `5aaf70b7487b6bfbc2d0a3257ae88a1717f8eee9663e67d7fac018930c4f31e9` |
-| `install_laptop_backup_trusted_dispatcher_core.ps1` | 23253 | `e8f21d17abcbb286c6aa40ca4ebf1cf595c7208807338e6c58ad4c75a76fe668` |
+| `install_laptop_backup_trusted_dispatcher.ps1` | 29677 | `6ecd1f4871004dd2ae1c8bc297dc8d0e2a3ab1444a988e42fe7022c8cfcf1c7d` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 24853 | `540952fee6e6ca1750e5a9c0e5194b7b9bfb4686bdf5e6eb9cddf006129c05e3` |
 | `laptop_backup_trusted_package.py` | 9175 | `9c1ab77734910f1a3762250a996697f0f4cc7142dd20481bb3fbd9b2fedf7ced` |
 | `native/laptop_backup_trusted_launcher.cpp` | 18969 | `03d359cdb1b3ba0e5763daad803d964a00cf25581d64088b56db86f83b140071` |
 | `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
@@ -5619,7 +5625,7 @@ This entry authorizes a two-stage, fail-closed binding:
 3. outside D-006, create clean detached candidate and authority checkouts, build
    the native launcher reproducibly, generate an expiring dispatcher manifest,
    and build one deterministic protected package using only candidate
-   `8182ba8245569395ddab3c5fd1e2ee549c475eb8` and that authority merge;
+   `5dee9e0334a7ad34b49e5b95099525d6218e1e6a` and that authority merge;
 4. before elevation, write an immutable pre-execution manifest recording every
    input/output path, byte length and SHA-256, the complete installer command,
    rollback procedure, current task/Pi/space/process gates and plan identity;
@@ -5674,6 +5680,15 @@ The bootstrap must hash these files immediately before and after transition and
 prove exact equality. Any startup trigger, helper or external write that changes
 the baseline blocks transition and requires fresh append-only authority; it
 cannot be accepted as installer activity.
+
+The elevated installer must independently reject `catalog/.receiver.lock`,
+`transition.lease`, every `*.partial`/`.partial-*` residue and every matching
+live backup/dispatcher/helper process before mutation. Its typed pre-execution
+manifest must bind the exact recovery-image path in addition to the target and
+control paths. Failed new roots are moved under protected execution evidence,
+not deleted. Control rollback must restore both exact tree bytes and the
+authenticated binary security descriptor; the displaced tree is preserved in
+evidence even when ACL restoration or verification fails.
 
 Terminal bootstrap acceptance requires a protected-root ACL denying the
 operator write access, exact package population, exact detached repositories,
