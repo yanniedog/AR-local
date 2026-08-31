@@ -62,6 +62,13 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
     assert "-AllowedRuntimeFiles @('bootstrap.ready')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
+    assert source.count("Invoke-ArTrustedPiIdleCheck") >= 3
+    assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
+    assert "Stop-ScheduledTask -TaskName $probeName" in source
+    assert source.index("Stop-ArTrustedProbeAndAwait") < source.index("Unregister-ScheduledTask -TaskName $probeName", source.index("rollbackMayMutate"))
+    assert "task/control/root rollback withheld because probe quiescence was not proven" in source
+    assert "if ($rollbackMayMutate -and $controlChanged)" in source
+    assert "if ($rollbackMayMutate -and $mutated)" in source
     assert "& $python -B -s -E $dispatcher activate" in source
     assert "[ScriptBlock]::Create($coreText)" in source
     assert "FileShare]::Read" in source

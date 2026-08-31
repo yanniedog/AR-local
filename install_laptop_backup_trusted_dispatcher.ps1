@@ -136,6 +136,45 @@ function Assert-ArTrustedBackupQuiescence {
   [ordered]@{ active_process_count=$processes.Count; residue_count=$items.Count; task_ready=[bool]$RequireReadyTask }
 }
 
+function Invoke-ArTrustedPiIdleCheck {
+  param([Parameter(Mandatory = $true)][string]$Phase)
+  $ssh = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
+  $lines = @(
+    'set -eu','cd /srv/ar-local/AR-local',
+    ('test "$(git rev-parse HEAD)" = ''{0}''' -f $ProtectedCodeSha),
+    'test -z "$(git status --porcelain=v1)"',
+    '! systemctl is-active --quiet ar-local-daily.service',
+    'test ! -e /srv/ar-local/data/state/daily-ingest.lock',
+    'curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null',
+    'echo AR_PI_PREFLIGHT_PASS'
+  )
+  $result = Invoke-ArTrustedSshScript -SshPath $ssh -HostName $PiHost -Script (($lines -join "`n") + "`n")
+  $output = @($result.Stdout.TrimEnd() -split "`n")
+  if ($result.ExitCode -ne 0 -or $output[-1] -cne 'AR_PI_PREFLIGHT_PASS') {
+    throw "Pi trusted-bootstrap $Phase check failed."
+  }
+  [ordered]@{ phase=$Phase; exit_code=$result.ExitCode; output=$output }
+}
+
+function Stop-ArTrustedProbeAndAwait {
+  $task = Get-ScheduledTask -TaskName $probeName -ErrorAction Stop
+  if ($task.State.ToString() -eq 'Running') {
+    Write-ArMutationIntent -Action 'ROLLBACK_STOP_RUNNING_PROBE' -TargetPath $probeName
+    Stop-ScheduledTask -TaskName $probeName -ErrorAction Stop
+  }
+  $deadline = [DateTimeOffset]::Now.AddSeconds(30)
+  do {
+    Start-Sleep -Milliseconds 250
+    $task = Get-ScheduledTask -TaskName $probeName -ErrorAction Stop
+  } while ($task.State.ToString() -eq 'Running' -and [DateTimeOffset]::Now -lt $deadline)
+  if ($task.State.ToString() -eq 'Running') { throw 'Disposable probe remained Running after stop.' }
+  $helpers = @(Get-CimInstance Win32_Process | Where-Object {
+    $_.ProcessId -ne $PID -and $_.CommandLine -and
+    $_.CommandLine -match 'laptop_backup_(dispatcher|trusted_child)|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'
+  })
+  if ($helpers.Count) { throw 'Disposable probe helper remained after stop.' }
+}
+
 function Invoke-ArTrustedActiveControlValidation {
   $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
   $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
@@ -306,12 +345,8 @@ $residue += @(Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction St
 } | ForEach-Object { $_.FullName })
 if ($residue.Count) { throw 'Backup lock, transition lease, or partial residue exists.' }
 
-$ssh = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
-$piLines = @('set -eu','cd /srv/ar-local/AR-local',('test "$(git rev-parse HEAD)" = ''{0}''' -f $ProtectedCodeSha),'test -z "$(git status --porcelain=v1)"','! systemctl is-active --quiet ar-local-daily.service','test ! -e /srv/ar-local/data/state/daily-ingest.lock','curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null','echo AR_PI_PREFLIGHT_PASS')
-$piScript = ($piLines -join "`n") + "`n"
-$piResult = Invoke-ArTrustedSshScript -SshPath $ssh -HostName $PiHost -Script $piScript
-$piOutput = @($piResult.Stdout.TrimEnd() -split "`n")
-if ($piResult.ExitCode -ne 0 -or $piOutput[-1] -cne 'AR_PI_PREFLIGHT_PASS') { throw 'Pi trusted-bootstrap preflight failed.' }
+$piPreflight = Invoke-ArTrustedPiIdleCheck -Phase 'initial preflight'
+$piOutput = @($piPreflight.output)
 
 $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $script:exactCommand = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine
@@ -447,6 +482,13 @@ try {
   & $python -B -s -E $dispatcher validate --control-root $ControlRoot --manifest $manifest
   if ($LASTEXITCODE -ne 0) { throw 'Protected dispatcher pre-mutation validation failed.' }
 
+  $piPremutation = Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'
+  [IO.File]::WriteAllText(
+    (Join-Path $script:executionRoot 'pi-immediate-pre-mutation.json'),
+    (($piPremutation | ConvertTo-Json -Depth 5 -Compress) + "`n"),
+    [Text.UTF8Encoding]::new($false)
+  )
+
   Copy-Item -LiteralPath $ControlRoot -Destination $controlPrestate -Recurse -ErrorAction Stop
   Write-ArMutationIntent -Action 'DISABLE_PRODUCTION_TASK' -TargetPath $TaskName
   $mutated = $true
@@ -535,11 +577,20 @@ try {
 } catch {
   $failure = $_.Exception.Message
   $rollbackErrors = New-Object Collections.Generic.List[string]
+  $rollbackMayMutate = $true
   if ($probeRegistered) {
-    try { Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_PROBE' -TargetPath $probeName; Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop }
-    catch { $rollbackErrors.Add("probe cleanup: $($_.Exception.Message)") }
+    try {
+      Stop-ArTrustedProbeAndAwait
+      Write-ArMutationIntent -Action 'ROLLBACK_REMOVE_PROBE' -TargetPath $probeName
+      Unregister-ScheduledTask -TaskName $probeName -Confirm:$false -ErrorAction Stop
+      $probeRegistered = $false
+    } catch {
+      $rollbackErrors.Add("probe cleanup: $($_.Exception.Message)")
+      $rollbackMayMutate = $false
+      $rollbackErrors.Add('task/control/root rollback withheld because probe quiescence was not proven')
+    }
   }
-  if ($controlChanged) {
+  if ($rollbackMayMutate -and $controlChanged) {
     try {
       Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_CONTROL' -TargetPath $ControlRoot
       Restore-ArTrustedControlRootAtomic -ControlRoot $ControlRoot -Prestate $controlPrestate `
@@ -547,7 +598,7 @@ try {
         -ExpectedControlSddlSha256 $controlSddlSemanticSha256
     } catch { $rollbackErrors.Add("control restore: $($_.Exception.Message)") }
   }
-  if ($mutated) {
+  if ($rollbackMayMutate -and $mutated) {
     try {
       Write-ArMutationIntent -Action 'ROLLBACK_RESTORE_PRODUCTION_TASK' -TargetPath $TaskName
       Restore-ArTrustedPriorTask -TaskName $TaskName -TaskXml $oldXml -TaskSddl $oldSddl
@@ -564,7 +615,7 @@ try {
       if ($restoredTask.State.ToString() -ne 'Ready' -or -not $restoredTask.Settings.Enabled) { throw 'Rollback did not restore a Ready enabled task.' }
     } catch { $rollbackErrors.Add("task restore: $($_.Exception.Message)") }
   }
-  foreach ($path in @($staging,$InstallRoot)) {
+  foreach ($path in $(if ($rollbackMayMutate) { @($staging,$InstallRoot) } else { @() })) {
     if (Test-Path -LiteralPath $path) {
       try {
         $destination = Join-Path $script:executionRoot ('failed-protected-root-' + [guid]::NewGuid().ToString('N'))
