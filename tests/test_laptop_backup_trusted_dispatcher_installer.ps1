@@ -202,9 +202,9 @@ if ($isAdmin) {
     $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
     $legacyRecords = @($reconciliation.legacy_closed_staging)
     $legacyRecord = $legacyRecords | Select-Object -First 1
-    if ($legacyRecords.Count -ne 1 -or [string]$legacyRecord.source_path -cne $legacySource -or
-        -not [bool]$legacyRecord.source_absent -or [int]$legacyRecord.source_line -ne 2 -or
-        [string]$legacyRecord.preserved_content_trust -cne 'UNTRUSTED_OPAQUE_NOT_CONSUMED') {
+    if ($legacyRecords.Count -ne 1 -or [string]($legacyRecord.source_path) -cne $legacySource -or
+        -not [bool]($legacyRecord.source_absent) -or [int]($legacyRecord.source_line) -ne 2 -or
+        [string]($legacyRecord.preserved_content_trust) -cne 'UNTRUSTED_OPAQUE_NOT_CONSUMED') {
       throw ('Closed legacy long staging journal was not preserved in reconciliation evidence: ' +
         ($legacyRecords | ConvertTo-Json -Compress -Depth 5))
     }
