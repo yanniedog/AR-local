@@ -17,6 +17,7 @@ on:
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
       - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
+      - 'install_laptop_backup_trusted_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
@@ -42,6 +43,7 @@ on:
       - 'install_laptop_backup_task*.ps1'
       - 'install_laptop_backup_dispatcher*.ps1'
       - 'install_laptop_backup_nonadmin_dispatcher*.ps1'
+      - 'install_laptop_backup_trusted_dispatcher*.ps1'
       - 'run_laptop_backup_task.ps1'
       - 'run_laptop_backup_dispatcher.ps1'
       - 'run_laptop_backup_nonadmin_dispatcher.ps1'
@@ -114,16 +116,22 @@ jobs:
       - name: Parse trusted child with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $parseErrors = $null
-          $tokens = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'run_laptop_backup_trusted_child.ps1'),
-            [ref]$tokens,
-            [ref]$parseErrors
-          )
-          if ($parseErrors.Count -gt 0) {
-            $parseErrors | ForEach-Object { Write-Error $_.Message }
-            throw 'Trusted child PowerShell parse failed.'
+          foreach ($path in @(
+            'run_laptop_backup_trusted_child.ps1',
+            'install_laptop_backup_trusted_dispatcher.ps1',
+            'install_laptop_backup_trusted_dispatcher_core.ps1'
+          )) {
+            $parseErrors = $null
+            $tokens = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $path),
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw "Trusted PowerShell parse failed: $path"
+            }
           }
       - name: Run dispatcher and dual-host installer contracts
         shell: powershell
@@ -138,3 +146,4 @@ jobs:
           tests/test_laptop_backup_nonadmin_dispatcher.py
           tests/test_laptop_backup_restricted_process.py
           tests/test_laptop_backup_trusted_launcher.py
+          tests/test_laptop_backup_trusted_dispatcher_installer.py

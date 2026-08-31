@@ -89,13 +89,17 @@ def test_source_has_no_general_command_channel() -> None:
 def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
     child = TRUSTED_CHILD.read_text(encoding="utf-8")
     dispatcher = DISPATCHER.read_text(encoding="utf-8")
-    assert "$config.schema_version -ne 2" in child
+    assert "$config.schema_version -ne 3" in child
     assert "Assert-ArTrustedWithinRoot $python" in child
     assert "Assert-ArTrustedWithinRoot $dispatcher" in child
     assert "Assert-ArTrustedWithinRoot $atomic" in child
     assert "Assert-ArTrustedWriteDenied $tool.Path" in child
     assert "$env:PATH =" in child
     assert "$env:AR_TRUSTED_ROOT = $trustedRoot" in child
+    assert "$env:GIT_CONFIG_COUNT = '2'" in child
+    assert "finalize.enabled" in child
+    assert "GIT_CONFIG_GLOBAL = 'NUL'" in child
+    assert "-B -s -E $dispatcher finalize" in child
     assert 'os.environ.get("AR_TRUSTED_ROOT")' in dispatcher
 
 
