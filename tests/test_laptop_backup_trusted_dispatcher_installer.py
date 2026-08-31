@@ -58,7 +58,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Global\\ARLocalTrustedBootstrapGate" in source
     assert "Enter-ArTrustedBootstrapGate" in source
     assert "bootstrap_gate_held = $true" in source
-    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in source
+    assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2" in source
+    assert '$expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$fixedResultSha256`n"' in source
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
     assert "-AllowedRuntimeFiles @('bootstrap.ready','bootstrap-result.json','installed-task-sddl-semantic.sha256')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
@@ -104,6 +105,14 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.count("Flush($true)") >= 4
     assert "installed-task-sddl-semantic.sha256" in source
     assert "Installed task SDDL differs from its protected semantic seal" in source
+    assert "bootstrap.installing.json" in source
+    assert "Read-ArTrustedInterruptedBootstrap" in source
+    assert "RECOVERY_RESTORE_CONTROL_PRESTATE" in source
+    assert "RECOVERY_RESTORE_PRODUCTION_TASK_PRESTATE" in source
+    assert "RECOVERY_QUARANTINE_INTERRUPTED_ROOT" in source
+    assert source.index("REMOVE_INTERRUPTED_RECOVERY_MARKER") < source.index(
+        "Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")
+    )
     assert "Trusted operator lacks read and execute access" in core
     assert "Trusted administrator principal lacks full control" in core
     assert "Trusted package owner is not Administrators" in core
