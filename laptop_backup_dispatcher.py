@@ -294,7 +294,7 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     return result
 
 
-def layout(control_root: Path) -> dict[str, Path]:
+def layout(control_root: Path, *, create: bool = True) -> dict[str, Path]:
     root = canonical_unlinked(control_root, "control root", file=False)
     result = {
         "root": root, "manifests": root / "manifests", "receipts": root / "activation-receipts",
@@ -303,7 +303,10 @@ def layout(control_root: Path) -> dict[str, Path]:
         "pointer": root / "active-runner.json", "lease": root / "transition.lease",
     }
     for name in ("manifests", "receipts", "lease_recoveries", "executions"):
-        result[name].mkdir(exist_ok=True)
+        if create:
+            result[name].mkdir(exist_ok=True)
+        elif not result[name].is_dir() or result[name].is_symlink():
+            raise ValueError(f"active control directory is absent or linked: {name}")
     return result
 
 
@@ -774,6 +777,34 @@ def validate_activation_state(paths: Mapping[str, Path], manifest: Mapping[str, 
         raise ValueError("manifest activation ID is a replay")
 
 
+def verify_active_state(control_root: Path) -> dict[str, object]:
+    """Read-only proof that the complete active control lineage is runnable."""
+    paths = layout(control_root, create=False)
+    if paths["lease"].exists():
+        raise ValueError("active control tree retains a transition lease")
+    receipt_ledger(paths)
+    for pending_path in sorted(paths["receipts"].glob("*-*-pending.json")):
+        pending = parse_json(pending_path.read_bytes(), "PENDING receipt")
+        if not any(
+            receipt_path(paths, pending, status).exists()
+            for status in ("PASS", "ROLLED_BACK", "ABANDONED")
+        ):
+            raise ValueError("active control tree retains an unresolved PENDING receipt")
+    current = active(paths)
+    if current is None:
+        raise ValueError("active control tree has no active manifest")
+    pointer, manifest, digest = current
+    return {
+        "ok": True,
+        "result": "PASS",
+        "mode": "VERIFY_ACTIVE",
+        "sequence": pointer["sequence"],
+        "activation_id": pointer["activation_id"],
+        "manifest_sha256": digest,
+        "candidate_code_sha": manifest["candidate_code_sha"],
+    }
+
+
 def activate(
     control_root: Path, manifest_path: Path, *, defer_proof: bool = False
 ) -> dict[str, object]:
@@ -894,6 +925,8 @@ def parser() -> argparse.ArgumentParser:
     item = sub.add_parser("validate")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--manifest", type=Path, required=True)
+    item = sub.add_parser("verify-active")
+    item.add_argument("--control-root", type=Path, required=True)
     item = sub.add_parser("finalize")
     item.add_argument("--control-root", type=Path, required=True)
     item.add_argument("--output", type=Path)
@@ -941,6 +974,8 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_code_sha": validated["candidate_code_sha"],
                 "sequence": validated["sequence"],
             }
+        elif args.command == "verify-active":
+            value = verify_active_state(args.control_root)
         elif args.command == "finalize":
             value = finalize_pending(layout(args.control_root))
         elif args.command == "prepare":

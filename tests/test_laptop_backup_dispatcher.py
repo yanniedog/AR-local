@@ -337,6 +337,26 @@ def test_run_writes_content_addressed_execution_evidence(
     assert record["deviations"] == []
 
 
+def test_verify_active_state_checks_complete_control_lineage(tmp_path: Path) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    digest = write_manifest(proposed, manifest)
+    dispatcher.activate(control, proposed)
+    result = dispatcher.verify_active_state(control)
+    assert result == {
+        "ok": True,
+        "result": "PASS",
+        "mode": "VERIFY_ACTIVE",
+        "sequence": 1,
+        "activation_id": manifest["activation_id"],
+        "manifest_sha256": digest,
+        "candidate_code_sha": manifest["candidate_code_sha"],
+    }
+    (control / "manifests" / f"{digest}.json").unlink()
+    with pytest.raises(FileNotFoundError):
+        dispatcher.verify_active_state(control)
+
+
 def test_reconcile_marks_pre_pointer_intent_abandoned(tmp_path: Path) -> None:
     control, _target, manifest = fixture(tmp_path)
     paths = dispatcher.layout(control)

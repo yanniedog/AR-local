@@ -94,6 +94,43 @@ function Write-ArMutationIntent {
   )
 }
 
+function Assert-ArTrustedBackupQuiescence {
+  param([switch]$RequireReadyTask)
+  $processes = @(Get-CimInstance Win32_Process | Where-Object {
+    $_.ProcessId -ne $PID -and $_.CommandLine -and
+    $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher|trusted_child)|laptop_pull_backup|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'
+  })
+  $items = @((Join-Path $Target 'catalog\.receiver.lock'),(Join-Path $ControlRoot 'transition.lease')) | Where-Object { Test-Path -LiteralPath $_ }
+  $items += @(Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction Stop | Where-Object {
+    $_.Name -like '*.partial' -or $_.Name -like '.partial-*' -or $_.Name -like '*.partial-*'
+  } | ForEach-Object { $_.FullName })
+  if ($processes.Count -or $items.Count) { throw 'Backup process, lock, transition lease, or partial residue exists.' }
+  if ($RequireReadyTask) {
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    if ($task.State.ToString() -ne 'Ready' -or -not $task.Settings.Enabled) { throw 'Production task is not terminally Ready and enabled.' }
+  }
+  [ordered]@{ active_process_count=$processes.Count; residue_count=$items.Count; task_ready=[bool]$RequireReadyTask }
+}
+
+function Invoke-ArTrustedActiveControlValidation {
+  $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
+  $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
+  $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
+  $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
+  $env:GIT_CONFIG_KEY_1 = 'safe.directory'; $env:GIT_CONFIG_VALUE_1 = [string]$trustedConfig.authority_path; $env:GIT_CONFIG_GLOBAL = 'NUL'
+  $env:AR_TRUSTED_ROOT = $InstallRoot; $env:GIT_OPTIONAL_LOCKS = '0'; $env:PYTHONNOUSERSITE = '1'; $env:PYTHONDONTWRITEBYTECODE = '1'
+  $python = Join-Path $InstallRoot 'python\python.exe'
+  $dispatcher = Join-Path $InstallRoot 'laptop_backup_dispatcher.py'
+  $lines = @(& $python -B -s -E $dispatcher verify-active --control-root $ControlRoot 2>&1 | ForEach-Object { [string]$_ })
+  if ($LASTEXITCODE -ne 0 -or $lines.Count -lt 1) { throw "Protected active-control validation failed: $($lines -join ' ')" }
+  $value = $lines[-1] | ConvertFrom-Json
+  $expectedManifestSha256 = Get-ArTrustedSha256 (Join-Path $InstallRoot 'dispatcher-manifest.json')
+  if ($value.ok -ne $true -or $value.result -cne 'PASS' -or $value.mode -cne 'VERIFY_ACTIVE' -or
+      [string]$value.candidate_code_sha -cne $CandidateCodeSha -or
+      [string]$value.manifest_sha256 -cne $expectedManifestSha256) { throw 'Protected active-control result is invalid.' }
+  $value
+}
+
 function Set-ArTrustedDeviationAuthorization {
   param([Parameter(Mandatory = $true)][string]$Root)
   $handoffPath = Join-Path $Root 'authority\docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
@@ -131,6 +168,8 @@ function Assert-ArExactInstalledBootstrap {
   $receiptName = '{0:d8}-{1}-pass.json' -f [int]$installedManifest.sequence,[string]$installedManifest.activation_id
   $receipt = Get-Content -LiteralPath (Join-Path (Join-Path $ControlRoot 'activation-receipts') $receiptName) -Raw -ErrorAction Stop | ConvertFrom-Json
   if ($receipt.status -cne 'PASS' -or [string]$receipt.manifest_sha256 -cne $manifestHash) { throw 'Installed dispatcher lacks its terminal PASS receipt.' }
+  $activeValidation = Invoke-ArTrustedActiveControlValidation
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $prior = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter bootstrap-result.json -File -Recurse | Where-Object { $_.DirectoryName -ne $script:executionRoot } | ForEach-Object {
     try { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } catch { $null }
   } | Where-Object { $_.result -ceq 'PASS' -and $_.package_sha256 -ceq $PackageSha256 -and $_.candidate_code_sha -ceq $CandidateCodeSha -and $_.authority_commit -ceq $AuthorityCommit })
@@ -430,6 +469,10 @@ try {
   $installedSddl = Get-ArTrustedTaskSddl $TaskName
   if ($installedSddl -cne $installedTaskSddl) { throw 'Installed task SDDL changed after activation.' }
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'installed-task.sddl'), $installedSddl, [Text.UTF8Encoding]::new($false))
+  $activeValidation = Invoke-ArTrustedActiveControlValidation
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $terminalQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
+  [IO.File]::WriteAllText((Join-Path $script:executionRoot 'terminal-quiescence.json'), (($terminalQuiescence | ConvertTo-Json -Depth 5 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $catalogAfter = Assert-ArTrustedCatalogBaseline @catalogArguments
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'post-bootstrap-catalog.json'), (($catalogAfter | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
