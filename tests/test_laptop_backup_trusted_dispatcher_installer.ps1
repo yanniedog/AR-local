@@ -202,15 +202,16 @@ if ($isAdmin) {
     $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
     $legacyRecords = @($reconciliation.legacy_closed_staging)
     $legacyRecord = $legacyRecords | Select-Object -First 1
+    $expectedLegacySource = [IO.Path]::GetFullPath($legacySource)
     $legacyChecks = [ordered]@{
       count=(@($legacyRecords).Count -eq 1)
-      source=[string]::Equals([string]($legacyRecord.source_path),$legacySource,[StringComparison]::Ordinal)
+      source=[string]::Equals([string]($legacyRecord.source_path),$expectedLegacySource,[StringComparison]::Ordinal)
       absent=([bool]($legacyRecord.source_absent) -eq $true); line=([int]($legacyRecord.source_line) -eq 2)
       trust=[string]::Equals([string]($legacyRecord.preserved_content_trust),'UNTRUSTED_OPAQUE_NOT_CONSUMED',[StringComparison]::Ordinal)
     }
     if (@($legacyChecks.Values | Where-Object { -not $_ }).Count -gt 0) {
       throw ('Closed legacy long staging journal was not preserved in reconciliation evidence: ' +
-        ([ordered]@{ checks=$legacyChecks; record=$legacyRecord; expected_source=$legacySource } | ConvertTo-Json -Compress -Depth 5))
+        ([ordered]@{ checks=$legacyChecks; record=$legacyRecord; expected_source=$expectedLegacySource } | ConvertTo-Json -Compress -Depth 5))
     }
     foreach ($item in @($reconciliation.transactions)) {
       if ([string]::IsNullOrWhiteSpace([string]$item.source_journal_prefix_sha256) -or [long]$item.source_journal_prefix_bytes -lt 1) {
