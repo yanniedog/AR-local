@@ -6331,3 +6331,92 @@ Australia/Hobart freeze. Installer `PASS` does not close A3. The natural
 `2026-09-01` 01:00 ingest and first natural trusted 05:00 backup must pass before
 A3 can become terminal `PASS` and before A4 may start. No manual task trigger,
 backup, ingest, deployment or publication is authorized.
+
+## Entry `HANDOFF-20260831T222652+1000-A3-DAYLIGHT-BLOCKED`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260831T222652+1000-A3-DAYLIGHT-BLOCKED` |
+| Previous handoff entry | `HANDOFF-20260831T220237+1000-A3-LEGACY-JOURNAL-AUTHORITY` |
+| Created | `2026-08-31T22:26:52+10:00` / `2026-08-31T12:26:52Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Documentation source | clean `origin/main` worktree at `10443b2464350a2a71b96c5e5b4e54dc49a73861`; pre-append handoff raw Git-blob SHA-256 `8817cf13d7624d5e78b90c9f5164123084fe14bac6b45707b757ff44b20393a4` |
+| Code candidate | `12ea4407123843336934cc766383a89b9b69deb6` |
+| Protected Pi | remains pinned to `9302890fcc752cbf90da97d597e972c157d913e3`; no Pi deployment, ingest, publication or production mutation occurred |
+| Result | build and authenticated preflight `PASS`; live installer `BLOCKED` by the immutable 22:00 daylight cutoff and `NOT_EXECUTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | none; D-006 and D-014 were enforced without conversational substitution |
+
+### Completed preparation and immutable non-execution evidence
+
+The fresh preparation root is:
+
+`C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260831\20260831T220759+1000`
+
+Its `NOT-EXECUTED.json` is 1339 bytes with SHA-256
+`092376c422f5c2be42caf68bb4e5eabca31be2c8d58fe4a036be85737ab541fa`.
+It records `BLOCKED`, `uac_requested:false`, `task_mutated:false` and
+`pi_mutated:false`. The prior expiring invocation is permanently invalid and
+must never be elevated or relabelled.
+
+The launcher was compiled independently twice and both 301568-byte outputs had
+SHA-256 `a0dbf906dace3b63c6555ba28d8da0c57271bfb36feaba83dac6a2e7144140ea`.
+The deterministic package was built independently twice and both 211202006-byte
+outputs had SHA-256
+`c9ae0715291bd48060821da733c070071b31d71d64f1e33bbbae9b0e7666060d`.
+The activation gate SHA-256 was
+`aac3e27592eb39d1bfe93cc8d60050b5b9516840f923a2d57e7c4b685cbf677b`;
+dispatcher-manifest SHA-256 was
+`8073aee3a238efe1901a893c1fdc04105604714ae576828ffa7cd566fafd0f70`;
+pre-execution-manifest SHA-256 was
+`5a6e93b901f008773c01574066e275643f6e95f0dfe000da5cc553eeafaf9c3c`;
+and invocation-contract SHA-256 was
+`a8dc8842ff2547a1d74d1a0962b5ad6a9873d24c8313a7a4a5b97d79dae1c397`.
+
+The Windows PowerShell 5.1 preflight passed at
+`2026-08-31T12:19:57.8768647Z`. It verified the exact candidate, authority and
+handoff; task XML/SDDL/semantic SDDL and `LastTaskResult=1`; catalog SHA-256
+`7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511`
+at final sequence 336; zero backup process/residue; 152099614720 free bytes;
+D-014 journal SHA-256
+`2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3`;
+and `AR_PI_PREFLIGHT_PASS`.
+
+No UAC prompt was launched because the authenticated installer itself rejects
+local time at or after 22:00. Preparation completed after that boundary. This is
+a safety gate, not a request for a conversational exception. A subsequent
+read-only check reconfirmed task `Ready`/enabled, `LastTaskResult=1`, unchanged
+catalog, zero direct `ARLBS-*`/`ARLBQ-*` roots, zero external backup helper and
+more than 50 GiB free. The Pi dashboard remained HTTP 200. A later LAN SSH probe
+timed out after the earlier authenticated PASS; that transient access result
+does not authorize mutation and must be re-proven before any future elevation.
+
+### Exact continuation
+
+D-006 takes priority. At 00:20 create fresh immutable evidence, complete the
+read-only gate, enter the 00:30 freeze and directly validate the natural
+`2026-09-01` 01:00 ingest. Do not deploy, restart, force, rerun, trigger backup,
+change task/control or manipulate publication.
+
+Only after terminal ingest validation and no earlier than 03:30, create a new
+unique bootstrap evidence root. The expired preparation above may supply no
+manifest, gate, package or pre-execution authority. Rebuild the launcher and
+package twice from the same candidate and authority, create fresh short-lived
+activation and pre-execution records, and repeat every live task, catalog,
+process, residue, free-space, legacy-journal and protected-Pi gate. Prefer the
+reachable authenticated Pi transport but never weaken host-key, identity,
+production-SHA, cleanliness, service, timer, lock or dashboard checks.
+
+After all gates pass inside the 03:30–22:00 installer window, Codex shall launch
+the exact authenticated installer itself with `Start-Process -Verb RunAs
+-WindowStyle Hidden -Wait`. The operator need only click **Yes once** in UAC;
+the operator must not be asked to type or paste routine commands. The permanent
+solution is the fixed S4U/`Limited` task and protected dispatcher—not blanket
+administrator permission or disabled UAC.
+
+Installer `PASS` remains provisional. Never manually trigger the task. Observe
+the first natural 05:00 backup and validate it at 05:15 against the complete A3
+acceptance gate. Only a later append-only terminal `PASS` may close A3 and
+authorize A4.
