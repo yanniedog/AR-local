@@ -65,8 +65,11 @@ try {
 
 function Write-ArTrustedResult {
   param([string]$Result, [string]$ErrorText, [hashtable]$Detail)
+  $path = Join-Path $script:executionRoot 'bootstrap-result.json'
   $files = @()
-  foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Sort-Object FullName)) {
+  foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Where-Object {
+    [IO.Path]::GetFullPath($_.FullName) -cne [IO.Path]::GetFullPath($path)
+  } | Sort-Object FullName)) {
     $files += [ordered]@{ path = $file.FullName; sha256 = Get-ArTrustedSha256 $file.FullName; size = $file.Length }
   }
   $record = [ordered]@{
@@ -81,8 +84,14 @@ function Write-ArTrustedResult {
     deviations = @($script:authorizedDeviations)
     deviation_authorization = $script:deviationAuthorization
   }
-  $path = Join-Path $script:executionRoot 'bootstrap-result.json'
-  [IO.File]::WriteAllText($path, (($record | ConvertTo-Json -Depth 10 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Depth 10 -Compress) + "`n")
+  $stream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
   $path
 }
 
@@ -211,22 +220,153 @@ function Set-ArTrustedDeviationAuthorization {
   $script:deviationAuthorization = [ordered]@{ authority_commit=$AuthorityCommit; handoff_sha256=$HandoffSha256 }
 }
 
+function Assert-ArTrustedBootstrapResultIdentity {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  Assert-ArTrustedPlainPath $Path | Out-Null
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Protected bootstrap result is absent.' }
+  $value = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ($value.schema_version -ne 1 -or $value.result -cne 'PASS' -or $null -ne $value.error -or
+      $value.plan_document_id -cne 'ARL-OPS-001' -or
+      $value.plan_version -cne '1.5' -or $value.plan_git_commit -cne $PlanGitCommit -or
+      $value.plan_sha256 -cne $PlanSha256 -or $value.authority_commit -cne $AuthorityCommit -or
+      $value.handoff_sha256 -cne $HandoffSha256 -or $value.candidate_code_sha -cne $CandidateCodeSha -or
+      $value.protected_code_sha -cne $ProtectedCodeSha -or $value.operator_sid -cne $OperatorSid -or
+      $value.package_sha256 -cne $PackageSha256 -or $value.task_name -cne $TaskName) {
+    throw 'Protected bootstrap result identity is invalid.'
+  }
+  $value
+}
+
+function Prepare-ArTrustedBootstrapPublication {
+  $fixedResult = Join-Path $InstallRoot 'bootstrap-result.json'
+  $pendingResult = $fixedResult + '.pending'
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  $pendingReady = $readyMarker + '.pending'
+  if ((Test-Path -LiteralPath $fixedResult) -and (Test-Path -LiteralPath $pendingResult)) {
+    throw 'Durable bootstrap result and its pending sibling both exist.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult) -and (Test-Path -LiteralPath $pendingResult)) {
+    try {
+      Assert-ArTrustedBootstrapResultIdentity -Path $pendingResult | Out-Null
+      Write-ArMutationIntent -Action 'RECOVER_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
+      Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult
+    } catch {
+      $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-result-' + [guid]::NewGuid().ToString('N') + '.json')
+      Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_RESULT' -TargetPath $pendingResult
+      Move-Item -LiteralPath $pendingResult -Destination $recovered -ErrorAction Stop
+      Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+    }
+  }
+  if (Test-Path -LiteralPath $fixedResult) {
+    Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
+  }
+  if ((Test-Path -LiteralPath $readyMarker) -and -not (Test-Path -LiteralPath $fixedResult -PathType Leaf)) {
+    throw 'Protected bootstrap readiness exists without its durable PASS result.'
+  }
+  if ((Test-Path -LiteralPath $readyMarker) -and (Test-Path -LiteralPath $pendingReady)) {
+    throw 'Bootstrap readiness and its pending sibling both exist.'
+  }
+  if (Test-Path -LiteralPath $fixedResult) {
+    $expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$(Get-ArTrustedSha256 $fixedResult)`n"
+    if (-not (Test-Path -LiteralPath $readyMarker) -and (Test-Path -LiteralPath $pendingReady)) {
+      Assert-ArTrustedPlainPath $pendingReady | Out-Null
+      if ([IO.File]::ReadAllText($pendingReady,[Text.Encoding]::ASCII) -ceq $expectedReady) {
+        Write-ArMutationIntent -Action 'RECOVER_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+        Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker
+      } else {
+        $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-readiness-' + [guid]::NewGuid().ToString('N'))
+        Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_READINESS' -TargetPath $pendingReady
+        Move-Item -LiteralPath $pendingReady -Destination $recovered -ErrorAction Stop
+        Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+      }
+    }
+    if (Test-Path -LiteralPath $readyMarker) {
+      Assert-ArTrustedPlainPath $readyMarker | Out-Null
+      if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
+        throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
+      }
+    }
+  } elseif (Test-Path -LiteralPath $pendingReady) {
+    throw 'Pending bootstrap readiness exists without a durable PASS result.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult)) {
+    Write-ArMutationIntent -Action 'PUBLISH_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
+  }
+  if (-not (Test-Path -LiteralPath $readyMarker)) {
+    Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+}
+
+function Publish-ArTrustedBootstrapReadiness {
+  param([Parameter(Mandatory = $true)][string]$ResultPath)
+  Assert-ArTrustedBootstrapResultIdentity -Path $ResultPath | Out-Null
+  $fixedResult = Join-Path $InstallRoot 'bootstrap-result.json'
+  $pendingResult = $fixedResult + '.pending'
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  $pendingReady = $readyMarker + '.pending'
+  if ((Test-Path -LiteralPath $readyMarker) -and -not (Test-Path -LiteralPath $fixedResult -PathType Leaf)) {
+    throw 'Protected bootstrap readiness exists without its durable PASS result.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult)) {
+    $source = [IO.File]::Open($ResultPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $destination = [IO.File]::Open($pendingResult,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+      $source.CopyTo($destination)
+      $destination.Flush($true)
+    } finally {
+      $destination.Dispose()
+      $source.Dispose()
+    }
+    Move-ArTrustedFileWriteThrough -Source $pendingResult -Destination $fixedResult
+  }
+  Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
+  if (Test-Path -LiteralPath $pendingResult) { throw 'Pending bootstrap result remains after publication.' }
+  $fixedResultSha256 = Get-ArTrustedSha256 $fixedResult
+  $expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$fixedResultSha256`n"
+  if (-not (Test-Path -LiteralPath $readyMarker)) {
+    $readyStream = [IO.File]::Open($pendingReady,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+      $readyBytes = [Text.Encoding]::ASCII.GetBytes($expectedReady)
+      $readyStream.Write($readyBytes,0,$readyBytes.Length)
+      $readyStream.Flush($true)
+    } finally {
+      $readyStream.Dispose()
+    }
+    Move-ArTrustedFileWriteThrough -Source $pendingReady -Destination $readyMarker
+  }
+  if (Test-Path -LiteralPath $pendingReady) { throw 'Pending bootstrap readiness remains after publication.' }
+  Assert-ArTrustedPlainPath $readyMarker | Out-Null
+  if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
+    throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  [ordered]@{
+    bootstrap_result_sha256 = Get-ArTrustedSha256 $fixedResult
+    bootstrap_ready_sha256 = Get-ArTrustedSha256 $readyMarker
+  }
+}
+
 function Assert-ArExactInstalledBootstrap {
   $launcher = Join-Path $InstallRoot 'launcher.exe'
-  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
-  if (-not (Test-Path -LiteralPath $readyMarker -PathType Leaf) -or
-      [IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n") {
-    throw 'Installed bootstrap readiness marker is absent or invalid.'
-  }
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
-    -AllowedRuntimeFiles @('bootstrap.ready') | Out-Null
+    -AllowedRuntimeFiles @('bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256') | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
-  Assert-ArTrustedTaskSddl -Sddl (Get-ArTrustedTaskSddl $TaskName)
+  $taskSddl = Get-ArTrustedTaskSddl $TaskName
+  Assert-ArTrustedTaskSddl -Sddl $taskSddl
+  $taskSddlSeal = Join-Path $InstallRoot 'installed-task-sddl-semantic.sha256'
+  $sealedTaskSddl = (Get-Content -LiteralPath $taskSddlSeal -Raw -ErrorAction Stop).Trim()
+  if ($sealedTaskSddl -notmatch '^[0-9a-f]{64}$' -or
+      (Get-ArTrustedSddlSemanticSha256 $taskSddl) -cne $sealedTaskSddl) {
+    throw 'Installed task SDDL differs from its protected semantic seal.'
+  }
   if ((Test-Path -LiteralPath (Join-Path $InstallRoot 'finalize.enabled')) -or (Test-Path -LiteralPath (Join-Path $InstallRoot 'probe.enabled'))) {
     throw 'Already-installed protected root retains a probe marker.'
   }
@@ -239,10 +379,94 @@ function Assert-ArExactInstalledBootstrap {
   if ($receipt.status -cne 'PASS' -or [string]$receipt.manifest_sha256 -cne $manifestHash) { throw 'Installed dispatcher lacks its terminal PASS receipt.' }
   $activeValidation = Invoke-ArTrustedActiveControlValidation
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
-  $prior = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter bootstrap-result.json -File -Recurse | Where-Object { $_.DirectoryName -ne $script:executionRoot } | ForEach-Object {
-    try { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } catch { $null }
-  } | Where-Object { $_.result -ceq 'PASS' -and $_.package_sha256 -ceq $PackageSha256 -and $_.candidate_code_sha -ceq $CandidateCodeSha -and $_.authority_commit -ceq $AuthorityCommit })
-  if ($prior.Count -lt 1) { throw 'Protected evidence has no matching prior bootstrap PASS.' }
+  [ordered]@{
+    durable_result_present = Test-Path -LiteralPath (Join-Path $InstallRoot 'bootstrap-result.json') -PathType Leaf
+    readiness_present = Test-Path -LiteralPath (Join-Path $InstallRoot 'bootstrap.ready') -PathType Leaf
+  }
+}
+
+function Get-ArTrustedPriorTaskState {
+  param([Parameter(Mandatory = $true)][string]$EvidencePrefix)
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+  if ($task.State.ToString() -notin @('Ready','Disabled') -or
+      $task.Principal.LogonType.ToString() -ne 'S4U' -or $task.Principal.RunLevel.ToString() -ne 'Limited') {
+    throw 'Existing production task cannot be authenticated for bootstrap recovery.'
+  }
+  $xml = Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $xmlPath = Join-Path $script:executionRoot ($EvidencePrefix + '-task.xml')
+  [IO.File]::WriteAllBytes($xmlPath, (Get-ArTrustedTaskXmlBytes $TaskName))
+  $sddl = Get-ArTrustedTaskSddl $TaskName
+  $sddlPath = Join-Path $script:executionRoot ($EvidencePrefix + '-task.sddl')
+  [IO.File]::WriteAllText($sddlPath, $sddl, [Text.UTF8Encoding]::new($false))
+  [pscustomobject]@{
+    task=$task; info=$info; xml=$xml; sddl=$sddl; xml_path=$xmlPath; sddl_path=$sddlPath
+    matches_authorized_prestate=(
+      (Get-ArTrustedSha256 $xmlPath) -ceq $ExpectedOldTaskXmlSha256 -and
+      (Get-ArTrustedTextSha256 $sddl) -ceq $ExpectedOldTaskSddlSha256 -and
+      (Get-ArTrustedSddlSemanticSha256 $sddl) -ceq $ExpectedOldTaskSddlSemanticSha256 -and
+      $task.State.ToString() -ceq 'Ready' -and $task.Settings.Enabled -and
+      $info.LastTaskResult -eq $ExpectedOldTaskLastResult
+    )
+  }
+}
+
+function Read-ArTrustedInterruptedBootstrap {
+  $markerPath = Join-Path $InstallRoot 'bootstrap.installing.json'
+  if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { return $null }
+  Assert-ArTrustedPlainPath $markerPath | Out-Null
+  $marker = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  $fields = @(
+    'authority_commit','candidate_code_sha','control_root','control_sddl_semantic_sha256','evidence_execution_id',
+    'expected_old_task_sddl_semantic_sha256','expected_old_task_sddl_sha256','expected_old_task_xml_sha256',
+    'handoff_sha256','install_root','operator_sid','package_sha256','plan_git_commit','plan_sha256',
+    'pre_execution_manifest_sha256','schema_version'
+  )
+  if (@(Compare-Object $fields @($marker.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
+      $marker.schema_version -ne 1 -or [string]$marker.authority_commit -cne $AuthorityCommit -or
+      [string]$marker.candidate_code_sha -cne $CandidateCodeSha -or [string]$marker.handoff_sha256 -cne $HandoffSha256 -or
+      [string]$marker.operator_sid -cne $OperatorSid -or [string]$marker.package_sha256 -cne $PackageSha256 -or
+      [string]$marker.plan_git_commit -cne $PlanGitCommit -or [string]$marker.plan_sha256 -cne $PlanSha256 -or
+      [string]$marker.pre_execution_manifest_sha256 -cne $PreExecutionManifestSha256 -or
+      [string]$marker.expected_old_task_xml_sha256 -cne $ExpectedOldTaskXmlSha256 -or
+      [string]$marker.expected_old_task_sddl_sha256 -cne $ExpectedOldTaskSddlSha256 -or
+      [string]$marker.expected_old_task_sddl_semantic_sha256 -cne $ExpectedOldTaskSddlSemanticSha256 -or
+      [IO.Path]::GetFullPath([string]$marker.install_root) -cne [IO.Path]::GetFullPath($InstallRoot) -or
+      [IO.Path]::GetFullPath([string]$marker.control_root) -cne [IO.Path]::GetFullPath($ControlRoot) -or
+      [string]$marker.evidence_execution_id -notmatch '^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{32}$' -or
+      [string]$marker.control_sddl_semantic_sha256 -notmatch '^[0-9a-f]{64}$') {
+    throw 'Interrupted-bootstrap recovery marker identity is invalid.'
+  }
+  $priorRoot = Join-Path $EvidenceRoot ([string]$marker.evidence_execution_id)
+  if (-not (Test-Path -LiteralPath $priorRoot -PathType Container) -or
+      [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($priorRoot)) -cne [IO.Path]::GetFullPath($EvidenceRoot)) {
+    throw 'Interrupted-bootstrap evidence root is invalid.'
+  }
+  Assert-ArTrustedRootAcl -Root $priorRoot -OperatorSid $OperatorSid
+  $priorManifest = Join-Path $priorRoot 'pre-execution-manifest.json'
+  $priorTaskXml = Join-Path $priorRoot 'pre-bootstrap-task.xml'
+  $priorTaskSddl = Join-Path $priorRoot 'pre-bootstrap-task.sddl'
+  $priorControlSddl = Join-Path $priorRoot 'pre-bootstrap-control.sddl'
+  $journalPath = Join-Path $priorRoot 'mutation-journal.jsonl'
+  foreach ($path in @($priorManifest,$priorTaskXml,$priorTaskSddl,$priorControlSddl,$journalPath)) {
+    Assert-ArTrustedPlainPath $path | Out-Null
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Interrupted-bootstrap evidence is absent: $path" }
+  }
+  if ((Get-ArTrustedSha256 $priorManifest) -cne $PreExecutionManifestSha256 -or
+      (Get-ArTrustedSha256 $priorTaskXml) -cne $ExpectedOldTaskXmlSha256 -or
+      (Get-ArTrustedTextSha256 ([IO.File]::ReadAllText($priorTaskSddl))) -cne $ExpectedOldTaskSddlSha256 -or
+      (Get-ArTrustedSddlSemanticSha256 ([IO.File]::ReadAllText($priorTaskSddl))) -cne $ExpectedOldTaskSddlSemanticSha256 -or
+      (Get-ArTrustedSddlBinarySha256 ([IO.File]::ReadAllText($priorControlSddl))) -cne [string]$marker.control_sddl_semantic_sha256) {
+    throw 'Interrupted-bootstrap recovery evidence hashes are invalid.'
+  }
+  $journal = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+  $published = @($journal | Where-Object { $_.action -ceq 'PUBLISH_PROTECTED_ROOT' -and [IO.Path]::GetFullPath([string]$_.target) -ceq [IO.Path]::GetFullPath($InstallRoot) })
+  if ($published.Count -ne 1) { throw 'Interrupted-bootstrap journal lacks one authenticated root publication.' }
+  [pscustomobject]@{
+    marker=$marker; marker_path=$markerPath; prior_root=$priorRoot; task_xml=$priorTaskXml; task_sddl=$priorTaskSddl
+    control_sddl=$priorControlSddl; control_prestate=(Join-Path $priorRoot 'dispatcher-control-prestate')
+    journal=$journal
+  }
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -385,16 +609,97 @@ if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha25
 if (Test-Path -LiteralPath $InstallRoot) {
   Enter-ArTrustedBootstrapGate
   try {
-    Assert-ArExactInstalledBootstrap
-    $alreadyQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
-    $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
-      mode='ALREADY_INSTALLED'; install_root=$InstallRoot; bootstrap_gate_held=$true
-      terminal_quiescence=$alreadyQuiescence
+    $interrupted = Read-ArTrustedInterruptedBootstrap
+    if ($null -eq $interrupted) {
+      $installedState = Assert-ArExactInstalledBootstrap
+      $alreadyQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
+      Prepare-ArTrustedBootstrapPublication
+      $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
+        mode='ALREADY_INSTALLED'; install_root=$InstallRoot; bootstrap_gate_held=$true
+        terminal_quiescence=$alreadyQuiescence; recovered_incomplete_readiness=(-not $installedState.readiness_present)
+      }
+      Publish-ArTrustedBootstrapReadiness -ResultPath $already | Out-Null
+      Get-Content -LiteralPath $already -Raw
+      exit 0
     }
-    Get-Content -LiteralPath $already -Raw
-    exit 0
+
+    Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
+      -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
+      -AllowedRuntimeFiles @('bootstrap.installing.json','installed-task-sddl-semantic.sha256','finalize.enabled') | Out-Null
+    Set-ArTrustedDeviationAuthorization -Root $InstallRoot
+    Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+    $probes = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -like 'AR-local trusted dispatcher probe *' })
+    foreach ($probe in $probes) {
+      Assert-ArTrustedProbeTask -TaskName $probe.TaskName -LauncherPath (Join-Path $InstallRoot 'launcher.exe') `
+        -InstallRoot $InstallRoot -OperatorSid $OperatorSid | Out-Null
+      if ($probe.State.ToString() -eq 'Running') {
+        Write-ArMutationIntent -Action 'RECOVERY_STOP_INTERRUPTED_PROBE' -TargetPath $probe.TaskName
+        Stop-ScheduledTask -TaskName $probe.TaskName -ErrorAction Stop
+      }
+      $probeDeadline = [DateTimeOffset]::Now.AddSeconds(30)
+      do {
+        Start-Sleep -Milliseconds 250
+        $probeState = Get-ScheduledTask -TaskName $probe.TaskName -ErrorAction Stop
+      } while ($probeState.State.ToString() -eq 'Running' -and [DateTimeOffset]::Now -lt $probeDeadline)
+      if ($probeState.State.ToString() -eq 'Running') { throw 'Interrupted disposable probe did not stop.' }
+      Write-ArMutationIntent -Action 'RECOVERY_REMOVE_INTERRUPTED_PROBE' -TargetPath $probe.TaskName
+      Unregister-ScheduledTask -TaskName $probe.TaskName -Confirm:$false -ErrorAction Stop
+    }
+    $helpers = @(Get-CimInstance Win32_Process | Where-Object {
+      $_.ProcessId -ne $PID -and $_.CommandLine -and
+      $_.CommandLine -match 'laptop_backup_(scheduled|dispatcher|trusted_child)|laptop_pull_backup|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'
+    })
+    if ($helpers.Count) { throw 'Interrupted-bootstrap helper process remains active.' }
+
+    $journalActions = @($interrupted.journal | ForEach-Object { [string]$_.action })
+    $controlMutationRecorded = @($journalActions | Where-Object {
+      $_ -in @('ACTIVATE_DISPATCHER_MANIFEST','REGISTER_DISABLED_PRODUCTION_TASK','REGISTER_DISPOSABLE_PROBE',
+        'START_DISPOSABLE_PROBE_ONLY','ENABLE_PRODUCTION_TASK_WITHOUT_START')
+    }).Count -gt 0
+    if ($controlMutationRecorded) {
+      if (-not (Test-Path -LiteralPath $interrupted.control_prestate -PathType Container)) {
+        throw 'Interrupted-bootstrap control mutation lacks protected prestate.'
+      }
+      $priorControlSddl = [IO.File]::ReadAllText($interrupted.control_sddl)
+      Write-ArMutationIntent -Action 'RECOVERY_RESTORE_CONTROL_PRESTATE' -TargetPath $ControlRoot
+      Restore-ArTrustedControlRootAtomic -ControlRoot $ControlRoot -Prestate $interrupted.control_prestate `
+        -EvidenceRoot $script:executionRoot -OperatorSid $OperatorSid -ControlSddl $priorControlSddl `
+        -ExpectedControlSddlSha256 ([string]$interrupted.marker.control_sddl_semantic_sha256)
+    }
+
+    $currentTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    if ($currentTask.State.ToString() -eq 'Running') {
+      Write-ArMutationIntent -Action 'RECOVERY_STOP_INTERRUPTED_PRODUCTION_TASK' -TargetPath $TaskName
+      Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+      $taskDeadline = [DateTimeOffset]::Now.AddSeconds(30)
+      do {
+        Start-Sleep -Milliseconds 250
+        $currentTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+      } while ($currentTask.State.ToString() -eq 'Running' -and [DateTimeOffset]::Now -lt $taskDeadline)
+      if ($currentTask.State.ToString() -eq 'Running') { throw 'Interrupted production task did not stop.' }
+    }
+    $observedPrior = Get-ArTrustedPriorTaskState -EvidencePrefix 'interrupted-recovery-observed'
+    if (-not $observedPrior.matches_authorized_prestate) {
+      Write-ArMutationIntent -Action 'RECOVERY_RESTORE_PRODUCTION_TASK_PRESTATE' -TargetPath $TaskName
+      Restore-ArTrustedPriorTask -TaskName $TaskName `
+        -TaskXml (Get-Content -LiteralPath $interrupted.task_xml -Raw -ErrorAction Stop) `
+        -TaskSddl ([IO.File]::ReadAllText($interrupted.task_sddl))
+    }
+    $restoredPrior = Get-ArTrustedPriorTaskState -EvidencePrefix 'interrupted-recovery-restored'
+    if (-not $restoredPrior.matches_authorized_prestate) { throw 'Interrupted-bootstrap task prestate was not restored exactly.' }
+    Assert-ArTrustedCatalogBaseline @catalogArguments | Out-Null
+    $quarantine = Join-Path $script:executionRoot ('interrupted-protected-root-' + [guid]::NewGuid().ToString('N'))
+    Write-ArMutationIntent -Action 'RECOVERY_QUARANTINE_INTERRUPTED_ROOT' -TargetPath $InstallRoot
+    Move-Item -LiteralPath $InstallRoot -Destination $quarantine -ErrorAction Stop
+    Set-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
+    Assert-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
+    [IO.File]::WriteAllText(
+      (Join-Path $script:executionRoot 'interrupted-recovery.json'),
+      (([ordered]@{ result='PASS'; prior_execution_root=$interrupted.prior_root; quarantined_root=$quarantine; bootstrap_gate_held=$true } | ConvertTo-Json -Compress) + "`n"),
+      [Text.UTF8Encoding]::new($false)
+    )
   } catch {
-    Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='ALREADY_INSTALLED_REJECTED' } | Out-Null
+    Write-ArTrustedResult -Result 'BLOCKED' -ErrorText $_.Exception.Message -Detail @{ mode='INSTALLED_OR_INTERRUPTED_RECOVERY_REJECTED' } | Out-Null
     throw
   } finally {
     Exit-ArTrustedBootstrapGate
@@ -447,6 +752,24 @@ try {
   Assert-ArTrustedPackageManifest -Root $staging -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $staging
+  $installingMarker = Join-Path $staging 'bootstrap.installing.json'
+  $installingRecord = [ordered]@{
+    schema_version=1; plan_git_commit=$PlanGitCommit; plan_sha256=$PlanSha256; authority_commit=$AuthorityCommit
+    handoff_sha256=$HandoffSha256; candidate_code_sha=$CandidateCodeSha; package_sha256=$PackageSha256
+    operator_sid=$OperatorSid; install_root=[IO.Path]::GetFullPath($InstallRoot); control_root=[IO.Path]::GetFullPath($ControlRoot)
+    evidence_execution_id=$executionId; pre_execution_manifest_sha256=$PreExecutionManifestSha256
+    expected_old_task_xml_sha256=$ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256=$ExpectedOldTaskSddlSha256
+    expected_old_task_sddl_semantic_sha256=$ExpectedOldTaskSddlSemanticSha256
+    control_sddl_semantic_sha256=$controlSddlSemanticSha256
+  }
+  $installingBytes = [Text.UTF8Encoding]::new($false).GetBytes(($installingRecord | ConvertTo-Json -Compress) + "`n")
+  $installingStream = [IO.File]::Open($installingMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $installingStream.Write($installingBytes,0,$installingBytes.Length)
+    $installingStream.Flush($true)
+  } finally {
+    $installingStream.Dispose()
+  }
   Set-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Assert-ArTrustedRootAcl -Root $staging -OperatorSid $OperatorSid
   Write-ArMutationIntent -Action 'PUBLISH_PROTECTED_ROOT' -TargetPath $InstallRoot
@@ -505,6 +828,16 @@ try {
   Write-ArMutationIntent -Action 'REGISTER_DISABLED_PRODUCTION_TASK' -TargetPath $TaskName
   Register-ScheduledTask -TaskName $TaskName -InputObject $definition -Force -ErrorAction Stop | Out-Null
   $installedTaskSddl = Set-ArTrustedTaskSddl -TaskName $TaskName -OperatorSid $OperatorSid
+  $taskSddlSeal = Join-Path $InstallRoot 'installed-task-sddl-semantic.sha256'
+  $sealStream = [IO.File]::Open($taskSddlSeal,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $sealBytes = [Text.Encoding]::ASCII.GetBytes((Get-ArTrustedSddlSemanticSha256 $installedTaskSddl) + "`n")
+    $sealStream.Write($sealBytes,0,$sealBytes.Length)
+    $sealStream.Flush($true)
+  } finally {
+    $sealStream.Dispose()
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $false | Out-Null
 
   $probeMarker = Join-Path $InstallRoot 'finalize.enabled'
@@ -553,26 +886,20 @@ try {
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
   $catalogAfter = Assert-ArTrustedCatalogBaseline @catalogArguments
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'post-bootstrap-catalog.json'), (($catalogAfter | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $publishedInstallingMarker = Join-Path $InstallRoot 'bootstrap.installing.json'
+  Write-ArMutationIntent -Action 'REMOVE_INTERRUPTED_RECOVERY_MARKER' -TargetPath $publishedInstallingMarker
+  Remove-Item -LiteralPath $publishedInstallingMarker -Force -ErrorAction Stop
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   $terminalQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
   $terminalQuiescence['bootstrap_gate_held'] = $true
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'terminal-quiescence.json'), (($terminalQuiescence | ConvertTo-Json -Depth 5 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
-  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
-  Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
-  $readyStream = [IO.File]::Open($readyMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  try {
-    $readyBytes = [Text.Encoding]::ASCII.GetBytes("AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n")
-    $readyStream.Write($readyBytes,0,$readyBytes.Length)
-    $readyStream.Flush($true)
-  } finally {
-    $readyStream.Dispose()
-  }
-  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
-  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Prepare-ArTrustedBootstrapPublication
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
     install_root = $InstallRoot; installed_task_xml_sha256 = Get-ArTrustedSha256 $installedXml
     installed_task_sddl_sha256 = Get-ArTrustedTextSha256 $installedSddl; probe_last_result = $probeInfo.LastTaskResult
-    bootstrap_gate_held = $true; bootstrap_ready_sha256 = Get-ArTrustedSha256 $readyMarker
+    bootstrap_gate_held = $true; installed_task_sddl_semantic_sha256 = Get-ArTrustedSddlSemanticSha256 $installedSddl
   }
+  Publish-ArTrustedBootstrapReadiness -ResultPath $result | Out-Null
   Get-Content -LiteralPath $result -Raw
 } catch {
   $failure = $_.Exception.Message

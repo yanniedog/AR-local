@@ -449,8 +449,6 @@ def require_activation_window() -> None:
 
 def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    if bootstrap_gate_active():
-        raise ValueError("trusted bootstrap gate blocks dispatcher activation")
     recover_expired_lease(paths)
     payload = canonical_json({
         "schema_version": 1, "pid": os.getpid(), "activation_id": activation_id,
@@ -461,21 +459,40 @@ def acquire_lease(paths: Mapping[str, Path], activation_id: str) -> bytes:
     return payload
 
 
-def bootstrap_gate_active() -> bool:
+def acquire_bootstrap_gate() -> int | None:
     if os.name != "nt":
-        return False
+        return None
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenMutexW.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p)
-    kernel32.OpenMutexW.restype = ctypes.c_void_p
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
     kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
     kernel32.CloseHandle.restype = ctypes.c_int
-    handle = kernel32.OpenMutexW(0x00100000, 0, BOOTSTRAP_GATE_NAME)
-    if handle:
+    ctypes.set_last_error(0)
+    handle = kernel32.CreateMutexW(None, 1, BOOTSTRAP_GATE_NAME)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
         kernel32.CloseHandle(handle)
-        return True
-    # ERROR_FILE_NOT_FOUND is the only unambiguous absent state.  A security
-    # or kernel-object error must fail closed just like the native launcher.
-    return ctypes.get_last_error() != 2
+        raise ValueError("trusted bootstrap gate blocks dispatcher activation")
+    return int(handle)
+
+
+def release_bootstrap_gate(handle: int | None) -> None:
+    if handle is None:
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.ReleaseMutex.argtypes = (ctypes.c_void_p,)
+    kernel32.ReleaseMutex.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.restype = ctypes.c_int
+    released = kernel32.ReleaseMutex(handle)
+    release_error = ctypes.get_last_error()
+    closed = kernel32.CloseHandle(handle)
+    close_error = ctypes.get_last_error()
+    if not released:
+        raise ctypes.WinError(release_error)
+    if not closed:
+        raise ctypes.WinError(close_error)
 
 
 def release_lease(paths: Mapping[str, Path], payload: bytes) -> None:
@@ -933,58 +950,65 @@ def activate(
 ) -> dict[str, object]:
     paths = layout(control_root)
     require_activation_window()
-    lease_payload = acquire_lease(paths, uuid.uuid4().hex)
-    old_pointer = paths["pointer"].read_bytes() if paths["pointer"].exists() else None
-    pointer_replaced = False
-    manifest: dict[str, object] | None = None
-    digest: str | None = None
+    bootstrap_gate = acquire_bootstrap_gate()
+    lease_payload: bytes | None = None
     try:
-        reconcile(paths)
-        if pending_activation(paths) is not None:
-            if is_admin():
-                raise ValueError("an earlier activation remains pending limited-token proof")
-            finalize_pending(paths)
-        raw, manifest, digest = proposed_activation(manifest_path)
-        validate_activation_state(paths, manifest)
-        immutable_write(paths["manifests"] / f"{digest}.json", raw)
-        pending = {
-            "schema_version": 1, "sequence": manifest["sequence"],
-            "activation_id": manifest["activation_id"], "manifest_sha256": digest,
-            "previous_manifest_sha256": manifest["previous_manifest_sha256"], "status": "PENDING",
-        }
-        immutable_write(receipt_path(paths, manifest, "PENDING"), canonical_json(pending))
-        pointer = {
-            "schema_version": POINTER_SCHEMA_VERSION, "sequence": manifest["sequence"],
-            "activation_id": manifest["activation_id"], "manifest_sha256": digest,
-        }
-        atomic_replace(paths["pointer"], canonical_json(pointer))
-        pointer_replaced = True
-        if parse_json(paths["pointer"].read_bytes(), "activated pointer") != pointer:
-            raise ValueError("activated pointer readback failed")
-        if defer_proof:
-            return {"ok": True, "result": "PENDING", **pointer}
-        final = finalize_pending(paths)
-        if final.get("result") != "PASS":
-            raise ValueError("fresh semantic proof did not pass")
-        return {"ok": True, "result": "PASS", **pointer}
-    except BaseException:
-        if pointer_replaced:
-            if old_pointer is None:
-                paths["pointer"].unlink(missing_ok=True)
-                fsync_directory(paths["root"])
-            else:
-                atomic_replace(paths["pointer"], old_pointer)
-        if manifest is not None and digest is not None:
-            terminal = {
+        lease_payload = acquire_lease(paths, uuid.uuid4().hex)
+        old_pointer = paths["pointer"].read_bytes() if paths["pointer"].exists() else None
+        pointer_replaced = False
+        manifest: dict[str, object] | None = None
+        digest: str | None = None
+        try:
+            reconcile(paths)
+            if pending_activation(paths) is not None:
+                if is_admin():
+                    raise ValueError("an earlier activation remains pending limited-token proof")
+                finalize_pending(paths)
+            raw, manifest, digest = proposed_activation(manifest_path)
+            validate_activation_state(paths, manifest)
+            immutable_write(paths["manifests"] / f"{digest}.json", raw)
+            pending = {
                 "schema_version": 1, "sequence": manifest["sequence"],
                 "activation_id": manifest["activation_id"], "manifest_sha256": digest,
-                "previous_manifest_sha256": manifest["previous_manifest_sha256"],
-                "status": "ROLLED_BACK" if pointer_replaced else "ABANDONED",
+                "previous_manifest_sha256": manifest["previous_manifest_sha256"], "status": "PENDING",
             }
-            immutable_write(receipt_path(paths, manifest, str(terminal["status"])), canonical_json(terminal))
-        raise
+            immutable_write(receipt_path(paths, manifest, "PENDING"), canonical_json(pending))
+            pointer = {
+                "schema_version": POINTER_SCHEMA_VERSION, "sequence": manifest["sequence"],
+                "activation_id": manifest["activation_id"], "manifest_sha256": digest,
+            }
+            atomic_replace(paths["pointer"], canonical_json(pointer))
+            pointer_replaced = True
+            if parse_json(paths["pointer"].read_bytes(), "activated pointer") != pointer:
+                raise ValueError("activated pointer readback failed")
+            if defer_proof:
+                return {"ok": True, "result": "PENDING", **pointer}
+            final = finalize_pending(paths)
+            if final.get("result") != "PASS":
+                raise ValueError("fresh semantic proof did not pass")
+            return {"ok": True, "result": "PASS", **pointer}
+        except BaseException:
+            if pointer_replaced:
+                if old_pointer is None:
+                    paths["pointer"].unlink(missing_ok=True)
+                    fsync_directory(paths["root"])
+                else:
+                    atomic_replace(paths["pointer"], old_pointer)
+            if manifest is not None and digest is not None:
+                terminal = {
+                    "schema_version": 1, "sequence": manifest["sequence"],
+                    "activation_id": manifest["activation_id"], "manifest_sha256": digest,
+                    "previous_manifest_sha256": manifest["previous_manifest_sha256"],
+                    "status": "ROLLED_BACK" if pointer_replaced else "ABANDONED",
+                }
+                immutable_write(receipt_path(paths, manifest, str(terminal["status"])), canonical_json(terminal))
+            raise
     finally:
-        release_lease(paths, lease_payload)
+        try:
+            if lease_payload is not None:
+                release_lease(paths, lease_payload)
+        finally:
+            release_bootstrap_gate(bootstrap_gate)
 
 
 def prepare_manifest(args: argparse.Namespace) -> dict[str, object]:
