@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> None:
     source = (ROOT / "install_laptop_backup_trusted_dispatcher.ps1").read_text(encoding="utf-8")
     core = (ROOT / "install_laptop_backup_trusted_dispatcher_core.ps1").read_text(encoding="utf-8")
+    combined = source + core
     assert "Start-ScheduledTask -TaskName $TaskName" not in source
     assert "Start-ScheduledTask -TaskName $probeName" in source
     assert "Restore-ArTrustedPriorTask" in source
@@ -89,10 +90,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
     assert "Join-Path $env:ProgramFiles ('ARLBS-'" in source
     assert source.count("Move-ArTrustedFailedRootToQuarantine -Path") >= 2
-    assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in source
-    assert "quarantined-root-" in source
-    assert "Write-ArTrustedFailureObserved" in source
-    assert "failed-protected-root-" not in source
+    assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in core
+    assert "quarantined-root-" in core
+    assert "Write-ArTrustedFailureObserved" in core
+    assert "failed-protected-root-" not in combined
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
     assert "Backup lock, transition lease, or partial residue exists" in source
     assert "dispatcherManifest.allowed_target_root" in source

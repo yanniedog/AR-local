@@ -390,6 +390,71 @@ function Assert-ArTrustedRootAcl {
   }
 }
 
+function Write-ArTrustedFailureObserved {
+  param([Parameter(Mandatory = $true)][string]$Message)
+  $path = Join-Path $script:executionRoot 'failure-observed.json'
+  $record = [ordered]@{
+    schema_version = 1
+    observed_at = [DateTimeOffset]::UtcNow.ToString('o')
+    error = $Message
+  }
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Compress) + "`n")
+  $stream = [IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
+  $path
+}
+
+function Move-ArTrustedFailedRootToQuarantine {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$OperatorSid
+  )
+  # The content-addressed install/evidence names deliberately exceed one
+  # hundred characters.  Nesting a failed package tree below the execution
+  # evidence root can cross legacy MAX_PATH in icacls/Get-Acl and prevent both
+  # rollback and the terminal result from being written.  Keep the tree intact
+  # under one short, protected Program Files sibling and bind every byte from
+  # the normal execution evidence instead.
+  $quarantine = Join-Path $env:ProgramFiles ('ARLBQ-' + [guid]::NewGuid().ToString('N'))
+  Assert-ArTrustedPlainPath $quarantine | Out-Null
+  if (Test-Path -LiteralPath $quarantine) { throw 'Short protected quarantine path already exists.' }
+  Write-ArMutationIntent -Action 'PUBLISH_SHORT_PROTECTED_QUARANTINE' -TargetPath $quarantine
+  Move-Item -LiteralPath $Path -Destination $quarantine -ErrorAction Stop
+  Set-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $quarantine -OperatorSid $OperatorSid
+  $files = @()
+  foreach ($file in @(Get-ChildItem -LiteralPath $quarantine -Recurse -Force -File | Sort-Object FullName)) {
+    $files += [ordered]@{
+      path = $file.FullName.Substring($quarantine.Length).TrimStart('\')
+      size = [long]$file.Length
+      sha256 = Get-ArTrustedSha256 $file.FullName
+    }
+  }
+  $record = [ordered]@{
+    schema_version = 1
+    quarantined_at = [DateTimeOffset]::UtcNow.ToString('o')
+    source_path = [IO.Path]::GetFullPath($Path)
+    quarantine_path = [IO.Path]::GetFullPath($quarantine)
+    quarantine_acl = (Get-Acl -LiteralPath $quarantine -ErrorAction Stop).Sddl
+    files = $files
+  }
+  $recordPath = Join-Path $script:executionRoot ('quarantined-root-' + [guid]::NewGuid().ToString('N') + '.json')
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-ArTrustedCanonicalJson $record) + "`n")
+  $stream = [IO.File]::Open($recordPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
+  [pscustomobject]@{ quarantine_path=$quarantine; record_path=$recordPath; file_count=$files.Count }
+}
+
 function Get-ArTrustedInvocationContractSha256 {
   param([Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Parameters)
   $items = @()
