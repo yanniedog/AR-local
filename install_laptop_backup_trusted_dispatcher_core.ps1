@@ -43,9 +43,14 @@ function Assert-ArTrustedPreExecutionManifest {
   $actual = @($Manifest.PSObject.Properties.Name)
   if ((Compare-Object ($required | Sort-Object) ($actual | Sort-Object))) { throw 'Pre-execution manifest fields are not exact.' }
   foreach ($key in $Expected.Keys) {
-    if ($key -eq 'expected_old_task_last_result') {
-      if ([int]$Manifest.$key -ne [int]$Expected[$key]) { throw "Pre-execution manifest identity differs: $key" }
-    } elseif ([string]$Manifest.$key -cne [string]$Expected[$key]) { throw "Pre-execution manifest identity differs: $key" }
+    $value = $Manifest.$key
+    if ($Expected[$key] -is [int]) {
+      if ($null -eq $value -or ($value -isnot [int] -and $value -isnot [long]) -or [long]$value -ne [long]$Expected[$key]) {
+        throw "Pre-execution manifest identity or type differs: $key"
+      }
+    } elseif ($value -isnot [string] -or $value -cne [string]$Expected[$key]) {
+      throw "Pre-execution manifest identity or type differs: $key"
+    }
   }
   try {
     $created = [DateTimeOffset]::ParseExact([string]$Manifest.created_at,'o',[Globalization.CultureInfo]::InvariantCulture)

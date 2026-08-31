@@ -14,6 +14,13 @@ import laptop_backup_dispatcher as dispatcher
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def deterministic_activation_window(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests independent of the runner's wall-clock D-006 window."""
+    if request.node.name != "test_activation_lease_cannot_enter_ingest_freeze":
+        monkeypatch.setattr(dispatcher, "require_activation_window", lambda: None)
+
+
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(("git", "-C", str(repo), *args), check=True, capture_output=True, text=True).stdout.strip()
 

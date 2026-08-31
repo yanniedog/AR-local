@@ -49,6 +49,11 @@ try {
   $rejected = $false
   try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
   if (-not $rejected) { throw 'Pre-execution identity drift was accepted.' }
+  $loaded.candidate_code_sha = 'a' * 40
+  $loaded.schema_version = $null
+  $rejected = $false
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Null pre-execution integer field was accepted.' }
 } finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
