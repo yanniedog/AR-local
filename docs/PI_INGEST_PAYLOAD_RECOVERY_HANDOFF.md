@@ -5510,13 +5510,15 @@ pointer, record `ROLLED_BACK`, and never trigger backup or ingest to compensate.
 | Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
 | Documentation source | clean `origin/main` worktree at `c40c57b39846866bd2b7c05c9255f50d31f9c755`; pre-append handoff Git-blob SHA-256 `330212f84565ba532373b486daa6045ed2f475c97c3cd880156f9555e016e4d8` |
 | Protected Pi | `9302890fcc752cbf90da97d597e972c157d913e3`; clean; service inactive, timer enabled/active, lock absent and dashboard HTTP 200 at authorization preflight |
-| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merged as candidate `c40c57b39846866bd2b7c05c9255f50d31f9c755` |
+| Implementation | PR #584 head `43ba29ba7194e022500378b8dad9c8b8c0f3969d`, merge `c40c57b39846866bd2b7c05c9255f50d31f9c755`; security hardening PR #586 head `510d7680a21fbc31765a4be46dfeb04ea9fda286`, merged as final candidate `4428f12089576523e41de40fb08c29cbf8fe60ab` |
 | Result | implementation and authority decision `PASS`; live transition `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
 | Deviations | append-only decisions `D-011` and `D-012` below |
 
 ### Reviewed implementation outcome
 
-PR #584 replaced the withdrawn D-009 design with a trusted-parent bootstrap.
+PR #584 replaced the withdrawn D-009 design with a trusted-parent bootstrap;
+PR #586 then preserved ACE inheritance provenance in semantic SDDL and enforced
+the exact candidate-and-authority-derived protected-root names.
 The scheduled task will enter an administrator-protected native launcher before
 it reads any operator-writable configuration or code. The launcher derives a
 restricted token with `CreateRestrictedToken`, proves the expected integrity
@@ -5526,20 +5528,23 @@ Python runtime, exact detached candidate and authority repositories, a disabled
 production task during control mutation, a disposable semantic probe, a
 mutation journal and independent rollback attempts.
 
-The exact PR head passed the hosted Windows PowerShell 5.1 dispatcher contract,
-the Linux payload-builder suite, `bot-feedback-gate` and Sourcery review. The
-complete local repository suite passed with 1342 tests and 13 skips. All
-substantive review findings were implemented and resolved. The advisory Gemini
-job failed independently and is not a required gate. Merge alone is not runtime
-acceptance.
+Both exact PR heads passed the hosted Windows PowerShell 5.1 dispatcher
+contract, Linux payload-builder suite, `bot-feedback-gate` and Sourcery review.
+PR #584's complete local repository suite passed with 1342 tests and 13 skips.
+On PR #586, the focused installer suite passed locally; the full local suite
+reported 1340 passed and 13 skipped, with only two compiler-dependent launcher
+tests unavailable because `cl.exe` was not loaded in that shell, while the
+hosted Windows job passed those exact contracts. All substantive review
+findings were implemented and resolved. The advisory Gemini jobs failed
+independently and are not required gates. Merge alone is not runtime acceptance.
 
-Exact immutable source blobs at candidate
-`c40c57b39846866bd2b7c05c9255f50d31f9c755` are:
+Exact immutable source blobs at final candidate
+`4428f12089576523e41de40fb08c29cbf8fe60ab` are:
 
 | Path | Bytes | Git-blob SHA-256 |
 |---|---:|---|
-| `install_laptop_backup_trusted_dispatcher.ps1` | 24495 | `06a880ce9abc7651ba5dc46199f3cb505ca8c1bf3006f47b771b2a6994674956` |
-| `install_laptop_backup_trusted_dispatcher_core.ps1` | 20431 | `9e15bbeeb250b9a4b261eae6e45887dd196146dbdc428e3bac15a3fd1984f389` |
+| `install_laptop_backup_trusted_dispatcher.ps1` | 25051 | `158faa2ba8bfba3489aaeaffcbf76578f2177b163d3aa5b87d3e87fa48afb4b8` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 20653 | `845a6b77fb9c0d66350a218453eee9064b6ada1792dd6de2cfd45d9049fa8858` |
 | `laptop_backup_trusted_package.py` | 8480 | `0961a765d58c1b7dde8ab590b57fa8376faa3f369218cc34de60c9d186d44ad5` |
 | `native/laptop_backup_trusted_launcher.cpp` | 18969 | `03d359cdb1b3ba0e5763daad803d964a00cf25581d64088b56db86f83b140071` |
 | `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
@@ -5561,7 +5566,7 @@ The exact accepted prestate is:
 | UTF-16LE task XML, including BOM | 4774 bytes; SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2` |
 | raw Task Scheduler SDDL | `O:BAG:S-1-5-21-689213601-40760280-3596424081-1001D:AI(A;;FR;;;S-1-5-21-689213601-40760280-3596424081-1001)(A;ID;0x1f019f;;;BA)(A;ID;0x1f019f;;;SY)(A;ID;FA;;;BA)` |
 | raw SDDL SHA-256 | `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b` |
-| semantic SDDL SHA-256 | `835cd94cd77793b6087a8b62f9fbfeac28cb7700b9b400b56d98e6a96d8d573e` |
+| semantic SDDL SHA-256 | `d0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965` |
 | laptop free space | 144.31 GiB |
 
 ### Append-only deviation decision `D-011` — Task Scheduler SDDL equivalence
@@ -5605,7 +5610,7 @@ This entry authorizes a two-stage, fail-closed binding:
 3. outside D-006, create clean detached candidate and authority checkouts, build
    the native launcher reproducibly, generate an expiring dispatcher manifest,
    and build one deterministic protected package using only candidate
-   `c40c57b39846866bd2b7c05c9255f50d31f9c755` and that authority merge;
+   `4428f12089576523e41de40fb08c29cbf8fe60ab` and that authority merge;
 4. before elevation, write an immutable pre-execution manifest recording every
    input/output path, byte length and SHA-256, the complete installer command,
    rollback procedure, current task/Pi/space/process gates and plan identity;
@@ -5634,9 +5639,11 @@ absent, the task is Ready, no backup helper/lock/partial exists, the protected
 Pi is clean at `9302890fcc752cbf90da97d597e972c157d913e3`, and at least 50 GiB is
 free. No backup or ingest may be manually triggered.
 
-The protected install and bootstrap-evidence roots must be distinct direct
-children of `%ProgramFiles%\AR-local`, content-addressed by candidate and
-authority. The target remains `C:\code\backups\AR-local-pi5`; the control root
+The protected install and bootstrap-evidence roots must be the exact distinct
+direct children `%ProgramFiles%\AR-local-backup-trusted-<candidate>-<authority>`
+and `%ProgramFiles%\AR-local-backup-evidence-<candidate>-<authority>`. The
+installer derives and enforces those complete names. The target remains
+`C:\code\backups\AR-local-pi5`; the control root
 remains its `dispatcher-control`; the recovery image remains
 `C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21`; operator
 SID remains `S-1-5-21-689213601-40760280-3596424081-1001`; plan and protected
