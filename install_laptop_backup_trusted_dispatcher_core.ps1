@@ -464,7 +464,8 @@ function Write-ArTrustedFailureObserved {
 function Move-ArTrustedFailedRootToQuarantine {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$OperatorSid
+    [Parameter(Mandatory = $true)][string]$OperatorSid,
+    [string]$ProgramFilesRoot = $env:ProgramFiles
   )
   # The content-addressed install/evidence names deliberately exceed one
   # hundred characters.  Nesting a failed package tree below the execution
@@ -472,7 +473,7 @@ function Move-ArTrustedFailedRootToQuarantine {
   # rollback and the terminal result from being written.  Keep the tree intact
   # under one short, protected Program Files sibling and bind every byte from
   # the normal execution evidence instead.
-  $quarantine = Join-Path $env:ProgramFiles ('ARLBQ-' + [guid]::NewGuid().ToString('N'))
+  $quarantine = Join-Path $ProgramFilesRoot ('ARLBQ-' + [guid]::NewGuid().ToString('N'))
   Assert-ArTrustedPlainPath $quarantine | Out-Null
   if (Test-Path -LiteralPath $quarantine) { throw 'Short protected quarantine path already exists.' }
   Write-ArMutationIntent -Action 'PUBLISH_SHORT_PROTECTED_QUARANTINE' -TargetPath $quarantine
@@ -574,7 +575,8 @@ function Assert-ArTrustedShortQuarantineState {
     Assert-ArTrustedPlainPath ([string]$created.source_path) | Out-Null
     Assert-ArTrustedRootAcl -Root ([string]$created.source_path) -OperatorSid $OperatorSid
     Write-ArMutationIntent -Action 'RECOVERY_QUARANTINE_ORPHANED_STAGING' -TargetPath ([string]$created.source_path)
-    $recovered = Move-ArTrustedFailedRootToQuarantine -Path ([string]$created.source_path) -OperatorSid $OperatorSid
+    $recovered = Move-ArTrustedFailedRootToQuarantine -Path ([string]$created.source_path) -OperatorSid $OperatorSid `
+      -ProgramFilesRoot $programFiles
     $currentJournal = Join-Path $script:executionRoot 'mutation-journal.jsonl'
     $transaction = [ordered]@{
       source_path=[string]$created.source_path; quarantine_path=[string]$recovered.quarantine_path
