@@ -114,6 +114,11 @@ $installFull = [IO.Path]::GetFullPath($InstallRoot)
 if (-not $installFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'InstallRoot must be below Program Files.' }
 $evidenceFull = [IO.Path]::GetFullPath($EvidenceRoot)
 if (-not $evidenceFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'EvidenceRoot must be below Program Files.' }
+$identitySuffix = $CandidateCodeSha + '-' + $AuthorityCommit
+$expectedInstall = [IO.Path]::GetFullPath((Join-Path $env:ProgramFiles ('AR-local-backup-trusted-' + $identitySuffix)))
+$expectedEvidence = [IO.Path]::GetFullPath((Join-Path $env:ProgramFiles ('AR-local-backup-evidence-' + $identitySuffix)))
+if ($installFull -cne $expectedInstall) { throw 'InstallRoot is not exactly content-addressed by candidate and authority.' }
+if ($evidenceFull -cne $expectedEvidence) { throw 'EvidenceRoot is not exactly content-addressed by candidate and authority.' }
 if ([IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($installFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles) -or
     [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($evidenceFull)) -cne [IO.Path]::GetFullPath($env:ProgramFiles)) {
   throw 'InstallRoot and EvidenceRoot must be direct children of the protected Program Files directory.'

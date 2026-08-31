@@ -34,6 +34,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Set-ArTrustedTaskSddl" in source
     assert "Assert-ArTrustedChildConfiguration" in source
     assert "EvidenceRoot must be below Program Files" in source
+    assert "InstallRoot is not exactly content-addressed by candidate and authority" in source
+    assert "EvidenceRoot is not exactly content-addressed by candidate and authority" in source
+    assert "AR-local-backup-trusted-" in source
+    assert "AR-local-backup-evidence-" in source
     assert "Set-ArTrustedRootAcl -Root $script:executionRoot" in source
     assert "SSH host must be one strict hostname" in core
     assert "New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited" in source
