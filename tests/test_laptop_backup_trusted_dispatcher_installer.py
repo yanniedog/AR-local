@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import argparse
@@ -87,6 +87,12 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "deviations = @($script:authorizedDeviations)" in source
     assert "ExpectedControlSddlSha256" in source
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
+    assert "Join-Path $env:ProgramFiles ('ARLBS-'" in source
+    assert source.count("Move-ArTrustedFailedRootToQuarantine -Path") >= 2
+    assert "PUBLISH_SHORT_PROTECTED_QUARANTINE" in source
+    assert "quarantined-root-" in source
+    assert "Write-ArTrustedFailureObserved" in source
+    assert "failed-protected-root-" not in source
     assert "ROLLBACK_REMOVE_NEW_ROOT" not in source
     assert "Backup lock, transition lease, or partial residue exists" in source
     assert "dispatcherManifest.allowed_target_root" in source
@@ -129,6 +135,20 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "GIT_CONFIG_VALUE_0" in source
     task_runner = (ROOT / "run_laptop_backup_task.ps1").read_text(encoding="utf-8")
     assert "& $PythonPath -B $ScriptPath" in task_runner
+
+
+def test_short_protected_roots_fit_the_observed_package_under_legacy_max_path() -> None:
+    source = (ROOT / "install_laptop_backup_trusted_dispatcher.ps1").read_text(encoding="utf-8")
+    longest_observed_relative_path = PureWindowsPath(
+        "python/Lib/site-packages/jsonschema_specifications/schemas/draft202012/"
+        "vocabularies/format-annotation"
+    )
+    roots = (
+        PureWindowsPath("C:/Program Files") / ("ARLBS-" + "0" * 32),
+        PureWindowsPath("C:/Program Files") / ("ARLBQ-" + "0" * 32),
+    )
+    assert max(len(str(root / longest_observed_relative_path)) for root in roots) < 248
+    assert "$InstallRoot + '.staging-'" not in source
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows write-through publication contract")
