@@ -374,17 +374,30 @@ function Restore-ArTrustedControlRootAtomic {
     }
     throw
   }
-  if ((Get-ArTrustedTreeDigest $ControlRoot) -cne $expected) { throw 'Restored control digest mismatch.' }
-  $restoredAcl = New-Object Security.AccessControl.DirectorySecurity
-  $restoredAcl.SetSecurityDescriptorSddlForm($ControlSddl)
-  Set-Acl -LiteralPath $ControlRoot -AclObject $restoredAcl -ErrorAction Stop
-  $actualSddl = (Get-Acl -LiteralPath $ControlRoot -ErrorAction Stop).Sddl
-  if ((Get-ArTrustedSddlBinarySha256 $actualSddl) -cne $ExpectedControlSddlSha256) { throw 'Restored control ACL differs from authenticated prestate.' }
-  if ($movedCurrent -and (Test-Path -LiteralPath $failed)) {
-    $destination = Join-Path $EvidenceRoot 'failed-dispatcher-control'
-    Move-Item -LiteralPath $failed -Destination $destination -ErrorAction Stop
-    Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
+  $verificationError = $null
+  $preservationError = $null
+  try {
+    if ((Get-ArTrustedTreeDigest $ControlRoot) -cne $expected) { throw 'Restored control digest mismatch.' }
+    $restoredAcl = New-Object Security.AccessControl.DirectorySecurity
+    $restoredAcl.SetSecurityDescriptorSddlForm($ControlSddl)
+    Set-Acl -LiteralPath $ControlRoot -AclObject $restoredAcl -ErrorAction Stop
+    $actualSddl = (Get-Acl -LiteralPath $ControlRoot -ErrorAction Stop).Sddl
+    if ((Get-ArTrustedSddlBinarySha256 $actualSddl) -cne $ExpectedControlSddlSha256) { throw 'Restored control ACL differs from authenticated prestate.' }
+  } catch { $verificationError = $_.Exception }
+  finally {
+    if ($movedCurrent -and (Test-Path -LiteralPath $failed)) {
+      try {
+        $destination = Join-Path $EvidenceRoot 'failed-dispatcher-control'
+        Move-Item -LiteralPath $failed -Destination $destination -ErrorAction Stop
+        Set-ArTrustedRootAcl -Root $destination -OperatorSid $OperatorSid
+      } catch { $preservationError = $_.Exception }
+    }
   }
+  if ($null -ne $verificationError -and $null -ne $preservationError) {
+    throw "Control restore verification failed: $($verificationError.Message); displaced-control preservation failed: $($preservationError.Message)"
+  }
+  if ($null -ne $preservationError) { throw $preservationError }
+  if ($null -ne $verificationError) { throw $verificationError }
 }
 
 function New-ArTrustedTaskDefinition {
