@@ -229,7 +229,8 @@ function Assert-ArTrustedPackageManifest {
     [Parameter(Mandatory = $true)][string]$CandidateCodeSha,
     [Parameter(Mandatory = $true)][string]$AuthorityCommit,
     [Parameter(Mandatory = $true)][string]$OperatorSid,
-    [Parameter(Mandatory = $true)][string]$ControlRoot
+    [Parameter(Mandatory = $true)][string]$ControlRoot,
+    [string[]]$AllowedRuntimeFiles = @()
   )
   $manifestPath = Join-Path $Root 'package-manifest.json'
   $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -248,7 +249,14 @@ function Assert-ArTrustedPackageManifest {
     }
     $expected[$property.Name.Replace('/', [IO.Path]::DirectorySeparatorChar).ToLowerInvariant()] = [string]$property.Value
   }
-  $actual = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object { $_.FullName -ne $manifestPath })
+  $allowedRuntime = @($AllowedRuntimeFiles | ForEach-Object {
+    if ([IO.Path]::GetFileName($_) -cne $_) { throw 'Allowed runtime package file must be one fixed file name.' }
+    $_.ToLowerInvariant()
+  })
+  $actual = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
+    $relative = $_.FullName.Substring(([IO.Path]::GetFullPath($Root).TrimEnd('\').Length + 1)).ToLowerInvariant()
+    $_.FullName -ne $manifestPath -and $relative -notin $allowedRuntime
+  })
   if ($actual.Count -ne $expected.Count) { throw 'Trusted package file population differs from its manifest.' }
   foreach ($file in $actual) {
     $relative = $file.FullName.Substring(([IO.Path]::GetFullPath($Root).TrimEnd('\').Length + 1)).ToLowerInvariant()
