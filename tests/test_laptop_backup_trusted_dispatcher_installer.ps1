@@ -162,9 +162,16 @@ if ($isAdmin) {
     $stagedJournal = Join-Path $stagedExecution 'mutation-journal.jsonl'
     $stagedLine = [ordered]@{ at=[DateTimeOffset]::UtcNow.ToString('o'); action='CREATE_PACKAGE_STAGING'; target=$orphanedStage } | ConvertTo-Json -Compress
     [IO.File]::WriteAllText($stagedJournal,($stagedLine + "`n"),[Text.UTF8Encoding]::new($false))
+    Set-ArTrustedRootAcl -Root $quarantineTestRoot -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $evidenceRoot -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $source -OperatorSid $operatorSidForAcl
     Set-ArTrustedRootAcl -Root $orphanedStage -OperatorSid $operatorSidForAcl
+    & "$env:SystemRoot\System32\icacls.exe" $priorJournal '/inheritance:e' '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0 -or (Get-Acl -LiteralPath $priorJournal).AreAccessRulesProtected) {
+      throw 'Failed to create inherited legacy-journal fixture.'
+    }
+    & "$env:SystemRoot\System32\icacls.exe" $orphanedStage '/inheritance:e' '/T' '/C' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to create inherited staging fixture.' }
     $script:OperatorSid = $operatorSidForAcl
     $script:bootstrapGate = [object]::new()
     $script:executionRoot = $currentExecution
@@ -180,6 +187,18 @@ if ($isAdmin) {
         $recoveryState.orphaned_stage_exists -or $recoveryState.quarantine_roots.Count -ne 2 -or
         -not $recoveryState.reconciliation_exists) {
       throw ('Journaled short quarantine was not recovered and sealed: ' + ($recoveryState | ConvertTo-Json -Compress))
+    }
+    Assert-ArTrustedSinglePathAcl -Path $priorJournal -OperatorSid $operatorSidForAcl
+    $reconciliation = Get-Content -LiteralPath (Join-Path $currentExecution 'short-quarantine-reconciliation.json') -Raw | ConvertFrom-Json
+    foreach ($item in @($reconciliation.transactions)) {
+      if ([string]::IsNullOrWhiteSpace([string]$item.source_journal_prefix_sha256) -or [long]$item.source_journal_prefix_bytes -lt 1) {
+        throw 'Reconciliation did not bind an immutable journal prefix.'
+      }
+      $identity = Get-ArTrustedJournalPrefixIdentity -Path ([string]$item.source_journal) -LineCount ([int]$item.source_line)
+      if ($identity.sha256 -cne [string]$item.source_journal_prefix_sha256 -or
+          $identity.bytes -ne [long]$item.source_journal_prefix_bytes) {
+        throw 'Reconciliation journal prefix identity did not survive later appends.'
+      }
     }
     $nextExecution = Join-Path $evidenceRoot 'next'
     New-Item -ItemType Directory -Path $nextExecution | Out-Null

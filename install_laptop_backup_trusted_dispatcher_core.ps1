@@ -419,6 +419,83 @@ function Assert-ArTrustedSinglePathAcl {
     if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Trusted operator lacks read and execute access at $Path" }
 }
 
+function Assert-ArTrustedRecoverablePathAcl {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$OperatorSid
+  )
+  Assert-ArTrustedPlainPath $Path | Out-Null
+  $dangerous = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
+    [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+    [Security.AccessControl.FileSystemRights]::TakeOwnership
+  $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
+  $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+  $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+  $ownerSid = $acl.Owner
+  try { $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
+  if ($ownerSid -cne 'S-1-5-32-544') { throw "Recoverable package owner is not Administrators: $Path" }
+  $effective = @{
+    'S-1-5-18' = [Security.AccessControl.FileSystemRights]0
+    'S-1-5-32-544' = [Security.AccessControl.FileSystemRights]0
+    $OperatorSid = [Security.AccessControl.FileSystemRights]0
+  }
+  foreach ($rule in $acl.Access) {
+    $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+        ($rule.FileSystemRights -band $dangerous) -and $sid -notin @('S-1-5-18','S-1-5-32-544')) {
+      throw "Unprivileged write remains on recoverable package: $sid at $Path"
+    }
+    if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Deny) {
+      throw "Recoverable package contains a deny ACE: $sid at $Path"
+    }
+    if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $effective.ContainsKey($sid)) {
+      $effective[$sid] = $effective[$sid] -bor $rule.FileSystemRights
+    }
+  }
+  foreach ($sid in @('S-1-5-18','S-1-5-32-544')) {
+    if (($effective[$sid] -band $fullControl) -ne $fullControl) { throw "Recoverable administrator principal lacks full control: $sid at $Path" }
+  }
+  if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Recoverable operator lacks read and execute access at $Path" }
+}
+
+function Assert-ArTrustedRecoverableRootAcl {
+  param(
+    [Parameter(Mandatory = $true)][string]$Root,
+    [Parameter(Mandatory = $true)][string]$OperatorSid
+  )
+  foreach ($path in @($Root) + @(Get-ChildItem -LiteralPath $Root -Force -Recurse | ForEach-Object FullName)) {
+    Assert-ArTrustedRecoverablePathAcl -Path $path -OperatorSid $OperatorSid
+  }
+}
+
+function Get-ArTrustedJournalPrefixIdentity {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][int]$LineCount
+  )
+  if ($LineCount -lt 1) { throw 'Journal prefix line count must be positive.' }
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  $seen = 0
+  $prefixLength = -1
+  for ($index = 0; $index -lt $bytes.Length; $index++) {
+    if ($bytes[$index] -eq 10) {
+      $seen++
+      if ($seen -eq $LineCount) { $prefixLength = $index + 1; break }
+    }
+  }
+  if ($prefixLength -lt 0) { throw 'Journal prefix is incomplete or lacks a durable line terminator.' }
+  $prefix = New-Object byte[] $prefixLength
+  [Array]::Copy($bytes,0,$prefix,0,$prefixLength)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    [pscustomobject]@{
+      bytes = [long]$prefixLength
+      lines = [int]$LineCount
+      sha256 = ([BitConverter]::ToString($algorithm.ComputeHash($prefix)) -replace '-','').ToLowerInvariant()
+    }
+  } finally { $algorithm.Dispose() }
+}
+
 function Assert-ArTrustedRootAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
@@ -523,6 +600,12 @@ function Assert-ArTrustedShortQuarantineState {
       if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
       Assert-ArTrustedPlainPath $execution.FullName | Out-Null
       Assert-ArTrustedSinglePathAcl -Path $execution.FullName -OperatorSid $OperatorSid
+      $journalAcl = Get-Acl -LiteralPath $journalPath -ErrorAction Stop
+      if (-not $journalAcl.AreAccessRulesProtected) {
+        Assert-ArTrustedRecoverablePathAcl -Path $journalPath -OperatorSid $OperatorSid
+        Write-ArMutationIntent -Action 'RECOVERY_SEAL_LEGACY_JOURNAL' -TargetPath $journalPath
+        Set-ArTrustedRootAcl -Root $journalPath -OperatorSid $OperatorSid
+      }
       Assert-ArTrustedSinglePathAcl -Path $journalPath -OperatorSid $OperatorSid
       $lines = @([IO.File]::ReadAllLines($journalPath,[Text.UTF8Encoding]::new($false)) | Where-Object { $_.Length -gt 0 })
       for ($index = 0; $index -lt $lines.Count; $index++) {
@@ -533,9 +616,11 @@ function Assert-ArTrustedShortQuarantineState {
               [IO.Path]::GetFileName($created) -notmatch '^ARLBS-[0-9a-f]{32}$' -or $createdStaging.ContainsKey($created)) {
             throw 'Created short staging root identity is invalid or duplicated.'
           }
+          $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 1))
           $createdStaging[$created] = [ordered]@{
             source_path=$created; source_journal=$journalPath
-            source_journal_sha256=Get-ArTrustedSha256 $journalPath; source_line=[int]($index + 1)
+            source_journal_prefix_sha256=$prefix.sha256; source_journal_prefix_bytes=$prefix.bytes
+            source_line=$prefix.lines
           }
           continue
         }
@@ -558,9 +643,11 @@ function Assert-ArTrustedShortQuarantineState {
         if ($sources.ContainsKey($source) -or $destinations.ContainsKey($destination)) {
           throw 'Short quarantine transaction path is not unique.'
         }
+        $prefix = Get-ArTrustedJournalPrefixIdentity -Path $journalPath -LineCount ([int]($index + 1))
         $transaction = [ordered]@{
           source_path=$source; quarantine_path=$destination; source_journal=$journalPath
-          source_journal_sha256=Get-ArTrustedSha256 $journalPath; source_line=[int]($index + 1)
+          source_journal_prefix_sha256=$prefix.sha256; source_journal_prefix_bytes=$prefix.bytes
+          source_line=$prefix.lines
         }
         $transactions += $transaction
         $sources[$source] = $transaction
@@ -573,15 +660,20 @@ function Assert-ArTrustedShortQuarantineState {
     if ($sources.ContainsKey([string]$created.source_path) -or
         -not (Test-Path -LiteralPath ([string]$created.source_path) -PathType Container)) { continue }
     Assert-ArTrustedPlainPath ([string]$created.source_path) | Out-Null
+    Assert-ArTrustedRecoverableRootAcl -Root ([string]$created.source_path) -OperatorSid $OperatorSid
+    Write-ArMutationIntent -Action 'RECOVERY_SEAL_ORPHANED_STAGING' -TargetPath ([string]$created.source_path)
+    Set-ArTrustedRootAcl -Root ([string]$created.source_path) -OperatorSid $OperatorSid
     Assert-ArTrustedRootAcl -Root ([string]$created.source_path) -OperatorSid $OperatorSid
     Write-ArMutationIntent -Action 'RECOVERY_QUARANTINE_ORPHANED_STAGING' -TargetPath ([string]$created.source_path)
     $recovered = Move-ArTrustedFailedRootToQuarantine -Path ([string]$created.source_path) -OperatorSid $OperatorSid `
       -ProgramFilesRoot $programFiles
     $currentJournal = Join-Path $script:executionRoot 'mutation-journal.jsonl'
+    $currentLine = [int]@([IO.File]::ReadAllLines($currentJournal,[Text.UTF8Encoding]::new($false))).Count
+    $prefix = Get-ArTrustedJournalPrefixIdentity -Path $currentJournal -LineCount $currentLine
     $transaction = [ordered]@{
       source_path=[string]$created.source_path; quarantine_path=[string]$recovered.quarantine_path
-      source_journal=$currentJournal; source_journal_sha256=Get-ArTrustedSha256 $currentJournal
-      source_line=[int]@([IO.File]::ReadAllLines($currentJournal,[Text.UTF8Encoding]::new($false))).Count
+      source_journal=$currentJournal; source_journal_prefix_sha256=$prefix.sha256
+      source_journal_prefix_bytes=$prefix.bytes; source_line=$prefix.lines
     }
     $transactions += $transaction
     $sources[$transaction.source_path] = $transaction
@@ -615,7 +707,8 @@ function Assert-ArTrustedShortQuarantineState {
     Assert-ArTrustedRootAcl -Root $transaction.quarantine_path -OperatorSid $OperatorSid
     $verified += [ordered]@{
       source_path=$transaction.source_path; quarantine_path=$transaction.quarantine_path
-      source_journal=$transaction.source_journal; source_journal_sha256=$transaction.source_journal_sha256
+      source_journal=$transaction.source_journal; source_journal_prefix_sha256=$transaction.source_journal_prefix_sha256
+      source_journal_prefix_bytes=$transaction.source_journal_prefix_bytes
       source_line=$transaction.source_line; quarantine_acl=(Get-Acl -LiteralPath $transaction.quarantine_path).Sddl
       files=@(Get-ArTrustedQuarantineInventory -Root $transaction.quarantine_path)
     }
