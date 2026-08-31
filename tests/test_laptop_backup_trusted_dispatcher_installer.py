@@ -61,7 +61,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2" in source
     assert '$expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$fixedResultSha256`n"' in source
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
-    assert "-AllowedRuntimeFiles @('bootstrap.ready','bootstrap-result.json','installed-task-sddl-semantic.sha256')" in source
+    assert "-AllowedRuntimeFiles @('bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert source.count("Invoke-ArTrustedPiIdleCheck") >= 3
     assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
@@ -98,8 +98,15 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
     terminal_pass = source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    assert source.index("Prepare-ArTrustedBootstrapPublication", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START")) < terminal_pass
     assert terminal_pass < source.index("Publish-ArTrustedBootstrapReadiness -ResultPath $result")
     assert "PUBLISH_DURABLE_BOOTSTRAP_RESULT" in source
+    publish_function = source[source.index("function Publish-ArTrustedBootstrapReadiness"):source.index("function Assert-ArExactInstalledBootstrap")]
+    assert "Write-ArMutationIntent" not in publish_function
+    assert "bootstrap-result.json.pending" in source
+    assert "bootstrap.ready.pending" in source
+    assert "Move-Item -LiteralPath $pendingResult -Destination $fixedResult" in source
+    assert "Move-Item -LiteralPath $pendingReady -Destination $readyMarker" in source
     assert "Assert-ArTrustedBootstrapResultIdentity" in source
     assert "Protected bootstrap readiness exists without its durable PASS result" in source
     assert source.count("Flush($true)") >= 4

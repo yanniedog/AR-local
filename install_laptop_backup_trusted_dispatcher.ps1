@@ -234,18 +234,78 @@ function Assert-ArTrustedBootstrapResultIdentity {
   $value
 }
 
+function Prepare-ArTrustedBootstrapPublication {
+  $fixedResult = Join-Path $InstallRoot 'bootstrap-result.json'
+  $pendingResult = $fixedResult + '.pending'
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  $pendingReady = $readyMarker + '.pending'
+  if ((Test-Path -LiteralPath $fixedResult) -and (Test-Path -LiteralPath $pendingResult)) {
+    throw 'Durable bootstrap result and its pending sibling both exist.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult) -and (Test-Path -LiteralPath $pendingResult)) {
+    try {
+      Assert-ArTrustedBootstrapResultIdentity -Path $pendingResult | Out-Null
+      Write-ArMutationIntent -Action 'RECOVER_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
+      Move-Item -LiteralPath $pendingResult -Destination $fixedResult -ErrorAction Stop
+    } catch {
+      $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-result-' + [guid]::NewGuid().ToString('N') + '.json')
+      Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_RESULT' -TargetPath $pendingResult
+      Move-Item -LiteralPath $pendingResult -Destination $recovered -ErrorAction Stop
+      Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+    }
+  }
+  if (Test-Path -LiteralPath $fixedResult) {
+    Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
+  }
+  if ((Test-Path -LiteralPath $readyMarker) -and -not (Test-Path -LiteralPath $fixedResult -PathType Leaf)) {
+    throw 'Protected bootstrap readiness exists without its durable PASS result.'
+  }
+  if ((Test-Path -LiteralPath $readyMarker) -and (Test-Path -LiteralPath $pendingReady)) {
+    throw 'Bootstrap readiness and its pending sibling both exist.'
+  }
+  if (Test-Path -LiteralPath $fixedResult) {
+    $expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$(Get-ArTrustedSha256 $fixedResult)`n"
+    if (-not (Test-Path -LiteralPath $readyMarker) -and (Test-Path -LiteralPath $pendingReady)) {
+      if ([IO.File]::ReadAllText($pendingReady,[Text.Encoding]::ASCII) -ceq $expectedReady) {
+        Write-ArMutationIntent -Action 'RECOVER_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+        Move-Item -LiteralPath $pendingReady -Destination $readyMarker -ErrorAction Stop
+      } else {
+        $recovered = Join-Path $script:executionRoot ('incomplete-bootstrap-readiness-' + [guid]::NewGuid().ToString('N'))
+        Write-ArMutationIntent -Action 'QUARANTINE_INCOMPLETE_BOOTSTRAP_READINESS' -TargetPath $pendingReady
+        Move-Item -LiteralPath $pendingReady -Destination $recovered -ErrorAction Stop
+        Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
+      }
+    }
+    if ((Test-Path -LiteralPath $readyMarker) -and
+        [IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
+      throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
+    }
+  } elseif (Test-Path -LiteralPath $pendingReady) {
+    throw 'Pending bootstrap readiness exists without a durable PASS result.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult)) {
+    Write-ArMutationIntent -Action 'PUBLISH_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
+  }
+  if (-not (Test-Path -LiteralPath $readyMarker)) {
+    Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+}
+
 function Publish-ArTrustedBootstrapReadiness {
   param([Parameter(Mandatory = $true)][string]$ResultPath)
   Assert-ArTrustedBootstrapResultIdentity -Path $ResultPath | Out-Null
   $fixedResult = Join-Path $InstallRoot 'bootstrap-result.json'
+  $pendingResult = $fixedResult + '.pending'
   $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  $pendingReady = $readyMarker + '.pending'
   if ((Test-Path -LiteralPath $readyMarker) -and -not (Test-Path -LiteralPath $fixedResult -PathType Leaf)) {
     throw 'Protected bootstrap readiness exists without its durable PASS result.'
   }
   if (-not (Test-Path -LiteralPath $fixedResult)) {
-    Write-ArMutationIntent -Action 'PUBLISH_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
     $source = [IO.File]::Open($ResultPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-    $destination = [IO.File]::Open($fixedResult,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    $destination = [IO.File]::Open($pendingResult,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try {
       $source.CopyTo($destination)
       $destination.Flush($true)
@@ -253,13 +313,14 @@ function Publish-ArTrustedBootstrapReadiness {
       $destination.Dispose()
       $source.Dispose()
     }
+    Move-Item -LiteralPath $pendingResult -Destination $fixedResult -ErrorAction Stop
   }
   Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
+  if (Test-Path -LiteralPath $pendingResult) { throw 'Pending bootstrap result remains after publication.' }
   $fixedResultSha256 = Get-ArTrustedSha256 $fixedResult
   $expectedReady = "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V2`n$fixedResultSha256`n"
   if (-not (Test-Path -LiteralPath $readyMarker)) {
-    Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
-    $readyStream = [IO.File]::Open($readyMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    $readyStream = [IO.File]::Open($pendingReady,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try {
       $readyBytes = [Text.Encoding]::ASCII.GetBytes($expectedReady)
       $readyStream.Write($readyBytes,0,$readyBytes.Length)
@@ -267,7 +328,9 @@ function Publish-ArTrustedBootstrapReadiness {
     } finally {
       $readyStream.Dispose()
     }
+    Move-Item -LiteralPath $pendingReady -Destination $readyMarker -ErrorAction Stop
   }
+  if (Test-Path -LiteralPath $pendingReady) { throw 'Pending bootstrap readiness remains after publication.' }
   if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne $expectedReady) {
     throw 'Installed bootstrap readiness marker or durable-result binding is invalid.'
   }
@@ -284,7 +347,7 @@ function Assert-ArExactInstalledBootstrap {
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
-    -AllowedRuntimeFiles @('bootstrap.ready','bootstrap-result.json','installed-task-sddl-semantic.sha256') | Out-Null
+    -AllowedRuntimeFiles @('bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256') | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
@@ -543,6 +606,7 @@ if (Test-Path -LiteralPath $InstallRoot) {
     if ($null -eq $interrupted) {
       $installedState = Assert-ArExactInstalledBootstrap
       $alreadyQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
+      Prepare-ArTrustedBootstrapPublication
       $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
         mode='ALREADY_INSTALLED'; install_root=$InstallRoot; bootstrap_gate_held=$true
         terminal_quiescence=$alreadyQuiescence; recovered_incomplete_readiness=(-not $installedState.readiness_present)
@@ -822,6 +886,7 @@ try {
   $terminalQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
   $terminalQuiescence['bootstrap_gate_held'] = $true
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'terminal-quiescence.json'), (($terminalQuiescence | ConvertTo-Json -Depth 5 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  Prepare-ArTrustedBootstrapPublication
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
     install_root = $InstallRoot; installed_task_xml_sha256 = Get-ArTrustedSha256 $installedXml
     installed_task_sddl_sha256 = Get-ArTrustedTextSha256 $installedSddl; probe_last_result = $probeInfo.LastTaskResult
