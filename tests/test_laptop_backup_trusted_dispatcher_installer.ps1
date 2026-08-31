@@ -111,6 +111,11 @@ if ($isAdmin) {
   try {
     Set-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl
     Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl
+    & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/deny' '*S-1-1-0:(RX)' | Out-Null
+    $rejected = $false
+    try { Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Aggregate deny ACE was accepted.' }
+    & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/remove:d' '*S-1-1-0' | Out-Null
     & "$env:SystemRoot\System32\icacls.exe" $aclRoot '/remove:g' "*$operatorSidForAcl" | Out-Null
     $rejected = $false
     try { Assert-ArTrustedRootAcl -Root $aclRoot -OperatorSid $operatorSidForAcl } catch { $rejected = $true }

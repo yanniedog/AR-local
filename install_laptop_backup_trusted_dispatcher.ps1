@@ -179,6 +179,10 @@ $invocationParameters = [ordered]@{
   expected_accepted_observation_id=$ExpectedAcceptedObservationId; expected_accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   expected_accepted_archive_size=$ExpectedAcceptedArchiveSize
   installer_sha256=$InstallerSha256; core_sha256=$CoreSha256
+  # A manifest cannot contain its own SHA-256. D-012 therefore binds every
+  # non-self invocation value here, while the separately authorized outer UAC
+  # command supplies the exact manifest SHA-256 that Read-ArTrusted... verifies
+  # under one locked stream and Write-ArTrustedResult preserves.
   pre_execution_manifest_path=[IO.Path]::GetFullPath($PreExecutionManifestPath); pre_execution_manifest_sha256='<SELF_SHA256>'
   pi_host=$PiHost
 }
