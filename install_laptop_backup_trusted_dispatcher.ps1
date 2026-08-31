@@ -82,7 +82,14 @@ function Write-ArTrustedResult {
     deviation_authorization = $script:deviationAuthorization
   }
   $path = Join-Path $script:executionRoot 'bootstrap-result.json'
-  [IO.File]::WriteAllText($path, (($record | ConvertTo-Json -Depth 10 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Depth 10 -Compress) + "`n")
+  $stream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    $stream.Dispose()
+  }
   $path
 }
 
@@ -211,22 +218,83 @@ function Set-ArTrustedDeviationAuthorization {
   $script:deviationAuthorization = [ordered]@{ authority_commit=$AuthorityCommit; handoff_sha256=$HandoffSha256 }
 }
 
+function Assert-ArTrustedBootstrapResultIdentity {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Protected bootstrap result is absent.' }
+  $value = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+  if ($value.schema_version -ne 1 -or $value.result -cne 'PASS' -or $null -ne $value.error -or
+      $value.plan_document_id -cne 'ARL-OPS-001' -or
+      $value.plan_version -cne '1.5' -or $value.plan_git_commit -cne $PlanGitCommit -or
+      $value.plan_sha256 -cne $PlanSha256 -or $value.authority_commit -cne $AuthorityCommit -or
+      $value.handoff_sha256 -cne $HandoffSha256 -or $value.candidate_code_sha -cne $CandidateCodeSha -or
+      $value.protected_code_sha -cne $ProtectedCodeSha -or $value.operator_sid -cne $OperatorSid -or
+      $value.package_sha256 -cne $PackageSha256 -or $value.task_name -cne $TaskName) {
+    throw 'Protected bootstrap result identity is invalid.'
+  }
+  $value
+}
+
+function Publish-ArTrustedBootstrapReadiness {
+  param([Parameter(Mandatory = $true)][string]$ResultPath)
+  Assert-ArTrustedBootstrapResultIdentity -Path $ResultPath | Out-Null
+  $fixedResult = Join-Path $InstallRoot 'bootstrap-result.json'
+  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
+  if ((Test-Path -LiteralPath $readyMarker) -and -not (Test-Path -LiteralPath $fixedResult -PathType Leaf)) {
+    throw 'Protected bootstrap readiness exists without its durable PASS result.'
+  }
+  if (-not (Test-Path -LiteralPath $fixedResult)) {
+    Write-ArMutationIntent -Action 'PUBLISH_DURABLE_BOOTSTRAP_RESULT' -TargetPath $fixedResult
+    $source = [IO.File]::Open($ResultPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $destination = [IO.File]::Open($fixedResult,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+      $source.CopyTo($destination)
+      $destination.Flush($true)
+    } finally {
+      $destination.Dispose()
+      $source.Dispose()
+    }
+  }
+  Assert-ArTrustedBootstrapResultIdentity -Path $fixedResult | Out-Null
+  if (-not (Test-Path -LiteralPath $readyMarker)) {
+    Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
+    $readyStream = [IO.File]::Open($readyMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+      $readyBytes = [Text.Encoding]::ASCII.GetBytes("AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n")
+      $readyStream.Write($readyBytes,0,$readyBytes.Length)
+      $readyStream.Flush($true)
+    } finally {
+      $readyStream.Dispose()
+    }
+  }
+  if ([IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n") {
+    throw 'Installed bootstrap readiness marker is invalid.'
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
+  [ordered]@{
+    bootstrap_result_sha256 = Get-ArTrustedSha256 $fixedResult
+    bootstrap_ready_sha256 = Get-ArTrustedSha256 $readyMarker
+  }
+}
+
 function Assert-ArExactInstalledBootstrap {
   $launcher = Join-Path $InstallRoot 'launcher.exe'
-  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
-  if (-not (Test-Path -LiteralPath $readyMarker -PathType Leaf) -or
-      [IO.File]::ReadAllText($readyMarker,[Text.Encoding]::ASCII) -cne "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n") {
-    throw 'Installed bootstrap readiness marker is absent or invalid.'
-  }
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
-    -AllowedRuntimeFiles @('bootstrap.ready') | Out-Null
+    -AllowedRuntimeFiles @('bootstrap.ready','bootstrap-result.json','installed-task-sddl-semantic.sha256') | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
-  Assert-ArTrustedTaskSddl -Sddl (Get-ArTrustedTaskSddl $TaskName)
+  $taskSddl = Get-ArTrustedTaskSddl $TaskName
+  Assert-ArTrustedTaskSddl -Sddl $taskSddl
+  $taskSddlSeal = Join-Path $InstallRoot 'installed-task-sddl-semantic.sha256'
+  $sealedTaskSddl = (Get-Content -LiteralPath $taskSddlSeal -Raw -ErrorAction Stop).Trim()
+  if ($sealedTaskSddl -notmatch '^[0-9a-f]{64}$' -or
+      (Get-ArTrustedSddlSemanticSha256 $taskSddl) -cne $sealedTaskSddl) {
+    throw 'Installed task SDDL differs from its protected semantic seal.'
+  }
   if ((Test-Path -LiteralPath (Join-Path $InstallRoot 'finalize.enabled')) -or (Test-Path -LiteralPath (Join-Path $InstallRoot 'probe.enabled'))) {
     throw 'Already-installed protected root retains a probe marker.'
   }
@@ -239,10 +307,10 @@ function Assert-ArExactInstalledBootstrap {
   if ($receipt.status -cne 'PASS' -or [string]$receipt.manifest_sha256 -cne $manifestHash) { throw 'Installed dispatcher lacks its terminal PASS receipt.' }
   $activeValidation = Invoke-ArTrustedActiveControlValidation
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'active-control-validation.json'), (($activeValidation | ConvertTo-Json -Depth 8 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
-  $prior = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter bootstrap-result.json -File -Recurse | Where-Object { $_.DirectoryName -ne $script:executionRoot } | ForEach-Object {
-    try { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } catch { $null }
-  } | Where-Object { $_.result -ceq 'PASS' -and $_.package_sha256 -ceq $PackageSha256 -and $_.candidate_code_sha -ceq $CandidateCodeSha -and $_.authority_commit -ceq $AuthorityCommit })
-  if ($prior.Count -lt 1) { throw 'Protected evidence has no matching prior bootstrap PASS.' }
+  [ordered]@{
+    durable_result_present = Test-Path -LiteralPath (Join-Path $InstallRoot 'bootstrap-result.json') -PathType Leaf
+    readiness_present = Test-Path -LiteralPath (Join-Path $InstallRoot 'bootstrap.ready') -PathType Leaf
+  }
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -385,12 +453,13 @@ if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha25
 if (Test-Path -LiteralPath $InstallRoot) {
   Enter-ArTrustedBootstrapGate
   try {
-    Assert-ArExactInstalledBootstrap
+    $installedState = Assert-ArExactInstalledBootstrap
     $alreadyQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
     $already = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
       mode='ALREADY_INSTALLED'; install_root=$InstallRoot; bootstrap_gate_held=$true
-      terminal_quiescence=$alreadyQuiescence
+      terminal_quiescence=$alreadyQuiescence; recovered_incomplete_readiness=(-not $installedState.readiness_present)
     }
+    Publish-ArTrustedBootstrapReadiness -ResultPath $already | Out-Null
     Get-Content -LiteralPath $already -Raw
     exit 0
   } catch {
@@ -505,6 +574,16 @@ try {
   Write-ArMutationIntent -Action 'REGISTER_DISABLED_PRODUCTION_TASK' -TargetPath $TaskName
   Register-ScheduledTask -TaskName $TaskName -InputObject $definition -Force -ErrorAction Stop | Out-Null
   $installedTaskSddl = Set-ArTrustedTaskSddl -TaskName $TaskName -OperatorSid $OperatorSid
+  $taskSddlSeal = Join-Path $InstallRoot 'installed-task-sddl-semantic.sha256'
+  $sealStream = [IO.File]::Open($taskSddlSeal,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $sealBytes = [Text.Encoding]::ASCII.GetBytes((Get-ArTrustedSddlSemanticSha256 $installedTaskSddl) + "`n")
+    $sealStream.Write($sealBytes,0,$sealBytes.Length)
+    $sealStream.Flush($true)
+  } finally {
+    $sealStream.Dispose()
+  }
+  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $false | Out-Null
 
   $probeMarker = Join-Path $InstallRoot 'finalize.enabled'
@@ -556,23 +635,12 @@ try {
   $terminalQuiescence = Assert-ArTrustedBackupQuiescence -RequireReadyTask
   $terminalQuiescence['bootstrap_gate_held'] = $true
   [IO.File]::WriteAllText((Join-Path $script:executionRoot 'terminal-quiescence.json'), (($terminalQuiescence | ConvertTo-Json -Depth 5 -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
-  $readyMarker = Join-Path $InstallRoot 'bootstrap.ready'
-  Write-ArMutationIntent -Action 'PUBLISH_TERMINAL_BOOTSTRAP_READINESS' -TargetPath $readyMarker
-  $readyStream = [IO.File]::Open($readyMarker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  try {
-    $readyBytes = [Text.Encoding]::ASCII.GetBytes("AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1`n")
-    $readyStream.Write($readyBytes,0,$readyBytes.Length)
-    $readyStream.Flush($true)
-  } finally {
-    $readyStream.Dispose()
-  }
-  Set-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
-  Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
   $result = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{
     install_root = $InstallRoot; installed_task_xml_sha256 = Get-ArTrustedSha256 $installedXml
     installed_task_sddl_sha256 = Get-ArTrustedTextSha256 $installedSddl; probe_last_result = $probeInfo.LastTaskResult
-    bootstrap_gate_held = $true; bootstrap_ready_sha256 = Get-ArTrustedSha256 $readyMarker
+    bootstrap_gate_held = $true; installed_task_sddl_semantic_sha256 = Get-ArTrustedSddlSemanticSha256 $installedSddl
   }
+  Publish-ArTrustedBootstrapReadiness -ResultPath $result | Out-Null
   Get-Content -LiteralPath $result -Raw
 } catch {
   $failure = $_.Exception.Message

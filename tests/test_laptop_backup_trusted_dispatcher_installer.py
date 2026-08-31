@@ -60,7 +60,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "bootstrap_gate_held = $true" in source
     assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in source
     assert "PUBLISH_TERMINAL_BOOTSTRAP_READINESS" in source
-    assert "-AllowedRuntimeFiles @('bootstrap.ready')" in source
+    assert "-AllowedRuntimeFiles @('bootstrap.ready','bootstrap-result.json','installed-task-sddl-semantic.sha256')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert source.count("Invoke-ArTrustedPiIdleCheck") >= 3
     assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
@@ -96,7 +96,14 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.count("Assert-ArTrustedCatalogBaseline @catalogArguments") >= 3
     assert source.index("Assert-ArTrustedBackupQuiescence -RequireReadyTask") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
     assert source.index("Enter-ArTrustedBootstrapGate", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START") - 120) < source.index("Enable-ScheduledTask -TaskName $TaskName")
-    assert source.index("PUBLISH_TERMINAL_BOOTSTRAP_READINESS") < source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    terminal_pass = source.index("Write-ArTrustedResult -Result 'PASS'", source.index("ENABLE_PRODUCTION_TASK_WITHOUT_START"))
+    assert terminal_pass < source.index("Publish-ArTrustedBootstrapReadiness -ResultPath $result")
+    assert "PUBLISH_DURABLE_BOOTSTRAP_RESULT" in source
+    assert "Assert-ArTrustedBootstrapResultIdentity" in source
+    assert "Protected bootstrap readiness exists without its durable PASS result" in source
+    assert source.count("Flush($true)") >= 4
+    assert "installed-task-sddl-semantic.sha256" in source
+    assert "Installed task SDDL differs from its protected semantic seal" in source
     assert "Trusted operator lacks read and execute access" in core
     assert "Trusted administrator principal lacks full control" in core
     assert "Trusted package owner is not Administrators" in core

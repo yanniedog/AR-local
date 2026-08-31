@@ -85,6 +85,7 @@ def test_source_has_no_general_command_channel() -> None:
     assert "require_write_denied(token, root, true)" in text
     assert "--restricted-child" in text
     assert "bootstrap.ready" in text
+    assert "bootstrap-result.json" in text
     assert "AR_LOCAL_TRUSTED_BOOTSTRAP_READY_V1" in text
 
 

@@ -454,6 +454,7 @@ DWORD scheduled_parent() {
       payload != kBootstrapReadyPayload) {
     throw std::runtime_error("bootstrap.ready content is invalid");
   }
+  require_plain_path(join(root, L"bootstrap-result.json"), false);
   return parent({L"--restricted-child"});
 }
 
