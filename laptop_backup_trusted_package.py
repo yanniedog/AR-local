@@ -18,6 +18,11 @@ CANONICAL_ORIGIN = "https://github.com/yanniedog/AR-local.git"
 FIXED_TIMESTAMP = (2026, 1, 1, 0, 0, 0)
 SHA40 = re.compile(r"[0-9a-f]{40}")
 SID = re.compile(r"S-1-5-21-(?:[0-9]+-){3}[0-9]+")
+SSH_HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
+SSH_USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+SSH_ED25519_KEY = re.compile(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [^\r\n]+)?")
+FIXED_SSH_ENDPOINT = ("192.168.20.19", "pi", 22)
+FIXED_SSH_HOST_KEY_SHA256 = "4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836"
 
 
 def sha256(path: Path) -> str:
@@ -83,6 +88,21 @@ def canonical_json(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def pinned_known_host(path: Path, host: str, port: int) -> bytes:
+    expected = host if port == 22 else f"[{host}]:{port}"
+    matches: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        fields = raw.split()
+        if len(fields) >= 3 and expected in fields[0].split(","):
+            key = " ".join(fields[1:])
+            if not SSH_ED25519_KEY.fullmatch(key):
+                raise ValueError("pinned SSH host key must be one ssh-ed25519 key")
+            matches.append(f"{expected} {key}")
+    if len(matches) != 1:
+        raise ValueError("known_hosts must contain exactly one pinned key for the fixed SSH host")
+    return (matches[0] + "\n").encode("ascii")
+
+
 def write_zip(root: Path, output: Path) -> None:
     files = sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.as_posix().casefold())
     seen: set[str] = set()
@@ -104,6 +124,11 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("candidate or authority commit is invalid")
     if not SID.fullmatch(args.operator_sid):
         raise ValueError("operator SID is invalid")
+    if (not SSH_HOST.fullmatch(args.ssh_host) or ".." in args.ssh_host or
+            not SSH_USER.fullmatch(args.ssh_user) or not 1 <= args.ssh_port <= 65535):
+        raise ValueError("fixed SSH host, user, or port is invalid")
+    if (args.ssh_host, args.ssh_user, args.ssh_port) != FIXED_SSH_ENDPOINT:
+        raise ValueError("trusted package SSH endpoint is not the fixed backup endpoint")
     candidate = Path(args.candidate_repo).resolve()
     authority = Path(args.authority_repo).resolve()
     python_root = Path(args.python_root).resolve()
@@ -122,9 +147,24 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         clone_exact(authority, root / "authority", args.authority_sha)
         copy_plain_tree(python_root, root / "python")
         shutil.copyfile(args.launcher, root / "launcher.exe")
-        for name in ("run_laptop_backup_trusted_child.ps1", "laptop_backup_dispatcher.py", "laptop_backup_atomic.py"):
+        for name in (
+            "run_laptop_backup_trusted_child.ps1", "laptop_backup_dispatcher.py",
+            "laptop_backup_dispatcher_security.py", "laptop_backup_atomic.py",
+        ):
             shutil.copyfile(candidate / name, root / name)
         shutil.copyfile(args.dispatcher_manifest, root / "dispatcher-manifest.json")
+        identity = Path(args.ssh_identity).resolve(strict=True)
+        identity_bytes = identity.read_bytes()
+        if not (identity_bytes.startswith(b"-----BEGIN OPENSSH PRIVATE KEY-----\n") and
+                identity_bytes.rstrip().endswith(b"-----END OPENSSH PRIVATE KEY-----")):
+            raise ValueError("SSH identity is not an OpenSSH private key")
+        (root / "ssh").mkdir()
+        known_host_bytes = pinned_known_host(
+            Path(args.ssh_known_hosts).resolve(strict=True), args.ssh_host, args.ssh_port
+        )
+        if hashlib.sha256(known_host_bytes).hexdigest() != FIXED_SSH_HOST_KEY_SHA256:
+            raise ValueError("fixed SSH host key fingerprint is invalid")
+        (root / "ssh" / "known_hosts").write_bytes(known_host_bytes)
         (root / "operator.sid").write_text(args.operator_sid, encoding="ascii", newline="")
         (root / "protected.sentinel").write_bytes(b"AR-local trusted launcher sentinel\n")
 
@@ -133,19 +173,27 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
         tools = {name: Path(getattr(args, name)).resolve() for name in ("git", "ssh", "scp", "whoami")}
         trusted = {
-            "schema_version": 3,
+            "schema_version": 5,
             "authority_path": installed("authority"),
             "atomic_path": installed("laptop_backup_atomic.py"),
             "atomic_sha256": sha256(root / "laptop_backup_atomic.py"),
             "control_root": str(Path(args.control_root)),
             "dispatcher_path": installed("laptop_backup_dispatcher.py"),
             "dispatcher_sha256": sha256(root / "laptop_backup_dispatcher.py"),
+            "dispatcher_security_path": installed("laptop_backup_dispatcher_security.py"),
+            "dispatcher_security_sha256": sha256(root / "laptop_backup_dispatcher_security.py"),
             "git_path": str(tools["git"]), "git_sha256": sha256(tools["git"]),
             "python_path": installed(str(Path("python") / "python.exe")),
             "python_sha256": sha256(root / "python" / "python.exe"),
             "receiver_path": installed("receiver"),
             "scp_path": str(tools["scp"]), "scp_sha256": sha256(tools["scp"]),
+            "ssh_host": args.ssh_host,
+            "ssh_identity_path": installed(str(Path("ssh") / "id")),
+            "ssh_identity_sha256": hashlib.sha256(identity_bytes).hexdigest(),
+            "ssh_known_hosts_path": installed(str(Path("ssh") / "known_hosts")),
+            "ssh_known_hosts_sha256": sha256(root / "ssh" / "known_hosts"),
             "ssh_path": str(tools["ssh"]), "ssh_sha256": sha256(tools["ssh"]),
+            "ssh_port": args.ssh_port, "ssh_user": args.ssh_user,
             "whoami_path": str(tools["whoami"]), "whoami_sha256": sha256(tools["whoami"]),
         }
         (root / "trusted-child.json").write_bytes(canonical_json(trusted))
@@ -185,6 +233,11 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--git", required=True)
     value.add_argument("--ssh", required=True)
     value.add_argument("--scp", required=True)
+    value.add_argument("--ssh-host", required=True)
+    value.add_argument("--ssh-user", default="pi")
+    value.add_argument("--ssh-port", type=int, default=22)
+    value.add_argument("--ssh-identity", required=True)
+    value.add_argument("--ssh-known-hosts", required=True)
     value.add_argument("--whoami", required=True)
     value.add_argument("--output", required=True)
     return value

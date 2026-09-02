@@ -39,7 +39,6 @@ function Get-ArTrustedSddlBinarySha256 {
   try { ([BitConverter]::ToString($algorithm.ComputeHash($bytes)) -replace '-','').ToLowerInvariant() }
   finally { $algorithm.Dispose() }
 }
-
 function Read-ArTrustedPreExecutionManifest {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -58,7 +57,6 @@ function Read-ArTrustedPreExecutionManifest {
   if ($null -eq $value -or $value -is [Array]) { throw 'Pre-execution manifest is not one object.' }
   $value
 }
-
 function Assert-ArTrustedPreExecutionManifest {
   param(
     [Parameter(Mandatory = $true)]$Manifest,
@@ -90,19 +88,16 @@ function Assert-ArTrustedPreExecutionManifest {
     throw 'Pre-execution manifest is expired or outside allowed clock skew.'
   }
 }
-
 function Get-ArTrustedTaskXmlBytes {
   param([Parameter(Mandatory = $true)][string]$TaskName)
   [byte[]](0xff, 0xfe) + [Text.Encoding]::Unicode.GetBytes((Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop))
 }
-
 function Get-ArTrustedTaskSddl {
   param([Parameter(Mandatory = $true)][string]$TaskName)
   $service = New-Object -ComObject 'Schedule.Service'
   $service.Connect()
   $service.GetFolder('\').GetTask("\$TaskName").GetSecurityDescriptor(7)
 }
-
 function Get-ArTrustedSddlSemanticSha256 {
   param([Parameter(Mandatory = $true)][string]$Sddl)
   $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
@@ -130,7 +125,6 @@ function Get-ArTrustedSddlSemanticSha256 {
   }
   Get-ArTrustedTextSha256 (($value | ConvertTo-Json -Depth 5 -Compress))
 }
-
 function Set-ArTrustedTaskSddl {
   param([Parameter(Mandatory = $true)][string]$TaskName, [Parameter(Mandatory = $true)][string]$OperatorSid)
   $sddl = "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;$OperatorSid)"
@@ -141,7 +135,6 @@ function Set-ArTrustedTaskSddl {
   Assert-ArTrustedTaskSddl -Sddl $actual
   $actual
 }
-
 function Assert-ArTrustedTaskSddl {
   param([Parameter(Mandatory = $true)][string]$Sddl)
   $descriptor = New-Object Security.AccessControl.RawSecurityDescriptor($Sddl)
@@ -158,7 +151,6 @@ function Assert-ArTrustedTaskSddl {
     }
   }
 }
-
 function Assert-ArTrustedPlainPath {
   param([Parameter(Mandatory = $true)][string]$Path)
   $full = [IO.Path]::GetFullPath($Path)
@@ -172,36 +164,6 @@ function Assert-ArTrustedPlainPath {
   }
   $full
 }
-
-function Invoke-ArTrustedSshScript {
-  param(
-    [Parameter(Mandatory = $true)][string]$SshPath,
-    [Parameter(Mandatory = $true)][string]$HostName,
-    [Parameter(Mandatory = $true)][string]$Script
-  )
-  if ($Script.Contains("`r")) { throw 'Remote script must contain LF only.' }
-  if ($HostName.Length -gt 253 -or $HostName -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or $HostName.Contains('..')) {
-    throw 'SSH host must be one strict hostname or IPv4 token.'
-  }
-  $start = New-Object Diagnostics.ProcessStartInfo
-  $start.FileName = $SshPath
-  $start.Arguments = "-o BatchMode=yes -o ConnectTimeout=10 $HostName bash -s"
-  $start.UseShellExecute = $false
-  $start.RedirectStandardInput = $true
-  $start.RedirectStandardOutput = $true
-  $start.RedirectStandardError = $true
-  $start.CreateNoWindow = $true
-  $process = New-Object Diagnostics.Process
-  $process.StartInfo = $start
-  [void]$process.Start()
-  $process.StandardInput.Write($Script)
-  $process.StandardInput.Close()
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
-  [pscustomobject]@{ ExitCode = $process.ExitCode; Stdout = $stdout; Stderr = $stderr }
-}
-
 function Expand-ArAuthenticatedPackage {
   param(
     [Parameter(Mandatory = $true)][string]$PackagePath,
@@ -236,7 +198,6 @@ function Expand-ArAuthenticatedPackage {
     } finally { $archive.Dispose() }
   } finally { $algorithm.Dispose(); $stream.Dispose() }
 }
-
 function Assert-ArTrustedPackageManifest {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
@@ -265,8 +226,9 @@ function Assert-ArTrustedPackageManifest {
     $expected[$property.Name.Replace('/', [IO.Path]::DirectorySeparatorChar).ToLowerInvariant()] = [string]$property.Value
   }
   $allowedRuntime = @($AllowedRuntimeFiles | ForEach-Object {
-    if ([IO.Path]::GetFileName($_) -cne $_) { throw 'Allowed runtime package file must be one fixed file name.' }
-    $_.ToLowerInvariant()
+    $relative = $_.Replace('/','\')
+    if ($relative -notmatch '^(?:[A-Za-z0-9._-]+\\)*[A-Za-z0-9._-]+$') { throw 'Allowed runtime package path is invalid.' }
+    $relative.ToLowerInvariant()
   })
   $actual = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
     $relative = $_.FullName.Substring(([IO.Path]::GetFullPath($Root).TrimEnd('\').Length + 1)).ToLowerInvariant()
@@ -281,24 +243,29 @@ function Assert-ArTrustedPackageManifest {
   }
   $manifest
 }
-
 function Assert-ArTrustedChildConfiguration {
   param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$ControlRoot)
   $path = Join-Path $Root 'trusted-child.json'
   $config = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
   $fields = @(
     'atomic_path','atomic_sha256','authority_path','control_root','dispatcher_path','dispatcher_sha256',
+    'dispatcher_security_path','dispatcher_security_sha256',
     'git_path','git_sha256','python_path','python_sha256','schema_version',
-    'receiver_path','scp_path','scp_sha256','ssh_path','ssh_sha256','whoami_path','whoami_sha256'
+    'receiver_path','scp_path','scp_sha256','ssh_host','ssh_identity_path','ssh_identity_sha256',
+    'ssh_known_hosts_path','ssh_known_hosts_sha256','ssh_path','ssh_port','ssh_sha256','ssh_user',
+    'whoami_path','whoami_sha256'
   )
-  if ($config.schema_version -ne 3 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
+  if ($config.schema_version -ne 5 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
       [IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($ControlRoot)) {
     throw 'Trusted child configuration identity is invalid.'
   }
   $internal = @(
     @('python_path','python_sha256','python\python.exe'),
     @('dispatcher_path','dispatcher_sha256','laptop_backup_dispatcher.py'),
-    @('atomic_path','atomic_sha256','laptop_backup_atomic.py')
+    @('dispatcher_security_path','dispatcher_security_sha256','laptop_backup_dispatcher_security.py'),
+    @('atomic_path','atomic_sha256','laptop_backup_atomic.py'),
+    @('ssh_identity_path','ssh_identity_sha256','ssh\id'),
+    @('ssh_known_hosts_path','ssh_known_hosts_sha256','ssh\known_hosts')
   )
   foreach ($item in $internal) {
     $actualPath = Assert-ArTrustedPlainPath ([string]$config.($item[0]))
@@ -312,6 +279,12 @@ function Assert-ArTrustedChildConfiguration {
     if (-not $checkout.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $checkout -PathType Container)) {
       throw "Trusted checkout is invalid: $name"
     }
+  }
+  $sshHost = [string]$config.ssh_host; $sshUser = [string]$config.ssh_user; $sshPort = [int]$config.ssh_port
+  if ($sshHost -cne '192.168.20.19' -or $sshUser -cne 'pi' -or $sshPort -ne 22 -or $sshHost.Length -gt 253 -or $sshHost -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or
+      $sshHost.Contains('..') -or $sshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $sshPort -lt 1 -or $sshPort -gt 65535 -or
+      [string]$config.ssh_known_hosts_sha256 -cne '4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836') {
+    throw 'Trusted child SSH endpoint identity is invalid.'
   }
   $system = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
   $programRoots = @([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles),[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) | Where-Object { $_ }
@@ -335,7 +308,6 @@ function Assert-ArTrustedChildConfiguration {
   }
   $config
 }
-
 function Set-ArTrustedRootAcl {
   param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$OperatorSid)
   $icacls = "$env:SystemRoot\System32\icacls.exe"
@@ -359,7 +331,6 @@ function Set-ArTrustedRootAcl {
   & $icacls $Root '/inheritance:r' '/T' '/C' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to protect trusted package ACL.' }
 }
-
 function Write-ArMutationIntent {
   param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$TargetPath)
   $entry = [ordered]@{ at = [DateTimeOffset]::UtcNow.ToString('o'); action = $Action; target = $TargetPath }
@@ -375,7 +346,6 @@ function Write-ArMutationIntent {
   Set-ArTrustedRootAcl -Root $path -OperatorSid $OperatorSid
   Assert-ArTrustedSinglePathAcl -Path $path -OperatorSid $OperatorSid
 }
-
 function Assert-ArTrustedSinglePathAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -414,7 +384,6 @@ function Assert-ArTrustedSinglePathAcl {
     }
     if (($effective[$OperatorSid] -band $readExecute) -ne $readExecute) { throw "Trusted operator lacks read and execute access at $Path" }
 }
-
 function Assert-ArTrustedRecoverablePathAcl {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -745,7 +714,6 @@ function Assert-ArTrustedShortQuarantineState {
   Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
   [pscustomobject]@{ record_path=$path; transaction_count=$verified.Count }
 }
-
 function Get-ArTrustedInvocationContractSha256 {
   param([Parameter(Mandatory = $true)][Collections.Specialized.OrderedDictionary]$Parameters)
   $items = @()
@@ -756,7 +724,6 @@ function Get-ArTrustedInvocationContractSha256 {
   }
   Get-ArTrustedTextSha256 (($items | ConvertTo-Json -Depth 5 -Compress))
 }
-
 function ConvertTo-ArTrustedCanonicalJson {
   param([Parameter(Mandatory = $false)]$Value)
   if ($null -eq $Value) { return 'null' }
@@ -782,7 +749,6 @@ function ConvertTo-ArTrustedCanonicalJson {
   }
   throw "Unsupported canonical JSON type: $($Value.GetType().FullName)"
 }
-
 function Assert-ArTrustedCatalogBaseline {
   param(
     [Parameter(Mandatory = $true)][string]$Target,
@@ -872,7 +838,6 @@ function Assert-ArTrustedCatalogBaseline {
     accepted_archive_size=$archive.Length; accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   }
 }
-
 function Get-ArTrustedTreeDigest {
   param([Parameter(Mandatory = $true)][string]$Root)
   $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
@@ -882,7 +847,6 @@ function Get-ArTrustedTreeDigest {
   }
   Get-ArTrustedTextSha256 (($items | ConvertTo-Json -Depth 5 -Compress))
 }
-
 function Restore-ArTrustedControlRootAtomic {
   param(
     [Parameter(Mandatory = $true)][string]$ControlRoot,
@@ -932,7 +896,6 @@ function Restore-ArTrustedControlRootAtomic {
   if ($null -ne $preservationError) { throw $preservationError }
   if ($null -ne $verificationError) { throw $verificationError }
 }
-
 function New-ArTrustedTaskDefinition {
   param([string]$LauncherPath, [string]$InstallRoot, [string]$Principal, [bool]$Enabled = $false)
   $daily = New-ScheduledTaskTrigger -Daily -At '05:00'
@@ -946,7 +909,6 @@ function New-ArTrustedTaskDefinition {
   New-ScheduledTask -Action $action -Trigger @($daily,$startup) -Settings $settings -Principal $taskPrincipal `
     -Description 'Runs the protected restricted-token AR-local laptop backup dispatcher.'
 }
-
 function Assert-ArTrustedTask {
   param(
     [string]$TaskName, [string]$LauncherPath, [string]$InstallRoot,
@@ -972,7 +934,6 @@ function Assert-ArTrustedTask {
   if ($bad.Count) { throw "Trusted task verification failed: $($bad -join ', ')." }
   $task
 }
-
 function Assert-ArTrustedProbeTask {
   param(
     [string]$TaskName, [string]$LauncherPath, [string]$InstallRoot, [string]$OperatorSid,
@@ -991,7 +952,6 @@ function Assert-ArTrustedProbeTask {
   }
   $task
 }
-
 function Restore-ArTrustedPriorTask {
   param([string]$TaskName, [string]$TaskXml, [string]$TaskSddl)
   Register-ScheduledTask -TaskName $TaskName -Xml $TaskXml -Force -ErrorAction Stop | Out-Null

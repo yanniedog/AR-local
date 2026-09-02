@@ -75,11 +75,13 @@ def test_source_has_no_general_command_channel() -> None:
     assert "ShellExecute" not in text
     assert "CreateProcessAsUserW" in text
     assert "CreateRestrictedToken" in text
-    assert "LUA_TOKEN" not in text
+    assert "LUA_TOKEN | DISABLE_MAX_PRIVILEGE" in text
     assert "DOMAIN_ALIAS_RID_ADMINS" in text
     assert "complete_integrity_handshake" in text
     assert "OpenProcessToken(child.get()" in text
     assert "TokenHasRestrictions" in text
+    assert "TokenElevation" in text
+    assert "TokenElevationType" in text
     assert "lower_integrity_to_medium(child_token.get())" in text
     assert "validate_token(current.get(), root, true)" in text
     assert "require_write_denied(token, root, true)" in text
@@ -93,18 +95,35 @@ def test_source_has_no_general_command_channel() -> None:
 def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
     child = TRUSTED_CHILD.read_text(encoding="utf-8")
     dispatcher = DISPATCHER.read_text(encoding="utf-8")
-    assert "$config.schema_version -ne 3" in child
+    security = (ROOT / "laptop_backup_dispatcher_security.py").read_text(encoding="utf-8")
+    assert "$config.schema_version -ne 5" in child
     assert "Assert-ArTrustedWithinRoot $python" in child
     assert "Assert-ArTrustedWithinRoot $dispatcher" in child
+    assert "Assert-ArTrustedWithinRoot $dispatcherSecurity" in child
+    assert "(Get-ArTrustedSha256 $dispatcherSecurity) -cne [string]$config.dispatcher_security_sha256" in child
     assert "Assert-ArTrustedWithinRoot $atomic" in child
     assert "Assert-ArTrustedWriteDenied $tool.Path" in child
+    assert "Assert-ArTrustedWriteDenied $path" in child
+    assert "AR_BACKUP_SSH_PREFLIGHT = 'PASS'" in child
+    assert "AR_BACKUP_SSH_SHA256" in child and "AR_BACKUP_SCP_SHA256" in child
+    assert "Remove-Item Env:\\PYTEST_CURRENT_TEST" in child
+    assert "Env:\\AR_DISPATCHER_TEST_*" in child
+    assert "'-F','NUL'" in child
+    assert "Wait-ArTrustedChildProcess" in child
+    assert "Wait-ArTrustedChildRedirectedTasks" in child
+    assert "ArTrustedJobObject" in child and "0x00002000" in child
+    assert "AssignProcessToJobObject" in child and "TerminateJobObject" in child
+    assert "[ArTrustedJobObject]::Terminate($Job)" in child
+    assert "$sshHost -cne '192.168.20.19'" in child
+    assert "$sshUser -cne 'pi'" in child
+    assert "$sshPort -ne 22" in child
     assert "$env:PATH =" in child
     assert "$env:AR_TRUSTED_ROOT = $trustedRoot" in child
     assert "$env:GIT_CONFIG_COUNT = '2'" in child
     assert "finalize.enabled" in child
     assert "GIT_CONFIG_GLOBAL = 'NUL'" in child
     assert "-B -s -E $dispatcher finalize" in child
-    assert 'os.environ.get("AR_TRUSTED_ROOT")' in dispatcher
+    assert 'os.environ.get("AR_TRUSTED_ROOT")' in security
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only reproducible build")

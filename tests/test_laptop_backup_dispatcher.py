@@ -149,6 +149,11 @@ def test_activate_and_limited_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         "result": "PASS",
         "mode": "PROBE",
         "is_admin": False,
+        "token_elevation": False,
+        "token_elevation_type": "Limited",
+        "token_has_restrictions": True,
+        "integrity_rid": 8192,
+        "ssh_preflight": "PASS",
         "operator_sid": manifest["operator_sid"],
         "sequence": 1,
         "candidate_code_sha": manifest["candidate_code_sha"],
@@ -171,6 +176,25 @@ def test_probe_rejects_elevated_or_wrong_sid(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setenv("AR_DISPATCHER_TEST_ADMIN", "invalid")
     with pytest.raises(ValueError, match="must be 0 or 1"):
         dispatcher.is_admin()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    (("AR_DISPATCHER_TEST_ELEVATION", "1"), ("AR_DISPATCHER_TEST_ELEVATION_TYPE", "Full"),
+     ("AR_DISPATCHER_TEST_ELEVATION_TYPE", "Unknown"),
+     ("AR_DISPATCHER_TEST_RESTRICTED", "0"), ("AR_DISPATCHER_TEST_INTEGRITY_RID", "12288")),
+)
+def test_probe_rejects_incomplete_restricted_token_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    control, _target, manifest = fixture(tmp_path)
+    proposed = tmp_path / "manifest.json"
+    write_manifest(proposed, manifest)
+    dispatcher.activate(control, proposed)
+    monkeypatch.setenv("AR_DISPATCHER_TEST_SID", str(manifest["operator_sid"]))
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match="restricted non-elevated Medium"):
+        dispatcher.probe(control)
 
 
 def test_duplicate_and_unknown_fields_fail_closed(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_core.ps1')
+. (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_ssh.ps1')
 
 $script:task = [pscustomobject]@{
   Actions = @([pscustomobject]@{ Execute='C:\Program Files\AR-local\trusted\launcher.exe'; Arguments=$null; WorkingDirectory='C:\Program Files\AR-local\trusted' })
@@ -24,9 +25,97 @@ if (-not $failed) { throw 'PowerShell production action was accepted.' }
 
 $remote = "set -eu`nexit 0`n"
 if ($remote.Contains("`r")) { throw 'Test remote script unexpectedly contains CR.' }
-$core = Get-Content -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_core.ps1') -Raw
-if ($core -notmatch "HostName\.Length -gt 253" -or $core -notmatch "HostName\.Contains\('\.\.'\)") {
+$sshBoundary = Get-Content -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_ssh.ps1') -Raw
+if ($sshBoundary -notmatch "HostName\.Length -gt 253" -or $sshBoundary -notmatch "HostName\.Contains\('\.\.'\)") {
   throw 'Strict SSH hostname validation is absent.'
+}
+$childPidPath = Join-Path $env:TEMP ('ar-process-tree-' + [guid]::NewGuid().ToString('N') + '.txt')
+$treeScript = @"
+`$child = Start-Process -FilePath '$PSHOME\powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30') -WindowStyle Hidden -PassThru
+[IO.File]::WriteAllText('$($childPidPath.Replace("'","''"))',[string]`$child.Id,[Text.Encoding]::ASCII)
+Start-Sleep -Seconds 30
+"@
+$encodedTreeScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($treeScript))
+$hangStart = New-Object Diagnostics.ProcessStartInfo
+$hangStart.FileName = "$PSHOME\powershell.exe"
+$hangStart.Arguments = "-NoProfile -NonInteractive -EncodedCommand $encodedTreeScript"
+$hangStart.UseShellExecute = $false; $hangStart.CreateNoWindow = $true
+$hangStart.RedirectStandardOutput = $true; $hangStart.RedirectStandardError = $true
+$hang = New-Object Diagnostics.Process; $hang.StartInfo = $hangStart
+$hangJob = New-ArTrustedProcessJob
+if (-not $hang.Start()) { throw 'Failed to start descendant-hang fixture.' }
+Add-ArTrustedProcessToJob -Job $hangJob -Process $hang
+$hangOut = $hang.StandardOutput.ReadToEndAsync(); $hangError = $hang.StandardError.ReadToEndAsync()
+$fixtureDeadline = [DateTime]::UtcNow.AddSeconds(5)
+while (-not (Test-Path -LiteralPath $childPidPath) -and [DateTime]::UtcNow -lt $fixtureDeadline) { Start-Sleep -Milliseconds 25 }
+if (-not (Test-Path -LiteralPath $childPidPath)) { throw 'Descendant-hang fixture did not publish its child PID.' }
+$childPid = [int][IO.File]::ReadAllText($childPidPath,[Text.Encoding]::ASCII)
+$clock = [Diagnostics.Stopwatch]::StartNew(); $timedOut = $false
+try {
+  Wait-ArTrustedProcess -Job $hangJob -Process $hang -TimeoutMilliseconds 100 -Label 'test process'
+} catch {
+  if ($_.Exception.Message -notmatch 'timed out and was terminated') { throw }
+  $timedOut = $true
+} finally {
+  $clock.Stop()
+  if (-not $hang.HasExited) { Stop-ArTrustedProcessTree -Job $hangJob -Process $hang -Label 'test cleanup' }
+  Wait-ArTrustedRedirectedTasks -Job $hangJob -Process $hang -Tasks @($hangOut,$hangError) -TimeoutMilliseconds 2000 -Label 'test streams'
+  Close-ArTrustedProcessJob -Job $hangJob
+  $hang.Dispose()
+  Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+}
+if (-not $timedOut -or $clock.Elapsed.TotalSeconds -gt 7 -or (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
+  throw 'Bounded process timeout did not terminate the full descendant tree promptly.'
+}
+
+$exitFirstGate = Join-Path $env:TEMP ('ar-exit-first-gate-' + [guid]::NewGuid().ToString('N'))
+$exitFirstPid = Join-Path $env:TEMP ('ar-exit-first-pid-' + [guid]::NewGuid().ToString('N') + '.txt')
+$exitFirstScript = @"
+while (-not (Test-Path -LiteralPath '$($exitFirstGate.Replace("'","''"))')) { Start-Sleep -Milliseconds 10 }
+`$start = New-Object Diagnostics.ProcessStartInfo
+`$start.FileName = '$PSHOME\powershell.exe'; `$start.Arguments = '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
+`$start.UseShellExecute = `$false; `$start.CreateNoWindow = `$true
+`$child = [Diagnostics.Process]::Start(`$start)
+[IO.File]::WriteAllText('$($exitFirstPid.Replace("'","''"))',[string]`$child.Id,[Text.Encoding]::ASCII)
+"@
+$exitFirstEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($exitFirstScript))
+$exitFirstStart = New-Object Diagnostics.ProcessStartInfo
+$exitFirstStart.FileName = "$PSHOME\powershell.exe"
+$exitFirstStart.Arguments = "-NoProfile -NonInteractive -EncodedCommand $exitFirstEncoded"
+$exitFirstStart.UseShellExecute = $false; $exitFirstStart.CreateNoWindow = $true
+$exitFirstStart.RedirectStandardOutput = $true; $exitFirstStart.RedirectStandardError = $true
+$exitFirst = New-Object Diagnostics.Process; $exitFirst.StartInfo = $exitFirstStart
+$exitFirstJob = New-ArTrustedProcessJob
+$exitFirstChildPid = 0; $exitFirstChild = $null; $exitFirstChildExited = $false; $streamsTimedOut = $false
+try {
+  if (-not $exitFirst.Start()) { throw 'Failed to start parent-exits-first fixture.' }
+  Add-ArTrustedProcessToJob -Job $exitFirstJob -Process $exitFirst
+  $exitFirstOut = $exitFirst.StandardOutput.ReadToEndAsync(); $exitFirstError = $exitFirst.StandardError.ReadToEndAsync()
+  [IO.File]::WriteAllText($exitFirstGate,'GO',[Text.Encoding]::ASCII)
+  $exitFirstDeadline = [DateTime]::UtcNow.AddSeconds(5)
+  while (-not (Test-Path -LiteralPath $exitFirstPid) -and [DateTime]::UtcNow -lt $exitFirstDeadline) { Start-Sleep -Milliseconds 25 }
+  if (-not (Test-Path -LiteralPath $exitFirstPid)) { throw 'Parent-exits-first fixture did not publish its child PID.' }
+  $exitFirstChildPid = [int][IO.File]::ReadAllText($exitFirstPid,[Text.Encoding]::ASCII)
+  $exitFirstChild = Get-Process -Id $exitFirstChildPid -ErrorAction Stop
+  if (-not $exitFirst.WaitForExit(5000) -or ($exitFirstOut.IsCompleted -and $exitFirstError.IsCompleted)) {
+    throw 'Parent-exits-first fixture did not retain redirected handles in its descendant.'
+  }
+  try {
+    Wait-ArTrustedRedirectedTasks -Job $exitFirstJob -Process $exitFirst -Tasks @($exitFirstOut,$exitFirstError) `
+      -TimeoutMilliseconds 100 -Label 'parent-exits-first test'
+  } catch {
+    if ($_.Exception.Message -notmatch 'redirected streams did not close') { throw }
+    $streamsTimedOut = $true
+  }
+  $exitFirstChildExited = $exitFirstChild.WaitForExit(5000)
+} finally {
+  Close-ArTrustedProcessJob -Job $exitFirstJob
+  if ($null -ne $exitFirstChild) { $exitFirstChild.Dispose() }
+  $exitFirst.Dispose()
+  Remove-Item -LiteralPath $exitFirstGate,$exitFirstPid -Force -ErrorAction SilentlyContinue
+}
+if (-not $streamsTimedOut -or -not $exitFirstChildExited) {
+  throw 'Parent-exits-first descendant survived the bounded redirected-stream timeout.'
 }
 $explicitSddl = 'D:P(A;;FR;;;SY)'
 $inheritedSddl = 'D:P(A;ID;FR;;;SY)'

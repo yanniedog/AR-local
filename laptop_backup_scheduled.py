@@ -607,7 +607,7 @@ def scheduled_status(target: Path, listing: Mapping[str, object], args: argparse
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("--target", type=Path, required=True)
-    value.add_argument("--host", default="ar-local-pi5-lan")
+    receiver.add_transport_arguments(value)
     value.add_argument("--source-helper", type=Path)
     value.add_argument("--recovery-image", type=Path, required=True)
     value.add_argument("--candidate-code-sha", required=True)
@@ -672,6 +672,14 @@ def receiver_arguments(
         command,
         "--target", str(args.target),
         "--host", args.host,
+        "--ssh-user", args.ssh_user,
+        "--ssh-port", str(args.ssh_port),
+        "--ssh-path", args.ssh_path,
+        "--ssh-sha256", args.ssh_sha256,
+        "--scp-path", args.scp_path,
+        "--scp-sha256", args.scp_sha256,
+        "--ssh-identity", args.ssh_identity,
+        "--ssh-known-hosts", args.ssh_known_hosts,
         "--recovery-image", str(args.recovery_image),
         "--candidate-code-sha", args.candidate_code_sha,
         "--protected-code-sha", args.protected_code_sha,

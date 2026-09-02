@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import hmac
 import os
 import re
 import subprocess
 import threading
 import time
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import BinaryIO
 
 
 CHUNK = 4 * 1024**2
@@ -16,6 +19,86 @@ SSH_POST_EOF_RE = re.compile(
     rb"close - IO is still pending on closed socket\. read:\d+, write:\d+, io:[0-9A-Fa-f]+\r?\n?"
 )
 REMOTE_HELPER_DIR_RE = re.compile(r"^/tmp/ar-local-laptop-backup\.[A-Za-z0-9]{8}$")
+SSH_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
+SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _transport_value(args: object, name: str) -> str:
+    value = str(getattr(args, name, "") or "")
+    if not value:
+        raise ValueError(f"trusted SSH transport lacks {name}")
+    return value
+
+
+def add_transport_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--host", default=os.environ.get("AR_BACKUP_SSH_HOST"))
+    parser.add_argument("--ssh-user", default=os.environ.get("AR_BACKUP_SSH_USER"))
+    parser.add_argument("--ssh-port", type=int, default=os.environ.get("AR_BACKUP_SSH_PORT"))
+    parser.add_argument("--ssh-path", default=os.environ.get("AR_BACKUP_SSH_PATH"))
+    parser.add_argument("--ssh-sha256", default=os.environ.get("AR_BACKUP_SSH_SHA256"))
+    parser.add_argument("--scp-path", default=os.environ.get("AR_BACKUP_SCP_PATH"))
+    parser.add_argument("--scp-sha256", default=os.environ.get("AR_BACKUP_SCP_SHA256"))
+    parser.add_argument("--ssh-identity", default=os.environ.get("AR_BACKUP_SSH_IDENTITY"))
+    parser.add_argument("--ssh-known-hosts", default=os.environ.get("AR_BACKUP_SSH_KNOWN_HOSTS"))
+
+
+def _windows_contract_path(value: str, platform: str) -> Path | PureWindowsPath:
+    return Path(value) if platform == "nt" else PureWindowsPath(value)
+
+
+def _validated_executable(args: object, name: str, platform: str) -> Path | PureWindowsPath:
+    executable = _windows_contract_path(_transport_value(args, f"{name}_path"), platform)
+    if not executable.is_absolute() or executable.name.lower() != f"{name}.exe":
+        raise ValueError("trusted SSH executable must be an absolute OpenSSH path")
+    if platform == "nt":
+        expected = _transport_value(args, f"{name}_sha256").lower()
+        if not SHA256_RE.fullmatch(expected) or not executable.is_file():
+            raise ValueError("trusted SSH executable is absent or its hash is invalid")
+        if not hmac.compare_digest(sha256_file(Path(executable)), expected):
+            raise ValueError("trusted SSH executable hash mismatch")
+    return executable
+
+
+def ssh_options(args: object, *, scp: bool = False, platform: str | None = None) -> list[str]:
+    """Return the fixed, non-interactive OpenSSH trust contract."""
+    platform = platform or os.name
+    executable = _validated_executable(args, "scp" if scp else "ssh", platform)
+    identity = _windows_contract_path(_transport_value(args, "ssh_identity"), platform)
+    known_hosts = _windows_contract_path(_transport_value(args, "ssh_known_hosts"), platform)
+    host = _transport_value(args, "host")
+    user = _transport_value(args, "ssh_user")
+    port = str(getattr(args, "ssh_port", "") or "")
+    if not identity.is_absolute() or not known_hosts.is_absolute():
+        raise ValueError("trusted SSH identity and known_hosts paths must be absolute")
+    if not SSH_HOST_RE.fullmatch(host) or ".." in host or not SSH_USER_RE.fullmatch(user):
+        raise ValueError("trusted SSH host or user is invalid")
+    if not port.isdigit() or not 1 <= int(port) <= 65535:
+        raise ValueError("trusted SSH port is invalid")
+    options = [
+        str(executable), "-F", "NUL",
+        "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+        "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
+        "-o", "ChallengeResponseAuthentication=no", "-o", "StrictHostKeyChecking=yes",
+        "-o", f"UserKnownHostsFile={known_hosts}", "-o", "GlobalKnownHostsFile=NUL",
+        "-o", "UpdateHostKeys=no", "-o", "VerifyHostKeyDNS=no",
+        "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
+        "-o", "RequestTTY=no", "-i", str(identity), "-P" if scp else "-p", port,
+    ]
+    if not scp:
+        options.extend(("-l", user))
+    return options
+
+
+def ssh_command(args: object, *remote: str) -> list[str]:
+    return [*ssh_options(args), _transport_value(args, "host"), *remote]
+
+
+def scp_command(args: object, source: Path, remote: str) -> list[str]:
+    destination = f"{_transport_value(args, 'ssh_user')}@{_transport_value(args, 'host')}:{remote}"
+    return [*ssh_options(args, scp=True), "-q", str(source), destination]
 
 
 def sha256_file(path: Path) -> str:
@@ -24,6 +107,15 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(CHUNK), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
+    read_available = getattr(stream, "read1", stream.read)
+    while True:
+        block = read_available(CHUNK)
+        if not block:
+            return
+        sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])
 
 
 def windows_ssh_post_eof_only(stderr: bytes, *, platform: str | None = None) -> bool:
@@ -76,14 +168,14 @@ def remove_remote_helper(args: object, remote: str) -> None:
     if path.name != "source.py" or not REMOTE_HELPER_DIR_RE.fullmatch(remote_dir):
         raise ValueError("refusing to remove unexpected remote helper path")
     removed = subprocess.run(
-        ("ssh", "-o", "BatchMode=yes", args.host, "rm", "--", remote),
+        ssh_command(args, "rm", "--", remote),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
         check=False,
     )
     directory = subprocess.run(
-        ("ssh", "-o", "BatchMode=yes", args.host, "rmdir", "--", remote_dir),
+        ssh_command(args, "rmdir", "--", remote_dir),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
@@ -102,10 +194,7 @@ def install_remote_helper(args: object) -> tuple[str, str]:
     source = Path(args.source_helper).resolve(strict=True)
     helper_sha = sha256_file(source)
     created = subprocess.run(
-        (
-            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            args.host, "mktemp", "-d", "/tmp/ar-local-laptop-backup.XXXXXXXX",
-        ),
+        ssh_command(args, "mktemp", "-d", "/tmp/ar-local-laptop-backup.XXXXXXXX"),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
@@ -119,29 +208,20 @@ def install_remote_helper(args: object) -> tuple[str, str]:
     remote = f"{remote_dir}/source.py"
     try:
         copied = subprocess.run(
-            (
-                "scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                str(source), f"{args.host}:{remote}",
-            ),
+            scp_command(args, source, remote),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=30,
         )
         verified = subprocess.run(
-            (
-                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                args.host, "sha256sum", "--", remote,
-            ),
+            ssh_command(args, "sha256sum", "--", remote),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=30,
         )
         fields = verified.stdout.decode("utf-8", "replace").split()
         mode = subprocess.run(
-            (
-                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                args.host, "stat", "-c", "%a", "--", remote_dir,
-            ),
+            ssh_command(args, "stat", "-c", "%a", "--", remote_dir),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=30,
