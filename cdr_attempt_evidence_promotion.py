@@ -317,6 +317,117 @@ def _verify_promoted(
     return summary, _hash_file(manifest_path)[1]
 
 
+def verify_promoted_attempt_evidence(
+    export_root: Path,
+    pointer: Mapping[str, Any],
+    *,
+    expected_head_digest: Optional[str] = None,
+    expected_session_id: Optional[str] = None,
+) -> RawAttemptJournal:
+    """Verify a finalized journal, its manifest, inventory, and status pointer."""
+
+    export_root = export_root.expanduser().absolute()
+    _validate_node(export_root, directory=True)
+    relative = _safe_relative(pointer.get("path"))
+    session_id = str(pointer.get("session_id") or "")
+    if (
+        not session_id
+        or relative != ARTIFACT_NAMESPACE / session_id
+        or pointer.get("path_resolution") != "relative_to_finalized_export_root"
+        or pointer.get("retention") != "hash_bound_finalized_artifact"
+        or pointer.get("verified") is not True
+        or (expected_session_id is not None and session_id != expected_session_id)
+        or (
+            expected_head_digest is not None
+            and pointer.get("head_digest") != expected_head_digest
+        )
+    ):
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence pointer is invalid"
+        )
+
+    destination = export_root
+    for part in relative.parts:
+        destination = destination / part
+        _validate_node(destination, directory=True)
+    lock = destination / ".lock"
+    if _validate_node(lock, directory=False).st_size != 1:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence lock is invalid"
+        )
+
+    manifest_relative = _safe_relative(pointer.get("promotion_manifest_path"))
+    if manifest_relative != relative / PROMOTION_MANIFEST:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest path is invalid"
+        )
+    manifest_path = export_root.joinpath(*manifest_relative.parts)
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest is unreadable"
+        ) from error
+    if not isinstance(manifest, Mapping):
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest is invalid"
+        )
+    source_relative = _safe_relative(manifest.get("source_journal_path"))
+    if source_relative != PurePosixPath(SOURCE_NAMESPACE) / session_id:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence source path is invalid"
+        )
+
+    records = _inventory(
+        destination,
+        exclude=frozenset({PROMOTION_MANIFEST}),
+    )
+    journal = RawAttemptJournal(destination.parent, session_id)
+    try:
+        summary = journal.summary(recover=False)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt journal verification failed"
+        ) from error
+    expected_manifest = _manifest(
+        artifact_path=relative,
+        source_path=source_relative,
+        summary=summary,
+        records=records,
+    )
+    verified, manifest_digest = _verify_promoted(
+        destination, session_id, expected_manifest
+    )
+    for field in (
+        "schema_version",
+        "session_id",
+        "attempts",
+        "head_digest",
+        "observed_at",
+        "verified",
+    ):
+        actual = pointer.get(field)
+        expected = verified.get(field)
+        if type(actual) is not type(expected) or actual != expected:
+            raise AttemptEvidencePromotionError(
+                f"promoted attempt evidence pointer mismatch: {field}"
+            )
+    pointer_fields = {
+        "promotion_manifest_sha256": manifest_digest,
+        "source_tree_sha256": expected_manifest["source_tree_sha256"],
+        "source_file_count": expected_manifest["source_file_count"],
+        "source_bytes": expected_manifest["source_bytes"],
+    }
+    for field, expected in pointer_fields.items():
+        actual = pointer.get(field)
+        if type(actual) is not type(expected) or actual != expected:
+            raise AttemptEvidencePromotionError(
+                f"promoted attempt evidence pointer mismatch: {field}"
+            )
+    return journal
+
+
 def _install_journal(
     *,
     export_root: Path,

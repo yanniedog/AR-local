@@ -16,6 +16,7 @@ from cdr_attempt_evidence_promotion import (
     AttemptEvidencePromotionError,
     install_tree_create_once,
     promote_attempt_evidence,
+    verify_promoted_attempt_evidence,
 )
 from cdr_atomic import atomic_write_json
 from cdr_export_contract import load_contract
@@ -65,6 +66,21 @@ def _source(
         wire_sha256=hashlib.sha256(body).hexdigest(),
         peer_ip="8.8.8.8",
         context={"phase": "register_discovery", "request_id": "register:1"},
+    )
+    product_body = b'{"data":{"products":[{"productId":"BOMInvestmentCashAccounts"}]}}'
+    journal.record(
+        "holder:bank-of-melbourne:page:1",
+        request_url="https://bank.example/cds-au/v1/banking/products",
+        started_at="2026-08-15T00:00:01.000000Z",
+        completed_at="2026-08-15T00:00:02.000000Z",
+        status=200,
+        outcome="success",
+        body=product_body,
+        context={
+            "phase": "products_index",
+            "provider": "Bank of Melbourne",
+            "page": 1,
+        },
     )
     summary = journal.summary()
     status = {
@@ -149,6 +165,45 @@ def test_promotes_exact_source_tree_and_rewrites_status_without_mutating_source(
     assert source_status["raw_attempt_journal"]["path_resolution"] == (
         "relative_to_ingest_run_root"
     )
+    assert verify_promoted_attempt_evidence(export_root, pointer).summary() == (
+        journal.summary()
+    )
+
+
+def test_verifier_rebuilds_manifest_inventory_instead_of_trusting_its_digest(
+    tmp_path,
+):
+    run_root = tmp_path / "run"
+    export_root = tmp_path / "export"
+    _source(run_root)
+    promote_attempt_evidence(run_root, export_root)
+    status_path = export_root / "ingest-status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    pointer = status["raw_attempt_journal"]
+    manifest_path = export_root / pointer["promotion_manifest_path"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source_files"] = manifest["source_files"][1:]
+    manifest["source_file_count"] = len(manifest["source_files"])
+    manifest["source_bytes"] = sum(item["bytes"] for item in manifest["source_files"])
+    manifest["source_tree_sha256"] = hashlib.sha256(
+        json.dumps(
+            {"files": manifest["source_files"]},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    atomic_write_json(manifest_path, manifest)
+    pointer.update(
+        promotion_manifest_sha256=_hash(manifest_path),
+        source_tree_sha256=manifest["source_tree_sha256"],
+        source_file_count=manifest["source_file_count"],
+        source_bytes=manifest["source_bytes"],
+    )
+    atomic_write_json(status_path, status)
+
+    with pytest.raises(AttemptEvidencePromotionError, match="manifest conflicts"):
+        verify_promoted_attempt_evidence(export_root, pointer)
 
 
 def test_idempotent_replay_preserves_installed_bytes(tmp_path):
@@ -493,7 +548,8 @@ def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path
         observation_date=DATE,
         observed_at="2026-08-15T00:00:01Z",
         raw_attempt_journal_digest=str(journal.summary()["head_digest"]),
-        product_evidence_id=journal.evidence_records()[0]["body_sha256"],
+        product_evidence_id=journal.evidence_records()[1]["body_sha256"],
+        accounting_id=journal.session_id,
     )
     status.update(
         providers_registered=1,
@@ -501,6 +557,10 @@ def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path
         provider_states=[
             {
                 "provider_uid": observation["products"][0]["provider_uid"],
+                "provider_dir": "Bank of Melbourne",
+                "brand_name": "Bank of Melbourne",
+                "legal_entity_name": "",
+                "endpoint_url": "https://bank.example/cds-au/v1/banking/products",
                 "state": "complete",
                 "population_known": True,
                 "products_in_scope": 1,

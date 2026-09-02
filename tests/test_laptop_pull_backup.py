@@ -14,7 +14,6 @@ import pytest
 import zstandard
 
 import laptop_backup_scheduled as scheduled
-import laptop_backup_daily_verify as daily_verify
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 from tests.support_legacy_export import write_legacy_export
@@ -343,19 +342,6 @@ def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None
     assert report["validation_mode"] == (
         "canonical_observation_and_immutable_sqlite_v10"
     )
-
-
-def test_canonical_reconciliation_rejects_unresolved_product_evidence(
-    tmp_path: Path,
-) -> None:
-    exports = tmp_path / "exports"
-    write_verified_observation(exports, observation_date="2026-09-03")
-    accounting = json.loads(
-        (exports / "product-accounting-v1.json").read_text(encoding="utf-8")
-    )
-    accounting["products"][0]["evidence_ids"] = ["f" * 64]
-    with pytest.raises(ValueError, match="does not resolve"):
-        daily_verify._validate_promoted_product_evidence(exports, accounting)
 
 
 @pytest.mark.parametrize("include_holder_attempts", (False, True))

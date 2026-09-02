@@ -9,6 +9,10 @@ from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_attempt_evidence_promotion import (
+    AttemptEvidencePromotionError,
+    verify_promoted_attempt_evidence,
+)
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -20,8 +24,8 @@ from cdr_ledger_v2 import (
     verify_reachable_generation,
 )
 from cdr_file_lock import FileLock
+from cdr_journal_evidence import validate_journal_evidence
 from cdr_observation import load_verified_observation
-from cdr_product_accounting import validate_product_evidence
 from cdr_raw_attempt_journal import RawAttemptJournal
 from cdr_provider_identity_registry import REGISTRY_FILENAME
 
@@ -64,47 +68,24 @@ def _coverage(
 
 
 def _verified_promoted_journal(
-    export_root: Path, status: Mapping[str, Any], expected_digest: str
+    export_root: Path,
+    status: Mapping[str, Any],
+    expected_digest: str,
+    expected_session: str,
 ) -> RawAttemptJournal:
     pointer = status.get("raw_attempt_journal")
     if not isinstance(pointer, Mapping):
         raise ValueError("promoted ingest evidence pointer is absent")
-    relative = PurePosixPath(str(pointer.get("path") or ""))
-    session = str(pointer.get("session_id") or "")
-    if (
-        pointer.get("verified") is not True
-        or pointer.get("path_resolution") != "relative_to_finalized_export_root"
-        or pointer.get("retention") != "hash_bound_finalized_artifact"
-        or pointer.get("head_digest") != expected_digest
-        or not session
-        or relative.is_absolute()
-        or "\\" in str(relative)
-        or any(part in {"", ".", ".."} for part in relative.parts)
-        or relative.parts
-        != ("attempt-evidence", "raw-attempt-journals-v1", session)
-    ):
-        raise ValueError("promoted ingest evidence pointer is invalid")
-    journal_root = export_root.joinpath(*relative.parts)
-    journal = RawAttemptJournal(journal_root.parent, session)
-    summary = journal.summary(recover=False)
-    for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
-        if pointer.get(field) != summary.get(field):
-            raise ValueError("promoted ingest journal does not match its pointer")
-    manifest_relative = PurePosixPath(str(pointer.get("promotion_manifest_path") or ""))
-    if (
-        manifest_relative.is_absolute()
-        or "\\" in str(manifest_relative)
-        or any(part in {"", ".", ".."} for part in manifest_relative.parts)
-        or manifest_relative.parent != relative
-    ):
-        raise ValueError("promoted ingest manifest path is invalid")
-    manifest = export_root.joinpath(*manifest_relative.parts)
     try:
-        digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    except OSError as error:
-        raise ValueError("promoted ingest manifest is unreadable") from error
-    if digest != pointer.get("promotion_manifest_sha256"):
-        raise ValueError("promoted ingest manifest digest does not match")
+        journal = verify_promoted_attempt_evidence(
+            export_root,
+            pointer,
+            expected_head_digest=expected_digest,
+            expected_session_id=expected_session,
+        )
+    except AttemptEvidencePromotionError as error:
+        raise ValueError(str(error)) from error
+    relative = PurePosixPath(str(pointer["path"]))
     registry = status.get("provider_identity_registry")
     fallback_present = any(
         str(item.get("provider_uid") or "").startswith("provider-fallback:")
@@ -144,12 +125,12 @@ def _observation_coverage(
     observation, accounting = load_verified_observation(export_root)
     status = _ingest_status(export_root)
     journal = _verified_promoted_journal(
-        export_root, status, accounting["raw_attempt_journal_digest"]
+        export_root,
+        status,
+        accounting["raw_attempt_journal_digest"],
+        accounting["accounting_id"],
     )
-    validate_product_evidence(
-        accounting,
-        {record["body_sha256"] for record in journal.evidence_records(recover=False)},
-    )
+    validate_journal_evidence(accounting, status.get("provider_states"), journal)
     register_attempts = [
         dict(item)
         for item in (status.get("register_attempts") or [])

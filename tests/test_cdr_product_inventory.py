@@ -367,6 +367,35 @@ def test_observation_and_sqlite_contain_only_publishable_products(tmp_path: Path
     assert len(accounting["products"]) == 2
 
 
+def test_duplicate_rows_for_a_quarantined_product_do_not_block_valid_products(
+    tmp_path: Path,
+) -> None:
+    root, banks, status = _inputs(tmp_path)
+    home_uid = product_uid(P2, "Mortgage", "home-1")
+    duplicate = {
+        "provider_uid": P2,
+        "product_uid": home_uid,
+        "product_id": "home-1",
+        "product_name": "Home Loan",
+        "dataset": "Mortgage",
+        "legacy_product_key": "Bank Two|home-1|RESIDENTIAL_MORTGAGES|Home Loan",
+        "evidence_id": "f" * 64,
+        "effective_to": "",
+    }
+    banks["products"].extend([duplicate, dict(duplicate)])
+    accounting, _, _ = build_product_inventory(
+        root, banks, status=status, observed_at=OBSERVED_AT
+    )
+
+    assert next(
+        row["disposition"]
+        for row in accounting["products"]
+        if row["product_uid"] == home_uid
+    ) == "quarantined_invalid"
+    projections = build_projections(banks, accounting)
+    assert {row["cdr_product_id"] for row in projections["products"]} == {"save-1"}
+
+
 def test_aggregated_issue_counts_round_trip_through_sqlite(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
     failure = (root / "banks" / "failures.jsonl").read_bytes()

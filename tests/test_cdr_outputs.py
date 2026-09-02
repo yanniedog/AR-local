@@ -127,6 +127,19 @@ def _captured_run(
         completed_at=observed_at,
         context={"phase": "register_discovery"},
     )
+    index_body = json.dumps(
+        {"data": {"products": [{"productId": "save-1"}]}}
+    ).encode()
+    journal.record(
+        "index:save-1",
+        request_url="https://bank.example/products",
+        status=200,
+        outcome="success",
+        body=index_body,
+        started_at=f"{run_date}T01:02:02Z",
+        completed_at=observed_at,
+        context={"phase": "products_index", "provider": brand_name, "page": 1},
+    )
     detail_body = (leaf / "product-detail.json").read_bytes()
     journal.record(
         "detail:save-1",

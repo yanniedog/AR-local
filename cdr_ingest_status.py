@@ -87,6 +87,7 @@ def _provider_state(
     return (
         {
             "provider_uid": brand["provider_uid"],
+            "provider_dir": directory,
             "identity_status": brand["provider_identity_status"],
             "data_holder_id": brand.get("data_holder_id") or None,
             "data_holder_brand_id": brand.get("data_holder_brand_id") or None,

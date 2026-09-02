@@ -15,11 +15,11 @@ from cdr_contracts import (
     normalize_provider_display_name,
     product_uid,
 )
-from cdr_ingest_support import extract_products, iter_banking_brands_from_payload, pick_text
+from cdr_ingest_support import iter_banking_brands_from_payload
+from cdr_journal_evidence import journal_product_evidence, validate_journal_evidence
 from cdr_product_accounting import (
     OPTIONAL_DETAIL_SECTIONS,
     build_product_accounting,
-    validate_product_evidence,
 )
 from cdr_raw_attempt_journal import RawAttemptJournal
 from cdr_provider_identity_registry import (
@@ -148,56 +148,6 @@ def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
     if not isinstance(value, str):
         raise ProductInventoryError("journal lacks a stable observation timestamp")
     return value
-
-
-def _journal_product_evidence(
-    journal: RawAttemptJournal,
-) -> dict[tuple[str, str], list[dict[str, str]]]:
-    evidence: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
-    for record in journal.evidence_records(recover=False):
-        if (
-            record["outcome"] != "success"
-            or not 200 <= record["status"] < 300
-        ):
-            continue
-        context = record["context"]
-        provider = str(context.get("provider") or "")
-        phase = str(context.get("phase") or "")
-        digest = str(record["body_sha256"])
-        if not provider:
-            continue
-        try:
-            body = (journal.root / str(record["body_path"])).read_bytes()
-            parsed = json.loads(body)
-            canonical_digest = _sha(canonical_json_bytes(parsed))
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-            continue
-        product = str(context.get("product_id") or "")
-        if product and phase in {"product_detail", "classification_detail"}:
-            evidence[(provider, product)].append(
-                {
-                    "body_sha256": digest,
-                    "canonical_digest": canonical_digest,
-                    "phase": phase,
-                }
-            )
-        if phase != "products_index":
-            continue
-        try:
-            products = extract_products(parsed)
-        except ValueError:
-            continue
-        for item in products:
-            product = pick_text(item, ["productId", "id"])
-            if product:
-                evidence[(provider, product)].append(
-                    {
-                        "body_sha256": digest,
-                        "canonical_digest": canonical_digest,
-                        "phase": phase,
-                    }
-                )
-    return evidence
 
 
 def _fallback_register_identity(
@@ -329,19 +279,26 @@ def _provider_maps(
     states = status.get("provider_states")
     if not isinstance(states, list):
         raise ProductInventoryError("ingest status lacks provider states")
-    state_uids = {
-        str(item.get("provider_uid") or "")
+    state_by_uid = {
+        str(item.get("provider_uid") or ""): item
         for item in states
         if isinstance(item, Mapping)
     }
+    state_uids = set(state_by_uid)
     registered = status.get("providers_registered")
     if (
         isinstance(registered, bool)
         or not isinstance(registered, int)
         or registered != len(by_uid)
+        or len(state_by_uid) != len(states)
         or state_uids != set(by_uid)
     ):
         raise ProductInventoryError("registered provider population does not reconcile")
+    if any(
+        state_by_uid[uid].get("provider_dir") not in {None, provider["provider_dir"]}
+        for uid, provider in by_uid.items()
+    ):
+        raise ProductInventoryError("provider directory disagrees with ingest status")
     return by_dir, by_uid
 
 
@@ -537,7 +494,7 @@ def build_product_inventory(
         fallback_uids = {binding["provider_uid"] for binding in registry["bindings"]}
         if any(provider["provider_uid"] not in fallback_uids for provider in fallback_providers):
             raise ProductInventoryError("fallback provider identity is absent from its registry")
-    journal_evidence = _journal_product_evidence(journal)
+    journal_evidence = journal_product_evidence(journal)
     candidates = _product_candidates(run_root, providers_by_dir, journal_evidence)
     normalized_by_uid: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in banks.get("products") or []:
@@ -798,12 +755,5 @@ def build_product_inventory(
     accounting = build_product_accounting(
         observation_date, status_copy, provider_inputs, products, issues
     )
-    validate_product_evidence(
-        accounting,
-        {
-            str(record["body_sha256"])
-            for records in journal_evidence.values()
-            for record in records
-        },
-    )
+    validate_journal_evidence(accounting, status_copy.get("provider_states"), journal)
     return accounting, observed_at, sorted(set(blockers))

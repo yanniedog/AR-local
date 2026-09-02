@@ -103,6 +103,21 @@ def _write_ingest(run_root, *, rates=1):
         peer_ip="8.8.8.8",
         context={"phase": "register_discovery"},
     )
+    index_body = b'{"data":{"products":[{"productId":"save-1"}]}}'
+    journal.record(
+        "index:save-1",
+        request_url="https://bank.example/products",
+        status=200,
+        outcome="success",
+        body=index_body,
+        started_at="2026-08-15T01:00:01.000000Z",
+        completed_at="2026-08-15T01:00:02.000000Z",
+        context={
+            "phase": "products_index",
+            "provider": "Example Bank",
+            "page": 1,
+        },
+    )
     detail_body = (detail / "product-detail.json").read_bytes()
     journal.record(
         "detail:save-1",
@@ -147,6 +162,7 @@ def _write_ingest(run_root, *, rates=1):
             "provider_states": [
                 {
                     "provider_uid": PROVIDER_UID,
+                    "provider_dir": "Example Bank",
                     "brand_name": "Example Bank",
                     "state": "complete",
                     "failure_records": 0,
@@ -611,7 +627,7 @@ def _assert_evidence_preserved(ram: Path) -> None:
     assert promoted.is_dir()
     summary = RawAttemptJournal(promoted.parent, SESSION).summary()
     assert summary["verified"] is True
-    assert summary["attempts"] == 2
+    assert summary["attempts"] == 3
     digest = hashlib.sha256(EVIDENCE_BODY).hexdigest()
     assert (promoted / "bodies" / f"{digest}.body").read_bytes() == EVIDENCE_BODY
 
