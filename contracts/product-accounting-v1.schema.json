@@ -104,6 +104,7 @@
     "issueCode": {
       "enum": [
         "detail_fetch_failed",
+        "detail_array_invalid",
         "detail_invalid_json",
         "cdr_error",
         "identity_mismatch",
@@ -127,6 +128,7 @@
     "productReasonCode": {
       "enum": [
         "detail_fetch_failed",
+        "detail_array_invalid",
         "detail_invalid_json",
         "cdr_error",
         "identity_mismatch",
@@ -399,6 +401,7 @@
       "additionalProperties": false,
       "properties": {
         "detail_fetch_failed": { "type": "integer", "minimum": 1 },
+        "detail_array_invalid": { "type": "integer", "minimum": 1 },
         "detail_invalid_json": { "type": "integer", "minimum": 1 },
         "cdr_error": { "type": "integer", "minimum": 1 },
         "identity_mismatch": { "type": "integer", "minimum": 1 },

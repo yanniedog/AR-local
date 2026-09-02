@@ -137,6 +137,34 @@ def test_valid_product_without_a_current_rate_is_explicitly_omitted(tmp_path: Pa
     assert saver["reason_codes"] == ["no_current_rate"]
 
 
+def test_detail_array_quarantine_reason_round_trips_exactly(tmp_path: Path) -> None:
+    root, banks, status = _inputs(tmp_path)
+    banks["quarantines"] = [
+        {
+            "bank": "Bank One",
+            "product_id": "save-1",
+            "status": "detail_array_invalid",
+            "evidence_digest": "b" * 64,
+        }
+    ]
+    accounting, observed_at, _ = build_product_inventory(
+        root, banks, status=status, observed_at=OBSERVED_AT
+    )
+    saver = next(
+        row for row in accounting["products"] if row["cdr_product_id"] == "save-1"
+    )
+    assert saver["disposition"] == "quarantined_invalid"
+    assert saver["reason_codes"] == ["detail_array_invalid"]
+    result = build_observation_database(
+        tmp_path / "detail-array.sqlite",
+        accounting=accounting,
+        projections=build_projections(banks, accounting),
+        generated_at=observed_at,
+        normalization_version="cdr-product-facts-v1",
+    )
+    assert result.verification.sidecar_bytes == canonical_json_bytes(accounting)
+
+
 def test_corrupt_or_unattributed_failure_is_recorded_and_blocks_publication(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
     with (root / "banks" / "failures.jsonl").open("ab") as stream:

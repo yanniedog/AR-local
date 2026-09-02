@@ -17,7 +17,7 @@ from cdr_atomic import atomic_write_json
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
 from cdr_ingest_population import ProductPopulation
-from cdr_ingest_parsing import KNOWN_OUT_OF_SCOPE_CATEGORIES
+from cdr_ingest_parsing import KNOWN_OUT_OF_SCOPE_CATEGORIES, dataset_from_cdr_category
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
     FetchResult,
@@ -126,7 +126,13 @@ class _HolderBreaker:
 class _BankWork(NamedTuple):
     pid: str
     leaf: Path
+    dataset: str
     prefetched: Optional[FetchResult]
+
+
+class _DetailResult(NamedTuple):
+    ok: bool
+    failure_code: Optional[str]
 
 
 def _fetch_bank_detail(
@@ -141,13 +147,14 @@ def _fetch_bank_detail(
     failure_lock: Optional[threading.Lock],
     preferred_version: Optional[int] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
-) -> bool:
+) -> _DetailResult:
     """Write product-detail.json for one bank product (called from thread pool).
 
-    Returns True only for a matching, valid detail. Raw request attempts are kept
-    by ``attempt_journal``; the caller records only terminal failures.
+    Returns an exact terminal result for a matching, valid detail or its failure.
+    Raw request attempts stay in ``attempt_journal`` until the caller records the
+    terminal outcome.
     """
-    pid, leaf, prefetched = work
+    pid, leaf, _, prefetched = work
     detail_path = leaf / "product-detail.json"
 
     if prefetched is not None:
@@ -177,12 +184,19 @@ def _fetch_bank_detail(
         and inner is not None
         and detail_pid == pid
     ):
-        detail_path.write_text(res.text, encoding="utf-8")
-        (leaf / "product-detail.error.txt").unlink(missing_ok=True)
-        return True
+        category = extract_cdr_product_category(inner)
+        if category is None or dataset_from_cdr_category(category) == work.dataset:
+            detail_path.write_text(res.text, encoding="utf-8")
+            (leaf / "product-detail.error.txt").unlink(missing_ok=True)
+            return _DetailResult(True, None)
+        failure_code = "classification_unresolved"
+    elif res.ok and inner is not None and detail_pid and detail_pid != pid:
+        failure_code = "identity_mismatch"
+    else:
+        failure_code = "detail_fetch_failed"
     detail_path.unlink(missing_ok=True)
     (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
-    return False
+    return _DetailResult(False, failure_code)
 
 
 def classify_product_for_ingest(
@@ -476,7 +490,9 @@ def ingest_brand(
 
             # A resumed run must not mix a current index with detail bytes from
             # an earlier attempt journal. Current details are always refetched.
-            pending.append(_BankWork(pid=pid, leaf=leaf, prefetched=prefetched))
+            pending.append(
+                _BankWork(pid=pid, leaf=leaf, dataset=ds, prefetched=prefetched)
+            )
 
         try:
             url = next_link(parsed, url)
@@ -527,7 +543,7 @@ def ingest_brand(
     if not pending:
         return _publish_population()
 
-    def _fetch_one(work: _BankWork) -> bool:
+    def _fetch_one(work: _BankWork) -> _DetailResult:
         return _fetch_bank_detail(
             work,
             endpoint_url,
@@ -543,14 +559,14 @@ def ingest_brand(
 
     def _detail_pass(
         items: List[_BankWork],
-    ) -> Tuple[List[_BankWork], List[_BankWork], List[_BankWork]]:
+    ) -> Tuple[List[_BankWork], List[Tuple[_BankWork, str]], List[_BankWork]]:
         """Return ``(deferred, failed, crashed)`` without terminal writes.
 
         Raw attempts remain in the attempt journal. Only the bounded recovery
         decision below promotes failures into terminal ingest evidence.
         """
         deferred: List[_BankWork] = []
-        failed: List[_BankWork] = []
+        failed: List[Tuple[_BankWork, str]] = []
         crashed: List[_BankWork] = []
         outcome_lock = threading.Lock()
         n_workers = min(detail_workers, len(items))
@@ -569,14 +585,16 @@ def ingest_brand(
                 with outcome_lock:
                     deferred.append(work)
                 return
-            ok = _fetch_one(work)
+            outcome = _fetch_one(work)
             with outcome_lock:
-                population.mark_detail(work.pid, ok)
-                if not ok:
-                    failed.append(work)
+                population.mark_detail(work.pid, outcome.ok)
+                if not outcome.ok:
+                    failed.append(
+                        (work, outcome.failure_code or "detail_fetch_failed")
+                    )
             # Only true network fetches feed the breaker; a Phase-1 prefetched result
             # was already counted in classify_product_for_ingest.
-            if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
+            if needs_fetch and breaker.record(outcome.ok):  # log() outside breaker lock
                 failures, attempts = breaker.snapshot()
                 log(
                     f"[banks] {bank_dir_name}: circuit opened "
@@ -604,9 +622,9 @@ def ingest_brand(
                         log(f"[banks] {bank_dir_name}: {done}/{len(items)} details done")
         return deferred, failed, crashed
 
-    def _write_off(items: List[_BankWork], status: str) -> None:
-        unique = {work.pid: work for work in items}
-        for work in sorted(unique.values(), key=lambda item: item.pid):
+    def _write_failures(items: List[Tuple[_BankWork, str]]) -> None:
+        unique = {work.pid: (work, status) for work, status in items}
+        for work, status in sorted(unique.values(), key=lambda item: item[0].pid):
             population.mark_detail(work.pid, False)
             append_failure(
                 date_root,
@@ -619,9 +637,15 @@ def ingest_brand(
                 lock=failure_lock,
             )
 
+    def _write_off(items: List[_BankWork], status: str) -> None:
+        _write_failures([(work, status) for work in items])
+
     deferred, failed, crashed = _detail_pass(pending)
     recovery = sorted(
-        {work.pid: work for work in [*failed, *deferred]}.values(),
+        {
+            work.pid: work
+            for work in [*(item[0] for item in failed), *deferred]
+        }.values(),
         key=lambda work: work.pid,
     )
     if breaker.is_open() and recovery:
@@ -634,9 +658,9 @@ def ingest_brand(
         )
         time.sleep(BREAKER_RECOVERY_DELAY_SECONDS)
         probe, rest = recovery[0], recovery[1:]
-        probe_ok = _fetch_one(probe)
-        population.mark_detail(probe.pid, probe_ok)
-        if not probe_ok:
+        probe_outcome = _fetch_one(probe)
+        population.mark_detail(probe.pid, probe_outcome.ok)
+        if not probe_outcome.ok:
             log(f"[banks] {bank_dir_name}: recovery probe failed — holder still unhealthy")
             _write_off(recovery, "holder_unavailable")
         else:
@@ -644,13 +668,12 @@ def ingest_brand(
             log(f"[banks] {bank_dir_name}: recovery probe succeeded — retrying failed and deferred details")
             if rest:
                 retry_deferred, retry_failed, retry_crashed = _detail_pass(rest)
-                _write_off(
-                    [*retry_failed, *retry_deferred],
-                    "circuit_open_after_recovery",
-                )
+                _write_failures(retry_failed)
+                _write_off(retry_deferred, "circuit_open_after_recovery")
                 _write_off(retry_crashed, "worker_crash")
     else:
-        _write_off([*failed, *deferred], "detail_fetch_failed")
+        _write_failures(failed)
+        _write_off(deferred, "detail_fetch_failed")
     _write_off(crashed, "worker_crash")
 
     return _publish_population()

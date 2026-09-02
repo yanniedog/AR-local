@@ -267,7 +267,9 @@ def next_link(payload: Any, current_url: str) -> Optional[str]:
         )
     nxt = raw_next.strip()
     if not nxt:
-        return None
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next must be a URL or null"
+        )
     return pagination_next_url(current_url, nxt)
 
 

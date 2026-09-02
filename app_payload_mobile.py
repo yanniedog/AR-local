@@ -106,17 +106,14 @@ def _snapshot_in(exports: Path, run_date: str, runs_root: Optional[Path] = None)
 def _banks_for_date(root: Path, run_date: str):
     """Return a canonical snapshot, or a retained historical legacy snapshot."""
     day = root / run_date
-    direct = _snapshot_in(day / "_exports", run_date, root)
-    if direct is not None:
-        return direct
     revisions = day / "_revisions"
     if revisions.is_dir():
-        # Newest stamp wins, so a revised day contributes its latest observation.
+        # A finalized revision supersedes the original snapshot for this date.
         for stamp in sorted((p for p in revisions.iterdir() if p.is_dir()), reverse=True):
             candidate = _snapshot_in(stamp / "_exports", run_date, root)
             if candidate is not None:
                 return candidate
-    return None
+    return _snapshot_in(day / "_exports", run_date, root)
 
 def _banks(exports_dir: Path, run_date: str):
     root = _runs_root(exports_dir)

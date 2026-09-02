@@ -174,7 +174,7 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert observation["row_counts"]["rates"] == 1
     verification = verify_observation_database(exports / "local-cdr.sqlite")
     assert verification.counts["bank_products"] == 1
-    assert SCHEMA_VERSION == 9
+    assert SCHEMA_VERSION == 10
     assert not list(exports.glob("*-wal"))
     assert not list(exports.glob("*-shm"))
     assert not (exports / "dashboard-cache").exists()

@@ -45,6 +45,7 @@ ISSUE_PHASES = (
 )
 PRODUCT_ISSUE_CODES = (
     "detail_fetch_failed",
+    "detail_array_invalid",
     "detail_invalid_json",
     "cdr_error",
     "identity_mismatch",

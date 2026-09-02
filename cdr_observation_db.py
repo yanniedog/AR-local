@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 from cdr_contracts import PROVIDER_UID_RE, canonical_json_bytes, product_uid
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
 FAILURE_STAGES = (
     "after_schema", "after_accounting", "after_projections", "after_commit",
@@ -37,6 +37,7 @@ SCOPES = frozenset({"product", "provider", "register", "run"})
 ISSUE_CODES = frozenset(
     {
         "detail_fetch_failed",
+        "detail_array_invalid",
         "detail_invalid_json",
         "cdr_error",
         "identity_mismatch",
@@ -166,7 +167,7 @@ CREATE TABLE bank_product_dispositions(
 CREATE UNIQUE INDEX uq_bank_product_dispositions_legacy_key ON bank_product_dispositions(accounting_id,legacy_product_key) WHERE legacy_product_key IS NOT NULL;
 CREATE TABLE bank_observation_issues(
  accounting_id TEXT NOT NULL,issue_id TEXT NOT NULL CHECK(length(trim(issue_id))>0),scope TEXT NOT NULL CHECK(scope IN('product','provider','register','run')),provider_uid TEXT,product_uid TEXT,
- affected_sections_json TEXT NOT NULL CHECK(length(affected_sections_json)>=2),phase TEXT NOT NULL CHECK(length(trim(phase))>0),code TEXT NOT NULL CHECK(code IN('detail_fetch_failed','detail_invalid_json','cdr_error','identity_mismatch','duplicate_conflict','rate_invalid','classification_unresolved','no_current_rate','product_closed','unsupported_category','field_omitted_invalid','products_index_failed','pagination_incomplete','holder_worker_crash','provider_population_unknown','register_failed','failure_record_corrupt','failure_unattributed','accounting_unreconciled')),
+ affected_sections_json TEXT NOT NULL CHECK(length(affected_sections_json)>=2),phase TEXT NOT NULL CHECK(length(trim(phase))>0),code TEXT NOT NULL CHECK(code IN('detail_fetch_failed','detail_array_invalid','detail_invalid_json','cdr_error','identity_mismatch','duplicate_conflict','rate_invalid','classification_unresolved','no_current_rate','product_closed','unsupported_category','field_omitted_invalid','products_index_failed','pagination_incomplete','holder_worker_crash','provider_population_unknown','register_failed','failure_record_corrupt','failure_unattributed','accounting_unreconciled')),
  http_status INTEGER CHECK(http_status IS NULL OR http_status BETWEEN 100 AND 599),occurrence_count INTEGER NOT NULL CHECK(occurrence_count>0),
  first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,evidence_digest TEXT NOT NULL CHECK(length(evidence_digest)=64 AND evidence_digest NOT GLOB '*[^0-9a-f]*'),
  disposition TEXT CHECK(disposition IS NULL OR disposition IN('published_full','published_core_only','omitted_valid','quarantined_invalid')),public_safe INTEGER NOT NULL CHECK(public_safe IN(0,1)),

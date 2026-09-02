@@ -414,6 +414,8 @@ def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypa
         {"next": None},
         {"self": "https://holder.example/products"},
         {"self": "https://holder.example/products", "next": []},
+        {"self": "https://holder.example/products", "next": ""},
+        {"self": "https://holder.example/products", "next": "   "},
     ],
 )
 def test_malformed_pagination_metadata_makes_population_unknown(
@@ -590,7 +592,59 @@ def test_mismatched_detail_id_is_terminal_and_not_written(tmp_path, monkeypatch)
 
     assert summary["state"] == "partial"
     assert summary["terminal_detail_failures"] == ["P1"]
-    assert [item["status"] for item in failures] == ["detail_fetch_failed"]
+    assert [item["status"] for item in failures] == ["identity_mismatch"]
+    assert not list(tmp_path.rglob("product-detail.json"))
+
+
+def test_conflicting_detail_category_is_quarantined(tmp_path, monkeypatch):
+    failures = []
+
+    def fake_fetch(url, **_kwargs):
+        if url == ENDPOINT:
+            return FetchResult(ok=True, status=200, url=url, text='{"data": {}}', version=4)
+        return FetchResult(
+            ok=True,
+            status=200,
+            url=url,
+            text='{"data":{"productId":"P1","productCategory":"TERM_DEPOSITS"}}',
+            version=7,
+        )
+
+    monkeypatch.setattr(lib, "fetch_cdr_json", fake_fetch)
+    monkeypatch.setattr(
+        lib,
+        "extract_products",
+        lambda _parsed: [
+            {
+                "productId": "P1",
+                "name": "One",
+                "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+            }
+        ],
+    )
+    monkeypatch.setattr(lib, "next_link", lambda _parsed, _url: None)
+    monkeypatch.setattr(
+        lib, "append_failure", lambda _root, entry, lock=None: failures.append(entry)
+    )
+
+    summary = lib.ingest_brand(
+        _brand(),
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert summary["state"] == "partial"
+    assert summary["terminal_detail_failures"] == ["P1"]
+    assert [item["status"] for item in failures] == ["classification_unresolved"]
     assert not list(tmp_path.rglob("product-detail.json"))
 
 

@@ -26,6 +26,7 @@ _SECTIONS = {
 _OMISSION_CODES = {"no_current_rate", "product_closed", "unsupported_category"}
 _NORMALIZATION_CODES = {
     "classification_unresolved",
+    "detail_array_invalid",
     "detail_invalid_json",
     "identity_mismatch",
     "rate_invalid",

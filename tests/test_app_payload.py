@@ -1178,6 +1178,18 @@ def test_history_includes_prior_days_that_exist_only_as_revisions(tmp_path):
     assert bank_history["events"]
 
 
+def test_history_prefers_a_finalized_revision_over_the_primary_snapshot(tmp_path):
+    runs = tmp_path / "runs"
+    _write_history_day(runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0400")])
+    revised = _write_revised_history_day(
+        runs, "2026-08-15", [_savings_row("Bank", "Bank|1", "0.0450")]
+    )
+
+    assert app_payload_mobile._banks_for_date(runs, "2026-08-15") == (
+        revised / "dashboard-cache" / "2026-08-15" / "banks.json"
+    )
+
+
 def test_collapsed_history_window_is_reported(tmp_path, capsys):
     runs = tmp_path / "runs"
     only = _write_history_day(runs, "2026-08-16", [_savings_row("Bank", "Bank|1", "0.0500")])
