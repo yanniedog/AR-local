@@ -1,7 +1,7 @@
 # AR-local
 
 AR-local captures Australian Consumer Data Right banking products, reconciles
-every selected product, stores one immutable SQLite v9 observation, and
+every selected product, stores one immutable SQLite v10 observation, and
 publishes a deterministic mobile payload.
 
 ## Data path
@@ -10,7 +10,7 @@ publishes a deterministic mobile payload.
 CDR register + product details
   -> immutable raw-attempt journal
   -> ProductAccountingV1 reconciliation
-  -> ObservationV1 + SQLite v9
+  -> ObservationV1 + SQLite v10
   -> deterministic v1 mobile payload
 ```
 
@@ -37,7 +37,7 @@ Each completed `runs/YYYY-MM-DD/_exports/` contains:
 
 - `observation-v1.json` — canonical public observation
 - `product-accounting-v1.json` — every selected product and disposition
-- `local-cdr.sqlite` — immutable, sidecar-free SQLite v9 projection
+- `local-cdr.sqlite` — immutable, sidecar-free SQLite v10 projection
 - optional XLSX exports created only with `--xlsx`
 
 Historical dashboard-cache files are read only for old observation recovery.

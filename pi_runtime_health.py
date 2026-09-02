@@ -84,7 +84,7 @@ def probe_urls() -> tuple[str, ...]:
     )
 
 
-def _status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
+def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
     if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
         return "invalid status contract"
     status = payload.get("status")
@@ -141,7 +141,7 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
                 if not isinstance(payload, dict):
                     last_err = "invalid JSON object"
                     continue
-                contract_error = _status_contract_error(payload)
+                contract_error = status_contract_error(payload)
                 if contract_error is not None:
                     last_err = contract_error
                     continue

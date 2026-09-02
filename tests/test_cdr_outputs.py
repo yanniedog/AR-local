@@ -12,6 +12,7 @@ from cdr_contracts import provider_uid
 from cdr_export_contract import load_contract
 from cdr_finalization import finalize_observation, verify_completion_marker
 from cdr_ingest_sanity import compare_ladders
+from cdr_observation import ObservationError
 from cdr_observation_db import SCHEMA_VERSION, verify_observation_database
 from cdr_outputs import build_outputs
 from cdr_product_change_runs import previous_finalized_run
@@ -32,6 +33,7 @@ def _captured_run(
     run_date: str = "2026-09-02",
     rate: str = "0.05",
     brand_name: str = "Bank One",
+    malformed_rate: bool = False,
 ) -> Path:
     run = tmp_path / run_date
     observed_at = f"{run_date}T01:02:03Z"
@@ -44,17 +46,17 @@ def _captured_run(
     leaf = run / "banks" / "Savings" / brand_name / "Everyday Saver" / "save-1__token"
     leaf.mkdir(parents=True)
     (leaf / "product-id.txt").write_text("save-1\n", encoding="utf-8")
-    _write_json(
-        leaf / "product-detail.json",
-        {
-            "data": {
-                "productId": "save-1",
-                "name": "Everyday Saver",
-                "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
-                "depositRates": [{"depositRateType": "VARIABLE", "rate": rate}],
-            }
-        },
-    )
+    detail = {
+        "data": {
+            "productId": "save-1",
+            "name": "Everyday Saver",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "depositRates": [{"depositRateType": "VARIABLE", "rate": rate}],
+        }
+    }
+    if malformed_rate:
+        detail["data"]["depositRates"].append("malformed")
+    _write_json(leaf / "product-detail.json", detail)
     holder = run / "banks" / "_holders" / brand_name
     _write_json(
         holder / "_register-brand.json",
@@ -105,6 +107,21 @@ def _captured_run(
         started_at=f"{run_date}T01:02:02Z",
         completed_at=observed_at,
         context={"phase": "register_discovery"},
+    )
+    detail_body = (leaf / "product-detail.json").read_bytes()
+    journal.record(
+        "detail:save-1",
+        request_url="https://bank.example/products/save-1",
+        status=200,
+        outcome="success",
+        body=detail_body,
+        started_at=f"{run_date}T01:02:02Z",
+        completed_at=observed_at,
+        context={
+            "phase": "product_detail",
+            "provider": brand_name,
+            "product_id": "save-1",
+        },
     )
     journal_summary = journal.summary()
     _write_json(
@@ -180,27 +197,13 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert not (exports / "dashboard-cache").exists()
 
 
-def test_malformed_rate_array_member_is_quarantined_not_silently_dropped(
+def test_malformed_rate_array_member_blocks_an_empty_publication(
     tmp_path: Path,
 ) -> None:
-    run = _captured_run(tmp_path)
-    detail_path = next(run.rglob("product-detail.json"))
-    detail = json.loads(detail_path.read_text(encoding="utf-8"))
-    detail["data"]["depositRates"].append("malformed")
-    _write_json(detail_path, detail)
+    run = _captured_run(tmp_path, malformed_rate=True)
 
-    result = build_outputs(run)
-    observation = json.loads(
-        (run / "_exports/observation-v1.json").read_text(encoding="utf-8")
-    )
-    accounting = json.loads(
-        (run / "_exports/product-accounting-v1.json").read_text(encoding="utf-8")
-    )
-
-    assert result["banks"]["rates"] == 0
-    assert observation["row_counts"]["rates"] == 0
-    assert accounting["products"][0]["disposition"] == "quarantined_invalid"
-    assert "rate_invalid" in accounting["products"][0]["reason_codes"]
+    with pytest.raises(ObservationError, match="zero_publishable_products"):
+        build_outputs(run)
 
 
 def test_build_outputs_rejects_noncanonical_database_before_writing(tmp_path: Path) -> None:
@@ -278,7 +281,7 @@ def test_finalization_reconciles_accounting_with_in_scope_products(tmp_path: Pat
     assert finalized["observation_state"] == "complete"
 
 
-def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> None:
+def test_sanity_check_reads_canonical_database_and_flags_large_rate_change(tmp_path: Path) -> None:
     previous = _captured_run(tmp_path, run_date="2026-09-01", rate="0.05")
     current = _captured_run(tmp_path, run_date="2026-09-02", rate="0.08")
     build_outputs(previous)

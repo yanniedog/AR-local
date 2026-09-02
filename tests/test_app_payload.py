@@ -114,27 +114,27 @@ def test_aggregate_ribbon_rejects_non_cdr_percent_style():
     assert agg["range"]["min"] is None
 
 
-def test_rba_series_parsed_from_dashboard_js():
-    series = app_payload.load_rba_series(ROOT / "dashboard")
-    assert series, "expected RBA entries parsed from dashboard/rba-cash-rate.js"
+def test_rba_series_uses_recorded_decisions():
+    series = app_payload.load_rba_series(ROOT)
+    assert series, "expected recorded RBA decisions"
     assert all(set(e) == {"date", "rate"} for e in series)
     assert series == sorted(series, key=lambda e: e["date"]), "entries should be ascending by date"
 
 
-def test_rba_holds_parsed_from_dashboard_js():
-    holds = app_payload.load_rba_holds(ROOT / "dashboard")
-    assert holds, "expected RBA hold dates parsed from dashboard/rba-cash-rate.js"
+def test_rba_holds_use_recorded_decisions():
+    holds = app_payload.load_rba_holds(ROOT)
+    assert holds, "expected recorded RBA hold dates"
     assert all(isinstance(d, str) and len(d) == 10 for d in holds)
     # The known 16 Jun 2026 hold (RBA met, held at 4.35%) must be present.
     assert "2026-06-16" in holds
     assert "2026-08-11" in holds
     # Holds must not collide with change dates (a hold left the rate unchanged).
-    change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT / "dashboard")}
+    change_dates = {e["date"] for e in app_payload.load_rba_series(ROOT)}
     assert not (set(holds) & change_dates), "hold dates must not also be change dates"
 
 
-def test_rba_holds_ignore_dashboard_source_files(tmp_path):
-    # Payload facts come from rba_decisions, never executable dashboard text.
+def test_rba_holds_ignore_untrusted_source_files(tmp_path):
+    # Payload facts come from rba_decisions, never arbitrary executable text.
     (tmp_path / "rba-cash-rate.js").write_text(
         "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
     )

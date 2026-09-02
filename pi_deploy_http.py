@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ar_local_pi_runtime import export_manifest_is_valid
+from pi_runtime_health import status_contract_error
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -31,18 +32,11 @@ def _read_json(url: str, timeout_seconds: float) -> dict[str, Any] | None:
 def status_smoke(base_url: str, *, timeout_seconds: float = 30.0) -> int:
     url = base_url.rstrip("/") + "/api/status"
     payload = _read_json(url, timeout_seconds)
-    observation = payload.get("observation") if payload else None
-    if (
-        not payload
-        or payload.get("schema_version") != 1
-        or payload.get("service") != "ar-local"
-        or payload.get("status") not in {"ok", "degraded"}
-        or not isinstance(observation, dict)
-        or not observation.get("date")
-        or not observation.get("accounting_id")
-    ):
+    contract_error = status_contract_error(payload) if payload is not None else "missing status"
+    if contract_error is not None:
         print(f"pi_deploy_verify: invalid status contract at {url}", file=sys.stderr)
         return EXIT_VERIFY_FAIL
+    observation = payload["observation"]
     print(f"pi_deploy_verify: HTTP OK {url} observation={observation['date']}")
     return EXIT_OK
 

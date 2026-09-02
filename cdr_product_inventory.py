@@ -10,8 +10,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from cdr_contracts import DATASETS, canonical_json_bytes, product_uid
-from cdr_product_accounting import build_product_accounting
+from cdr_ingest_support import extract_products, pick_text
+from cdr_product_accounting import build_product_accounting, validate_product_evidence
 from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_provider_identity_registry import (
+    REGISTRY_FILENAME,
+    ProviderIdentityRegistryError,
+    validate_registry_snapshot_bytes,
+)
 
 
 class ProductInventoryError(ValueError):
@@ -52,7 +58,44 @@ def load_ingest_status(run_root: Path) -> dict[str, Any]:
     return _json(run_root / "banks" / "ingest-status.json", "ingest status")
 
 
-def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
+def _provider_registry(
+    run_root: Path, status: Mapping[str, Any]
+) -> dict[str, Any]:
+    pointer = status.get("provider_identity_registry")
+    journal = status.get("raw_attempt_journal")
+    if not isinstance(pointer, Mapping) or not isinstance(journal, Mapping):
+        raise ProductInventoryError("provider identity registry evidence is absent")
+    raw_path = str(pointer.get("path") or "")
+    relative = PurePosixPath(raw_path)
+    journal_relative = PurePosixPath(str(journal.get("path") or ""))
+    if (
+        pointer.get("verified") is not True
+        or pointer.get("path_resolution") != "relative_to_ingest_run_root"
+        or pointer.get("retention") != "follows_ingest_run_root"
+        or relative != journal_relative / REGISTRY_FILENAME
+        or relative.is_absolute()
+        or "\\" in raw_path
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise ProductInventoryError("provider identity registry pointer is invalid")
+    try:
+        payload = run_root.joinpath(*relative.parts).read_bytes()
+    except OSError as error:
+        raise ProductInventoryError("provider identity registry evidence is unreadable") from error
+    if (
+        pointer.get("bytes") != len(payload)
+        or pointer.get("sha256") != hashlib.sha256(payload).hexdigest()
+    ):
+        raise ProductInventoryError("provider identity registry evidence digest disagrees")
+    try:
+        return validate_registry_snapshot_bytes(payload)
+    except ProviderIdentityRegistryError as error:
+        raise ProductInventoryError("provider identity registry evidence is invalid") from error
+
+
+def _verified_journal(
+    run_root: Path, status: Mapping[str, Any]
+) -> tuple[RawAttemptJournal, dict[str, Any]]:
     pointer = status.get("raw_attempt_journal")
     if not isinstance(pointer, Mapping) or pointer.get("verified") is not True:
         raise ProductInventoryError("raw attempt journal is not verified")
@@ -69,9 +112,10 @@ def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
     if relative.parts != ("_raw-attempt-journals-v1", session_id):
         raise ProductInventoryError("raw attempt journal path disagrees with its session")
     try:
-        summary = RawAttemptJournal(
+        journal = RawAttemptJournal(
             run_root.joinpath(*relative.parts[:-1]), session_id
-        ).summary(recover=False)
+        )
+        summary = journal.summary(recover=False)
     except (OSError, RuntimeError, ValueError) as error:
         raise ProductInventoryError("raw attempt journal verification failed") from error
     for field in (
@@ -86,10 +130,65 @@ def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
             raise ProductInventoryError(
                 f"raw attempt journal disagrees with ingest status: {field}"
             )
+    return journal, summary
+
+
+def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
+    _, summary = _verified_journal(run_root, status)
     value = summary.get("observed_at")
     if not isinstance(value, str):
         raise ProductInventoryError("journal lacks a stable observation timestamp")
     return value
+
+
+def _journal_product_evidence(
+    journal: RawAttemptJournal,
+) -> dict[tuple[str, str], list[dict[str, str]]]:
+    evidence: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for record in journal.evidence_records(recover=False):
+        if (
+            record["outcome"] != "success"
+            or not 200 <= record["status"] < 300
+        ):
+            continue
+        context = record["context"]
+        provider = str(context.get("provider") or "")
+        phase = str(context.get("phase") or "")
+        digest = str(record["body_sha256"])
+        if not provider:
+            continue
+        try:
+            body = (journal.root / str(record["body_path"])).read_bytes()
+            parsed = json.loads(body)
+            canonical_digest = _sha(canonical_json_bytes(parsed))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            continue
+        product = str(context.get("product_id") or "")
+        if product and phase in {"product_detail", "classification_detail"}:
+            evidence[(provider, product)].append(
+                {
+                    "body_sha256": digest,
+                    "canonical_digest": canonical_digest,
+                    "phase": phase,
+                }
+            )
+        if phase != "products_index":
+            continue
+        try:
+            products = extract_products(parsed)
+        except ValueError:
+            continue
+        for item in products:
+            product = pick_text(item, ["productId", "id"])
+            if product:
+                evidence[(provider, product)].append(
+                    {
+                        "body_sha256": digest,
+                        "canonical_digest": canonical_digest,
+                        "phase": phase,
+                    }
+                )
+    return evidence
 
 
 def _provider_maps(
@@ -127,7 +226,9 @@ def _provider_maps(
 
 
 def _product_candidates(
-    run_root: Path, providers: Mapping[str, Mapping[str, Any]]
+    run_root: Path,
+    providers: Mapping[str, Mapping[str, Any]],
+    journal_evidence: Mapping[tuple[str, str], list[Mapping[str, str]]],
 ) -> dict[str, dict[str, Any]]:
     banks_root = run_root / "banks"
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -152,11 +253,34 @@ def _product_candidates(
                 raise ProductInventoryError("product ID evidence is invalid")
             uid = product_uid(str(provider["provider_uid"]), dataset, cdr_id)
             detail = id_path.parent / "product-detail.json"
-            error_path = id_path.parent / "product-detail.error.txt"
-            evidence = [_sha(raw_id)]
-            for candidate in (detail, error_path):
-                if candidate.is_file():
-                    evidence.append(_sha(candidate.read_bytes()))
+            evidence = journal_evidence.get((provider_dir, cdr_id), [])
+            if not evidence:
+                raise ProductInventoryError("product lacks current journal-bound evidence")
+            evidence_ids = {
+                str(record["body_sha256"])
+                for record in evidence
+                if record["phase"] == "products_index"
+            }
+            if detail.is_file():
+                try:
+                    detail_digest = _sha(
+                        canonical_json_bytes(json.loads(detail.read_bytes()))
+                    )
+                except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+                    raise ProductInventoryError("product detail is unreadable") from error
+                matching_details = {
+                    str(record["body_sha256"])
+                    for record in evidence
+                    if record["phase"] in {"product_detail", "classification_detail"}
+                    and record["canonical_digest"] == detail_digest
+                }
+                if not matching_details:
+                    raise ProductInventoryError(
+                        "product detail disagrees with current journal evidence"
+                    )
+                evidence_ids.update(matching_details)
+            if not evidence_ids:
+                raise ProductInventoryError("product lacks current journal-bound evidence")
             grouped[uid].append(
                 {
                     "product_uid": uid,
@@ -166,7 +290,7 @@ def _product_candidates(
                     "cdr_product_id": cdr_id,
                     "display_name": relative.parts[-3],
                     "detail_present": detail.is_file(),
-                    "evidence_ids": sorted(set(evidence)),
+                    "evidence_ids": sorted(evidence_ids),
                 }
             )
     output: dict[str, dict[str, Any]] = {}
@@ -271,9 +395,23 @@ def build_product_inventory(
     observation_date = run_root.name
     date.fromisoformat(observation_date)
     status_copy = dict(status or load_ingest_status(run_root))
-    observed_at = observed_at or observed_at_from_journal(run_root, status_copy)
+    journal, journal_summary = _verified_journal(run_root, status_copy)
+    observed_at = observed_at or journal_summary.get("observed_at")
+    if not isinstance(observed_at, str):
+        raise ProductInventoryError("journal lacks a stable observation timestamp")
     providers_by_dir, providers_by_uid = _provider_maps(banks, status_copy)
-    candidates = _product_candidates(run_root, providers_by_dir)
+    fallback_providers = [
+        provider
+        for provider in providers_by_uid.values()
+        if str(provider.get("provider_uid") or "").startswith("provider-fallback:")
+    ]
+    if status_copy.get("provider_identity_registry") is not None or fallback_providers:
+        registry = _provider_registry(run_root, status_copy)
+        fallback_uids = {binding["provider_uid"] for binding in registry["bindings"]}
+        if any(provider["provider_uid"] not in fallback_uids for provider in fallback_providers):
+            raise ProductInventoryError("fallback provider identity is absent from its registry")
+    journal_evidence = _journal_product_evidence(journal)
+    candidates = _product_candidates(run_root, providers_by_dir, journal_evidence)
     normalized_by_uid: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in banks.get("products") or []:
         if not isinstance(row, Mapping) or str(row.get("product_uid") or "") not in candidates:
@@ -346,6 +484,13 @@ def build_product_inventory(
             continue
         code = str(record.get("status") or "")
         code = code if code in _NORMALIZATION_CODES else "detail_invalid_json"
+        sections = record.get("affected_sections")
+        if (
+            not isinstance(sections, list)
+            or not sections
+            or not all(isinstance(item, str) and item for item in sections)
+        ):
+            sections = ["details", "products", "rates"]
         digest = str(record.get("evidence_digest") or "")
         if len(digest) != 64:
             digest = _sha(canonical_json_bytes(record))
@@ -353,7 +498,7 @@ def build_product_inventory(
             issue_seeds.append(
                 _seed(
                     scope="product", code=code, observed_at=observed_at,
-                    evidence_digest=digest, sections=["details", "products", "rates"],
+                    evidence_digest=digest, sections=sections,
                     phase="normalization", provider_uid=str(provider["provider_uid"]),
                     product_uid_value=product,
                 )
@@ -515,5 +660,13 @@ def build_product_inventory(
     status_copy["provider_state_counts"] = dict(counts)
     accounting = build_product_accounting(
         observation_date, status_copy, provider_inputs, products, issues
+    )
+    validate_product_evidence(
+        accounting,
+        {
+            str(record["body_sha256"])
+            for records in journal_evidence.values()
+            for record in records
+        },
     )
     return accounting, observed_at, sorted(set(blockers))

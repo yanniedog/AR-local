@@ -13,7 +13,7 @@ from datetime import date as calendar_date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
 
-from cdr_atomic import atomic_write_json
+from cdr_atomic import atomic_write_bytes, atomic_write_json
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
 from cdr_ingest_population import ProductPopulation
@@ -39,6 +39,7 @@ from cdr_ingest_support import (
 )
 from cdr_ingest_status import persist_ingest_status as _persist_ingest_status
 from cdr_raw_attempt_journal import RawAttemptJournal, new_session_id
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 
 # ─── Per-holder version cache ─────────────────────────────────────────────────
 
@@ -761,6 +762,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "Total concurrent requests ~= workers x detail-workers."
         ),
     )
+    p.add_argument(
+        "--provider-registry",
+        type=Path,
+        default=None,
+        help="Persistent provider fallback identity registry",
+    )
     return p.parse_args(argv)
 
 
@@ -798,6 +805,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         sleep_ms=args.sleep_ms,
         holders_filter=args.holders,
         attempt_journal=attempt_journal,
+        provider_registry_path=(
+            args.provider_registry.expanduser().resolve()
+            if args.provider_registry is not None
+            else (out_root.parent / "state" / REGISTRY_FILENAME).resolve()
+        ),
+    )
+    atomic_write_bytes(
+        attempt_journal.root / REGISTRY_FILENAME,
+        snap.provider_identity_registry_bytes,
+        create_once=True,
     )
     log(
         f"Banking holders: {len(snap.banking_brands)} after filter "
@@ -882,6 +899,26 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         def run_one(item: Tuple[Dict[str, str], str]) -> None:
             brand, bdir = item
+            if brand.get("provider_identity_held") is True:
+                holder = banks_root / "_holders" / bdir
+                holder.mkdir(parents=True, exist_ok=True)
+                atomic_write_json(
+                    holder / "_register-brand.json", brand, create_once=True
+                )
+                append_failure(
+                    banks_root,
+                    {
+                        "phase": "register_discovery",
+                        "bank": bdir,
+                        "status": "provider_identity_conflict",
+                        "evidence_digest": brand.get(
+                            "provider_identity_evidence_digest"
+                        ),
+                    },
+                    lock=failure_lock,
+                )
+                log_ts(f"[banks] Held {bdir}: provider identity conflict")
+                return
             log_ts(f"[banks] Ingesting {bdir} ({brand['endpoint_url']})")
             try:
                 ingest_brand(

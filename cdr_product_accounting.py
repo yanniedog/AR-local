@@ -15,6 +15,7 @@ from typing import Any, Iterable, Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_contracts import (
     DATASETS,
     PROVIDER_UID_RE,
@@ -70,6 +71,9 @@ RUN_ISSUE_CODES = (
     "accounting_unreconciled",
 )
 ISSUE_CODES = PRODUCT_ISSUE_CODES + PROVIDER_ISSUE_CODES + REGISTER_ISSUE_CODES + RUN_ISSUE_CODES
+VALID_ABSENCE_CODES = frozenset({"no_current_rate", "product_closed", "unsupported_category"})
+OPTIONAL_DETAIL_CODES = frozenset({"field_omitted_invalid"})
+TRUST_CRITICAL_CODES = frozenset(PRODUCT_ISSUE_CODES) - VALID_ABSENCE_CODES - OPTIONAL_DETAIL_CODES
 
 _ASCII_SPACE = re.compile(r"[\t\n\v\f\r ]+")
 _ACCOUNTING_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -77,7 +81,6 @@ _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _PROVIDER_UID = PROVIDER_UID_RE
 _PRODUCT_UID = re.compile(r"^[0-9a-f]{64}$")
 _ISSUE_ID = re.compile(r"^issue:v1:[0-9a-f]{64}$")
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SECTION = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ABSOLUTE_REFERENCE = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]{1,2}|[A-Za-z][A-Za-z0-9+.-]*://)")
 
@@ -320,7 +323,7 @@ def _normalise_product(value: Any, index: int) -> dict[str, Any]:
         "reason_codes": _sorted_unique(
             source["reason_codes"], "reason_codes", allowed=PRODUCT_ISSUE_CODES
         ),
-        "evidence_ids": _sorted_unique(source["evidence_ids"], "evidence_ids", pattern=_SAFE_ID),
+        "evidence_ids": _sorted_unique(source["evidence_ids"], "evidence_ids", pattern=_DIGEST),
         "core_valid": _boolean(source["core_valid"], "core_valid"),
         "details_complete": _boolean(source["details_complete"], "details_complete"),
     }
@@ -337,14 +340,22 @@ def _validate_product_flags(product: Mapping[str, Any]) -> None:
         if not product["core_valid"] or not product["details_complete"] or reasons:
             raise ValueError("published_full requires valid core, complete details and no reasons")
     elif disposition == "published_core_only":
-        if not product["core_valid"] or product["details_complete"] or not reasons:
-            raise ValueError("published_core_only requires valid core, incomplete details and reasons")
+        if (
+            not product["core_valid"]
+            or product["details_complete"]
+            or not reasons
+            or not reasons <= OPTIONAL_DETAIL_CODES
+        ):
+            raise ValueError(
+                "published_core_only requires valid core and only optional-detail reasons"
+            )
     elif disposition == "omitted_valid":
-        valid_reasons = {"no_current_rate", "product_closed", "unsupported_category"}
-        if product["core_valid"] or not reasons or not reasons <= valid_reasons:
+        if product["core_valid"] or not reasons or not reasons <= VALID_ABSENCE_CODES:
             raise ValueError("omitted_valid requires an allowlisted valid-absence reason")
-    elif product["core_valid"] or not reasons:
-        raise ValueError("quarantined_invalid requires invalid core and reasons")
+    elif product["core_valid"] or not reasons or not reasons <= TRUST_CRITICAL_CODES:
+        raise ValueError(
+            "quarantined_invalid requires invalid core and trust-critical reasons"
+        )
 
 
 def _issue_identity(issue: Mapping[str, Any]) -> list[Any]:
@@ -374,7 +385,16 @@ def issue_id_for(issue: Mapping[str, Any]) -> str:
     return "issue:v1:" + hashlib.sha256(canonical_json_bytes(_issue_identity(issue))).hexdigest()
 
 
-def _normalise_issue(value: Any, index: int) -> dict[str, Any]:
+def _timestamp_for_observation(value: Any, label: str, observation_date: str) -> str:
+    normalized = _timestamp(value, label)
+    if _timestamp_instant(normalized).astimezone(DAILY_INGEST_TZ).date() != date.fromisoformat(
+        observation_date
+    ):
+        raise ValueError(f"{label} must fall on the observation date")
+    return normalized
+
+
+def _normalise_issue(value: Any, index: int, observation_date: str) -> dict[str, Any]:
     source = _mapping(value, f"terminal_issues[{index}]")
     _exact_fields(source, _ISSUE_INPUT_FIELDS, f"terminal_issues[{index}]", frozenset({"issue_id"}))
     scope = _enum(source["scope"], ISSUE_SCOPES, "issue scope")
@@ -394,8 +414,12 @@ def _normalise_issue(value: Any, index: int) -> dict[str, Any]:
         if source["http_status"] is None
         else _integer(source["http_status"], "http_status", 100),
         "occurrence_count": _integer(source["occurrence_count"], "occurrence_count", 1),
-        "first_seen_at": _timestamp(source["first_seen_at"], "first_seen_at"),
-        "last_seen_at": _timestamp(source["last_seen_at"], "last_seen_at"),
+        "first_seen_at": _timestamp_for_observation(
+            source["first_seen_at"], "first_seen_at", observation_date
+        ),
+        "last_seen_at": _timestamp_for_observation(
+            source["last_seen_at"], "last_seen_at", observation_date
+        ),
         "evidence_digest": _pattern(source["evidence_digest"], _DIGEST, "evidence_digest"),
         "disposition": None
         if disposition is None
@@ -441,10 +465,10 @@ def _validate_issue_scope(issue: Mapping[str, Any]) -> None:
         raise ValueError("run issue cannot carry provider, product or disposition")
 
 
-def _aggregate_issues(values: Iterable[Any]) -> list[dict[str, Any]]:
+def _aggregate_issues(values: Iterable[Any], observation_date: str) -> list[dict[str, Any]]:
     aggregated: dict[str, dict[str, Any]] = {}
     for index, value in enumerate(values):
-        issue = _normalise_issue(value, index)
+        issue = _normalise_issue(value, index, observation_date)
         previous = aggregated.get(issue["issue_id"])
         if previous is None:
             aggregated[issue["issue_id"]] = issue
@@ -631,6 +655,7 @@ def _validate_references(
             legacy_keys[key] = product["product_uid"]
         _validate_product_flags(product)
     product_codes: dict[str, set[str]] = defaultdict(set)
+    provider_codes: dict[str, set[str]] = defaultdict(set)
     issue_ids: set[str] = set()
     for issue in issues:
         if issue["issue_id"] in issue_ids or issue["issue_id"] != issue_id_for(issue):
@@ -639,6 +664,8 @@ def _validate_references(
         _validate_issue_scope(issue)
         if issue["provider_uid"] is not None and issue["provider_uid"] not in provider_uids:
             raise ValueError("issue references an unknown provider")
+        if issue["provider_uid"] is not None:
+            provider_codes[issue["provider_uid"]].add(issue["code"])
         if issue["product_uid"] is not None:
             product = product_by_uid.get(issue["product_uid"])
             if product is None or product["provider_uid"] != issue["provider_uid"]:
@@ -649,6 +676,21 @@ def _validate_references(
     for product in products:
         if set(product["reason_codes"]) != product_codes[product["product_uid"]]:
             raise ValueError("product reason_codes do not reconcile with terminal issues")
+    population_unknown_codes = {
+        "pagination_incomplete",
+        "products_index_failed",
+        "provider_population_unknown",
+    }
+    for provider in providers:
+        if provider_codes[provider["provider_uid"]] & population_unknown_codes:
+            if provider["population_known"] or provider["state"] not in {
+                "partial",
+                "failed",
+                "not_attempted",
+            }:
+                raise ValueError(
+                    "terminal provider issue requires an unknown, incomplete population"
+                )
 
 
 def validate_product_accounting(accounting: Mapping[str, Any]) -> None:
@@ -700,9 +742,19 @@ def validate_product_accounting(accounting: Mapping[str, Any]) -> None:
     for issue in issues:
         if issue["affected_sections"] != sorted(issue["affected_sections"]):
             raise ValueError("issue affected_sections must use canonical order")
-        if _timestamp(issue["first_seen_at"], "first_seen_at") != issue["first_seen_at"]:
+        if (
+            _timestamp_for_observation(
+                issue["first_seen_at"], "first_seen_at", document["observation_date"]
+            )
+            != issue["first_seen_at"]
+        ):
             raise ValueError("issue first_seen_at must use canonical UTC form")
-        if _timestamp(issue["last_seen_at"], "last_seen_at") != issue["last_seen_at"]:
+        if (
+            _timestamp_for_observation(
+                issue["last_seen_at"], "last_seen_at", document["observation_date"]
+            )
+            != issue["last_seen_at"]
+        ):
             raise ValueError("issue last_seen_at must use canonical UTC form")
         if _timestamp_instant(issue["first_seen_at"]) > _timestamp_instant(
             issue["last_seen_at"]
@@ -716,6 +768,22 @@ def validate_product_accounting(accounting: Mapping[str, Any]) -> None:
         raise ValueError("provider accounting records do not reconcile")
     if document["summary"] != _summary(providers, products, issues):
         raise ValueError("product accounting summary does not reconcile")
+
+
+def validate_product_evidence(
+    accounting: Mapping[str, Any], verified_evidence_ids: Iterable[str]
+) -> None:
+    """Require every product evidence digest to resolve in the verified journal."""
+
+    validate_product_accounting(accounting)
+    available = set(verified_evidence_ids)
+    required = {
+        evidence
+        for product in accounting["products"]
+        for evidence in product["evidence_ids"]
+    }
+    if not required <= available:
+        raise ValueError("product evidence does not resolve in the verified journal")
 
 
 def build_product_accounting(
@@ -737,7 +805,7 @@ def build_product_accounting(
         (_normalise_product(value, index) for index, value in enumerate(normalized_products)),
         key=lambda item: item["product_uid"],
     )
-    issues = _aggregate_issues(terminal_issues)
+    issues = _aggregate_issues(terminal_issues, observation)
     base_providers = [item[0] for item in provider_inputs]
     _validate_references(base_providers, products, issues)
     providers = sorted(

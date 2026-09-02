@@ -54,7 +54,7 @@
   "$defs": {
     "count": { "type": "integer", "minimum": 0 },
     "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "providerUid": { "type": "string", "pattern": "^(?:provider(?:-fallback)?:v1|provider(?:-interim)?:v2):[0-9a-f]{64}$" },
+    "providerUid": { "type": "string", "pattern": "^provider(?:-fallback)?:v1:[0-9a-f]{64}$" },
     "productUid": { "$ref": "#/$defs/digest" },
     "nullableText": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
     "document": { "type": "object" },
@@ -94,15 +94,18 @@
     },
     "fact": {
       "type": "object", "additionalProperties": false,
-      "required": ["product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_number", "value_text", "document"],
+      "required": ["product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number", "value_text", "min_value", "max_value", "document"],
       "properties": {
         "product_uid": { "$ref": "#/$defs/productUid" },
         "fact_id": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["fee", "rate", "tier", "bundle", "attribute", "feature", "eligibility", "constraint", "condition"] },
         "canonical_key": { "type": "string", "minLength": 1 },
         "value_type": { "enum": ["boolean", "money", "rate", "number", "duration", "range", "enum", "text"] },
+        "value_boolean": { "oneOf": [{ "type": "null" }, { "type": "boolean" }] },
         "value_number": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
         "value_text": { "$ref": "#/$defs/nullableText" },
+        "min_value": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
+        "max_value": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
         "document": { "$ref": "#/$defs/document" }
       }
     },

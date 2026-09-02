@@ -321,6 +321,34 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
             },
         )
         (banks / "failures.jsonl").write_bytes(b"")
+        detail_body = (detail / "product-detail.json").read_bytes()
+        journal = RawAttemptJournal(
+            out_dir / date / "_raw-attempt-journals-v1", SESSION
+        )
+        journal.record(
+            "detail:loan-1",
+            request_url="https://bank.example/products/loan-1",
+            status=200,
+            outcome="success",
+            body=detail_body,
+            started_at="2026-08-15T01:00:01.000000Z",
+            completed_at="2026-08-15T01:00:02.000000Z",
+            context={
+                "phase": "product_detail",
+                "provider": "Example Bank",
+                "product_id": "loan-1",
+            },
+        )
+        status_path = banks / "ingest-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        pointer = status["raw_attempt_journal"]
+        status["raw_attempt_journal"] = {
+            **journal.summary(),
+            "path": pointer["path"],
+            "path_resolution": pointer["path_resolution"],
+            "retention": pointer["retention"],
+        }
+        atomic_write_json(status_path, status)
 
     monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
 

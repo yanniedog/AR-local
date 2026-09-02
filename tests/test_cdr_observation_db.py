@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cdr_contracts import canonical_json_bytes, product_uid
+from cdr_contracts import canonical_json_bytes, product_uid, rate_uid
 from cdr_observation_db import (
     APPLICATION_ID,
     FAILURE_STAGES,
@@ -22,7 +22,7 @@ from cdr_observation_db import (
 FIXTURE = Path(__file__).parent / "fixtures/canonical_domain_real_observations.json"
 PROVIDER_UID = "provider:v1:" + "1" * 64
 PRODUCT_UID = product_uid(PROVIDER_UID, "Savings", "BOMInvestmentCashAccounts")
-RATE_UID = "3" * 64
+RATE_UID = rate_uid(PRODUCT_UID, 1, "0.0045", None)
 ACCOUNTING_ID = "ingest-2026-05-25-bank-of-melbourne"
 
 
@@ -83,8 +83,11 @@ def observation() -> tuple[dict, dict]:
         "kind": "rate",
         "canonical_key": "rate.advertised",
         "value_type": "rate",
+        "value_boolean": None,
         "value_number": 0.0045,
-        "value_text": source_rate["rate"],
+        "value_text": None,
+        "min_value": None,
+        "max_value": None,
     }
     change_keys = {
         "event_id": "rename-2026-05-26",
@@ -94,9 +97,9 @@ def observation() -> tuple[dict, dict]:
         "canonical_key": "product.name",
     }
     projections = {
-        "products": [{**product_keys, "document": {**product_keys, "source_record": record}}],
-        "rates": [{**rate_keys, "document": {**rate_keys, "source_rate": source_rate}}],
-        "items": [{**item_keys, "document": {**item_keys, "source_item": record["eligibility"][0]}}],
+        "products": [{**product_keys, "document": dict(product_keys)}],
+        "rates": [{**rate_keys, "document": dict(rate_keys)}],
+        "items": [{**item_keys, "document": dict(item_keys)}],
         "product_facts": [{**fact_keys, "document": fact_keys}],
         "product_changes": [
             {
@@ -105,8 +108,6 @@ def observation() -> tuple[dict, dict]:
                     **change_keys,
                     "dataset": source["dataset"],
                     "product_id": record["productId"],
-                    "before": record["name"],
-                    "after": captured["bank_of_melbourne_after_rename"]["record"]["name"],
                 },
             }
         ],
@@ -178,6 +179,30 @@ def test_create_once_replay_and_collision_preserve_bytes(tmp_path: Path):
             path, accounting=accounting, projections=projections, generated_at="2026-05-25T00:01:00+10:00", normalization_version="cdr-domain-v1"
         )
     assert verify_observation_database(path).database_sha256 == first.verification.database_sha256
+
+
+def test_public_documents_reject_sensitive_fields_and_unapproved_urls(tmp_path: Path):
+    accounting, projections = observation()
+    projections["products"][0]["document"]["authorization"] = "Bearer secret"
+    with pytest.raises(ObservationDatabaseError, match="outside its contract"):
+        build_observation_database(
+            tmp_path / "sensitive.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+    accounting, projections = observation()
+    projections["products"][0]["document"]["description"] = "See https://internal.example/token"
+    with pytest.raises(ObservationDatabaseError, match="unapproved URL"):
+        build_observation_database(
+            tmp_path / "url.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
 
 
 @pytest.mark.parametrize("stage", [stage for stage in FAILURE_STAGES if stage != "after_install"])
@@ -304,6 +329,12 @@ def test_database_constraints_reject_orphans_type_drift_and_visibility_drift(tmp
         connection.rollback()
         with pytest.raises(sqlite3.IntegrityError, match="cannot become non-publishable"):
             connection.execute("UPDATE bank_product_dispositions SET disposition='omitted_valid' WHERE product_uid=?", (PRODUCT_UID,))
+        connection.rollback()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE bank_product_facts SET value_number=100 WHERE product_uid=?",
+                (PRODUCT_UID,),
+            )
 
 
 @pytest.mark.parametrize("bad_rate", ["5", "NaN", "0.00450", "5.0e-2"])
@@ -319,6 +350,46 @@ def test_noncanonical_or_wrong_magnitude_rates_fail_before_disk(tmp_path: Path, 
             normalization_version="cdr-domain-v1",
         )
     assert not (tmp_path / "banks.sqlite").exists()
+
+
+def test_rate_uid_is_recomputed_from_canonical_rate_identity(tmp_path: Path):
+    accounting, projections = observation()
+    projections["rates"][0]["rate_uid"] = "4" * 64
+    projections["rates"][0]["document"]["rate_uid"] = "4" * 64
+    with pytest.raises(ObservationDatabaseError, match="rate identity"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+def test_rate_fact_outside_decimal_fraction_fails_before_disk(tmp_path: Path):
+    accounting, projections = observation()
+    projections["product_facts"][0]["value_number"] = 100.0
+    projections["product_facts"][0]["document"]["value_number"] = 100.0
+    with pytest.raises(ObservationDatabaseError, match="rate fact"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+def test_database_generated_at_must_match_observation_date(tmp_path: Path):
+    accounting, projections = observation()
+    with pytest.raises(ObservationDatabaseError, match="observation date"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2027-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
 
 
 def test_unreconciled_accounting_fails_before_disk(tmp_path: Path):

@@ -9,7 +9,7 @@ serves only a small read-only status API and optional Netdata metrics.
 - Preserve the immutable raw-attempt journal.
 - Reconcile every selected provider and product through ProductAccountingV1.
 - Treat ObservationV1 as the only current normalized contract.
-- Build and verify immutable, sidecar-free SQLite v9 before finalization.
+- Build and verify immutable, sidecar-free SQLite v10 before finalization.
 - Publish mobile payloads only from a freshly re-verified observation.
 - A product-scoped omission must be disclosed. A control-plane ambiguity must
   withhold the whole observation.

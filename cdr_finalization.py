@@ -21,7 +21,9 @@ from cdr_ledger_v2 import (
 )
 from cdr_file_lock import FileLock
 from cdr_observation import load_verified_observation
+from cdr_product_accounting import validate_product_evidence
 from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 
 
 def _ingest_status(export_root: Path) -> dict[str, Any]:
@@ -134,7 +136,7 @@ def _coverage(
 
 def _verified_promoted_journal(
     export_root: Path, status: Mapping[str, Any], expected_digest: str
-) -> None:
+) -> RawAttemptJournal:
     pointer = status.get("raw_attempt_journal")
     if not isinstance(pointer, Mapping):
         raise ValueError("promoted ingest evidence pointer is absent")
@@ -154,7 +156,8 @@ def _verified_promoted_journal(
     ):
         raise ValueError("promoted ingest evidence pointer is invalid")
     journal_root = export_root.joinpath(*relative.parts)
-    summary = RawAttemptJournal(journal_root.parent, session).summary(recover=False)
+    journal = RawAttemptJournal(journal_root.parent, session)
+    summary = journal.summary(recover=False)
     for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
         if pointer.get(field) != summary.get(field):
             raise ValueError("promoted ingest journal does not match its pointer")
@@ -173,6 +176,37 @@ def _verified_promoted_journal(
         raise ValueError("promoted ingest manifest is unreadable") from error
     if digest != pointer.get("promotion_manifest_sha256"):
         raise ValueError("promoted ingest manifest digest does not match")
+    registry = status.get("provider_identity_registry")
+    fallback_present = any(
+        str(item.get("provider_uid") or "").startswith("provider-fallback:")
+        for item in status.get("provider_states") or []
+        if isinstance(item, Mapping)
+    )
+    if registry is None and fallback_present:
+        raise ValueError("provider identity registry pointer is absent")
+    if registry is None:
+        return journal
+    if not isinstance(registry, Mapping):
+        raise ValueError("provider identity registry pointer is invalid")
+    registry_relative = PurePosixPath(str(registry.get("path") or ""))
+    expected_registry = relative / REGISTRY_FILENAME
+    if (
+        registry_relative != expected_registry
+        or registry.get("path_resolution") != "relative_to_finalized_export_root"
+        or registry.get("retention") != "hash_bound_finalized_artifact"
+        or registry.get("verified") is not True
+    ):
+        raise ValueError("provider identity registry pointer is invalid")
+    try:
+        registry_bytes = export_root.joinpath(*registry_relative.parts).read_bytes()
+    except OSError as error:
+        raise ValueError("provider identity registry snapshot is unreadable") from error
+    if (
+        registry.get("bytes") != len(registry_bytes)
+        or registry.get("sha256") != hashlib.sha256(registry_bytes).hexdigest()
+    ):
+        raise ValueError("provider identity registry snapshot does not match its pointer")
+    return journal
 
 
 def _observation_coverage(
@@ -180,8 +214,12 @@ def _observation_coverage(
 ) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     observation, accounting = load_verified_observation(export_root)
     status = _ingest_status(export_root)
-    _verified_promoted_journal(
+    journal = _verified_promoted_journal(
         export_root, status, accounting["raw_attempt_journal_digest"]
+    )
+    validate_product_evidence(
+        accounting,
+        {record["body_sha256"] for record in journal.evidence_records(recover=False)},
     )
     register_attempts = [
         dict(item)

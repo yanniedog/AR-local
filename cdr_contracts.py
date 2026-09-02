@@ -12,9 +12,7 @@ from urllib.parse import urlsplit
 
 
 DATASETS = ("Mortgage", "Savings", "TD")
-PROVIDER_UID_PATTERN = (
-    r"^(?:provider(?:-fallback)?:v1|provider(?:-interim)?:v2):[0-9a-f]{64}$"
-)
+PROVIDER_UID_PATTERN = r"^provider(?:-fallback)?:v1:[0-9a-f]{64}$"
 PROVIDER_UID_RE = re.compile(PROVIDER_UID_PATTERN)
 _ASCII_SPACE = re.compile(r"[\t\n\v\f\r ]+")
 
@@ -53,6 +51,12 @@ def _display_name(value: str) -> str:
     return _ASCII_SPACE.sub(" ", normalized)
 
 
+def normalize_provider_display_name(value: str) -> str:
+    """Return the exact display-name component of fallback identity."""
+
+    return _display_name(value)
+
+
 def canonical_authority(urls: Iterable[str]) -> str:
     """Choose the stable HTTPS ``host[:port]`` authority for fallback identity."""
 
@@ -80,27 +84,18 @@ def provider_uid(
     endpoint_urls: Iterable[str],
     display_name: str,
 ) -> tuple[str, str]:
-    """Return a stable UID from the strongest Register identity available.
+    """Return the controlled official or fallback provider identity."""
 
-    The current summary supplies ``dataHolderBrandId`` but not ``dataHolderId``;
-    requiring both would incorrectly downgrade almost every live brand. A brand
-    ID identifies the PRD provider directly. The one transitional brand without
-    it is bound to its Register ``interimId`` and disclosed as interim.
-    """
-
-    del data_holder_id
-    brand = str(data_holder_brand_id or "").strip().casefold()
-    if brand:
+    del interim_id
+    holder = str(data_holder_id or "").strip()
+    brand = str(data_holder_brand_id or "").strip()
+    if holder and brand:
         digest = hashlib.sha256(
-            canonical_json_bytes(["identity-v2", "provider-brand", brand])
+            canonical_json_bytes(
+                ["identity-v1", "provider", {"brand": brand, "holder": holder}]
+            )
         ).hexdigest()
-        return f"provider:v2:{digest}", "official_brand"
-    interim = str(interim_id or "").strip().casefold()
-    if interim:
-        digest = hashlib.sha256(
-            canonical_json_bytes(["identity-v2", "provider-interim", interim])
-        ).hexdigest()
-        return f"provider-interim:v2:{digest}", "registry_interim"
+        return f"provider:v1:{digest}", "official"
     name = _display_name(display_name)
     if not name:
         raise ValueError("fallback provider identity requires a display name")
@@ -120,3 +115,12 @@ def product_uid(provider: str, dataset: str, cdr_product_id: str) -> str:
         raise ValueError("provider_uid, known dataset and CDR product ID are required")
     material = f"product-v1\0{provider}\0{dataset}\0{product_id}".encode("utf-8")
     return hashlib.sha256(material).hexdigest()
+
+
+def rate_uid(
+    product: str, rate_index: int, rate: str, comparison_rate: str | None
+) -> str:
+    """Return the canonical identity of one normalized product-rate slot."""
+
+    identity = ["rate-v1", product, rate_index, rate, comparison_rate]
+    return hashlib.sha256(canonical_json_bytes(identity)).hexdigest()

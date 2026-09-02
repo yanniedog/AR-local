@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 from cdr_atomic import atomic_write_json
 from cdr_ingest_support import RegisterSnapshot, summarize_failures
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 from cdr_raw_attempt_journal import RawAttemptJournal
 
 
@@ -49,29 +51,36 @@ def _provider_state(
     summary_path = (
         banks_root / "_holders" / directory / "_products-index" / "index-summary.json"
     )
+    held = brand.get("provider_identity_held") is True
     complete = True
-    try:
-        population = json.loads(summary_path.read_text(encoding="utf-8"))
-        if (
-            not isinstance(population, dict)
-            or population.get("schema_version") != 1
-            or population.get("provider_uid") != brand["provider_uid"]
-        ):
-            raise ValueError("invalid holder population summary")
-        state = str(population.get("state") or "failed")
-        if state not in {"complete", "empty", "partial", "failed"}:
-            raise ValueError("invalid holder state")
-        population_known = population.get("population_known")
-        if not isinstance(population_known, bool):
-            raise ValueError("invalid holder population knowledge")
-        unique, relevant, out_of_scope, unresolved = _population_counts(population)
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+    if held:
         population, state = {}, "failed"
         unique = relevant = out_of_scope = None
         unresolved = []
         population_known = False
-        complete = False
-    if unresolved or not population_known:
+    else:
+        try:
+            population = json.loads(summary_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(population, dict)
+                or population.get("schema_version") != 1
+                or population.get("provider_uid") != brand["provider_uid"]
+            ):
+                raise ValueError("invalid holder population summary")
+            state = str(population.get("state") or "failed")
+            if state not in {"complete", "empty", "partial", "failed"}:
+                raise ValueError("invalid holder state")
+            population_known = population.get("population_known")
+            if not isinstance(population_known, bool):
+                raise ValueError("invalid holder population knowledge")
+            unique, relevant, out_of_scope, unresolved = _population_counts(population)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            population, state = {}, "failed"
+            unique = relevant = out_of_scope = None
+            unresolved = []
+            population_known = False
+            complete = failures > 0
+    if unresolved:
         complete = False
     if failures and state in {"complete", "empty"}:
         state = "partial"
@@ -140,14 +149,16 @@ def persist_ingest_status(
         {
             "providers_registered": snapshot.banking_count_before_filter,
             "providers_available": snapshot.banking_count_before_filter,
-            "providers_attempted": len(bank_work),
+            "providers_attempted": sum(
+                provider["state"] != "not_attempted" for provider in provider_states
+            ),
             "provider_states": provider_states,
             "provider_scope_complete": scope_complete,
             "coverage_evidence_complete": coverage_complete and scope_complete,
             "classification_unresolved_products": unresolved_total,
             "provider_state_counts": {
                 state: sum(1 for provider in provider_states if provider["state"] == state)
-                for state in ("complete", "empty", "partial", "failed")
+                for state in ("complete", "empty", "partial", "failed", "not_attempted")
             },
         }
     )
@@ -158,6 +169,17 @@ def persist_ingest_status(
         or any(provider["state"] not in {"complete", "empty"} for provider in provider_states)
     )
     attempt_summary = attempt_journal.summary()
+    registry_path = attempt_journal.root / REGISTRY_FILENAME
+    registry_bytes = registry_path.read_bytes()
+    status["provider_identity_registry"] = {
+        "schema_version": 1,
+        "path": registry_path.relative_to(run_root).as_posix(),
+        "path_resolution": "relative_to_ingest_run_root",
+        "retention": "follows_ingest_run_root",
+        "bytes": len(registry_bytes),
+        "sha256": hashlib.sha256(registry_bytes).hexdigest(),
+        "verified": True,
+    }
     attempt_summary.update(
         {
             "path": attempt_journal.root.relative_to(run_root).as_posix(),

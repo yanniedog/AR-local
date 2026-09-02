@@ -57,7 +57,7 @@ def _sqlite_uri(path: Path) -> str:
     return f"{path.expanduser().resolve().as_uri()}?mode=ro&immutable=1"
 
 
-def _v9_database(path: Path, expected_date: str) -> bool:
+def _canonical_database(path: Path, expected_date: str) -> bool:
     if not path.is_file():
         return False
     try:
@@ -170,7 +170,7 @@ def iter_run_fact_groups(
 ) -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
     export_root = _export_root(run_root)
     database = export_root / "local-cdr.sqlite"
-    if _v9_database(database, run_date(run_root)):
+    if _canonical_database(database, run_date(run_root)):
         yield from _iter_sqlite_fact_groups(export_root)
         return
     facts = _observation_facts(export_root)
@@ -200,7 +200,7 @@ def _canonical_export_ready(export_root: Path, observation_date: str) -> bool:
     return (
         (export_root / "observation-v1.json").is_file()
         and (export_root / "product-accounting-v1.json").is_file()
-        and _v9_database(export_root / "local-cdr.sqlite", observation_date)
+        and _canonical_database(export_root / "local-cdr.sqlite", observation_date)
     )
 
 
@@ -231,7 +231,7 @@ def _finalized_export_root(
     observation = export_root / "observation-v1.json"
     accounting = export_root / "product-accounting-v1.json"
     database = export_root / "local-cdr.sqlite"
-    canonical_database = _v9_database(database, observation_date)
+    canonical_database = _canonical_database(database, observation_date)
     canonical_present = observation.is_file() or accounting.is_file() or canonical_database
     if canonical_present:
         if not _canonical_export_ready(export_root, observation_date):

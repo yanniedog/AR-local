@@ -575,3 +575,34 @@ class RawAttemptJournal:
                 "observed_at": observed_at,
                 "verified": True,
             }
+
+    def evidence_records(self, *, recover: bool = False) -> tuple[dict[str, Any], ...]:
+        """Return body digests and sanitized contexts after full chain verification."""
+
+        with self._thread_lock, FileLock(self.lock_path):
+            current = self._read_current()
+            if recover:
+                current = self._recover(current)
+            self._verify_committed(current)
+            previous: Optional[str] = None
+            records = []
+            for sequence in range(1, int(current["sequence"]) + 1):
+                candidates = sorted(self.events.glob(f"{sequence:08d}-*.json"))
+                if len(candidates) != 1:
+                    raise AttemptJournalError(
+                        f"attempt sequence {sequence} is missing or ambiguous"
+                    )
+                event = self._validate_event(
+                    candidates[0], sequence=sequence, previous_digest=previous
+                )
+                records.append(
+                    {
+                        "body_sha256": event["response"]["body_sha256"],
+                        "body_path": event["body_path"],
+                        "status": event["response"]["status"],
+                        "outcome": event["response"]["outcome"],
+                        "context": dict(event["context"]),
+                    }
+                )
+                previous = event["event_digest"]
+            return tuple(records)

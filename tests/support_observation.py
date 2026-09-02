@@ -10,8 +10,9 @@ def write_verified_observation(
     exports: Path,
     *,
     observation_date: str = "2026-09-02",
-    observed_at: str = "2026-09-02T05:01:02Z",
+    observed_at: str | None = None,
 ) -> dict:
+    observed_at = observed_at or f"{observation_date}T05:01:02Z"
     providers = {
         "registered": 0,
         "attempted": 0,

@@ -14,6 +14,7 @@ from cdr_observation import (
 )
 from cdr_observation_db import build_observation_database
 from cdr_product_inventory import ProductInventoryError, build_product_inventory
+from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 OBSERVED_AT = "2026-09-02T01:02:03Z"
@@ -81,6 +82,35 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
         "product_changes": [],
         "quarantines": [],
     }
+    session_id = "ingest-20260902T000000Z-test"
+    journal = RawAttemptJournal(root / "_raw-attempt-journals-v1", session_id)
+    for index, (provider, product_id_value) in enumerate(
+        (("Bank One", "save-1"), ("Bank Two", "home-1")), 1
+    ):
+        body = json.dumps(
+            {"data": {"products": [{"productId": product_id_value}]}}
+        ).encode()
+        journal.record(
+            f"index-{index}",
+            request_url=f"https://bank-{index}.example/products",
+            status=200,
+            outcome="success",
+            body=body,
+            context={"phase": "products_index", "provider": provider, "page": 1},
+        )
+    journal.record(
+        "detail-save-1",
+        request_url="https://bank-1.example/products/save-1",
+        status=200,
+        outcome="success",
+        body=b"{}",
+        context={
+            "phase": "product_detail",
+            "provider": "Bank One",
+            "product_id": "save-1",
+        },
+    )
+    journal_summary = journal.summary(recover=False)
     status = {
         "providers_registered": 2,
         "providers_attempted": 2,
@@ -94,11 +124,8 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
         "coverage_evidence_complete": True,
         "register_attempts": [],
         "raw_attempt_journal": {
-            "schema_version": 1,
-            "session_id": "ingest-20260902T000000Z-test",
-            "attempts": 3,
-            "head_digest": "d" * 64,
-            "verified": True,
+            **journal_summary,
+            "path": f"_raw-attempt-journals-v1/{session_id}",
         },
     }
     return root, banks, status
@@ -137,13 +164,14 @@ def test_valid_product_without_a_current_rate_is_explicitly_omitted(tmp_path: Pa
     assert saver["reason_codes"] == ["no_current_rate"]
 
 
-def test_detail_array_quarantine_reason_round_trips_exactly(tmp_path: Path) -> None:
+def test_optional_detail_rejection_publishes_only_valid_core(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
     banks["quarantines"] = [
         {
             "bank": "Bank One",
             "product_id": "save-1",
-            "status": "detail_array_invalid",
+            "status": "field_omitted_invalid",
+            "affected_sections": ["fees"],
             "evidence_digest": "b" * 64,
         }
     ]
@@ -153,8 +181,8 @@ def test_detail_array_quarantine_reason_round_trips_exactly(tmp_path: Path) -> N
     saver = next(
         row for row in accounting["products"] if row["cdr_product_id"] == "save-1"
     )
-    assert saver["disposition"] == "quarantined_invalid"
-    assert saver["reason_codes"] == ["detail_array_invalid"]
+    assert saver["disposition"] == "published_core_only"
+    assert saver["reason_codes"] == ["field_omitted_invalid"]
     result = build_observation_database(
         tmp_path / "detail-array.sqlite",
         accounting=accounting,
@@ -192,7 +220,15 @@ def test_unknown_provider_identity_fails_closed(tmp_path: Path) -> None:
         build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
 
 
-def test_removed_provider_change_round_trips_prior_canonical_identity(
+def test_changed_product_detail_fails_journal_binding(tmp_path: Path) -> None:
+    root, banks, status = _inputs(tmp_path)
+    detail = next(root.rglob("product-detail.json"))
+    detail.write_text('{"data":{"productId":"save-1","name":"forged"}}', encoding="utf-8")
+    with pytest.raises(ProductInventoryError, match="disagrees with current journal"):
+        build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
+
+
+def test_removed_provider_change_is_not_published_without_a_visible_product(
     tmp_path: Path,
 ) -> None:
     root, banks, status = _inputs(tmp_path)
@@ -226,9 +262,8 @@ def test_removed_provider_change_round_trips_prior_canonical_identity(
         normalization_version="cdr-product-facts-v1",
     )
 
-    assert rows[0]["provider_uid"] == removed_provider
-    assert rows[0]["product_uid"] == old_product
-    assert result.verification.counts["bank_product_changes"] == 1
+    assert rows == []
+    assert result.verification.counts["bank_product_changes"] == 0
 
 
 def test_observation_and_sqlite_contain_only_publishable_products(tmp_path: Path) -> None:

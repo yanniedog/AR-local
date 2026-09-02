@@ -17,6 +17,7 @@ from cdr_atomic import (
 )
 from cdr_file_lock import FileLock
 from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 
 
 PROMOTION_SCHEMA_VERSION = 1
@@ -482,6 +483,36 @@ def promote_attempt_evidence(
     if not isinstance(pointer, Mapping):
         raise AttemptEvidencePromotionError("attempt journal status pointer is invalid")
     source, summary, source_relative = _verified_source(run_root, pointer)
+    registry = status.get("provider_identity_registry")
+    fallback_present = any(
+        str(item.get("provider_uid") or "").startswith("provider-fallback:")
+        for item in status.get("provider_states") or []
+        if isinstance(item, Mapping)
+    )
+    if registry is None and fallback_present:
+        raise AttemptEvidencePromotionError("provider identity registry pointer is absent")
+    if registry is not None:
+        if not isinstance(registry, Mapping):
+            raise AttemptEvidencePromotionError("provider identity registry pointer is invalid")
+        registry_relative = _safe_relative(registry.get("path"))
+        registry_source = source.root / REGISTRY_FILENAME
+        try:
+            registry_bytes = registry_source.read_bytes()
+        except OSError as error:
+            raise AttemptEvidencePromotionError(
+                "provider identity registry snapshot is unreadable"
+            ) from error
+        if (
+            registry_relative.parts != (*source_relative.parts, REGISTRY_FILENAME)
+            or registry.get("path_resolution") != "relative_to_ingest_run_root"
+            or registry.get("retention") != "follows_ingest_run_root"
+            or registry.get("verified") is not True
+            or registry.get("bytes") != len(registry_bytes)
+            or registry.get("sha256") != hashlib.sha256(registry_bytes).hexdigest()
+        ):
+            raise AttemptEvidencePromotionError(
+                "provider identity registry snapshot does not match its pointer"
+            )
     records = _inventory(source.root)
     source_tree_sha256 = _tree_digest(records)
     _fault(fault_injector, "after_source_verify")
@@ -524,6 +555,13 @@ def promote_attempt_evidence(
             }
         )
         status["raw_attempt_journal"] = promoted_pointer
+        if registry is not None:
+            status["provider_identity_registry"] = {
+                **dict(registry),
+                "path": (artifact_path / REGISTRY_FILENAME).as_posix(),
+                "path_resolution": "relative_to_finalized_export_root",
+                "retention": "hash_bound_finalized_artifact",
+            }
         _write_status(export_status, status)
         _fault(fault_injector, "after_status")
         return promoted_pointer

@@ -14,7 +14,7 @@ from cdr_ingest_support import iter_banking_brands_from_payload
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_real_register_brand_uses_official_brand_id_without_holder_id() -> None:
+def test_real_register_brand_without_both_controlled_ids_uses_fallback() -> None:
     item = json.loads(
         (FIXTURES / "register_brand_summary_real_2026-09-02.json").read_text(encoding="utf-8")
     )["record"]
@@ -25,8 +25,8 @@ def test_real_register_brand_uses_official_brand_id_without_holder_id() -> None:
         endpoint_urls=(item["publicBaseUri"], item["productBaseUri"]),
         display_name=item["brandName"],
     )
-    assert status == "official_brand"
-    assert uid == "provider:v2:20e53ed3089a1d23447c5a1d2c5a53b655257512ee4d243734f120dddf186fec"
+    assert status == "fallback"
+    assert uid == "provider-fallback:v1:5b62d1baa4af7c75f2fcbc90f3bdc57478e44145fac9a47fe4c9d36858a51fb4"
 
 
 def test_real_register_brand_parser_preserves_identity_evidence() -> None:
@@ -41,8 +41,8 @@ def test_real_register_brand_parser_preserves_identity_evidence() -> None:
         "data_holder_id": "",
         "data_holder_brand_id": "ceca4dce-3f8f-ef11-95f6-000d3a79c46e",
         "interim_id": "fe051e80-e743-44e1-ae83-a4d6286eb596",
-        "provider_uid": "provider:v2:20e53ed3089a1d23447c5a1d2c5a53b655257512ee4d243734f120dddf186fec",
-        "provider_identity_status": "official_brand",
+        "provider_uid": "provider-fallback:v1:5b62d1baa4af7c75f2fcbc90f3bdc57478e44145fac9a47fe4c9d36858a51fb4",
+        "provider_identity_status": "fallback",
         "identity_authority": "public.cdr.alex.com.au",
     }
 
@@ -60,11 +60,18 @@ def test_official_provider_and_product_identities_are_exact_and_name_stable() ->
         endpoint_urls=("https://changed.example/path",),
         display_name="Name B",
     )
-    assert status == "official_brand"
+    assert status == "official"
     assert provider == renamed
-    assert provider == "provider:v2:166868311b2e4cf790534d34c119bb7f78623eea7842d668feb7d7896a15459a"
+    assert provider == "provider:v1:833838128d3e6060e3b65ed0f3b9526cca807acd039aeb6436ff7e83156fce18"
+    changed_case, _ = provider_uid(
+        data_holder_id="Holder-1",
+        data_holder_brand_id="brand-1",
+        endpoint_urls=(),
+        display_name="Name A",
+    )
+    assert changed_case != provider
     assert product_uid(provider, "Mortgage", "product-1") == (
-        "550898e9e00849f1053a9b593f76674624aec5b5518037f3c199292491d732a5"
+        "2fba7c40a47faa132d87f1119256ea82ffe7d264d98967cbad3758d1a3f82369"
     )
     assert product_uid(provider, "Savings", "product-1") != product_uid(
         provider, "Mortgage", "product-1"
@@ -97,7 +104,7 @@ def test_fallback_authority_is_canonical_and_display_name_is_not_case_folded() -
     assert first != changed_case
 
 
-def test_interim_register_identity_is_stable_and_explicit() -> None:
+def test_one_controlled_id_is_insufficient_for_official_identity() -> None:
     first = provider_uid(
         data_holder_id=None,
         data_holder_brand_id=None,
@@ -106,16 +113,14 @@ def test_interim_register_identity_is_stable_and_explicit() -> None:
         display_name="Temporary Name",
     )
     second = provider_uid(
-        data_holder_id="ignored",
+        data_holder_id="holder-1",
         data_holder_brand_id=None,
         interim_id="interim-1",
-        endpoint_urls=("https://two.example",),
-        display_name="Renamed",
+        endpoint_urls=("https://one.example/changed",),
+        display_name="Temporary Name",
     )
-    assert first == second == (
-        "provider-interim:v2:5d7ee1702a6d73f9e0117089ed34de54af4d63ee5dfd558bddcb23759427272b",
-        "registry_interim",
-    )
+    assert first == second
+    assert first[1] == "fallback"
 
 
 @pytest.mark.parametrize(
@@ -142,6 +147,26 @@ def test_unknown_deposit_category_uses_only_unambiguous_dataset_evidence() -> No
     }
     assert infer_cdr_dataset({**base, "name": "12 Month Term Deposit"}) == "term_deposits"
     assert infer_cdr_dataset({**base, "name": "Everyday Account"}) is None
+
+
+def test_fallback_identity_uses_smallest_authority_from_whole_register_record() -> None:
+    item = {
+        "dataHolderBrandId": "brand-only",
+        "brandName": "Example Bank",
+        "industries": ["banking"],
+        "publicBaseUri": "https://z.example/cds-au/v1",
+        "productBaseUri": "https://z.example/cds-au/v1",
+        "logoUri": "https://a.example/logo.png",
+    }
+    row = next(iter(iter_banking_brands_from_payload({"data": [item]})))
+    expected, _ = provider_uid(
+        data_holder_id=None,
+        data_holder_brand_id="brand-only",
+        endpoint_urls=("https://a.example",),
+        display_name="Example Bank",
+    )
+    assert row["identity_authority"] == "a.example"
+    assert row["provider_uid"] == expected
 
 
 def test_unknown_lending_category_requires_mortgage_specific_evidence() -> None:
@@ -232,7 +257,7 @@ def test_clean_export_quarantines_out_of_unit_rate(tmp_path: Path) -> None:
         ("constraints", [1]),
     ],
 )
-def test_clean_export_quarantines_malformed_detail_arrays(
+def test_clean_export_omits_malformed_optional_detail_arrays(
     tmp_path: Path, field: str, value: object
 ) -> None:
     run = tmp_path / "2026-09-02"
@@ -240,6 +265,19 @@ def test_clean_export_quarantines_malformed_detail_arrays(
 
     banks = cdr_clean_export.parse_banks_run(run)
 
-    assert banks["products"] == []
-    assert banks["rates"] == []
-    assert banks["quarantines"][0]["status"] == "detail_array_invalid"
+    assert len(banks["products"]) == 1
+    assert len(banks["rates"]) == 1
+    assert banks["products"][0]["details_complete"] is False
+    assert field not in json.loads(banks["products"][0]["details_json"])
+    assert banks[field] == []
+    assert banks["quarantines"] == [
+        {
+            "phase": "normalization",
+            "bank": "Holder",
+            "product_id": "P1",
+            "status": "field_omitted_invalid",
+            "affected_sections": [field],
+            "evidence_digest": banks["products"][0]["evidence_id"],
+            "source_file": "Savings/Holder/Saver/P1/product-detail.json",
+        }
+    ]

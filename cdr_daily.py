@@ -501,7 +501,12 @@ def run_once(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    extra_args = [*sector_ingest_args(args), *args.ingest_arg]
+    extra_args = [
+        *sector_ingest_args(args),
+        *args.ingest_arg,
+        "--provider-registry",
+        str(state_dir / "provider-identity-registry-v1.json"),
+    ]
     use_ram_stage = args.ram_stage or automatic_pi_stage
     ram_cleanup_paths: Optional[tuple[Path, Path]] = None
     staged_exports_to_install: Optional[Path] = None

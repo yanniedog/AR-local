@@ -24,6 +24,7 @@ from cdr_http_policy import (
     request_https,
 )
 from cdr_contracts import canonical_authority, provider_uid
+from cdr_provider_identity_registry import resolve_provider_rows
 from cdr_ingest_parsing import (
     DATASET_CATEGORY_ALIASES,
     DATASET_TO_FOLDER,
@@ -77,6 +78,7 @@ class RegisterSnapshot:
     register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
+    provider_identity_registry_bytes: bytes = b'{"bindings":[],"schema_version":1}\n'
 
 
 def safe_url(value: str) -> str:
@@ -137,6 +139,25 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     return safe_url(raw) + "/cds-au/v1/banking/products"
 
 
+def _register_https_urls(value: Any) -> Iterable[str]:
+    """Yield every HTTPS string in one bounded Register provider record."""
+
+    pending = [value]
+    visited = 0
+    while pending:
+        current = pending.pop()
+        visited += 1
+        if visited > 10_000:
+            raise ValueError("register provider record is too deeply populated")
+        if isinstance(current, str):
+            if current.strip().lower().startswith("https://"):
+                yield current
+        elif isinstance(current, Mapping):
+            pending.extend(current.values())
+        elif isinstance(current, list):
+            pending.extend(current)
+
+
 def _banking_brand_row(
     item: Mapping[str, Any],
     *,
@@ -149,11 +170,12 @@ def _banking_brand_row(
     data_holder_brand_id = pick_text(item, ["dataHolderBrandId"])
     interim_id = pick_text(item, ["interimId"])
     display_name = brand_name or legal_name
+    identity_urls = (*_register_https_urls(item), endpoint_url)
     uid, identity_status = provider_uid(
         data_holder_id=data_holder_id,
         data_holder_brand_id=data_holder_brand_id,
         interim_id=interim_id,
-        endpoint_urls=(endpoint_raw, endpoint_url),
+        endpoint_urls=identity_urls,
         display_name=display_name,
     )
     return {
@@ -165,7 +187,7 @@ def _banking_brand_row(
         "interim_id": interim_id,
         "provider_uid": uid,
         "provider_identity_status": identity_status,
-        "identity_authority": canonical_authority((endpoint_raw, endpoint_url)),
+        "identity_authority": canonical_authority(identity_urls),
     }
 
 
@@ -804,6 +826,7 @@ def collect_register_snapshot(
     sleep_ms: int,
     holders_filter: Optional[str],
     attempt_journal: Optional[RawAttemptJournal] = None,
+    provider_registry_path: Optional[Path] = None,
 ) -> RegisterSnapshot:
     """Merge banking holder rows from all register URLs."""
     merged_banking: Dict[Tuple[str, str, str], Dict[str, str]] = {}
@@ -868,6 +891,25 @@ def collect_register_snapshot(
             merged_banking[key] = b
 
     banking_all = list(merged_banking.values())
+    registry_bytes = b'{"bindings":[],"schema_version":1}\n'
+    if provider_registry_path is not None:
+        banking_all, registry_bytes = resolve_provider_rows(
+            banking_all, provider_registry_path
+        )
+    by_uid: dict[str, list[Dict[str, Any]]] = {}
+    for row in banking_all:
+        by_uid.setdefault(str(row["provider_uid"]), []).append(row)
+    banking_all = []
+    for uid in sorted(by_uid):
+        rows = by_uid[uid]
+        row = dict(rows[0])
+        if len(rows) > 1:
+            row["provider_identity_status"] = "identity_collision"
+            row["provider_identity_held"] = True
+            row["provider_identity_evidence_digest"] = hashlib.sha256(
+                json.dumps(rows, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+        banking_all.append(row)
     count_banking = len(banking_all)
 
     if holders_filter:
@@ -897,5 +939,6 @@ def collect_register_snapshot(
         register_attempts=register_attempts,
         banking_brands=banking_brands,
         banking_count_before_filter=count_banking,
+        provider_identity_registry_bytes=registry_bytes,
     )
 

@@ -28,6 +28,10 @@ NOISE_KEYS = {
 
 URL_KEY_RE = re.compile(r"(uri|url|href|link)$", re.I)
 URL_TEXT_RE = re.compile(r"https?://\S+", re.I)
+SENSITIVE_KEY_RE = re.compile(
+    r"(?:authorization|cookie|credential|password|secret|signature|token|api[_-]?key|"
+    r"request[_-]?headers?|response[_-]?body|exception|traceback)", re.I
+)
 SPACE_RE = re.compile(r"\s+")
 OFFICIAL_PRODUCT_LINK_FIELDS = (
     "overviewUri",
@@ -64,7 +68,11 @@ def clean_value(value: Any) -> Any:
         out: Dict[str, Any] = {}
         for key, raw in value.items():
             lowered = str(key).lower()
-            if lowered in NOISE_KEYS or URL_KEY_RE.search(str(key)):
+            if (
+                lowered in NOISE_KEYS
+                or URL_KEY_RE.search(str(key))
+                or SENSITIVE_KEY_RE.search(str(key))
+            ):
                 continue
             cleaned = clean_value(raw)
             if cleaned not in ("", None, [], {}):
@@ -343,7 +351,8 @@ def _validate_core_rates(record: Mapping[str, Any], dataset: str) -> None:
                 parse_rate_string(comparison)
 
 
-def _validate_detail_arrays(record: Mapping[str, Any]) -> None:
+def _invalid_detail_arrays(record: Mapping[str, Any]) -> list[str]:
+    invalid = []
     for key in ("fees", "features", "eligibility", "constraints"):
         if key not in record:
             continue
@@ -351,7 +360,23 @@ def _validate_detail_arrays(record: Mapping[str, Any]) -> None:
         if not isinstance(raw, list) or any(
             not isinstance(item, Mapping) for item in raw
         ):
-            raise ValueError(f"{key} must be an array of objects")
+            invalid.append(key)
+    return invalid
+
+
+def _validate_rate_facts(rows: List[Dict[str, Any]]) -> None:
+    for row in rows:
+        if row.get("kind") != "rate" and row.get("value_type") != "rate":
+            continue
+        number = row.get("value_number")
+        if number is None:
+            continue
+        if (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not 0 <= number <= 1
+        ):
+            raise ValueError("rate fact must contain a decimal fraction from 0 to 1")
 
 
 def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
@@ -499,10 +524,17 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
                     "brand_name": provider_dir,
                 }
             base = bank_base_row(path, banks_root, rec, providers[provider_dir])
+            invalid_details = _invalid_detail_arrays(rec)
+            filtered = {
+                key: value for key, value in rec.items() if key not in invalid_details
+            }
+            safe_record = json.loads(detail_json(filtered))
+            base = bank_base_row(path, banks_root, safe_record, providers[provider_dir])
             code = "rate_invalid"
-            _validate_core_rates(rec, str(base["dataset"]))
-            code = "detail_array_invalid"
-            _validate_detail_arrays(rec)
+            _validate_core_rates(safe_record, str(base["dataset"]))
+            code = "rate_invalid"
+            facts = clean_fact_rows(safe_record, base)
+            _validate_rate_facts(facts)
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
             product_id = text(rec.get("productId") or rec.get("id"))
             if not product_id:
@@ -523,9 +555,29 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             dataset["failures"].append(issue)
             dataset["quarantines"].append(issue)
             continue
-        dataset["products"].append({**base, "details_json": detail_json(rec)})
-        append_bank_details(dataset, base, rec)
-        dataset["product_facts"].extend(clean_fact_rows(rec, base))
+        base["details_complete"] = not invalid_details
+        dataset["products"].append(
+            {
+                **base,
+                "details_json": json.dumps(
+                    safe_record, ensure_ascii=False, sort_keys=True
+                ),
+            }
+        )
+        for group in invalid_details:
+            dataset["quarantines"].append(
+                {
+                    "phase": "normalization",
+                    "bank": provider_dir,
+                    "product_id": base["product_id"],
+                    "status": "field_omitted_invalid",
+                    "affected_sections": [group],
+                    "evidence_digest": evidence_digest,
+                    "source_file": relative.as_posix(),
+                }
+            )
+        append_bank_details(dataset, base, safe_record)
+        dataset["product_facts"].extend(facts)
     dataset["provider_observations"] = [
         {
             "provider_dir": provider_dir,

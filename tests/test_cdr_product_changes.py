@@ -593,7 +593,7 @@ def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
         (export / name).write_bytes(b"unfinalized")
     current = tmp_path / "runs" / "2026-08-13"
     current.mkdir()
-    monkeypatch.setattr(change_runs, "_v9_database", lambda *_args: True)
+    monkeypatch.setattr(change_runs, "_canonical_database", lambda *_args: True)
 
     assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
 
