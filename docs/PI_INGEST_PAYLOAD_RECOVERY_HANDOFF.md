@@ -6946,3 +6946,424 @@ Do not execute either block from this documentation turn. No other elevation,
 manual task trigger, backup, ingest, deployment or publication is authorized.
 Installer `PASS` leaves A3 `RUNNING`; only natural backup acceptance and a later
 append-only terminal entry can close it or release A4.
+
+### Executable generator correction `C-20260902T140000+1000`
+
+The rolling search-index digest above is corrected to
+`6db1e8a078ccc133839a8fa79488bc8ae7e6d6e84db515729cefe0d5cf4dd12a`;
+the earlier value is quarantined. The abbreviated generator description is not
+an executable by itself. The exact complete generator is the block below.
+
+<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->
+```powershell
+param()
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version 2
+
+$entry='HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'
+$root=[IO.Path]::GetFullPath((Split-Path -Parent $PSCommandPath))
+$requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
+$candidateSha='8b158d74ddd51a3523ecb6367b6ef99ca994df61'
+$protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
+$planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
+$target='C:\code\backups\AR-local-pi5'
+$control=Join-Path $target 'dispatcher-control'
+$recovery='C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21'
+$runtime='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
+$python=Join-Path $runtime 'python.exe'
+$identity='C:\Users\jkoka\.ssh\pi5'
+$git='C:\Program Files\Git\cmd\git.exe'
+$ssh='C:\Windows\System32\OpenSSH\ssh.exe'
+$scp='C:\Windows\System32\OpenSSH\scp.exe'
+$whoami='C:\Windows\System32\whoami.exe'
+$operator='jkoka'
+$operatorSid='S-1-5-21-689213601-40760280-3596424081-1001'
+$principal='yanniedog\jkoka'
+$repo='https://github.com/yanniedog/AR-local.git'
+$candidate=Join-Path $root 'candidate'
+$authority=Join-Path $root 'authority'
+$knownHostsSource=Join-Path $root 'known-hosts-source'
+$knownHostsAlias=Join-Path $root 'known-hosts-alias'
+$manifest=Join-Path $root 'dispatcher-manifest.json'
+
+function Sha([string]$Path){(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()}
+function WriteUtf8([string]$Path,[string]$Text){[IO.File]::WriteAllText($Path,($Text-replace "`r",''),[Text.UTF8Encoding]::new($false))}
+function WriteJson([string]$Path,[object]$Value){WriteUtf8 $Path (($Value|ConvertTo-Json -Depth 12 -Compress)+"`n")}
+function RequireHash([string]$Path,[string]$Expected){if((Sha $Path)-cne$Expected){throw "hash drift: $Path"}}
+
+$now=[DateTimeOffset]::Now
+if($now.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$now.TimeOfDay-ge[TimeSpan]::FromHours(22)){throw 'outside D-006 daylight window'}
+foreach($path in @($candidate,$authority,$knownHostsSource,$knownHostsAlias,$manifest,(Join-Path $root 'trusted-child.json'),(Join-Path $root 'trusted-package-1.zip'),(Join-Path $root 'trusted-package-2.zip'),(Join-Path $root 'pre-execution-manifest.json'))){if(Test-Path -LiteralPath $path){throw "non-reusable output exists: $path"}}
+
+$authoritySha=(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
+if($authoritySha-notmatch'^[0-9a-f]{40}$'-or$authoritySha-ceq$candidateSha){throw 'post-merge authority is absent'}
+& $git -c core.autocrlf=false clone --quiet --no-checkout $repo $candidate
+if($LASTEXITCODE){throw 'candidate clone failed'}
+& $git -C $candidate -c core.autocrlf=false checkout --quiet --detach $candidateSha
+if($LASTEXITCODE){throw 'candidate checkout failed'}
+& $git -c core.autocrlf=false clone --quiet --no-checkout $repo $authority
+if($LASTEXITCODE){throw 'authority clone failed'}
+& $git -C $authority -c core.autocrlf=false checkout --quiet --detach $authoritySha
+if($LASTEXITCODE){throw 'authority checkout failed'}
+foreach($pair in @(@($candidate,$candidateSha),@($authority,$authoritySha))){if((& $git -C $pair[0] rev-parse HEAD).Trim()-cne$pair[1]-or(& $git -C $pair[0] status --porcelain=v1)){throw 'checkout identity/cleanliness failed'}}
+$handoff=Join-Path $authority 'docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+if(-not(Select-String -LiteralPath $handoff -SimpleMatch $entry -Quiet)){throw 'authority lacks this entry'}
+$handoffSha=Sha $handoff
+
+$sources=[ordered]@{
+'install_laptop_backup_trusted_dispatcher.ps1'='20f2581e46b2d525c180ff962ddfadd42e852b8d6fff1511b3f0b3c73969b96d'
+'install_laptop_backup_trusted_dispatcher_core.ps1'='de958229fe2a8220cae93083e9f1ad0bec031e6b4164d130782f163fc9f49a18'
+'install_laptop_backup_trusted_dispatcher_ssh.ps1'='7e387696d22a789f9ede481c48b820f52623e610e96a9f170cb6641b84757625'
+'laptop_backup_trusted_package.py'='6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43'
+'native\laptop_backup_trusted_launcher.cpp'='f31431ddb6ae9e6d7f7db5992dc74872303113761a01462264f50e173e7b7774'
+'run_laptop_backup_task.ps1'='50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860'
+'run_laptop_backup_trusted_child.ps1'='295271485c79907b7ee87463b53f6cc2258d146e07d771860ae4534b743c772a'
+'laptop_backup_dispatcher.py'='36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc'
+'laptop_backup_dispatcher_security.py'='c52229848b75931cb576855db3093830073be48695e97610f5e82ab8e403b36b'
+'laptop_backup_atomic.py'='d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c'
+'laptop_backup_scheduled.py'='25e400780554e82f690822bfbaaf41f8d8e93c85106d4501e561e7558d8c44cb'
+'laptop_backup_transport.py'='59cd046e7fae1eab543bb70dd0aca91bf346d6f1b554407a5eab76b3097ddfc1'
+'laptop_pull_backup.py'='ce3c80b492d04ef923aca2701169be76c35ee6d7cc45a517e2c535c7d2232d47'
+'laptop_backup_ssh_endpoint.py'='4b425d82301c749f3a1f6f2e36a070c169ea8a6e961d8d1ffd52fddbb4347f93'
+}
+foreach($item in $sources.GetEnumerator()){RequireHash (Join-Path $candidate $item.Key) $item.Value}
+RequireHash $python '53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f'
+RequireHash $identity 'faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e'
+RequireHash $git 'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9'
+RequireHash $ssh '6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42'
+RequireHash $scp '63b7118d8e1a8a84398cf4ce1584dc6b146606092fe9c68bbaf110bbdcfb480a'
+RequireHash $whoami '23240ef9f8b0a9a324110b1c2331de31dc1b0e08f5359cb707e51a939af56cd3'
+$inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(r.rglob("*")) if p.is_file()};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();print(len(d),sum(p.stat().st_size for p in r.rglob("*") if p.is_file()),hashlib.sha256(b).hexdigest())'
+$inventory=(& $python -I -c $inventoryCode $runtime).Trim()
+if($LASTEXITCODE-or$inventory-cne'3067 64118158 d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7'){throw 'runtime inventory drift'}
+
+. (Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_core.ps1')
+. (Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_ssh.ps1')
+$endpoint=Resolve-ArTrustedSshEndpoint -PythonPath $python -ModulePath (Join-Path $candidate 'laptop_backup_ssh_endpoint.py') -DiscoveryName 'ar.local' -TimeoutSeconds 10
+$keyLines=@(Get-Content -LiteralPath 'C:\Users\jkoka\.ssh\known_hosts'|Where-Object{($_-split'\s+')[0].Split(',')-contains$endpoint-and($_-split'\s+')[1]-ceq'ssh-ed25519'})
+if($keyLines.Count-ne1){throw 'pinned key source is not unique'}
+$keyFields=$keyLines[0]-split'\s+'
+$blob=[Convert]::FromBase64String($keyFields[2]);$hash=[Security.Cryptography.SHA256]::Create();try{$digest=$hash.ComputeHash($blob)}finally{$hash.Dispose()}
+$blobHex=($digest|ForEach-Object{$_.ToString('x2')})-join'';$fingerprint='SHA256:'+([Convert]::ToBase64String($digest).TrimEnd('='))
+if($blobHex-cne'84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e'-or$fingerprint-cne'SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4'){throw 'pinned key drift'}
+WriteUtf8 $knownHostsSource ("ar.local ssh-ed25519 $($keyFields[2])`n")
+WriteUtf8 $knownHostsAlias ("ar-local-pi5 ssh-ed25519 $($keyFields[2])`n")
+
+$catalog=Assert-ArTrustedCatalogBaseline -Target $target -ExpectedCatalogSha256 '7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511' -ExpectedCatalogSize 236234 -ExpectedCatalogFinalSequence 336 -ExpectedCatalogFinalEntrySha256 '368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420' -ExpectedLatestVerifiedSha256 '737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389' -ExpectedLatestVerifiedSize 316 -ExpectedAcceptedCatalogEntrySha256 '6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68' -ExpectedAcceptedReceiptRelativePath 'observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json' -ExpectedAcceptedReceiptSha256 '7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea' -ExpectedAcceptedReceiptSize 3392 -ExpectedAcceptedObservationId 'obs-2026-08-30-69a34aa4c745bb2e' -ExpectedAcceptedArchiveSha256 'abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b' -ExpectedAcceptedArchiveSize 237101208
+$trusted=[ordered]@{schema_version=6;authority_path=$authority;atomic_path=(Join-Path $candidate 'laptop_backup_atomic.py');atomic_sha256=$sources['laptop_backup_atomic.py'];control_root=$control;dispatcher_path=(Join-Path $candidate 'laptop_backup_dispatcher.py');dispatcher_sha256=$sources['laptop_backup_dispatcher.py'];dispatcher_security_path=(Join-Path $candidate 'laptop_backup_dispatcher_security.py');dispatcher_security_sha256=$sources['laptop_backup_dispatcher_security.py'];git_path=$git;git_sha256=(Sha $git);python_path=$python;python_sha256=(Sha $python);receiver_path=$candidate;scp_path=$scp;scp_sha256=(Sha $scp);ssh_discovery_timeout_seconds=10;ssh_endpoint_path=(Join-Path $candidate 'laptop_backup_ssh_endpoint.py');ssh_endpoint_sha256=$sources['laptop_backup_ssh_endpoint.py'];ssh_host='ar.local';ssh_logical_host='ar-local-pi5';ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_known_hosts_path=$knownHostsAlias;ssh_known_hosts_sha256=(Sha $knownHostsAlias);ssh_path=$ssh;ssh_sha256=(Sha $ssh);ssh_port=22;ssh_user='pi';whoami_path=$whoami;whoami_sha256=(Sha $whoami)}
+WriteJson (Join-Path $root 'trusted-child.json') $trusted
+$checkArgs=@('-B','-s','-E',(Join-Path $candidate 'laptop_backup_scheduled.py'),'--target',$target,'--host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-path',$ssh,'--ssh-sha256',(Sha $ssh),'--scp-path',$scp,'--scp-sha256',(Sha $scp),'--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsAlias,'--recovery-image',$recovery,'--candidate-code-sha',$candidateSha,'--protected-code-sha',$protectedSha,'--plan-git-commit',$planCommit,'--operator',$operator,'--check-only')
+$wrapper='import subprocess,sys;r=subprocess.run(sys.argv[1:],capture_output=True,text=True,timeout=120);print(r.stdout,end="");print(r.stderr,end="",file=sys.stderr);raise SystemExit(r.returncode)'
+$checkText=(& $python -I -c $wrapper $python @checkArgs 2>&1|Out-String)
+if($LASTEXITCODE){throw "fresh check-only failed: $checkText"}
+$check=$checkText|ConvertFrom-Json
+if($check.ok-ne$true-or$check.result-cne'PASS'-or$check.action-cne'NO_BACKUP_DATA_WRITE'){throw 'fresh check-only was not PASS/NO_BACKUP_DATA_WRITE'}
+WriteUtf8 (Join-Path $root 'check-only.json') (($check|ConvertTo-Json -Depth 12 -Compress)+"`n")
+
+$pointerPath=Join-Path $control 'active-runner.json'
+RequireHash $pointerPath 'fd66311c66aad9a8f16643171fdb3de54f6582361d41ce3255c7da09a086e923'
+$prior=Get-Content -LiteralPath $pointerPath -Raw|ConvertFrom-Json
+if($prior.sequence-ne1-or$prior.manifest_sha256-cne'af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092'){throw 'dispatcher predecessor drift'}
+$activationId=[guid]::NewGuid().ToString('N')
+$gate=[ordered]@{schema_version=1;result='PASS';activation_id=$activationId;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;operator_sid=$operatorSid;foreground_result='PASS';check_only_result='PASS'}
+$gatePath=Join-Path $root 'activation-gate.json';WriteJson $gatePath $gate
+$installRoot="C:\Program Files\AR-local-backup-trusted-$candidateSha-$authoritySha"
+$evidenceRoot="C:\Program Files\AR-local-backup-evidence-$candidateSha-$authoritySha"
+$created=[DateTimeOffset]::UtcNow
+$dispatcher=[ordered]@{schema_version=1;sequence=2;activation_id=$activationId;created_at=$created.ToString('o').Replace('+00:00','Z');activation_expires_at=$created.AddMinutes(45).ToString('o').Replace('+00:00','Z');previous_manifest_sha256=$prior.manifest_sha256;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;authority_repo=(Join-Path $installRoot 'authority');authority_handoff_path='docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md';candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;operator=$operator;operator_sid=$operatorSid;receiver=(Join-Path $installRoot 'receiver');allowed_receiver_root=$installRoot;entrypoint='run_laptop_backup_task.ps1';entrypoint_sha256=$sources['run_laptop_backup_task.ps1'];python_path=(Join-Path $installRoot 'python\python.exe');python_sha256=(Sha $python);scheduled_plan_git_commit=$planCommit;target=$target;allowed_target_root=$target;recovery_image=$recovery;allowed_recovery_root=[IO.Path]::GetDirectoryName($recovery);gate_evidence_path=$gatePath;gate_evidence_sha256=(Sha $gatePath)}
+WriteJson $manifest $dispatcher
+
+$launcher1=Join-Path $root 'launcher-1.exe';$launcher2=Join-Path $root 'launcher-2.exe';$source=Join-Path $candidate 'native\laptop_backup_trusted_launcher.cpp'
+Push-Location $root
+try{
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fe:$launcher1" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf|Out-Null
+if($LASTEXITCODE){throw 'launcher build 1 failed'}
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fe:$launcher2" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf|Out-Null
+if($LASTEXITCODE){throw 'launcher build 2 failed'}
+}finally{Pop-Location}
+if((Sha $launcher1)-cne(Sha $launcher2)){throw 'launcher builds differ'}
+$package1=Join-Path $root 'trusted-package-1.zip';$package2=Join-Path $root 'trusted-package-2.zip'
+$packageArgs=@('--candidate-repo',$candidate,'--candidate-sha',$candidateSha,'--authority-repo',$authority,'--authority-sha',$authoritySha,'--python-root',$runtime,'--launcher',$launcher1,'--dispatcher-manifest',$manifest,'--install-root',$installRoot,'--control-root',$control,'--operator-sid',$operatorSid,'--git',$git,'--ssh',$ssh,'--scp',$scp,'--ssh-host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsSource,'--whoami',$whoami)
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package1|Out-Null
+if($LASTEXITCODE){throw 'package build 1 failed'}
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package2|Out-Null
+if($LASTEXITCODE){throw 'package build 2 failed'}
+if((Sha $package1)-cne(Sha $package2)){throw 'package builds differ'}
+
+$taskName='AR-local laptop backup';$task=Get-ScheduledTask -TaskName $taskName;$taskInfo=Get-ScheduledTaskInfo -TaskName $taskName
+if($task.State.ToString()-cne'Ready'-or-not$task.Settings.Enabled-or$taskInfo.LastTaskResult-ne1){throw 'task state drift'}
+$taskXml=Join-Path $root 'observed-task.xml';[IO.File]::WriteAllBytes($taskXml,(Get-ArTrustedTaskXmlBytes $taskName));RequireHash $taskXml 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+$sddl=Get-ArTrustedTaskSddl $taskName
+if((Get-ArTrustedTextSha256 $sddl)-cne'6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b'-or(Get-ArTrustedSddlSemanticSha256 $sddl)-cne'd0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965'){throw 'task SDDL drift'}
+$active=@(Get-CimInstance Win32_Process|Where-Object{$_.ProcessId-ne$PID-and$_.CommandLine-and$_.CommandLine-match'laptop_backup_(scheduled|dispatcher|trusted_child)|laptop_pull_backup|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'})
+$residue=@((Join-Path $target 'catalog\.receiver.lock'),(Join-Path $control 'transition.lease'))|Where-Object{Test-Path -LiteralPath $_}
+$residue+=@(Get-ChildItem -LiteralPath $target -Recurse -Force|Where-Object{$_.Name-like'*.partial'-or$_.Name-like'.partial-*'-or$_.Name-like'*.partial-*'})
+if($active.Count-or$residue.Count-or[long](Get-PSDrive C).Free-lt50GB){throw 'process/residue/free-space gate failed'}
+$journal='C:\Program Files\AR-local-backup-evidence-0a444caab7624499bca7ffdbbc56189e152e53e9-dc78b85368c020dcbcbb357b932e56110999f105\20260831T090802Z-5b12a8455b9b4c14b36071bc498eb8eb\mutation-journal.jsonl'
+RequireHash $journal '2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3'
+$journalLines=@([IO.File]::ReadAllLines($journal,[Text.UTF8Encoding]::new($false)));if($journalLines.Count-ne2){throw 'D-014 line count drift'}
+
+$remote=@'
+set -eu
+cd /srv/ar-local/AR-local
+test "$(git rev-parse HEAD)" = '9302890fcc752cbf90da97d597e972c157d913e3'
+test -z "$(git status --porcelain=v1)"
+test "$(systemctl show ar-local-daily.service -p Result --value)" = success
+test "$(systemctl show ar-local-daily.service -p ExecMainStatus --value)" = 0
+test "$(systemctl is-enabled ar-local-daily.timer)" = enabled
+test "$(systemctl is-active ar-local-daily.timer)" = active
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+printf '%s  %s\n' bcde983cdab8790fe436d0f977e64cee4ae53ea74701820df2cab9e9d21704f1 /srv/ar-local/data/state/2026-09-02.done.json | sha256sum -c -
+printf '%s  %s\n' f2945b67890138827dcd1b74be69ae4e6727b740cd1a5414a2da01e0cea35745 /srv/ar-local/data/state/observation-pointers-v2/latest-observation.json | sha256sum -c -
+printf '%s  %s\n' cf98d96b46a18bdb5f128b439555429f7a648516ee9650aafa304ddca55fa425 /srv/ar-local/data/state/ledger-v2/head.json | sha256sum -c -
+printf '%s  %s\n' 4f45841840f1b2a256120bd269dd5557f277653d8a7c6667c4cf717564897d25 /srv/ar-local/data/runs/2026-09-02/_exports/ingest-status.json | sha256sum -c -
+printf '%s  %s\n' a1f6cd2369e872704530616b3b435fac8a115e13001645eef6b86fffc2454d44 /srv/ar-local/data/state/export-contracts-v2/2026-09-02/obs-2026-09-02-724fc227e6776842.json | sha256sum -c -
+printf '%s  %s\n' 9be89c33d89bef07e49c452340f2c2265880d7dd1b035dd6108ce57126d5e7af /srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite | sha256sum -c -
+test "$(curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest | sha256sum | cut -d' ' -f1)" = bbca1b65b96b06aed4702b551a507b7475739dc31c7ec9bbbcbadb7c312180b4
+python3 - <<'PY'
+import sqlite3
+p='/srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite'
+c=sqlite3.connect(f'file:{p}?mode=ro',uri=True);c.execute('pragma query_only=on')
+assert c.execute('pragma quick_check').fetchall()==[('ok',)]
+PY
+echo AR_PI_PREFLIGHT_PASS
+'@
+$pi=Invoke-ArTrustedSshScript -SshPath $ssh -HostName $endpoint -LogicalHost 'ar-local-pi5' -UserName 'pi' -Port 22 -IdentityPath $identity -KnownHostsPath $knownHostsAlias -Script (($remote-replace"`r",'')+"`n") -TimeoutMilliseconds 120000
+if($pi.ExitCode-ne0-or$pi.Stderr-or@($pi.Stdout.TrimEnd()-split"`n")[-1]-cne'AR_PI_PREFLIGHT_PASS'){throw "Pi preflight failed: $($pi.Stderr)"}
+WriteUtf8 (Join-Path $root 'pi-preflight.txt') $pi.Stdout
+
+$web=[Net.Http.HttpClient]::new();$web.Timeout=[TimeSpan]::FromSeconds(20)
+try{foreach($pair in @(@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/manifest.json','367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47'),@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json','a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236'),@('https://github.com/yanniedog/AR-local/releases/download/app-payload-dates/dates-index.json','9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e'),@('https://github.com/yanniedog/AR-local/releases/download/app-payload-v2-latest/manifest-v2.json','02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb'))){$bytes=$web.GetByteArrayAsync($pair[0]).GetAwaiter().GetResult();$h=[Security.Cryptography.SHA256]::Create();try{$actual=($h.ComputeHash($bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()};if($actual-cne$pair[1]){throw "publication drift: $($pair[0])"}}}finally{$web.Dispose()}
+if(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]-cne$authoritySha-or(Sha $handoff)-cne$handoffSha){throw 'authority advanced during preparation'}
+
+$installer=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher.ps1';$core=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_core.ps1';$sshBoundary=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_ssh.ps1';$hostPath='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';$preexec=Join-Path $root 'pre-execution-manifest.json'
+$invoke=[ordered]@{task_name=$taskName;package_path=$package1;package_sha256=(Sha $package1);install_root=$installRoot;target=$target;control_root=$control;recovery_image=$recovery;evidence_root=$evidenceRoot;principal=$principal;operator=$operator;operator_sid=$operatorSid;candidate_code_sha=$candidateSha;authority_commit=$authoritySha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;handoff_sha256=$handoffSha;expected_old_task_xml_sha256='aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2';expected_old_task_sddl_sha256='6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b';expected_old_task_sddl_semantic_sha256='d0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965';expected_old_task_last_result=1;expected_catalog_sha256='7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511';expected_catalog_size=236234L;expected_catalog_final_sequence=336;expected_catalog_final_entry_sha256='368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420';expected_latest_verified_sha256='737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389';expected_latest_verified_size=316L;expected_accepted_catalog_entry_sha256='6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68';expected_accepted_receipt_relative_path='observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json';expected_accepted_receipt_sha256='7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea';expected_accepted_receipt_size=3392L;expected_accepted_observation_id='obs-2026-08-30-69a34aa4c745bb2e';expected_accepted_archive_sha256='abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b';expected_accepted_archive_size=237101208L;installer_sha256=(Sha $installer);core_sha256=(Sha $core);ssh_boundary_sha256=(Sha $sshBoundary);pre_execution_manifest_path=$preexec;pre_execution_manifest_sha256='<SELF_SHA256>';pi_host='ar.local';pi_user='pi';pi_port=22;ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_executable_sha256=(Sha $ssh)}
+$contract=Get-ArTrustedInvocationContractSha256 $invoke
+$fresh=[DateTimeOffset]::UtcNow
+if([DateTimeOffset]::Now.AddMinutes(45).DateTime.Date-ne[DateTimeOffset]::Now.Date-or[DateTimeOffset]::Now.AddMinutes(45).TimeOfDay-gt[TimeSpan]::FromHours(22)){throw 'preflight would cross safe stop'}
+$pre=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';task_name=$taskName;package_path=$package1;package_sha256=(Sha $package1);install_root=$installRoot;target=$target;control_root=$control;recovery_image=$recovery;evidence_root=$evidenceRoot;principal=$principal;operator=$operator;operator_sid=$operatorSid;candidate_code_sha=$candidateSha;authority_commit=$authoritySha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;handoff_sha256=$handoffSha;expected_old_task_xml_sha256=$invoke.expected_old_task_xml_sha256;expected_old_task_sddl_sha256=$invoke.expected_old_task_sddl_sha256;expected_old_task_sddl_semantic_sha256=$invoke.expected_old_task_sddl_semantic_sha256;expected_old_task_last_result=1;installer_sha256=(Sha $installer);core_sha256=(Sha $core);ssh_boundary_sha256=(Sha $sshBoundary);expected_catalog_sha256=$invoke.expected_catalog_sha256;expected_catalog_size=236234L;expected_catalog_final_sequence=336;expected_catalog_final_entry_sha256=$invoke.expected_catalog_final_entry_sha256;expected_latest_verified_sha256=$invoke.expected_latest_verified_sha256;expected_latest_verified_size=316L;expected_accepted_catalog_entry_sha256=$invoke.expected_accepted_catalog_entry_sha256;expected_accepted_receipt_relative_path=$invoke.expected_accepted_receipt_relative_path;expected_accepted_receipt_sha256=$invoke.expected_accepted_receipt_sha256;expected_accepted_receipt_size=3392L;expected_accepted_observation_id=$invoke.expected_accepted_observation_id;expected_accepted_archive_sha256=$invoke.expected_accepted_archive_sha256;expected_accepted_archive_size=237101208L;invocation_contract_schema=1;invocation_host_path=$hostPath;invocation_script_path=$installer;invocation_contract_sha256=$contract;rollback_procedure='RESTORE_TASK_CONTROL_AND_QUARANTINE_V1';preflight_min_free_bytes=53687091200L;preflight_expected_active_process_count=0;preflight_expected_residue_count=0;preflight_expected_pi_status='AR_PI_PREFLIGHT_PASS';pi_host='ar.local';pi_user='pi';pi_port=22;ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_executable_sha256=(Sha $ssh);created_at=$fresh.ToString('o');expires_at=$fresh.AddMinutes(45).ToString('o')}
+WriteJson $preexec $pre
+
+function Quote([string]$Value){"'"+$Value.Replace("'","''")+"'"}
+$args=[ordered]@{TaskName=$taskName;PackagePath=$package1;PackageSha256=(Sha $package1);InstallRoot=$installRoot;Target=$target;ControlRoot=$control;RecoveryImage=$recovery;EvidenceRoot=$evidenceRoot;Principal=$principal;Operator=$operator;OperatorSid=$operatorSid;CandidateCodeSha=$candidateSha;AuthorityCommit=$authoritySha;ProtectedCodeSha=$protectedSha;PlanGitCommit=$planCommit;PlanSha256=$planSha;HandoffSha256=$handoffSha;ExpectedOldTaskXmlSha256=$invoke.expected_old_task_xml_sha256;ExpectedOldTaskSddlSha256=$invoke.expected_old_task_sddl_sha256;ExpectedOldTaskSddlSemanticSha256=$invoke.expected_old_task_sddl_semantic_sha256;ExpectedOldTaskLastResult='1';ExpectedCatalogSha256=$invoke.expected_catalog_sha256;ExpectedCatalogSize='236234';ExpectedCatalogFinalSequence='336';ExpectedCatalogFinalEntrySha256=$invoke.expected_catalog_final_entry_sha256;ExpectedLatestVerifiedSha256=$invoke.expected_latest_verified_sha256;ExpectedLatestVerifiedSize='316';ExpectedAcceptedCatalogEntrySha256=$invoke.expected_accepted_catalog_entry_sha256;ExpectedAcceptedReceiptRelativePath=$invoke.expected_accepted_receipt_relative_path;ExpectedAcceptedReceiptSha256=$invoke.expected_accepted_receipt_sha256;ExpectedAcceptedReceiptSize='3392';ExpectedAcceptedObservationId=$invoke.expected_accepted_observation_id;ExpectedAcceptedArchiveSha256=$invoke.expected_accepted_archive_sha256;ExpectedAcceptedArchiveSize='237101208';InstallerSha256=(Sha $installer);CoreSha256=(Sha $core);SshBoundarySha256=(Sha $sshBoundary);PreExecutionManifestPath=$preexec;PreExecutionManifestSha256=(Sha $preexec);SshIdentityPath=$identity;SshIdentitySha256=(Sha $identity);SshExecutableSha256=(Sha $ssh);PiHost='ar.local';PiUser='pi';PiPort='22'}
+$inner='$ErrorActionPreference=''Stop'';& '+(Quote $installer);foreach($item in $args.GetEnumerator()){$inner+=' -'+$item.Key+' '+(Quote ([string]$item.Value))}
+$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
+[IO.File]::WriteAllText((Join-Path $root 'uac-encoded.txt'),$encoded,[Text.Encoding]::ASCII)
+$summary=[ordered]@{result='PASS';authority_commit=$authoritySha;handoff_sha256=$handoffSha;candidate_code_sha=$candidateSha;endpoint=$endpoint;logical_host='ar-local-pi5';launcher_sha256=(Sha $launcher1);package_sha256=(Sha $package1);activation_gate_sha256=(Sha $gatePath);dispatcher_manifest_sha256=(Sha $manifest);pre_execution_manifest_sha256=(Sha $preexec);invocation_contract_sha256=$contract;check_only_execution_record=$check.execution_record;catalog_sha256=$invoke.expected_catalog_sha256;expires_at=$pre.expires_at;uac_encoded_sha256=(Sha (Join-Path $root 'uac-encoded.txt'))}
+WriteJson (Join-Path $root 'preflight-summary.json') $summary
+[Console]::Out.Write($encoded)
+```
+<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->
+
+Materialize only from the current merged authority checkout: read the bytes
+strictly between the markers, remove the Markdown fence lines, normalize LF,
+write create-once to the exact path, and require the bound generator SHA-256 in
+the correction immediately below. The materializer and generator are ordinary
+non-administrator commands; neither is authorized in this documentation turn.
+
+### Generator binding correction `C-20260902T140500+1000`
+
+The exact generator block is 27954 UTF-8/LF bytes, 198 lines, SHA-256
+`5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6`.
+PowerShell's parser reports zero syntax errors. This binding supersedes the
+earlier dangling generator reference and earlier `next_command` hash.
+
+Run this complete materializer only after the authority merge. It obtains the
+current immutable handoff directly at canonical `origin/main`, records the
+actual D-012 authority and complete handoff hashes, extracts only the marked
+block, verifies the hash above, and uses create-once output:
+
+```powershell
+$ErrorActionPreference='Stop'
+$repo='https://github.com/yanniedog/AR-local.git'
+$authoritySha=(((& 'C:\Program Files\Git\cmd\git.exe' ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
+if($authoritySha-notmatch'^[0-9a-f]{40}$'){throw 'canonical main is invalid'}
+$client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(20)
+try{$bytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md").GetAwaiter().GetResult()}finally{$client.Dispose()}
+$alg=[Security.Cryptography.SHA256]::Create();try{$handoffSha=($alg.ComputeHash($bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$alg.Dispose()}
+$text=[Text.Encoding]::UTF8.GetString($bytes)
+if($text-notmatch'HANDOFF-20260902T133826\+1000-A3-PINNED-LAN-FINAL-AUTHORITY'){throw 'current main lacks authority entry'}
+$match=[regex]::Match($text,'(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->\r?\n```powershell\r?\n(.*?)\r?\n```\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->')
+if(-not$match.Success){throw 'bound generator block is absent'}
+$script=$match.Groups[1].Value-replace"`r",'';$scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script)
+$alg=[Security.Cryptography.SHA256]::Create();try{$scriptSha=($alg.ComputeHash($scriptBytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$alg.Dispose()}
+if($scriptBytes.Length-ne27954-or$scriptSha-cne'5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6'){throw 'generator binding mismatch'}
+$root='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012';if(Test-Path -LiteralPath $root){throw 'evidence root is not create-once'}
+[void](New-Item -ItemType Directory -Path $root)
+$path=Join-Path $root 'prepare-and-preflight.ps1';$stream=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($scriptBytes,0,$scriptBytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+$record=[ordered]@{schema_version=1;authority_commit=$authoritySha;complete_handoff_raw_sha256=$handoffSha;generator_path=$path;generator_bytes=$scriptBytes.Length;generator_sha256=$scriptSha;materialized_at=[DateTimeOffset]::UtcNow.ToString('o')}
+[IO.File]::WriteAllText((Join-Path $root 'materialization.json'),(($record|ConvertTo-Json -Compress)+"`n"),[Text.UTF8Encoding]::new($false))
+if((((& 'C:\Program Files\Git\cmd\git.exe' ls-remote $repo refs/heads/main)-split"`t")[0])-cne$authoritySha){throw 'main advanced during materialization'}
+$record|ConvertTo-Json -Compress
+```
+
+The corrected exact next command is 205 UTF-8 bytes with no trailing LF,
+SHA-256 `45ebfe833dfcf9126e05a2608725fb6e949611f5c3af3a6f3f24d5f0cc0b4184`:
+
+```powershell
+$encoded = & 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012\prepare-and-preflight.ps1'
+```
+
+`$encoded` must be one non-empty base64 line and the generator's terminal
+`preflight-summary.json` must be `PASS`, current and unexpired before using the
+single UAC command already bound above. The corrected pointer delta is:
+
+```json
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":4,"predecessor":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T140500+1000","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":27954,"sha256":"5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6"},"authority_merge_sha":"D012_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_MATERIALIZATION_RECORD","package_sha256":"D012_PREFLIGHT_SUMMARY","dispatcher_manifest_sha256":"D012_PREFLIGHT_SUMMARY","preexecution_manifest_sha256":"D012_PREFLIGHT_SUMMARY","next_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","next_command_utf8_lf_sha256":"45ebfe833dfcf9126e05a2608725fb6e949611f5c3af3a6f3f24d5f0cc0b4184","terminal_status":"USABLE_ONLY_AFTER_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+```
+
+### Terminal generator correction `C-20260902T143500+1000`
+
+This correction supersedes and quarantines the unmodified generator and the
+sequence-4 materializer. Neither may be used. Read-only fetches on 2026-09-02
+authenticated the canonical rolling routes: `app-payload-latest/dates-index.json`
+is 2116 bytes, SHA-256
+`9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e`, and
+`app-payload-latest/manifest-v2.json` is 1217 bytes, SHA-256
+`02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb`.
+The obsolete `app-payload-dates` and `app-payload-v2-latest` routes are
+quarantined. The dated and rolling core/details assets and rolling search asset
+were also fetched independently at the exact sizes and hashes in the authority.
+
+The corrected generator requires the create-once evidence root to contain only
+`prepare-and-preflight.ps1` and `materialization.json` at entry. It gives both
+launcher objects explicit paths, emits `build-result.json`, records every fixed
+source/tool and generated file by absolute path, size and SHA-256, and rejects
+any missing or unexpected top-level output before terminal `PASS`. The final
+UTF-8/LF generator is 31582 bytes, 220 lines, SHA-256
+`19bbfa484945d48dd782e52ce16673b7653de2748feb5aad8109dc15c300a2ae`;
+PowerShell's parser reports zero errors.
+
+The corrected exact dual launcher commands are:
+
+```powershell
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fo$launcherObj1" "/Fe:$launcher1" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fo$launcherObj2" "/Fe:$launcher2" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf
+if ((Get-FileHash -LiteralPath $launcher1 -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $launcher2 -Algorithm SHA256).Hash) { throw 'launcher builds differ' }
+```
+
+The corrected generator retains these exact deterministic dual package commands:
+
+```powershell
+$packageArgs=@('--candidate-repo',$candidate,'--candidate-sha',$candidateSha,'--authority-repo',$authority,'--authority-sha',$authoritySha,'--python-root',$runtime,'--launcher',$launcher1,'--dispatcher-manifest',$manifest,'--install-root',$installRoot,'--control-root',$control,'--operator-sid',$operatorSid,'--git',$git,'--ssh',$ssh,'--scp',$scp,'--ssh-host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsSource,'--whoami',$whoami)
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package1
+if ($LASTEXITCODE) { throw 'package build 1 failed' }
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package2
+if ($LASTEXITCODE) { throw 'package build 2 failed' }
+if ((Get-FileHash -LiteralPath $package1 -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $package2 -Algorithm SHA256).Hash) { throw 'package builds differ' }
+```
+
+After this correction is merged, run the following complete non-administrator
+materializer from any clean PowerShell session. It resolves canonical current
+`main`, hashes the complete raw handoff, verifies the original marked block,
+applies only the eight unique fail-closed replacements below, verifies the exact
+corrected generator binding and parser result, and writes create-once. It does
+not build, preflight, elevate, trigger, back up, ingest, deploy or publish.
+
+```powershell
+$ErrorActionPreference='Stop'
+$repo='https://github.com/yanniedog/AR-local.git'
+$git='C:\Program Files\Git\cmd\git.exe'
+$authoritySha=(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
+if($authoritySha-notmatch'^[0-9a-f]{40}$'-or$authoritySha-ceq'8b158d74ddd51a3523ecb6367b6ef99ca994df61'){throw 'post-merge canonical main is invalid'}
+$client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(20)
+try{$handoffBytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md").GetAwaiter().GetResult()}finally{$client.Dispose()}
+function BytesSha([byte[]]$Bytes){$h=[Security.Cryptography.SHA256]::Create();try{($h.ComputeHash($Bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()}}
+$handoffSha=BytesSha $handoffBytes
+$text=[Text.Encoding]::UTF8.GetString($handoffBytes)
+if(-not$text.Contains('C-20260902T143500+1000')){throw 'current main lacks terminal correction'}
+$match=[regex]::Match($text,'(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->\r?\n```powershell\r?\n(.*?)\r?\n```\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1 -->')
+if(-not$match.Success){throw 'marked generator is absent'}
+$script=$match.Groups[1].Value-replace"`r",''
+$originalBytes=[Text.UTF8Encoding]::new($false).GetBytes($script)
+if($originalBytes.Length-ne27954-or(BytesSha $originalBytes)-cne'5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6'){throw 'original generator binding mismatch'}
+function ReplaceLineOnce([string]$Text,[string]$Needle,[string]$New){$lines=[Collections.Generic.List[string]]::new();foreach($line in ($Text-split"`n")){$lines.Add($line)};$indexes=@(for($i=0;$i-lt$lines.Count;$i++){if($lines[$i].Contains($Needle)){$i}});if($indexes.Count-ne1){throw "line match count $($indexes.Count): $Needle"};$lines[$indexes[0]]=$New;[string]::Join("`n",$lines)}
+$replacement=@'
+$allowedInitial=@('prepare-and-preflight.ps1','materialization.json')
+$initial=@(Get-ChildItem -LiteralPath $root -Force)
+if($initial.Count-ne2-or@($initial|Where-Object{$allowedInitial-notcontains$_.Name}).Count-or@($allowedInitial|Where-Object{-not(Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)}).Count){throw 'evidence root contains prior or unbound output'}
+'@.Trim()
+$script=ReplaceLineOnce $script 'non-reusable output exists' $replacement
+$replacement=@'
+$launcher1=Join-Path $root 'launcher-1.exe';$launcher2=Join-Path $root 'launcher-2.exe';$launcherObj1=Join-Path $root 'launcher-1.obj';$launcherObj2=Join-Path $root 'launcher-2.obj';$source=Join-Path $candidate 'native\laptop_backup_trusted_launcher.cpp'
+'@.Trim()
+$script=ReplaceLineOnce $script '$launcher1=Join-Path' $replacement
+$script=ReplaceLineOnce $script '"/Fe:$launcher1"' '& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fo$launcherObj1" "/Fe:$launcher1" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf|Out-Null'
+$script=ReplaceLineOnce $script '"/Fe:$launcher2"' '& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE $source "/Fo$launcherObj2" "/Fe:$launcher2" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf|Out-Null'
+$replacement=@'
+if((Sha $package1)-cne(Sha $package2)){throw 'package builds differ'}
+
+function Record([string]$Path){[ordered]@{path=[IO.Path]::GetFullPath($Path);bytes=[long](Get-Item -LiteralPath $Path).Length;sha256=(Sha $Path)}}
+$sourceRecords=[ordered]@{};foreach($item in $sources.GetEnumerator()){$path=Join-Path $candidate $item.Key;$sourceRecords[$item.Key]=Record $path}
+$build=[ordered]@{schema_version=1;authority_commit=$authoritySha;candidate_commit=$candidateSha;protected_commit=$protectedSha;complete_handoff=(Record $handoff);plan=[ordered]@{commit=$planCommit;sha256=$planSha};runtime=[ordered]@{path=$runtime;files=3067;bytes=64118158L;inventory_sha256='d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7';python=(Record $python)};tools=[ordered]@{git=(Record $git);ssh=(Record $ssh);scp=(Record $scp);whoami=(Record $whoami);identity=(Record $identity)};sources=$sourceRecords;route=[ordered]@{discovery='ar.local';selected=$endpoint;logical='ar-local-pi5';user='pi';port=22;key_blob_sha256=$blobHex;fingerprint=$fingerprint};known_hosts_source=(Record $knownHostsSource);known_hosts_alias=(Record $knownHostsAlias);trusted_child=(Record (Join-Path $root 'trusted-child.json'));check_only=(Record (Join-Path $root 'check-only.json'));active_pointer=(Record $pointerPath);activation_gate=(Record $gatePath);dispatcher_manifest=(Record $manifest);launcher_1=(Record $launcher1);launcher_2=(Record $launcher2);launcher_object_1=(Record $launcherObj1);launcher_object_2=(Record $launcherObj2);package_1=(Record $package1);package_2=(Record $package2)}
+WriteJson (Join-Path $root 'build-result.json') $build
+'@.Trim()
+$script=ReplaceLineOnce $script 'if((Sha $package1)-cne' $replacement
+$replacement=@'
+$publication=@(
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/manifest.json',1211L,'367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json',2881L,'a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json',2116L,'9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json',1217L,'02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/search-index-2026-09-02-6db1e8a078cc.json.gz',597950L,'6db1e8a078ccc133839a8fa79488bc8ae7e6d6e84db515729cefe0d5cf4dd12a'))
+$web=[Net.Http.HttpClient]::new();$web.Timeout=[TimeSpan]::FromSeconds(20)
+'@.Trim()
+$script=ReplaceLineOnce $script '$web=[Net.Http.HttpClient]::new()' $replacement
+$script=ReplaceLineOnce $script 'try{foreach($pair in @(@(' 'try{foreach($pair in $publication){$bytes=$web.GetByteArrayAsync($pair[0]).GetAwaiter().GetResult();$h=[Security.Cryptography.SHA256]::Create();try{$actual=($h.ComputeHash($bytes)|ForEach-Object{$_.ToString(''x2'')})-join''''}finally{$h.Dispose()};if($bytes.Length-ne[long]$pair[1]-or$actual-cne$pair[2]){throw "publication drift: $($pair[0])"}}}finally{$web.Dispose()}'
+$replacement=@'
+$expected=@('prepare-and-preflight.ps1','materialization.json','candidate','authority','known-hosts-source','known-hosts-alias','dispatcher-manifest.json','trusted-child.json','check-only.json','activation-gate.json','launcher-1.exe','launcher-2.exe','launcher-1.obj','launcher-2.obj','trusted-package-1.zip','trusted-package-2.zip','build-result.json','observed-task.xml','pi-preflight.txt','pre-execution-manifest.json','uac-encoded.txt')
+$present=@(Get-ChildItem -LiteralPath $root -Force|ForEach-Object{$_.Name})
+if(@($expected|Where-Object{$present-notcontains$_}).Count-or@($present|Where-Object{$expected-notcontains$_}).Count){throw 'generated output set is incomplete or unbound'}
+$outputs=[ordered]@{};foreach($name in $expected){$path=Join-Path $root $name;if(Test-Path -LiteralPath $path -PathType Leaf){$outputs[$name]=Record $path}}
+$outputs['active-runner.json']=Record $pointerPath
+$summary=[ordered]@{schema_version=1;result='PASS';authority_commit=$authoritySha;complete_handoff_sha256=$handoffSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_commit=$planCommit;plan_sha256=$planSha;endpoint=$endpoint;logical_host='ar-local-pi5';host_key_blob_sha256=$blobHex;host_key_fingerprint=$fingerprint;outputs=$outputs;invocation_contract_sha256=$contract;check_only_execution_record=$check.execution_record;catalog_sha256=$invoke.expected_catalog_sha256;expires_at=$pre.expires_at}
+'@.Trim()
+$script=ReplaceLineOnce $script '$summary=[ordered]@{result=' $replacement
+$scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script)
+$scriptSha=BytesSha $scriptBytes
+if($scriptBytes.Length-ne31582-or$scriptSha-cne'19bbfa484945d48dd782e52ce16673b7653de2748feb5aad8109dc15c300a2ae'){throw 'corrected generator binding mismatch'}
+$tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
+if(@($parseErrors).Count){throw 'corrected generator has parse errors'}
+if((((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()-cne$authoritySha){throw 'main advanced during materialization'}
+$root='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+if(Test-Path -LiteralPath $root){throw 'evidence root is not create-once'}
+[void](New-Item -ItemType Directory -Path $root)
+function WriteNew([string]$Path,[byte[]]$Bytes){$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}}
+$generatorPath=Join-Path $root 'prepare-and-preflight.ps1'
+WriteNew $generatorPath $scriptBytes
+$record=[ordered]@{schema_version=1;correction='C-20260902T143500+1000';authority_commit=$authoritySha;complete_handoff_raw_sha256=$handoffSha;original_generator_sha256='5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6';generator_path=$generatorPath;generator_bytes=$scriptBytes.Length;generator_lines=220;generator_sha256=$scriptSha;materialized_at=[DateTimeOffset]::UtcNow.ToString('o')}
+$recordBytes=[Text.UTF8Encoding]::new($false).GetBytes((($record|ConvertTo-Json -Compress)+"`n"))
+WriteNew (Join-Path $root 'materialization.json') $recordBytes
+$record|ConvertTo-Json -Compress
+```
+
+Materializer output binding: `prepare-and-preflight.ps1` must be exactly 31582
+UTF-8/LF bytes with SHA-256
+`19bbfa484945d48dd782e52ce16673b7653de2748feb5aad8109dc15c300a2ae`.
+The actual authority commit and complete handoff raw SHA-256 are recorded in
+`materialization.json`; generated launcher/package/manifest/pointer and every
+preflight output identity are recorded in `build-result.json` and
+`preflight-summary.json`. Do not reuse the evidence root after any failure.
+
+The exact next command remains 205 UTF-8 bytes with no trailing LF, SHA-256
+`45ebfe833dfcf9126e05a2608725fb6e949611f5c3af3a6f3f24d5f0cc0b4184`:
+
+```powershell
+$encoded = & 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012\prepare-and-preflight.ps1'
+```
+
+Only a non-empty one-line base64 result plus current, unexpired terminal
+`preflight-summary.json` `PASS` permits the single UAC command already recorded
+in the sequence-3 authority. No other elevation, manual task trigger, backup,
+ingest, deployment or publication is authorized. Natural backup acceptance is
+still mandatory; A3 remains running and A4 remains blocked.
+
+```json
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":5,"predecessor":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T143500+1000","quarantines":["unmodified-generator-5471eef99980b1b9970284ccf716ce99aba928fa96bbbf510860e203fdb49de6","sequence-4-materializer","app-payload-dates","app-payload-v2-latest"],"candidate_sha":"8b158d74ddd51a3523ecb6367b6ef99ca994df61","authority_merge_sha":"D012_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":31582,"lines":220,"sha256":"19bbfa484945d48dd782e52ce16673b7653de2748feb5aad8109dc15c300a2ae"},"build_result":"D012_BUILD_RESULT","package_sha256":"D012_PREFLIGHT_SUMMARY","dispatcher_manifest_sha256":"D012_PREFLIGHT_SUMMARY","active_pointer_sha256":"D012_PREFLIGHT_SUMMARY","preexecution_manifest_sha256":"D012_PREFLIGHT_SUMMARY","publication":{"dates_index_url":"https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json","dates_index_sha256":"9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e","v2_url":"https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json","v2_sha256":"02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb","v2_state":"FAIL_STALE_2026-08-21"},"next_action":"materialize corrected generator; run exact next command non-admin; require current terminal PASS; then and only then use the sole sequence-3 UAC command","next_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","next_command_utf8_lf_sha256":"45ebfe833dfcf9126e05a2608725fb6e949611f5c3af3a6f3f24d5f0cc0b4184","expiry":"fresh preflight 45 minutes; never after 22:00 Australia/Hobart","stop":["main/handoff/generator drift","non-create-once root or unexpected output","resolver/key/auth drift","source/tool/runtime/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher/package mismatch"],"terminal_status":"USABLE_ONLY_AFTER_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+```
