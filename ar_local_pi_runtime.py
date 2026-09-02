@@ -129,12 +129,35 @@ def manifest_banks_rate_count(manifest: Mapping[str, Any]) -> int:
 
 
 def export_manifest_is_valid(manifest: Mapping[str, Any]) -> bool:
-    """A dashboard export is usable when banking rates were exported."""
+    """A current observation is usable; legacy exports require banking rates."""
+    if manifest.get("contract") == "observation-v1":
+        return bool(
+            manifest.get("run_date")
+            and manifest.get("observation_state") in {"complete", "degraded"}
+        )
     return manifest_banks_rate_count(manifest) > 0
 
 
 def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
     exports_root = exports_root.expanduser().resolve()
+    observation_path = exports_root / "observation-v1.json"
+    if observation_path.is_file():
+        try:
+            observation = json.loads(observation_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(observation, dict) or observation.get("schema_version") != 1:
+            return None
+        row_counts = observation.get("row_counts")
+        return {
+            "contract": "observation-v1",
+            "run_date": observation.get("observation_date"),
+            "observed_at": observation.get("observed_at"),
+            "observation_state": observation.get("state"),
+            "banks_counts": row_counts if isinstance(row_counts, dict) else {},
+        }
+
+    # Read-only compatibility for already-finalized historical observations.
     manifest_path = exports_root / "dashboard-cache" / "latest.json"
     if not manifest_path.is_file():
         return None
