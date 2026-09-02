@@ -46,6 +46,7 @@ from ar_local_pi_runtime import (
     is_raspberry_pi,
 )
 import pi_deploy_http
+import pi_deploy_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
@@ -87,6 +88,7 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "pi_daily_sync.py",
     "pi_deploy_cli.py",
     "pi_deploy_http.py",
+    "pi_deploy_snapshot.py",
     "pi_deploy_verify.py",
     "pi_runtime_health.py",
     "pi_capacity_monitor.py",
@@ -485,98 +487,19 @@ def status_active(*, dry_run: bool = False, snap: Optional[dict[str, str]] = Non
 
 
 def pi_service_paths_ok(snap: dict[str, str]) -> bool:
-    ok = True
-    path_fields = {
-        "status WorkingDirectory": snap.get("STATUS_WD", ""),
-        "status ExecStart": snap.get("STATUS_EXEC", ""),
-        "daily WorkingDirectory": snap.get("DAILY_WD", ""),
-        "daily ExecStart": snap.get("DAILY_EXEC", ""),
-    }
-    environment_fields = {
-        "status Environment": snap.get("STATUS_ENV", ""),
-        "daily Environment": snap.get("DAILY_ENV", ""),
-    }
-    for label, value in {**path_fields, **environment_fields}.items():
-        print(f"pi_deploy_verify: {label}: {value}")
-    for label, value in path_fields.items():
-        if FORBIDDEN_PI_BOOTSTRAP_RE.search(value):
-            print(f"pi_deploy_verify: forbidden bootstrap path in {label}: {value}", file=sys.stderr)
-            ok = False
-    for label, value in environment_fields.items():
-        try:
-            assignments = shlex.split(value)
-        except ValueError:
-            assignments = [value]
-        for assignment in assignments:
-            name, separator, path = assignment.partition("=")
-            name = name.strip()
-            path = path.strip()
-            if not separator or not FORBIDDEN_PI_BOOTSTRAP_RE.search(path):
-                continue
-            if (name, path) in {
-                ("HOME", "/home/pi"),
-                ("XDG_CONFIG_HOME", "/home/pi/.config"),
-            }:
-                continue
-            print(
-                f"pi_deploy_verify: forbidden bootstrap path in {label}: {assignment}",
-                file=sys.stderr,
-            )
-            ok = False
-
-    status_exec = snap.get("STATUS_EXEC", "")
-    repo_local_runs = f"{pi_ar_repo().rstrip('/')}/runs"
-    bad_runs_tokens = ("--runs runs", "--runs=.", "--runs ./runs", f"--runs {repo_local_runs}", f"--runs={repo_local_runs}")
-    if any(token in status_exec for token in bad_runs_tokens):
-        print(f"pi_deploy_verify: status --runs points inside the service checkout: {status_exec}", file=sys.stderr)
-        ok = False
-    if "AR_LOCAL_DATA_ROOT=" not in (snap.get("STATUS_ENV", "") + ";" + snap.get("DAILY_ENV", "")):
-        print("pi_deploy_verify: AR_LOCAL_DATA_ROOT missing from Pi service environments", file=sys.stderr)
-        ok = False
-
-    for label, key in (("repo", "DF_AR"), ("site", "DF_SITE"), ("data", "DF_DATA")):
-        print(f"pi_deploy_verify: df {label}: {snap.get(key, '')}")
-    return ok
+    return pi_deploy_snapshot.service_paths_ok(
+        snap,
+        repo_path=pi_ar_repo(),
+        forbidden_bootstrap_path=FORBIDDEN_PI_BOOTSTRAP_RE,
+    )
 
 
 def pi_ingest_timers_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_TIMER_ENABLED": "enabled",
-        "DAILY_TIMER_ACTIVE": "active",
-        "WATCHDOG_TIMER_ENABLED": "enabled",
-        "WATCHDOG_TIMER_ACTIVE": "active",
-        "CAPACITY_TIMER_ENABLED": "enabled",
-        "CAPACITY_TIMER_ACTIVE": "active",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    if not ok:
-        print("pi_deploy_verify: daily ingest timers are not armed", file=sys.stderr)
-    return ok
+    return pi_deploy_snapshot.ingest_timers_ok(snap)
 
 
 def pi_ingest_service_fences_ok(snap: dict[str, str]) -> bool:
-    expected = {
-        "DAILY_KILL_MODE": "control-group",
-        "DAILY_START_TIMEOUT": "6h 15min",
-        "WATCHDOG_KILL_MODE": "control-group",
-        "WATCHDOG_START_TIMEOUT": "6h 15min",
-        "MANUAL_KILL_MODE": "control-group",
-        "MANUAL_START_TIMEOUT": "6h 15min",
-    }
-    ok = True
-    for field, value in expected.items():
-        actual = snap.get(field, "")
-        print(f"pi_deploy_verify: {field}: {actual}")
-        if actual != value:
-            ok = False
-    if not ok:
-        print("pi_deploy_verify: ingest process fencing is not active", file=sys.stderr)
-    return ok
+    return pi_deploy_snapshot.ingest_service_fences_ok(snap)
 
 
 def http_smoke(
