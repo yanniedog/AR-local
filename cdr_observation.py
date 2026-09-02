@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -12,20 +13,45 @@ from typing import Any, Iterable, Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_atomic import atomic_write_bytes
-from cdr_contracts import canonical_json_bytes, parse_rate_string, product_uid
+from cdr_contracts import canonical_json_bytes, parse_rate_string, product_uid, rate_uid
 from cdr_observation_db import validate_observation_inputs, verify_observation_database
 from cdr_product_accounting import validate_product_accounting
+from cdr_public_projection import PublicProjectionError, public_document
 
 
 SCHEMA_VERSION = 1
 ACCOUNTING_FILE = "product-accounting-v1.json"
 OBSERVATION_FILE = "observation-v1.json"
 PROJECTION_GROUPS = ("products", "rates", "items", "product_facts", "product_changes")
+_GLOBAL_ISSUE_BLOCKERS = {
+    "accounting_unreconciled",
+    "failure_record_corrupt",
+    "failure_unattributed",
+    "register_failed",
+}
 
 
 class ObservationError(ValueError):
     """An observation would be ambiguous, unsafe, or internally inconsistent."""
+
+
+def _accounting_blockers(accounting: Mapping[str, Any]) -> list[str]:
+    blockers = {
+        issue["code"]
+        for issue in accounting["issues"]
+        if issue["code"] in _GLOBAL_ISSUE_BLOCKERS
+    }
+    if any(provider["state"] == "not_attempted" for provider in accounting["providers"]):
+        blockers.add("provider_not_attempted")
+    summary = accounting["summary"]
+    if (
+        summary["providers"]["registered"] > 0
+        and summary["products"]["consumer_visible"] == 0
+    ):
+        blockers.add("zero_publishable_products")
+    return sorted(blockers)
 
 
 @lru_cache(maxsize=1)
@@ -43,12 +69,28 @@ def _uid(row: Mapping[str, Any], label: str) -> str:
     return value
 
 
-def _document(row: Mapping[str, Any], envelope: Mapping[str, Any]) -> dict[str, Any]:
-    return {**dict(row), **dict(envelope)}
+def _document(
+    group: str,
+    row: Mapping[str, Any],
+    envelope: Mapping[str, Any],
+    *,
+    omitted_detail_groups: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    try:
+        return public_document(
+            group,
+            row,
+            envelope,
+            omitted_detail_groups=omitted_detail_groups,
+        )
+    except PublicProjectionError as error:
+        raise ObservationError(str(error)) from error
 
 
 def _product_projections(
-    banks: Mapping[str, Any], accounting: Mapping[str, Any]
+    banks: Mapping[str, Any],
+    accounting: Mapping[str, Any],
+    rejected_details: Mapping[str, frozenset[str]],
 ) -> list[dict[str, Any]]:
     publishable = {
         row["product_uid"]: row
@@ -74,7 +116,17 @@ def _product_projections(
             "cdr_product_id": disposition["cdr_product_id"],
             "legacy_product_key": disposition["legacy_product_key"],
         }
-        output.append({**envelope, "document": _document(rows[uid], envelope)})
+        output.append(
+            {
+                **envelope,
+                "document": _document(
+                    "products",
+                    rows[uid],
+                    envelope,
+                    omitted_detail_groups=rejected_details.get(uid, frozenset()),
+                ),
+            }
+        )
     return output
 
 
@@ -94,20 +146,21 @@ def _rate_projections(
         rate = parse_rate_string(raw.get("rate"))
         comparison_raw = raw.get("comparison_rate")
         comparison = None if comparison_raw in (None, "") else parse_rate_string(comparison_raw)
-        identity = ["rate-v1", uid, index, rate, comparison]
         envelope = {
-            "rate_uid": hashlib.sha256(canonical_json_bytes(identity)).hexdigest(),
+            "rate_uid": rate_uid(uid, index, rate, comparison),
             "product_uid": uid,
             "rate_index": index,
             "rate": rate,
             "comparison_rate": comparison,
         }
-        output.append({**envelope, "document": _document(raw, envelope)})
+        output.append({**envelope, "document": _document("rates", raw, envelope)})
     return output
 
 
 def _item_projections(
-    banks: Mapping[str, Any], visible: set[str]
+    banks: Mapping[str, Any],
+    visible: set[str],
+    rejected_details: Mapping[str, frozenset[str]],
 ) -> list[dict[str, Any]]:
     output = []
     for group in ("fees", "features", "eligibility", "constraints"):
@@ -115,24 +168,33 @@ def _item_projections(
             if not isinstance(raw, Mapping):
                 raise ObservationError("item projection source is invalid")
             uid = _uid(raw, "item")
-            if uid not in visible:
+            if uid not in visible or group in rejected_details.get(uid, frozenset()):
                 continue
             index = raw.get("item_index")
             if isinstance(index, bool) or not isinstance(index, int) or index < 1:
                 raise ObservationError("item_index must be a positive integer")
             envelope = {"product_uid": uid, "item_group": group, "item_index": index}
-            output.append({**envelope, "document": _document(raw, envelope)})
+            output.append({**envelope, "document": _document("items", raw, envelope)})
     return output
 
 
-def _fact_projections(rows: Iterable[Any], visible: set[str]) -> list[dict[str, Any]]:
+def _fact_projections(
+    rows: Iterable[Any],
+    visible: set[str],
+    rejected_details: Mapping[str, frozenset[str]] | None = None,
+) -> list[dict[str, Any]]:
     output = []
     for raw in rows:
         if not isinstance(raw, Mapping):
             raise ObservationError("fact projection source is invalid")
         uid = _uid(raw, "fact")
-        if uid not in visible:
+        rejected = (rejected_details or {}).get(uid, frozenset())
+        source_group = str(raw.get("source_path") or "").split("[", 1)[0].split(".", 1)[0]
+        if uid not in visible or source_group in rejected or "details" in rejected:
             continue
+        boolean = raw.get("value_boolean")
+        if boolean is not None and not isinstance(boolean, bool):
+            raise ObservationError("fact value_boolean must be boolean or null")
         number = raw.get("value_number")
         if number is not None:
             if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
@@ -141,17 +203,67 @@ def _fact_projections(rows: Iterable[Any], visible: set[str]) -> list[dict[str, 
         text = raw.get("value_text")
         if text is not None and not isinstance(text, str):
             raise ObservationError("fact value_text must be text or null")
+        minimum = raw.get("min_value")
+        maximum = raw.get("max_value")
+        for label, value in (("min_value", minimum), ("max_value", maximum)):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ObservationError(f"fact {label} must be finite or null")
+        minimum = None if minimum is None else float(minimum)
+        maximum = None if maximum is None else float(maximum)
+        kind = str(raw.get("kind") or "")
+        value_type = str(raw.get("value_type") or "")
+        typed = (boolean, number, text, minimum, maximum)
+        valid_shape = {
+            "boolean": boolean is not None and typed[1:] == (None, None, None, None),
+            "money": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "rate": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "number": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "duration": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "enum": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "text": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "range": boolean is None and number is None and text is None and (minimum is not None or maximum is not None),
+        }.get(value_type, False)
+        if not valid_shape:
+            raise ObservationError("fact values do not match value_type")
+        if (
+            (kind == "rate" or value_type == "rate")
+            and number is not None
+            and not 0 <= number <= 1
+        ):
+            raise ObservationError("rate fact value_number must be a fraction from 0 to 1")
         envelope = {
             "product_uid": uid,
             "fact_id": str(raw.get("fact_id") or ""),
-            "kind": str(raw.get("kind") or ""),
+            "kind": kind,
             "canonical_key": str(raw.get("canonical_key") or ""),
-            "value_type": str(raw.get("value_type") or ""),
+            "value_type": value_type,
+            "value_boolean": boolean,
             "value_number": number,
             "value_text": text,
+            "min_value": minimum,
+            "max_value": maximum,
         }
-        output.append({**envelope, "document": _document(raw, envelope)})
+        output.append({**envelope, "document": _document("product_facts", raw, envelope)})
     return output
+
+
+def _validate_observed_at(observation_date: str, observed_at: Any) -> str:
+    if not isinstance(observed_at, str):
+        raise ObservationError("observed_at must be an RFC 3339 timestamp")
+    try:
+        source_date = date.fromisoformat(observation_date)
+        instant = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ObservationError("observed_at must be an RFC 3339 timestamp") from error
+    if instant.tzinfo is None or instant.utcoffset() is None:
+        raise ObservationError("observed_at must include a timezone")
+    if instant.astimezone(DAILY_INGEST_TZ).date() != source_date:
+        raise ObservationError("observed_at must fall on the observation date")
+    return observed_at
 
 
 def _provider_labels(
@@ -205,7 +317,10 @@ def _change_provider_uid(
 
 
 def _change_projections(
-    banks: Mapping[str, Any], accounting: Mapping[str, Any]
+    banks: Mapping[str, Any],
+    accounting: Mapping[str, Any],
+    visible: set[str],
+    rejected_details: Mapping[str, frozenset[str]],
 ) -> list[dict[str, Any]]:
     labels = _provider_labels(banks, accounting)
     output = []
@@ -217,28 +332,44 @@ def _change_projections(
         if dataset not in {"Mortgage", "Savings", "TD"} or not product_id_value:
             raise ObservationError("product change cannot be bound to a canonical identity")
         provider = _change_provider_uid(raw, labels, dataset, product_id_value)
+        uid = product_uid(provider, dataset, product_id_value)
+        if uid not in visible:
+            continue
+        rejected = rejected_details.get(uid, frozenset())
+        changed_group = str(raw.get("kind") or raw.get("canonical_key") or "").split(".", 1)[0]
+        if "details" in rejected or changed_group in rejected:
+            continue
         envelope = {
             "event_id": str(raw.get("event_id") or ""),
             "provider_uid": provider,
-            "product_uid": product_uid(provider, dataset, product_id_value),
+            "product_uid": uid,
             "event_type": str(raw.get("event_type") or ""),
             "canonical_key": str(raw.get("canonical_key") or "").strip() or None,
         }
-        output.append({**envelope, "document": _document(raw, envelope)})
+        output.append({**envelope, "document": _document("product_changes", raw, envelope)})
     return output
 
 
 def build_projections(
     banks: Mapping[str, Any], accounting: Mapping[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
-    products = _product_projections(banks, accounting)
+    rejected: dict[str, set[str]] = {}
+    for issue in accounting["issues"]:
+        if issue["code"] == "field_omitted_invalid" and issue["product_uid"] is not None:
+            rejected.setdefault(issue["product_uid"], set()).update(issue["affected_sections"])
+    rejected_details = {uid: frozenset(groups) for uid, groups in rejected.items()}
+    products = _product_projections(banks, accounting, rejected_details)
     visible = {row["product_uid"] for row in products}
     projections = {
         "products": products,
         "rates": _rate_projections(banks.get("rates") or [], visible),
-        "items": _item_projections(banks, visible),
-        "product_facts": _fact_projections(banks.get("product_facts") or [], visible),
-        "product_changes": _change_projections(banks, accounting),
+        "items": _item_projections(banks, visible, rejected_details),
+        "product_facts": _fact_projections(
+            banks.get("product_facts") or [], visible, rejected_details
+        ),
+        "product_changes": _change_projections(
+            banks, accounting, visible, rejected_details
+        ),
     }
     _, normalized = validate_observation_inputs(accounting, projections)
     return normalized
@@ -256,6 +387,11 @@ def validate_observation(
             f"observation schema violation at {location}: {error.message}"
         ) from error
     validate_product_accounting(accounting)
+    mandatory_blockers = _accounting_blockers(accounting)
+    if mandatory_blockers:
+        raise ObservationError(
+            "global observation blockers: " + ", ".join(mandatory_blockers)
+        )
     expected_digest = hashlib.sha256(canonical_json_bytes(accounting)).hexdigest()
     if document["accounting"] != {
         "schema_version": 1,
@@ -266,8 +402,18 @@ def validate_observation(
         raise ObservationError("observation does not bind its accounting sidecar")
     if document["observation_date"] != accounting["observation_date"]:
         raise ObservationError("observation date disagrees with accounting")
+    _validate_observed_at(document["observation_date"], document["observed_at"])
     if document["summaries"] != accounting["summary"]:
         raise ObservationError("observation summaries disagree with accounting")
+    expected_state = "degraded" if (
+        accounting["issues"]
+        or any(
+            provider["state"] not in {"complete", "empty"}
+            for provider in accounting["providers"]
+        )
+    ) else "complete"
+    if document["state"] != expected_state:
+        raise ObservationError("observation state disagrees with accounting")
     projections = {group: document[group] for group in PROJECTION_GROUPS}
     _, normalized = validate_observation_inputs(accounting, projections)
     if projections != normalized:
@@ -285,10 +431,15 @@ def build_observation(
     normalization_version: str,
     blockers: Iterable[str] = (),
 ) -> dict[str, Any]:
-    blockers = sorted(set(blockers))
+    normalized_accounting, normalized = validate_observation_inputs(accounting, projections)
+    blockers = sorted(
+        set(blockers) | set(_accounting_blockers(normalized_accounting))
+    )
     if blockers:
         raise ObservationError("global observation blockers: " + ", ".join(blockers))
-    normalized_accounting, normalized = validate_observation_inputs(accounting, projections)
+    observed_at = _validate_observed_at(
+        normalized_accounting["observation_date"], observed_at
+    )
     degraded = bool(normalized_accounting["issues"]) or any(
         provider["state"] not in {"complete", "empty"}
         for provider in normalized_accounting["providers"]

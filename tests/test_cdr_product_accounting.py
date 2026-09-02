@@ -10,6 +10,7 @@ from cdr_contracts import canonical_json_bytes, product_uid, provider_uid
 from cdr_product_accounting import (
     build_product_accounting,
     build_product_accounting_bytes,
+    validate_product_evidence,
     validate_product_accounting,
 )
 
@@ -51,7 +52,7 @@ def _product(
         "legacy_product_key": legacy_product_key,
         "disposition": disposition,
         "reason_codes": reasons or [],
-        "evidence_ids": [f"attempt:{product_id}"],
+        "evidence_ids": [hashlib.sha256(f"attempt:{product_id}".encode()).hexdigest()],
         "core_valid": core_valid,
         "details_complete": details_complete,
     }
@@ -295,14 +296,14 @@ def test_duplicate_identical_issues_aggregate_without_changing_identity() -> Non
     status, providers, products, issues = _inputs()
     duplicate = copy.deepcopy(issues[0])
     duplicate["occurrence_count"] = 3
-    duplicate["first_seen_at"] = "2026-09-01T13:59:00Z"
+    duplicate["first_seen_at"] = "2026-09-01T14:00:00Z"
     duplicate["last_seen_at"] = "2026-09-01T14:03:00Z"
     document = build_product_accounting(
         "2026-09-02", status, providers, products, [*issues, duplicate]
     )
     issue = next(item for item in document["issues"] if item["code"] == "field_omitted_invalid")
     assert issue["occurrence_count"] == 5
-    assert issue["first_seen_at"] == "2026-09-01T13:59:00Z"
+    assert issue["first_seen_at"] == "2026-09-01T14:00:00Z"
     assert issue["last_seen_at"] == "2026-09-01T14:03:00Z"
     assert document["summary"]["issues"]["total"] == 8
 
@@ -339,7 +340,7 @@ def test_rejects_unverified_journal_and_ingest_provider_drift() -> None:
 def test_rejects_disposition_issue_and_reference_mismatches() -> None:
     status, providers, products, issues = _inputs()
     products[1]["reason_codes"] = ["detail_fetch_failed"]
-    with pytest.raises(ValueError, match="reason_codes do not reconcile"):
+    with pytest.raises(ValueError, match="only optional-detail reasons"):
         build_product_accounting("2026-09-02", status, providers, products, issues)
 
     status, providers, products, issues = _inputs()
@@ -350,6 +351,17 @@ def test_rejects_disposition_issue_and_reference_mismatches() -> None:
     status, providers, products, issues = _inputs()
     issues[0]["scope"] = "provider"
     with pytest.raises(ValueError, match="requires product scope"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+@pytest.mark.parametrize("code", ["products_index_failed", "pagination_incomplete", "provider_population_unknown"])
+def test_terminal_provider_population_issue_cannot_claim_complete_population(code: str) -> None:
+    status, providers, products, issues = _inputs()
+    providers[2].update(state="complete", population_known=True)
+    state = next(item for item in status["provider_states"] if item["provider_uid"] == P3)
+    state.update(state="complete", population_known=True)
+    issues[2]["code"] = code
+    with pytest.raises(ValueError, match="terminal provider issue"):
         build_product_accounting("2026-09-02", status, providers, products, issues)
 
 
@@ -366,8 +378,54 @@ def test_rejects_duplicate_products_legacy_collisions_and_unsafe_evidence() -> N
 
     status, providers, products, issues = _inputs()
     products[0]["evidence_ids"] = ["C:\\secret\\raw.json"]
-    with pytest.raises(ValueError, match="invalid identifier"):
+    with pytest.raises(ValueError, match="evidence_ids contains an invalid identifier"):
         build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+@pytest.mark.parametrize(
+    "disposition,reasons,core_valid,details_complete",
+    [
+        ("published_core_only", ["rate_invalid"], True, False),
+        ("quarantined_invalid", ["no_current_rate"], False, True),
+        ("quarantined_invalid", ["field_omitted_invalid"], False, False),
+    ],
+)
+def test_rejects_disposition_reason_class_mismatches(
+    disposition, reasons, core_valid, details_complete
+) -> None:
+    status, providers, products, issues = _inputs()
+    products[0].update(
+        disposition=disposition,
+        reason_codes=reasons,
+        core_valid=core_valid,
+        details_complete=details_complete,
+    )
+    issues = [
+        _issue(
+            reasons[0],
+            scope="product",
+            provider=P1,
+            product=product_uid(P1, "Savings", "full-1"),
+            disposition=disposition,
+            sections=["rates"],
+            phase="validation",
+        ),
+        *issues,
+    ]
+    with pytest.raises(ValueError, match="optional-detail|trust-critical"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+def test_rejects_issue_timestamp_outside_observation_date() -> None:
+    status, providers, products, issues = _inputs()
+    issues[0]["last_seen_at"] = "2027-09-02T00:02:00+10:00"
+    with pytest.raises(ValueError, match="observation date"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+    document = _build()
+    document["issues"][0]["last_seen_at"] = "2027-09-01T14:02:00Z"
+    with pytest.raises(ValueError, match="observation date"):
+        validate_product_accounting(document)
 
 
 def test_rejects_bad_product_uid_timestamp_and_provider_assertions() -> None:
@@ -402,3 +460,15 @@ def test_external_validation_detects_noncanonical_order_and_summary_tampering() 
     document["providers"][0]["attempted"] = False
     with pytest.raises(ValueError, match="attempted flag"):
         validate_product_accounting(document)
+
+
+def test_product_evidence_must_resolve_in_verified_journal_bodies() -> None:
+    document = _build()
+    evidence = {
+        evidence_id
+        for product in document["products"]
+        for evidence_id in product["evidence_ids"]
+    }
+    validate_product_evidence(document, evidence)
+    with pytest.raises(ValueError, match="does not resolve"):
+        validate_product_evidence(document, set())

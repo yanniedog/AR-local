@@ -197,7 +197,21 @@ try {
   $loaded = Read-ArTrustedPreExecutionManifest -Path $manifestPath -ExpectedSha256 $manifestHash
   Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath)
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($template.Replace('<SELF_SHA256>',$manifestHash)))
-  Assert-ArTrustedInstallerCommandEvidence -Manifest $loaded -ManifestSha256 $manifestHash -ActualProcessCommand "powershell -EncodedCommand $encoded"
+  $hostPath = [IO.Path]::GetFullPath((Join-Path $PSHOME 'powershell.exe'))
+  $validCommand = '"' + $hostPath + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + $encoded
+  Assert-ArTrustedInstallerCommandEvidence -Manifest $loaded -ManifestSha256 $manifestHash -ActualProcessCommand $validCommand
+  foreach ($invalidCommand in @(
+      "powershell -EncodedCommand $encoded",
+      ($validCommand + ' -NoExit'),
+      ('powershell -NoProfile -NonInteractive -Command "Write-Output ''' + $encoded + '''; Write-Output extra"')
+    )) {
+    $rejected = $false
+    try {
+      Assert-ArTrustedInstallerCommandEvidence -Manifest $loaded -ManifestSha256 $manifestHash `
+        -ActualProcessCommand $invalidCommand
+    } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Non-exact elevated installer command was accepted.' }
+  }
   $loaded.candidate_code_sha = 'b' * 40
   $rejected = $false
   try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath) } catch { $rejected = $true }

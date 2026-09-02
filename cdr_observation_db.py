@@ -1,4 +1,4 @@
-"""Create-once, verified SQLite v9 storage for one canonical CDR observation."""
+"""Create-once, verified SQLite v10 storage for one canonical CDR observation."""
 
 from __future__ import annotations
 
@@ -6,211 +6,53 @@ import hashlib
 import json
 import math
 import os
-import re
 import sqlite3
 import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote
 
-from cdr_contracts import PROVIDER_UID_RE, canonical_json_bytes, product_uid
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from cdr_contracts import (
+    PROVIDER_UID_RE,
+    canonical_json_bytes,
+    parse_rate_string,
+    product_uid,
+    rate_uid,
+)
+from cdr_product_accounting import validate_product_accounting
 
-SCHEMA_VERSION = 9
-APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
-FAILURE_STAGES = (
-    "after_schema", "after_accounting", "after_projections", "after_commit",
-    "after_verify", "before_install", "after_install",
+from cdr_observation_db_schema import (
+    ACCOUNTING_KEYS,
+    APPLICATION_ID,
+    DATASETS,
+    DISPOSITIONS,
+    FACT_KINDS,
+    FAILURE_STAGES,
+    ISSUE_CODES,
+    ISSUE_KEYS,
+    ITEM_GROUPS,
+    PROJECTION_FIELDS,
+    PROJECTION_KEYS,
+    PROVIDER_KEYS,
+    PROVIDER_UID,
+    PRODUCT_KEYS,
+    PRODUCT_UID,
+    PUBLISHABLE,
+    RATE_UID,
+    SCHEMA_SQL,
+    SCHEMA_VERSION,
+    SCOPES,
+    SECTIONS,
+    SHA256,
+    STATES,
+    VALUE_TYPES,
 )
-DATASETS = frozenset({"Mortgage", "Savings", "TD"})
-SECTIONS = frozenset(
-    {"details", "mortgage", "products", "rates", "register", "savings", "term_deposit"}
-)
-STATES = frozenset({"complete", "partial", "empty", "failed", "not_attempted"})
-PUBLISHABLE = frozenset({"published_full", "published_core_only"})
-DISPOSITIONS = PUBLISHABLE | {"omitted_valid", "quarantined_invalid"}
-SCOPES = frozenset({"product", "provider", "register", "run"})
-ISSUE_CODES = frozenset(
-    {
-        "detail_fetch_failed",
-        "detail_invalid_json",
-        "cdr_error",
-        "identity_mismatch",
-        "duplicate_conflict",
-        "rate_invalid",
-        "classification_unresolved",
-        "no_current_rate",
-        "product_closed",
-        "unsupported_category",
-        "field_omitted_invalid",
-        "products_index_failed",
-        "pagination_incomplete",
-        "holder_worker_crash",
-        "provider_population_unknown",
-        "register_failed",
-        "failure_record_corrupt",
-        "failure_unattributed",
-        "accounting_unreconciled",
-    }
-)
-ITEM_GROUPS = frozenset({"fees", "features", "eligibility", "constraints"})
-FACT_KINDS = frozenset(
-    {
-        "fee",
-        "rate",
-        "tier",
-        "bundle",
-        "attribute",
-        "feature",
-        "eligibility",
-        "constraint",
-        "condition",
-    }
-)
-VALUE_TYPES = frozenset({"boolean", "money", "rate", "number", "duration", "range", "enum", "text"})
-PROJECTION_FIELDS = frozenset({"products", "rates", "items", "product_facts", "product_changes"})
-PROJECTION_KEYS = {
-    "products": {"product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key", "document"},
-    "rates": {"rate_uid", "product_uid", "rate_index", "rate", "comparison_rate", "document"},
-    "items": {"product_uid", "item_group", "item_index", "document"},
-    "product_facts": {"product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_number", "value_text", "document"},
-    "product_changes": {"event_id", "provider_uid", "product_uid", "event_type", "canonical_key", "document"},
-}
-ACCOUNTING_KEYS = {"schema_version", "observation_date", "accounting_id", "raw_attempt_journal_digest", "providers", "products", "issues", "summary"}
-PROVIDER_KEYS = {
-    "provider_uid",
-    "brand_name",
-    "datasets",
-    "affected_sections",
-    "state",
-    "attempted",
-    "population_known",
-    "discovered_count",
-    "published_full_count",
-    "published_core_only_count",
-    "omitted_valid_count",
-    "quarantined_invalid_count",
-    "issue_count",
-    "issue_ids",
-}
-PRODUCT_KEYS = {
-    "product_uid",
-    "provider_uid",
-    "cdr_product_id",
-    "dataset",
-    "display_name",
-    "legacy_product_key",
-    "disposition",
-    "reason_codes",
-    "evidence_ids",
-    "core_valid",
-    "details_complete",
-}
-ISSUE_KEYS = {
-    "issue_id",
-    "scope",
-    "provider_uid",
-    "product_uid",
-    "affected_sections",
-    "phase",
-    "code",
-    "http_status",
-    "occurrence_count",
-    "first_seen_at",
-    "last_seen_at",
-    "evidence_digest",
-    "disposition",
-    "public_safe",
-}
-PROVIDER_UID = PROVIDER_UID_RE
-PRODUCT_UID = re.compile(r"^[0-9a-f]{64}$")
-RATE_UID = re.compile(r"^[0-9a-f]{64}$")
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-SCHEMA_SQL = r"""
-CREATE TABLE schema_meta(key TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL) STRICT,WITHOUT ROWID;
-CREATE TABLE runs(
- observation_date TEXT PRIMARY KEY NOT NULL,
- accounting_id TEXT NOT NULL UNIQUE CHECK(length(trim(accounting_id))>0),
- raw_attempt_journal_digest TEXT NOT NULL CHECK(length(raw_attempt_journal_digest)=64 AND raw_attempt_journal_digest NOT GLOB '*[^0-9a-f]*'),
- generated_at TEXT NOT NULL CHECK(length(trim(generated_at))>0),
- sidecar_bytes BLOB NOT NULL CHECK(length(sidecar_bytes)>2),
- projection_counts_json TEXT NOT NULL CHECK(length(projection_counts_json)>1)
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_provider_observations(
- accounting_id TEXT NOT NULL,provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),brand_name TEXT NOT NULL CHECK(length(trim(brand_name))>0),
- datasets_json TEXT NOT NULL CHECK(length(datasets_json)>=2),affected_sections_json TEXT NOT NULL CHECK(length(affected_sections_json)>=2),
- state TEXT NOT NULL CHECK(state IN ('complete','partial','empty','failed','not_attempted')),
- attempted INTEGER NOT NULL CHECK(attempted IN(0,1)),population_known INTEGER NOT NULL CHECK(population_known IN(0,1)),
- discovered_count INTEGER NOT NULL CHECK(discovered_count>=0),published_full_count INTEGER NOT NULL CHECK(published_full_count>=0),
- published_core_only_count INTEGER NOT NULL CHECK(published_core_only_count>=0),omitted_valid_count INTEGER NOT NULL CHECK(omitted_valid_count>=0),
- quarantined_invalid_count INTEGER NOT NULL CHECK(quarantined_invalid_count>=0),issue_count INTEGER NOT NULL CHECK(issue_count>=0),issue_ids_json TEXT NOT NULL,
- PRIMARY KEY(accounting_id,provider_uid),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
- CHECK(discovered_count=published_full_count+published_core_only_count+omitted_valid_count+quarantined_invalid_count),
- CHECK((state='not_attempted' AND attempted=0) OR(state<>'not_attempted' AND attempted=1)),CHECK(state<>'empty' OR(population_known=1 AND discovered_count=0))
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_product_dispositions(
- accounting_id TEXT NOT NULL,product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),cdr_product_id TEXT NOT NULL CHECK(length(trim(cdr_product_id))>0),
- dataset TEXT NOT NULL CHECK(dataset IN('Mortgage','Savings','TD')),display_name TEXT CHECK(display_name IS NULL OR length(trim(display_name))>0),legacy_product_key TEXT CHECK(legacy_product_key IS NULL OR length(trim(legacy_product_key))>0),
- disposition TEXT NOT NULL CHECK(disposition IN('published_full','published_core_only','omitted_valid','quarantined_invalid')),
- reason_codes_json TEXT NOT NULL CHECK(length(reason_codes_json)>=2),evidence_ids_json TEXT NOT NULL CHECK(length(evidence_ids_json)>2),core_valid INTEGER NOT NULL CHECK(core_valid IN(0,1)),details_complete INTEGER NOT NULL CHECK(details_complete IN(0,1)),
- PRIMARY KEY(accounting_id,product_uid),UNIQUE(accounting_id,provider_uid,dataset,cdr_product_id),UNIQUE(accounting_id,product_uid,provider_uid),
- UNIQUE(accounting_id,product_uid,provider_uid,dataset,cdr_product_id),
- FOREIGN KEY(accounting_id,provider_uid) REFERENCES bank_provider_observations(accounting_id,provider_uid) ON UPDATE RESTRICT ON DELETE RESTRICT,
- CHECK(disposition NOT IN('published_full','published_core_only') OR core_valid=1),CHECK(disposition<>'published_full' OR details_complete=1),CHECK(disposition<>'published_core_only' OR details_complete=0)
-) STRICT,WITHOUT ROWID;
-CREATE UNIQUE INDEX uq_bank_product_dispositions_legacy_key ON bank_product_dispositions(accounting_id,legacy_product_key) WHERE legacy_product_key IS NOT NULL;
-CREATE TABLE bank_observation_issues(
- accounting_id TEXT NOT NULL,issue_id TEXT NOT NULL CHECK(length(trim(issue_id))>0),scope TEXT NOT NULL CHECK(scope IN('product','provider','register','run')),provider_uid TEXT,product_uid TEXT,
- affected_sections_json TEXT NOT NULL CHECK(length(affected_sections_json)>=2),phase TEXT NOT NULL CHECK(length(trim(phase))>0),code TEXT NOT NULL CHECK(code IN('detail_fetch_failed','detail_invalid_json','cdr_error','identity_mismatch','duplicate_conflict','rate_invalid','classification_unresolved','no_current_rate','product_closed','unsupported_category','field_omitted_invalid','products_index_failed','pagination_incomplete','holder_worker_crash','provider_population_unknown','register_failed','failure_record_corrupt','failure_unattributed','accounting_unreconciled')),
- http_status INTEGER CHECK(http_status IS NULL OR http_status BETWEEN 100 AND 599),occurrence_count INTEGER NOT NULL CHECK(occurrence_count>0),
- first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,evidence_digest TEXT NOT NULL CHECK(length(evidence_digest)=64 AND evidence_digest NOT GLOB '*[^0-9a-f]*'),
- disposition TEXT CHECK(disposition IS NULL OR disposition IN('published_full','published_core_only','omitted_valid','quarantined_invalid')),public_safe INTEGER NOT NULL CHECK(public_safe IN(0,1)),
- PRIMARY KEY(accounting_id,issue_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
- FOREIGN KEY(accounting_id,provider_uid) REFERENCES bank_provider_observations(accounting_id,provider_uid) ON UPDATE RESTRICT ON DELETE RESTRICT,
- FOREIGN KEY(accounting_id,product_uid,provider_uid) REFERENCES bank_product_dispositions(accounting_id,product_uid,provider_uid) ON UPDATE RESTRICT ON DELETE RESTRICT,
- CHECK(product_uid IS NULL OR provider_uid IS NOT NULL),CHECK((scope='product' AND provider_uid IS NOT NULL AND product_uid IS NOT NULL)OR(scope='provider' AND provider_uid IS NOT NULL AND product_uid IS NULL)OR(scope='register' AND product_uid IS NULL)OR(scope='run' AND provider_uid IS NULL AND product_uid IS NULL))
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_products(
- accounting_id TEXT NOT NULL,product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),dataset TEXT NOT NULL CHECK(dataset IN('Mortgage','Savings','TD')),
- cdr_product_id TEXT NOT NULL CHECK(length(trim(cdr_product_id))>0),legacy_product_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),PRIMARY KEY(accounting_id,product_uid),
- FOREIGN KEY(accounting_id,product_uid,provider_uid,dataset,cdr_product_id) REFERENCES bank_product_dispositions(accounting_id,product_uid,provider_uid,dataset,cdr_product_id) ON UPDATE RESTRICT ON DELETE RESTRICT
-) STRICT,WITHOUT ROWID;
-CREATE TRIGGER bank_products_publishable_insert BEFORE INSERT ON bank_products WHEN NOT EXISTS(SELECT 1 FROM bank_product_dispositions d WHERE d.accounting_id=NEW.accounting_id AND d.product_uid=NEW.product_uid AND d.disposition IN('published_full','published_core_only')) BEGIN SELECT RAISE(ABORT,'consumer product is not publishable');END;
-CREATE TRIGGER bank_products_publishable_update BEFORE UPDATE OF accounting_id,product_uid ON bank_products WHEN NOT EXISTS(SELECT 1 FROM bank_product_dispositions d WHERE d.accounting_id=NEW.accounting_id AND d.product_uid=NEW.product_uid AND d.disposition IN('published_full','published_core_only')) BEGIN SELECT RAISE(ABORT,'consumer product is not publishable');END;
-CREATE TRIGGER bank_disposition_publishable_update BEFORE UPDATE OF disposition ON bank_product_dispositions WHEN NEW.disposition NOT IN('published_full','published_core_only') AND EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid) BEGIN SELECT RAISE(ABORT,'published product cannot become non-publishable');END;
-CREATE TABLE bank_rates(
- accounting_id TEXT NOT NULL,rate_uid TEXT NOT NULL CHECK(length(trim(rate_uid))>0),product_uid TEXT NOT NULL,rate_index INTEGER NOT NULL CHECK(rate_index>0),rate TEXT NOT NULL CHECK(length(trim(rate))>0),comparison_rate TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,rate_uid),UNIQUE(accounting_id,product_uid,rate_index),FOREIGN KEY(accounting_id,product_uid) REFERENCES bank_products(accounting_id,product_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_items(
- accounting_id TEXT NOT NULL,product_uid TEXT NOT NULL,item_group TEXT NOT NULL CHECK(item_group IN('fees','features','eligibility','constraints')),item_index INTEGER NOT NULL CHECK(item_index>0),document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,product_uid,item_group,item_index),FOREIGN KEY(accounting_id,product_uid) REFERENCES bank_products(accounting_id,product_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_product_facts(
- accounting_id TEXT NOT NULL,product_uid TEXT NOT NULL,fact_id TEXT NOT NULL CHECK(length(trim(fact_id))>0),kind TEXT NOT NULL CHECK(kind IN('fee','rate','tier','bundle','attribute','feature','eligibility','constraint','condition')),
- canonical_key TEXT NOT NULL CHECK(length(trim(canonical_key))>0),value_type TEXT NOT NULL CHECK(value_type IN('boolean','money','rate','number','duration','range','enum','text')),value_number REAL,value_text TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,product_uid,fact_id),FOREIGN KEY(accounting_id,product_uid) REFERENCES bank_products(accounting_id,product_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
-) STRICT,WITHOUT ROWID;
-CREATE TABLE bank_product_changes(
- accounting_id TEXT NOT NULL,event_id TEXT NOT NULL CHECK(length(trim(event_id))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),event_type TEXT NOT NULL CHECK(length(trim(event_type))>0),canonical_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT
-) STRICT,WITHOUT ROWID;
-CREATE INDEX idx_bank_provider_observations_state ON bank_provider_observations(accounting_id,state,population_known,provider_uid);
-CREATE INDEX idx_bank_product_dispositions_identity ON bank_product_dispositions(accounting_id,provider_uid,dataset,cdr_product_id,product_uid);
-CREATE INDEX idx_bank_product_dispositions_disposition ON bank_product_dispositions(accounting_id,disposition,provider_uid,product_uid);
-CREATE INDEX idx_bank_observation_issues_code ON bank_observation_issues(accounting_id,code,issue_id);
-CREATE INDEX idx_bank_observation_issues_scope ON bank_observation_issues(accounting_id,scope,provider_uid,product_uid,issue_id);
-CREATE INDEX idx_bank_products_provider ON bank_products(accounting_id,dataset,provider_uid,product_uid);
-CREATE INDEX idx_bank_rates_product ON bank_rates(accounting_id,product_uid,rate_index,rate_uid);
-CREATE INDEX idx_bank_product_facts_numeric ON bank_product_facts(accounting_id,canonical_key,value_number,product_uid,fact_id);
-CREATE INDEX idx_bank_product_facts_text ON bank_product_facts(accounting_id,canonical_key,value_text,product_uid,fact_id);
-CREATE INDEX idx_bank_product_changes_lookup ON bank_product_changes(accounting_id,provider_uid,event_type,canonical_key,product_uid);
-"""
+from cdr_public_projection import PublicProjectionError, validate_public_document
 
 FailureHook = Callable[[str], None]
 
@@ -315,6 +157,14 @@ def _timestamp(value: Any, label: str) -> str:
     return text
 
 
+def _timestamp_on_observation_date(value: Any, observation_date: str, label: str) -> str:
+    text = _timestamp(value, label)
+    instant = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if instant.astimezone(DAILY_INGEST_TZ).date() != date.fromisoformat(observation_date):
+        _fail(f"{label} must fall on the observation date")
+    return text
+
+
 def _summary(providers: Sequence[Mapping[str, Any]], products: Sequence[Mapping[str, Any]], issues: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     states = Counter(row["state"] for row in providers)
     dispositions = Counter(row["disposition"] for row in products)
@@ -385,6 +235,10 @@ def _normalize_provider(raw: Any, index: int) -> dict[str, Any]:
     row["state"] = _enum(row["state"], STATES, "provider state")
     row["attempted"] = _boolean(row["attempted"], "attempted")
     row["population_known"] = _boolean(row["population_known"], "population_known")
+    if row["state"] in {"complete", "empty"} and not row["population_known"]:
+        _fail("complete or empty provider population must be known")
+    if row["state"] in {"failed", "not_attempted"} and row["population_known"]:
+        _fail("failed or unattempted provider population must be unknown")
     for key in ("discovered_count", "published_full_count", "published_core_only_count", "omitted_valid_count", "quarantined_invalid_count", "issue_count"):
         row[key] = _integer(row[key], key)
     return row
@@ -516,6 +370,13 @@ def _normalize_accounting(value: Mapping[str, Any]) -> dict[str, Any]:
             _fail(f"provider {uid} issue IDs do not reconcile")
         if row["affected_sections"] != sorted({section for item in member_issues for section in item["affected_sections"]}):
             _fail(f"provider {uid} affected sections do not reconcile")
+        terminal_unknown = {
+            "pagination_incomplete", "products_index_failed", "provider_population_unknown"
+        }
+        if terminal_unknown & {item["code"] for item in member_issues} and (
+            row["population_known"] or row["state"] not in {"partial", "failed", "not_attempted"}
+        ):
+            _fail("terminal provider issue requires an unknown, incomplete population")
     _validate_summary(root["summary"])
     root.update({"providers": providers, "products": products, "issues": issues})
     if root["summary"] != _summary(providers, products, issues):
@@ -523,11 +384,12 @@ def _normalize_accounting(value: Mapping[str, Any]) -> dict[str, Any]:
     return json.loads(_json_bytes(root))
 
 
-def _document(value: Any, expected: Mapping[str, Any]) -> dict[str, Any]:
+def _document(group: str, value: Any, expected: Mapping[str, Any]) -> dict[str, Any]:
     document = json.loads(_json_bytes(_mapping(value, "projection document")))
-    if any(key in document and document[key] != expected_value for key, expected_value in expected.items()):
-        _fail("projection document contradicts its indexed keys")
-    return document
+    try:
+        return validate_public_document(group, document, expected)
+    except PublicProjectionError as error:
+        raise ObservationDatabaseError(str(error)) from error
 
 
 def _rate(value: Any, label: str, nullable: bool = False) -> str | None:
@@ -535,13 +397,10 @@ def _rate(value: Any, label: str, nullable: bool = False) -> str | None:
         return None
     text = _text(value, label)
     try:
-        number = Decimal(text)
-    except InvalidOperation as error:
-        raise ObservationDatabaseError(f"{label} is not decimal") from error
-    rendered = format(number, "f")
-    rendered = rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
-    rendered = "0" if rendered in {"", "-0"} else rendered
-    if not number.is_finite() or not Decimal(0) <= number <= Decimal(1) or text != rendered:
+        canonical = parse_rate_string(text)
+    except ValueError as error:
+        raise ObservationDatabaseError(f"{label} is not a decimal fraction") from error
+    if text != canonical:
         _fail(f"{label} must be a canonical fraction from 0 to 1")
     return text
 
@@ -573,7 +432,7 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         uid = expected["product_uid"]
         if uid in products or uid not in publishable or any(accounting_products[uid][key] != val for key, val in expected.items()):
             _fail("consumer product identity or membership is invalid")
-        products[uid] = {**expected, "document": _document(row["document"], expected)}
+        products[uid] = {**expected, "document": _document("products", row["document"], expected)}
     if set(products) != publishable:
         _fail("consumer products differ from publishable dispositions")
     output["products"] = sorted(products.values(), key=lambda row: row["product_uid"])
@@ -587,12 +446,22 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "comparison_rate": _rate(row["comparison_rate"], "comparison_rate", True),
         }
         key = (expected["product_uid"], expected["rate_index"])
-        if not RATE_UID.fullmatch(expected["rate_uid"]) or expected["product_uid"] not in products or expected["rate_uid"] in rate_ids or key in rate_slots:
+        canonical_rate_uid = rate_uid(
+            expected["product_uid"], expected["rate_index"],
+            expected["rate"], expected["comparison_rate"]
+        )
+        if (
+            not RATE_UID.fullmatch(expected["rate_uid"])
+            or expected["rate_uid"] != canonical_rate_uid
+            or expected["product_uid"] not in products
+            or expected["rate_uid"] in rate_ids
+            or key in rate_slots
+        ):
             _fail("rate identity or membership is invalid")
         rate_ids.add(expected["rate_uid"])
         rate_slots.add(key)
         rated.add(expected["product_uid"])
-        rates.append({**expected, "document": _document(row["document"], expected)})
+        rates.append({**expected, "document": _document("rates", row["document"], expected)})
     if rated != publishable:
         _fail("every publishable product requires at least one rate")
     output["rates"] = sorted(rates, key=lambda row: (row["product_uid"], row["rate_index"], row["rate_uid"]))
@@ -607,11 +476,14 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         if expected["product_uid"] not in products or key in item_keys:
             _fail("item identity or membership is invalid")
         item_keys.add(key)
-        items.append({**expected, "document": _document(row["document"], expected)})
+        items.append({**expected, "document": _document("items", row["document"], expected)})
     output["items"] = sorted(items, key=lambda row: (row["product_uid"], row["item_group"], row["item_index"]))
     facts, fact_keys = [], set()
     for row in output["product_facts"]:
-        product, fact_id, number, text = _text(row["product_uid"], "fact product_uid"), _text(row["fact_id"], "fact_id"), row["value_number"], row["value_text"]
+        product = _text(row["product_uid"], "fact product_uid")
+        fact_id = _text(row["fact_id"], "fact_id")
+        boolean, number, text = row["value_boolean"], row["value_number"], row["value_text"]
+        minimum, maximum = row["min_value"], row["max_value"]
         key = (product, fact_id)
         if product not in products or key in fact_keys or row["kind"] not in FACT_KINDS or row["value_type"] not in VALUE_TYPES:
             _fail("fact identity, kind, or membership is invalid")
@@ -619,18 +491,52 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             _fail("fact value_number must be finite or null")
         if text is not None and not isinstance(text, str):
             _fail("fact value_text must be text or null")
+        if boolean is not None and not isinstance(boolean, bool):
+            _fail("fact value_boolean must be boolean or null")
+        for label, value in (("min_value", minimum), ("max_value", maximum)):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                _fail(f"fact {label} must be finite or null")
         number = None if number is None else float(number)
+        minimum = None if minimum is None else float(minimum)
+        maximum = None if maximum is None else float(maximum)
+        typed = (boolean, number, text, minimum, maximum)
+        value_type = row["value_type"]
+        valid_shape = {
+            "boolean": boolean is not None and typed[1:] == (None, None, None, None),
+            "money": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "rate": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "number": number is not None and boolean is None and text is None and minimum is None and maximum is None,
+            "duration": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "enum": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "text": text is not None and boolean is None and number is None and minimum is None and maximum is None,
+            "range": boolean is None and number is None and text is None and (minimum is not None or maximum is not None),
+        }.get(value_type, False)
+        if not valid_shape:
+            _fail("fact values do not match value_type")
+        if (
+            (row["kind"] == "rate" or row["value_type"] == "rate")
+            and number is not None
+            and not 0 <= number <= 1
+        ):
+            _fail("rate fact value_number must be a fraction from 0 to 1")
         expected = {
             "product_uid": product,
             "fact_id": fact_id,
             "kind": row["kind"],
             "canonical_key": _text(row["canonical_key"], "canonical_key"),
-            "value_type": row["value_type"],
+            "value_type": value_type,
+            "value_boolean": boolean,
             "value_number": number,
             "value_text": text,
+            "min_value": minimum,
+            "max_value": maximum,
         }
         fact_keys.add(key)
-        facts.append({**expected, "document": _document(row["document"], expected)})
+        facts.append({**expected, "document": _document("product_facts", row["document"], expected)})
     output["product_facts"] = sorted(facts, key=lambda row: (row["product_uid"], row["fact_id"]))
     changes, event_ids = [], set()
     for row in output["product_changes"]:
@@ -641,12 +547,15 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "event_type": _text(row["event_type"], "event_type"),
             "canonical_key": _nullable_text(row["canonical_key"], "canonical_key"),
         }
-        document = _document(row["document"], expected)
+        document = _document("product_changes", row["document"], expected)
         dataset = _enum(document.get("dataset"), DATASETS, "change dataset")
         cdr_product_id = _text(document.get("product_id"), "change product_id")
         if (
             expected["event_id"] in event_ids
             or not PROVIDER_UID.fullmatch(expected["provider_uid"])
+            or expected["product_uid"] not in products
+            or products[expected["product_uid"]]["provider_uid"]
+            != expected["provider_uid"]
             or expected["product_uid"]
             != product_uid(expected["provider_uid"], dataset, cdr_product_id)
         ):
@@ -662,6 +571,10 @@ def validate_observation_inputs(
 ) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
     """Validate and canonicalize the sidecar and every consumer projection."""
 
+    try:
+        validate_product_accounting(accounting)
+    except ValueError as error:
+        raise ObservationDatabaseError(str(error)) from error
     normalized_accounting = _normalize_accounting(accounting)
     return normalized_accounting, _normalize_projections(projections, normalized_accounting)
 
@@ -712,7 +625,7 @@ def _storage_rows(accounting_id: str, rows: Sequence[Mapping[str, Any]], columns
         if column.endswith("_json"):
             return _json_text(row[key])
         if key in boolean_fields:
-            return int(row[key])
+            return None if row[key] is None else int(row[key])
         return row[key]
     return [(accounting_id, *(stored(row, column) for column in columns[1:])) for row in rows]
 
@@ -737,12 +650,18 @@ def _write_projections(connection: sqlite3.Connection, accounting_id: str, proje
         "products": ("product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key", "document_json"),
         "rates": ("rate_uid", "product_uid", "rate_index", "rate", "comparison_rate", "document_json"),
         "items": ("product_uid", "item_group", "item_index", "document_json"),
-        "product_facts": ("product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_number", "value_text", "document_json"),
+        "product_facts": ("product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number", "value_text", "min_value", "max_value", "document_json"),
         "product_changes": ("event_id", "provider_uid", "product_uid", "event_type", "canonical_key", "document_json"),
     }
     for group, fields in specifications.items():
         columns = ("accounting_id", *fields)
-        _insert_many(connection, f"bank_{group}", columns, _storage_rows(accounting_id, projections[group], columns))
+        boolean_fields = frozenset({"value_boolean"}) if group == "product_facts" else frozenset()
+        _insert_many(
+            connection,
+            f"bank_{group}",
+            columns,
+            _storage_rows(accounting_id, projections[group], columns, boolean_fields),
+        )
 
 
 def _load_json(value: Any, label: str, object_only: bool = False) -> Any:
@@ -768,7 +687,7 @@ def _read_records(connection: sqlite3.Connection, table: str, columns: Sequence[
             if column.endswith("_json"):
                 value = _load_json(value, f"{table}.{column}", key == "document")
             elif key in boolean_fields:
-                value = bool(value)
+                value = None if value is None else bool(value)
             record[key] = value
         records.append(record)
     return records
@@ -802,10 +721,19 @@ def _projections_from_database(connection: sqlite3.Connection) -> dict[str, Any]
         "products": (("product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key", "document_json"), "product_uid"),
         "rates": (("rate_uid", "product_uid", "rate_index", "rate", "comparison_rate", "document_json"), "product_uid,rate_index,rate_uid"),
         "items": (("product_uid", "item_group", "item_index", "document_json"), "product_uid,item_group,item_index"),
-        "product_facts": (("product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_number", "value_text", "document_json"), "product_uid,fact_id"),
+        "product_facts": (("product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number", "value_text", "min_value", "max_value", "document_json"), "product_uid,fact_id", frozenset({"value_boolean"})),
         "product_changes": (("event_id", "provider_uid", "product_uid", "event_type", "canonical_key", "document_json"), "event_id"),
     }
-    return {group: _read_records(connection, f"bank_{group}", columns, order) for group, (columns, order) in specifications.items()}
+    return {
+        group: _read_records(
+            connection,
+            f"bank_{group}",
+            spec[0],
+            spec[1],
+            spec[2] if len(spec) > 2 else frozenset(),
+        )
+        for group, spec in specifications.items()
+    }
 
 
 def _integrity(connection: sqlite3.Connection) -> None:
@@ -843,7 +771,7 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
         _fail("SQLite file has non-page trailing or truncated bytes")
     schema_sha = _schema_fingerprint(connection)
     if schema_sha != expected_schema_fingerprint():
-        _fail("SQLite tables, constraints, indexes, or triggers differ from v9")
+        _fail("SQLite tables, constraints, indexes, or triggers differ from v10")
     _integrity(connection)
     meta = dict(connection.execute("SELECT key,value FROM schema_meta"))
     required = {"schema_sha256", "accounting_sha256", "projections_sha256", "normalization_version"}
@@ -854,6 +782,9 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
     if expected_generated_at is not None and stored_generated_at != expected_generated_at:
         _fail("generated_at differs from expected")
     sidecar, stored_sidecar = _sidecar_from_database(connection)
+    _timestamp_on_observation_date(
+        stored_generated_at, sidecar["observation_date"], "stored generated_at"
+    )
     rebuilt_sidecar = _json_bytes(sidecar)
     accounting_sha = _sha256(rebuilt_sidecar)
     if stored_sidecar != rebuilt_sidecar or meta["accounting_sha256"] != accounting_sha:
@@ -932,7 +863,9 @@ def build_observation_database(target: Path | str, *, accounting: Mapping[str, A
         accounting, projections
     )
     sidecar_bytes = _json_bytes(normalized_accounting)
-    generated_at = _timestamp(generated_at, "generated_at")
+    generated_at = _timestamp_on_observation_date(
+        generated_at, normalized_accounting["observation_date"], "generated_at"
+    )
     normalization_version = _text(normalization_version, "normalization_version")
     hook = failure_hook or (lambda _stage: None)
     if destination.exists():

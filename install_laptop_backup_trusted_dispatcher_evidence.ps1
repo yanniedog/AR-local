@@ -132,7 +132,13 @@ function Assert-ArTrustedInstallerCommandEvidence {
   $expectedEncoded = [Convert]::ToBase64String(
     [Text.Encoding]::Unicode.GetBytes($template.Replace('<SELF_SHA256>',$ManifestSha256))
   )
-  if ([String]::IsNullOrWhiteSpace($ActualProcessCommand) -or -not $ActualProcessCommand.Contains($expectedEncoded)) {
+  $hostPath = [IO.Path]::GetFullPath((Join-Path $PSHOME 'powershell.exe'))
+  $escapedHost = [regex]::Escape($hostPath)
+  $pattern = ('^\s*(?:"' + $escapedHost + '"|' + $escapedHost + ')' +
+    '\s+-NoProfile\s+-NonInteractive\s+-ExecutionPolicy\s+Bypass' +
+    '\s+-EncodedCommand\s+([A-Za-z0-9+/]+={0,2})\s*$')
+  $match = [regex]::Match($ActualProcessCommand,$pattern,[Text.RegularExpressions.RegexOptions]::IgnoreCase)
+  if (-not $match.Success -or $match.Groups[1].Value -cne $expectedEncoded) {
     throw 'Elevated process does not match the authenticated installer command.'
   }
 }
