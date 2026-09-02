@@ -61,13 +61,17 @@ def _provider_state(
         state = str(population.get("state") or "failed")
         if state not in {"complete", "empty", "partial", "failed"}:
             raise ValueError("invalid holder state")
+        population_known = population.get("population_known")
+        if not isinstance(population_known, bool):
+            raise ValueError("invalid holder population knowledge")
         unique, relevant, out_of_scope, unresolved = _population_counts(population)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         population, state = {}, "failed"
         unique = relevant = out_of_scope = None
         unresolved = []
+        population_known = False
         complete = False
-    if unresolved:
+    if unresolved or not population_known:
         complete = False
     if failures and state in {"complete", "empty"}:
         state = "partial"
@@ -83,7 +87,7 @@ def _provider_state(
             "endpoint_url": brand.get("endpoint_url") or None,
             "state": state,
             "failure_records": failures,
-            "population_known": bool(population.get("population_known")),
+            "population_known": population_known,
             "products_discovered": unique,
             "products_in_scope": relevant,
             "products_out_of_scope": out_of_scope,

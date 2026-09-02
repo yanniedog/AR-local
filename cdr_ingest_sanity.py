@@ -43,20 +43,23 @@ LOW_BP = 100.0
 HIGH_BP = 200.0
 
 
-def _ladder_query(con: sqlite3.Connection) -> List[Tuple[str, str, str, str, str, str, float]]:
-    """Return rows of (provider, product_id, application_type, ribbon_rate_structure,
-    product_name, dataset, rate). Caller buckets by the first four columns."""
+def _ladder_query(
+    con: sqlite3.Connection,
+) -> List[Tuple[str, str, str, str, str, str, str, float]]:
+    """Return stable identity, display metadata, tier dimensions, and rate."""
     if con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
         if con.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
             raise ValueError("canonical observation database application ID is invalid")
         output = []
-        for (raw,) in con.execute(
-            "SELECT document_json FROM bank_rates ORDER BY product_uid,rate_index,rate_uid"
+        for stored_uid, raw in con.execute(
+            "SELECT product_uid,document_json FROM bank_rates "
+            "ORDER BY product_uid,rate_index,rate_uid"
         ):
             try:
                 row = json.loads(raw)
                 output.append(
                     (
+                        str(stored_uid),
                         str(row["provider"]),
                         str(row["product_id"]),
                         str(row.get("application_type") or ""),
@@ -81,21 +84,34 @@ def _ladder_query(con: sqlite3.Connection) -> List[Tuple[str, str, str, str, str
         where rate is not null and rate != ''
         """
     )
-    return cur.fetchall()
+    return [
+        (f"legacy:{provider}\0{product_id}", provider, product_id, app, structure,
+         name, dataset, rate)
+        for provider, product_id, app, structure, name, dataset, rate in cur.fetchall()
+    ]
 
 
-def _bucket(rows: List[Tuple[Any, ...]]) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
-    out: Dict[Tuple[str, str, str, str], Dict[str, Any]] = {}
-    for provider, pid, app, struct, name, dataset, rate in rows:
-        key = (provider, pid, app, struct)
-        slot = out.setdefault(key, {"name": name, "dataset": dataset, "rates": []})
+def _bucket(rows: List[Tuple[Any, ...]]) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
+    out: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for identity, provider, pid, app, struct, name, dataset, rate in rows:
+        key = (identity, app, struct)
+        slot = out.setdefault(
+            key,
+            {
+                "provider": provider,
+                "product_id": pid,
+                "name": name,
+                "dataset": dataset,
+                "rates": [],
+            },
+        )
         slot["rates"].append(float(rate))
     for slot in out.values():
         slot["rates"].sort()
     return out
 
 
-def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
+def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
     """Open a read-only connection and return bucketed ladders.
 
     Uses ``Path.resolve().as_uri()`` so paths with spaces/reserved characters
@@ -122,8 +138,8 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
         if len(cv) != len(pv):
             findings.append({
                 "severity": "STRUCTURAL",
-                "provider": key[0], "product_id": key[1],
-                "application_type": key[2], "ribbon_rate_structure": key[3],
+                "provider": slot["provider"], "product_id": slot["product_id"],
+                "application_type": key[1], "ribbon_rate_structure": key[2],
                 "product_name": slot["name"], "dataset": slot["dataset"],
                 "tier_count_prev": len(pv), "tier_count_curr": len(cv),
             })
@@ -139,8 +155,8 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
             severity = "HIGH" if worst_delta_bp >= HIGH_BP else "LOW"
             findings.append({
                 "severity": severity,
-                "provider": key[0], "product_id": key[1],
-                "application_type": key[2], "ribbon_rate_structure": key[3],
+                "provider": slot["provider"], "product_id": slot["product_id"],
+                "application_type": key[1], "ribbon_rate_structure": key[2],
                 "product_name": slot["name"], "dataset": slot["dataset"],
                 "worst_delta_bp": round(worst_delta_bp, 1),
                 "tiers": per_tier,

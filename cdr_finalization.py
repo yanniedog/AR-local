@@ -223,7 +223,7 @@ def _observation_coverage(
         return bool(
             state_ok
             and raw.get("population_known") is provider["population_known"]
-            and raw.get("products_discovered") == provider["discovered_count"]
+            and raw.get("products_in_scope") == provider["discovered_count"]
         )
 
     providers_reconcile = (

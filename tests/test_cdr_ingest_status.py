@@ -215,6 +215,63 @@ def test_unresolved_classification_withholds_the_observation(tmp_path, monkeypat
     assert status["provider_states"][0]["products_in_scope"] == 0
 
 
+def test_unknown_population_withholds_the_observation(tmp_path, monkeypatch):
+    brand = _brand("https://holder.example/products")
+    monkeypatch.setattr(
+        lib,
+        "collect_register_snapshot",
+        lambda **_kwargs: _snapshot(brands=[brand]),
+    )
+
+    def fake_ingest(_brand_row, *, date_root, bank_dir_name, **_kwargs):
+        summary = (
+            date_root
+            / "_holders"
+            / bank_dir_name
+            / "_products-index"
+            / "index-summary.json"
+        )
+        summary.parent.mkdir(parents=True)
+        summary.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "provider_uid": brand["provider_uid"],
+                    "state": "partial",
+                    "population_known": False,
+                    "unique_product_ids": 1,
+                    "relevant_products": 1,
+                    "out_of_scope_products": 0,
+                    "classification_unresolved": [],
+                    "details_present": 1,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(lib, "ingest_brand", fake_ingest)
+
+    assert lib.main(
+        [
+            "--out",
+            str(tmp_path),
+            "--date",
+            "2026-08-15",
+            "--workers",
+            "1",
+            "--detail-workers",
+            "1",
+        ]
+    ) == 2
+    status = json.loads(
+        (tmp_path / "2026-08-15/banks/ingest-status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert status["coverage_evidence_complete"] is False
+    assert status["provider_states"][0]["population_known"] is False
+
+
 def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypatch):
     failures = []
     monkeypatch.setattr(

@@ -15,6 +15,13 @@ import pi_laptop_backup_source as source
 PROTECTED = "b" * 40
 
 
+def test_source_defaults_to_data_readiness_endpoint() -> None:
+    action = next(
+        item for item in source.parser()._actions if item.dest == "status_url"
+    )
+    assert action.default == "http://127.0.0.1:8808/api/status"
+
+
 @pytest.mark.parametrize(
     "timer_value",
     ["Sun 2026-08-30 02:00:00 AEST", "Mon 2026-08-31 01:00:00 AEST"],
@@ -59,7 +66,7 @@ def test_source_preflight_requires_enabled_and_active_timer(
         production_repo=str(tmp_path / "AR-local"),
         runs_root=str(tmp_path / "data/runs"),
         state_root=str(tmp_path / "data/state"),
-        status_url="http://127.0.0.1:8808/healthz",
+        status_url="http://127.0.0.1:8808/api/status",
         expected_production_sha=PROTECTED,
     )
     for path in (Path(args.production_repo), Path(args.runs_root), Path(args.state_root)):

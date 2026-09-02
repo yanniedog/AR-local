@@ -922,6 +922,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             "ERROR: unresolved product classifications prevent an accurate observation."
         )
         return 2
+    if status.get("coverage_evidence_complete") is not True:
+        log("ERROR: unknown product populations prevent an accurate observation.")
+        return 2
     return 0
 
 

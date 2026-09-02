@@ -80,6 +80,7 @@ def _write_ingest(run_root):
                     "failure_records": 0,
                     "population_known": True,
                     "products_discovered": 1,
+                    "products_in_scope": 1,
                     "products_indexed": 1,
                 }
             ],
@@ -267,7 +268,11 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
                 "population_known": True,
                 "population_errors": [],
                 "duplicate_conflicts": [],
+                "unique_product_ids": 1,
                 "relevant_products": 1,
+                "out_of_scope_products": 0,
+                "classification_unresolved": [],
+                "details_present": 1,
             },
         )
         (banks / "failures.jsonl").write_bytes(b"")

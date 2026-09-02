@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from typing import Any, Mapping
 
 from cdr_atomic import canonical_json_bytes
+from cdr_export_contract import load_contract
 from cdr_finalization import verified_pointer_export_root
+from cdr_ledger_v2 import ledger_root
 from cdr_observation import load_verified_observation
+
+
+_GENERATION = re.compile(r"^obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}$")
 
 
 def _load_verified(exports: Path) -> dict[str, Any] | None:
@@ -92,8 +100,108 @@ def health_payload(_runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
     }
 
 
+def _safe_child(root: Path, value: Any) -> Path:
+    relative = Path(str(value or ""))
+    if not str(value or "") or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("unsafe status cache path")
+    child = (root / relative).resolve()
+    child.relative_to(root)
+    return child
+
+
+def _mapping_file(path: Path) -> Mapping[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping):
+        raise ValueError("status cache document must be an object")
+    return value
+
+
+def _generation_paths(runs_root: Path) -> tuple[Path, ...]:
+    """Return every immutable file covered by the selected ledger ancestry."""
+
+    state = runs_root.parent / "state"
+    pointer_path = state / "observation-pointers-v2" / "latest-observation.json"
+    pointer = _mapping_file(pointer_path)
+    marker_path = _safe_child(state, pointer.get("marker_path"))
+    marker = _mapping_file(marker_path)
+    paths = {pointer_path, marker_path, _safe_child(state, marker.get("export_contract_path"))}
+    date = str(pointer.get("observation_date") or "")
+    generation = str(pointer.get("generation_id") or "")
+    seen: set[str] = set()
+    while _GENERATION.fullmatch(generation) and generation not in seen:
+        seen.add(generation)
+        event_path = ledger_root(state) / "events" / date / f"{generation}.json"
+        event = _mapping_file(event_path)
+        contract_path = _safe_child(state, event.get("contract_path"))
+        contract = load_contract(contract_path)
+        source = _safe_child(state.parent, contract.get("source_path"))
+        paths.update({event_path, contract_path})
+        for artifact in contract["artifacts"]:
+            paths.add(_safe_child(source, artifact["path"]))
+        if event.get("event_type") != "revision_finalized":
+            break
+        generation = str(event.get("parent_generation_id") or "")
+    return tuple(sorted(paths, key=lambda path: str(path).casefold()))
+
+
+def _path_stamps(paths: tuple[Path, ...]) -> tuple[tuple[int, ...], ...]:
+    def fields(value: Any) -> tuple[int, ...]:
+        return (
+            value.st_mode,
+            value.st_dev,
+            value.st_ino,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    return tuple(fields(path.lstat()) + fields(path.stat()) for path in paths)
+
+
+class _StatusResolver:
+    """Cache a fully verified immutable generation; invalidate on metadata drift."""
+
+    def __init__(self, runs_root: Path):
+        self.runs_root = runs_root
+        self._lock = Lock()
+        self._paths: tuple[Path, ...] = ()
+        self._stamps: tuple[tuple[int, ...], ...] = ()
+        self._cached: tuple[HTTPStatus, dict[str, Any]] | None = None
+
+    def resolve(self) -> tuple[HTTPStatus, dict[str, Any]]:
+        with self._lock:
+            try:
+                if self._cached is not None and _path_stamps(self._paths) == self._stamps:
+                    return self._cached
+                before_paths = _generation_paths(self.runs_root)
+                before_stamps = _path_stamps(before_paths)
+            except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                before_paths, before_stamps = (), ()
+            result = status_payload(self.runs_root)
+            self._cached = None
+            if result[0] != HTTPStatus.OK:
+                return result
+            try:
+                after_paths = _generation_paths(self.runs_root)
+                after_stamps = _path_stamps(after_paths)
+            except (KeyError, OSError, ValueError, json.JSONDecodeError):
+                after_paths, after_stamps = (), ()
+            if before_paths != after_paths or before_stamps != after_stamps:
+                return HTTPStatus.SERVICE_UNAVAILABLE, {
+                    "schema_version": 1,
+                    "service": "ar-local",
+                    "status": "unavailable",
+                    "reason": "observation_changed_during_verification",
+                }
+            self._paths, self._stamps, self._cached = after_paths, after_stamps, result
+            return result
+
+
 def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
     root = runs_root.expanduser().resolve()
+    resolver = _StatusResolver(root)
+    resolver.resolve()
 
     class StatusHandler(BaseHTTPRequestHandler):
         server_version = "ARLocalStatus/1"
@@ -123,7 +231,7 @@ def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
         def _route(self, *, head: bool = False) -> None:
             path = self.path.split("?", 1)[0]
             if path in {"/", "/status", "/api/status"}:
-                self._reply(*status_payload(root), head=head)
+                self._reply(*resolver.resolve(), head=head)
                 return
             if path == "/healthz":
                 self._reply(*health_payload(root), head=head)
@@ -168,7 +276,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    server = HTTPServer((args.host, args.port), handler_for(args.runs))
+    server = ThreadingHTTPServer((args.host, args.port), handler_for(args.runs))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

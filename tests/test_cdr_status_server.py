@@ -66,3 +66,27 @@ def test_status_rejects_canonical_files_without_finalization(tmp_path: Path) -> 
     code, value = cdr_status_server.status_payload(tmp_path / "runs")
     assert code == 503
     assert value["reason"] == "no_verified_observation"
+
+
+def test_status_resolver_caches_only_unchanged_verified_generation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    write_finalized_observation(tmp_path)
+    original = cdr_status_server.status_payload
+    calls = 0
+
+    def counted(runs_root: Path):
+        nonlocal calls
+        calls += 1
+        return original(runs_root)
+
+    monkeypatch.setattr(cdr_status_server, "status_payload", counted)
+    resolver = cdr_status_server._StatusResolver(tmp_path / "runs")
+    assert resolver.resolve()[0] == 200
+    assert resolver.resolve()[0] == 200
+    assert calls == 1
+
+    database = tmp_path / "runs/2026-09-02/_exports/local-cdr.sqlite"
+    database.write_bytes(database.read_bytes() + b"tamper")
+    assert resolver.resolve()[0] == 503
+    assert calls == 2

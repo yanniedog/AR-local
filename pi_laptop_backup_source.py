@@ -679,7 +679,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--production-repo", default="/srv/ar-local/AR-local")
     value.add_argument("--site-repo", default="/srv/ar-local/australianrates")
     value.add_argument("--macro-db", default="/srv/ar-local/AR-local/state/local-macro.sqlite")
-    value.add_argument("--status-url", default="http://127.0.0.1:8808/healthz")
+    value.add_argument("--status-url", default="http://127.0.0.1:8808/api/status")
     value.add_argument("--expected-production-sha", required=True)
     value.add_argument("--candidate-code-sha", required=True)
     value.add_argument("--plan-document-id", required=True)

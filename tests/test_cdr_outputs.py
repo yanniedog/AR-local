@@ -27,7 +27,11 @@ def _write_json(path: Path, value: object) -> None:
 
 
 def _captured_run(
-    tmp_path: Path, *, run_date: str = "2026-09-02", rate: str = "0.05"
+    tmp_path: Path,
+    *,
+    run_date: str = "2026-09-02",
+    rate: str = "0.05",
+    brand_name: str = "Bank One",
 ) -> Path:
     run = tmp_path / run_date
     observed_at = f"{run_date}T01:02:03Z"
@@ -35,9 +39,9 @@ def _captured_run(
         data_holder_id="holder-1",
         data_holder_brand_id="brand-1",
         endpoint_urls=(),
-        display_name="Bank One",
+        display_name=brand_name,
     )
-    leaf = run / "banks" / "Savings" / "Bank One" / "Everyday Saver" / "save-1__token"
+    leaf = run / "banks" / "Savings" / brand_name / "Everyday Saver" / "save-1__token"
     leaf.mkdir(parents=True)
     (leaf / "product-id.txt").write_text("save-1\n", encoding="utf-8")
     _write_json(
@@ -51,7 +55,7 @@ def _captured_run(
             }
         },
     )
-    holder = run / "banks" / "_holders" / "Bank One"
+    holder = run / "banks" / "_holders" / brand_name
     _write_json(
         holder / "_register-brand.json",
         {
@@ -59,7 +63,7 @@ def _captured_run(
             "provider_identity_status": identity_status,
             "data_holder_id": "holder-1",
             "data_holder_brand_id": "brand-1",
-            "brand_name": "Bank One",
+            "brand_name": brand_name,
         },
     )
     _write_json(
@@ -115,10 +119,11 @@ def _captured_run(
             "provider_states": [
                 {
                     "provider_uid": uid,
-                    "brand_name": "Bank One",
+                    "brand_name": brand_name,
                     "state": "complete",
                     "population_known": True,
                     "products_discovered": 1,
+                    "products_in_scope": 1,
                     "products_indexed": 1,
                 }
             ],
@@ -217,6 +222,39 @@ def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
     assert previous_finalized_run(tomorrow, state_dir=state) == run
 
 
+def test_finalization_reconciles_accounting_with_in_scope_products(tmp_path: Path) -> None:
+    run = _captured_run(tmp_path)
+    summary_path = run / "banks/_holders/Bank One/_products-index/index-summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary.update(
+        unique_product_ids=2,
+        relevant_products=1,
+        out_of_scope_products=1,
+    )
+    _write_json(summary_path, summary)
+    status_path = run / "banks/ingest-status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    status["provider_states"][0].update(
+        products_discovered=2,
+        products_in_scope=1,
+        products_out_of_scope=1,
+    )
+    _write_json(status_path, status)
+
+    result = build_outputs(run)
+    exports = run / "_exports"
+    promote_attempt_evidence(run, exports)
+    finalized = finalize_observation(
+        exports,
+        tmp_path / "state",
+        tmp_path / "state/2026-09-02.done.json",
+        observation_date="2026-09-02",
+        result=result,
+    )
+
+    assert finalized["observation_state"] == "complete"
+
+
 def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> None:
     previous = _captured_run(tmp_path, run_date="2026-09-01", rate="0.05")
     current = _captured_run(tmp_path, run_date="2026-09-02", rate="0.08")
@@ -231,6 +269,26 @@ def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> No
     assert len(findings) == 1
     assert findings[0]["severity"] == "HIGH"
     assert findings[0]["worst_delta_bp"] == 300.0
+
+
+def test_sanity_matches_canonical_product_across_brand_rename(tmp_path: Path) -> None:
+    previous = _captured_run(
+        tmp_path, run_date="2026-09-01", rate="0.05", brand_name="Old Brand"
+    )
+    current = _captured_run(
+        tmp_path, run_date="2026-09-02", rate="0.08", brand_name="New Brand"
+    )
+    build_outputs(previous)
+    build_outputs(current)
+
+    findings = compare_ladders(
+        current / "_exports/local-cdr.sqlite",
+        previous / "_exports/local-cdr.sqlite",
+    )
+
+    assert len(findings) == 1
+    assert findings[0]["provider"] == "New Brand"
+    assert findings[0]["severity"] == "HIGH"
 
 
 def test_mobile_payload_is_deterministic_and_bound_to_observation(tmp_path: Path) -> None:
