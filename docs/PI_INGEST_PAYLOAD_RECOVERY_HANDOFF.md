@@ -6420,3 +6420,82 @@ Installer `PASS` remains provisional. Never manually trigger the task. Observe
 the first natural 05:00 backup and validate it at 05:15 against the complete A3
 acceptance gate. Only a later append-only terminal `PASS` may close A3 and
 authorize A4.
+
+## Entry `HANDOFF-20260902T110352+1000-A3-LEAN-RUNTIME-AUTHORITY`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260902T110352+1000-A3-LEAN-RUNTIME-AUTHORITY` |
+| Previous handoff entry | `HANDOFF-20260831T222652+1000-A3-DAYLIGHT-BLOCKED` |
+| Created | `2026-09-02T11:03:52+10:00` / `2026-09-02T01:03:52Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| Documentation source | clean current `origin/main` at candidate `32c74557c07a40c202a257d6d4e7eee331928dd0`; pre-append handoff Git-blob SHA-256 `ae1bd18b6ed969dfb466dc28bf9540326db94a2b7ee5e83a20cfa137a0ff4a9b` |
+| Merged implementation | PR #598 head `f7eed308240b2d0712b0aa9a734e23e7dc4502a4`, merge `325ae0d5fd35f25b1a55f162b09373aeacdb733f`; PR #599 head `d3e0ebd42bc3324a56137b6d5e6ab9bb99acef05`, merge `6a3b5665731db41cbe73ec7df1c74d0238a4a278`; test-only PR #600 head `0125acb40d9695d93a72c37dd88d7cff7b034ca3`, merge and sole candidate `32c74557c07a40c202a257d6d4e7eee331928dd0` |
+| SSH identity | `pi@ar-local-pi5:22`; stable Tailscale hostname required; pinned Ed25519 fingerprint `SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4`; a DHCP address, SSH-config alias or different key is not equivalent |
+| Protected Pi | no Pi deployment, ingest, publication, restart or backup-task trigger occurred; its exact clean production identity must be freshly re-proven before elevation |
+| Result | merged lean runtime and exact source binding `PASS`; package/preflight `NOT_STARTED`; UAC/task/backup/Pi mutation `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
+| Deviations | D-006, D-011, D-012, D-013 and D-014 remain; no new deviation |
+
+### Exact merged source binding
+
+Only candidate `32c74557c07a40c202a257d6d4e7eee331928dd0` is authorized. The
+operational Git-blob bytes are:
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 69006 | `611974aa47652c1c6ad4278bb2f7860b388fa57083154e425802a5d990d75066` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 57443 | `67b50577e73adebe1ab6a86abd468c1546758997785ebe67a30e5bcbb0bd9e45` |
+| `install_laptop_backup_trusted_dispatcher_ssh.ps1` | 14515 | `61e0bd750bcc5b6f5ee0fd9d629e0e9465bb90f6e4193553ff7f7f83a63992c3` |
+| `laptop_backup_trusted_package.py` | 12611 | `6c8386a3b0464e26527d709f7ee29cc2b45751d76b1d9bf9eda67e006bc9de5f` |
+| `native/laptop_backup_trusted_launcher.cpp` | 24190 | `f31431ddb6ae9e6d7f7db5992dc74872303113761a01462264f50e173e7b7774` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 16600 | `8b479107748d5de8ef24ad500ae7dc2531ffb5d99aa0bcc1699148ed22be5105` |
+| `laptop_backup_dispatcher.py` | 38525 | `36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc` |
+| `laptop_backup_dispatcher_security.py` | 20490 | `c52229848b75931cb576855db3093830073be48695e97610f5e82ab8e403b36b` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+| `laptop_backup_scheduled.py` | 39800 | `25e400780554e82f690822bfbaaf41f8d8e93c85106d4501e561e7558d8c44cb` |
+| `laptop_backup_transport.py` | 14615 | `74ede2c24030e738c652008f74a2dff9415608a427d064e9492909c9ba9314e1` |
+| `laptop_pull_backup.py` | 46804 | `ce3c80b492d04ef923aca2701169be76c35ee6d7cc45a517e2c535c7d2232d47` |
+
+PRs #598 and #599 make the trusted runtime consume only the authenticated
+Windows OpenSSH boundary and protected connection contract; #600 changes only
+the cross-platform transport fixture. Candidate identity still binds the whole
+tree. The fixed host-key blob SHA-256 is
+`84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e`,
+which is the fingerprint above.
+
+### Narrow D-012 continuation authority
+
+Merge this documentation-only entry through exact-head CI and thread gates.
+Under D-012, that merge commit and the complete merged handoff raw SHA-256
+become the sole authority identity. Only after merge may routine
+non-administrator commands create separate clean detached candidate and
+authority checkouts, compile the launcher twice, build the deterministic package
+twice, and create a fresh short-lived activation gate, dispatcher manifest and
+pre-execution manifest. Those records must bind the exact candidate, authority,
+complete handoff, plan, installer/core/SSH-boundary hashes, package, protected
+Pi, task, catalog, operator, target/recovery roots, `ar-local-pi5`, `pi`,
+port 22, SSH executable and identity hashes, and the pinned Ed25519 key.
+
+Exactly one UAC approval is authorized only for the resulting authenticated
+installer invocation after every fresh live gate passes inside 03:30–22:00
+Australia/Hobart. No other elevated command is authorized. UAC cancellation is
+`BLOCKED`, not success and not authority to retry stale material. No manual task
+trigger, backup, ingest, deployment, restart or publication is authorized.
+
+Authority expires before use if canonical `origin/main` is not the authority
+merge, or if any candidate, authority, handoff, source, launcher, package,
+manifest, hostname, host-key, SSH executable/identity, task XML/SDDL, catalog,
+accepted receipt/archive, process/residue, free-space, clock-window, protected
+Pi identity/cleanliness/service/timer/lock/dashboard, or legacy-journal gate
+differs. Stop without mutation and append new authority; conversational
+substitution is invalid.
+
+Installer failure must preserve evidence and follow its complete authenticated
+rollback, ending only `ROLLED_BACK`, `FAIL` or `BLOCKED`. Installer `PASS` is
+provisional: D-006 still protects the natural 01:00 ingest, and only the first
+natural trusted 05:00 backup plus full 05:15 validation and a later append-only
+terminal `PASS` may close A3 or authorize A4.
