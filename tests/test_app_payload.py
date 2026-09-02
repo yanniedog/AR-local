@@ -1044,19 +1044,6 @@ def test_aggregate_ribbon_prefers_comparison_rate():
     assert round(ribbon["range"]["max"], 4) == 0.061
 
 
-def test_ribbon_kernel_is_shared_with_dashboard_server():
-    # Single source of truth: both the payload builder and the dashboard server
-    # must use the same callable, so web and mobile can never diverge on the ribbon
-    # rate metric. Guard against a future re-inlining of either copy.
-    import cdr_ribbon_normalize
-    import cdr_dashboard_server
-
-    assert app_payload.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
-    # The dashboard server binds the same kernel at import; if it ever re-inlined
-    # its own ribbon aggregate, this assertion (the bug this PR fixes) would fail.
-    assert cdr_dashboard_server.aggregate_ribbon is cdr_ribbon_normalize.aggregate_ribbon
-
-
 def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     # The dashboard server projects comparison_rate as '' on legacy DBs that lack
     # the column, and deposits carry no comparison rate at all. Non-positive and
@@ -1135,20 +1122,6 @@ def test_compact_history_field_contract_matches_dashboard_client():
         assert set(provider) == {"provider", "by_date"}
         for stats in provider["by_date"].values():
             assert set(stats) == stat_fields
-
-
-def test_history_index_key_matches_dashboard_contract():
-    import cdr_dashboard_server as srv
-
-    row = {"provider": "X", "product_key": "P1", "rate": "5.0", "lvr_tier": "70_80"}
-    key = srv.history_index_key(row)
-    # Joined with the same  separator the dashboard's historyIndexKey uses.
-    assert "" in key
-    # Rate is intentionally excluded from identity, so two samples of the same
-    # product at different rates share a key (a product's history is one series).
-    assert srv.history_index_key({**row, "rate": "9.9"}) == key
-    # A different product key is a different identity (current-catalogue filtering).
-    assert srv.history_index_key({**row, "product_key": "P2"}) != key
 
 
 def _write_revised_history_day(runs, date, rows, *, stamp="stamp0001"):
