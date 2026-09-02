@@ -113,26 +113,26 @@ def test_numeric_product_id_is_preserved_as_opaque_text():
     )
 
 
-def test_percent_style_rates_are_normalized_to_fractions_everywhere():
+def test_percent_style_rates_are_preserved_as_invalid_evidence_not_guessed():
     record = {
         "productId": "percent-rates",
         "lendingRates": [{"lendingRateType": "VARIABLE", "rate": "5.0", "comparisonRate": "5.25"}],
     }
     facts = extract_product_facts(record, "Mortgage|Bank|percent-rates")
-    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == 0.05
-    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == 0.0525
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.advertised")["value"] == "5.0"
+    assert next(fact for fact in facts if fact["canonical_key"] == "rate.comparison")["value"] == "5.25"
     compact = next(fact for fact in compact_facts(record, "Mortgage|Bank|percent-rates") if fact["kind"] == "rate")
-    assert (compact["value"], compact["comparisonValue"]) == (0.05, 0.0525)
+    assert (compact["value"], compact["comparisonValue"]) == ("5.0", "5.25")
 
 
 @pytest.mark.parametrize(
     ("key", "type_key", "rate", "comparison", "expected_rate", "expected_comparison"),
     [
-        ("depositRates", "depositRateType", "0.85", "0.90", 0.0085, 0.009),
-        ("lendingRates", "lendingRateType", "0.55", "0.60", 0.055, 0.06),
+        ("depositRates", "depositRateType", "0.85", "0.90", 0.85, 0.90),
+        ("lendingRates", "lendingRateType", "0.55", "0.60", 0.55, 0.60),
     ],
 )
-def test_legacy_sub_one_rates_use_the_same_family_normalization_in_all_facts(
+def test_cdr_fraction_rates_are_never_rescaled_by_family(
     key, type_key, rate, comparison, expected_rate, expected_comparison,
 ):
     record = {

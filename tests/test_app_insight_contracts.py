@@ -352,8 +352,8 @@ def test_economic_outlook_uses_real_local_observations():
     assert all(1 <= len(series["observations"]) <= 2 for series in payload["series"])
     assert all(series["source_url"].startswith("https://") for series in payload["series"])
 
-def test_sub_one_percent_deposit_rates_are_normalized_before_export():
+def test_cdr_decimal_rates_are_never_rescaled_before_export():
     rows = [{"rate": "0.85"}, {"rate": "0.65"}]
     divisor = cdr_clean_export.rate_divisor(rows, "deposit")
-    assert divisor == 100
-    assert cdr_clean_export.normalized_rate_text("0.85", divisor, "deposit") == "0.0085"
+    assert divisor == 1
+    assert cdr_clean_export.normalized_rate_text("0.85", divisor, "deposit") == "0.85"

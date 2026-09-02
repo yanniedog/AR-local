@@ -531,6 +531,8 @@ def _metadata(fact: Mapping[str, Any]) -> Dict[str, Any]:
         "category", "canonical_key", "canonicalKey", "fact_key", "factKey", "path",
         "name", "label", "title", "source_value_json", "value_json", "qualifiers", "qualifiers_json",
         "source_path", "product_key", "source_file",
+        "provider_uid", "provider_identity_status", "product_uid", "legacy_product_key",
+        "evidence_id", "details_complete",
         *_DUPLICATED_PRODUCT_FIELDS,
         *_TEXT_FIELDS, *_VALUE_FIELDS, *_RANGE_FIELDS, *_CADENCE_FIELDS,
     }

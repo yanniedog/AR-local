@@ -182,7 +182,7 @@ def _typed_value(
         root = path.split("[", 1)[0].split(".", 1)[0]
         family = "deposit" if root == "depositRates" else "lending" if root == "lendingRates" else None
         fraction = _ratio_fraction(number) if lvr else _rate_fraction(
-            number,
+            value,
             rate_divisors.get(family) if family and rate_divisors else None,
             family,
         )

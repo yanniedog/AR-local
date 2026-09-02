@@ -1,40 +1,26 @@
-"""Shared normalization for legacy CDR percentage-rate conventions."""
+"""Strict CDR RateString parsing without unit guessing."""
 from __future__ import annotations
 
-import math
 from typing import Any, List, Mapping, Optional
+
+from cdr_contracts import parse_rate_string
 
 
 def finite_float(value: Any) -> Optional[float]:
-    """Return a finite float, rejecting NaN and infinities as non-numeric evidence."""
+    """Return a valid CDR decimal rate, or ``None`` for invalid evidence."""
     try:
-        number = float(str(value).strip())
-    except (TypeError, ValueError):
+        return float(parse_rate_string(value))
+    except ValueError:
         return None
-    return number if math.isfinite(number) else None
 
 
 def rate_divisor(items: List[Mapping[str, Any]], family: str) -> float:
-    """Infer the retained feed's product-level percentage convention."""
-    values = [number for item in items if (number := finite_float(item.get("rate"))) is not None]
-    if any(value > 1 for value in values):
-        return 100
-    if family == "lending" and any(0.3 < value <= 1 for value in values):
-        return 10
-    if family == "deposit" and any(0.2 <= value <= 1 for value in values):
-        return 100
+    """Compatibility shim: the CDR unit is fixed, so the divisor is always one."""
+    del items, family
     return 1
 
 
 def normalized_rate_value(value: Any, divisor: float, family: str) -> Optional[float]:
-    """Normalize one rate with the same conventions used by clean exports."""
-    number = finite_float(value)
-    if number is None:
-        return None
-    if divisor != 1:
-        number /= divisor
-    elif number > 1:
-        number /= 100
-    if family == "lending" and 0 < number < 0.02:
-        number *= 10
-    return number
+    """Validate and return the exact decimal rate; legacy hints are ignored."""
+    del divisor, family
+    return finite_float(value)

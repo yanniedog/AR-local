@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import cdr_clean_export
 from cdr_contracts import canonical_authority, parse_rate_string, product_uid, provider_uid
 from cdr_ingest_support import iter_banking_brands_from_payload
 
@@ -108,3 +109,52 @@ def test_rate_string_is_decimal_and_never_rescaled(raw: str, expected: str) -> N
 def test_rate_string_rejects_wrong_types_units_and_non_finite_values(raw: object) -> None:
     with pytest.raises(ValueError):
         parse_rate_string(raw)
+
+
+def _write_rate_product(root: Path, rate: str) -> None:
+    provider = "Holder"
+    holder = root / "banks" / "_holders" / provider
+    holder.mkdir(parents=True)
+    (holder / "_register-brand.json").write_text(
+        json.dumps(
+            {
+                "brand_name": provider,
+                "endpoint_url": "https://holder.example/cds-au/v1/banking/products",
+                "provider_uid": "provider-fallback:v1:" + "a" * 64,
+                "provider_identity_status": "fallback",
+            }
+        ),
+        encoding="utf-8",
+    )
+    detail = root / "banks" / "Savings" / provider / "Saver" / "P1"
+    detail.mkdir(parents=True)
+    (detail / "product-detail.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "productId": "P1",
+                    "name": "Saver",
+                    "depositRates": [{"depositRateType": "VARIABLE", "rate": rate}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_clean_export_keeps_exact_cdr_rate_and_relative_evidence_path(tmp_path: Path) -> None:
+    run = tmp_path / "2026-09-02"
+    _write_rate_product(run, "0.04500")
+    banks = cdr_clean_export.parse_banks_run(run)
+    assert banks["rates"][0]["rate"] == "0.045"
+    assert banks["products"][0]["source_file"] == "Savings/Holder/Saver/P1/product-detail.json"
+    assert banks["quarantines"] == []
+
+
+def test_clean_export_quarantines_out_of_unit_rate(tmp_path: Path) -> None:
+    run = tmp_path / "2026-09-02"
+    _write_rate_product(run, "4.5")
+    banks = cdr_clean_export.parse_banks_run(run)
+    assert banks["products"] == []
+    assert banks["rates"] == []
+    assert banks["quarantines"][0]["status"] == "rate_invalid"

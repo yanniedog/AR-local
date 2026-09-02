@@ -64,11 +64,11 @@ def test_aggregate_ribbon_stats():
     assert agg["range"]["mean"] == pytest.approx(0.05)
 
 
-def test_aggregate_ribbon_handles_percent_style():
-    # A product whose raw rate is > 1 is treated as percent-style and divided by 100.
+def test_aggregate_ribbon_rejects_non_cdr_percent_style():
     rows = [{"provider": "A", "product_key": "A|1", "rate": "5.0"}]
     agg = app_payload.aggregate_ribbon(rows, "Savings")
-    assert agg["range"]["min"] == pytest.approx(0.05)
+    assert agg["counts"]["rates"] == 0
+    assert agg["range"]["min"] is None
 
 
 def test_rba_series_parsed_from_dashboard_js():
@@ -1050,11 +1050,11 @@ def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     # non-parsable comparison rates must also fall back to the headline rate, never
     # dropping the product from the ribbon.
     rows = [
-        {"product_key": "A", "provider": "X", "rate": "4.5", "comparison_rate": ""},
-        {"product_key": "B", "provider": "Y", "rate": "5.0", "comparison_rate": None},
-        {"product_key": "C", "provider": "Z", "rate": "4.0", "comparison_rate": "0"},
-        {"product_key": "D", "provider": "W", "rate": "4.2", "comparison_rate": "-1"},
-        {"product_key": "E", "provider": "V", "rate": "4.8", "comparison_rate": "foo"},
+        {"product_key": "A", "provider": "X", "rate": "0.045", "comparison_rate": ""},
+        {"product_key": "B", "provider": "Y", "rate": "0.05", "comparison_rate": None},
+        {"product_key": "C", "provider": "Z", "rate": "0.04", "comparison_rate": "0"},
+        {"product_key": "D", "provider": "W", "rate": "0.042", "comparison_rate": "-1"},
+        {"product_key": "E", "provider": "V", "rate": "0.048", "comparison_rate": "foo"},
     ]
     ribbon = app_payload.aggregate_ribbon(rows, "Savings")
     assert ribbon["counts"]["rates"] == 5  # none dropped
@@ -1069,13 +1069,13 @@ def test_compact_history_reshapes_per_day_aggregates():
     aggs = {
         d1: crn.aggregate_ribbon(
             [
-                {"product_key": "A", "provider": "X", "rate": "5.0"},
-                {"product_key": "B", "provider": "Y", "rate": "4.0"},
+                {"product_key": "A", "provider": "X", "rate": "0.05"},
+                {"product_key": "B", "provider": "Y", "rate": "0.04"},
             ],
             "Savings",
         ),
         d2: crn.aggregate_ribbon(
-            [{"product_key": "A", "provider": "X", "rate": "5.5"}],
+            [{"product_key": "A", "provider": "X", "rate": "0.055"}],
             "Savings",
         ),
     }

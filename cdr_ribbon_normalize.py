@@ -13,6 +13,8 @@ import math
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from cdr_contracts import parse_rate_string
+
 _ISO_DURATION = re.compile(r"^P(\d+)([DMYW])$", re.IGNORECASE)
 _MONTH_RE = re.compile(r"(\d+)\s*(?:MONTH|MTH|MO)", re.IGNORECASE)
 _DAY_RE = re.compile(r"(\d+)\s*DAY", re.IGNORECASE)
@@ -38,17 +40,14 @@ _BUNDLE_VARIABLE = re.compile(r"^bundle[_-]?discount[_-]?variable\b", re.IGNOREC
 # so the implementation lives here and is imported by both. Do not re-inline it.
 # --------------------------------------------------------------------------- #
 def normalized_rate_value(raw: Any, dataset: str, percent_style: bool) -> Optional[float]:
+    del dataset, percent_style
     try:
-        value = float(raw)
-    except (TypeError, ValueError):
+        value = float(parse_rate_string(raw))
+    except ValueError:
         return None
     if not value or value <= 0:
         return None
-    if percent_style:
-        return value / 100.0
-    if dataset == "Mortgage" and 0.3 < value <= 1:
-        return value / 10.0
-    return value / 100.0 if value > 1 else value
+    return value
 
 
 def ribbon_stats(values: List[float]) -> Dict[str, Optional[float]]:
@@ -84,20 +83,11 @@ def aggregate_ribbon(rows: List[Mapping[str, Any]], section: str) -> Dict[str, A
         str(row.get("product_key") or row.get("product_id") or row.get("product_name") or "")
         for row in rows
     ]
-    percent_style: set[str] = set()
-    for key, row in zip(keys, rows):
-        try:
-            raw = float(effective_rate(row))
-        except (TypeError, ValueError):
-            continue
-        if key and raw > 1:
-            percent_style.add(key)
-
     providers: Dict[str, Dict[str, Any]] = {}
     rates: List[float] = []
     products: set[str] = set()
     for key, row in zip(keys, rows):
-        rate = normalized_rate_value(effective_rate(row), section, key in percent_style)
+        rate = normalized_rate_value(effective_rate(row), section, False)
         if rate is None:
             continue
         provider = str(row.get("provider") or "Unknown")
