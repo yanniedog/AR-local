@@ -25,10 +25,10 @@ def _block(name: str) -> str:
 def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
     payload = script.encode()
-    assert len(payload) == 71456
-    assert len(script.split("\n")) == 466
+    assert len(payload) == 71895
+    assert len(script.split("\n")) == 468
     assert hashlib.sha256(payload).hexdigest() == (
-        "73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f"
+        "df0572e47f11f1ae345368f035dcd5cae6f42537e589f73eb2b5c53d4b7a2185"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -43,6 +43,8 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert "dated/rolling asset drift: $role" in script
     assert "$earlyObservation.local_v1" in script
     assert "local payload counts do not match finalized marker" in script
+    assert "TryParseExact($value,'yyyy-MM-dd'" in script
+    assert "$dates[$i]-cne$sorted[$i]" in script
 
 
 def test_sequence7_source_map_matches_lf_checkout() -> None:
@@ -75,10 +77,10 @@ def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
 def test_sequence7_materializer_journals_initialization_failures() -> None:
     script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")
     payload = script.encode()
-    assert len(payload) == 37634
-    assert len(script.split("\n")) == 357
+    assert len(payload) == 37850
+    assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf"
+        "d3863e69f3a91b96158de06239d4c3a4eb769c7a81f11c4d2477674c488ecda4"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
@@ -86,6 +88,9 @@ def test_sequence7_materializer_journals_initialization_failures() -> None:
     assert "materialization failed before execution journal ownership" in script
     assert "running_residue=$runningResidue" in script
     assert "$piIdle.observation.local_v1" in script
+    assert "$jsonFences=[regex]::Matches" in script
+    assert "ConvertFrom-Json -ErrorAction Stop" in script
+    assert "$latestResume.match.Index+$latestResume.match.Length" in script
 
 
 def test_final_resume_pointer_matches_exact_scripts() -> None:

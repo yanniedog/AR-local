@@ -7865,8 +7865,10 @@ function Assert-CurrentPublication([string]$Date,[object]$LocalV1){
     $dated=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$datedTag/manifest.json"
     $rolling=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$rollingTag/manifest.json"
     $index=Get-WebJson $client 'https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json'
-    $dates=@($index.value.dates);$sorted=@($dates|Sort-Object -Unique)
-    if($index.value.schema_version-ne1-or[long]$index.value.count-ne$dates.Count-or$index.value.latest_date-cne$Date-or$dates.Count-lt1-or$dates[-1]-cne$Date-or(Compare-Object $dates $sorted)){throw 'dates index is not current, ordered, and unique'}
+    $dates=@($index.value.dates);$sorted=@($dates|Sort-Object -Unique);$datesValid=$true
+    foreach($value in $dates){$parsed=[datetime]::MinValue;if($value-isnot[string]-or-not[datetime]::TryParseExact($value,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsed)){$datesValid=$false;break}}
+    $datesOrdered=$dates.Count-eq$sorted.Count;for($i=0;$datesOrdered-and$i-lt$dates.Count;$i++){if($dates[$i]-cne$sorted[$i]){$datesOrdered=$false}}
+    if($index.value.schema_version-ne1-or[long]$index.value.count-ne$dates.Count-or$index.value.latest_date-cne$Date-or$dates.Count-lt1-or$dates[-1]-cne$Date-or-not$datesValid-or-not$datesOrdered){throw 'dates index is not current, ordered, unique, and valid'}
     $verified=[ordered]@{dated=(Assert-PayloadManifest $client $dated $Date $datedTag @('core','details'));rolling=(Assert-PayloadManifest $client $rolling $Date $rollingTag @('bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'))}
     foreach($key in @('dated','rolling')){$public=$verified[$key];$local=$LocalV1.PSObject.Properties[$key].Value;if($null-eq$local-or$public.manifest.sha256-cne$local.manifest.sha256-or[long]$public.manifest.bytes-ne[long]$local.manifest.bytes){throw "public/local manifest drift: $key"};$publicNames=@($public.files.Keys|Sort-Object);$localNames=@($local.files.PSObject.Properties.Name|Sort-Object);if(Compare-Object $publicNames $localNames){throw "public/local role drift: $key"};foreach($name in $localNames){$a=$public.files[$name];$b=$local.files.PSObject.Properties[$name].Value;if($a.name-cne$b.name-or$a.sha256-cne$b.sha256-or[long]$a.bytes-ne[long]$b.bytes){throw "public/local asset drift: $key/$name"}}}
     foreach($role in @('core','details')){$a=$verified.dated.files[$role];$b=$verified.rolling.files[$role];if($a.name-cne$b.name-or$a.sha256-cne$b.sha256-or[long]$a.bytes-ne[long]$b.bytes){throw "dated/rolling asset drift: $role"}}
@@ -8248,8 +8250,8 @@ $generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS' $null ([ordered
 ```
 <!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
 
-The generator above is exactly 71456 UTF-8/LF bytes, 466 lines, SHA-256
-`73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f`.
+The generator above is exactly 71895 UTF-8/LF bytes, 468 lines, SHA-256
+`df0572e47f11f1ae345368f035dcd5cae6f42537e589f73eb2b5c53d4b7a2185`.
 Its PowerShell parser has zero errors. Its only native `python -c` site is the
 base64 bootstrap helper.
 
@@ -8462,18 +8464,19 @@ $handoffSha=ShaBytes $handoffBytes
 $planRawSha=ShaBytes $planBytes
 if($planRawSha-cne$planRawShaExpected){throw 'controlled plan raw hash drift'}
 $text=[Text.UTF8Encoding]::new($false,$true).GetString($handoffBytes)
-$resumeMatches=[regex]::Matches($text,'(?m)^\{"schema":"ARL-A3-RESUME-POINTER-V1".*\}$')
+$jsonFences=[regex]::Matches($text,'(?s)\x60\x60\x60json\r?\n(.*?)\r?\n\x60\x60\x60')
+$resumeMatches=@();foreach($fence in $jsonFences){try{$value=$fence.Groups[1].Value|ConvertFrom-Json -ErrorAction Stop}catch{continue};if($value.schema-ceq'ARL-A3-RESUME-POINTER-V1'){$resumeMatches+=[pscustomobject]@{match=$fence;value=$value}}}
 if($resumeMatches.Count-lt1){throw 'current handoff lacks a resume pointer'}
 $latestResume=$resumeMatches[$resumeMatches.Count-1]
-$resumeTail=$text.Substring($latestResume.Index+$latestResume.Length)
-$resume=$latestResume.Value|ConvertFrom-Json
-if($resumeTail-notmatch'^\r?\n\x60\x60\x60\r?\n\s*$'-or$resume.schema-cne'ARL-A3-RESUME-POINTER-V1'-or$resume.version-ne1-or$resume.sequence-ne7-or$resume.predecessor-cne'C-20260902T144000+1000'-or$resume.authority-cne'HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'-or$resume.correction-cne'C-20260902T160000+1000'-or$resume.candidate_sha-cne$candidateSha-or$resume.terminal_status-cne'BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS'){throw 'sequence-7 correction is not the final exact resume pointer'}
+$resumeTail=$text.Substring($latestResume.match.Index+$latestResume.match.Length)
+$resume=$latestResume.value
+if($resumeTail-notmatch'^\s*$'-or$resume.schema-cne'ARL-A3-RESUME-POINTER-V1'-or$resume.version-ne1-or$resume.sequence-ne7-or$resume.predecessor-cne'C-20260902T144000+1000'-or$resume.authority-cne'HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'-or$resume.correction-cne'C-20260902T160000+1000'-or$resume.candidate_sha-cne$candidateSha-or$resume.terminal_status-cne'BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS'){throw 'sequence-7 correction is not the final exact resume pointer'}
 $pattern='(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->\r?\n\x60\x60\x60powershell\r?\n(.*?)\r?\n\x60\x60\x60\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->'
 $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-7 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne71456-or$script.Split([char]10).Count-ne466-or$scriptSha-cne'73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f'){throw 'sequence-7 generator binding mismatch'}
+if($scriptBytes.Length-ne71895-or$script.Split([char]10).Count-ne468-or$scriptSha-cne'df0572e47f11f1ae345368f035dcd5cae6f42537e589f73eb2b5c53d4b7a2185'){throw 'sequence-7 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
@@ -8622,8 +8625,8 @@ $record|ConvertTo-Json -Depth 4 -Compress
 ```
 <!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
 
-The materializer above is exactly 37634 UTF-8/LF bytes, 357 lines, SHA-256
-`3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf`.
+The materializer above is exactly 37850 UTF-8/LF bytes, 358 lines, SHA-256
+`d3863e69f3a91b96158de06239d4c3a4eb769c7a81f11c4d2477674c488ecda4`.
 It is the exact next safe command after merge; any different bytes are
 unauthorized.
 
@@ -8709,15 +8712,15 @@ blocked.
   "complete_handoff_raw_sha256": "D012_SEQUENCE7_MATERIALIZATION_RECORD",
   "generator": {
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
-    "bytes": 71456,
-    "lines": 466,
-    "sha256": "73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f"
+    "bytes": 71895,
+    "lines": 468,
+    "sha256": "df0572e47f11f1ae345368f035dcd5cae6f42537e589f73eb2b5c53d4b7a2185"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
-    "bytes": 37634,
-    "lines": 357,
-    "sha256": "3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf"
+    "bytes": 37850,
+    "lines": 358,
+    "sha256": "d3863e69f3a91b96158de06239d4c3a4eb769c7a81f11c4d2477674c488ecda4"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -8729,7 +8732,7 @@ blocked.
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000",
-  "next_command_utf8_lf_sha256": "3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf",
+  "next_command_utf8_lf_sha256": "d3863e69f3a91b96158de06239d4c3a4eb769c7a81f11c4d2477674c488ecda4",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [
