@@ -24,7 +24,7 @@ import uuid
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from ar_local_restore_verification import (
     _completion_marker_valid,
@@ -45,9 +45,12 @@ from laptop_backup_archive import (
     verify_tar_metadata,
 )
 from laptop_backup_transport import (
+    add_transport_arguments,
     finish_stream_process,
     install_remote_helper,
     remove_remote_helper,
+    ssh_command,
+    stderr_reader,
     windows_ssh_post_eof_only,
 )
 
@@ -359,18 +362,9 @@ def validate_manifest(
     return value
 
 
-def stderr_reader(stream: BinaryIO, sink: bytearray) -> None:
-    read_available = getattr(stream, "read1", stream.read)
-    while True:
-        block = read_available(CHUNK)
-        if not block:
-            return
-        sink.extend(block[: max(0, 4 * 1024**2 - len(sink))])
-
-
 def remote_common(args: argparse.Namespace, remote_path: str) -> list[str]:
     return [
-        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", args.host,
+        *ssh_command(args),
         "python3", remote_path,
         "--expected-production-sha", args.protected_code_sha,
         "--candidate-code-sha", args.candidate_code_sha,
@@ -936,7 +930,7 @@ def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("command", choices=("preflight", "backup-latest", "backfill"))
     value.add_argument("--target", type=Path, required=True)
-    value.add_argument("--host", default="ar-local-pi5-lan")
+    add_transport_arguments(value)
     value.add_argument("--source-helper", type=Path, default=Path(__file__).resolve().with_name("pi_laptop_backup_source.py"))
     value.add_argument("--recovery-image", type=Path)
     value.add_argument("--candidate-code-sha", required=True)

@@ -237,7 +237,7 @@ Handle restricted_token(HANDLE current) {
   SID_AND_ATTRIBUTES disabled{};
   disabled.Sid = administrators;
   Handle restricted;
-  if (!CreateRestrictedToken(current, DISABLE_MAX_PRIVILEGE, 1, &disabled, 0, nullptr,
+  if (!CreateRestrictedToken(current, LUA_TOKEN | DISABLE_MAX_PRIVILEGE, 1, &disabled, 0, nullptr,
                              0, nullptr, restricted.put())) {
     throw win_error("CreateRestrictedToken");
   }
@@ -297,6 +297,19 @@ void require_restricted(HANDLE token, bool require_medium_integrity) {
     throw win_error("GetTokenInformation(TokenHasRestrictions)");
   }
   if (!restricted) throw std::runtime_error("child token has no restrictions");
+
+  TOKEN_ELEVATION elevation{};
+  if (!GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &returned)) {
+    throw win_error("GetTokenInformation(TokenElevation)");
+  }
+  if (elevation.TokenIsElevated) throw std::runtime_error("restricted token remains elevated");
+  TOKEN_ELEVATION_TYPE elevation_type = TokenElevationTypeDefault;
+  if (!GetTokenInformation(token, TokenElevationType, &elevation_type, sizeof(elevation_type), &returned)) {
+    throw win_error("GetTokenInformation(TokenElevationType)");
+  }
+  if (elevation_type == TokenElevationTypeFull) {
+    throw std::runtime_error("restricted token retains a full elevation type");
+  }
 
   auto integrity = token_information(token, TokenIntegrityLevel);
   auto* label = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(integrity.data());
@@ -515,6 +528,11 @@ DWORD scheduled_parent() {
     require_plain_path(probe, false);
     return parent({L"--restricted-probe"});
   }
+  std::wstring finalize = join(root, L"finalize.enabled");
+  if (GetFileAttributesW(finalize.c_str()) != INVALID_FILE_ATTRIBUTES) {
+    require_plain_path(finalize, false);
+    return parent({L"--restricted-child"});
+  }
   validate_bootstrap_readiness(root);
   return parent({L"--restricted-child"});
 }
@@ -534,8 +552,12 @@ int wmain(int argc, wchar_t** argv) {
   try {
     if (argc == 1) {
       if (bootstrap_gate_active()) {
-        std::cerr << "trusted launcher blocked by active bootstrap gate\n";
-        return kBootstrapGateActiveExitCode;
+        std::wstring finalize = join(directory_of(module_path()), L"finalize.enabled");
+        if (GetFileAttributesW(finalize.c_str()) == INVALID_FILE_ATTRIBUTES) {
+          std::cerr << "trusted launcher blocked by active bootstrap gate\n";
+          return kBootstrapGateActiveExitCode;
+        }
+        require_plain_path(finalize, false);
       }
       return static_cast<int>(scheduled_parent());
     }

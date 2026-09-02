@@ -35,16 +35,24 @@ param(
   [Parameter(Mandatory = $true)][long]$ExpectedAcceptedArchiveSize,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshBoundarySha256,
   [Parameter(Mandatory = $true)][string]$PreExecutionManifestPath,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PreExecutionManifestSha256,
-  [string]$PiHost = 'ar-local-pi5-lan'
+  [Parameter(Mandatory = $true)][string]$SshIdentityPath,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshIdentitySha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshExecutableSha256,
+  [ValidateSet('192.168.20.19')][string]$PiHost = '192.168.20.19',
+  [ValidateSet('pi')][string]$PiUser = 'pi',
+  [ValidateRange(22,22)][int]$PiPort = 22
 )
-
 $ErrorActionPreference = 'Stop'
 $script:authorizedDeviations = @()
 $script:deviationAuthorization = $null
 $script:bootstrapGate = $null
 $script:bootstrapGateName = 'Global\ARLocalTrustedBootstrapGate'
+$script:trustedSshConfig = $null
+$script:fixedSshKnownHostsSha256 = '4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836'
+$sshContractArguments = @{ HostName=$PiHost; UserName=$PiUser; Port=$PiPort; SshSha256=$SshExecutableSha256; IdentitySha256=$SshIdentitySha256; KnownHostsSha256=$script:fixedSshKnownHostsSha256 }
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'
@@ -61,6 +69,19 @@ try {
 } finally {
   $coreAlgorithm.Dispose()
   $coreStream.Dispose()
+}
+$sshBoundaryPath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_ssh.ps1'
+$sshBoundaryStream = [IO.File]::Open($sshBoundaryPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+$sshBoundaryAlgorithm = [Security.Cryptography.SHA256]::Create()
+try {
+  $sshBoundaryActual = ([BitConverter]::ToString($sshBoundaryAlgorithm.ComputeHash($sshBoundaryStream)) -replace '-','').ToLowerInvariant()
+  if ($sshBoundaryActual -cne $SshBoundarySha256) { throw 'Trusted SSH boundary implementation hash mismatch.' }
+  $sshBoundaryStream.Position = 0
+  $sshBoundaryReader = New-Object IO.StreamReader($sshBoundaryStream,[Text.UTF8Encoding]::new($false),$true,4096,$true)
+  try { $sshBoundaryText = $sshBoundaryReader.ReadToEnd() } finally { $sshBoundaryReader.Dispose() }
+  . ([ScriptBlock]::Create($sshBoundaryText))
+} finally {
+  $sshBoundaryAlgorithm.Dispose(); $sshBoundaryStream.Dispose()
 }
 
 function Write-ArTrustedResult {
@@ -137,7 +158,8 @@ function Assert-ArTrustedBackupQuiescence {
 
 function Invoke-ArTrustedPiIdleCheck {
   param([Parameter(Mandatory = $true)][string]$Phase)
-  $ssh = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
+  if ($null -eq $script:trustedSshConfig) { throw 'Protected SSH configuration is not authenticated.' }
+  $config = $script:trustedSshConfig
   $lines = @(
     'set -eu','cd /srv/ar-local/AR-local',
     ('test "$(git rev-parse HEAD)" = ''{0}''' -f $ProtectedCodeSha),
@@ -147,7 +169,9 @@ function Invoke-ArTrustedPiIdleCheck {
     'curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null',
     'echo AR_PI_PREFLIGHT_PASS'
   )
-  $result = Invoke-ArTrustedSshScript -SshPath $ssh -HostName $PiHost -Script (($lines -join "`n") + "`n")
+  $result = Invoke-ArTrustedSshScript -SshPath ([string]$config.ssh_path) -HostName ([string]$config.ssh_host) `
+    -UserName ([string]$config.ssh_user) -Port ([int]$config.ssh_port) -IdentityPath ([string]$config.ssh_identity_path) `
+    -KnownHostsPath ([string]$config.ssh_known_hosts_path) -Script (($lines -join "`n") + "`n")
   $output = @($result.Stdout.TrimEnd() -split "`n")
   if ($result.ExitCode -ne 0 -or $output[-1] -cne 'AR_PI_PREFLIGHT_PASS') {
     throw "Pi trusted-bootstrap $Phase check failed."
@@ -176,6 +200,7 @@ function Stop-ArTrustedProbeAndAwait {
 
 function Invoke-ArTrustedActiveControlValidation {
   $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
+  Assert-ArTrustedSshConfiguration -Config $trustedConfig @sshContractArguments
   $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
   $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
   $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
@@ -344,10 +369,11 @@ function Assert-ArExactInstalledBootstrap {
   if ((Get-ArTrustedSha256 $PackagePath) -cne $PackageSha256) { throw 'Already-installed package input changed.' }
   Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
-    -AllowedRuntimeFiles @('bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256') | Out-Null
+    -AllowedRuntimeFiles @('ssh\id','bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256') | Out-Null
   Set-ArTrustedDeviationAuthorization -Root $InstallRoot
   Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
-  Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot | Out-Null
+  $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
+  Assert-ArTrustedSshConfiguration -Config $trustedConfig @sshContractArguments
   Assert-ArTrustedTask -TaskName $TaskName -LauncherPath $launcher -InstallRoot $InstallRoot -OperatorSid $OperatorSid -Enabled $true | Out-Null
   $taskSddl = Get-ArTrustedTaskSddl $TaskName
   Assert-ArTrustedTaskSddl -Sddl $taskSddl
@@ -466,8 +492,11 @@ $local = [DateTimeOffset]::Now
 if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [TimeSpan]::FromHours(22)) { throw 'Trusted bootstrap is outside the D-006 daylight window.' }
 if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) { throw 'Trusted package is absent.' }
 if (-not (Test-Path -LiteralPath $PreExecutionManifestPath -PathType Leaf)) { throw 'Pre-execution manifest is absent.' }
+if (-not (Test-Path -LiteralPath $SshIdentityPath -PathType Leaf)) { throw 'SSH identity source is absent.' }
 foreach ($path in @($Target,$ControlRoot)) { if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Required directory is absent: $path" } }
-foreach ($path in @($PackagePath,$PreExecutionManifestPath,$Target,$ControlRoot,$RecoveryImage,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
+foreach ($path in @($PackagePath,$PreExecutionManifestPath,$SshIdentityPath,$Target,$ControlRoot,$RecoveryImage,([IO.Path]::GetDirectoryName($InstallRoot)),([IO.Path]::GetDirectoryName($EvidenceRoot)))) { Assert-ArTrustedPlainPath $path | Out-Null }
+$sshExecutable = "$env:SystemRoot\System32\OpenSSH\ssh.exe"
+Assert-ArTrustedSystemSshExecutable -Path $sshExecutable -ExpectedSha256 $SshExecutableSha256
 $expectedControl = Join-Path ([IO.Path]::GetFullPath($Target)) 'dispatcher-control'
 if ([IO.Path]::GetFullPath($ControlRoot) -cne [IO.Path]::GetFullPath($expectedControl)) { throw 'ControlRoot must be exactly Target\dispatcher-control.' }
 $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
@@ -475,6 +504,10 @@ $installFull = [IO.Path]::GetFullPath($InstallRoot)
 if (-not $installFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'InstallRoot must be below Program Files.' }
 $evidenceFull = [IO.Path]::GetFullPath($EvidenceRoot)
 if (-not $evidenceFull.StartsWith($programFilesRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'EvidenceRoot must be below Program Files.' }
+$identitySourceFull = [IO.Path]::GetFullPath($SshIdentityPath)
+foreach ($sensitiveRoot in @($installFull,$evidenceFull)) {
+  if ($identitySourceFull -eq $sensitiveRoot -or $identitySourceFull.StartsWith($sensitiveRoot.TrimEnd('\') + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'SSH identity source must remain outside install and evidence roots.' }
+}
 $identitySuffix = $CandidateCodeSha + '-' + $AuthorityCommit
 $expectedInstall = [IO.Path]::GetFullPath((Join-Path $env:ProgramFiles ('AR-local-backup-trusted-' + $identitySuffix)))
 $expectedEvidence = [IO.Path]::GetFullPath((Join-Path $env:ProgramFiles ('AR-local-backup-evidence-' + $identitySuffix)))
@@ -500,13 +533,14 @@ $invocationParameters = [ordered]@{
   expected_accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size=$ExpectedAcceptedReceiptSize
   expected_accepted_observation_id=$ExpectedAcceptedObservationId; expected_accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   expected_accepted_archive_size=$ExpectedAcceptedArchiveSize
-  installer_sha256=$InstallerSha256; core_sha256=$CoreSha256
+  installer_sha256=$InstallerSha256; core_sha256=$CoreSha256; ssh_boundary_sha256=$SshBoundarySha256
   # A manifest cannot contain its own SHA-256. D-012 therefore binds every
   # non-self invocation value here, while the separately authorized outer UAC
   # command supplies the exact manifest SHA-256 that Read-ArTrusted... verifies
   # under one locked stream and Write-ArTrustedResult preserves.
   pre_execution_manifest_path=[IO.Path]::GetFullPath($PreExecutionManifestPath); pre_execution_manifest_sha256='<SELF_SHA256>'
-  pi_host=$PiHost
+  pi_host=$PiHost; pi_user=$PiUser; pi_port=$PiPort
+  ssh_identity_path=[IO.Path]::GetFullPath($SshIdentityPath); ssh_identity_sha256=$SshIdentitySha256; ssh_executable_sha256=$SshExecutableSha256
 }
 $invocationContractSha256 = Get-ArTrustedInvocationContractSha256 $invocationParameters
 $preExecution = Read-ArTrustedPreExecutionManifest -Path $PreExecutionManifestPath -ExpectedSha256 $PreExecutionManifestSha256
@@ -521,6 +555,7 @@ $expectedPreExecution = [ordered]@{
   expected_old_task_xml_sha256 = $ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256 = $ExpectedOldTaskSddlSha256
   expected_old_task_sddl_semantic_sha256 = $ExpectedOldTaskSddlSemanticSha256
   expected_old_task_last_result = $ExpectedOldTaskLastResult; installer_sha256 = $InstallerSha256; core_sha256 = $CoreSha256
+  ssh_boundary_sha256 = $SshBoundarySha256
   expected_catalog_sha256 = $ExpectedCatalogSha256; expected_catalog_size = $ExpectedCatalogSize
   expected_catalog_final_sequence = $ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256 = $ExpectedCatalogFinalEntrySha256
   expected_latest_verified_sha256 = $ExpectedLatestVerifiedSha256; expected_latest_verified_size = $ExpectedLatestVerifiedSize
@@ -533,7 +568,8 @@ $expectedPreExecution = [ordered]@{
   invocation_script_path = [IO.Path]::GetFullPath($PSCommandPath); invocation_contract_sha256 = $invocationContractSha256
   rollback_procedure = 'RESTORE_TASK_CONTROL_AND_QUARANTINE_V1'; preflight_min_free_bytes = [long]50GB
   preflight_expected_active_process_count = 0; preflight_expected_residue_count = 0; preflight_expected_pi_status = 'AR_PI_PREFLIGHT_PASS'
-  pi_host = $PiHost
+  pi_host = $PiHost; pi_user = $PiUser; pi_port = $PiPort
+  ssh_identity_path = [IO.Path]::GetFullPath($SshIdentityPath); ssh_identity_sha256 = $SshIdentitySha256; ssh_executable_sha256 = $SshExecutableSha256
 }
 Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution
 $catalogArguments = @{
@@ -559,9 +595,6 @@ $residue += @(Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction St
 } | ForEach-Object { $_.FullName })
 if ($residue.Count) { throw 'Backup lock, transition lease, or partial residue exists.' }
 
-$piPreflight = Invoke-ArTrustedPiIdleCheck -Phase 'initial preflight'
-$piOutput = @($piPreflight.output)
-
 $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $script:exactCommand = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine
 if (-not (Test-Path -LiteralPath $EvidenceRoot)) {
@@ -581,12 +614,11 @@ $script:executionRoot = Join-Path $EvidenceRoot $executionId
 New-Item -ItemType Directory -Path $script:executionRoot -ErrorAction Stop | Out-Null
 Set-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
 Assert-ArTrustedRootAcl -Root $script:executionRoot -OperatorSid $OperatorSid
-[IO.File]::WriteAllText((Join-Path $script:executionRoot 'pi-preflight.txt'), (($piOutput -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText(
   (Join-Path $script:executionRoot 'pre-execution-observed.json'),
   (([ordered]@{
     invocation_contract_sha256=$invocationContractSha256; free_bytes=$freeBytes
-    active_process_count=$active.Count; residue_count=$residue.Count; pi_status=$piOutput[-1]
+    active_process_count=$active.Count; residue_count=$residue.Count; pi_status='PENDING_AUTHENTICATED_PROTECTED_PACKAGE'
     task_expected_last_result=$ExpectedOldTaskLastResult; catalog=$catalogBaseline
     rollback_procedure='RESTORE_TASK_CONTROL_AND_QUARANTINE_V1'
   } | ConvertTo-Json -Depth 8 -Compress) + "`n"),
@@ -597,6 +629,7 @@ Copy-Item -LiteralPath $PreExecutionManifestPath -Destination $preservedPreExecu
 if ((Get-ArTrustedSha256 $preservedPreExecution) -cne $PreExecutionManifestSha256) { throw 'Preserved pre-execution manifest changed.' }
 Enter-ArTrustedBootstrapGate
 try {
+  Remove-ArTrustedOrphanedSshInputs -OperatorSid $OperatorSid
   Assert-ArTrustedShortQuarantineState -OperatorSid $OperatorSid | Out-Null
 
 if (Test-Path -LiteralPath $InstallRoot) {
@@ -617,7 +650,7 @@ if (Test-Path -LiteralPath $InstallRoot) {
 
     Assert-ArTrustedPackageManifest -Root $InstallRoot -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
       -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot `
-      -AllowedRuntimeFiles @('bootstrap.installing.json','installed-task-sddl-semantic.sha256','finalize.enabled') | Out-Null
+      -AllowedRuntimeFiles @('ssh\id','bootstrap.installing.json','installed-task-sddl-semantic.sha256','finalize.enabled') | Out-Null
     Set-ArTrustedDeviationAuthorization -Root $InstallRoot
     Assert-ArTrustedRootAcl -Root $InstallRoot -OperatorSid $OperatorSid
     $probes = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -like 'AR-local trusted dispatcher probe *' })
@@ -743,6 +776,8 @@ try {
   Expand-ArAuthenticatedPackage -PackagePath $PackagePath -ExpectedSha256 $PackageSha256 -Destination $staging
   Assert-ArTrustedPackageManifest -Root $staging -InstallRoot $InstallRoot -CandidateCodeSha $CandidateCodeSha `
     -AuthorityCommit $AuthorityCommit -OperatorSid $OperatorSid -ControlRoot $ControlRoot | Out-Null
+  Install-ArTrustedSshIdentity -SourcePath $SshIdentityPath -ExpectedSha256 $SshIdentitySha256 `
+    -DestinationPath (Join-Path $staging 'ssh\id') -OperatorSid $OperatorSid
   Set-ArTrustedDeviationAuthorization -Root $staging
   $installingMarker = Join-Path $staging 'bootstrap.installing.json'
   $installingRecord = [ordered]@{
@@ -789,6 +824,7 @@ try {
     throw 'Protected dispatcher manifest does not match the authorised bootstrap identity.'
   }
   $trustedConfig = Assert-ArTrustedChildConfiguration -Root $InstallRoot -ControlRoot $ControlRoot
+  Assert-ArTrustedSshConfiguration -Config $trustedConfig @sshContractArguments
   $toolPaths = @($trustedConfig.git_path,$trustedConfig.ssh_path,$trustedConfig.scp_path,$trustedConfig.whoami_path)
   $env:PATH = (($toolPaths | ForEach-Object { [IO.Path]::GetDirectoryName([string]$_) } | Select-Object -Unique) -join ';')
   $env:GIT_CONFIG_COUNT = '2'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = [string]$trustedConfig.receiver_path
@@ -797,6 +833,12 @@ try {
   & $python -B -s -E $dispatcher validate --control-root $ControlRoot --manifest $manifest
   if ($LASTEXITCODE -ne 0) { throw 'Protected dispatcher pre-mutation validation failed.' }
 
+  $piPreflight = Invoke-ArTrustedPiIdleCheck -Phase 'protected-package preflight'
+  [IO.File]::WriteAllText(
+    (Join-Path $script:executionRoot 'pi-preflight.json'),
+    (($piPreflight | ConvertTo-Json -Depth 5 -Compress) + "`n"),
+    [Text.UTF8Encoding]::new($false)
+  )
   $piPremutation = Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'
   [IO.File]::WriteAllText(
     (Join-Path $script:executionRoot 'pi-immediate-pre-mutation.json'),
@@ -853,6 +895,9 @@ try {
   if ($probeTask.State.ToString() -eq 'Running' -or $probeInfo.LastTaskResult -ne 0) { throw 'Disposable protected-token probe failed.' }
   $probe = Get-Content -LiteralPath $probeOutput -Raw -ErrorAction Stop | ConvertFrom-Json
   if ($probe.ok -ne $true -or $probe.result -cne 'PASS' -or $probe.is_admin -ne $false -or
+      $probe.token_elevation -ne $false -or $probe.token_elevation_type -notin @('Default','Limited') -or
+      $probe.token_has_restrictions -ne $true -or [int]$probe.integrity_rid -gt 8192 -or
+      $probe.ssh_preflight -cne 'PASS' -or
       [string]$probe.operator_sid -cne $OperatorSid -or [string]$probe.candidate_code_sha -cne $CandidateCodeSha) {
     throw 'Protected semantic-finalization result is invalid.'
   }
