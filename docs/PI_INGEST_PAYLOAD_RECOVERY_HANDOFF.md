@@ -6499,3 +6499,223 @@ rollback, ending only `ROLLED_BACK`, `FAIL` or `BLOCKED`. Installer `PASS` is
 provisional: D-006 still protects the natural 01:00 ingest, and only the first
 natural trusted 05:00 backup plus full 05:15 validation and a later append-only
 terminal `PASS` may close A3 or authorize A4.
+
+## Entry `HANDOFF-20260902T113247+1000-A3-LEAN-AUTHORITY-QUARANTINE`
+
+### Control record
+
+| Field | Value |
+|---|---|
+| Entry ID | `HANDOFF-20260902T113247+1000-A3-LEAN-AUTHORITY-QUARANTINE` |
+| Previous handoff entry | `HANDOFF-20260902T110352+1000-A3-LEAN-RUNTIME-AUTHORITY` |
+| Created | `2026-09-02T11:32:47+10:00` / `2026-09-02T01:32:47Z` |
+| Author/operator | Codex unattended for `jkoka` |
+| Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; raw file SHA-256 `d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4`; LF-normalized SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
+| In-flight legacy execution | `ARL-OPS-001` v1.4; plan commit `14dd066099bba393cccf61a280243e43162eedc9`; controlled SHA-256 `78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713`; raw SHA-256 `a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d`; installed candidate `f214e3249c7968d574e3449edb14792904e1cc1f` |
+| Documentation source | clean branch from `origin/main` `c7d92d3b24a0f12360c8b038d1228c0c35152105`; pre-append handoff 457421 bytes, raw SHA-256 `6e2c6072c1bc71a3a125fab48637b22f034c1a992af457fba78b38e5d6dd7c3a` |
+| Sole code candidate | `32c74557c07a40c202a257d6d4e7eee331928dd0`; unchanged by this documentation-only correction |
+| Result | `BLOCKED`; PR #601 authority quarantined; package, preflight, UAC, task mutation, backup, Pi mutation, deployment and publication all `NOT_STARTED` |
+| Phase | A3 remains `RUNNING` with activation `BLOCKED`; A4 remains `BLOCKED` |
+| Deviations | D-006 and D-011 through D-014 remain controlling; no new deviation |
+
+### Quarantine of the PR #601 authority
+
+PR #601 head `11854c50c5ee517e9bd08ce4d186c933687ed828` merged as
+`c7d92d3b24a0f12360c8b038d1228c0c35152105`. Its final entry is not an
+executable authority. This correction supersedes only its continuation
+permission and leaves every prior byte and completed result intact. It remains
+quarantined because it conflated two host-key digests, omitted the required
+resume-pointer state, and did not record the intervening natural-ingest results.
+
+No package, preflight manifest or installer invocation derived from #601 may be
+created, reused, elevated or treated as current. Only a later append-only entry
+that authenticates every missing fact and passes normal exact-head review may
+replace this `BLOCKED` pointer.
+
+### Host-key identity correction
+
+The endpoint is exactly `pi@ar-local-pi5:22`. `ar-local-pi5` must be resolved
+as the stable Tailscale hostname with OpenSSH configuration disabled; a DHCP IP,
+SSH-config alias, different user, different port or different key is not an
+equivalent endpoint.
+
+The two required Ed25519 identities are distinct representations:
+
+| Identity | Exact value |
+|---|---|
+| Raw 51-byte SSH host-key blob SHA-256, lowercase hexadecimal | `84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e` |
+| OpenSSH-rendered SHA-256 fingerprint, unpadded base64 | `SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4` |
+
+A read-only `ssh-keyscan -t ed25519 ar-local-pi5` observation at this entry's
+creation time produced one 51-byte blob matching both values. The hexadecimal
+digest is not the rendered fingerprint and neither value may be substituted for
+the other at its comparison boundary.
+
+### Intervening natural-ingest evidence
+
+#### `NATURAL-20260901`
+
+The create-once local evidence root is
+`C:\code\backups\AR-local-pi5\evidence\NATURAL-20260901-LATE-VALIDATION\20260901T082434+1000`.
+Its controlling record is `late-validation/pass-result.json`, 49120 bytes,
+SHA-256 `83cee70609b0dc0193be1386d9eee5361fd9144f5c59fa175853ad6f4f123484`.
+The record binds protected Pi commit
+`9302890fcc752cbf90da97d597e972c157d913e3`, service invocation
+`5792bc4b1ce747819e9519ca0b94539d`, observation
+`obs-2026-09-01-a2a93c9b841c9594`, ledger head
+`854687253b9c5752339ec637b307f6fbae852f7d51ee062e8f8c3ca6efd16619`,
+and SQLite SHA-256
+`c6ff3d22908fcd7a5a8375a18002613a3e47979d78b64ef85ef9a6830bc514da`.
+
+| Component | Result and immutable identity |
+|---|---|
+| Procedure | `BLOCKED`: mandatory 00:20 and 00:55 evidence gates did not run; the late validation does not relabel that miss |
+| Source capture | `PASS`: 3833 attempts and 10961 retained source files; verified source-tree SHA-256 `aab9fed06459fd221a64079f3ff39eaceb7cb5e5e85999212d9b45c0efd3076b`; promotion-manifest SHA-256 `b71c5cee936b6830e622e643568d295920b7e76b2942d83cb28f3bd783a2aad6` |
+| Observation finalization | `PASS`: observation state `partial`; 3008 products, 17045 rates, 119 providers attempted, 112 complete, 7 partial, 0 failed; SQLite `quick_check=ok`; ledger chain 21/21 with no finding |
+| Dated v1 | `PASS`: manifest 1212 bytes, SHA-256 `bc739e194a437f5d1cec27bc69d53ce7708f240d8b8b2157d20a6d8b13200752` |
+| Rolling v1 | `PASS`: manifest 2882 bytes, SHA-256 `1602bcb2e4314f05eb30872bac1b8114982c33f291942a7194f6345a92cecfbc` |
+| Dates index | `PASS`: 2098 bytes, SHA-256 `f368d86e9e7764de592d92996f9dec9cc4f9322a4a1213fd5d388f975c69843a`, latest `2026-09-01` |
+| v2 | independent `FAIL`: stale run date `2026-08-21`, 1217 bytes, SHA-256 `02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb`; not a v1 gate |
+| Dashboard/service | `PASS`: terminal values 357 bytes, SHA-256 `f6e53c8236efdebc115e9c1726ecaa6d0e47b408003a2d8c1552beb32104bcc8`; service exit 0, lock absent, dashboard healthy, timer enabled/active |
+| Laptop backup | `FAIL`: the 05:00 path did not advance the catalog; dispatcher execution `dispatcher-control/dispatcher-executions/20260831T190002Z-a42b58e9fc0c44b9b101eec015e44be7.json` is 698 bytes, SHA-256 `ca6e62b12fbf07833b0dac2862b9f82c87a9663853445081d0872507e69b9db9`, child exit 1 |
+
+Additional immutable validation files are
+`late-validation/observation-verify-stdout.txt`, 42752 bytes, SHA-256
+`cb3e6f54990e1f91ad1f023ba677ba9bacc154d91383ca047c19d798603110c9`,
+and `late-validation/ledger-verify-stdout.txt`, 476 bytes, SHA-256
+`8b5871d815a19256f1e4861f73356b2a044e4c9c579f5c671e8e663b4173055d`.
+
+#### `NATURAL-20260902`
+
+Only the public and dashboard components could be authenticated. They do not
+prove raw capture, observation finalization, ledger identity or production
+cleanliness:
+
+| Component | Result and authenticated point-in-time identity |
+|---|---|
+| Source capture | `BLOCKED` / unproven: no immutable raw-attempt identity was available through the authenticated stable endpoint |
+| Observation finalization | `BLOCKED` / unproven: observation ID, completion marker, ledger head, export contract and SQLite hash were unavailable |
+| Dated v1 | `PASS`: `https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/manifest.json`, 1211 bytes, SHA-256 `367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47`; core 362452 bytes, SHA-256 `d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11`; details 757500 bytes, SHA-256 `0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46` |
+| Rolling v1 | `PASS`: `https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json`, 2881 bytes, SHA-256 `a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236` |
+| Dates index | `PASS`: 2116 bytes, SHA-256 `9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e`, latest `2026-09-02` |
+| v2 | independent `FAIL`: stale run date `2026-08-21`, 1217 bytes, SHA-256 `02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb`; not a v1 gate |
+| Dashboard | point-in-time `PASS`: `http://100.78.28.10/api/latest`, 373 bytes, SHA-256 `bbca1b65b96b06aed4702b551a507b7475739dc31c7ec9bbbcbadb7c312180b4`, run date `2026-09-02`, generated at `2026-09-02T01:11:18+10:00`, 3009 products and 17050 rates |
+| Laptop backup | `FAIL`: task last ran `2026-09-02T05:00:01+10:00` with result 1; dispatcher execution `dispatcher-control/dispatcher-executions/20260901T190002Z-02dc91d7af334692b654d6d48c7abccd.json` is 698 bytes, SHA-256 `271bf6621708f13aa55a70dbfa4e315937e53b2ba5717ff5cf9c021db5e00102`, child exit 1; catalog did not advance |
+
+The stable endpoint presented the correct Ed25519 key but Tailscale SSH required
+an additional interactive check before remote command execution. Therefore the
+current protected-Pi SHA, cleanliness, service invocation, raw capture,
+completion, pointer, ledger and SQLite identities remain unproven. Public bytes
+cannot fill that gap. This is the exact blocker and it prohibits elevation.
+
+### Current catalog, accepted observation and task
+
+The read-only laptop snapshot at `2026-09-02T11:32:47+10:00` is:
+
+| Item | Exact identity/state |
+|---|---|
+| Catalog | `catalog/generations.jsonl`, 236234 bytes, SHA-256 `7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511`; final sequence 336, kind `macro`, entry SHA-256 `368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420` |
+| Latest verified | `catalog/latest-verified.json`, 316 bytes, SHA-256 `737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`; observation catalog entry SHA-256 `6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68` |
+| Accepted receipt | `observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json`, 3392 bytes, SHA-256 `7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea` |
+| Accepted observation | `obs-2026-08-30-69a34aa4c745bb2e`; archive 237101208 bytes, SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b` |
+| Task | `\AR-local laptop backup`; enabled/Ready; S4U/`Limited`; current old-candidate action `f214e3249c7968d574e3449edb14792904e1cc1f`; XML 4774 UTF-16LE-with-BOM bytes, SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`; raw SDDL 160 UTF-8 bytes, SHA-256 `6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`; last result 1 |
+
+The latest independently evidenced capture/finalization/publication date is
+`2026-09-01`, with its procedure explicitly `BLOCKED`. The latest public and
+dashboard date is `2026-09-02`, but its capture/finalization identities are
+unproven. The latest accepted laptop observation remains `2026-08-30`. These
+three dates and meanings must not be collapsed into one "latest" state.
+
+### Exact hash-bound resume-pointer contract
+
+Every later A3 continuation entry must declare schema
+`ARL-A3-RESUME-POINTER-V1` and bind all of the following exact fields in one
+record: entry ID and timestamps; result; authority merge SHA and complete merged
+handoff raw SHA-256; current and legacy plan identities including raw hashes;
+candidate and current protected-production SHA plus cleanliness; A3 and A4
+states; catalog file size/hash/final sequence/final entry; latest-verified
+size/hash/catalog entry; accepted receipt path/size/hash; accepted observation
+ID/archive size/hash; each intervening natural date with independent capture,
+finalization, dated v1, rolling v1, dates-index, v2, dashboard and backup states
+and evidence identities; exact next command and its UTF-8/LF SHA-256; earliest
+start, latest safe stop and expiry; acceptance criteria; stop conditions;
+preservation/rollback action; risks, findings, deviations and authorization.
+
+Missing, `null`, inherited, conversational or point-in-time-substituted values
+make the record `BLOCKED`. A usable record is current only while canonical
+`origin/main` equals its authority merge, its complete handoff hash matches, all
+listed bytes still hash identically, every intervening natural date is recorded,
+the stable endpoint and both host-key representations match, and its fresh
+preflight has not expired. Fresh package/pre-execution authority may last no
+more than 45 minutes, may not cross 22:00 Australia/Hobart, and expires
+immediately on any state change. This entry has `expires_at=NO_USE_BLOCKED` and
+can never authorize elevation.
+
+### Exact next action
+
+Earliest start is after the operator completes the Tailscale SSH additional
+check for exactly `pi@ar-local-pi5:22`. The following command is read-only; its
+UTF-8 SHA-256 with LF separators and no trailing LF is
+`557c9942e40e5b559ed945ea2dba98df3e3b1710b50ff41ff1f3847f6eab9163`. It disables SSH configuration,
+independently verifies both host-key representations, and prints the missing
+Pi and `2026-09-02` identities without changing them:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$hostName = 'ar-local-pi5'
+$ssh = "$env:WINDIR\System32\OpenSSH\ssh.exe"
+$keyscan = "$env:WINDIR\System32\OpenSSH\ssh-keyscan.exe"
+$expectedHex = '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e'
+$expectedFingerprint = 'SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4'
+$keyLine = @(& $keyscan -T 10 -t ed25519 $hostName 2>$null |
+  Where-Object { $_ -match '^ar-local-pi5\s+ssh-ed25519\s+' })
+if ($keyLine.Count -ne 1) { throw 'expected exactly one Ed25519 host key' }
+$blob = [Convert]::FromBase64String(($keyLine[0] -split '\s+')[2])
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try { $digest = $sha256.ComputeHash($blob) } finally { $sha256.Dispose() }
+$hex = ($digest | ForEach-Object { $_.ToString('x2') }) -join ''
+$fingerprint = 'SHA256:' + [Convert]::ToBase64String($digest).TrimEnd('=')
+if ($blob.Length -ne 51 -or $hex -cne $expectedHex -or
+    $fingerprint -cne $expectedFingerprint) { throw 'host-key mismatch' }
+$knownScript = "[Console]::Out.WriteLine('$($keyLine[0])')"
+$knownEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($knownScript))
+$knownOption = "KnownHostsCommand=C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -EncodedCommand $knownEncoded"
+$remote = @'
+set -eu
+date --iso-8601=seconds
+hostname
+git -C /srv/ar-local/AR-local rev-parse HEAD
+git -C /srv/ar-local/AR-local status --porcelain=v1
+systemctl show ar-local-daily.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p InvocationID -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+systemctl show ar-local-daily.timer -p UnitFileState -p ActiveState -p LastTriggerUSec -p NextElapseUSecRealtime
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+curl -fsS http://127.0.0.1:8808/api/latest
+cd /srv/ar-local/AR-local
+python3 cdr_ledger_v2.py verify --state /srv/ar-local/data/state
+for p in /srv/ar-local/data/state/2026-09-02.done.json /srv/ar-local/data/state/observation-pointers-v2/latest-observation.json /srv/ar-local/data/state/ledger-v2/head.json /srv/ar-local/data/runs/2026-09-02/_exports/ingest-status.json /srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite; do
+  test -f "$p"
+  stat -c '%n %s' "$p"
+  sha256sum "$p"
+done
+find /srv/ar-local/data/state/export-contracts-v2/2026-09-02 -maxdepth 1 -type f -print0 | sort -z | xargs -0 -r sha256sum
+journalctl -u ar-local-daily.service --since '2026-09-02 00:55:00' --until '2026-09-02 02:00:00' --output=json --no-pager
+'@
+$remote | & $ssh -F NUL -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes `
+  -o "IdentityFile=$env:USERPROFILE\.ssh\pi5" -o StrictHostKeyChecking=yes `
+  -o UserKnownHostsFile=NUL -o GlobalKnownHostsFile=NUL `
+  -o HostKeyAlgorithms=ssh-ed25519 -o $knownOption "pi@$hostName" bash -s
+if ($LASTEXITCODE -ne 0) { throw "read-only Pi evidence failed: $LASTEXITCODE" }
+```
+
+Acceptance is a successful pinned session whose output proves clean production
+at the expected protected SHA and supplies exact immutable `2026-09-02`
+capture, finalization, ledger, pointer, contract and SQLite identities. The next
+operator must preserve and hash that output, validate it against public bytes,
+then append a new documentation-only authority through review. If the session
+again requests additional authentication, any file is missing, any hash/state
+differs, or another natural date intervenes, stop `BLOCKED` without mutation.
+
+Preservation action is to leave the old task, catalog, accepted observation,
+Pi, payloads and all evidence unchanged. There is no rollback because this entry
+authorizes no mutation. No package, preflight or UAC command exists while this
+pointer is `BLOCKED`.
