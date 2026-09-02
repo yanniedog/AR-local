@@ -68,6 +68,20 @@ def _uid(row: Mapping[str, Any], label: str) -> str:
     return value
 
 
+def _evidence_id(
+    row: Mapping[str, Any], allowed: frozenset[str], label: str
+) -> str:
+    value = row.get("evidence_id")
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+        or value not in allowed
+    ):
+        raise ObservationError(f"{label} lacks accounting-bound evidence")
+    return value
+
+
 def _document(
     group: str,
     row: Mapping[str, Any],
@@ -111,6 +125,9 @@ def _product_projections(
         raise ObservationError("publishable product lacks a normalized source row")
     output = []
     for uid, disposition in publishable.items():
+        evidence = _evidence_id(
+            rows[uid], frozenset(disposition["evidence_ids"]), "product"
+        )
         envelope = {
             "product_uid": uid,
             "provider_uid": disposition["provider_uid"],
@@ -121,6 +138,7 @@ def _product_projections(
         document_envelope = {
             **envelope,
             "details_complete": disposition["details_complete"],
+            "evidence_id": evidence,
         }
         output.append(
             {
@@ -138,7 +156,10 @@ def _product_projections(
 
 
 def _rate_projections(
-    rows: Iterable[Any], visible: set[str], observation_date: str
+    rows: Iterable[Any],
+    visible: set[str],
+    evidence_by_uid: Mapping[str, str],
+    observation_date: str,
 ) -> list[dict[str, Any]]:
     output = []
     for raw in rows:
@@ -153,6 +174,9 @@ def _rate_projections(
         rate = parse_rate_string(raw.get("rate"))
         comparison_raw = raw.get("comparison_rate")
         comparison = None if comparison_raw in (None, "") else parse_rate_string(comparison_raw)
+        evidence = _evidence_id(
+            raw, frozenset({evidence_by_uid[uid]}), "rate"
+        )
         envelope = {
             "rate_uid": rate_uid(uid, index, rate, comparison),
             "product_uid": uid,
@@ -160,11 +184,12 @@ def _rate_projections(
             "rate": rate,
             "comparison_rate": comparison,
         }
+        document_envelope = {**envelope, "evidence_id": evidence}
         output.append(
             {
                 **envelope,
                 "document": _document(
-                    "rates", raw, envelope, observation_date=observation_date
+                    "rates", raw, document_envelope, observation_date=observation_date
                 ),
             }
         )
@@ -175,6 +200,7 @@ def _item_projections(
     banks: Mapping[str, Any],
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]],
+    evidence_by_uid: Mapping[str, str],
     observation_date: str,
 ) -> list[dict[str, Any]]:
     output = []
@@ -189,11 +215,17 @@ def _item_projections(
             if isinstance(index, bool) or not isinstance(index, int) or index < 1:
                 raise ObservationError("item_index must be a positive integer")
             envelope = {"product_uid": uid, "item_group": group, "item_index": index}
+            document_envelope = {
+                **envelope,
+                "evidence_id": _evidence_id(
+                    raw, frozenset({evidence_by_uid[uid]}), "item"
+                ),
+            }
             output.append(
                 {
                     **envelope,
                     "document": _document(
-                        "items", raw, envelope, observation_date=observation_date
+                        "items", raw, document_envelope, observation_date=observation_date
                     ),
                 }
             )
@@ -205,6 +237,7 @@ def _fact_projections(
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]] | None = None,
     *,
+    evidence_by_uid: Mapping[str, str],
     observation_date: str,
 ) -> list[dict[str, Any]]:
     output = []
@@ -273,11 +306,17 @@ def _fact_projections(
             "min_value": minimum,
             "max_value": maximum,
         }
+        document_envelope = {
+            **envelope,
+            "evidence_id": _evidence_id(
+                raw, frozenset({evidence_by_uid[uid]}), "fact"
+            ),
+        }
         output.append(
             {
                 **envelope,
                 "document": _document(
-                    "product_facts", raw, envelope, observation_date=observation_date
+                    "product_facts", raw, document_envelope, observation_date=observation_date
                 ),
             }
         )
@@ -354,6 +393,7 @@ def _change_projections(
     accounting: Mapping[str, Any],
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]],
+    evidence_by_uid: Mapping[str, str],
     observation_date: str,
 ) -> list[dict[str, Any]]:
     labels = _provider_labels(banks, accounting)
@@ -380,11 +420,12 @@ def _change_projections(
             "event_type": str(raw.get("event_type") or ""),
             "canonical_key": str(raw.get("canonical_key") or "").strip() or None,
         }
+        document_envelope = {**envelope, "evidence_id": evidence_by_uid[uid]}
         output.append(
             {
                 **envelope,
                 "document": _document(
-                    "product_changes", raw, envelope, observation_date=observation_date
+                    "product_changes", raw, document_envelope, observation_date=observation_date
                 ),
             }
         )
@@ -404,22 +445,27 @@ def build_projections(
         banks, accounting, rejected_details, observation_date
     )
     visible = {row["product_uid"] for row in products}
+    evidence_by_uid = {
+        row["product_uid"]: row["document"]["evidence_id"] for row in products
+    }
     projections = {
         "products": products,
         "rates": _rate_projections(
-            banks.get("rates") or [], visible, observation_date
+            banks.get("rates") or [], visible, evidence_by_uid, observation_date
         ),
         "items": _item_projections(
-            banks, visible, rejected_details, observation_date
+            banks, visible, rejected_details, evidence_by_uid, observation_date
         ),
         "product_facts": _fact_projections(
             banks.get("product_facts") or [],
             visible,
             rejected_details,
+            evidence_by_uid=evidence_by_uid,
             observation_date=observation_date,
         ),
         "product_changes": _change_projections(
-            banks, accounting, visible, rejected_details, observation_date
+            banks, accounting, visible, rejected_details, evidence_by_uid,
+            observation_date,
         ),
     }
     _, normalized = validate_observation_inputs(accounting, projections)

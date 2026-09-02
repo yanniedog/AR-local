@@ -412,6 +412,49 @@ def _rate(value: Any, label: str, nullable: bool = False) -> str | None:
     return text
 
 
+def _bound_evidence(
+    document: Any, allowed: frozenset[str], label: str
+) -> str:
+    value = _mapping(document, f"{label} document").get("evidence_id")
+    if not isinstance(value, str) or not SHA256.fullmatch(value) or value not in allowed:
+        _fail(f"{label} lacks accounting-bound evidence")
+    return value
+
+
+def _reject_overlapping_tiers(facts: Sequence[Mapping[str, Any]]) -> None:
+    groups: dict[tuple[Any, ...], list[Mapping[str, Any]]] = {}
+    for row in facts:
+        if row["kind"] != "tier" or row["value_type"] != "range":
+            continue
+        document = row["document"]
+        key = (
+            row["product_uid"],
+            row["canonical_key"],
+            document.get("source_pattern"),
+            document.get("qualifiers_json"),
+            document.get("unit"),
+        )
+        groups.setdefault(key, []).append(row)
+    for ranges in groups.values():
+        ordered = sorted(
+            ranges,
+            key=lambda row: (
+                row["min_value"] is not None,
+                row["min_value"] if row["min_value"] is not None else 0.0,
+            ),
+        )
+        previous_max = ordered[0]["max_value"]
+        for current in ordered[1:]:
+            if (
+                previous_max is None
+                or current["min_value"] is None
+                or current["min_value"] < previous_max
+            ):
+                _fail("tier ranges overlap within one semantic parent")
+            if current["max_value"] is None or current["max_value"] > previous_max:
+                previous_max = current["max_value"]
+
+
 def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     root = _mapping(value, "projections")
     if set(root) != PROJECTION_FIELDS:
@@ -429,6 +472,7 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
     observation_date = accounting["observation_date"]
     publishable = {uid for uid, row in accounting_products.items() if row["disposition"] in PUBLISHABLE}
     products: dict[str, dict[str, Any]] = {}
+    evidence_by_uid: dict[str, str] = {}
     for row in output["products"]:
         expected = {
             "product_uid": _text(row["product_uid"], "product_uid"),
@@ -443,7 +487,13 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         document_envelope = {
             **expected,
             "details_complete": accounting_products[uid]["details_complete"],
+            "evidence_id": _bound_evidence(
+                row["document"],
+                frozenset(accounting_products[uid]["evidence_ids"]),
+                "product",
+            ),
         }
+        evidence_by_uid[uid] = document_envelope["evidence_id"]
         products[uid] = {
             **expected,
             "document": _document(
@@ -478,11 +528,19 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         rate_ids.add(expected["rate_uid"])
         rate_slots.add(key)
         rated.add(expected["product_uid"])
+        document_envelope = {
+            **expected,
+            "evidence_id": _bound_evidence(
+                row["document"],
+                frozenset({evidence_by_uid[expected["product_uid"]]}),
+                "rate",
+            ),
+        }
         rates.append(
             {
                 **expected,
                 "document": _document(
-                    "rates", row["document"], expected, observation_date
+                    "rates", row["document"], document_envelope, observation_date
                 ),
             }
         )
@@ -500,11 +558,19 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         if expected["product_uid"] not in products or key in item_keys:
             _fail("item identity or membership is invalid")
         item_keys.add(key)
+        document_envelope = {
+            **expected,
+            "evidence_id": _bound_evidence(
+                row["document"],
+                frozenset({evidence_by_uid[expected["product_uid"]]}),
+                "item",
+            ),
+        }
         items.append(
             {
                 **expected,
                 "document": _document(
-                    "items", row["document"], expected, observation_date
+                    "items", row["document"], document_envelope, observation_date
                 ),
             }
         )
@@ -569,14 +635,24 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "max_value": maximum,
         }
         fact_keys.add(key)
+        document_envelope = {
+            **expected,
+            "evidence_id": _bound_evidence(
+                row["document"],
+                frozenset({evidence_by_uid[product]}),
+                "fact",
+            ),
+        }
         facts.append(
             {
                 **expected,
                 "document": _document(
-                    "product_facts", row["document"], expected, observation_date
+                    "product_facts", row["document"], document_envelope,
+                    observation_date
                 ),
             }
         )
+    _reject_overlapping_tiers(facts)
     output["product_facts"] = sorted(facts, key=lambda row: (row["product_uid"], row["fact_id"]))
     changes, event_ids = [], set()
     for row in output["product_changes"]:
@@ -587,19 +663,30 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "event_type": _text(row["event_type"], "event_type"),
             "canonical_key": _nullable_text(row["canonical_key"], "canonical_key"),
         }
-        document = _document(
-            "product_changes", row["document"], expected, observation_date
-        )
-        dataset = _enum(document.get("dataset"), DATASETS, "change dataset")
-        cdr_product_id = _text(document.get("product_id"), "change product_id")
         if (
             expected["event_id"] in event_ids
             or not PROVIDER_UID.fullmatch(expected["provider_uid"])
             or expected["product_uid"] not in products
             or products[expected["product_uid"]]["provider_uid"]
             != expected["provider_uid"]
-            or expected["product_uid"]
-            != product_uid(expected["provider_uid"], dataset, cdr_product_id)
+        ):
+            _fail("change identity or provider is invalid")
+        expected_document = {
+            **expected,
+            "evidence_id": _bound_evidence(
+                row["document"],
+                frozenset({evidence_by_uid[expected["product_uid"]]}),
+                "change",
+            ),
+        }
+        document = _document(
+            "product_changes", row["document"], expected_document,
+            observation_date
+        )
+        dataset = _enum(document.get("dataset"), DATASETS, "change dataset")
+        cdr_product_id = _text(document.get("product_id"), "change product_id")
+        if expected["product_uid"] != product_uid(
+            expected["provider_uid"], dataset, cdr_product_id
         ):
             _fail("change identity or provider is invalid")
         event_ids.add(expected["event_id"])
