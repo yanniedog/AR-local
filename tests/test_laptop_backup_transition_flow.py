@@ -13,7 +13,7 @@ import pytest
 import laptop_backup_transition as transition
 import laptop_backup_transition_contract as contract
 import laptop_pull_backup as receiver
-from test_laptop_backup_transition_contract import HOBART_NOW, listing, task_snapshot
+from tests.test_laptop_backup_transition_contract import HOBART_NOW, listing, task_snapshot
 
 
 class FakeOps:
@@ -847,7 +847,7 @@ def test_runtime_preflight_task_failures_have_zero_mutating_calls(
         lambda value: value["preflight"].update(daily_timer="disabled"),
         lambda value: value["preflight"].update(daily_timer_active="inactive"),
         lambda value: value["preflight"].update(ingest_lock_absent=False),
-        lambda value: value["preflight"].update(dashboard_healthy=False),
+        lambda value: value["preflight"].update(status_healthy=False),
         lambda value: value["preflight"].update(daily_timer_next="Sun 2026-08-30 02:00:00 AEST"),
         lambda value: value["latest_observation"].update(observation_date="2026-08-28"),
     ],

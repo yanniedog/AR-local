@@ -13,18 +13,19 @@ from cdr_ingest_support import iter_banking_brands_from_payload
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_real_register_brand_uses_stable_fallback_when_holder_id_is_absent() -> None:
+def test_real_register_brand_uses_official_brand_id_without_holder_id() -> None:
     item = json.loads(
         (FIXTURES / "register_brand_summary_real_2026-09-02.json").read_text(encoding="utf-8")
     )["record"]
     uid, status = provider_uid(
         data_holder_id=item.get("dataHolderId"),
         data_holder_brand_id=item.get("dataHolderBrandId"),
+        interim_id=item.get("interimId"),
         endpoint_urls=(item["publicBaseUri"], item["productBaseUri"]),
         display_name=item["brandName"],
     )
-    assert status == "fallback"
-    assert uid == "provider-fallback:v1:5b62d1baa4af7c75f2fcbc90f3bdc57478e44145fac9a47fe4c9d36858a51fb4"
+    assert status == "official_brand"
+    assert uid == "provider:v2:20e53ed3089a1d23447c5a1d2c5a53b655257512ee4d243734f120dddf186fec"
 
 
 def test_real_register_brand_parser_preserves_identity_evidence() -> None:
@@ -38,8 +39,9 @@ def test_real_register_brand_parser_preserves_identity_evidence() -> None:
         "endpoint_url": "https://public.cdr.alex.com.au/cds-au/v1/banking/products",
         "data_holder_id": "",
         "data_holder_brand_id": "ceca4dce-3f8f-ef11-95f6-000d3a79c46e",
-        "provider_uid": "provider-fallback:v1:5b62d1baa4af7c75f2fcbc90f3bdc57478e44145fac9a47fe4c9d36858a51fb4",
-        "provider_identity_status": "fallback",
+        "interim_id": "fe051e80-e743-44e1-ae83-a4d6286eb596",
+        "provider_uid": "provider:v2:20e53ed3089a1d23447c5a1d2c5a53b655257512ee4d243734f120dddf186fec",
+        "provider_identity_status": "official_brand",
         "identity_authority": "public.cdr.alex.com.au",
     }
 
@@ -57,11 +59,11 @@ def test_official_provider_and_product_identities_are_exact_and_name_stable() ->
         endpoint_urls=("https://changed.example/path",),
         display_name="Name B",
     )
-    assert status == "official"
+    assert status == "official_brand"
     assert provider == renamed
-    assert provider == "provider:v1:833838128d3e6060e3b65ed0f3b9526cca807acd039aeb6436ff7e83156fce18"
+    assert provider == "provider:v2:166868311b2e4cf790534d34c119bb7f78623eea7842d668feb7d7896a15459a"
     assert product_uid(provider, "Mortgage", "product-1") == (
-        "2fba7c40a47faa132d87f1119256ea82ffe7d264d98967cbad3758d1a3f82369"
+        "550898e9e00849f1053a9b593f76674624aec5b5518037f3c199292491d732a5"
     )
     assert product_uid(provider, "Savings", "product-1") != product_uid(
         provider, "Mortgage", "product-1"
@@ -74,24 +76,45 @@ def test_fallback_authority_is_canonical_and_display_name_is_not_case_folded() -
     ) == "a.example:8443"
     first, _ = provider_uid(
         data_holder_id=None,
-        data_holder_brand_id="brand",
+        data_holder_brand_id=None,
         endpoint_urls=("https://bank.example/products",),
         display_name="Bank  Name",
     )
     second, _ = provider_uid(
         data_holder_id=None,
-        data_holder_brand_id="brand",
+        data_holder_brand_id=None,
         endpoint_urls=("https://bank.example/other",),
         display_name="Bank\tName",
     )
     changed_case, _ = provider_uid(
         data_holder_id=None,
-        data_holder_brand_id="brand",
+        data_holder_brand_id=None,
         endpoint_urls=("https://bank.example",),
         display_name="bank name",
     )
     assert first == second
     assert first != changed_case
+
+
+def test_interim_register_identity_is_stable_and_explicit() -> None:
+    first = provider_uid(
+        data_holder_id=None,
+        data_holder_brand_id=None,
+        interim_id="Interim-1",
+        endpoint_urls=("https://one.example",),
+        display_name="Temporary Name",
+    )
+    second = provider_uid(
+        data_holder_id="ignored",
+        data_holder_brand_id=None,
+        interim_id="interim-1",
+        endpoint_urls=("https://two.example",),
+        display_name="Renamed",
+    )
+    assert first == second == (
+        "provider-interim:v2:5d7ee1702a6d73f9e0117089ed34de54af4d63ee5dfd558bddcb23759427272b",
+        "registry_interim",
+    )
 
 
 @pytest.mark.parametrize(

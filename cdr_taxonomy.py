@@ -235,11 +235,8 @@ def build_taxonomy_summary(
 # Standard vs non-standard account classification
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# Goal: keep the dashboard's default view to mainstream retail products (plain
-# savings / transaction / at-call accounts, vanilla personal term deposits, home
-# loans, etc.) while letting the user opt in to everything else — foreign-currency
-# accounts, farm/agribusiness accounts, business/commercial accounts, trust & SMSF
-# accounts, and so on.
+# Separate mainstream retail products from foreign-currency, agribusiness,
+# commercial, trust, SMSF, and other specialised accounts.
 #
 # Two complementary signals make this FUTURE-PROOF rather than a fixed blocklist —
 # a product is "non_standard" if EITHER fires:

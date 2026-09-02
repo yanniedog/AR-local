@@ -19,9 +19,9 @@ PI_SITE_ROOT = PI_SITE_REPO / "site"
 PI_DATA_ROOT = PI_PORTABLE_ROOT / "data"
 _UID_SUFFIX = os.getuid() if hasattr(os, "getuid") else "shared"
 PI_RAM_ROOT = Path(os.environ.get("AR_LOCAL_RAM_ROOT", f"/dev/shm/ar-local-{_UID_SUFFIX}"))
-PI_DASHBOARD_HOST = "0.0.0.0"
-PI_DASHBOARD_PORT = 8808
-PI_DASHBOARD_PROXY_PORT = 80
+PI_STATUS_HOST = "127.0.0.1"
+PI_STATUS_PORT = 8808
+PI_STATUS_PROXY_PORT = 80
 # Operational Tailscale IP from docs/UNIVERSAL_ROADMAP.md (override via AR_PI_TAILSCALE_IP / AR_PI_BASE_URL).
 PI_TAILSCALE_IP = (os.environ.get("AR_PI_TAILSCALE_IP", "100.78.28.10") or "100.78.28.10").strip()
 _pi_base_url = (os.environ.get("AR_PI_BASE_URL", "") or "").strip().rstrip("/")
@@ -169,7 +169,7 @@ def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def latest_exports_root(runs_root: Path) -> Optional[Path]:
+def latest_exports_root(runs_root: Path, *, allow_legacy: bool = False) -> Optional[Path]:
     runs_root = runs_root.expanduser().resolve()
     if not runs_root.is_dir():
         return None
@@ -178,6 +178,8 @@ def latest_exports_root(runs_root: Path) -> Optional[Path]:
         if not child.is_dir():
             continue
         exports = child / "_exports"
+        if not allow_legacy and not (exports / "observation-v1.json").is_file():
+            continue
         manifest = load_exports_manifest(exports)
         if manifest is not None and export_manifest_is_valid(manifest):
             candidates.append((child.name, exports))

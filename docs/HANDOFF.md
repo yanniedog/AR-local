@@ -1,7 +1,7 @@
 # AR-local producer handoff
 
-AR-local owns the Australian CDR rate-data pipeline, its append-only evidence
-and history, payload publication, the local dashboard, and guarded Pi runtime.
+AR-local owns the Australian CDR rate-data pipeline, append-only evidence and
+history, deterministic payload publication, and the guarded Pi status runtime.
 The installable consumer is maintained separately in
 [yanniedog/AR-app](https://github.com/yanniedog/AR-app).
 
@@ -29,7 +29,7 @@ CDR endpoints
   -> cdr_daily.py / ingest modules
   -> immutable attempt evidence and append-only ledger
   -> runs/<date>/_exports
-  -> dashboard caches and SQLite exports
+  -> canonical ObservationV1 + create-once SQLite v9
   -> app_payload.py
   -> GitHub app-payload releases consumed by AR-app
 ```

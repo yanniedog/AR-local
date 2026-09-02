@@ -92,7 +92,7 @@ render_unit() {
 }
 
 for name in \
-  ar-local-dashboard.service \
+  ar-local-status.service \
   ar-local-daily.service \
   ar-local-daily-watchdog.service \
   ar-local-ingest-alert.service \
@@ -118,12 +118,12 @@ done
 sudo install -m 0755 "$repo_dir/deploy/pi/cdr-ingest" /usr/local/bin/cdr-ingest
 
 sudo systemctl daemon-reload
-sudo systemctl enable ar-local-dashboard.service ar-local-boot-recovery.service
+sudo systemctl enable ar-local-status.service ar-local-boot-recovery.service
 sudo systemctl enable --now \
   ar-local-daily.timer \
   ar-local-daily-watchdog.timer \
   ar-local-deploy-watchdog.timer \
   ar-local-runtime-health.timer \
   ar-local-capacity-monitor.timer
-sudo systemctl restart ar-local-dashboard.service
+sh "$repo_dir/deploy/pi/cutover-status-service.sh"
 sudo systemctl restart ar-local-daily.timer ar-local-daily-watchdog.timer

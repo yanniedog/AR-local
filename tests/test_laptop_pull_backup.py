@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 import zstandard
 
-import cdr_outputs
 import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
+from tests.support_legacy_export import write_legacy_export
 
 
 CANDIDATE = "a" * 40
@@ -77,38 +77,7 @@ def base_manifest(kind: str, entries: list[dict[str, object]]) -> dict[str, obje
 
 
 def create_daily_exports(root: Path, date: str) -> None:
-    exports = root / f"data/runs/{date}/_exports"
-    (exports / "dashboard-cache").mkdir(parents=True)
-    groups = {
-        "products": [],
-        "rates": [],
-        "product_facts": [],
-        "product_changes": [],
-        "fees": [],
-        "features": [],
-        "eligibility": [],
-        "constraints": [],
-        "failures": [{}, {}, {}],
-        "holder_attempts": [{}, {}],
-    }
-    expected_counts = {key: len(value) for key, value in groups.items()}
-    (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
-    (exports / "dashboard-cache/latest.json").write_text(
-        json.dumps({"run_date": date, "banks_counts": expected_counts}),
-        encoding="utf-8",
-    )
-    database = exports / "local-cdr.sqlite"
-    connection = sqlite3.connect(database)
-    try:
-        cdr_outputs.ensure_db(connection)
-        connection.execute(
-            "INSERT INTO runs VALUES (?, ?, ?)",
-            (date, "2026-08-25T00:00:00Z", json.dumps(expected_counts)),
-        )
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        connection.close()
+    write_legacy_export(root, date)
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -859,8 +828,8 @@ def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) 
 def test_component_revision_is_shared_and_ignores_only_archive_and_runtime_metadata() -> None:
     manifest = base_manifest("control", [
         {"path": "state/a.json", "type": "file", "size": 2, "sha256": "a" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
-        {"path": "system/systemd/ar-local-dashboard.service.show.txt", "type": "file", "size": 3, "sha256": "c" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
-        {"path": "system/systemd/ar-local-dashboard.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-status.service.show.txt", "type": "file", "size": 3, "sha256": "c" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-status.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "git/AR-local.bundle", "type": "file", "size": 5, "sha256": "e" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "system/control-metadata.json", "type": "file", "size": 6, "sha256": "f" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "data/state/runtime_health.json", "type": "file", "size": 7, "sha256": "9" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},

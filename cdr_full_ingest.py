@@ -12,7 +12,7 @@ Usage:
   python cdr_full_ingest.py --holders commbank --max-pages 2 --max-products 50
   python cdr_full_ingest.py --workers 16
   python cdr_outputs.py runs/2026-05-06
-  python cdr_dashboard_server.py --exports runs/2026-05-06/_exports
+  python cdr_status_server.py --runs runs
   python cdr_daily.py --workers 8
 
 Holders are ingested in parallel via a thread pool (default --workers 8).
@@ -21,7 +21,7 @@ Exit codes: 0 success; 1 no holders matched ``--holders`` (register OK); 2 regis
 failure or zero banking brands without filter waiver. Use ``--allow-empty-holders`` to
 exit 0 when register discovery fails or filters match nothing.
 
-Default run date folder uses UTC (YYYY-MM-DD). Banking layout:
+Default run date uses the Australia/Hobart calendar day. Banking layout:
 
   <out>/<YYYY-MM-DD>/banks/Mortgage/<Bank>/<ProductName>/<safe-id-dir>/product-detail.json
   <out>/<YYYY-MM-DD>/banks/Savings/...

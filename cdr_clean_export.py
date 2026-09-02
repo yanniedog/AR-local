@@ -302,6 +302,7 @@ def _provider_records(holders_root: Path) -> Dict[str, Dict[str, Any]]:
                 uid, status = provider_uid(
                     data_holder_id=normalized.get("data_holder_id"),
                     data_holder_brand_id=normalized.get("data_holder_brand_id"),
+                    interim_id=normalized.get("interim_id"),
                     endpoint_urls=(str(normalized.get("endpoint_url") or ""),),
                     display_name=str(
                         normalized.get("brand_name")

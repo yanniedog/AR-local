@@ -472,6 +472,49 @@ def verified_pointer_marker_for_date(
     )
 
 
+def verified_pointer_export_root(
+    state_dir: Path, pointer_name: str = "latest-observation.json"
+) -> Optional[Path]:
+    """Resolve a finalized export pointer without repairing or mutating state."""
+
+    state_dir = state_dir.expanduser().resolve()
+    try:
+        pointer = json.loads(
+            (state_dir / "observation-pointers-v2" / pointer_name).read_text(
+                encoding="utf-8"
+            )
+        )
+        if not isinstance(pointer, Mapping) or pointer.get("schema_version") != 2:
+            return None
+        observation_date = str(pointer.get("observation_date") or "")
+        marker_path = _safe_state_path(state_dir, pointer.get("marker_path"))
+        if marker_path is None:
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, Mapping) or not verify_completion_marker(
+            marker, state_dir, observation_date
+        ):
+            return None
+        contract_path = _safe_state_path(
+            state_dir, marker.get("export_contract_path")
+        )
+        if contract_path is None:
+            return None
+        contract = load_contract(contract_path)
+        expected = {
+            "observation_date": observation_date,
+            "generation_id": marker.get("generation_id"),
+            "observation_state": marker.get("observation_state"),
+            "ledger_event_digest": marker.get("ledger_event_digest"),
+            "export_path": contract.get("source_path"),
+        }
+        if any(pointer.get(key) != value for key, value in expected.items()):
+            return None
+        return _source_root_for_contract(state_dir, contract)
+    except (KeyError, OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def recover_pending_finalization(
     state_dir: Path, observation_date: str
 ) -> Optional[Path]:

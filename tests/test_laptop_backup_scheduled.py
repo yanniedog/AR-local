@@ -204,7 +204,7 @@ def source_listing() -> dict[str, object]:
             "daily_timer_active": "active",
             "daily_timer_next": "Sun 2026-08-30 01:00:00 AEST",
             "ingest_lock_absent": True,
-            "dashboard_healthy": True,
+            "status_healthy": True,
             "state_root": "/srv/ar-local/data/state",
         },
         "retained_runs": [
@@ -305,8 +305,8 @@ INVALID_SOURCE_IDENTITIES: tuple[tuple[InvalidMutation, str], ...] = (
         "ingest lock identity is invalid",
     ),
     (
-        lambda value: value["preflight"].update(dashboard_healthy=False),
-        "dashboard identity is invalid",
+        lambda value: value["preflight"].update(status_healthy=False),
+        "status identity is invalid",
     ),
     (
         lambda value: value["component_identities"].update(control={}),

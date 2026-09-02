@@ -24,6 +24,23 @@ from cdr_http_policy import (
     request_https,
 )
 from cdr_contracts import canonical_authority, provider_uid
+from cdr_ingest_parsing import (
+    DATASET_CATEGORY_ALIASES,
+    DATASET_TO_FOLDER,
+    as_array,
+    dataset_from_cdr_category,
+    detail_inner_record,
+    extract_cdr_product_category,
+    has_deposit_structured_signals,
+    has_mortgage_structured_signals,
+    infer_cdr_dataset,
+    infer_dataset_from_name,
+    infer_dataset_from_structured_signals,
+    is_record,
+    normalize_category_token,
+    normalize_cdr_product_category,
+    pick_text,
+)
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
 
 # -----------------------------------------------------------------------------
@@ -53,41 +70,6 @@ DEFAULT_LOGICAL_FETCH_ATTEMPTS = 8
 # P&N Bank, Teachers Mutual, Beyond Bank, UBank and Rabobank.
 DEFAULT_USER_AGENT = "ar-local-cdr/1.0 (+https://github.com/yanniedog/AR-local)"
 
-DATASET_CATEGORY_ALIASES: Dict[str, List[str]] = {
-    "home_loans": [
-        "RESIDENTIAL_MORTGAGES",
-        "RESIDENTIAL_MORTGAGE",
-        "MORTGAGES",
-        "MORTGAGE",
-        "HOME_LOANS",
-        "HOME_LOAN",
-    ],
-    "savings": [
-        "TRANS_AND_SAVINGS_ACCOUNTS",
-        "TRANS_AND_SAVINGS_ACCOUNT",
-        "TRANS_AND_SAVINGS",
-        "SAVINGS_ACCOUNTS",
-        "SAVINGS_ACCOUNT",
-        "SAVINGS",
-        "TRANSACTION_AND_SAVINGS_ACCOUNTS",
-    ],
-    "term_deposits": [
-        "TERM_DEPOSITS",
-        "TERM_DEPOSIT",
-        "FIXED_TERM_DEPOSITS",
-        "FIXED_TERM_DEPOSIT",
-        "FIXED_DEPOSITS",
-        "FIXED_DEPOSIT",
-    ],
-}
-
-DATASET_TO_FOLDER = {
-    "home_loans": "Mortgage",
-    "savings": "Savings",
-    "term_deposits": "TD",
-}
-
-
 @dataclass
 class RegisterSnapshot:
     register_ok: bool
@@ -95,34 +77,6 @@ class RegisterSnapshot:
     register_attempts: List[Dict[str, Any]]
     banking_brands: List[Dict[str, str]]
     banking_count_before_filter: int
-
-
-# -----------------------------------------------------------------------------
-# JSON primitives (subset of workers/api/src/ingest/cdr/primitives.ts)
-# -----------------------------------------------------------------------------
-
-
-def is_record(value: Any) -> bool:
-    return isinstance(value, dict)
-
-
-def as_array(value: Any) -> List[Any]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return []
-
-
-def pick_text(record: Mapping[str, Any], keys: Iterable[str]) -> str:
-    for key in keys:
-        raw = record.get(key)
-        if raw is None:
-            continue
-        text = str(raw).strip()
-        if text:
-            return text
-    return ""
 
 
 def safe_url(value: str) -> str:
@@ -172,122 +126,6 @@ def parse_supported_versions(body: str) -> List[int]:
 
 
 # -----------------------------------------------------------------------------
-# Classification (mirror workers/api/src/ingest/cdr/product-classification.ts)
-# -----------------------------------------------------------------------------
-
-
-def normalize_category_token(value: str) -> str:
-    text = str(value or "").strip().upper()
-    text = re.sub(r"[^A-Z0-9]+", "_", text)
-    return text.strip("_")
-
-
-def normalize_cdr_product_category(value: Any) -> Optional[str]:
-    token = normalize_category_token(str(value or ""))
-    return token if token else None
-
-
-def extract_cdr_product_category(product: Mapping[str, Any]) -> Optional[str]:
-    raw = pick_text(product, ["productCategory", "category", "type"])
-    return normalize_cdr_product_category(raw)
-
-
-def dataset_from_cdr_category(category: Optional[str]) -> Optional[str]:
-    normalized = normalize_cdr_product_category(category or "")
-    if not normalized:
-        return None
-    for dataset, aliases in DATASET_CATEGORY_ALIASES.items():
-        if normalized in aliases:
-            return dataset
-    if "MORTGAGE" in normalized or "HOME_LOAN" in normalized:
-        return "home_loans"
-    if "TERM_DEPOSIT" in normalized or "FIXED_DEPOSIT" in normalized:
-        return "term_deposits"
-    if "SAVINGS" in normalized or "TRANS_AND_SAVINGS" in normalized:
-        return "savings"
-    return None
-
-
-def has_mortgage_structured_signals(product: Mapping[str, Any]) -> bool:
-    rates = [x for x in as_array(product.get("lendingRates")) if is_record(x)]
-    if not rates:
-        return False
-    for rate in rates:
-        if not is_record(rate):
-            continue
-        lp = pick_text(rate, ["loanPurpose"])
-        rt = pick_text(rate, ["repaymentType"])
-        lrt = pick_text(rate, ["lendingRateType"])
-        if lp or rt or lrt:
-            return True
-    return False
-
-
-def has_deposit_structured_signals(product: Mapping[str, Any]) -> bool:
-    dr = [x for x in as_array(product.get("depositRates")) if is_record(x)]
-    if dr:
-        return True
-    generic = [x for x in as_array(product.get("rates")) if is_record(x)]
-    for rate in generic:
-        if not is_record(rate):
-            continue
-        dt = pick_text(rate, ["depositRateType", "rateType"])
-        at = pick_text(rate, ["applicationType", "rateApplicabilityType"])
-        if dt or at:
-            return True
-    return False
-
-
-def infer_dataset_from_structured_signals(product: Mapping[str, Any]) -> Optional[str]:
-    if has_mortgage_structured_signals(product):
-        return "home_loans"
-    if has_deposit_structured_signals(product):
-        cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-        if cat_ds:
-            return cat_ds
-        return "savings"
-    return None
-
-
-def infer_dataset_from_name(product: Mapping[str, Any]) -> Optional[str]:
-    name = pick_text(product, ["name", "productName"]).upper()
-    if not name:
-        return None
-    if "MORTGAGE" in name or "HOME LOAN" in name:
-        return "home_loans"
-    if "TERM DEPOSIT" in name or "FIXED DEPOSIT" in name:
-        return "term_deposits"
-    if "SAVINGS" in name or "SAVER" in name or "AT CALL" in name:
-        return "savings"
-    return None
-
-
-def infer_cdr_dataset(
-    product: Mapping[str, Any],
-    *,
-    allow_name_fallback: bool = True,
-) -> Optional[str]:
-    cat_ds = dataset_from_cdr_category(extract_cdr_product_category(product))
-    if cat_ds:
-        return cat_ds
-    structured = infer_dataset_from_structured_signals(product)
-    if structured:
-        return structured
-    if not allow_name_fallback:
-        return None
-    return infer_dataset_from_name(product)
-
-
-def detail_inner_record(parsed: Any) -> Optional[Dict[str, Any]]:
-    if not is_record(parsed):
-        return None
-    inner = parsed.get("data")
-    if is_record(inner):
-        return inner
-    return parsed  # type: ignore[return-value]
-
-
-# -----------------------------------------------------------------------------
 # Register + product list parsing (discovery.ts)
 # -----------------------------------------------------------------------------
 
@@ -309,10 +147,12 @@ def _banking_brand_row(
     endpoint_url = normalize_banking_products_url(endpoint_raw)
     data_holder_id = pick_text(item, ["dataHolderId"])
     data_holder_brand_id = pick_text(item, ["dataHolderBrandId"])
+    interim_id = pick_text(item, ["interimId"])
     display_name = brand_name or legal_name
     uid, identity_status = provider_uid(
         data_holder_id=data_holder_id,
         data_holder_brand_id=data_holder_brand_id,
+        interim_id=interim_id,
         endpoint_urls=(endpoint_raw, endpoint_url),
         display_name=display_name,
     )
@@ -322,6 +162,7 @@ def _banking_brand_row(
         "endpoint_url": endpoint_url,
         "data_holder_id": data_holder_id,
         "data_holder_brand_id": data_holder_brand_id,
+        "interim_id": interim_id,
         "provider_uid": uid,
         "provider_identity_status": identity_status,
         "identity_authority": canonical_authority((endpoint_raw, endpoint_url)),

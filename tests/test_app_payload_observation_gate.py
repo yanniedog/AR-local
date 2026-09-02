@@ -230,13 +230,13 @@ def test_retry_republishes_the_recorded_day_not_the_current_one(
     assert not pi_daily_sync.payload_publication_pending(ROOT)
 
 
-def test_backfill_refuses_an_ungated_date_unless_forced(tmp_path: Path) -> None:
+def test_backfill_never_publishes_an_ungated_date(tmp_path: Path) -> None:
     """The path that published the broken 2026-08-15 day now shares the policy."""
     backfill = _load_backfill()
     allowed, reason, _ = backfill.observation_gate(tmp_path, "2026-08-15", force=False)
     assert (allowed, reason) == (False, "missing_export_contract")
     allowed, reason, _ = backfill.observation_gate(tmp_path, "2026-08-15", force=True)
-    assert allowed and reason == "forced_over_missing_export_contract"
+    assert (allowed, reason) == (False, "missing_export_contract")
 
 
 def test_backfill_admits_a_contract_the_daily_path_would_publish(tmp_path: Path) -> None:

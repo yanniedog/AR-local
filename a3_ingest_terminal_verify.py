@@ -309,8 +309,8 @@ echo timer_last=$(systemctl show ar-local-daily.timer -p LastTriggerUSec --value
 echo timer_next=$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)
 if test -e /srv/ar-local/data/state/daily-ingest.lock; then echo lock=PRESENT; exit 42; else echo lock=ABSENT; fi
 if pgrep -f '[p]i_daily_sync.py|[c]dr_daily.py' >/dev/null; then echo competing_process=PRESENT; exit 43; else echo competing_process=ABSENT; fi
-curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest | python3 -c "import json,sys;v=json.load(sys.stdin);b=v.get('banks_counts')or{{}};assert v.get('run_date')=='{run_day.isoformat()}';assert int(b.get('products',0))>0;assert int(b.get('rates',0))>0"
-echo dashboard=HEALTHY
+curl -fsS --max-time 10 http://127.0.0.1:8808/api/status | python3 -c "import json,sys;v=json.load(sys.stdin);o=v.get('observation')or{{}};assert v.get('service')=='ar-local';assert v.get('status') in ('ok','degraded');assert o.get('date')=='{run_day.isoformat()}';assert o.get('accounting_id')"
+echo status_api=HEALTHY
 case "$(systemctl show ar-local-daily.timer -p NextElapseUSecRealtime --value)" in *"{next_day.isoformat()} 01:00:00 AEST") ;; *) exit 46 ;; esac
 """
     return script.encode()
@@ -478,7 +478,7 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         raise VerificationError("natural start identity is invalid")
     terminal_raw = require_success(ssh(args, "bash", "-s", input_bytes=remote_terminal_script(args.date)), "terminal-service", writer)
     terminal = parse_key_values(terminal_raw, "terminal")
-    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "start_iso", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "dashboard"), "terminal values")
+    require_keys(terminal, ("head", "checkout_clean", "active", "invocation", "start_timestamp", "start_iso", "exit_iso", "status", "code", "result", "restarts", "timer_enabled", "timer_active", "timer_last", "timer_next", "lock", "competing_process", "status_api"), "terminal values")
     exit_at = datetime.fromisoformat(terminal["exit_iso"].replace("Z", "+00:00"))
     started_at = datetime.fromisoformat(terminal["start_iso"].replace("Z", "+00:00"))
     if (
@@ -499,7 +499,7 @@ def validate_service(args: argparse.Namespace, writer: EvidenceWriter) -> dict[s
         or terminal["timer_active"] != "active"
         or terminal["lock"] != "ABSENT"
         or terminal["competing_process"] != "ABSENT"
-        or terminal["dashboard"] != "HEALTHY"
+        or terminal["status_api"] != "HEALTHY"
     ):
         raise VerificationError("natural terminal service gate failed")
     writer.write_json("terminal-service-values.json", terminal)

@@ -54,7 +54,7 @@
   "$defs": {
     "count": { "type": "integer", "minimum": 0 },
     "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "providerUid": { "type": "string", "pattern": "^provider(?:-fallback)?:v1:[0-9a-f]{64}$" },
+    "providerUid": { "type": "string", "pattern": "^(?:provider(?:-fallback)?:v1|provider(?:-interim)?:v2):[0-9a-f]{64}$" },
     "productUid": { "$ref": "#/$defs/digest" },
     "nullableText": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
     "document": { "type": "object" },

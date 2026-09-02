@@ -3,12 +3,20 @@
 import json
 from pathlib import Path
 
+import pytest
+
 import cdr_daily
 import cdr_ingest_lib as lib
 import cdr_ingest_support as cis
 from cdr_ingest_support import FetchResult
 
 ENDPOINT = "http://holder/products"
+
+
+@pytest.mark.parametrize("value", ("../2026-09-02", "2026-9-2", "not-a-date"))
+def test_run_date_rejects_noncanonical_or_escaping_values(value):
+    with pytest.raises(SystemExit):
+        lib.parse_args(["--date", value])
 
 
 def _brand(endpoint=ENDPOINT):

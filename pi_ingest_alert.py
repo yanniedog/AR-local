@@ -98,7 +98,7 @@ def build_body(reason: str, run_date: str, details: str) -> str:
         [
             "Pi host: ar-local-pi5",
             "Repo: /srv/ar-local/AR-local",
-            "Dashboard: http://100.78.28.10/",
+            "Status API: http://100.78.28.10/",
             "",
             "Manual recovery:",
             "  ssh ar-local-pi5 'cd /srv/ar-local/AR-local && git status --porcelain'",

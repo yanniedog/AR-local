@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Pi deploy watchdog
 
-When the user says **"run pi deploy watchdog"** or when **orchestrator/chief** closes a merge that touches `dashboard/**`, `cdr_*.py`, `deploy/pi/**`, or `cdr_dashboard_server.py`:
+When the user says **"run pi deploy watchdog"** or when **orchestrator/chief** closes a merge that touches ingest, payload, status, or `deploy/pi/**`:
 
 1. Read `.cursor/skills/pi-deploy-watchdog/SKILL.md`.
 2. Run `npm run pi:needs-deploy -- --ref origin/main~1` (adjust `--ref` to merge base if known).

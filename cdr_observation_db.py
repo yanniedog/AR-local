@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote
 
-from cdr_contracts import canonical_json_bytes
+from cdr_contracts import PROVIDER_UID_RE, canonical_json_bytes
 
 SCHEMA_VERSION = 9
 APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
@@ -131,7 +131,7 @@ ISSUE_KEYS = {
     "disposition",
     "public_safe",
 }
-PROVIDER_UID = re.compile(r"^provider(?:-fallback)?:v1:[0-9a-f]{64}$")
+PROVIDER_UID = PROVIDER_UID_RE
 PRODUCT_UID = re.compile(r"^[0-9a-f]{64}$")
 RATE_UID = re.compile(r"^[0-9a-f]{64}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -836,6 +836,10 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
         _fail("SQLite schema version is wrong")
     if connection.execute("PRAGMA journal_mode").fetchone()[0].lower() != "delete":
         _fail("SQLite journal mode is not DELETE")
+    page_count = int(connection.execute("PRAGMA page_count").fetchone()[0])
+    page_size = int(connection.execute("PRAGMA page_size").fetchone()[0])
+    if path.stat().st_size != page_count * page_size:
+        _fail("SQLite file has non-page trailing or truncated bytes")
     schema_sha = _schema_fingerprint(connection)
     if schema_sha != expected_schema_fingerprint():
         _fail("SQLite tables, constraints, indexes, or triggers differ from v9")
@@ -868,8 +872,6 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
     if counts != stored_counts:
         _fail("projection counts do not reconcile")
     return DatabaseVerification(path, "", schema_sha, accounting_sha, projections_sha, rebuilt_sidecar, counts)
-
-
 def _database_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -902,8 +904,6 @@ def verify_observation_database(path: Path | str, *, expected_sidecar_bytes: byt
     if before_state != after_state or digest_before != digest_after or any(sidecar.exists() for sidecar in _sidecar_paths(target)):
         _fail("database changed during immutable verification")
     return DatabaseVerification(result.path, digest_after, result.schema_sha256, result.accounting_sha256, result.projections_sha256, result.sidecar_bytes, result.counts)
-
-
 def _fsync_file(path: Path) -> None:
     with path.open("rb+") as stream:
         os.fsync(stream.fileno())
@@ -917,14 +917,10 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
-
 def _cleanup_candidate(path: Path) -> None:
     path.unlink(missing_ok=True)
     for sidecar in _sidecar_paths(path):
         sidecar.unlink(missing_ok=True)
-
-
 def build_observation_database(target: Path | str, *, accounting: Mapping[str, Any], projections: Mapping[str, Any], generated_at: str, normalization_version: str, failure_hook: FailureHook | None = None) -> DatabaseBuildResult:
     """Build privately, verify, then atomically install without overwriting history."""
     supplied = Path(target).expanduser()

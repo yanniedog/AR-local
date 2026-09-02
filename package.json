@@ -1,11 +1,12 @@
 {
   "name": "ar-local",
   "private": true,
-  "description": "Local CDR ingest + dashboard (workflow parity with AustralianRates; no Cloudflare)",
+  "description": "Verified CDR ingest, immutable observations, and deterministic payload publication",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
+    "test": "python -m pytest -q",
     "wait-for-bots": "node wait_for_bots.mjs",
     "pr:bot-feedback-check": "node scripts/pr-bot-feedback-check.mjs",
     "pr:gates:check": "node scripts/pr-gates-check.mjs",

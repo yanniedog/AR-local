@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill per-date app-payload GitHub releases from Pi run exports.
 
-For each ``runs/<YYYY-MM-DD>/_exports`` with valid dashboard data, builds and publishes
+For each verified finalized observation, builds and publishes
 an immutable dated release ``app-payload-<date>``. After all dates, refreshes the rolling
 ``app-payload-latest`` manifest to the newest run_date on disk (without downgrading a
 newer live manifest).
@@ -50,16 +50,15 @@ def observation_gate(
 ) -> Tuple[bool, str, Optional[dict]]:
     """Apply the daily path's publication policy to a backfill candidate.
 
-    This script used to publish any date with parseable dashboard data, with no
+    This script used to publish any date with parseable legacy export data, with no
     reference to the observation's contract at all — which is how the broken
     2026-08-15 run (1,195 failure records against 1,856 products) became a public
     dated release while ``pi_daily_sync`` was correctly refusing it. ``--force``
-    still overrides, so an operator can deliberately republish a known-bad day.
+    may replace a release, but never bypasses observation acceptance.
     """
+    del force
     contract = gate.contract_for_run_date(state_root, run_date)
     allowed, reason = gate.publication_allowed(contract)
-    if not allowed and force:
-        return True, f"forced_over_{reason}", contract
     return allowed, reason, contract
 
 

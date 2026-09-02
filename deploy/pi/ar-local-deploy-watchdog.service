@@ -1,6 +1,6 @@
 [Unit]
-Description=AR-local Pi deploy verify (sync + /api/latest smoke)
-After=network-online.target ar-local-dashboard.service
+Description=AR-local Pi deploy verify (sync + status smoke)
+After=network-online.target ar-local-status.service
 Wants=network-online.target
 
 [Service]

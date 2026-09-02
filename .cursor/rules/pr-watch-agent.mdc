@@ -9,7 +9,7 @@ alwaysApply: false
 When the user says **"run pr watch"**, **"watch open PRs"**, or when **chief/workflow-orchestrator** delegates continuous PR babysit + merge + Pi sync:
 
 1. Read [`.cursor/skills/pr-watch-agent/SKILL.md`](../skills/pr-watch-agent/SKILL.md).
-2. Run `npm run pr:watch-once` (add `--watch` for idle polling).
+2. Run one bounded `npm run pr:watch-once`; do not start polling loops.
 3. For each open PR (oldest first): pr-fix patterns → `wait-for-bots` → `pr:bot-feedback-check` → `pr:gates:check` → `pr:merge` (squash auto-merge) only at exit **0**.
 4. After merges: run drift verification only. Production activation requires the separate exact-commit canary workflow; never deploy merely because a PR merged.
 

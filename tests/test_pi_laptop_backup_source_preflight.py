@@ -59,7 +59,7 @@ def test_source_preflight_requires_enabled_and_active_timer(
         production_repo=str(tmp_path / "AR-local"),
         runs_root=str(tmp_path / "data/runs"),
         state_root=str(tmp_path / "data/state"),
-        dashboard_url="http://127.0.0.1:8808/api/latest",
+        status_url="http://127.0.0.1:8808/healthz",
         expected_production_sha=PROTECTED,
     )
     for path in (Path(args.production_repo), Path(args.runs_root), Path(args.state_root)):

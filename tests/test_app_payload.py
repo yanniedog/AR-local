@@ -1062,68 +1062,6 @@ def test_aggregate_ribbon_empty_comparison_falls_back_to_headline():
     assert round(ribbon["range"]["max"], 4) == 0.05  # B: 5.0 headline (comparison None)
 
 
-def test_compact_history_reshapes_per_day_aggregates():
-    import cdr_ribbon_normalize as crn
-
-    d1, d2 = "2026-06-10", "2026-06-11"
-    aggs = {
-        d1: crn.aggregate_ribbon(
-            [
-                {"product_key": "A", "provider": "X", "rate": "0.05"},
-                {"product_key": "B", "provider": "Y", "rate": "0.04"},
-            ],
-            "Savings",
-        ),
-        d2: crn.aggregate_ribbon(
-            [{"product_key": "A", "provider": "X", "rate": "0.055"}],
-            "Savings",
-        ),
-    }
-    # A gap day (d3) with no aggregate must carry nulls, keeping the series aligned.
-    out = crn.compact_history([d1, d2, "2026-06-12"], aggs)
-    assert out["run_dates"] == [d1, d2, "2026-06-12"]
-    assert [p["date"] for p in out["points"]] == [d1, d2, "2026-06-12"]
-    assert round(out["points"][0]["max"], 4) == 0.05  # d1 overall max = 5.0%
-    assert out["points"][2]["min"] is None and out["points"][2]["count"] == 0  # gap day
-    provider_x = next(p for p in out["providers"] if p["provider"] == "X")
-    assert set(provider_x["by_date"]) == {d1, d2}  # X present both days, not the gap
-    assert round(provider_x["by_date"][d2]["median"], 4) == 0.055
-    # Compact: a handful of points/providers, never the raw per-product rows.
-    assert "rates" not in out
-
-
-def test_compact_history_field_contract_matches_dashboard_client():
-    # dashboard/app.js compactChartItems() reads these exact fields off the
-    # compact payload to build the chart model; lock them so a server-side reshape
-    # change can't silently break the client (which has no JS test harness).
-    import cdr_ribbon_normalize as crn
-
-    d1, d2 = "2026-06-10", "2026-06-11"
-    aggs = {
-        d1: crn.aggregate_ribbon(
-            [
-                {"product_key": "A", "provider": "X", "rate": "5.0", "comparison_rate": "5.1"},
-                {"product_key": "B", "provider": "Y", "rate": "4.0"},
-            ],
-            "Mortgage",
-        ),
-        d2: crn.aggregate_ribbon(
-            [{"product_key": "A", "provider": "X", "rate": "5.5", "comparison_rate": "5.6"}],
-            "Mortgage",
-        ),
-    }
-    out = crn.compact_history([d1, d2], aggs)
-    assert set(out) >= {"run_dates", "points", "providers"}
-    point_fields = {"date", "min", "max", "mean", "median", "count"}
-    for point in out["points"]:
-        assert set(point) == point_fields
-    stat_fields = {"min", "max", "mean", "median", "count"}
-    for provider in out["providers"]:
-        assert set(provider) == {"provider", "by_date"}
-        for stats in provider["by_date"].values():
-            assert set(stats) == stat_fields
-
-
 def _write_revised_history_day(runs, date, rows, *, stamp="stamp0001"):
     """A day whose exports live under the revision layout, not runs/<date>/_exports."""
     exports = runs / date / "_revisions" / stamp / "_exports"

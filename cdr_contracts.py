@@ -12,6 +12,10 @@ from urllib.parse import urlsplit
 
 
 DATASETS = ("Mortgage", "Savings", "TD")
+PROVIDER_UID_PATTERN = (
+    r"^(?:provider(?:-fallback)?:v1|provider(?:-interim)?:v2):[0-9a-f]{64}$"
+)
+PROVIDER_UID_RE = re.compile(PROVIDER_UID_PATTERN)
 _ASCII_SPACE = re.compile(r"[\t\n\v\f\r ]+")
 
 
@@ -72,18 +76,31 @@ def provider_uid(
     *,
     data_holder_id: str | None,
     data_holder_brand_id: str | None,
+    interim_id: str | None = None,
     endpoint_urls: Iterable[str],
     display_name: str,
 ) -> tuple[str, str]:
-    """Return the exact provider UID and ``official``/``fallback`` status."""
+    """Return a stable UID from the strongest Register identity available.
 
-    holder = str(data_holder_id or "").strip()
-    brand = str(data_holder_brand_id or "").strip()
-    if holder and brand:
+    The current summary supplies ``dataHolderBrandId`` but not ``dataHolderId``;
+    requiring both would incorrectly downgrade almost every live brand. A brand
+    ID identifies the PRD provider directly. The one transitional brand without
+    it is bound to its Register ``interimId`` and disclosed as interim.
+    """
+
+    del data_holder_id
+    brand = str(data_holder_brand_id or "").strip().casefold()
+    if brand:
         digest = hashlib.sha256(
-            canonical_json_bytes(["identity-v1", "provider", {"brand": brand, "holder": holder}])
+            canonical_json_bytes(["identity-v2", "provider-brand", brand])
         ).hexdigest()
-        return f"provider:v1:{digest}", "official"
+        return f"provider:v2:{digest}", "official_brand"
+    interim = str(interim_id or "").strip().casefold()
+    if interim:
+        digest = hashlib.sha256(
+            canonical_json_bytes(["identity-v2", "provider-interim", interim])
+        ).hexdigest()
+        return f"provider-interim:v2:{digest}", "registry_interim"
     name = _display_name(display_name)
     if not name:
         raise ValueError("fallback provider identity requires a display name")

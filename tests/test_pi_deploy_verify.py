@@ -42,6 +42,25 @@ def test_deploy_rejects_commit_other_than_current_main(monkeypatch, capsys):
     assert "not the current local origin/main" in capsys.readouterr().err
 
 
+def test_deploy_rejects_nonpositive_bootstrap_timeout_before_contact(monkeypatch):
+    args = pi_deploy_verify.build_parser().parse_args(
+        [
+            "--deploy",
+            "--expected-commit",
+            "a" * 40,
+            "--bootstrap-observation",
+            "--ingest-timeout",
+            "0",
+        ]
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "origin_main_sha_local",
+        lambda: pytest.fail("invalid input must fail before repository or Pi contact"),
+    )
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
+
+
 def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     expected = "a" * 40
     args = pi_deploy_verify.build_parser().parse_args(
@@ -120,14 +139,6 @@ def test_deployment_acceptance_is_append_only_candidate_command(monkeypatch):
     assert actual_command in command
 
 
-def test_controlled_deploy_rejects_empty_rate_override(capsys):
-    args = pi_deploy_verify.build_parser().parse_args(
-        ["--deploy", "--expected-commit", "a" * 40, "--allow-empty-rates"]
-    )
-    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_CONFIG
-    assert "forbidden for controlled deployment" in capsys.readouterr().err
-
-
 def test_main_preserves_actual_deploy_argv_for_acceptance(monkeypatch):
     captured = []
     monkeypatch.setattr(
@@ -137,9 +148,8 @@ def test_main_preserves_actual_deploy_argv_for_acceptance(monkeypatch):
     )
     candidate = "a" * 40
     assert pi_deploy_verify.main(
-        ["--deploy", "--expected-commit", candidate, "--allow-empty-rates"]
+        ["--deploy", "--expected-commit", candidate]
     ) == pi_deploy_verify.EXIT_OK
-    assert "--allow-empty-rates" in captured[0]
     assert candidate in captured[0]
 
 
@@ -152,13 +162,21 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
         "run_ssh",
         lambda command, dry_run=False: commands.append(command) or (0, "", ""),
     )
-    monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "restore_protected_runtime",
+        lambda **_kwargs: "legacy",
+    )
     monkeypatch.setattr(
         pi_deploy_verify,
         "pi_remote_snapshot",
         lambda **_kwargs: {"AR_HEAD": protected},
     )
-    monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "wait_for_legacy_http_smoke",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
     assert (
         pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
         == pi_deploy_verify.EXIT_OK
@@ -169,6 +187,55 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
     assert "ar-local-backup-gate record-rollback" in commands[1]
     assert f"--candidate-sha {candidate}" in commands[1]
     assert "--dashboard-verified --services-verified" in commands[1]
+    assert commands[1].count("--parent-command") == 1
+
+
+def test_restore_protected_runtime_selects_legacy_contract(monkeypatch):
+    commands = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: commands.append(command)
+        or (0, "ROLLBACK_RUNTIME=legacy", ""),
+    )
+    assert pi_deploy_verify.restore_protected_runtime() == "legacy"
+    command = commands[0]
+    assert "install-pi-dashboard-proxy.sh" in command
+    assert "install-pi-status-proxy.sh" in command
+    assert "sudo systemctl stop ar-local-status.service" in command
+    assert "/etc/nginx/sites-enabled/ar-local-status" in command
+
+
+def test_rollback_does_not_record_until_protected_http_is_verified(monkeypatch):
+    protected = "b" * 40
+    candidate = "a" * 40
+    commands = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda command, dry_run=False: commands.append(command) or (0, "", ""),
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify, "restore_protected_runtime", lambda **_kwargs: "legacy"
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "pi_remote_snapshot",
+        lambda **_kwargs: {"AR_HEAD": protected},
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "wait_for_legacy_http_smoke",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    assert (
+        pi_deploy_verify.rollback_to_protected_commit(
+            protected, candidate, "deploy command"
+        )
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
+    assert len(commands) == 1
+    assert "record-rollback" not in commands[0]
 
 
 def test_exact_commit_install_does_not_move_site_checkout(monkeypatch):
@@ -232,10 +299,44 @@ def test_runtime_unit_activation_is_ingest_locked_and_complete():
     assert "ar-local-daily-watchdog.service" in text
     assert "ar-local-ingest-now.service" in text
     assert "sudo systemctl daemon-reload" in text
-    assert "sudo systemctl restart ar-local-dashboard.service" in text
+    assert "cutover-status-service.sh" in text
+    cutover = (ROOT / "deploy" / "pi" / "cutover-status-service.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'sudo systemctl stop "$old_unit"' in cutover
+    assert 'sudo systemctl restart "$new_unit"' in cutover
+    assert cutover.index('sudo systemctl stop "$old_unit"') < cutover.index(
+        'sudo systemctl restart "$new_unit"'
+    )
+    assert 'sudo systemctl start "$old_unit"' in cutover
+    assert "http://127.0.0.1:8808/healthz" in cutover
     assert "git fetch" not in text
     assert "git checkout" not in text
     assert "apt-get" not in text
+
+
+def test_status_runtime_is_loopback_only_hardened_and_netdata_is_private():
+    unit = (ROOT / "deploy" / "pi" / "ar-local-status.service").read_text(
+        encoding="utf-8"
+    )
+    for directive in (
+        "--host 127.0.0.1 --port 8808",
+        "CapabilityBoundingSet=",
+        "NoNewPrivileges=true",
+        "ProtectSystem=strict",
+        "RestrictNamespaces=true",
+        "UMask=0077",
+    ):
+        assert directive in unit
+
+    nginx = (ROOT / "deploy" / "pi" / "ar-local-status-nginx.conf").read_text(
+        encoding="utf-8"
+    )
+    assert "location ~ ^/netdata/" in nginx
+    assert "allow 100.64.0.0/10;" in nginx
+    assert "allow fd7a:115c:a1e0::/48;" in nginx
+    assert "deny all;" in nginx
+    assert "client_max_body_size 1k;" in nginx
 
 
 def test_runtime_unit_activation_preserves_busy_lock_result(monkeypatch, capsys):
@@ -314,6 +415,11 @@ def test_pi_runtime_health_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_runtime_health.py"])
 
 
+@pytest.mark.parametrize("path", ("pi_deploy_cli.py", "pi_deploy_http.py"))
+def test_pi_deploy_helpers_require_pi_deploy(path):
+    assert pi_deploy_verify.paths_touch_pi_deploy([path])
+
+
 def test_pi_capacity_monitor_changes_require_pi_deploy():
     assert pi_deploy_verify.paths_touch_pi_deploy(["pi_capacity_monitor.py"])
 
@@ -343,9 +449,9 @@ def test_every_trusted_backup_gate_input_requires_pi_deploy(path):
 
 def _service_snapshot(**overrides: str) -> dict[str, str]:
     snapshot = {
-        "DASHBOARD_WD": "/srv/ar-local/AR-local",
-        "DASHBOARD_EXEC": "/usr/bin/python3 /srv/ar-local/AR-local/cdr_dashboard_server.py --runs /srv/ar-local/data/runs",
-        "DASHBOARD_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data",
+        "STATUS_WD": "/srv/ar-local/AR-local",
+        "STATUS_EXEC": "/usr/bin/python3 /srv/ar-local/AR-local/cdr_status_server.py --runs /srv/ar-local/data/runs",
+        "STATUS_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data",
         "DAILY_WD": "/srv/ar-local/AR-local",
         "DAILY_EXEC": "/usr/bin/python3 /srv/ar-local/AR-local/pi_daily_sync.py",
         "DAILY_ENV": "AR_LOCAL_DATA_ROOT=/srv/ar-local/data HOME=/home/pi XDG_CONFIG_HOME=/home/pi/.config",
@@ -379,7 +485,7 @@ def _verified_sync_snapshot(ar_commit: str) -> dict[str, str]:
         "SITE_ORIGIN": site_commit,
         "AR_DIRTY": "",
         "SITE_DIRTY": "",
-        "DASHBOARD": "active",
+        "STATUS": "active",
     }
 
 
@@ -412,6 +518,101 @@ def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
     args.effective_command = f"python pi_deploy_verify.py --deploy --expected-commit {candidate}"
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
     assert rolled_back == [(protected, candidate, args.effective_command)]
+
+
+def test_post_activation_failure_invokes_verified_rollback(monkeypatch):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deployment_backup_gate",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_pull_all",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_services",
+        lambda **_kwargs: pi_deploy_verify.EXIT_VERIFY_FAIL,
+    )
+    rolled_back = []
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "rollback_to_protected_commit",
+        lambda *values, **_kwargs: rolled_back.append(values)
+        or pi_deploy_verify.EXIT_OK,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        ["--deploy", "--expected-commit", candidate]
+    )
+    args.effective_command = "deploy command"
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_VERIFY_FAIL
+    assert rolled_back == [(protected, candidate, "deploy command")]
+
+
+def test_bootstrap_flag_runs_ingest_before_status_acceptance(monkeypatch):
+    candidate = "a" * 40
+    protected = "b" * 40
+    initial = _verified_sync_snapshot(protected)
+    initial["AR_ORIGIN"] = candidate
+    calls = []
+    monkeypatch.setattr(pi_deploy_verify, "origin_main_sha_local", lambda: candidate)
+    monkeypatch.setattr(pi_deploy_verify, "pi_remote_snapshot", lambda **_kwargs: initial)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deployment_backup_gate",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_pull_all",
+        lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "deploy_services",
+        lambda **_kwargs: calls.append("services") or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "verify_sync",
+        lambda **_kwargs: calls.append("sync") or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "bootstrap_observation",
+        lambda *_args, **_kwargs: calls.append("ingest") or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "wait_for_http_smoke",
+        lambda *_args, **_kwargs: calls.append("smoke") or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "record_deployment_acceptance",
+        lambda *_args, **_kwargs: calls.append("record") or pi_deploy_verify.EXIT_OK,
+    )
+    args = pi_deploy_verify.build_parser().parse_args(
+        [
+            "--deploy",
+            "--expected-commit",
+            candidate,
+            "--bootstrap-observation",
+            "--ingest-timeout",
+            "60",
+        ]
+    )
+    args.effective_command = "deploy command"
+    assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
+    assert calls == ["services", "sync", "ingest", "smoke", "record"]
 
 
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
@@ -476,7 +677,7 @@ def test_ingest_fence_verification_rejects_partial_unit_rollout():
 
 def test_service_paths_reject_bootstrap_checkout():
     assert not pi_deploy_verify.pi_service_paths_ok(
-        _service_snapshot(DASHBOARD_WD="/home/pi/AR-local")
+        _service_snapshot(STATUS_WD="/home/pi/AR-local")
     )
 
 
@@ -500,7 +701,7 @@ def test_service_paths_parse_quoted_values_and_embedded_equals():
 @pytest.mark.parametrize("sibling", ["/home/pilot/data", "/home/pine", "/mnt/home/pi"])
 def test_service_paths_allow_paths_outside_pi_home_boundary(sibling):
     assert pi_deploy_verify.pi_service_paths_ok(
-        _service_snapshot(DASHBOARD_WD=sibling, DAILY_ENV=f"AR_LOCAL_DATA_ROOT={sibling}")
+        _service_snapshot(STATUS_WD=sibling, DAILY_ENV=f"AR_LOCAL_DATA_ROOT={sibling}")
     )
 
 
@@ -567,7 +768,7 @@ def test_remote_wrapper_keeps_marker_outside_trailing_comment():
     assert wrapped.rstrip().endswith(pi_deploy_verify.shell_quote(pi_deploy_verify.SSH_SUCCESS_SENTINEL))
 
 
-def test_deploy_smoke_waits_for_dashboard_preload(monkeypatch):
+def test_deploy_smoke_waits_for_status_restart(monkeypatch):
     results = iter(
         [
             pi_deploy_verify.EXIT_VERIFY_FAIL,
@@ -600,11 +801,10 @@ def test_deploy_smoke_returns_immediately_when_ready(monkeypatch):
 
     assert (
         pi_deploy_verify.wait_for_http_smoke(
-            "http://pi/", require_rates=False, attempts=3, delay_seconds=2.5
+            "http://pi/", attempts=3, delay_seconds=2.5
         )
         == pi_deploy_verify.EXIT_OK
     )
-    assert calls[0]["require_rates"] is False
     assert calls[0]["timeout_seconds"] <= 30.0
     assert sleeps == []
 
@@ -650,6 +850,38 @@ def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
     )
     assert timeouts == [20.0]
     assert sleeps == []
+
+
+def test_bootstrap_waits_for_a_new_successful_systemd_invocation(monkeypatch):
+    old = "1" * 32
+    new = "2" * 32
+    responses = iter(
+        [
+            (0, f"BEFORE={old}\nINVOCATION={old}", ""),
+            (
+                0,
+                f"INVOCATION={new}\nACTIVE=activating\nSUB=start\n"
+                "RESULT=success\nSTATUS=0",
+                "",
+            ),
+            (
+                0,
+                f"INVOCATION={new}\nACTIVE=inactive\nSUB=dead\n"
+                "RESULT=success\nSTATUS=0",
+                "",
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify, "run_ssh", lambda *_args, **_kwargs: next(responses)
+    )
+    monkeypatch.setattr(pi_deploy_verify.time, "sleep", lambda _seconds: None)
+    assert (
+        pi_deploy_verify.bootstrap_observation(
+            "a" * 40, timeout_seconds=60, poll_seconds=0
+        )
+        == pi_deploy_verify.EXIT_OK
+    )
 
 
 class _FakeProc:

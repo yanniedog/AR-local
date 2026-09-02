@@ -68,7 +68,7 @@ render_unit() {
     "$src" > "$dst"
 }
 
-render_unit "$repo_dir/deploy/pi/ar-local-dashboard.service" "$tmp_dir/ar-local-dashboard.service"
+render_unit "$repo_dir/deploy/pi/ar-local-status.service" "$tmp_dir/ar-local-status.service"
 render_unit "$repo_dir/deploy/pi/ar-local-daily.service" "$tmp_dir/ar-local-daily.service"
 render_unit "$repo_dir/deploy/pi/ar-local-daily-watchdog.service" "$tmp_dir/ar-local-daily-watchdog.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-alert.service" "$tmp_dir/ar-local-ingest-alert.service"
@@ -77,7 +77,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-capacity-monitor.service" "$tmp_dir/ar
 render_unit "$repo_dir/deploy/pi/ar-local-boot-recovery.service" "$tmp_dir/ar-local-boot-recovery.service"
 render_unit "$repo_dir/deploy/pi/ar-local-ingest-now.service" "$tmp_dir/ar-local-ingest-now.service"
 
-sudo install -m 0644 "$tmp_dir/ar-local-dashboard.service" /etc/systemd/system/ar-local-dashboard.service
+sudo install -m 0644 "$tmp_dir/ar-local-status.service" /etc/systemd/system/ar-local-status.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily.service" /etc/systemd/system/ar-local-daily.service
 sudo install -m 0644 "$tmp_dir/ar-local-daily-watchdog.service" /etc/systemd/system/ar-local-daily-watchdog.service
 sudo install -m 0644 "$tmp_dir/ar-local-ingest-alert.service" /etc/systemd/system/ar-local-ingest-alert.service
@@ -96,7 +96,7 @@ render_unit "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" "$tmp_dir/ar-
 sudo install -m 0644 "$tmp_dir/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.timer" /etc/systemd/system/ar-local-deploy-watchdog.timer
 sudo systemctl daemon-reload
-sudo systemctl enable ar-local-dashboard.service
+sudo systemctl enable ar-local-status.service
 sudo systemctl enable ar-local-boot-recovery.service
 sudo systemctl enable --now ar-local-daily.timer
 sudo systemctl enable --now ar-local-daily-watchdog.timer
@@ -123,9 +123,7 @@ fi
 
 echo "Installed AR-local Pi services for $run_user using portable root $portable_root."
 echo "Repo: $repo_dir"
-echo "Site assets: $site_root"
 echo "Data root: $data_dir"
-echo "LAN dashboard (no port in URL): http://<pi-ip>/ or http://ar.local/ when mDNS is available."
-echo "Direct backend (optional): http://<pi-ip>:8808/"
-echo "Run a real ingest before starting ar-local-dashboard.service."
-sudo bash "$repo_dir/deploy/pi/install-pi-dashboard-proxy.sh" "$repo_dir"
+sh "$repo_dir/deploy/pi/cutover-status-service.sh"
+sudo bash "$repo_dir/deploy/pi/install-pi-status-proxy.sh" "$repo_dir"
+echo "Status API: http://<pi-ip>/ or http://ar.local/ when mDNS is available."

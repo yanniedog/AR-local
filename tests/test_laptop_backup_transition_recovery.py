@@ -11,8 +11,8 @@ import pytest
 import laptop_backup_transition as transition
 import laptop_backup_transition_contract as contract
 import laptop_pull_backup as receiver
-from test_laptop_backup_transition_contract import listing, task_snapshot
-from test_laptop_backup_transition_flow import FakeOps, config, execution_record, patch_flow
+from tests.test_laptop_backup_transition_contract import listing, task_snapshot
+from tests.test_laptop_backup_transition_flow import FakeOps, config, execution_record, patch_flow
 
 
 class ReceiverLockCheckingOps(FakeOps):

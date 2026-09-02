@@ -3,28 +3,22 @@
 from __future__ import annotations
 
 import argparse
-import json
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, Mapping
 
-from ar_local_pi_runtime import latest_exports_root
 from cdr_atomic import canonical_json_bytes
+from cdr_finalization import verified_pointer_export_root
+from cdr_observation import load_verified_observation
 
 
-MAX_STATUS_BYTES = 2 * 1024 * 1024
-
-
-def _load_object(path: Path) -> dict[str, Any] | None:
+def _load_verified(exports: Path) -> dict[str, Any] | None:
     try:
-        raw = path.read_bytes()
-        if len(raw) > MAX_STATUS_BYTES:
-            return None
-        value = json.loads(raw)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        observation, _ = load_verified_observation(exports)
+        return observation
+    except (OSError, ValueError):
         return None
-    return value if isinstance(value, dict) else None
 
 
 def _summary(value: Any) -> dict[str, int]:
@@ -38,7 +32,8 @@ def _summary(value: Any) -> dict[str, int]:
 
 
 def status_payload(runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
-    exports = latest_exports_root(runs_root)
+    runs_root = runs_root.expanduser().resolve()
+    exports = verified_pointer_export_root(runs_root.parent / "state")
     if exports is None:
         return HTTPStatus.SERVICE_UNAVAILABLE, {
             "schema_version": 1,
@@ -46,7 +41,16 @@ def status_payload(runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
             "status": "unavailable",
             "reason": "no_verified_observation",
         }
-    observation = _load_object(exports / "observation-v1.json")
+    try:
+        exports.relative_to(runs_root)
+    except ValueError:
+        return HTTPStatus.SERVICE_UNAVAILABLE, {
+            "schema_version": 1,
+            "service": "ar-local",
+            "status": "unavailable",
+            "reason": "no_verified_observation",
+        }
+    observation = _load_verified(exports)
     if observation is None:
         return HTTPStatus.SERVICE_UNAVAILABLE, {
             "schema_version": 1,
@@ -78,12 +82,13 @@ def status_payload(runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
     }
 
 
-def health_payload(runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
-    status, value = status_payload(runs_root)
-    return status, {
+def health_payload(_runs_root: Path) -> tuple[HTTPStatus, dict[str, Any]]:
+    """Report process liveness; /api/status remains the data-readiness gate."""
+
+    return HTTPStatus.OK, {
         "schema_version": 1,
         "service": "ar-local",
-        "status": value["status"],
+        "status": "ok",
     }
 
 
@@ -93,13 +98,24 @@ def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
     class StatusHandler(BaseHTTPRequestHandler):
         server_version = "ARLocalStatus/1"
 
+        def version_string(self) -> str:
+            return self.server_version
+
         def _reply(self, status: HTTPStatus, value: Mapping[str, Any], *, head: bool) -> None:
             body = canonical_json_bytes(value)
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
+            self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            if status == HTTPStatus.METHOD_NOT_ALLOWED:
+                self.send_header("Allow", "GET, HEAD")
             self.end_headers()
             if not head:
                 self.wfile.write(body)
@@ -124,6 +140,18 @@ def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_HEAD(self) -> None:  # noqa: N802
             self._route(head=True)
 
+        def _method_not_allowed(self) -> None:
+            self._reply(
+                HTTPStatus.METHOD_NOT_ALLOWED,
+                {"schema_version": 1, "status": "method_not_allowed"},
+                head=False,
+            )
+
+        do_POST = _method_not_allowed
+        do_PUT = _method_not_allowed
+        do_PATCH = _method_not_allowed
+        do_DELETE = _method_not_allowed
+
         def log_message(self, format: str, *args: object) -> None:
             return
 
@@ -140,7 +168,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    server = ThreadingHTTPServer((args.host, args.port), handler_for(args.runs))
+    server = HTTPServer((args.host, args.port), handler_for(args.runs))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -41,7 +41,7 @@ Chief runs `npm run chief:scan` before delegating. Exit **1** → run remediatio
 
 ## After substantive subagent work
 
-When a `Task` subagent returns after **implementation**, **ingest**, **dashboard**, **docs**, **PR babysit**, or **orchestrator** cycle:
+When a `Task` subagent returns after **implementation**, **ingest**, **status runtime**, **docs**, **PR babysit**, or **orchestrator** cycle:
 
 1. Spawn or resume **chief** (not orchestrator directly) unless chief is already in flight or waived.
 2. Chief re-runs scan, updates branch lock registry, dedupes orchestrator spawns.
@@ -73,5 +73,5 @@ User phrase: **"run chief agent"** — read `.cursor/skills/chief-agent/SKILL.md
 ## Orchestrator relationship
 
 - Chief → **one pr-fix/babysit per open PR** for ship bar; orchestrator for queue coordination, split PRs, merge order (one cycle at a time).
-- Orchestrator → spawns/resumes pr-fix per PR + path owners (ingest, dashboard); reports completion to chief via parent re-scan.
+- Orchestrator → spawns/resumes pr-fix per PR plus path owners; reports completion to chief via parent re-scan.
 - Parent agents spawn **chief first**; do not spawn orchestrator directly unless chief waived or chief delegates this turn.

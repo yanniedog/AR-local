@@ -15,7 +15,12 @@ from typing import Any, Iterable, Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
-from cdr_contracts import DATASETS, canonical_json_bytes, product_uid as derive_product_uid
+from cdr_contracts import (
+    DATASETS,
+    PROVIDER_UID_RE,
+    canonical_json_bytes,
+    product_uid as derive_product_uid,
+)
 
 
 SCHEMA_VERSION = 1
@@ -68,7 +73,7 @@ ISSUE_CODES = PRODUCT_ISSUE_CODES + PROVIDER_ISSUE_CODES + REGISTER_ISSUE_CODES 
 _ASCII_SPACE = re.compile(r"[\t\n\v\f\r ]+")
 _ACCOUNTING_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_PROVIDER_UID = re.compile(r"^provider(?:-fallback)?:v1:[0-9a-f]{64}$")
+_PROVIDER_UID = PROVIDER_UID_RE
 _PRODUCT_UID = re.compile(r"^[0-9a-f]{64}$")
 _ISSUE_ID = re.compile(r"^issue:v1:[0-9a-f]{64}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")

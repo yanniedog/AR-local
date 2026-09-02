@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pi runtime health probes and self-heal (dashboard, nginx, tailscaled)."""
+"""Pi runtime health probes and self-heal (status API, nginx, tailscaled)."""
 
 from __future__ import annotations
 
@@ -16,22 +16,21 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ar_local_pi_runtime import (
-    PI_DASHBOARD_PORT,
+    PI_STATUS_PORT,
     PI_TAILSCALE_IP,
     data_state_root,
     ensure_runtime_data_writable,
-    export_manifest_is_valid,
     is_raspberry_pi,
 )
 from ar_local_pi_service_heal import (
-    restart_dashboard_and_nginx,
+    restart_status_and_nginx,
     restart_tailscaled,
     unit_is_active,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
 STATE_NAME = "runtime_health.json"
-PROBE_PATH = "/api/latest"
+PROBE_PATH = "/api/status"
 DEFAULT_PROBE_TIMEOUT_SEC = 15.0
 DEFAULT_PROBE_RETRIES = 2
 DEFAULT_FAIL_THRESHOLD = 3
@@ -79,7 +78,7 @@ def save_state(state: dict[str, Any]) -> None:
 def probe_urls() -> tuple[str, ...]:
     return (
         f"http://127.0.0.1{PROBE_PATH}",
-        f"http://127.0.0.1:{PI_DASHBOARD_PORT}{PROBE_PATH}",
+        f"http://127.0.0.1:{PI_STATUS_PORT}{PROBE_PATH}",
     )
 
 
@@ -95,10 +94,13 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
                 if not isinstance(payload, dict):
                     last_err = "invalid JSON object"
                     continue
-                if not export_manifest_is_valid(payload):
-                    last_err = "manifest missing rates"
+                if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
+                    last_err = "invalid status contract"
                     continue
-                return True, f"OK run_date={payload.get('run_date')!r}"
+                if payload.get("status") not in {"ok", "degraded"}:
+                    last_err = f"status={payload.get('status')!r}"
+                    continue
+                return True, f"OK status={payload.get('status')!r}"
         except urllib.error.HTTPError as exc:
             last_err = f"HTTP {exc.code}"
         except Exception as exc:
@@ -267,8 +269,8 @@ def cmd_heal(args: argparse.Namespace) -> int:
     http_streak = int(state.get("http_fail_streak") or 0)
     if not http_ok and http_streak >= args.fail_threshold:
         if cooldown_elapsed(state, "last_http_heal_at", args.heal_cooldown):
-            print(f"pi_runtime_health: HTTP fail streak {http_streak}; restarting dashboard + nginx")
-            if restart_dashboard_and_nginx(dry_run=args.dry_run) != 0:
+            print(f"pi_runtime_health: HTTP fail streak {http_streak}; restarting status API + nginx")
+            if restart_status_and_nginx(dry_run=args.dry_run) != 0:
                 save_state(state)
                 return EXIT_UNHEALTHY
             state["last_http_heal_at"] = _utc_iso()

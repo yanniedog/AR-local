@@ -12,6 +12,8 @@ from typing import Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 
 from ar_local_backup_policy import canonical_json_bytes, sha256_file
+from cdr_observation import load_verified_observation
+from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
 
 
 RESTORE_ACCEPTANCE_SCHEMA = (
@@ -26,7 +28,7 @@ REQUIRED_DAILY_TABLES = {
     "bank_product_facts",
     "bank_product_changes",
 }
-DAILY_SCHEMA_VERSION = "8"
+LEGACY_DAILY_SCHEMA_VERSION = "8"
 REQUIRED_DAILY_COLUMNS = {
     "runs": {"run_date", "generated_at", "banks_counts_json"},
     "bank_products": {"run_date", "provider", "product_id", "product_key"},
@@ -64,6 +66,7 @@ def _immutable_connection(path: Path) -> sqlite3.Connection:
 
 
 def _daily_export_reconciliation(database: Path) -> dict[str, object]:
+    """Verify a retained pre-ObservationV1 export."""
     banks_files = sorted(database.parent.glob("banks-*.json"))
     if len(banks_files) != 1:
         raise ValueError("daily export must contain exactly one banks JSON")
@@ -87,16 +90,31 @@ def _daily_export_reconciliation(database: Path) -> dict[str, object]:
     for key, count in actual.items():
         if count != expected.get(key, 0):
             raise ValueError(f"database count mismatch for {key}")
-    dashboard_path = database.parent / "dashboard-cache/latest.json"
-    dashboard = _json(dashboard_path)
-    if dashboard.get("run_date") != run_date or dashboard.get("banks_counts") != expected:
-        raise ValueError("dashboard manifest does not match banks export")
+    legacy_manifest_path = database.parent / "dashboard-cache/latest.json"
+    legacy_manifest = _json(legacy_manifest_path)
+    if (
+        legacy_manifest.get("run_date") != run_date
+        or legacy_manifest.get("banks_counts") != expected
+    ):
+        raise ValueError("historical manifest does not match banks export")
     return {
         "run_date": run_date,
         "counts": actual,
         "banks_json": banks_files[0].name,
         "banks_json_sha256": sha256_file(banks_files[0]),
-        "dashboard_sha256": sha256_file(dashboard_path),
+        "dashboard_sha256": sha256_file(legacy_manifest_path),
+    }
+
+
+def _observation_reconciliation(database: Path) -> dict[str, object]:
+    observation, accounting = load_verified_observation(database.parent)
+    return {
+        "run_date": observation["observation_date"],
+        "counts": observation["row_counts"],
+        "observation_sha256": sha256_file(database.parent / "observation-v1.json"),
+        "accounting_sha256": sha256_file(database.parent / "product-accounting-v1.json"),
+        "database_sha256": sha256_file(database),
+        "accounting_id": accounting["accounting_id"],
     }
 
 
@@ -176,6 +194,7 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
     findings: list[str] = []
     with closing(_immutable_connection(path)) as connection:
         quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
+        user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         tables = {
             row[0]
             for row in connection.execute(
@@ -185,9 +204,16 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
     record: dict[str, object] = {
         "path": path.relative_to(data_root).as_posix(),
         "quick_check": quick_check,
+        "schema_version": user_version,
     }
     if quick_check != "ok":
         findings.append(f"sqlite_quick_check:{path}")
+    if user_version == OBSERVATION_SCHEMA_VERSION:
+        try:
+            record["export_reconciliation"] = _observation_reconciliation(path)
+        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
+            findings.append(f"daily_observation_mismatch:{path}:{exc}")
+        return record, findings
     missing = sorted(REQUIRED_DAILY_TABLES - tables)
     if missing:
         findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
@@ -196,7 +222,7 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
         schema_version = connection.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
-        if not schema_version or schema_version[0] != DAILY_SCHEMA_VERSION:
+        if not schema_version or schema_version[0] != LEGACY_DAILY_SCHEMA_VERSION:
             findings.append(f"daily_schema_version_mismatch:{path}")
         for table, columns in REQUIRED_DAILY_COLUMNS.items():
             actual_columns = {
@@ -223,13 +249,17 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
         try:
             with closing(_immutable_connection(path)) as connection:
                 result = connection.execute("PRAGMA quick_check").fetchone()[0]
-                schema_version = None
+                schema_version: object = None
                 if path.name == "local-cdr.sqlite":
                     daily_databases.append(path.resolve())
-                    row = connection.execute(
-                        "SELECT value FROM schema_meta WHERE key = 'version'"
-                    ).fetchone()
-                    schema_version = row[0] if row else None
+                    user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                    if user_version == OBSERVATION_SCHEMA_VERSION:
+                        schema_version = user_version
+                    else:
+                        row = connection.execute(
+                            "SELECT value FROM schema_meta WHERE key = 'version'"
+                        ).fetchone()
+                        schema_version = row[0] if row else None
             sqlite_results.append(
                 {
                     "path": path.relative_to(data_root).as_posix(),

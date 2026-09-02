@@ -10,7 +10,7 @@ import laptop_backup_scheduled as scheduled
 import laptop_backup_scheduled_lineage as lineage
 import laptop_backup_transition_contract as contract
 import laptop_pull_backup as receiver
-from test_laptop_backup_transition_flow import config, execution_record
+from tests.test_laptop_backup_transition_flow import config, execution_record
 
 
 def _args() -> Namespace:

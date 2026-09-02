@@ -46,7 +46,7 @@ def test_check_fail_increments_streak(isolated_state):
     with mock.patch.object(
         pi_runtime_health,
         "run_http_probes",
-        return_value=(False, ["http://127.0.0.1/api/latest: timeout"]),
+        return_value=(False, ["http://127.0.0.1/api/status: timeout"]),
     ):
         rc = pi_runtime_health.cmd_check(_ns(check=True, check_tailscale=False, timeout=5.0, retries=0))
     assert rc == 1
@@ -59,7 +59,7 @@ def test_heal_restarts_at_threshold(isolated_state):
     state_path.write_text(json.dumps({"http_fail_streak": 2, "tailscale_fail_streak": 0}) + "\n", encoding="utf-8")
     with mock.patch.object(pi_runtime_health, "run_http_probes", side_effect=[(False, ["fail"]), (True, ["ok"])]):
         with mock.patch.object(pi_runtime_health, "check_tailscale", return_value=(True, ["tailnet ok"])):
-            with mock.patch.object(pi_runtime_health, "restart_dashboard_and_nginx", return_value=0) as heal_mock:
+            with mock.patch.object(pi_runtime_health, "restart_status_and_nginx", return_value=0) as heal_mock:
                 rc = pi_runtime_health.cmd_heal(
                     _ns(
                         dry_run=False,
@@ -77,5 +77,5 @@ def test_heal_restarts_at_threshold(isolated_state):
 
 def test_probe_urls_include_nginx_and_backend():
     urls = pi_runtime_health.probe_urls()
-    assert "http://127.0.0.1/api/latest" in urls
-    assert "http://127.0.0.1:8808/api/latest" in urls
+    assert "http://127.0.0.1/api/status" in urls
+    assert "http://127.0.0.1:8808/api/status" in urls

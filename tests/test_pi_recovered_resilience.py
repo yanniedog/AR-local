@@ -358,7 +358,7 @@ def test_ingest_units_kill_the_whole_process_tree(name: str) -> None:
     assert "TimeoutStopSec=45s" in text
     assert "TimeoutStartSec=6h15min" in text
     assert "RuntimeMaxSec=" not in text
-    assert "ExecStopPost=+/usr/bin/systemctl start ar-local-dashboard.service" in text
+    assert "ar-local-dashboard.service" not in text
 
 
 def test_watchdog_timeout_terminates_the_catch_up_process_group(

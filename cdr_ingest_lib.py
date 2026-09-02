@@ -9,11 +9,12 @@ import threading
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date as calendar_date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
 
 from cdr_atomic import atomic_write_json
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
 from cdr_ingest_population import ProductPopulation
 from cdr_ingest_support import (
@@ -659,6 +660,7 @@ def _persist_ingest_status(
                 "identity_status": brand["provider_identity_status"],
                 "data_holder_id": brand.get("data_holder_id") or None,
                 "data_holder_brand_id": brand.get("data_holder_brand_id") or None,
+                "interim_id": brand.get("interim_id") or None,
                 "brand_name": brand.get("brand_name") or None,
                 "legal_entity_name": brand.get("legal_entity_name") or None,
                 "endpoint_url": brand.get("endpoint_url") or None,
@@ -696,6 +698,16 @@ def _persist_ingest_status(
     atomic_write_json(banks_root / "ingest-status.json", status)
     return status
 
+def _run_date(value: str) -> str:
+    try:
+        parsed = calendar_date.fromisoformat(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("run date must be YYYY-MM-DD") from error
+    if parsed.isoformat() != value:
+        raise argparse.ArgumentTypeError("run date must be YYYY-MM-DD")
+    return value
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     default_out = here / "runs"
@@ -711,9 +723,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--date",
-        type=str,
+        type=_run_date,
         default=None,
-        help="Run folder YYYY-MM-DD (default: UTC today)",
+        help="Run folder YYYY-MM-DD (default: Australia/Hobart today)",
     )
     p.add_argument(
         "--resume",
@@ -772,7 +784,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
 
-    run_date = args.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    run_date = args.date or datetime.now(timezone.utc).astimezone(
+        DAILY_INGEST_TZ
+    ).date().isoformat()
     out_root: Path = args.out.expanduser().resolve()
     run_root = out_root / run_date
     banks_root = run_root / "banks"

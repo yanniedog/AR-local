@@ -299,11 +299,9 @@ def calendar_payload() -> dict:
 
 
 def api_payload(now: Optional[Union[date, datetime]] = None) -> dict:
-    """Client-facing snapshot for the dashboard/app: current cash rate, the
-    next-decision countdown, and the recorded decision calendar + forward schedule.
+    """Client-facing cash-rate snapshot and decision schedule.
 
-    Pure and importable so the dashboard server route stays a thin serialise-only
-    binding — no domain logic trapped in the server closure (the audit's root cause).
+    Pure and importable so payload generation does not duplicate domain logic.
 
     ``now`` is normalised to an aware UTC instant: a naive datetime is assumed UTC,
     and a bare date becomes that day's UTC midnight, so an off-contract input never

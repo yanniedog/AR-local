@@ -95,7 +95,7 @@ jobs:
               print(f"  contents: {sorted(p.name for p in run_dir.iterdir())[:20]}")
               raise SystemExit(0)
           # The finalization gate reads ingest status; surface the same numbers.
-          for name in ("ingest-status.json", "dashboard-cache/latest.json"):
+          for name in ("ingest-status.json", "product-accounting-v1.json", "observation-v1.json"):
               p = root / name
               print(f"== {p} ==")
               if not p.is_file():
@@ -120,8 +120,13 @@ jobs:
                          if s.get("state") in {"partial", "failed"}][:15]
                   print(f"  first failing providers: {bad}")
               else:
-                  print(f"  run_date: {d.get('run_date')!r}")
-                  print(f"  banks_counts: {d.get('banks_counts')!r}")
+                  print(f"  observation_date: {d.get('observation_date')!r}")
+                  print(f"  accounting_id: {d.get('accounting_id') or (d.get('accounting') or {}).get('accounting_id')!r}")
+                  print(f"  state: {d.get('state')!r}")
+          if (root / "observation-v1.json").is_file():
+              from cdr_observation import load_verified_observation
+              observation, _ = load_verified_observation(root)
+              print(f"  canonical verification: PASS ({observation['observation_date']})")
           PY
 
       - name: Payload publication journal
@@ -139,7 +144,7 @@ jobs:
         run: |
           set +e
           for u in ar-local-daily.timer ar-local-daily-watchdog.timer \
-                   ar-local-dashboard.service ar-local-runtime-health.timer tailscaled.service; do
+                   ar-local-status.service ar-local-runtime-health.timer tailscaled.service; do
             printf '%-38s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null)"
           done
           echo "--- last daily run ---"

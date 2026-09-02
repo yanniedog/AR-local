@@ -75,7 +75,7 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         for unit in (
             "ar-local-daily.service",
             "ar-local-daily.timer",
-            "ar-local-dashboard.service",
+            "ar-local-status.service",
         )
     }
     volatile_control_paths.update({
@@ -463,8 +463,8 @@ def validate_source_listing(
     validate_next_daily_timer(preflight.get("daily_timer_next"), checked_at_hobart)
     if preflight.get("ingest_lock_absent") is not True:
         raise ValueError("Pi ingest lock identity is invalid")
-    if preflight.get("dashboard_healthy") is not True:
-        raise ValueError("Pi dashboard identity is invalid")
+    if preflight.get("status_healthy") is not True:
+        raise ValueError("Pi status identity is invalid")
     service = preflight.get("daily_service")
     terminal_failure = preflight.get("terminal_failure_authorization")
     if service == "inactive":

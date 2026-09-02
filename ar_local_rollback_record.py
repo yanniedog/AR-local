@@ -53,7 +53,7 @@ def record_rollback_acceptance(
     if not operator or not exact_commands:
         raise ValueError("rollback operator and exact commands are required")
     if not services_verified or not dashboard_verified:
-        raise ValueError("rollback services and dashboard must be verified")
+        raise ValueError("rollback services and status must be verified")
     started_at = utc_now()
     repo = repo.resolve(strict=True)
     site_repo = site_repo.resolve(strict=True)

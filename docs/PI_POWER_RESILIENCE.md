@@ -1,6 +1,6 @@
 # Pi power-loss resilience & recovery
 
-The AR-local CDR ingest + dashboard run on a single Raspberry Pi 5
+The AR-local CDR ingest and status API run on a single Raspberry Pi 5
 (`ar-local-pi5`, root on NVMe, Wi-Fi only — `eth0` normally unplugged). It is
 **headless** and reached over Wi-Fi + Tailscale.
 
@@ -43,7 +43,7 @@ arp -a | grep -iE 'd8-3a-dd|2c-cf-67|e4-5f-01|dc-a6-32|b8-27-eb'   # Raspberry P
 Confirm it's the AR-local box: port 80 open (nginx) and the backend on 8808.
 
 > A Pi-5-OUI host whose port 80 returns an *empty reply* and whose port 8808
-> is *closed* is the AR-local Pi with the dashboard backend **down** — that is
+> is *closed* is the AR-local Pi with the status backend **down** — that is
 > the "no CDR packages" symptom.
 
 ### Step 2 — get in
@@ -80,12 +80,12 @@ ls /srv/ar-local/AR-local                   # repo still present?
 ### Step 4 — restart services & rectify any data gap
 ```bash
 cd /srv/ar-local/AR-local
-sudo systemctl start ar-local-dashboard.service
+sudo systemctl start ar-local-status.service
 python3 pi_daily_watchdog.py            # catches up a missed daily ingest (grace-gated, idempotent)
 # If the watchdog declines but today's run is genuinely missing:
 python3 pi_daily_sync.py --banks-only --date "$(date +%F)"
 # Verify:
-python3 verify_local.py --base-url=http://127.0.0.1:8808/ --require-banks-rates --expect-run-date "$(date +%F)"
+python3 verify_local.py --base-url=http://127.0.0.1:8808/ --expect-run-date "$(date +%F)"
 ```
 
 ### Step 5 — restore remote access
@@ -132,10 +132,10 @@ sudo reboot               # cmdline.txt/config.txt changes need a reboot
 
 Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`):
 
-- **`ar-local-dashboard.service`**: `Restart=always` (was `on-failure`) so the
+- **`ar-local-status.service`**: `Restart=always` so the
   backend on :8808 / nginx upstream never stays dead after an unexpected exit.
 - **`ar-local-boot-recovery.service`** (oneshot, every boot):
-  1. starts the dashboard if it isn't active,
+  1. starts the status API if it isn't active,
   2. runs `pi_daily_watchdog.py` to catch up a daily ingest missed while powered off,
   3. emails a "Pi rebooted" alert (`pi_ingest_alert.py --reason boot-recovery`).
 - Existing `ar-local-daily-watchdog.timer` (`Persistent=true`, `OnBootSec=10min`)
@@ -150,8 +150,8 @@ Service-level resilience (in the unit files, applied by `install-pi-systemd.sh`)
 
 ## Manual CDR ingest
 
-To fetch fresh CDR data on demand (forced run → publish to GitHub → refresh the
-dashboard → verify), SSH to the Pi and run:
+To fetch fresh CDR data on demand (forced run, finalize, publish, then verify),
+SSH to the Pi and run:
 
 ```bash
 cdr-ingest
