@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+from cdr_attempt_evidence_promotion import promote_attempt_evidence
 from cdr_contracts import provider_uid
+from cdr_export_contract import load_contract
+from cdr_finalization import finalize_observation, verify_completion_marker
+from cdr_ingest_sanity import compare_ladders
 from cdr_observation_db import SCHEMA_VERSION, verify_observation_database
 from cdr_outputs import build_outputs
+from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 OBSERVED_AT = "2026-09-02T01:02:03Z"
@@ -16,8 +22,11 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def _captured_run(tmp_path: Path) -> Path:
-    run = tmp_path / "2026-09-02"
+def _captured_run(
+    tmp_path: Path, *, run_date: str = "2026-09-02", rate: str = "0.05"
+) -> Path:
+    run = tmp_path / run_date
+    observed_at = f"{run_date}T01:02:03Z"
     uid, identity_status = provider_uid(
         data_holder_id="holder-1",
         data_holder_brand_id="brand-1",
@@ -34,7 +43,7 @@ def _captured_run(tmp_path: Path) -> Path:
                 "productId": "save-1",
                 "name": "Everyday Saver",
                 "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
-                "depositRates": [{"depositRateType": "VARIABLE", "rate": "0.05"}],
+                "depositRates": [{"depositRateType": "VARIABLE", "rate": rate}],
             }
         },
     )
@@ -76,22 +85,27 @@ def _captured_run(tmp_path: Path) -> Path:
     failures = run / "banks" / "failures.jsonl"
     failures.parent.mkdir(parents=True, exist_ok=True)
     failures.write_bytes(b"")
-    session = "ingest-20260902T000000Z-test"
-    digest = "d" * 64
-    journal = run / "banks" / "_raw-attempt-journals-v1" / session
-    _write_json(
-        journal / "current.json",
-        {
-            "schema_version": 1,
-            "session_id": session,
-            "sequence": 1,
-            "head_digest": digest,
-            "updated_at": OBSERVED_AT,
-        },
+    session = f"ingest-{run_date.replace('-', '')}T000000Z-test"
+    register_body = b'{"data":[{"dataHolderBrandId":"brand-1"}]}'
+    journal = RawAttemptJournal(run / "_raw-attempt-journals-v1", session)
+    journal.record(
+        "register:1",
+        request_url="https://register.example/holders",
+        status=200,
+        outcome="success",
+        body=register_body,
+        started_at="2026-09-02T01:02:02Z",
+        completed_at=observed_at,
+        context={"phase": "register_discovery"},
     )
+    journal_summary = journal.summary()
     _write_json(
         run / "banks" / "ingest-status.json",
         {
+            "total": 0,
+            "corrupt_records": 0,
+            "unattributed_records": 0,
+            "incomplete": False,
             "providers_registered": 1,
             "providers_attempted": 1,
             "provider_states": [
@@ -108,14 +122,21 @@ def _captured_run(tmp_path: Path) -> Path:
             "register_provenance_complete": True,
             "failure_provenance_complete": True,
             "coverage_evidence_complete": True,
-            "register_attempts": [],
+            "register_attempts": [
+                {
+                    "source_url": "https://register.example/holders",
+                    "mode": "plain",
+                    "ok": True,
+                    "status": 200,
+                    "bytes": len(register_body),
+                    "sha256": hashlib.sha256(register_body).hexdigest(),
+                }
+            ],
             "raw_attempt_journal": {
-                "schema_version": 1,
-                "path": f"banks/_raw-attempt-journals-v1/{session}",
-                "session_id": session,
-                "attempts": 1,
-                "head_digest": digest,
-                "verified": True,
+                **journal_summary,
+                "path": f"_raw-attempt-journals-v1/{session}",
+                "path_resolution": "relative_to_ingest_run_root",
+                "retention": "follows_ingest_run_root",
             },
         },
     )
@@ -149,3 +170,45 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert not list(exports.glob("*-shm"))
     assert not (exports / "dashboard-cache").exists()
 
+
+def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
+    tmp_path: Path,
+) -> None:
+    run = _captured_run(tmp_path)
+    result = build_outputs(run)
+    exports = run / "_exports"
+    promote_attempt_evidence(run, exports)
+    state = tmp_path / "state"
+    marker = state / f"{run.name}.done.json"
+
+    finalized = finalize_observation(
+        exports,
+        state,
+        marker,
+        observation_date=run.name,
+        result=result,
+    )
+
+    assert verify_completion_marker(finalized, state, run.name)
+    contract = load_contract(state / finalized["export_contract_path"])
+    assert contract["observed_at"] == OBSERVED_AT
+    assert contract["normalization_version"] == "cdr-product-facts-2"
+    assert contract["coverage"]["products_discovered"] == 1
+    assert contract["coverage"]["products_published"] == 1
+    assert contract["coverage"]["reconciliation_status"] == "reconciled"
+
+
+def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> None:
+    previous = _captured_run(tmp_path, run_date="2026-09-01", rate="0.05")
+    current = _captured_run(tmp_path, run_date="2026-09-02", rate="0.08")
+    build_outputs(previous)
+    build_outputs(current, previous_run_root=previous)
+
+    findings = compare_ladders(
+        current / "_exports" / "local-cdr.sqlite",
+        previous / "_exports" / "local-cdr.sqlite",
+    )
+
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "HIGH"
+    assert findings[0]["worst_delta_bp"] == 300.0

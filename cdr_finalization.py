@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json
+from cdr_contracts import canonical_json_bytes
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -18,6 +20,12 @@ from cdr_ledger_v2 import (
     verify_event_artifacts,
 )
 from cdr_file_lock import FileLock
+from cdr_observation import validate_observation
+from cdr_observation_db import verify_observation_database
+from cdr_raw_attempt_journal import RawAttemptJournal
+
+
+_PROJECTION_GROUPS = ("products", "rates", "items", "product_facts", "product_changes")
 
 
 def _ingest_status(export_root: Path) -> dict[str, Any]:
@@ -51,7 +59,9 @@ def _coverage(
 ]:
     manifest = load_exports_manifest(export_root)
     if manifest is None:
-        raise ValueError("cannot finalize without dashboard-cache/latest.json")
+        raise ValueError("cannot finalize without a valid observation")
+    if manifest.get("contract") == "observation-v1":
+        return _observation_coverage(export_root)
     counts = manifest.get("banks_counts")
     counts = counts if isinstance(counts, Mapping) else {}
     status = _ingest_status(export_root)
@@ -126,6 +136,161 @@ def _coverage(
     return observation_state, coverage, provider_states, register_attempts
 
 
+def _read_canonical_object(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{label} is unreadable") from error
+    if not isinstance(value, dict) or raw != canonical_json_bytes(value):
+        raise ValueError(f"{label} is not canonical")
+    return value, raw
+
+
+def _verified_promoted_journal(
+    export_root: Path, status: Mapping[str, Any], expected_digest: str
+) -> None:
+    pointer = status.get("raw_attempt_journal")
+    if not isinstance(pointer, Mapping):
+        raise ValueError("promoted ingest evidence pointer is absent")
+    relative = PurePosixPath(str(pointer.get("path") or ""))
+    session = str(pointer.get("session_id") or "")
+    if (
+        pointer.get("verified") is not True
+        or pointer.get("path_resolution") != "relative_to_finalized_export_root"
+        or pointer.get("retention") != "hash_bound_finalized_artifact"
+        or pointer.get("head_digest") != expected_digest
+        or not session
+        or relative.is_absolute()
+        or "\\" in str(relative)
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or relative.parts
+        != ("attempt-evidence", "raw-attempt-journals-v1", session)
+    ):
+        raise ValueError("promoted ingest evidence pointer is invalid")
+    journal_root = export_root.joinpath(*relative.parts)
+    summary = RawAttemptJournal(journal_root.parent, session).summary(recover=False)
+    for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
+        if pointer.get(field) != summary.get(field):
+            raise ValueError("promoted ingest journal does not match its pointer")
+    manifest_relative = PurePosixPath(str(pointer.get("promotion_manifest_path") or ""))
+    if (
+        manifest_relative.is_absolute()
+        or "\\" in str(manifest_relative)
+        or any(part in {"", ".", ".."} for part in manifest_relative.parts)
+        or manifest_relative.parent != relative
+    ):
+        raise ValueError("promoted ingest manifest path is invalid")
+    manifest = export_root.joinpath(*manifest_relative.parts)
+    try:
+        digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    except OSError as error:
+        raise ValueError("promoted ingest manifest is unreadable") from error
+    if digest != pointer.get("promotion_manifest_sha256"):
+        raise ValueError("promoted ingest manifest digest does not match")
+
+
+def _observation_coverage(
+    export_root: Path,
+) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    observation, _ = _read_canonical_object(
+        export_root / "observation-v1.json", "observation"
+    )
+    accounting, accounting_bytes = _read_canonical_object(
+        export_root / "product-accounting-v1.json", "product accounting"
+    )
+    validate_observation(observation, accounting)
+    projections = {group: observation[group] for group in _PROJECTION_GROUPS}
+    verify_observation_database(
+        export_root / "local-cdr.sqlite",
+        expected_sidecar_bytes=accounting_bytes,
+        expected_projections=projections,
+        expected_normalization_version=observation["normalization_version"],
+        expected_generated_at=observation["observed_at"],
+    )
+    status = _ingest_status(export_root)
+    _verified_promoted_journal(
+        export_root, status, accounting["raw_attempt_journal_digest"]
+    )
+    register_attempts = [
+        dict(item)
+        for item in (status.get("register_attempts") or [])
+        if isinstance(item, Mapping)
+        and isinstance(item.get("sha256"), str)
+        and len(str(item["sha256"])) == 64
+    ]
+    register_complete = (
+        status.get("register_provenance_complete") is True
+        and bool(register_attempts)
+        and all(item.get("ok") is True for item in register_attempts)
+    )
+    provider_states = [
+        {
+            "provider_uid": provider["provider_uid"],
+            "state": provider["state"],
+            "failure_records": provider["issue_count"],
+        }
+        for provider in accounting["providers"]
+    ]
+    provider_summary = accounting["summary"]["providers"]
+    status_states = {
+        str(item.get("provider_uid") or ""): item
+        for item in (status.get("provider_states") or [])
+        if isinstance(item, Mapping)
+    }
+    providers_reconcile = (
+        status.get("providers_registered") == provider_summary["registered"]
+        and status.get("providers_attempted") == provider_summary["attempted"]
+        and set(status_states) == {item["provider_uid"] for item in provider_states}
+        and all(
+            status_states[item["provider_uid"]].get("state") == item["state"]
+            for item in provider_states
+        )
+    )
+    provenance_complete = (
+        status.get("failure_provenance_complete") is True
+        and status.get("coverage_evidence_complete") is True
+        and register_complete
+        and providers_reconcile
+    )
+    if not provenance_complete:
+        raise ValueError("promoted ingest provenance is incomplete")
+    products = accounting["summary"]["products"]
+    issues = accounting["summary"]["issues"]
+    rows = observation["row_counts"]
+    item_counts = {
+        group: sum(item["item_group"] == group for item in observation["items"])
+        for group in ("fees", "features", "eligibility", "constraints")
+    }
+    coverage = {
+        "products_discovered": products["discovered"],
+        "products_published": products["consumer_visible"],
+        "products_omitted": products["omitted_valid"],
+        "products_quarantined": products["quarantined_invalid"],
+        "eligible_rate_rows": rows["rates"],
+        "fee_rows": item_counts["fees"],
+        "feature_rows": item_counts["features"],
+        "eligibility_rows": item_counts["eligibility"],
+        "constraint_rows": item_counts["constraints"],
+        "providers_registered": provider_summary["registered"],
+        "providers_attempted": provider_summary["attempted"],
+        "providers_complete": provider_summary["complete"],
+        "providers_partial": provider_summary["partial"],
+        "providers_failed": provider_summary["failed"],
+        "failure_records": int(status.get("total") or 0),
+        "corrupt_failure_records": issues["corrupt"],
+        "unattributed_failure_records": issues["unattributed"],
+        "register_sources_attempted": len(register_attempts),
+        "register_sources_complete": len(register_attempts),
+        "register_provenance_complete": True,
+        "failure_provenance_complete": True,
+        "reconciliation_status": "reconciled",
+        "unavailable_populations": [],
+    }
+    state = "complete" if observation["state"] == "complete" else "partial"
+    return state, coverage, provider_states, register_attempts
+
+
 def validate_finalization_layout(export_root: Path, state_dir: Path) -> str:
     """Reject non-portable export/state layouts before a live ingest begins."""
 
@@ -156,6 +321,9 @@ def finalize_observation(
     observation_state, coverage, provider_states, register_hashes = _coverage(
         export_root
     )
+    manifest = load_exports_manifest(export_root)
+    if manifest is None:
+        raise ValueError("cannot finalize without a valid observation")
     source_path = validate_finalization_layout(export_root, state_dir)
     artifacts = artifact_records(export_root)
     append_lock = ledger_root(state_dir) / ".append.lock"
@@ -171,6 +339,10 @@ def finalize_observation(
             register_hashes=register_hashes,
             prior_ledger_head=_current_head_digest(state_dir),
             artifacts=artifacts,
+            observed_at=manifest.get("observed_at"),
+            normalization_version=str(
+                manifest.get("normalization_version") or "legacy-v1"
+            ),
         )
         finalized = find_contract_event_locked(
             state_dir,

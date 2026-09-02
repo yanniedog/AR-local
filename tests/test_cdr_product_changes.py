@@ -605,4 +605,3 @@ def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path
     current = tmp_path / "2026-08-13"
     current.mkdir()
     assert changes.previous_finalized_run(current) == compatible
-

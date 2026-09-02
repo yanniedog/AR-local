@@ -153,6 +153,7 @@ def load_exports_manifest(exports_root: Path) -> Optional[dict[str, Any]]:
             "contract": "observation-v1",
             "run_date": observation.get("observation_date"),
             "observed_at": observation.get("observed_at"),
+            "normalization_version": observation.get("normalization_version"),
             "observation_state": observation.get("state"),
             "banks_counts": row_counts if isinstance(row_counts, dict) else {},
         }

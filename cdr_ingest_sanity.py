@@ -1,4 +1,4 @@
-"""Post-ingest sanity check: flag suspicious day-over-day rate changes.
+"""Fail-closed day-over-day checks for suspicious rate changes.
 
 Background — 2026-05-26 CommBank Foreign Currency Account incident:
   CBA's public CDR endpoint briefly served a partial/intermediate set of
@@ -6,14 +6,12 @@ Background — 2026-05-26 CommBank Foreign Currency Account incident:
   captured the bad data exactly as published. The same family of glitch
   also occurred on 2026-05-20. Neither event tripped any existing
   validation — failure counts and row counts were normal — so they
-  silently entered the historical record and were only detected by
-  visual review of the dashboard chart.
+  silently entered the historical record.
 
 This module is the per-product/per-tier guard. It compares the freshly
-built bank_rates table to the previous day's export and writes a
-``sanity-report.json`` next to the daily marker. It does NOT block the
-ingest — large legitimate rate moves do happen — but a non-empty
-report means a human should eyeball the dashboard before publishing.
+built bank_rates table to the previous finalized export and writes a
+``sanity-report.json`` beside the canonical observation. The daily runner
+withholds finalization when HIGH or STRUCTURAL findings exist.
 
 Heuristic (intentionally simple, no time-window memory):
   For each (provider, product_id, application_type, ribbon_rate_structure)
@@ -34,6 +32,10 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cdr_atomic import atomic_write_json
+from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
+from cdr_product_change_runs import previous_finalized_run
+
 # Tiers can legitimately move by ~50 bp on the day of an RBA decision.
 # 100 bp moves are rare but happen (term-deposit specials, neobank promos).
 # 200 bp moves are essentially never legitimate same-day.
@@ -44,6 +46,29 @@ HIGH_BP = 200.0
 def _ladder_query(con: sqlite3.Connection) -> List[Tuple[str, str, str, str, str, str, float]]:
     """Return rows of (provider, product_id, application_type, ribbon_rate_structure,
     product_name, dataset, rate). Caller buckets by the first four columns."""
+    if con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+        if con.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
+            raise ValueError("canonical observation database application ID is invalid")
+        output = []
+        for (raw,) in con.execute(
+            "SELECT document_json FROM bank_rates ORDER BY product_uid,rate_index,rate_uid"
+        ):
+            try:
+                row = json.loads(raw)
+                output.append(
+                    (
+                        str(row["provider"]),
+                        str(row["product_id"]),
+                        str(row.get("application_type") or ""),
+                        str(row.get("ribbon_rate_structure") or ""),
+                        str(row.get("product_name") or ""),
+                        str(row["dataset"]),
+                        float(row["rate"]),
+                    )
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise ValueError("canonical rate document is invalid") from error
+        return output
     cur = con.execute(
         """
         select provider, product_id,
@@ -77,7 +102,7 @@ def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, An
     encode correctly, and ``contextlib.closing`` because the sqlite3 connection
     context manager only commits/rolls back — it does not close the handle.
     """
-    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    uri = f"{db_path.resolve().as_uri()}?mode=ro&immutable=1"
     with closing(sqlite3.connect(uri, uri=True)) as con:
         return _bucket(_ladder_query(con))
 
@@ -85,7 +110,7 @@ def _read_ladders(db_path: Path) -> Dict[Tuple[str, str, str, str], Dict[str, An
 def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     """Return a list of finding dicts. Empty list means no concerns."""
     if not curr_db.is_file() or not prev_db.is_file():
-        return []
+        raise FileNotFoundError("sanity comparison database is absent")
     curr = _read_ladders(curr_db)
     prev = _read_ladders(prev_db)
     findings: List[Dict[str, Any]] = []
@@ -147,22 +172,14 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Op
         "findings": findings,
     }
     out = exports_dir / "sanity-report.json"
-    out.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(out, summary, create_once=True)
     return out
 
 
 def _find_previous_export_db(runs_root: Path, run_date: str) -> Optional[Path]:
     """Find the most recent prior date's local-cdr.sqlite under runs_root."""
-    if not runs_root.is_dir():
+    previous = previous_finalized_run(runs_root / run_date)
+    if previous is None:
         return None
-    candidates = []
-    for child in runs_root.iterdir():
-        if not child.is_dir() or child.name >= run_date:
-            continue
-        db = child / "_exports" / "local-cdr.sqlite"
-        if db.is_file():
-            candidates.append((child.name, db))
-    if not candidates:
-        return None
-    candidates.sort()
-    return candidates[-1][1]
+    database = previous / "_exports" / "local-cdr.sqlite"
+    return database if database.is_file() else None
