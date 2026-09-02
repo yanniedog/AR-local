@@ -6,8 +6,9 @@ import re
 from pathlib import Path
 
 
-HANDOFF = Path(__file__).parents[1] / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
-CANDIDATE = "3a9af7251e1e530c88a24fb711635f28365059f5"
+ROOT = Path(__file__).parents[1]
+HANDOFF = ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
+CANDIDATE = "ca99546e6b9bc188881ad0c4232eb2e6a610f8e9"
 
 
 def _block(name: str) -> str:
@@ -27,7 +28,7 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert len(payload) == 71260
     assert len(script.split("\n")) == 464
     assert hashlib.sha256(payload).hexdigest() == (
-        "e9872174d0add79f9bc463af56335b4c98fa0a950d6ae25c775f91333f28a483"
+        "fc14e887b867c46cd78c90ff047102c25f9b22a8ccf975389b64b3cc18b93d30"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -44,13 +45,40 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert "local payload counts do not match finalized marker" in script
 
 
+def test_sequence7_source_map_matches_lf_checkout() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
+    source_block = re.search(
+        r"\$sources=\[ordered\]@\{\n(.*?)\n\}", script, re.DOTALL
+    )
+    assert source_block is not None
+    sources = dict(
+        re.findall(r"^'([^']+)'='([0-9a-f]{64})'$", source_block.group(1), re.MULTILINE)
+    )
+    assert len(sources) == 24
+    for relative, expected in sources.items():
+        payload = (ROOT / relative.replace("\\", "/")).read_bytes()
+        assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == expected
+
+
+def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
+    for name in (
+        "install_laptop_backup_dispatcher.ps1",
+        "install_laptop_backup_nonadmin_dispatcher.ps1",
+        "install_laptop_backup_trusted_dispatcher.ps1",
+        "repair_laptop_backup_restricted_runner.ps1",
+    ):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert "pi_runtime_health.py --backup-preflight" in source
+        assert "curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest" in source
+
+
 def test_sequence7_materializer_journals_initialization_failures() -> None:
     script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")
     payload = script.encode()
     assert len(payload) == 37634
     assert len(script.split("\n")) == 357
     assert hashlib.sha256(payload).hexdigest() == (
-        "161daf55f29c26d033c7c68f2fc1798afec8b939ce806c56a11265b7d1de680d"
+        "5e8a2b6df67086a7c70efb492c1b31767376c7a778ebb130b5b4ea95b0a461e0"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
@@ -62,8 +90,11 @@ def test_sequence7_materializer_journals_initialization_failures() -> None:
 
 def test_final_resume_pointer_matches_exact_scripts() -> None:
     text = HANDOFF.read_text(encoding="utf-8")
-    pointer = json.loads(
-        re.findall(r'^\{"schema":"ARL-A3-RESUME-POINTER-V1".*\}$', text, re.MULTILINE)[-1]
+    blocks = re.findall(r"```json\n(.*?)\n```", text.replace("\r\n", "\n"), re.DOTALL)
+    pointer = next(
+        value
+        for block in reversed(blocks)
+        if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
     generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
     materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")

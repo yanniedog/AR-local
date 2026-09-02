@@ -7797,7 +7797,7 @@ $requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
 $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae'
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE7-EXECUTION'
 if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
-$candidateSha='3a9af7251e1e530c88a24fb711635f28365059f5'
+$candidateSha='ca99546e6b9bc188881ad0c4232eb2e6a610f8e9'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -8036,10 +8036,10 @@ if((Sha $planPath)-cne$planRawSha){throw 'controlled plan raw hash drift'}
 if($materialization.complete_handoff_raw_sha256-cne$handoffSha){throw 'materialized handoff identity is stale'}
 
 $sources=[ordered]@{
-'install_laptop_backup_trusted_dispatcher.ps1'='b2cd21bef2b9a8a6848c49ec61e2b8dce7dc1e4829ea8bcdddb460bf466a39de'
+'install_laptop_backup_trusted_dispatcher.ps1'='f19f8982a6d6b0224b6316b105748c23adfbec9cbd03d80a91cab88036fe3e76'
 'install_laptop_backup_trusted_dispatcher_core.ps1'='b890d1e7b8f45de98627ed39b203f832b0daab7eefb583ddfd416320f60d18f6'
 'install_laptop_backup_trusted_dispatcher_ssh.ps1'='7e387696d22a789f9ede481c48b820f52623e610e96a9f170cb6641b84757625'
-'install_laptop_backup_trusted_dispatcher_evidence.ps1'='abeaf55385e8451a73376f15b20c2ed5d69bca6f2d2e6d301858028e5e633b6b'
+'install_laptop_backup_trusted_dispatcher_evidence.ps1'='1599fc4d2dcc5a847bb8821fc8e876a39161aaaf7ed38633ac726e2eb3283eae'
 'laptop_backup_trusted_package.py'='6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43'
 'native\laptop_backup_trusted_launcher.cpp'='f31431ddb6ae9e6d7f7db5992dc74872303113761a01462264f50e173e7b7774'
 'run_laptop_backup_task.ps1'='50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860'
@@ -8053,13 +8053,13 @@ $sources=[ordered]@{
 'laptop_backup_ssh_endpoint.py'='4b425d82301c749f3a1f6f2e36a070c169ea8a6e961d8d1ffd52fddbb4347f93'
 'laptop_backup_daily_verify.py'='4420e8827cca63577886c9c19113959f536d569eed28f6ca87018a47e44285f3'
 'pi_backup_foundation.py'='f97daa944fc574e94ee92019fb7e6a31d1dc799e8a975c534c107aed61bb9d50'
-'pi_laptop_backup_source.py'='c541b25c2237a25b6a26441d4ac47f4ed1d24d6c39afab3053701a236f3550c1'
-'cdr_contracts.py'='cec7cf9126fec409255654c99916c5d59003b51d0caa838d69e8971447ae09e2'
-'cdr_observation.py'='6fb7fca89f2ed852e501cf673db084b7bb2ec843b7c8c4d156d164d744c079e0'
-'cdr_observation_db.py'='5eaab7107fd0434a9a84e3dd8fa0f75684b09d18ad1ad2ef06bd61a4ee546d06'
-'cdr_product_accounting.py'='665c87ff80f33fc60fe5cf2c0d19e425ba741ca51881da93a9e179cb92242df4'
-'contracts\observation-v1.schema.json'='331295f16b57ac2f7e97ceb4b1455d123e4e5a331a95233b8aecf6646768ef76'
-'contracts\product-accounting-v1.schema.json'='9602ed36ad7b93663a1325836920fb09b1693fbc3b7a5867a04a3f24edc5ecb1'
+'pi_laptop_backup_source.py'='40cdf48c9e2d2728be9aca521a35a478c85661db4a66777756fe9d4141092dc0'
+'cdr_contracts.py'='d8cdb7361be2c7468b148a49e0f1c04539fa51c92a404967cf1813338a906de4'
+'cdr_observation.py'='27964d4f9987b1df73e1c8e3a718ff837294241ff6734df8103c12e04f76687b'
+'cdr_observation_db.py'='b6594517030f82458269a79730be03327e975b3c716c17b03663e8ab65f664d2'
+'cdr_product_accounting.py'='3065451c42b04ed0d91c057561901d307039eb448085bf00d50e2947b3966869'
+'contracts\observation-v1.schema.json'='a99e95d541c9fefc931b110ef4d694d3a1a5263d7926f7822ea92ed20128cc3e'
+'contracts\product-accounting-v1.schema.json'='f41c219c242f6f8e0cc94546178b97640952c03979994559e9afa1e5073973a4'
 }
 foreach($item in $sources.GetEnumerator()){
   RequireHash (Join-Path $candidate $item.Key) $item.Value
@@ -8247,7 +8247,7 @@ $generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS' $null ([ordered
 <!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
 
 The generator above is exactly 71260 UTF-8/LF bytes, 464 lines, SHA-256
-`e9872174d0add79f9bc463af56335b4c98fa0a950d6ae25c775f91333f28a483`.
+`fc14e887b867c46cd78c90ff047102c25f9b22a8ccf975389b64b3cc18b93d30`.
 Its PowerShell parser has zero errors. Its only native `python -c` site is the
 base64 bootstrap helper.
 
@@ -8273,7 +8273,7 @@ $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUA
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE7-EXECUTION'
 $runtimeSource='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
 $repo='https://github.com/yanniedog/AR-local.git'
-$candidateSha='3a9af7251e1e530c88a24fb711635f28365059f5'
+$candidateSha='ca99546e6b9bc188881ad0c4232eb2e6a610f8e9'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -8471,7 +8471,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-7 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne71260-or$script.Split([char]10).Count-ne464-or$scriptSha-cne'e9872174d0add79f9bc463af56335b4c98fa0a950d6ae25c775f91333f28a483'){throw 'sequence-7 generator binding mismatch'}
+if($scriptBytes.Length-ne71260-or$script.Split([char]10).Count-ne464-or$scriptSha-cne'fc14e887b867c46cd78c90ff047102c25f9b22a8ccf975389b64b3cc18b93d30'){throw 'sequence-7 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
@@ -8621,7 +8621,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
 <!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
 
 The materializer above is exactly 37634 UTF-8/LF bytes, 357 lines, SHA-256
-`161daf55f29c26d033c7c68f2fc1798afec8b939ce806c56a11265b7d1de680d`.
+`5e8a2b6df67086a7c70efb492c1b31767376c7a778ebb130b5b4ea95b0a461e0`.
 It is the exact next safe command after merge; any different bytes are
 unauthorized.
 
@@ -8659,5 +8659,89 @@ Natural backup acceptance remains mandatory; A3 remains running and A4 remains
 blocked.
 
 ```json
-{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"3a9af7251e1e530c88a24fb711635f28365059f5","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":71260,"lines":464,"sha256":"e9872174d0add79f9bc463af56335b4c98fa0a950d6ae25c775f91333f28a483"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":37634,"lines":357,"sha256":"161daf55f29c26d033c7c68f2fc1798afec8b939ce806c56a11265b7d1de680d"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"161daf55f29c26d033c7c68f2fc1798afec8b939ce806c56a11265b7d1de680d","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+{
+  "schema": "ARL-A3-RESUME-POINTER-V1",
+  "version": 1,
+  "sequence": 7,
+  "predecessor": "C-20260902T144000+1000",
+  "authority": "HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY",
+  "correction": "C-20260902T160000+1000",
+  "base_main_sha": "c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe",
+  "candidate_sha": "ca99546e6b9bc188881ad0c4232eb2e6a610f8e9",
+  "quarantines": [
+    "sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383",
+    "sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2",
+    "partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"
+  ],
+  "failed_root": {
+    "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012",
+    "files": 1048,
+    "directories": 128,
+    "bytes": 22404909,
+    "nodes": 1176,
+    "tree_inventory_sha256": "79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf",
+    "materialization_sha256": "557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41",
+    "generator_sha256": "917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"
+  },
+  "quarantine_path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae",
+  "source_runtime": {
+    "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime",
+    "files": 3081,
+    "directories": 207,
+    "bytes": 64290614,
+    "tree_inventory_sha256": "7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86",
+    "file_map_sha256": "8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517",
+    "excluded_pyc": {
+      "files": 14,
+      "bytes": 172456
+    }
+  },
+  "clean_runtime": {
+    "files": 3067,
+    "directories": 205,
+    "bytes": 64118158,
+    "tree_inventory_sha256": "4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c",
+    "file_map_sha256": "d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"
+  },
+  "authority_merge_sha": "D012_SEQUENCE7_MATERIALIZATION_RECORD",
+  "complete_handoff_raw_sha256": "D012_SEQUENCE7_MATERIALIZATION_RECORD",
+  "generator": {
+    "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
+    "bytes": 71260,
+    "lines": 464,
+    "sha256": "fc14e887b867c46cd78c90ff047102c25f9b22a8ccf975389b64b3cc18b93d30"
+  },
+  "materializer": {
+    "encoding": "UTF8_LF_NO_TRAILING_LF",
+    "bytes": 37634,
+    "lines": 357,
+    "sha256": "5e8a2b6df67086a7c70efb492c1b31767376c7a778ebb130b5b4ea95b0a461e0"
+  },
+  "boundaries": {
+    "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
+    "system_net_http_sha256": "d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db",
+    "python_sha256": "53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f",
+    "python_mode": "-I -B BASE64_ARGV_BOOTSTRAP"
+  },
+  "a3": "RUNNING",
+  "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
+  "next_action": "after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint",
+  "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000",
+  "next_command_utf8_lf_sha256": "5e8a2b6df67086a7c70efb492c1b31767376c7a778ebb130b5b4ea95b0a461e0",
+  "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
+  "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
+  "stop": [
+    "main/handoff/generator/materializer/root/runtime/toolchain drift",
+    "quarantine already exists",
+    "resolver/key/auth drift",
+    "source/task/catalog/Pi/evidence/publication drift",
+    "timeout/web-auth",
+    "process/lock/lease/partial",
+    "under 50GiB",
+    "D-006 window or expired preflight",
+    "launcher object/executable or package mismatch"
+  ],
+  "authorization": "non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication",
+  "terminal_status": "BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"
+}
 ```
