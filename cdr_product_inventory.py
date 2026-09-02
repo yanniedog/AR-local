@@ -9,8 +9,13 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
-from cdr_contracts import DATASETS, canonical_json_bytes, product_uid
-from cdr_ingest_support import extract_products, pick_text
+from cdr_contracts import (
+    DATASETS,
+    canonical_json_bytes,
+    normalize_provider_display_name,
+    product_uid,
+)
+from cdr_ingest_support import extract_products, iter_banking_brands_from_payload, pick_text
 from cdr_product_accounting import build_product_accounting, validate_product_evidence
 from cdr_raw_attempt_journal import RawAttemptJournal
 from cdr_provider_identity_registry import (
@@ -191,8 +196,96 @@ def _journal_product_evidence(
     return evidence
 
 
+def _fallback_register_identity(
+    row: Mapping[str, Any], registry: Mapping[str, Any]
+) -> tuple[str, str, bool]:
+    signature = (
+        str(row.get("identity_authority") or ""),
+        normalize_provider_display_name(
+            str(row.get("brand_name") or row.get("legal_entity_name") or "")
+        ),
+    )
+    by_signature: dict[tuple[str, str], str] = {}
+    by_anchor: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for binding in registry.get("bindings") or []:
+        uid = str(binding["provider_uid"])
+        by_signature[(str(binding["authority"]), str(binding["display_name"]))] = uid
+        for alias in binding["authorized_aliases"]:
+            by_signature[(str(alias["authority"]), str(alias["display_name"]))] = uid
+        for anchor in binding["anchors"]:
+            by_anchor[(str(anchor["kind"]), str(anchor["value"]))].add(uid)
+    strong = ("data_holder_brand_id", "interim_id")
+    anchor_fields = (
+        strong
+        if any(str(row.get(key) or "").strip() for key in strong)
+        else ("data_holder_id",)
+    )
+    anchor_uids = {
+        uid
+        for key in anchor_fields
+        if str(row.get(key) or "").strip()
+        for uid in by_anchor.get((key, str(row[key]).strip()), set())
+    }
+    mapped = by_signature.get(signature)
+    if mapped is not None and not (anchor_uids - {mapped}):
+        return mapped, "fallback", False
+    if anchor_uids:
+        return sorted(anchor_uids | ({mapped} if mapped else set()))[0], "fallback_conflict", True
+    raise ProductInventoryError("fallback provider is not bound by the verified registry")
+
+
+def _journal_register_providers(
+    journal: RawAttemptJournal, registry: Mapping[str, Any]
+) -> dict[str, dict[str, Any]]:
+    merged: dict[tuple[str, str, str], dict[str, Any]] = {}
+    successful_register = False
+    for record in journal.evidence_records(recover=False):
+        context = record["context"]
+        if (
+            context.get("phase") != "register_discovery"
+            or record["outcome"] != "success"
+            or not 200 <= record["status"] < 300
+        ):
+            continue
+        successful_register = True
+        try:
+            payload = json.loads((journal.root / str(record["body_path"])).read_bytes())
+            rows = iter_banking_brands_from_payload(payload)
+            for source in rows:
+                row = dict(source)
+                if row.get("provider_identity_status") != "official":
+                    uid, status, held = _fallback_register_identity(row, registry)
+                    row.update(
+                        provider_uid=uid,
+                        provider_identity_status=status,
+                        provider_identity_held=held,
+                    )
+                key = (
+                    str(row.get("endpoint_url") or "").lower(),
+                    str(row.get("brand_name") or "").lower(),
+                    str(row.get("legal_entity_name") or "").lower(),
+                )
+                merged[key] = row
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+            raise ProductInventoryError("register journal evidence is invalid") from error
+    if not successful_register:
+        raise ProductInventoryError("register journal lacks a successful response")
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in merged.values():
+        grouped[str(row["provider_uid"])].append(row)
+    expected: dict[str, dict[str, Any]] = {}
+    for uid, rows in grouped.items():
+        row = dict(rows[0])
+        if len(rows) > 1:
+            row.update(provider_identity_status="identity_collision", provider_identity_held=True)
+        expected[uid] = row
+    return expected
+
+
 def _provider_maps(
-    banks: Mapping[str, Any], status: Mapping[str, Any]
+    banks: Mapping[str, Any],
+    status: Mapping[str, Any],
+    journal_providers: Mapping[str, Mapping[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     by_dir: dict[str, dict[str, Any]] = {}
     by_uid: dict[str, dict[str, Any]] = {}
@@ -204,6 +297,29 @@ def _provider_maps(
         if not provider_dir or not uid or provider_dir in by_dir or uid in by_uid:
             raise ProductInventoryError("provider identities are missing or duplicated")
         record = dict(raw)
+        expected = journal_providers.get(uid)
+        identity_fields = (
+            "legal_entity_name",
+            "endpoint_url",
+            "data_holder_id",
+            "data_holder_brand_id",
+            "interim_id",
+            "identity_authority",
+        )
+        if (
+            expected is None
+            or record.get("brand_name")
+            != (expected.get("brand_name") or expected.get("legal_entity_name") or provider_dir)
+            or record.get("provider_identity_status")
+            != expected.get("provider_identity_status")
+            or (record.get("provider_identity_held") is True)
+            != (expected.get("provider_identity_held") is True)
+            or any(
+                str(record.get(field) or "") != str(expected.get(field) or "")
+                for field in identity_fields
+            )
+        ):
+            raise ProductInventoryError("provider identity disagrees with register journal")
         by_dir[provider_dir] = record
         by_uid[uid] = record
     states = status.get("provider_states")
@@ -399,14 +515,21 @@ def build_product_inventory(
     observed_at = observed_at or journal_summary.get("observed_at")
     if not isinstance(observed_at, str):
         raise ProductInventoryError("journal lacks a stable observation timestamp")
-    providers_by_dir, providers_by_uid = _provider_maps(banks, status_copy)
+    registry = (
+        _provider_registry(run_root, status_copy)
+        if status_copy.get("provider_identity_registry") is not None
+        else {"schema_version": 1, "bindings": []}
+    )
+    journal_providers = _journal_register_providers(journal, registry)
+    providers_by_dir, providers_by_uid = _provider_maps(
+        banks, status_copy, journal_providers
+    )
     fallback_providers = [
         provider
         for provider in providers_by_uid.values()
         if str(provider.get("provider_uid") or "").startswith("provider-fallback:")
     ]
     if status_copy.get("provider_identity_registry") is not None or fallback_providers:
-        registry = _provider_registry(run_root, status_copy)
         fallback_uids = {binding["provider_uid"] for binding in registry["bindings"]}
         if any(provider["provider_uid"] not in fallback_uids for provider in fallback_providers):
             raise ProductInventoryError("fallback provider identity is absent from its registry")

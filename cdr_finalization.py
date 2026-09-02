@@ -58,80 +58,9 @@ def _coverage(
     manifest = load_exports_manifest(export_root)
     if manifest is None:
         raise ValueError("cannot finalize without a valid observation")
-    if manifest.get("contract") == "observation-v1":
-        return _observation_coverage(export_root)
-    counts = manifest.get("banks_counts")
-    counts = counts if isinstance(counts, Mapping) else {}
-    status = _ingest_status(export_root)
-    failures = int(status.get("total") or 0)
-    corrupt = int(status.get("corrupt_records") or 0)
-    unattributed = int(status.get("unattributed_records") or 0)
-    provider_states = [
-        dict(item)
-        for item in (status.get("provider_states") or [])
-        if isinstance(item, Mapping)
-    ]
-    register_attempts = [
-        dict(item)
-        for item in (status.get("register_attempts") or [])
-        if isinstance(item, Mapping)
-        and isinstance(item.get("sha256"), str)
-        and len(str(item["sha256"])) == 64
-    ]
-    register_provenance_complete = (
-        status.get("register_provenance_complete") is True
-        and bool(register_attempts)
-        and all(item.get("ok") is True for item in register_attempts)
-    )
-    registered = int(status.get("providers_registered") or 0)
-    attempted = int(status.get("providers_attempted") or 0)
-    providers_reconcile = (
-        bool(provider_states)
-        and attempted == len(provider_states)
-        and registered == attempted
-    )
-    provenance_complete = (
-        status.get("failure_provenance_complete") is True
-        and providers_reconcile
-        and register_provenance_complete
-    )
-    incomplete = (
-        status.get("incomplete") is not False
-        or failures > 0
-        or corrupt > 0
-        or not provenance_complete
-        or any(item.get("state") in {"partial", "failed"} for item in provider_states)
-    )
-    observation_state = "partial" if incomplete or not provenance_complete else "complete"
-    coverage = {
-        "products_discovered": int(counts.get("products") or 0),
-        "eligible_rate_rows": int(counts.get("rates") or 0),
-        "fee_rows": int(counts.get("fees") or 0),
-        "feature_rows": int(counts.get("features") or 0),
-        "eligibility_rows": int(counts.get("eligibility") or 0),
-        "constraint_rows": int(counts.get("constraints") or 0),
-        "providers_registered": registered,
-        "providers_attempted": attempted,
-        "providers_complete": sum(item.get("state") == "complete" for item in provider_states),
-        "providers_partial": sum(item.get("state") == "partial" for item in provider_states),
-        "providers_failed": sum(item.get("state") == "failed" for item in provider_states),
-        "failure_records": failures,
-        "corrupt_failure_records": corrupt,
-        "unattributed_failure_records": unattributed,
-        "register_sources_attempted": len(register_attempts),
-        "register_sources_complete": sum(
-            item.get("ok") is True for item in register_attempts
-        ),
-        "register_provenance_complete": register_provenance_complete,
-        "failure_provenance_complete": provenance_complete,
-        "reconciliation_status": "partial" if observation_state == "partial" else "reconciled",
-        "unavailable_populations": [
-            "consumer_eligible_products",
-            "priced_products",
-            "rate_tiers_by_classification",
-        ],
-    }
-    return observation_state, coverage, provider_states, register_attempts
+    if manifest.get("contract") != "observation-v1":
+        raise ValueError("current finalization requires an ObservationV1 export")
+    return _observation_coverage(export_root)
 
 
 def _verified_promoted_journal(

@@ -116,9 +116,10 @@ def test_http_probe_accepts_verified_observation_identity(monkeypatch):
             "observed_at": "2026-09-03T01:02:03+10:00",
             "state": "degraded",
             "accounting_id": "ingest-20260903T010203Z-abcdef123456",
-            "providers": {},
-            "products": {},
-            "issues": {},
+            **{
+                key: {field: 0 for field in fields}
+                for key, fields in pi_runtime_health.STATUS_SUMMARY_FIELDS.items()
+            },
         },
     }
     monkeypatch.setattr(
@@ -133,3 +134,62 @@ def test_http_probe_accepts_verified_observation_identity(monkeypatch):
 
     assert ok is True
     assert detail == "OK status='degraded'"
+
+
+def test_http_probe_rejects_incomplete_summary_and_mismatched_date(monkeypatch):
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "degraded",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-04T01:02:03+10:00",
+            "state": "degraded",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            **{
+                key: {field: 0 for field in fields}
+                for key, fields in pi_runtime_health.STATUS_SUMMARY_FIELDS.items()
+            },
+        },
+    }
+    assert pi_runtime_health.status_contract_error(payload) == (
+        "observation timestamp and date disagree"
+    )
+    payload["observation"]["observed_at"] = "2026-09-03T01:02:03+10:00"
+    payload["observation"]["providers"].pop("registered")
+    assert pi_runtime_health.status_contract_error(payload) == "invalid providers summary"
+
+
+def test_backup_preflight_prefers_status_without_writing_state(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health, "http_probe", lambda *_args, **_kwargs: (True, "status")
+    )
+    legacy = mock.Mock(return_value=(True, "legacy"))
+    monkeypatch.setattr(pi_runtime_health, "legacy_http_probe", legacy)
+
+    assert pi_runtime_health.cmd_backup_preflight(_ns(timeout=1, retries=0)) == 0
+    legacy.assert_not_called()
+
+
+def test_backup_preflight_accepts_legacy_contract_during_cutover(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health, "http_probe", lambda *_args, **_kwargs: (False, "missing")
+    )
+    monkeypatch.setattr(
+        pi_runtime_health,
+        "legacy_http_probe",
+        lambda *_args, **_kwargs: (True, "legacy"),
+    )
+
+    assert pi_runtime_health.cmd_backup_preflight(_ns(timeout=1, retries=0)) == 0
+
+
+def test_backup_installers_use_transition_aware_runtime_preflight() -> None:
+    for name in (
+        "install_laptop_backup_dispatcher.ps1",
+        "install_laptop_backup_nonadmin_dispatcher.ps1",
+        "install_laptop_backup_trusted_dispatcher.ps1",
+        "repair_laptop_backup_restricted_runner.ps1",
+    ):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert "pi_runtime_health.py --backup-preflight" in source

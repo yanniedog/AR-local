@@ -80,7 +80,7 @@ def _provider_state(
             unresolved = []
             population_known = False
             complete = failures > 0
-    if unresolved:
+    if unresolved or not population_known:
         complete = False
     if failures and state in {"complete", "empty"}:
         state = "partial"

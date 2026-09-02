@@ -11,6 +11,7 @@ def write_verified_observation(
     *,
     observation_date: str = "2026-09-02",
     observed_at: str | None = None,
+    raw_attempt_journal_digest: str = "0" * 64,
 ) -> dict:
     observed_at = observed_at or f"{observation_date}T05:01:02Z"
     providers = {
@@ -43,7 +44,7 @@ def write_verified_observation(
         "schema_version": 1,
         "observation_date": observation_date,
         "accounting_id": f"test-{observation_date}",
-        "raw_attempt_journal_digest": "0" * 64,
+        "raw_attempt_journal_digest": raw_attempt_journal_digest,
         "providers": [],
         "products": [],
         "issues": [],

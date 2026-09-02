@@ -248,6 +248,27 @@ def test_clean_export_quarantines_out_of_unit_rate(tmp_path: Path) -> None:
     assert banks["quarantines"][0]["status"] == "rate_invalid"
 
 
+def test_clean_export_keeps_numeric_metadata_nested_in_a_rate(tmp_path: Path) -> None:
+    run = tmp_path / "2026-09-02"
+    _write_rate_product(
+        run,
+        "0.045",
+        depositRates=[
+            {
+                "depositRateType": "VARIABLE",
+                "rate": "0.045",
+                "additionalValue": "12",
+            }
+        ],
+    )
+
+    banks = cdr_clean_export.parse_banks_run(run)
+
+    assert len(banks["products"]) == 1
+    assert len(banks["rates"]) == 1
+    assert banks["quarantines"] == []
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

@@ -34,6 +34,7 @@ def _captured_run(
     rate: str = "0.05",
     brand_name: str = "Bank One",
     malformed_rate: bool = False,
+    malformed_optional: bool = False,
 ) -> Path:
     run = tmp_path / run_date
     observed_at = f"{run_date}T01:02:03Z"
@@ -56,6 +57,8 @@ def _captured_run(
     }
     if malformed_rate:
         detail["data"]["depositRates"].append("malformed")
+    if malformed_optional:
+        detail["data"]["fees"] = "malformed"
     _write_json(leaf / "product-detail.json", detail)
     holder = run / "banks" / "_holders" / brand_name
     _write_json(
@@ -66,6 +69,10 @@ def _captured_run(
             "data_holder_id": "holder-1",
             "data_holder_brand_id": "brand-1",
             "brand_name": brand_name,
+            "legal_entity_name": "",
+            "endpoint_url": "https://bank.example/cds-au/v1/banking/products",
+            "interim_id": "",
+            "identity_authority": "bank.example",
         },
     )
     _write_json(
@@ -96,7 +103,18 @@ def _captured_run(
     failures.parent.mkdir(parents=True, exist_ok=True)
     failures.write_bytes(b"")
     session = f"ingest-{run_date.replace('-', '')}T000000Z-test"
-    register_body = b'{"data":[{"dataHolderBrandId":"brand-1"}]}'
+    register_body = json.dumps(
+        {
+            "data": [
+                {
+                    "dataHolderId": "holder-1",
+                    "dataHolderBrandId": "brand-1",
+                    "brandName": brand_name,
+                    "publicBaseUri": "https://bank.example/cds-au/v1/banking/products",
+                }
+            ]
+        }
+    ).encode()
     journal = RawAttemptJournal(run / "_raw-attempt-journals-v1", session)
     journal.record(
         "register:1",

@@ -308,7 +308,7 @@ def test_unresolved_classification_withholds_the_observation(tmp_path, monkeypat
     assert status["provider_states"][0]["products_in_scope"] == 0
 
 
-def test_attributable_unknown_population_is_disclosed_without_blocking_other_providers(tmp_path, monkeypatch):
+def test_unknown_population_withholds_the_observation(tmp_path, monkeypatch):
     brand = _brand("https://holder.example/products")
     monkeypatch.setattr(
         lib,
@@ -355,13 +355,13 @@ def test_attributable_unknown_population_is_disclosed_without_blocking_other_pro
             "--detail-workers",
             "1",
         ]
-    ) == 0
+    ) == 2
     status = json.loads(
         (tmp_path / "2026-08-15/banks/ingest-status.json").read_text(
             encoding="utf-8"
         )
     )
-    assert status["coverage_evidence_complete"] is True
+    assert status["coverage_evidence_complete"] is False
     assert status["provider_states"][0]["population_known"] is False
 
 

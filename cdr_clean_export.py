@@ -366,7 +366,7 @@ def _invalid_detail_arrays(record: Mapping[str, Any]) -> list[str]:
 
 def _validate_rate_facts(rows: List[Dict[str, Any]]) -> None:
     for row in rows:
-        if row.get("kind") != "rate" and row.get("value_type") != "rate":
+        if row.get("value_type") != "rate":
             continue
         number = row.get("value_number")
         if number is None:
@@ -584,6 +584,13 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             "provider_uid": record.get("provider_uid"),
             "provider_identity_status": record.get("provider_identity_status"),
             "brand_name": record.get("brand_name") or record.get("legal_entity_name") or provider_dir,
+            "legal_entity_name": record.get("legal_entity_name") or "",
+            "endpoint_url": record.get("endpoint_url") or "",
+            "data_holder_id": record.get("data_holder_id") or "",
+            "data_holder_brand_id": record.get("data_holder_brand_id") or "",
+            "interim_id": record.get("interim_id") or "",
+            "identity_authority": record.get("identity_authority") or "",
+            "provider_identity_held": record.get("provider_identity_held") is True,
             "population": record.get("population"),
         }
         for provider_dir, record in sorted(providers.items())

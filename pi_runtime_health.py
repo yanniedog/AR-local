@@ -15,12 +15,14 @@ import urllib.request
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
+from zoneinfo import ZoneInfo
 
 from ar_local_pi_runtime import (
     PI_STATUS_PORT,
     PI_TAILSCALE_IP,
     data_state_root,
     ensure_runtime_data_writable,
+    export_manifest_is_valid,
     is_raspberry_pi,
 )
 from ar_local_pi_service_heal import (
@@ -43,6 +45,22 @@ EXIT_OK = 0
 EXIT_UNHEALTHY = 1
 EXIT_CONFIG = 2
 ACCOUNTING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOW_TZ = ZoneInfo("Australia/Hobart")
+MAX_HTTP_BYTES = 64 * 1024
+STATUS_SUMMARY_FIELDS = {
+    "providers": frozenset({
+        "registered", "attempted", "complete", "partial", "empty", "failed",
+        "not_attempted", "population_unknown",
+    }),
+    "products": frozenset({
+        "discovered", "published_full", "published_core_only",
+        "quarantined_invalid", "omitted_valid", "consumer_visible",
+    }),
+    "issues": frozenset({
+        "total", "corrupt", "unattributed", "affected_providers",
+        "affected_products",
+    }),
+}
 
 
 def _utc_now() -> datetime:
@@ -110,6 +128,8 @@ def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
         return "invalid observation timestamp"
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         return "invalid observation timestamp"
+    if timestamp.astimezone(WINDOW_TZ).date().isoformat() != observed_date:
+        return "observation timestamp and date disagree"
     state = observation.get("state")
     if state not in {"complete", "degraded"}:
         return "invalid observation state"
@@ -121,11 +141,14 @@ def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
         or ACCOUNTING_ID_RE.fullmatch(accounting_id) is None
     ):
         return "invalid accounting identity"
-    if any(
-        not isinstance(observation.get(key), Mapping)
-        for key in ("providers", "products", "issues")
-    ):
-        return "invalid observation summary"
+    for key, required in STATUS_SUMMARY_FIELDS.items():
+        summary = observation.get(key)
+        if (
+            not isinstance(summary, Mapping)
+            or not required.issubset(summary)
+            or any(type(summary[field]) is not int or summary[field] < 0 for field in required)
+        ):
+            return f"invalid {key} summary"
     return None
 
 
@@ -137,7 +160,11 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
                 if int(resp.status) != 200:
                     last_err = f"HTTP {resp.status}"
                     continue
-                payload = json.loads(resp.read().decode("utf-8"))
+                raw = resp.read(MAX_HTTP_BYTES + 1)
+                if len(raw) > MAX_HTTP_BYTES:
+                    last_err = "status response too large"
+                    continue
+                payload = json.loads(raw.decode("utf-8"))
                 if not isinstance(payload, dict):
                     last_err = "invalid JSON object"
                     continue
@@ -153,6 +180,57 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
         if attempt < retries:
             time.sleep(0.5)
     return False, last_err
+
+
+def legacy_http_probe(url: str, *, timeout: float) -> tuple[bool, str]:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            raw = response.read(MAX_HTTP_BYTES + 1)
+            if len(raw) > MAX_HTTP_BYTES:
+                return False, "legacy response too large"
+            payload = json.loads(raw.decode("utf-8"))
+            if int(response.status) != 200 or not isinstance(payload, Mapping):
+                return False, "invalid legacy response"
+            run_date = payload.get("run_date")
+            generated_at = payload.get("generated_at")
+            files = payload.get("files")
+            if not isinstance(run_date, str) or date.fromisoformat(run_date).isoformat() != run_date:
+                return False, "invalid legacy observation date"
+            if not isinstance(generated_at, str):
+                return False, "invalid legacy observation timestamp"
+            timestamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                return False, "invalid legacy observation timestamp"
+            if (
+                not export_manifest_is_valid(payload)
+                or not isinstance(files, Mapping)
+                or files.get("db") != "local-cdr.sqlite"
+            ):
+                return False, "invalid legacy export contract"
+            return True, f"OK legacy run_date={run_date}"
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False, "legacy endpoint unavailable"
+
+
+def cmd_backup_preflight(args: argparse.Namespace) -> int:
+    status_url = f"http://127.0.0.1:{PI_STATUS_PORT}/api/status"
+    status_ok, status_detail = http_probe(
+        status_url, timeout=args.timeout, retries=args.retries
+    )
+    if status_ok:
+        print(f"pi_runtime_health: backup preflight {status_detail}")
+        return EXIT_OK
+    legacy_url = f"http://127.0.0.1:{PI_STATUS_PORT}/api/latest"
+    legacy_ok, legacy_detail = legacy_http_probe(legacy_url, timeout=args.timeout)
+    if legacy_ok:
+        print(f"pi_runtime_health: backup preflight {legacy_detail}")
+        return EXIT_OK
+    print(
+        f"pi_runtime_health: backup preflight failed: "
+        f"status={status_detail}; legacy={legacy_detail}",
+        file=sys.stderr,
+    )
+    return EXIT_UNHEALTHY
 
 
 def run_http_probes(*, timeout: float, retries: int) -> tuple[bool, list[str]]:
@@ -363,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--heal", action="store_true")
+    mode.add_argument("--backup-preflight", action="store_true")
     parser.add_argument("--check-tailscale", action="store_true")
     return parser
 
@@ -377,6 +456,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return cmd_check(args)
     if args.heal:
         return cmd_heal(args)
+    if args.backup_preflight:
+        return cmd_backup_preflight(args)
     return EXIT_CONFIG
 
 

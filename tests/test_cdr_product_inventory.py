@@ -53,10 +53,25 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
         "Bank One": {"schema_version": 1, "provider_uid": P1, "state": "complete", "population_known": True, "population_errors": [], "duplicate_conflicts": []},
         "Bank Two": {"schema_version": 1, "provider_uid": P2, "state": "partial", "population_known": True, "population_errors": [], "duplicate_conflicts": []},
     }
+    def provider_observation(number: int, name: str) -> dict[str, object]:
+        return {
+            "provider_dir": name,
+            "provider_uid": _provider(number),
+            "provider_identity_status": "official",
+            "provider_identity_held": False,
+            "brand_name": name,
+            "legal_entity_name": "",
+            "endpoint_url": f"https://bank-{number}.example/cds-au/v1/banking/products",
+            "data_holder_id": f"holder-{number}",
+            "data_holder_brand_id": f"brand-{number}",
+            "interim_id": "",
+            "identity_authority": f"bank-{number}.example",
+            "population": populations[name],
+        }
     banks = {
         "provider_observations": [
-            {"provider_dir": "Bank One", "provider_uid": P1, "brand_name": "Bank One", "population": populations["Bank One"]},
-            {"provider_dir": "Bank Two", "provider_uid": P2, "brand_name": "Bank Two", "population": populations["Bank Two"]},
+            provider_observation(1, "Bank One"),
+            provider_observation(2, "Bank Two"),
         ],
         "products": [{
             "provider_uid": P1,
@@ -84,6 +99,25 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
     }
     session_id = "ingest-20260902T000000Z-test"
     journal = RawAttemptJournal(root / "_raw-attempt-journals-v1", session_id)
+    register = {
+        "data": [
+            {
+                "dataHolderId": f"holder-{number}",
+                "dataHolderBrandId": f"brand-{number}",
+                "brandName": f"Bank {name}",
+                "publicBaseUri": f"https://bank-{number}.example/cds-au/v1/banking/products",
+            }
+            for number, name in ((1, "One"), (2, "Two"))
+        ]
+    }
+    journal.record(
+        "register-1",
+        request_url="https://register.example/holders",
+        status=200,
+        outcome="success",
+        body=json.dumps(register).encode(),
+        context={"phase": "register_discovery"},
+    )
     for index, (provider, product_id_value) in enumerate(
         (("Bank One", "save-1"), ("Bank Two", "home-1")), 1
     ):
@@ -225,6 +259,14 @@ def test_changed_product_detail_fails_journal_binding(tmp_path: Path) -> None:
     detail = next(root.rglob("product-detail.json"))
     detail.write_text('{"data":{"productId":"save-1","name":"forged"}}', encoding="utf-8")
     with pytest.raises(ProductInventoryError, match="disagrees with current journal"):
+        build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
+
+
+def test_staged_provider_identity_must_match_register_journal(tmp_path: Path) -> None:
+    root, banks, status = _inputs(tmp_path)
+    banks["provider_observations"][0]["data_holder_brand_id"] = "substituted-brand"
+
+    with pytest.raises(ProductInventoryError, match="register journal"):
         build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
 
 

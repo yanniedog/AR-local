@@ -20,7 +20,19 @@ from cdr_raw_attempt_journal import RawAttemptJournal
 
 DATE = "2026-08-15"
 SESSION = "ingest-20260815T010000000000Z-112233445566"
-EVIDENCE_BODY = b'{"data":{"products":[]}}'
+EVIDENCE_BODY = json.dumps(
+    {
+        "data": [
+            {
+                "dataHolderId": "holder-1",
+                "dataHolderBrandId": "brand-1",
+                "brandName": "Example Bank",
+                "publicBaseUri": "https://bank.example/cds-au/v1/banking/products",
+            }
+        ]
+    },
+    separators=(",", ":"),
+).encode()
 PROVIDER_UID, IDENTITY_STATUS = provider_uid(
     data_holder_id="holder-1",
     data_holder_brand_id="brand-1",
@@ -29,7 +41,52 @@ PROVIDER_UID, IDENTITY_STATUS = provider_uid(
 )
 
 
-def _write_ingest(run_root):
+def _write_ingest(run_root, *, rates=1):
+    banks = run_root / "banks"
+    detail = banks / "Savings" / "Example Bank" / "save-1" / "save-1__token"
+    detail.mkdir(parents=True)
+    (detail / "product-id.txt").write_text("save-1\n", encoding="utf-8")
+    detail_payload = {
+        "data": {
+            "productId": "save-1",
+            "name": "Example Saver",
+            "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+            "depositRates": (
+                [{"depositRateType": "VARIABLE", "rate": "0.05"}] if rates else []
+            ),
+        }
+    }
+    atomic_write_json(detail / "product-detail.json", detail_payload)
+    holder = banks / "_holders" / "Example Bank"
+    atomic_write_json(
+        holder / "_register-brand.json",
+        {
+            "provider_uid": PROVIDER_UID,
+            "provider_identity_status": IDENTITY_STATUS,
+            "data_holder_id": "holder-1",
+            "data_holder_brand_id": "brand-1",
+            "brand_name": "Example Bank",
+            "legal_entity_name": "",
+            "endpoint_url": "https://bank.example/cds-au/v1/banking/products",
+            "interim_id": "",
+            "identity_authority": "bank.example",
+        },
+    )
+    atomic_write_json(
+        holder / "_products-index" / "index-summary.json",
+        {
+            "schema_version": 1,
+            "provider_uid": PROVIDER_UID,
+            "state": "complete",
+            "population_known": True,
+            "population_errors": [],
+            "duplicate_conflicts": [],
+            "unique_product_ids": 1,
+            "relevant_products": 1,
+            "details_present": 1,
+        },
+    )
+    (banks / "failures.jsonl").write_bytes(b"")
     journal = RawAttemptJournal(run_root / "_raw-attempt-journals-v1", SESSION)
     body = EVIDENCE_BODY
     journal.record(
@@ -45,6 +102,21 @@ def _write_ingest(run_root):
         wire_sha256=hashlib.sha256(body).hexdigest(),
         peer_ip="8.8.8.8",
         context={"phase": "register_discovery"},
+    )
+    detail_body = (detail / "product-detail.json").read_bytes()
+    journal.record(
+        "detail:save-1",
+        request_url="https://bank.example/products/save-1",
+        status=200,
+        outcome="success",
+        body=detail_body,
+        started_at="2026-08-15T01:00:01.000000Z",
+        completed_at="2026-08-15T01:00:02.000000Z",
+        context={
+            "phase": "product_detail",
+            "provider": "Example Bank",
+            "product_id": "save-1",
+        },
     )
     summary = journal.summary()
     atomic_write_json(
@@ -106,10 +178,12 @@ def _configure(tmp_path, monkeypatch, *, rates=1):
 
     def ingest(_script_dir, out_dir, date, _extra):
         assert date == DATE
-        _write_ingest(out_dir / date)
+        _write_ingest(out_dir / date, rates=rates)
 
     def build(_run_root, export_root, _db, *, previous_run_root=None):
         assert previous_run_root is None
+        if rates:
+            return cdr_outputs.build_outputs(_run_root, export_root, _db)
         cache = export_root / "dashboard-cache"
         cache.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
@@ -266,92 +340,6 @@ def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch)
     args.ram_stage = False
     monkeypatch.setattr(cdr_daily, "is_raspberry_pi", lambda: True)
     expected_stage = runs.parent / ".daily-export-stage" / DATE / "_exports"
-    configured_ingest = cdr_daily.run_ingest
-
-    def ingest(script_dir, out_dir, date, extra):
-        configured_ingest(script_dir, out_dir, date, extra)
-        banks = out_dir / date / "banks"
-        detail = banks / "Mortgage" / "Example Bank" / "loan-1" / "loan-1__token"
-        detail.mkdir(parents=True)
-        (detail / "product-id.txt").write_text("loan-1\n", encoding="utf-8")
-        (detail / "product-detail.json").write_text(
-            json.dumps({
-                "data": {
-                    "productId": "loan-1",
-                    "name": "Example variable home loan",
-                    "brand": "Example Bank",
-                    "features": [],
-                    "eligibility": [],
-                    "constraints": [],
-                    "fees": [],
-                    "lendingRates": [{
-                        "lendingRateType": "VARIABLE",
-                        "rate": "0.055",
-                        "comparisonRate": "0.057",
-                    }],
-                },
-            }),
-            encoding="utf-8",
-        )
-        holder = banks / "_holders" / "Example Bank"
-        atomic_write_json(
-            holder / "_register-brand.json",
-            {
-                "provider_uid": PROVIDER_UID,
-                "provider_identity_status": IDENTITY_STATUS,
-                "data_holder_id": "holder-1",
-                "data_holder_brand_id": "brand-1",
-                "brand_name": "Example Bank",
-            },
-        )
-        atomic_write_json(
-            holder / "_products-index" / "index-summary.json",
-            {
-                "schema_version": 1,
-                "provider_uid": PROVIDER_UID,
-                "state": "complete",
-                "population_known": True,
-                "population_errors": [],
-                "duplicate_conflicts": [],
-                "unique_product_ids": 1,
-                "relevant_products": 1,
-                "out_of_scope_products": 0,
-                "classification_unresolved": [],
-                "details_present": 1,
-            },
-        )
-        (banks / "failures.jsonl").write_bytes(b"")
-        detail_body = (detail / "product-detail.json").read_bytes()
-        journal = RawAttemptJournal(
-            out_dir / date / "_raw-attempt-journals-v1", SESSION
-        )
-        journal.record(
-            "detail:loan-1",
-            request_url="https://bank.example/products/loan-1",
-            status=200,
-            outcome="success",
-            body=detail_body,
-            started_at="2026-08-15T01:00:01.000000Z",
-            completed_at="2026-08-15T01:00:02.000000Z",
-            context={
-                "phase": "product_detail",
-                "provider": "Example Bank",
-                "product_id": "loan-1",
-            },
-        )
-        status_path = banks / "ingest-status.json"
-        status = json.loads(status_path.read_text(encoding="utf-8"))
-        pointer = status["raw_attempt_journal"]
-        status["raw_attempt_journal"] = {
-            **journal.summary(),
-            "path": pointer["path"],
-            "path_resolution": pointer["path_resolution"],
-            "retention": pointer["retention"],
-        }
-        atomic_write_json(status_path, status)
-
-    monkeypatch.setattr(cdr_daily, "run_ingest", ingest)
-
     def build(run_root, export_root, db_path, *, previous_run_root=None):
         assert export_root == expected_stage
         assert not str(export_root).startswith(str(ram))
@@ -623,7 +611,7 @@ def _assert_evidence_preserved(ram: Path) -> None:
     assert promoted.is_dir()
     summary = RawAttemptJournal(promoted.parent, SESSION).summary()
     assert summary["verified"] is True
-    assert summary["attempts"] == 1
+    assert summary["attempts"] == 2
     digest = hashlib.sha256(EVIDENCE_BODY).hexdigest()
     assert (promoted / "bodies" / f"{digest}.body").read_bytes() == EVIDENCE_BODY
 

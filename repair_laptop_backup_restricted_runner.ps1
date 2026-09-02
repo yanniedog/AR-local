@@ -203,7 +203,11 @@ $piCheck = New-ArLfRemoteScript -Lines @(
   'test -z "$(git status --porcelain=v1)"',
   '! systemctl is-active --quiet ar-local-daily.service',
   'test ! -e /srv/ar-local/data/state/daily-ingest.lock',
-  'curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null',
+  'if grep -q -- ''--backup-preflight'' pi_runtime_health.py; then',
+  '  python3 -B pi_runtime_health.py --backup-preflight --timeout 10 --retries 0',
+  'else',
+  '  curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null',
+  'fi',
   'echo AR_PI_D009_PREFLIGHT_PASS'
 )
 $script:piCommandIdentity = "ssh $PiHost LF-SHA256=$(Get-ArTextSha256 $piCheck)"

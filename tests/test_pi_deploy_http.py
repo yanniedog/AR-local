@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pi_deploy_http
+from pi_runtime_health import STATUS_SUMMARY_FIELDS
 
 
 def _status(**observation_overrides):
@@ -9,9 +10,10 @@ def _status(**observation_overrides):
         "observed_at": "2026-09-03T01:02:03+10:00",
         "state": "degraded",
         "accounting_id": "ingest-20260903T010203Z-abcdef123456",
-        "providers": {},
-        "products": {},
-        "issues": {},
+        **{
+            key: {field: 0 for field in fields}
+            for key, fields in STATUS_SUMMARY_FIELDS.items()
+        },
         **observation_overrides,
     }
     return {
