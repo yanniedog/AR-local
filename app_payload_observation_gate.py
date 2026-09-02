@@ -17,8 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
 # Compatibility v1 is allowed to advance from a fully-audited partial
-# observation only inside these deliberately narrow bounds.  The append-only
-# ledger and v3 promotion contract remain complete-only.
+# observation only inside these deliberately narrow bounds.
 # Sized against observed production days rather than a round number. On
 # 2026-08-16 a healthy run recorded 17 failure records across 3,035 products with
 # 7 of 118 providers partial; a broken run the day before recorded 1,195 records
@@ -64,7 +63,7 @@ def bounded_partial_v1_allowed(contract: Mapping[str, Any]) -> bool:
         and register_attempted > 0
         and register_complete == register_attempted
         and failed == 0
-        and 0 < failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
+        and 0 <= failures <= PARTIAL_V1_MAX_FAILURE_RECORDS
         and failures / products <= PARTIAL_V1_MAX_FAILURE_RATIO
         and partial / registered <= PARTIAL_V1_MAX_PARTIAL_PROVIDER_RATIO
     )

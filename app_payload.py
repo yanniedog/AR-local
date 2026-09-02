@@ -1,9 +1,9 @@
 """Build and publish the compact mobile-app payload for AR-local.
 
-The Raspberry Pi daily ingest already produces a compact, dashboard-ready
-``dashboard-cache/<run_date>/banks.json`` plus a ``dashboard-cache/latest.json``
-manifest. This module reshapes those (pure Python, no SQLite and no running
-dashboard server) into three small artifacts the mobile app downloads from GitHub Releases:
+The Raspberry Pi daily ingest produces a canonical ``observation-v1.json`` plus
+a verified SQLite database. This module reshapes
+that canonical observation into small artifacts the mobile app downloads from
+GitHub Releases:
 
   * ``manifest.json``          - tiny; the app polls this first.
   * ``core-<date>.json.gz``    - section rates + ribbon stats + brands + RBA series.
@@ -51,7 +51,6 @@ from app_payload_brands import (
 from app_payload_build import (
     _asset,
     _compute_payload,
-    _find_banks_json,
     _gzip_bytes,
     _ingest_schedule,
     _ongoing_num,
@@ -93,7 +92,6 @@ from app_payload_common import (
     release_display_title,
     release_title,
     section_filter,
-    utc_now_iso,
 )
 from app_payload_details import _detail_items, _detail_links, _fee_items, build_details
 from app_payload_publish import (
@@ -136,7 +134,6 @@ __all__ = [
     "_detail_items",
     "_fee_items",
     "_detail_links",
-    "_find_banks_json",
     "_get_brand_lookup",
     "_gh_authed",
     "_gh_available",
@@ -189,7 +186,6 @@ __all__ = [
     "retitle_payload_releases",
     "section_filter",
     "subprocess",
-    "utc_now_iso",
 ]
 
 

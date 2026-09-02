@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import bank_behaviour
 import rba_decisions
 from app_payload_contracts import ALL_PRODUCTS_COHORT
+from cdr_observation import load_verified_observation
 
 VALID_SECTIONS = ("Mortgage", "Savings", "TD")
 _WS = re.compile(r"\s+")
@@ -87,29 +88,41 @@ def _runs_root(exports_dir: Path):
             return ancestor
     return None
 
+def _snapshot_in(exports: Path, run_date: str):
+    observation = exports / "observation-v1.json"
+    if observation.is_file():
+        return observation
+    # Read-only compatibility for already-retained pre-observation history.
+    legacy = exports / "dashboard-cache" / run_date / "banks.json"
+    return legacy if legacy.is_file() else None
+
+
 def _banks_for_date(root: Path, run_date: str):
-    """Return a day's ``banks.json`` under either the plain or revised layout."""
+    """Return a canonical snapshot, or a retained historical legacy snapshot."""
     day = root / run_date
-    direct = day / "_exports" / "dashboard-cache" / run_date / "banks.json"
-    if direct.is_file():
+    direct = _snapshot_in(day / "_exports", run_date)
+    if direct is not None:
         return direct
     revisions = day / "_revisions"
     if revisions.is_dir():
         # Newest stamp wins, so a revised day contributes its latest observation.
         for stamp in sorted((p for p in revisions.iterdir() if p.is_dir()), reverse=True):
-            candidate = stamp / "_exports" / "dashboard-cache" / run_date / "banks.json"
-            if candidate.is_file():
+            candidate = _snapshot_in(stamp / "_exports", run_date)
+            if candidate is not None:
                 return candidate
     return None
 
 def _banks(exports_dir: Path, run_date: str):
-    direct = exports_dir / "dashboard-cache" / run_date / "banks.json"
-    if direct.is_file(): return direct
+    direct = _snapshot_in(exports_dir, run_date)
+    if direct is not None: return direct
     root = _runs_root(exports_dir)
     return _banks_for_date(root, run_date) if root else None
 
 def _history_dates(exports_dir: Path, run_date: str) -> List[str]:
     dates = set()
+    if _snapshot_in(exports_dir, run_date) is not None:
+        dates.add(run_date)
+    # Retained legacy snapshots may contain several dates under one export root.
     direct = exports_dir / "dashboard-cache"
     if direct.is_dir():
         dates.update(
@@ -228,7 +241,7 @@ def build_history_assets(
     schema_version=1,
     rba_calendar=None,
 ):
-    """Single pass over the daily banks.json snapshots producing BOTH mobile history assets:
+    """Single pass over verified observations and retained historical snapshots.
 
     1. ``history_banks`` — per-section daily aggregate ribbon points (existing asset).
     2. ``bank_history`` — per-provider daily median/best/count series per section, plus
@@ -257,7 +270,15 @@ def build_history_assets(
         stats_for_day: Dict[str, Dict[str, Tuple[float, float, int]]] = {}
         path = _banks(exports_dir, date)
         if path:
-            rates = [row for row in (load_json(path).get("rates") or []) if isinstance(row, dict)]
+            if path.name == "observation-v1.json":
+                observation, _accounting = load_verified_observation(path.parent)
+                rates = [row["document"] for row in observation["rates"]]
+            else:
+                rates = [
+                    row
+                    for row in (load_json(path).get("rates") or [])
+                    if isinstance(row, dict)
+                ]
             for section in VALID_SECTIONS:
                 rows = [
                     row

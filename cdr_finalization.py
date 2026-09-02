@@ -9,7 +9,6 @@ from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import load_exports_manifest, manifest_banks_rate_count
 from cdr_atomic import ImmutablePathError, atomic_write_json
-from cdr_contracts import canonical_json_bytes
 from cdr_export_contract import artifact_records, build_contract, load_contract, write_contract
 from cdr_ledger_v2 import (
     append_contract_event_locked,
@@ -20,12 +19,8 @@ from cdr_ledger_v2 import (
     verify_event_artifacts,
 )
 from cdr_file_lock import FileLock
-from cdr_observation import validate_observation
-from cdr_observation_db import verify_observation_database
+from cdr_observation import load_verified_observation
 from cdr_raw_attempt_journal import RawAttemptJournal
-
-
-_PROJECTION_GROUPS = ("products", "rates", "items", "product_facts", "product_changes")
 
 
 def _ingest_status(export_root: Path) -> dict[str, Any]:
@@ -136,17 +131,6 @@ def _coverage(
     return observation_state, coverage, provider_states, register_attempts
 
 
-def _read_canonical_object(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
-    try:
-        raw = path.read_bytes()
-        value = json.loads(raw)
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"{label} is unreadable") from error
-    if not isinstance(value, dict) or raw != canonical_json_bytes(value):
-        raise ValueError(f"{label} is not canonical")
-    return value, raw
-
-
 def _verified_promoted_journal(
     export_root: Path, status: Mapping[str, Any], expected_digest: str
 ) -> None:
@@ -193,21 +177,7 @@ def _verified_promoted_journal(
 def _observation_coverage(
     export_root: Path,
 ) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    observation, _ = _read_canonical_object(
-        export_root / "observation-v1.json", "observation"
-    )
-    accounting, accounting_bytes = _read_canonical_object(
-        export_root / "product-accounting-v1.json", "product accounting"
-    )
-    validate_observation(observation, accounting)
-    projections = {group: observation[group] for group in _PROJECTION_GROUPS}
-    verify_observation_database(
-        export_root / "local-cdr.sqlite",
-        expected_sidecar_bytes=accounting_bytes,
-        expected_projections=projections,
-        expected_normalization_version=observation["normalization_version"],
-        expected_generated_at=observation["observed_at"],
-    )
+    observation, accounting = load_verified_observation(export_root)
     status = _ingest_status(export_root)
     _verified_promoted_journal(
         export_root, status, accounting["raw_attempt_journal_digest"]
@@ -238,14 +208,29 @@ def _observation_coverage(
         for item in (status.get("provider_states") or [])
         if isinstance(item, Mapping)
     }
+    accounting_providers = {
+        provider["provider_uid"]: provider for provider in accounting["providers"]
+    }
+
+    def state_reconciles(item: Mapping[str, Any]) -> bool:
+        raw = status_states[item["provider_uid"]]
+        raw_state = raw.get("state")
+        normalized_state = item["state"]
+        state_ok = raw_state == normalized_state or (
+            normalized_state == "partial" and raw_state in {"complete", "partial"}
+        )
+        provider = accounting_providers[item["provider_uid"]]
+        return bool(
+            state_ok
+            and raw.get("population_known") is provider["population_known"]
+            and raw.get("products_discovered") == provider["discovered_count"]
+        )
+
     providers_reconcile = (
         status.get("providers_registered") == provider_summary["registered"]
         and status.get("providers_attempted") == provider_summary["attempted"]
         and set(status_states) == {item["provider_uid"] for item in provider_states}
-        and all(
-            status_states[item["provider_uid"]].get("state") == item["state"]
-            for item in provider_states
-        )
+        and all(state_reconciles(item) for item in provider_states)
     )
     provenance_complete = (
         status.get("failure_provenance_complete") is True

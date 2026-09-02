@@ -54,6 +54,13 @@ def test_publication_allowed_matches_the_daily_path() -> None:
     assert (allowed, reason) == (True, "complete")
 
 
+def test_reconciled_partial_with_valid_omissions_can_publish() -> None:
+    allowed, reason = gate.publication_allowed(
+        _contract(failure_records=0, providers_partial=1)
+    )
+    assert (allowed, reason) == (True, "bounded_partial")
+
+
 def test_publication_refuses_the_broken_day_and_the_unknown_day() -> None:
     # 2026-08-15: 1,195 failure records over 1,864 products, 34 of 118 partial.
     broken = _contract(failure_records=1195, products_discovered=1864, providers_partial=34)

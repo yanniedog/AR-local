@@ -14,7 +14,7 @@ from jsonschema.exceptions import ValidationError
 
 from cdr_atomic import atomic_write_bytes
 from cdr_contracts import canonical_json_bytes, parse_rate_string, product_uid
-from cdr_observation_db import validate_observation_inputs
+from cdr_observation_db import validate_observation_inputs, verify_observation_database
 from cdr_product_accounting import validate_product_accounting
 
 
@@ -290,3 +290,32 @@ def write_observation(
     out_dir = out_dir.expanduser().resolve()
     atomic_write_bytes(out_dir / ACCOUNTING_FILE, canonical_json_bytes(accounting), create_once=True)
     atomic_write_bytes(out_dir / OBSERVATION_FILE, canonical_json_bytes(observation), create_once=True)
+
+
+def load_verified_observation(out_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load the one canonical observation only after every stored form agrees."""
+
+    out_dir = out_dir.expanduser().resolve()
+
+    def read(name: str, label: str) -> tuple[dict[str, Any], bytes]:
+        try:
+            raw = (out_dir / name).read_bytes()
+            value = json.loads(raw)
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ObservationError(f"{label} is unreadable") from error
+        if not isinstance(value, dict) or raw != canonical_json_bytes(value):
+            raise ObservationError(f"{label} is not canonical")
+        return value, raw
+
+    observation, _ = read(OBSERVATION_FILE, "observation")
+    accounting, accounting_bytes = read(ACCOUNTING_FILE, "product accounting")
+    validate_observation(observation, accounting)
+    projections = {group: observation[group] for group in PROJECTION_GROUPS}
+    verify_observation_database(
+        out_dir / "local-cdr.sqlite",
+        expected_sidecar_bytes=accounting_bytes,
+        expected_projections=projections,
+        expected_normalization_version=observation["normalization_version"],
+        expected_generated_at=observation["observed_at"],
+    )
+    return observation, accounting

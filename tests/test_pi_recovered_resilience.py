@@ -432,68 +432,6 @@ def test_daily_ingest_never_inspects_or_changes_checkout(
     ingest.assert_called_once()
 
 
-def test_pi_daily_ingest_pauses_and_resumes_dashboard(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
-    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
-    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
-    events: list[str] = []
-
-    def control(command, **_kwargs):
-        events.append(command[2])
-        return subprocess.CompletedProcess(command, 0)
-
-    def ingest(*_args, **_kwargs):
-        events.append("ingest")
-
-    monkeypatch.setattr(pi_daily_sync.subprocess, "run", control)
-    monkeypatch.setattr(pi_daily_sync, "run_checked", ingest)
-
-    assert pi_daily_sync.main(["--banks-only"]) == 0
-    assert events == ["stop", "ingest", "start"]
-
-
-def test_pi_daily_ingest_resumes_dashboard_after_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
-    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
-    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
-    events: list[str] = []
-
-    def control(command, **_kwargs):
-        events.append(command[2])
-        return subprocess.CompletedProcess(command, 0)
-
-    def fail_ingest(*_args, **_kwargs):
-        events.append("ingest")
-        raise subprocess.CalledProcessError(1, ["cdr_daily.py"])
-
-    monkeypatch.setattr(pi_daily_sync.subprocess, "run", control)
-    monkeypatch.setattr(pi_daily_sync, "run_checked", fail_ingest)
-
-    with pytest.raises(subprocess.CalledProcessError):
-        pi_daily_sync.main(["--banks-only"])
-    assert events == ["stop", "ingest", "start"]
-
-
-def test_dashboard_pause_failure_never_blocks_daily_ingest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(pi_daily_sync, "data_state_root", lambda _repo: tmp_path)
-    monkeypatch.setattr(pi_daily_sync, "ensure_runtime_data_writable", lambda _repo: None)
-    monkeypatch.setattr(pi_daily_sync, "is_raspberry_pi", lambda: True)
-    monkeypatch.setattr(
-        pi_daily_sync.subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 1),
-    )
-    with mock.patch.object(pi_daily_sync, "run_checked") as ingest:
-        assert pi_daily_sync.main(["--banks-only"]) == 0
-    ingest.assert_called_once()
-
-
 def test_daily_ingest_does_not_invoke_sync_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -685,7 +623,7 @@ def test_live_rolling_manifest_match_counts_as_published(
     manifest = _payload_manifest(date)
     with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, False, False)):
         with mock.patch("app_payload._live_manifest_status", return_value=("present", manifest)):
-            with mock.patch("app_payload.build_and_publish_v2", return_value=({}, True)):
+            with mock.patch("app_payload.refresh_dates_index", return_value=True):
                 outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
     assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
 
@@ -701,7 +639,8 @@ def test_newer_live_rolling_manifest_is_not_a_failure(
         "app_payload.build_and_publish_dual", return_value=(_payload_manifest(date), False, False)
     ):
         with mock.patch("app_payload._live_manifest_status", return_value=("present", newer)):
-            outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+            with mock.patch("app_payload.refresh_dates_index", return_value=True):
+                outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
     assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
 
 
@@ -713,9 +652,8 @@ def test_successful_publish_refreshes_dates_index(
     _stage_complete_payload_run(tmp_path, monkeypatch, date)
     manifest = _payload_manifest(date)
     with mock.patch("app_payload.build_and_publish_dual", return_value=(manifest, True, True)):
-        with mock.patch("app_payload.build_and_publish_v2", return_value=({}, True)):
-            with mock.patch("app_payload.refresh_dates_index") as refresh:
-                outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
+        with mock.patch("app_payload.refresh_dates_index", return_value=True) as refresh:
+            outcome = pi_daily_sync.maybe_publish_app_payload(pi_daily_sync.REPO_ROOT)
     assert outcome == pi_daily_sync.PUBLISH_PUBLISHED
     refresh.assert_called_once()
     assert refresh.call_args.args[0] == tmp_path / "data" / "runs"

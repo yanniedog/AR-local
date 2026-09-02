@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -212,3 +213,25 @@ def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> No
     assert len(findings) == 1
     assert findings[0]["severity"] == "HIGH"
     assert findings[0]["worst_delta_bp"] == 300.0
+
+
+def test_mobile_payload_is_deterministic_and_bound_to_observation(tmp_path: Path) -> None:
+    run = _captured_run(tmp_path)
+    build_outputs(run)
+    first = app_payload.build_payload(run / "_exports", tmp_path / "payload-a")
+    second = app_payload.build_payload(run / "_exports", tmp_path / "payload-b")
+
+    assert first == second
+    assert first["generated_at"] == OBSERVED_AT
+    assert first["schedule"] and "next_due_utc" not in first["schedule"]
+    assert first["counts"]["products"] == 1
+    assert first["counts"]["rates"] == 1
+    assert first["files"]["core"]["sha256"] == second["files"]["core"]["sha256"]
+    core_path = tmp_path / "payload-a" / first["files"]["core"]["name"]
+    core = json.loads(gzip.decompress(core_path.read_bytes()))
+    rate = core["sections"]["Savings"]["rates"][0]
+    assert len(rate["provider_uid"]) > 64
+    assert len(rate["product_uid"]) == 64
+    assert core["coverage"]["observed_at"] == OBSERVED_AT
+    assert core["coverage"]["counts"]["products_discovered"] == 1
+import app_payload
