@@ -75,6 +75,7 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         for unit in (
             "ar-local-daily.service",
             "ar-local-daily.timer",
+            "ar-local-dashboard.service",
             "ar-local-status.service",
         )
     }
@@ -463,8 +464,11 @@ def validate_source_listing(
     validate_next_daily_timer(preflight.get("daily_timer_next"), checked_at_hobart)
     if preflight.get("ingest_lock_absent") is not True:
         raise ValueError("Pi ingest lock identity is invalid")
-    if preflight.get("status_healthy") is not True:
-        raise ValueError("Pi status identity is invalid")
+    runtime_health_fields = [
+        field for field in ("dashboard_healthy", "status_healthy") if field in preflight
+    ]
+    if len(runtime_health_fields) != 1 or preflight[runtime_health_fields[0]] is not True:
+        raise ValueError("Pi runtime health identity is invalid")
     service = preflight.get("daily_service")
     terminal_failure = preflight.get("terminal_failure_authorization")
     if service == "inactive":
