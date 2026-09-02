@@ -12,51 +12,17 @@ def write_verified_observation(
     observation_date: str = "2026-09-02",
     observed_at: str | None = None,
     raw_attempt_journal_digest: str = "0" * 64,
+    product_evidence_id: str | None = None,
 ) -> dict:
+    from tests.test_cdr_observation_db import observation as observation_inputs
+
     observed_at = observed_at or f"{observation_date}T05:01:02Z"
-    providers = {
-        "registered": 0,
-        "attempted": 0,
-        "complete": 0,
-        "partial": 0,
-        "empty": 0,
-        "failed": 0,
-        "not_attempted": 0,
-        "population_unknown": 0,
-    }
-    products = {
-        "discovered": 0,
-        "published_full": 0,
-        "published_core_only": 0,
-        "omitted_valid": 0,
-        "quarantined_invalid": 0,
-        "consumer_visible": 0,
-    }
-    issues = {
-        "total": 0,
-        "corrupt": 0,
-        "unattributed": 0,
-        "affected_providers": 0,
-        "affected_products": 0,
-        "by_code": {},
-    }
-    accounting = {
-        "schema_version": 1,
-        "observation_date": observation_date,
-        "accounting_id": f"test-{observation_date}",
-        "raw_attempt_journal_digest": raw_attempt_journal_digest,
-        "providers": [],
-        "products": [],
-        "issues": [],
-        "summary": {"providers": providers, "products": products, "issues": issues},
-    }
-    projections = {
-        "products": [],
-        "rates": [],
-        "items": [],
-        "product_facts": [],
-        "product_changes": [],
-    }
+    accounting, projections = observation_inputs()
+    accounting["observation_date"] = observation_date
+    accounting["accounting_id"] = f"test-{observation_date}"
+    accounting["raw_attempt_journal_digest"] = raw_attempt_journal_digest
+    if product_evidence_id is not None:
+        accounting["products"][0]["evidence_ids"] = [product_evidence_id]
     observation = build_observation(
         accounting=accounting,
         projections=projections,

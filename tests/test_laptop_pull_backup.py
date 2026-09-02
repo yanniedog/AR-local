@@ -17,6 +17,7 @@ import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
 from tests.support_legacy_export import write_legacy_export
+from tests.support_observation import write_verified_observation
 
 
 CANDIDATE = "a" * 40
@@ -329,6 +330,18 @@ def test_reconciliation_rejects_corrupt_non_database_population(
     banks_path.write_text(json.dumps(banks), encoding="utf-8")
     with pytest.raises(ValueError, match="do not reconcile"):
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+
+def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None:
+    exports = tmp_path / "exports"
+    write_verified_observation(exports, observation_date="2026-09-03")
+
+    report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+    assert report["schema_version"] == "10"
+    assert report["validation_mode"] == (
+        "canonical_observation_and_immutable_sqlite_v10"
+    )
 
 
 def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:

@@ -5,15 +5,20 @@ from pi_runtime_health import STATUS_SUMMARY_FIELDS
 
 
 def _status(**observation_overrides):
+    providers = {field: 0 for field in STATUS_SUMMARY_FIELDS["providers"]}
+    providers.update(registered=1, attempted=1, partial=1)
+    products = {field: 0 for field in STATUS_SUMMARY_FIELDS["products"]}
+    products.update(discovered=1, published_core_only=1, consumer_visible=1)
+    issues = {field: 0 for field in STATUS_SUMMARY_FIELDS["issues"]}
+    issues.update(total=1, affected_providers=1, affected_products=1)
     observation = {
         "date": "2026-09-03",
         "observed_at": "2026-09-03T01:02:03+10:00",
         "state": "degraded",
         "accounting_id": "ingest-20260903T010203Z-abcdef123456",
-        **{
-            key: {field: 0 for field in fields}
-            for key, fields in STATUS_SUMMARY_FIELDS.items()
-        },
+        "providers": providers,
+        "products": products,
+        "issues": issues,
         **observation_overrides,
     }
     return {

@@ -486,14 +486,29 @@ def test_finalization_hash_binds_status_manifest_and_every_journal_file(tmp_path
     run_root = tmp_path / "ram" / "runs" / DATE
     export_root = data_root / "runs" / DATE / "_exports"
     state = data_root / "state"
-    journal, _ = _source(run_root)
+    journal, status = _source(run_root)
     _export(export_root)
-    write_verified_observation(
+    observation = write_verified_observation(
         export_root,
         observation_date=DATE,
         observed_at="2026-08-15T00:00:01Z",
         raw_attempt_journal_digest=str(journal.summary()["head_digest"]),
+        product_evidence_id=journal.evidence_records()[0]["body_sha256"],
     )
+    status.update(
+        providers_registered=1,
+        providers_attempted=1,
+        provider_states=[
+            {
+                "provider_uid": observation["products"][0]["provider_uid"],
+                "state": "complete",
+                "population_known": True,
+                "products_in_scope": 1,
+            }
+        ],
+        provider_state_counts={"complete": 1},
+    )
+    atomic_write_json(run_root / "banks/ingest-status.json", status)
     promoted = promote_attempt_evidence(run_root, export_root)
     assert promoted is not None
 

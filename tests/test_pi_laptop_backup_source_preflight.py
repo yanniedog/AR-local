@@ -16,6 +16,10 @@ PROTECTED = "b" * 40
 
 
 def status_payload() -> dict[str, object]:
+    providers = {key: 0 for key in source.STATUS_PROVIDER_COUNTS}
+    providers.update(registered=1, attempted=1, complete=1)
+    products = {key: 0 for key in source.STATUS_PRODUCT_COUNTS}
+    products.update(discovered=1, published_full=1, consumer_visible=1)
     return {
         "schema_version": 1,
         "service": "ar-local",
@@ -25,8 +29,8 @@ def status_payload() -> dict[str, object]:
             "observed_at": "2026-09-02T15:10:39+00:00",
             "state": "complete",
             "accounting_id": "accounting-2026-09-03",
-            "providers": {key: 0 for key in source.STATUS_PROVIDER_COUNTS},
-            "products": {key: 0 for key in source.STATUS_PRODUCT_COUNTS},
+            "providers": providers,
+            "products": products,
             "issues": {key: 0 for key in source.STATUS_ISSUE_COUNTS},
         },
     }
@@ -50,6 +54,48 @@ def test_source_accepts_only_complete_status_contract(monkeypatch: pytest.Monkey
 
     payload.pop("observation")
     assert source.http_healthy("http://status") is False
+
+
+@pytest.mark.parametrize(
+    ("summary", "updates"),
+    [
+        ("providers", {"complete": 0, "failed": 1, "population_unknown": 1}),
+        ("products", {"published_full": 0, "quarantined_invalid": 1, "consumer_visible": 0}),
+        ("issues", {"total": 1, "corrupt": 1}),
+    ],
+)
+def test_source_rejects_inconsistent_complete_status_summaries(
+    monkeypatch: pytest.MonkeyPatch, summary: str, updates: dict[str, int]
+) -> None:
+    payload = status_payload()
+    payload["observation"][summary].update(updates)
+    monkeypatch.setattr(source, "_json_endpoint", lambda _url: payload)
+
+    assert source.http_healthy("http://status") is False
+
+
+def test_control_capture_includes_both_installed_runtime_units(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(*parts: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        del check
+        calls.append(parts)
+        return subprocess.CompletedProcess(parts, 0, stdout=f"{' '.join(parts)}\n", stderr="")
+
+    monkeypatch.setattr(source, "command", command)
+
+    captured = source.capture_runtime_services(
+        tmp_path, "ar-local-status.service"
+    )
+
+    assert captured == list(source.RUNTIME_SERVICES)
+    for unit in source.RUNTIME_SERVICES:
+        assert (tmp_path / f"system/systemd/{unit}.txt").is_file()
+        assert (tmp_path / f"system/systemd/{unit}.show.txt").is_file()
+        assert ("systemctl", "cat", unit) in calls
+        assert ("systemctl", "show", unit) in calls
 
 
 def test_source_accepts_legacy_export_contract_during_cutover(

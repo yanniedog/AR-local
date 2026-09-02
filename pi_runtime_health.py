@@ -102,6 +102,67 @@ def probe_urls() -> tuple[str, ...]:
     )
 
 
+def _summaries_reconcile(
+    state: object,
+    providers: object,
+    products: object,
+    issues: object,
+) -> bool:
+    if not all(isinstance(value, Mapping) for value in (providers, products, issues)):
+        return False
+    assert isinstance(providers, Mapping)
+    assert isinstance(products, Mapping)
+    assert isinstance(issues, Mapping)
+    provider_terminal = sum(
+        providers[key]
+        for key in ("complete", "partial", "empty", "failed", "not_attempted")
+    )
+    provider_attempted = sum(
+        providers[key] for key in ("complete", "partial", "empty", "failed")
+    )
+    product_terminal = sum(
+        products[key]
+        for key in (
+            "published_full", "published_core_only", "quarantined_invalid",
+            "omitted_valid",
+        )
+    )
+    degraded_provider_count = sum(
+        providers[key] for key in ("partial", "failed", "not_attempted")
+    )
+    if not (
+        providers["registered"] > 0
+        and providers["registered"] == provider_terminal
+        and providers["attempted"] == provider_attempted
+        and providers["population_unknown"] <= degraded_provider_count
+        and products["discovered"] == product_terminal
+        and products["consumer_visible"]
+        == products["published_full"] + products["published_core_only"]
+        and products["consumer_visible"] > 0
+        and issues["corrupt"] + issues["unattributed"] <= issues["total"]
+        and issues["affected_providers"] <= min(
+            providers["registered"], issues["total"]
+        )
+        and issues["affected_products"] <= min(
+            products["discovered"], issues["total"]
+        )
+    ):
+        return False
+    if state == "complete":
+        return bool(
+            degraded_provider_count == 0
+            and providers["population_unknown"] == 0
+            and products["published_full"] == products["discovered"]
+            and products["published_core_only"] == 0
+            and products["quarantined_invalid"] == 0
+            and products["omitted_valid"] == 0
+            and all(issues[key] == 0 for key in STATUS_SUMMARY_FIELDS["issues"])
+        )
+    return bool(state == "degraded" and (
+        issues["total"] > 0 or degraded_provider_count > 0
+    ))
+
+
 def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
     if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
         return "invalid status contract"
@@ -149,6 +210,13 @@ def status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
             or any(type(summary[field]) is not int or summary[field] < 0 for field in required)
         ):
             return f"invalid {key} summary"
+    if not _summaries_reconcile(
+        state,
+        observation["providers"],
+        observation["products"],
+        observation["issues"],
+    ):
+        return "status summaries do not reconcile"
     return None
 
 

@@ -107,18 +107,28 @@ def test_http_probe_rejects_liveness_only_payload(monkeypatch):
 
 
 def test_http_probe_accepts_verified_observation_identity(monkeypatch):
+    providers = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["providers"]
+    }
+    providers.update(registered=1, attempted=1, complete=1)
+    products = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["products"]
+    }
+    products.update(discovered=1, published_full=1, consumer_visible=1)
     payload = {
         "schema_version": 1,
         "service": "ar-local",
-        "status": "degraded",
+        "status": "ok",
         "observation": {
             "date": "2026-09-03",
             "observed_at": "2026-09-03T01:02:03+10:00",
-            "state": "degraded",
+            "state": "complete",
             "accounting_id": "ingest-20260903T010203Z-abcdef123456",
-            **{
-                key: {field: 0 for field in fields}
-                for key, fields in pi_runtime_health.STATUS_SUMMARY_FIELDS.items()
+            "providers": providers,
+            "products": products,
+            "issues": {
+                field: 0
+                for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["issues"]
             },
         },
     }
@@ -133,7 +143,7 @@ def test_http_probe_accepts_verified_observation_identity(monkeypatch):
     )
 
     assert ok is True
-    assert detail == "OK status='degraded'"
+    assert detail == "OK status='ok'"
 
 
 def test_http_probe_rejects_incomplete_summary_and_mismatched_date(monkeypatch):
@@ -158,6 +168,38 @@ def test_http_probe_rejects_incomplete_summary_and_mismatched_date(monkeypatch):
     payload["observation"]["observed_at"] = "2026-09-03T01:02:03+10:00"
     payload["observation"]["providers"].pop("registered")
     assert pi_runtime_health.status_contract_error(payload) == "invalid providers summary"
+
+
+def test_status_contract_rejects_unreconciled_complete_summary() -> None:
+    providers = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["providers"]
+    }
+    providers.update(registered=1, attempted=1, failed=1, population_unknown=1)
+    products = {
+        field: 0 for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["products"]
+    }
+    products.update(discovered=1, published_full=1, consumer_visible=1)
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "ok",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-03T01:02:03+10:00",
+            "state": "complete",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            "providers": providers,
+            "products": products,
+            "issues": {
+                field: 0
+                for field in pi_runtime_health.STATUS_SUMMARY_FIELDS["issues"]
+            },
+        },
+    }
+
+    assert pi_runtime_health.status_contract_error(payload) == (
+        "status summaries do not reconcile"
+    )
 
 
 def test_backup_preflight_prefers_status_without_writing_state(monkeypatch):

@@ -46,10 +46,9 @@ def _accounting_blockers(accounting: Mapping[str, Any]) -> list[str]:
     if any(provider["state"] == "not_attempted" for provider in accounting["providers"]):
         blockers.add("provider_not_attempted")
     summary = accounting["summary"]
-    if (
-        summary["providers"]["registered"] > 0
-        and summary["products"]["consumer_visible"] == 0
-    ):
+    if summary["providers"]["registered"] == 0:
+        blockers.add("no_registered_providers")
+    if summary["products"]["consumer_visible"] == 0:
         blockers.add("zero_publishable_products")
     return sorted(blockers)
 
