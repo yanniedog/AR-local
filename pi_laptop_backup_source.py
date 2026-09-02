@@ -43,6 +43,17 @@ TIMER_NEXT_RE = re.compile(
     r"^(?P<weekday>[A-Z][a-z]{2}) (?P<date>\d{4}-\d{2}-\d{2}) "
     r"01:00:00 (?P<zone>AEST|AEDT)$"
 )
+STATUS_PROVIDER_COUNTS = frozenset({
+    "registered", "attempted", "complete", "partial", "empty", "failed",
+    "not_attempted", "population_unknown",
+})
+STATUS_PRODUCT_COUNTS = frozenset({
+    "discovered", "published_full", "published_core_only",
+    "quarantined_invalid", "omitted_valid", "consumer_visible",
+})
+STATUS_ISSUE_COUNTS = frozenset({
+    "total", "corrupt", "unattributed", "affected_providers", "affected_products",
+})
 
 
 def validate_next_daily_timer(value: str, now: datetime) -> None:
@@ -98,19 +109,110 @@ def repo_state(repo: Path) -> dict[str, object]:
     return {"path": str(repo), "commit": commit, "clean": not dirty, "dirty_paths": dirty}
 
 
-def http_healthy(url: str) -> bool:
+def _json_endpoint(url: str) -> Mapping[str, object] | None:
     try:
         with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310 - fixed operator URL
-            payload = json.loads(response.read(64 * 1024).decode("utf-8"))
-            return bool(
-                response.status == 200
-                and isinstance(payload, dict)
-                and payload.get("schema_version") == 1
-                and payload.get("service") == "ar-local"
-                and payload.get("status") in {"ok", "degraded"}
-            )
+            raw = response.read(64 * 1024 + 1)
+            payload = json.loads(raw.decode("utf-8"))
+            if response.status != 200 or len(raw) > 64 * 1024 or not isinstance(payload, Mapping):
+                return None
+            return payload
     except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
+def _aware_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None and parsed.utcoffset() is not None else None
+
+
+def _valid_counts(value: object, required: frozenset[str]) -> bool:
+    return bool(
+        isinstance(value, Mapping)
+        and required.issubset(value)
+        and all(type(value[key]) is int and value[key] >= 0 for key in required)
+    )
+
+
+def http_healthy(url: str) -> bool:
+    payload = _json_endpoint(url)
+    if payload is None:
         return False
+    observation = payload.get("observation")
+    if not isinstance(observation, Mapping):
+        return False
+    observed_at = _aware_timestamp(observation.get("observed_at"))
+    observation_date = observation.get("date")
+    try:
+        parsed_date = date.fromisoformat(observation_date) if isinstance(observation_date, str) else None
+    except ValueError:
+        return False
+    expected_state = {"ok": "complete", "degraded": "degraded"}.get(payload.get("status"))
+    return bool(
+        payload.get("schema_version") == 1
+        and payload.get("service") == "ar-local"
+        and expected_state is not None
+        and observation.get("state") == expected_state
+        and parsed_date is not None
+        and parsed_date.isoformat() == observation_date
+        and observed_at is not None
+        and observed_at.astimezone(WINDOW_TZ).date() == parsed_date
+        and isinstance(observation.get("accounting_id"), str)
+        and bool(observation["accounting_id"])
+        and _valid_counts(observation.get("providers"), STATUS_PROVIDER_COUNTS)
+        and _valid_counts(observation.get("products"), STATUS_PRODUCT_COUNTS)
+        and _valid_counts(observation.get("issues"), STATUS_ISSUE_COUNTS)
+    )
+
+
+def legacy_dashboard_healthy(url: str) -> bool:
+    payload = _json_endpoint(url)
+    if payload is None:
+        return False
+    generated_at = _aware_timestamp(payload.get("generated_at"))
+    run_date = payload.get("run_date")
+    counts = payload.get("banks_counts")
+    files = payload.get("files")
+    try:
+        parsed_date = date.fromisoformat(run_date) if isinstance(run_date, str) else None
+    except ValueError:
+        return False
+    return bool(
+        parsed_date is not None
+        and parsed_date.isoformat() == run_date
+        and generated_at is not None
+        and generated_at.astimezone(WINDOW_TZ).date() == parsed_date
+        and isinstance(counts, Mapping)
+        and type(counts.get("products")) is int
+        and counts["products"] > 0
+        and type(counts.get("rates")) is int
+        and counts["rates"] > 0
+        and type(counts.get("failures")) is int
+        and counts["failures"] >= 0
+        and isinstance(files, Mapping)
+        and files.get("db") == "local-cdr.sqlite"
+    )
+
+
+def runtime_health(args: argparse.Namespace) -> dict[str, object]:
+    if http_healthy(args.status_url):
+        return {
+            "runtime_service": "ar-local-status.service",
+            "status_url": args.status_url,
+            "status_healthy": True,
+        }
+    if legacy_dashboard_healthy(args.legacy_dashboard_url):
+        return {
+            "runtime_service": "ar-local-dashboard.service",
+            "dashboard_url": args.legacy_dashboard_url,
+            "dashboard_healthy": True,
+        }
+    raise ValueError("neither supported runtime data-readiness endpoint is healthy")
 
 
 def valid_terminal_failure(state: Path, protected_sha: str) -> dict[str, object] | None:
@@ -195,8 +297,8 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     ).stdout.strip()
     checked_at = datetime.now(WINDOW_TZ)
     validate_next_daily_timer(timer_next, checked_at)
-    if not http_healthy(args.status_url):
-        raise ValueError("status health endpoint is not HTTP 200")
+    health = runtime_health(args)
+    args.runtime_service = health["runtime_service"]
     return {
         "checked_at": checked_at.isoformat(),
         "production": current,
@@ -208,8 +310,7 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "daily_timer_active": timer_active,
         "daily_timer_next": timer_next,
         "ingest_lock_absent": True,
-        "status_url": args.status_url,
-        "status_healthy": True,
+        **health,
     }
 
 
@@ -420,7 +521,8 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
             current["bundle_path"] = f"git/{label}.bundle"
             current["bundle_sha256"] = sha256_file(bundle)
             repositories.append(current)
-        for unit in ("ar-local-daily.service", "ar-local-daily.timer", "ar-local-status.service"):
+        runtime_service = str(args.runtime_service)
+        for unit in ("ar-local-daily.service", "ar-local-daily.timer", runtime_service):
             write_command(root / f"system/systemd/{unit}.txt", ("systemctl", "cat", unit))
             write_command(root / f"system/systemd/{unit}.show.txt", ("systemctl", "show", unit))
         write_command(root / "system/packages.tsv", ("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"))
@@ -580,6 +682,7 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         for unit in (
             "ar-local-daily.service",
             "ar-local-daily.timer",
+            "ar-local-dashboard.service",
             "ar-local-status.service",
         )
     }
@@ -680,6 +783,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--site-repo", default="/srv/ar-local/australianrates")
     value.add_argument("--macro-db", default="/srv/ar-local/AR-local/state/local-macro.sqlite")
     value.add_argument("--status-url", default="http://127.0.0.1:8808/api/status")
+    value.add_argument("--legacy-dashboard-url", default="http://127.0.0.1:8808/api/latest")
     value.add_argument("--expected-production-sha", required=True)
     value.add_argument("--candidate-code-sha", required=True)
     value.add_argument("--plan-document-id", required=True)

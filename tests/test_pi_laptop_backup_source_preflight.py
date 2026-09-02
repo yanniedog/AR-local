@@ -15,11 +15,57 @@ import pi_laptop_backup_source as source
 PROTECTED = "b" * 40
 
 
+def status_payload() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "ok",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-02T15:10:39+00:00",
+            "state": "complete",
+            "accounting_id": "accounting-2026-09-03",
+            "providers": {key: 0 for key in source.STATUS_PROVIDER_COUNTS},
+            "products": {key: 0 for key in source.STATUS_PRODUCT_COUNTS},
+            "issues": {key: 0 for key in source.STATUS_ISSUE_COUNTS},
+        },
+    }
+
+
 def test_source_defaults_to_data_readiness_endpoint() -> None:
     action = next(
         item for item in source.parser()._actions if item.dest == "status_url"
     )
     assert action.default == "http://127.0.0.1:8808/api/status"
+    legacy = next(
+        item for item in source.parser()._actions if item.dest == "legacy_dashboard_url"
+    )
+    assert legacy.default == "http://127.0.0.1:8808/api/latest"
+
+
+def test_source_accepts_only_complete_status_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = status_payload()
+    monkeypatch.setattr(source, "_json_endpoint", lambda _url: payload)
+    assert source.http_healthy("http://status") is True
+
+    payload.pop("observation")
+    assert source.http_healthy("http://status") is False
+
+
+def test_source_accepts_legacy_export_contract_during_cutover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "generated_at": "2026-09-02T15:10:39+00:00",
+        "run_date": "2026-09-03",
+        "banks_counts": {"products": 2791, "rates": 16457, "failures": 19},
+        "files": {"db": "local-cdr.sqlite"},
+    }
+    monkeypatch.setattr(source, "_json_endpoint", lambda _url: payload)
+    assert source.legacy_dashboard_healthy("http://legacy") is True
+
+    payload["banks_counts"]["rates"] = 0
+    assert source.legacy_dashboard_healthy("http://legacy") is False
 
 
 @pytest.mark.parametrize(
@@ -67,6 +113,7 @@ def test_source_preflight_requires_enabled_and_active_timer(
         runs_root=str(tmp_path / "data/runs"),
         state_root=str(tmp_path / "data/state"),
         status_url="http://127.0.0.1:8808/api/status",
+        legacy_dashboard_url="http://127.0.0.1:8808/api/latest",
         expected_production_sha=PROTECTED,
     )
     for path in (Path(args.production_repo), Path(args.runs_root), Path(args.state_root)):
@@ -120,3 +167,22 @@ def test_source_preflight_requires_enabled_and_active_timer(
     timer_active[0] = "inactive"
     with pytest.raises(ValueError, match="timer is not active"):
         source.production_preflight(args)
+
+
+def test_source_preflight_falls_back_to_legacy_runtime_during_cutover(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    args = Namespace(
+        status_url="http://127.0.0.1:8808/api/status",
+        legacy_dashboard_url="http://127.0.0.1:8808/api/latest",
+    )
+    monkeypatch.setattr(source, "http_healthy", lambda _url: False)
+    monkeypatch.setattr(source, "legacy_dashboard_healthy", lambda _url: True)
+
+    health = source.runtime_health(args)
+
+    assert health == {
+        "runtime_service": "ar-local-dashboard.service",
+        "dashboard_url": args.legacy_dashboard_url,
+        "dashboard_healthy": True,
+    }

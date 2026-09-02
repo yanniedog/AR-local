@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 HANDOFF = Path(__file__).parents[1] / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
-CANDIDATE = "7c32718458213576b39bf4296bcff236170d292d"
+CANDIDATE = "3a9af7251e1e530c88a24fb711635f28365059f5"
 
 
 def _block(name: str) -> str:
@@ -27,7 +27,7 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert len(payload) == 71260
     assert len(script.split("\n")) == 464
     assert hashlib.sha256(payload).hexdigest() == (
-        "1765cc5f218253735aa44abf0b9fef560e4be6696aa1af661e5a0d2945006945"
+        "e9872174d0add79f9bc463af56335b4c98fa0a950d6ae25c775f91333f28a483"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -50,7 +50,7 @@ def test_sequence7_materializer_journals_initialization_failures() -> None:
     assert len(payload) == 37634
     assert len(script.split("\n")) == 357
     assert hashlib.sha256(payload).hexdigest() == (
-        "95a688fff1f991db773337860792ff40c35813e4d57b72d04ac67847b146c845"
+        "161daf55f29c26d033c7c68f2fc1798afec8b939ce806c56a11265b7d1de680d"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
