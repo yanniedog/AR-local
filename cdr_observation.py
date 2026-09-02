@@ -113,11 +113,16 @@ def _product_projections(
         for row in accounting["products"]
         if row["disposition"] in {"published_full", "published_core_only"}
     }
+    accounted = {row["product_uid"] for row in accounting["products"]}
     rows: dict[str, Mapping[str, Any]] = {}
     for raw in banks.get("products") or []:
         if not isinstance(raw, Mapping):
             raise ObservationError("product projection source is invalid")
         uid = _uid(raw, "product")
+        if uid not in accounted:
+            raise ObservationError("product projection source is absent from accounting")
+        if uid not in publishable:
+            continue
         if uid in rows:
             raise ObservationError("product projection identity is duplicated")
         rows[uid] = raw

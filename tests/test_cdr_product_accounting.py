@@ -365,6 +365,31 @@ def test_terminal_provider_population_issue_cannot_claim_complete_population(cod
         build_product_accounting("2026-09-02", status, providers, products, issues)
 
 
+def test_failed_provider_requires_an_attributable_terminal_issue() -> None:
+    status, providers, products, issues = _inputs()
+    issues = [issue for issue in issues if issue["provider_uid"] != P3]
+
+    with pytest.raises(ValueError, match="incomplete provider state"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+def test_partial_provider_requires_an_attributable_terminal_issue() -> None:
+    status, providers, products, issues = _inputs()
+    providers[0]["state"] = "partial"
+    state = next(item for item in status["provider_states"] if item["provider_uid"] == P1)
+    state["state"] = "partial"
+    status["provider_state_counts"].update(complete=0, partial=2)
+    products[1].update(
+        disposition="published_full",
+        reason_codes=[],
+        details_complete=True,
+    )
+    issues = [issue for issue in issues if issue["provider_uid"] != P1]
+
+    with pytest.raises(ValueError, match="incomplete provider state"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
 def test_rejects_duplicate_products_legacy_collisions_and_unsafe_evidence() -> None:
     status, providers, products, issues = _inputs()
     products.append(copy.deepcopy(products[0]))

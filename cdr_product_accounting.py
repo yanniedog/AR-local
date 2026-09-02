@@ -713,6 +713,10 @@ def _validate_references(
         "provider_population_unknown",
     }
     for provider in providers:
+        if provider["state"] in {"partial", "failed"} and not provider_codes[
+            provider["provider_uid"]
+        ]:
+            raise ValueError("incomplete provider state lacks a terminal issue")
         if provider_codes[provider["provider_uid"]] & population_unknown_codes:
             if provider["population_known"] or provider["state"] not in {
                 "partial",
