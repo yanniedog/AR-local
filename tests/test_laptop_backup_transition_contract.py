@@ -36,7 +36,7 @@ def listing() -> dict[str, object]:
             "daily_timer_active": "active",
             "daily_timer_next": "Sun 2026-08-30 01:00:00 AEST",
             "ingest_lock_absent": True,
-            "dashboard_healthy": True,
+            "status_healthy": True,
             "state_root": "/srv/ar-local/data/state",
         },
         "retained_runs": [{"date": "2026-08-29", "status": "completed"}],

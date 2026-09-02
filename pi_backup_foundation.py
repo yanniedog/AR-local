@@ -260,7 +260,7 @@ def create_snapshot(
             system_configuration: list[dict[str, object]] = []
             for source in (
                 Path("/etc/fstab"),
-                Path("/etc/nginx/sites-available/ar-local-dashboard"),
+                Path("/etc/nginx/sites-available/ar-local-status"),
                 config_path,
             ):
                 if source.is_symlink():
@@ -665,7 +665,7 @@ def record_deployment_acceptance(
     if not repository["clean"] or repository["commit"] != candidate_sha:
         raise ValueError("deployed checkout is not the exact clean candidate")
     if not dashboard_verified or not services_verified:
-        raise ValueError("dashboard and service verification must precede acceptance")
+        raise ValueError("status and service verification must precede acceptance")
     binding = gate_report.get("evidence_binding")
     if not isinstance(binding, Mapping):
         raise ValueError("deployment gate did not return immutable evidence identities")

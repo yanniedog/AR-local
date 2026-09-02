@@ -7,8 +7,8 @@ import pytest
 import laptop_backup_transition as transition
 import laptop_backup_transition_contract as contract
 import laptop_pull_backup as receiver
-from test_laptop_backup_transition_contract import listing
-from test_laptop_backup_transition_flow import config, execution_record
+from tests.test_laptop_backup_transition_contract import listing
+from tests.test_laptop_backup_transition_flow import config, execution_record
 
 
 def prepare_backfill(

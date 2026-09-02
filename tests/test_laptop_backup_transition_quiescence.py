@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 import laptop_backup_transition as transition
-from test_laptop_backup_transition_contract import listing, task_snapshot
-from test_laptop_backup_transition_flow import FakeOps, config, patch_flow
+from tests.test_laptop_backup_transition_contract import listing, task_snapshot
+from tests.test_laptop_backup_transition_flow import FakeOps, config, patch_flow
 
 
 def test_recovery_quiesces_enabled_old_task_even_before_disable_checkpoint(

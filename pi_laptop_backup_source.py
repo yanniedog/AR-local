@@ -101,8 +101,15 @@ def repo_state(repo: Path) -> dict[str, object]:
 def http_healthy(url: str) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310 - fixed operator URL
-            return response.status == 200
-    except OSError:
+            payload = json.loads(response.read(64 * 1024).decode("utf-8"))
+            return bool(
+                response.status == 200
+                and isinstance(payload, dict)
+                and payload.get("schema_version") == 1
+                and payload.get("service") == "ar-local"
+                and payload.get("status") in {"ok", "degraded"}
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return False
 
 
@@ -188,8 +195,8 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
     ).stdout.strip()
     checked_at = datetime.now(WINDOW_TZ)
     validate_next_daily_timer(timer_next, checked_at)
-    if not http_healthy(args.dashboard_url):
-        raise ValueError("dashboard health endpoint is not HTTP 200")
+    if not http_healthy(args.status_url):
+        raise ValueError("status health endpoint is not HTTP 200")
     return {
         "checked_at": checked_at.isoformat(),
         "production": current,
@@ -201,8 +208,8 @@ def production_preflight(args: argparse.Namespace) -> dict[str, object]:
         "daily_timer_active": timer_active,
         "daily_timer_next": timer_next,
         "ingest_lock_absent": True,
-        "dashboard_url": args.dashboard_url,
-        "dashboard_healthy": True,
+        "status_url": args.status_url,
+        "status_healthy": True,
     }
 
 
@@ -413,7 +420,7 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
             current["bundle_path"] = f"git/{label}.bundle"
             current["bundle_sha256"] = sha256_file(bundle)
             repositories.append(current)
-        for unit in ("ar-local-daily.service", "ar-local-daily.timer", "ar-local-dashboard.service"):
+        for unit in ("ar-local-daily.service", "ar-local-daily.timer", "ar-local-status.service"):
             write_command(root / f"system/systemd/{unit}.txt", ("systemctl", "cat", unit))
             write_command(root / f"system/systemd/{unit}.show.txt", ("systemctl", "show", unit))
         write_command(root / "system/packages.tsv", ("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"))
@@ -573,7 +580,7 @@ def content_revision(manifest: Mapping[str, object]) -> str:
         for unit in (
             "ar-local-daily.service",
             "ar-local-daily.timer",
-            "ar-local-dashboard.service",
+            "ar-local-status.service",
         )
     }
     volatile_control_paths.update({
@@ -672,7 +679,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--production-repo", default="/srv/ar-local/AR-local")
     value.add_argument("--site-repo", default="/srv/ar-local/australianrates")
     value.add_argument("--macro-db", default="/srv/ar-local/AR-local/state/local-macro.sqlite")
-    value.add_argument("--dashboard-url", default="http://127.0.0.1:8808/api/latest")
+    value.add_argument("--status-url", default="http://127.0.0.1:8808/api/status")
     value.add_argument("--expected-production-sha", required=True)
     value.add_argument("--candidate-code-sha", required=True)
     value.add_argument("--plan-document-id", required=True)
