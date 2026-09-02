@@ -178,7 +178,11 @@ def test_native_transport_accepts_endpoint_bound_by_protected_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     args = _native_transport_args(tmp_path, host="192.0.2.10")
-    _authenticate_native_fixture(monkeypatch, args)
+    contract = _native_contract(args)
+    monkeypatch.setattr(
+        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
+    )
+    monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
     assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
 
 
