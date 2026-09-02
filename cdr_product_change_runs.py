@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from cdr_clean_export import load_json, parse_banks_run
-from cdr_export_contract import load_contract
-from cdr_finalization import verify_completion_marker
+from cdr_finalization import is_finalized_export_root, verified_pointer_export_root
 from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
 from cdr_product_facts import NORMALIZATION_VERSION
 
@@ -41,8 +40,13 @@ def _product_key(fact: Mapping[str, Any]) -> Tuple[str, str, str]:
     return tuple(values)  # type: ignore[return-value]
 
 
+def _day_root(run_root: Path) -> Path:
+    run = run_root.parent if run_root.name == "_exports" else run_root
+    return run.parent.parent if run.parent.name == "_revisions" else run
+
+
 def run_date(run_root: Path) -> str:
-    return run_root.parent.name if run_root.name == "_exports" else run_root.name
+    return _day_root(run_root).name
 
 
 def _export_root(run_root: Path) -> Path:
@@ -116,7 +120,7 @@ def _observation_facts(export_root: Path) -> Optional[List[Dict[str, Any]]]:
         not isinstance(payload, Mapping)
         or payload.get("schema_version") != 1
         or payload.get("normalization_version") != NORMALIZATION_VERSION
-        or payload.get("observation_date") != export_root.parent.name
+        or payload.get("observation_date") != run_date(export_root)
     ):
         raise ValueError(f"canonical observation is incompatible: {path}")
     supplied = payload.get("product_facts")
@@ -189,67 +193,89 @@ def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
 
 
 def _default_state_dir(run_root: Path) -> Path:
-    run = run_root.parent if run_root.name == "_exports" else run_root
-    return run.parent.parent / "state"
+    return _day_root(run_root).parent.parent / "state"
 
 
-def _complete(run_root: Path, state_dir: Optional[Path] = None) -> bool:
+def _canonical_export_ready(export_root: Path, observation_date: str) -> bool:
+    return (
+        (export_root / "observation-v1.json").is_file()
+        and (export_root / "product-accounting-v1.json").is_file()
+        and _v9_database(export_root / "local-cdr.sqlite", observation_date)
+    )
+
+
+def _finalized_export_root(
+    run_root: Path, state_dir: Optional[Path] = None
+) -> Optional[Path]:
+    day = _day_root(run_root)
+    observation_date = day.name
+    state = (state_dir or _default_state_dir(run_root)).expanduser().resolve()
+    selected = verified_pointer_export_root(state)
+    if selected is not None and _day_root(selected).resolve() == day.resolve():
+        return selected if _canonical_export_ready(selected, observation_date) else None
+
+    revisions = day / "_revisions"
+    if revisions.is_dir():
+        for stamp in sorted(
+            (path for path in revisions.iterdir() if path.is_dir()), reverse=True
+        ):
+            candidate = stamp / "_exports"
+            if is_finalized_export_root(candidate, state, observation_date):
+                return (
+                    candidate
+                    if _canonical_export_ready(candidate, observation_date)
+                    else None
+                )
+
     export_root = _export_root(run_root)
     observation = export_root / "observation-v1.json"
     accounting = export_root / "product-accounting-v1.json"
     database = export_root / "local-cdr.sqlite"
-    canonical_database = _v9_database(database, run_date(run_root))
+    canonical_database = _v9_database(database, observation_date)
     canonical_present = observation.is_file() or accounting.is_file() or canonical_database
     if canonical_present:
-        observation_date = run_date(run_root)
-        if not (
-            observation.is_file()
-            and accounting.is_file()
-            and canonical_database
-        ):
-            return False
-        state = (state_dir or _default_state_dir(run_root)).expanduser().resolve()
-        try:
-            marker = load_json(state / f"{observation_date}.done.json")
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            return False
-        if not isinstance(marker, Mapping) or not verify_completion_marker(
-            marker, state, observation_date
-        ):
-            return False
-        contract_part = Path(str(marker.get("export_contract_path") or ""))
-        if contract_part.is_absolute() or ".." in contract_part.parts:
-            return False
-        try:
-            contract = load_contract(state / contract_part)
-            source = (state.parent / contract["source_path"]).resolve()
-        except (KeyError, OSError, ValueError, json.JSONDecodeError):
-            return False
-        return source == export_root.resolve()
+        if not _canonical_export_ready(export_root, observation_date):
+            return None
+        return (
+            export_root
+            if is_finalized_export_root(export_root, state, observation_date)
+            else None
+        )
     legacy = _legacy_export(run_root)
     manifest = export_root / "dashboard-cache" / "latest.json"
     if legacy is None or not manifest.is_file():
-        return False
+        return None
     try:
         if _legacy_payload(legacy) is None:
-            return False
+            return None
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-        return False
+        return None
     try:
         value = load_json(manifest)
     except (OSError, json.JSONDecodeError):
-        return False
+        return None
     files = value.get("files") if isinstance(value, Mapping) else None
     if not isinstance(files, Mapping) or value.get("run_date") != run_date(run_root):
-        return False
+        return None
     names = [str(files.get(key) or "") for key in ("banks_json", "banks_xlsx", "db")]
-    return all(name and Path(name).name == name and (export_root / name).is_file() for name in names)
+    return (
+        export_root
+        if all(
+            name and Path(name).name == name and (export_root / name).is_file()
+            for name in names
+        )
+        else None
+    )
+
+
+def _complete(run_root: Path, state_dir: Optional[Path] = None) -> bool:
+    return _finalized_export_root(run_root, state_dir=state_dir) is not None
 
 
 def previous_finalized_run(
     current_root: Path, state_dir: Optional[Path] = None
 ) -> Optional[Path]:
-    current = current_root.parent if current_root.name == "_exports" else current_root
+    current = _day_root(current_root)
     if not current.parent.is_dir():
         return None
     candidates = sorted(
@@ -261,7 +287,8 @@ def previous_finalized_run(
         key=lambda path: path.name,
         reverse=True,
     )
-    return next(
-        (path for path in candidates if _complete(path, state_dir=state_dir)),
-        None,
-    )
+    for path in candidates:
+        selected = _finalized_export_root(path, state_dir=state_dir)
+        if selected is not None:
+            return selected
+    return None

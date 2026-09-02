@@ -963,7 +963,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     previous = args.previous.resolve() if args.previous else previous_finalized_run(current)
     report = compare_runs(previous, current) if previous else {
         "schema_version": SCHEMA_VERSION, "normalization_version": NORMALIZATION_VERSION,
-        "previous_run_date": None, "run_date": current.name, "current_run_date": current.name,
+        "previous_run_date": None, "run_date": run_date(current),
+        "current_run_date": run_date(current),
         "products": {"previous": 0, "current": 0, "joined": 0},
         "change_count": 0, "events": [], "changes": [],
     }

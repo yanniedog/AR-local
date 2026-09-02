@@ -118,12 +118,15 @@ done
 sudo install -m 0755 "$repo_dir/deploy/pi/cdr-ingest" /usr/local/bin/cdr-ingest
 
 sudo systemctl daemon-reload
-sudo systemctl enable ar-local-status.service ar-local-boot-recovery.service
+sudo systemctl enable ar-local-boot-recovery.service
 sudo systemctl enable --now \
   ar-local-daily.timer \
   ar-local-daily-watchdog.timer \
   ar-local-deploy-watchdog.timer \
   ar-local-runtime-health.timer \
   ar-local-capacity-monitor.timer
-sh "$repo_dir/deploy/pi/cutover-status-service.sh"
+sh "$repo_dir/deploy/pi/cutover-status-service.sh" \
+  "http://127.0.0.1:8808/healthz" \
+  "$repo_dir/deploy/pi/install-pi-status-proxy.sh" \
+  "$repo_dir"
 sudo systemctl restart ar-local-daily.timer ar-local-daily-watchdog.timer

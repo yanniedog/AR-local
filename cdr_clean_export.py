@@ -343,6 +343,17 @@ def _validate_core_rates(record: Mapping[str, Any], dataset: str) -> None:
                 parse_rate_string(comparison)
 
 
+def _validate_detail_arrays(record: Mapping[str, Any]) -> None:
+    for key in ("fees", "features", "eligibility", "constraints"):
+        if key not in record:
+            continue
+        raw = record[key]
+        if not isinstance(raw, list) or any(
+            not isinstance(item, Mapping) for item in raw
+        ):
+            raise ValueError(f"{key} must be an array of objects")
+
+
 def bank_detail_item_value(sheet: str, item: Mapping[str, Any]) -> Any:
     """Choose a useful flat-export value while details_json stays lossless."""
     def present(raw: Any) -> bool:
@@ -490,6 +501,8 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             base = bank_base_row(path, banks_root, rec, providers[provider_dir])
             code = "rate_invalid"
             _validate_core_rates(rec, str(base["dataset"]))
+            code = "detail_array_invalid"
+            _validate_detail_arrays(rec)
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
             product_id = text(rec.get("productId") or rec.get("id"))
             if not product_id:

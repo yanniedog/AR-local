@@ -235,11 +235,37 @@ def extract_products(payload: Any) -> List[Dict[str, Any]]:
 
 def next_link(payload: Any, current_url: str) -> Optional[str]:
     if not is_record(payload):
-        return None
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination response must be an object"
+        )
     links = payload.get("links")
     if not is_record(links):
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links must be an object"
+        )
+    self_link = links.get("self")
+    if not isinstance(self_link, str) or not self_link.strip():
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.self must be a URL"
+        )
+    try:
+        pagination_next_url(current_url, self_link)
+    except HttpPolicyError as error:
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.self is invalid"
+        ) from error
+    if "next" not in links:
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next is required"
+        )
+    raw_next = links["next"]
+    if raw_next is None:
         return None
-    nxt = str(links.get("next") or "").strip()
+    if not isinstance(raw_next, str):
+        raise HttpPolicyError(
+            "pagination_metadata_invalid", "Pagination links.next must be a URL or null"
+        )
+    nxt = raw_next.strip()
     if not nxt:
         return None
     return pagination_next_url(current_url, nxt)

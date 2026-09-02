@@ -96,7 +96,6 @@ render_unit "$repo_dir/deploy/pi/ar-local-deploy-watchdog.service" "$tmp_dir/ar-
 sudo install -m 0644 "$tmp_dir/ar-local-deploy-watchdog.service" /etc/systemd/system/ar-local-deploy-watchdog.service
 sudo install -m 0644 "$repo_dir/deploy/pi/ar-local-deploy-watchdog.timer" /etc/systemd/system/ar-local-deploy-watchdog.timer
 sudo systemctl daemon-reload
-sudo systemctl enable ar-local-status.service
 sudo systemctl enable ar-local-boot-recovery.service
 sudo systemctl enable --now ar-local-daily.timer
 sudo systemctl enable --now ar-local-daily-watchdog.timer
@@ -124,6 +123,8 @@ fi
 echo "Installed AR-local Pi services for $run_user using portable root $portable_root."
 echo "Repo: $repo_dir"
 echo "Data root: $data_dir"
-sh "$repo_dir/deploy/pi/cutover-status-service.sh"
-sudo bash "$repo_dir/deploy/pi/install-pi-status-proxy.sh" "$repo_dir"
+sh "$repo_dir/deploy/pi/cutover-status-service.sh" \
+  "http://127.0.0.1:8808/healthz" \
+  "$repo_dir/deploy/pi/install-pi-status-proxy.sh" \
+  "$repo_dir"
 echo "Status API: http://<pi-ip>/ or http://ar.local/ when mDNS is available."

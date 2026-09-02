@@ -5,15 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from ar_local_pi_runtime import (
     PI_STATUS_PORT,
@@ -41,6 +42,7 @@ JOURNAL_LOOKBACK_SEC = 300
 EXIT_OK = 0
 EXIT_UNHEALTHY = 1
 EXIT_CONFIG = 2
+ACCOUNTING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _utc_now() -> datetime:
@@ -82,6 +84,51 @@ def probe_urls() -> tuple[str, ...]:
     )
 
 
+def _status_contract_error(payload: Mapping[str, Any]) -> Optional[str]:
+    if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
+        return "invalid status contract"
+    status = payload.get("status")
+    if status not in {"ok", "degraded"}:
+        return f"status={status!r}"
+    observation = payload.get("observation")
+    if not isinstance(observation, Mapping):
+        return "missing observation"
+    observed_date = observation.get("date")
+    if not isinstance(observed_date, str):
+        return "invalid observation date"
+    try:
+        if date.fromisoformat(observed_date).isoformat() != observed_date:
+            return "invalid observation date"
+    except ValueError:
+        return "invalid observation date"
+    observed_at = observation.get("observed_at")
+    if not isinstance(observed_at, str):
+        return "invalid observation timestamp"
+    try:
+        timestamp = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return "invalid observation timestamp"
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return "invalid observation timestamp"
+    state = observation.get("state")
+    if state not in {"complete", "degraded"}:
+        return "invalid observation state"
+    if status != ("ok" if state == "complete" else "degraded"):
+        return "status and observation state disagree"
+    accounting_id = observation.get("accounting_id")
+    if (
+        not isinstance(accounting_id, str)
+        or ACCOUNTING_ID_RE.fullmatch(accounting_id) is None
+    ):
+        return "invalid accounting identity"
+    if any(
+        not isinstance(observation.get(key), Mapping)
+        for key in ("providers", "products", "issues")
+    ):
+        return "invalid observation summary"
+    return None
+
+
 def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
     last_err = "unknown"
     for attempt in range(max(1, retries + 1)):
@@ -94,11 +141,9 @@ def http_probe(url: str, *, timeout: float, retries: int) -> tuple[bool, str]:
                 if not isinstance(payload, dict):
                     last_err = "invalid JSON object"
                     continue
-                if payload.get("schema_version") != 1 or payload.get("service") != "ar-local":
-                    last_err = "invalid status contract"
-                    continue
-                if payload.get("status") not in {"ok", "degraded"}:
-                    last_err = f"status={payload.get('status')!r}"
+                contract_error = _status_contract_error(payload)
+                if contract_error is not None:
+                    last_err = contract_error
                     continue
                 return True, f"OK status={payload.get('status')!r}"
         except urllib.error.HTTPError as exc:

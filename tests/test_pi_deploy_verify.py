@@ -310,6 +310,21 @@ def test_runtime_unit_activation_is_ingest_locked_and_complete():
     )
     assert 'sudo systemctl start "$old_unit"' in cutover
     assert "http://127.0.0.1:8808/healthz" in cutover
+    proxy_call = 'sudo sh "$proxy_installer" "$repo_dir"'
+    assert proxy_call in cutover
+    assert cutover.index(proxy_call) < cutover.index(
+        'sudo systemctl disable "$old_unit"'
+    )
+    assert cutover.index(proxy_call) < cutover.index(
+        "sudo rm -f /etc/systemd/system/ar-local-dashboard.service"
+    )
+    proxy = (ROOT / "deploy" / "pi" / "install-pi-status-proxy.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "http://127.0.0.1/healthz" in proxy
+    assert proxy.index("rollback_proxy") < proxy.index(
+        "prior proxy restored"
+    )
     assert "git fetch" not in text
     assert "git checkout" not in text
     assert "apt-get" not in text

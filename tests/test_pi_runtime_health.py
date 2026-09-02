@@ -79,3 +79,57 @@ def test_probe_urls_include_nginx_and_backend():
     urls = pi_runtime_health.probe_urls()
     assert "http://127.0.0.1/api/status" in urls
     assert "http://127.0.0.1:8808/api/status" in urls
+
+
+def _probe_response(payload):
+    response = mock.MagicMock()
+    response.status = 200
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+    return response
+
+
+def test_http_probe_rejects_liveness_only_payload(monkeypatch):
+    monkeypatch.setattr(
+        pi_runtime_health.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _probe_response(
+            {"schema_version": 1, "service": "ar-local", "status": "ok"}
+        ),
+    )
+
+    ok, detail = pi_runtime_health.http_probe(
+        "http://127.0.0.1/api/status", timeout=1, retries=0
+    )
+
+    assert ok is False
+    assert detail == "missing observation"
+
+
+def test_http_probe_accepts_verified_observation_identity(monkeypatch):
+    payload = {
+        "schema_version": 1,
+        "service": "ar-local",
+        "status": "degraded",
+        "observation": {
+            "date": "2026-09-03",
+            "observed_at": "2026-09-03T01:02:03+10:00",
+            "state": "degraded",
+            "accounting_id": "ingest-20260903T010203Z-abcdef123456",
+            "providers": {},
+            "products": {},
+            "issues": {},
+        },
+    }
+    monkeypatch.setattr(
+        pi_runtime_health.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _probe_response(payload),
+    )
+
+    ok, detail = pi_runtime_health.http_probe(
+        "http://127.0.0.1/api/status", timeout=1, retries=0
+    )
+
+    assert ok is True
+    assert detail == "OK status='degraded'"

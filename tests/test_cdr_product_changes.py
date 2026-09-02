@@ -11,6 +11,10 @@ import pytest
 import cdr_outputs
 import cdr_product_changes as changes
 import cdr_product_change_runs as change_runs
+from cdr_attempt_evidence_promotion import promote_attempt_evidence
+from cdr_finalization import finalize_observation
+from tests.support_observation import write_finalized_observation
+from tests.test_cdr_outputs import _captured_run
 
 
 def fact(
@@ -562,7 +566,7 @@ def test_previous_finalized_run_ignores_partial_sibling(tmp_path: Path) -> None:
     (partial / "banks").mkdir(parents=True)
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == finalized
+    assert changes.previous_finalized_run(current) == finalized / "_exports"
 
 
 def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_path: Path) -> None:
@@ -576,7 +580,7 @@ def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_p
     (missing_artifact / "_exports" / "local-cdr.sqlite").unlink()
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == finalized
+    assert changes.previous_finalized_run(current) == finalized / "_exports"
 
 
 def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
@@ -616,7 +620,7 @@ def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_pat
     )
     current.mkdir()
 
-    assert changes.previous_finalized_run(current) == compatible
+    assert changes.previous_finalized_run(current) == compatible / "_exports"
     with pytest.raises(ValueError, match="normalization version mismatch"):
         changes.load_run_facts(incompatible)
 
@@ -630,4 +634,45 @@ def test_previous_finalized_run_skips_legacy_export_without_facts(tmp_path: Path
     write_finalized_export(compatible, [fact("access", "Text")])
     current = tmp_path / "2026-08-13"
     current.mkdir()
-    assert changes.previous_finalized_run(current) == compatible
+    assert changes.previous_finalized_run(current) == compatible / "_exports"
+
+
+def test_previous_finalized_run_selects_latest_verified_revision(
+    tmp_path: Path,
+) -> None:
+    observation_date = "2026-09-02"
+    write_finalized_observation(tmp_path, observation_date=observation_date)
+    state = tmp_path / "state"
+    primary_exports = tmp_path / "runs" / observation_date / "_exports"
+    primary_marker = json.loads(
+        (state / f"{observation_date}.done.json").read_text(encoding="utf-8")
+    )
+    revision_source = _captured_run(
+        tmp_path / "revision-source", run_date=observation_date, rate="0.06"
+    )
+    revision_exports = (
+        tmp_path
+        / "runs"
+        / observation_date
+        / "_revisions"
+        / "later"
+        / "_exports"
+    )
+    revision_result = cdr_outputs.build_outputs(revision_source, revision_exports)
+    promote_attempt_evidence(revision_source, revision_exports)
+    finalize_observation(
+        revision_exports,
+        state,
+        state / f"{observation_date}.revision.later.json",
+        observation_date=observation_date,
+        result=revision_result,
+        parent_generation_id=primary_marker["generation_id"],
+    )
+    current = tmp_path / "runs" / "2026-09-03"
+    current.mkdir()
+
+    selected = changes.previous_finalized_run(current, state_dir=state)
+
+    assert selected == revision_exports.resolve()
+    assert changes.run_date(selected) == observation_date
+    assert changes.load_run_facts(selected) != changes.load_run_facts(primary_exports)

@@ -242,7 +242,7 @@ def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
     assert contract["coverage"]["reconciliation_status"] == "reconciled"
     tomorrow = tmp_path / "2026-09-03"
     tomorrow.mkdir()
-    assert previous_finalized_run(tomorrow, state_dir=state) == run
+    assert previous_finalized_run(tomorrow, state_dir=state) == exports
 
 
 def test_finalization_reconciles_accounting_with_in_scope_products(tmp_path: Path) -> None:

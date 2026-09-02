@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cdr_atomic import atomic_write_json
 from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
-from cdr_product_change_runs import previous_finalized_run
+from cdr_product_change_runs import previous_finalized_run, run_date as observation_date_for
 
 # Tiers can legitimately move by ~50 bp on the day of an RBA decision.
 # 100 bp moves are rare but happen (term-deposit specials, neobank promos).
@@ -228,7 +228,7 @@ def write_sanity_report(
     findings = compare_ladders(curr_db, prev_db)
     summary = {
         "run_date": run_date,
-        "compared_against": prev_db.parent.parent.name,
+        "compared_against": observation_date_for(prev_db.parent),
         "thresholds_bp": {"low": LOW_BP, "high": HIGH_BP},
         "counts": {
             "HIGH": sum(1 for f in findings if f["severity"] == "HIGH"),
@@ -249,5 +249,6 @@ def _find_previous_export_db(
     previous = previous_finalized_run(runs_root / run_date, state_dir=state_dir)
     if previous is None:
         return None
-    database = previous / "_exports" / "local-cdr.sqlite"
+    export_root = previous if previous.name == "_exports" else previous / "_exports"
+    database = export_root / "local-cdr.sqlite"
     return database if database.is_file() else None

@@ -11,7 +11,7 @@ from cdr_clean_export import parse_banks_run
 from cdr_observation import build_observation, build_projections, write_observation
 from cdr_observation_db import build_observation_database
 from cdr_product_accounting import validate_product_accounting
-from cdr_product_change_runs import iter_run_fact_groups, previous_finalized_run
+from cdr_product_change_runs import iter_run_fact_groups, previous_finalized_run, run_date
 from cdr_product_changes import diff_normalized_product_fact_groups
 from cdr_product_facts import NORMALIZATION_VERSION
 from cdr_product_inventory import build_product_inventory
@@ -114,7 +114,7 @@ def _product_changes(
     report = diff_normalized_product_fact_groups(
         previous_groups,
         banks["product_facts"],
-        previous_run_date=previous.name,
+        previous_run_date=run_date(previous),
         current_run_date=run_root.name,
     )
     report["suppressed_incomplete_products"] = suppression["suppressed"]

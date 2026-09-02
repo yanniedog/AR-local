@@ -374,7 +374,10 @@ def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypa
             ok=True,
             status=200,
             url=url,
-            text='{"data":{},"links":{"next":"https://evil.example/products?page=2"}}',
+            text=(
+                '{"data":{},"links":{"self":"https://holder.example/products",'
+                '"next":"https://evil.example/products?page=2"}}'
+            ),
             version=4,
         ),
     )
@@ -401,6 +404,57 @@ def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypa
     )
 
     assert [item["status"] for item in failures] == ["pagination_cross_origin"]
+
+
+@pytest.mark.parametrize(
+    "links",
+    [
+        None,
+        {},
+        {"next": None},
+        {"self": "https://holder.example/products"},
+        {"self": "https://holder.example/products", "next": []},
+    ],
+)
+def test_malformed_pagination_metadata_makes_population_unknown(
+    tmp_path, monkeypatch, links
+):
+    failures = []
+    payload = {"data": {"products": []}, "meta": {"totalRecords": 0}}
+    if links is not None:
+        payload["links"] = links
+    monkeypatch.setattr(
+        lib,
+        "fetch_cdr_json",
+        lambda url, **_kwargs: FetchResult(
+            ok=True, status=200, url=url, text=json.dumps(payload), version=4
+        ),
+    )
+    monkeypatch.setattr(
+        lib,
+        "append_failure",
+        lambda _root, entry, lock=None: failures.append(entry),
+    )
+
+    summary = lib.ingest_brand(
+        _brand("https://holder.example/products"),
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert summary["population_known"] is False
+    assert summary["terminal_page_reached"] is False
+    assert "pagination_metadata_invalid" in summary["population_errors"]
+    assert [item["status"] for item in failures] == ["pagination_metadata_invalid"]
 
 
 def test_summarize_failures_complete_run_has_no_failures(tmp_path):

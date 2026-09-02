@@ -173,7 +173,7 @@ def test_known_out_of_scope_category_wins_over_product_name() -> None:
     )
 
 
-def _write_rate_product(root: Path, rate: str) -> None:
+def _write_rate_product(root: Path, rate: str, **details: object) -> None:
     provider = "Holder"
     holder = root / "banks" / "_holders" / provider
     holder.mkdir(parents=True)
@@ -197,6 +197,7 @@ def _write_rate_product(root: Path, rate: str) -> None:
                     "productId": "P1",
                     "name": "Saver",
                     "depositRates": [{"depositRateType": "VARIABLE", "rate": rate}],
+                    **details,
                 }
             }
         ),
@@ -220,3 +221,25 @@ def test_clean_export_quarantines_out_of_unit_rate(tmp_path: Path) -> None:
     assert banks["products"] == []
     assert banks["rates"] == []
     assert banks["quarantines"][0]["status"] == "rate_invalid"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("fees", {"feeType": "PERIODIC"}),
+        ("features", ["OFFSET"]),
+        ("eligibility", None),
+        ("constraints", [1]),
+    ],
+)
+def test_clean_export_quarantines_malformed_detail_arrays(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    run = tmp_path / "2026-09-02"
+    _write_rate_product(run, "0.045", **{field: value})
+
+    banks = cdr_clean_export.parse_banks_run(run)
+
+    assert banks["products"] == []
+    assert banks["rates"] == []
+    assert banks["quarantines"][0]["status"] == "detail_array_invalid"
