@@ -7794,6 +7794,7 @@ if($httpClientAssembly-cne'System.Net.Http, Version=4.0.0.0, Culture=neutral, Pu
 $entry='HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'
 $root=[IO.Path]::GetFullPath((Split-Path -Parent $PSCommandPath))
 $requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+$quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae'
 if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
 $candidateSha='8b158d74ddd51a3523ecb6367b6ef99ca994df61'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
@@ -7837,10 +7838,37 @@ $initial=@(Get-ChildItem -LiteralPath $root -Force)
 if($initial.Count-ne3-or@($initial|Where-Object{$allowedInitial-notcontains$_.Name}).Count-or-not(Test-Path -LiteralPath (Join-Path $root 'prepare-and-preflight.ps1') -PathType Leaf)-or-not(Test-Path -LiteralPath (Join-Path $root 'materialization.json') -PathType Leaf)-or-not(Test-Path -LiteralPath $runtime -PathType Container)){throw 'evidence root contains prior or unbound output'}
 $materializationPath=Join-Path $root 'materialization.json'
 $materialization=Get-Content -LiteralPath $materializationPath -Raw|ConvertFrom-Json
-if($materialization.schema_version-ne2-or$materialization.correction-cne'C-20260902T160000+1000'-or$materialization.prior_partial_root.inventory_sha256-cne'79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf'-or$materialization.clean_runtime.tree_inventory_sha256-cne'4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'-or$materialization.clean_runtime.file_map_sha256-cne'd664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7'-or$materialization.http_client.sha256-cne'd7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db'-or(Sha $PSCommandPath)-cne$materialization.generator.sha256){throw 'materialization/quarantine binding drift'}
+if($materialization.schema_version-ne2-or$materialization.correction-cne'C-20260902T160000+1000'-or$materialization.plan_document_id-cne'ARL-OPS-001'-or$materialization.plan_version-cne'1.5'-or$materialization.plan_git_commit-cne$planCommit-or$materialization.plan_sha256-cne$planSha-or$materialization.plan_raw_sha256-cne'f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684'-or$materialization.candidate_code_sha-cne$candidateSha-or$materialization.protected_code_sha-cne$protectedSha-or$materialization.operator-cne'yanniedog\jkoka'-or$materialization.result-cne'PASS'-or@($materialization.deviations).Count-ne0-or$materialization.exact_commands.Count-ne1-or$materialization.exact_commands[0]-cne'MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000'-or$materialization.evidence_paths.Count-ne3-or$materialization.evidence_paths[0]-cne$quarantine-or$materialization.evidence_paths[1]-cne$runtime-or$materialization.evidence_paths[2]-cne$PSCommandPath-or$materialization.prior_partial_root.quarantine_path-cne$quarantine-or$materialization.prior_partial_root.inventory_sha256-cne'79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf'-or$materialization.clean_runtime.tree_inventory_sha256-cne'4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'-or$materialization.clean_runtime.file_map_sha256-cne'd664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7'-or$materialization.http_client.sha256-cne'd7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db'-or(Sha $PSCommandPath)-cne$materialization.generator.sha256){throw 'materialization/quarantine binding drift'}
+$materializedStarted=[DateTimeOffset]::Parse($materialization.timestamps.started_at,[Globalization.CultureInfo]::InvariantCulture)
+$materializedCompleted=[DateTimeOffset]::Parse($materialization.timestamps.completed_at,[Globalization.CultureInfo]::InvariantCulture)
+if($materializedCompleted-lt$materializedStarted){throw 'materialization timestamps are inverted'}
+$inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"),key=lambda p:p.relative_to(r).as_posix());bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing runtime root"));files=[p for p in nodes if p.is_file()];dirs=[p for p in nodes if p.is_dir()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();t=("".join(("D\t"+p.relative_to(r).as_posix()+"\n") if p.is_dir() else ("F\t"+p.relative_to(r).as_posix()+"\t"+str(p.stat().st_size)+"\t"+d[p.relative_to(r).as_posix()]+"\n") for p in nodes)).encode();print(len(files),len(dirs),sum(p.stat().st_size for p in files),hashlib.sha256(b).hexdigest(),hashlib.sha256(t).hexdigest())'
+$quarantineRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($quarantine)
+$quarantineFields=@($quarantineRun.Output.Trim()-split' ')
+if($quarantineRun.ExitCode-ne0-or$quarantineFields.Count-ne5-or$quarantineFields[0]-cne'1048'-or$quarantineFields[1]-cne'128'-or$quarantineFields[2]-cne'22404909'-or$quarantineFields[4]-cne'79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf'){throw "quarantined sequence-6 tree drift: $($quarantineRun.Output)"}
+
+$earlyEndpoints=@([Net.Dns]::GetHostAddresses('ar.local')|Where-Object{$_.AddressFamily-eq[Net.Sockets.AddressFamily]::InterNetwork}|ForEach-Object{$_.IPAddressToString}|Select-Object -Unique)
+if($earlyEndpoints.Count-ne1){throw 'initial Pi endpoint resolution is not unique'}
+$earlyEndpoint=$earlyEndpoints[0]
+$earlyKeyLines=@(Get-Content -LiteralPath 'C:\Users\jkoka\.ssh\known_hosts'|Where-Object{($_-split'\s+')[0].Split(',')-contains$earlyEndpoint-and($_-split'\s+')[1]-ceq'ssh-ed25519'})
+if($earlyKeyLines.Count-ne1){throw 'initial Pi key source is not unique'}
+$earlyBlob=[Convert]::FromBase64String(($earlyKeyLines[0]-split'\s+')[2]);$earlyHash=[Security.Cryptography.SHA256]::Create();try{$earlyKeySha=($earlyHash.ComputeHash($earlyBlob)|ForEach-Object{$_.ToString('x2')})-join''}finally{$earlyHash.Dispose()}
+if($earlyKeySha-cne'84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e'){throw 'initial Pi key drift'}
+RequireHash $ssh '6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42'
+RequireHash $identity 'faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e'
+$earlyScript=@'
+set -eu
+state=$(systemctl is-active ar-local-daily.service 2>/dev/null || true)
+case "$state" in inactive|failed) ;; *) exit 41;; esac
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+! pgrep -f '[c]dr_daily.py' >/dev/null
+'@
+$earlyArgs=@('-T','-F','NUL','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=10','-o','UserKnownHostsFile=C:\Users\jkoka\.ssh\known_hosts','-i',$identity,"pi@$earlyEndpoint",'bash','-s','--')
+$earlyOutput=($earlyScript|& $ssh @earlyArgs 2>&1|Out-String)
+if($LASTEXITCODE-ne0){throw "Pi ingest is active or initial idle proof failed: $earlyOutput"}
 
 $authoritySha=(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
-if($materialization.authority_commit-cne$authoritySha){throw 'materialized authority is stale'}
+if($materialization.authority_commit-cne$authoritySha-or$materialization.document_commit-cne$authoritySha){throw 'materialized authority is stale'}
 if($authoritySha-notmatch'^[0-9a-f]{40}$'-or$authoritySha-ceq$candidateSha){throw 'post-merge authority is absent'}
 & $git -c core.autocrlf=false clone --quiet --no-checkout $repo $candidate
 if($LASTEXITCODE){throw 'candidate clone failed'}
@@ -7886,7 +7914,6 @@ $argvProbeRun=Invoke-PythonCode -Code $argvProbeCode -Arguments $argvProbeArgs
 $argvProbeActual=$argvProbeRun.Output.Trim()
 if($argvProbeRun.ExitCode-ne0-or$argvProbeActual-cne$argvProbeExpected){throw "PS5.1 Python argv boundary failed: $($argvProbeRun.Output)"}
 $pythonBoundary=[ordered]@{bootstrap_sha256=(TextSha $pythonBootstrap);probe_code_sha256=(TextSha $argvProbeCode);probe_result_sha256=(TextSha $argvProbeActual)}
-$inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"),key=lambda p:p.relative_to(r).as_posix());bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing runtime root"));files=[p for p in nodes if p.is_file()];dirs=[p for p in nodes if p.is_dir()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();t=("".join(("D\t"+p.relative_to(r).as_posix()+"\n") if p.is_dir() else ("F\t"+p.relative_to(r).as_posix()+"\t"+str(p.stat().st_size)+"\t"+d[p.relative_to(r).as_posix()]+"\n") for p in nodes)).encode();print(len(files),len(dirs),sum(p.stat().st_size for p in files),hashlib.sha256(b).hexdigest(),hashlib.sha256(t).hexdigest())'
 $inventoryRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($runtime)
 $inventory=$inventoryRun.Output.Trim()
 if($inventoryRun.ExitCode-ne0-or$inventory-cne'3067 205 64118158 d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7 4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'){throw "runtime inventory drift: $($inventoryRun.Output)"}
@@ -8059,8 +8086,8 @@ WriteJson (Join-Path $root 'preflight-summary.json') $summary
 ```
 <!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
 
-The generator above is exactly 42069 UTF-8/LF bytes, 277 lines, SHA-256
-`e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537`.
+The generator above is exactly 45775 UTF-8/LF bytes, 304 lines, SHA-256
+`dc727e270ff2080408f992da05645a4dc57946e5363e3592efa632cba1689e50`.
 Its PowerShell parser has zero errors. Its only native `python -c` site is the
 base64 bootstrap helper.
 
@@ -8085,8 +8112,18 @@ $root='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
 $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae'
 $runtimeSource='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
 $repo='https://github.com/yanniedog/AR-local.git'
+$candidateSha='8b158d74ddd51a3523ecb6367b6ef99ca994df61'
+$protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
+$planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
+$planRawShaExpected='f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684'
 $git='C:\Program Files\Git\cmd\git.exe'
 $hostPath='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+$startedAt=[DateTimeOffset]::UtcNow
+$windowsIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
+$operator=$windowsIdentity.Name
+$principal=[Security.Principal.WindowsPrincipal]::new($windowsIdentity)
+if($operator-cne'yanniedog\jkoka'-or$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'normal non-administrator operator is required'}
 if(-not[Environment]::Is64BitProcess-or[IO.Path]::GetFullPath([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)-cne$hostPath-or(ShaFile $hostPath)-cne'7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5'){throw 'normal x64 System32 Windows PowerShell is required'}
 if((ShaFile $git)-cne'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9'){throw 'git executable drift'}
 $env:GIT_TERMINAL_PROMPT='0'
@@ -8132,16 +8169,23 @@ function AssertInventory([object]$Actual,[long]$Files,[long]$Directories,[long]$
 $authoritySha=ResolveMain
 if($authoritySha-ceq'c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe'){throw 'sequence-7 correction is not merged'}
 $client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(20)
-try{$handoffBytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md").GetAwaiter().GetResult()}finally{$client.Dispose()}
+try{$handoffBytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md").GetAwaiter().GetResult();$planBytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md").GetAwaiter().GetResult()}finally{$client.Dispose()}
 $handoffSha=ShaBytes $handoffBytes
+$planRawSha=ShaBytes $planBytes
+if($planRawSha-cne$planRawShaExpected){throw 'controlled plan raw hash drift'}
 $text=[Text.UTF8Encoding]::new($false,$true).GetString($handoffBytes)
-if(-not$text.Contains('C-20260902T160000+1000')){throw 'current main lacks sequence-7 correction'}
+$resumeMatches=[regex]::Matches($text,'(?m)^\{"schema":"ARL-A3-RESUME-POINTER-V1".*\}$')
+if($resumeMatches.Count-lt1){throw 'current handoff lacks a resume pointer'}
+$latestResume=$resumeMatches[$resumeMatches.Count-1]
+$resumeTail=$text.Substring($latestResume.Index+$latestResume.Length)
+$resume=$latestResume.Value|ConvertFrom-Json
+if($resumeTail-notmatch'^\r?\n\x60\x60\x60\r?\n\s*$'-or$resume.schema-cne'ARL-A3-RESUME-POINTER-V1'-or$resume.version-ne1-or$resume.sequence-ne7-or$resume.predecessor-cne'C-20260902T144000+1000'-or$resume.authority-cne'HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'-or$resume.correction-cne'C-20260902T160000+1000'-or$resume.candidate_sha-cne$candidateSha-or$resume.terminal_status-cne'BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS'){throw 'sequence-7 correction is not the final exact resume pointer'}
 $pattern='(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->\r?\n\x60\x60\x60powershell\r?\n(.*?)\r?\n\x60\x60\x60\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->'
 $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-7 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne42069-or$script.Split([char]10).Count-ne277-or$scriptSha-cne'e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537'){throw 'sequence-7 generator binding mismatch'}
+if($scriptBytes.Length-ne45775-or$script.Split([char]10).Count-ne304-or$scriptSha-cne'dc727e270ff2080408f992da05645a4dc57946e5363e3592efa632cba1689e50'){throw 'sequence-7 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
@@ -8223,9 +8267,24 @@ $runtimeSourceAfter=Get-TreeInventory $runtimeSource
 AssertInventory $runtimeSourceAfter 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime after copy'
 function WriteNew([string]$Path,[byte[]]$Bytes){$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}}
 $generatorPath=Join-Path $root 'prepare-and-preflight.ps1';WriteNew $generatorPath $scriptBytes
+$completedAt=[DateTimeOffset]::UtcNow
 $record=[ordered]@{
   schema_version=2
   correction='C-20260902T160000+1000'
+  plan_document_id='ARL-OPS-001'
+  plan_version='1.5'
+  document_commit=$authoritySha
+  plan_git_commit=$planCommit
+  plan_sha256=$planSha
+  plan_raw_sha256=$planRawSha
+  candidate_code_sha=$candidateSha
+  protected_code_sha=$protectedSha
+  operator=$operator
+  timestamps=[ordered]@{started_at=$startedAt.ToString('o');completed_at=$completedAt.ToString('o')}
+  exact_commands=@('MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000')
+  evidence_paths=@($quarantine,$runtime,$generatorPath)
+  result='PASS'
+  deviations=@()
   authority_commit=$authoritySha
   complete_handoff_raw_sha256=$handoffSha
   prior_partial_root=[ordered]@{path=$partial.path;quarantine_path=$quarantine;format=$partial.format;files=[long]$partial.files;directories=[long]$partial.directories;bytes=[long]$partial.bytes;nodes=[long]$partial.nodes;inventory_sha256=$partial.inventory_sha256;records=$partial.records}
@@ -8244,8 +8303,8 @@ $record|ConvertTo-Json -Depth 4 -Compress
 ```
 <!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
 
-The materializer above is exactly 16658 UTF-8/LF bytes, 168 lines, SHA-256
-`0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b`.
+The materializer above is exactly 18988 UTF-8/LF bytes, 200 lines, SHA-256
+`aa5f70c48d2303b70e07ca0b8116406dfc59437da6d96ac6ac1c7023cb0e4536`.
 It is the exact next safe command after merge; any different bytes are
 unauthorized.
 
@@ -8283,5 +8342,5 @@ Natural backup acceptance remains mandatory; A3 remains running and A4 remains
 blocked.
 
 ```json
-{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"8b158d74ddd51a3523ecb6367b6ef99ca994df61","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":42069,"lines":277,"sha256":"e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":16658,"lines":168,"sha256":"0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"8b158d74ddd51a3523ecb6367b6ef99ca994df61","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":45775,"lines":304,"sha256":"dc727e270ff2080408f992da05645a4dc57946e5363e3592efa632cba1689e50"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":18988,"lines":200,"sha256":"aa5f70c48d2303b70e07ca0b8116406dfc59437da6d96ac6ac1c7023cb0e4536"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"aa5f70c48d2303b70e07ca0b8116406dfc59437da6d96ac6ac1c7023cb0e4536","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
 ```
