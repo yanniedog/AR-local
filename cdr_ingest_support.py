@@ -23,6 +23,7 @@ from cdr_http_policy import (
     pagination_next_url,
     request_https,
 )
+from cdr_contracts import canonical_authority, provider_uid
 from cdr_raw_attempt_journal import RawAttemptJournal, utc_now as attempt_utc_now
 
 # -----------------------------------------------------------------------------
@@ -298,6 +299,35 @@ def normalize_banking_products_url(endpoint_raw: str) -> str:
     return safe_url(raw) + "/cds-au/v1/banking/products"
 
 
+def _banking_brand_row(
+    item: Mapping[str, Any],
+    *,
+    endpoint_raw: str,
+    brand_name: str,
+    legal_name: str,
+) -> Dict[str, str]:
+    endpoint_url = normalize_banking_products_url(endpoint_raw)
+    data_holder_id = pick_text(item, ["dataHolderId"])
+    data_holder_brand_id = pick_text(item, ["dataHolderBrandId"])
+    display_name = brand_name or legal_name
+    uid, identity_status = provider_uid(
+        data_holder_id=data_holder_id,
+        data_holder_brand_id=data_holder_brand_id,
+        endpoint_urls=(endpoint_raw, endpoint_url),
+        display_name=display_name,
+    )
+    return {
+        "brand_name": brand_name,
+        "legal_entity_name": legal_name,
+        "endpoint_url": endpoint_url,
+        "data_holder_id": data_holder_id,
+        "data_holder_brand_id": data_holder_brand_id,
+        "provider_uid": uid,
+        "provider_identity_status": identity_status,
+        "identity_authority": canonical_authority((endpoint_raw, endpoint_url)),
+    }
+
+
 def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
     """Yield banking PRD brand rows from one register payload."""
     if is_record(payload):
@@ -320,11 +350,12 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
                 continue
             inds = {str(x).strip().lower() for x in industries_list}
             if "banking" in inds:
-                yield {
-                    "brand_name": brand_name,
-                    "legal_entity_name": legal_name,
-                    "endpoint_url": normalize_banking_products_url(base),
-                }
+                yield _banking_brand_row(
+                    item,
+                    endpoint_raw=base,
+                    brand_name=brand_name,
+                    legal_name=legal_name,
+                )
             continue
 
         # Legacy register row (e.g. banking data-holders/brands) — no industries array.
@@ -341,12 +372,12 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
         legal_name = ""
         if is_record(legal_entity):
             legal_name = pick_text(legal_entity, ["legalEntityName"])
-        endpoint_url = normalize_banking_products_url(endpoint_raw)
-        yield {
-            "brand_name": brand_name,
-            "legal_entity_name": legal_name,
-            "endpoint_url": endpoint_url,
-        }
+        yield _banking_brand_row(
+            item,
+            endpoint_raw=endpoint_raw,
+            brand_name=brand_name,
+            legal_name=legal_name,
+        )
 
 
 def extract_products(payload: Any) -> List[Dict[str, Any]]:

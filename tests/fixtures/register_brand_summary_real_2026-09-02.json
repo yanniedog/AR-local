@@ -1,0 +1,17 @@
+{
+  "source_url": "https://api.cdr.gov.au/cdr-register/v1/all/data-holders/brands/summary",
+  "requested_version": 2,
+  "captured_on": "2026-09-02",
+  "record": {
+    "dataHolderBrandId": "ceca4dce-3f8f-ef11-95f6-000d3a79c46e",
+    "interimId": "fe051e80-e743-44e1-ae83-a4d6286eb596",
+    "brandName": "Alex.Bank",
+    "industries": ["banking"],
+    "logoUri": "https://www.alex.bank/assets/alex-bank-logo.png",
+    "publicBaseUri": "https://public.cdr.alex.com.au",
+    "productBaseUri": "https://public.cdr.alex.com.au",
+    "abn": "13627244848",
+    "acn": "627244848",
+    "lastUpdated": "2026-07-01T12:14:23Z"
+  }
+}

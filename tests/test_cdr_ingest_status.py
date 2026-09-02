@@ -11,6 +11,18 @@ from cdr_ingest_support import FetchResult
 ENDPOINT = "http://holder/products"
 
 
+def _brand(endpoint=ENDPOINT):
+    return {
+        "endpoint_url": endpoint,
+        "brand_name": "Holder",
+        "legal_entity_name": "Holder Ltd",
+        "provider_uid": "provider-fallback:v1:" + "a" * 64,
+        "provider_identity_status": "fallback",
+        "data_holder_id": "",
+        "data_holder_brand_id": "",
+    }
+
+
 def _snapshot(*, ok=True, complete=True, brands=None):
     return cis.RegisterSnapshot(
         register_ok=ok,
@@ -86,17 +98,31 @@ def test_register_failure_still_publishes_verified_attempt_journal_status(
 
 
 def test_successful_run_status_points_to_verified_attempt_journal(tmp_path, monkeypatch):
-    brand = {
-        "endpoint_url": "https://holder.example/products",
-        "brand_name": "Holder",
-        "legal_entity_name": "Holder Ltd",
-    }
+    brand = _brand("https://holder.example/products")
     monkeypatch.setattr(
         lib,
         "collect_register_snapshot",
         lambda **_kwargs: _snapshot(brands=[brand]),
     )
-    monkeypatch.setattr(lib, "ingest_brand", lambda *_args, **_kwargs: None)
+    def fake_ingest(_brand_row, *, date_root, bank_dir_name, **_kwargs):
+        summary = date_root / "_holders" / bank_dir_name / "_products-index" / "index-summary.json"
+        summary.parent.mkdir(parents=True)
+        summary.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "provider_uid": brand["provider_uid"],
+                    "state": "empty",
+                    "population_known": True,
+                    "unique_product_ids": 0,
+                    "relevant_products": 0,
+                    "details_present": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(lib, "ingest_brand", fake_ingest)
 
     exit_code = lib.main(
         [
@@ -143,7 +169,7 @@ def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypa
     )
 
     lib.ingest_brand(
-        {"endpoint_url": "https://holder.example/products"},
+        _brand("https://holder.example/products"),
         date_root=tmp_path,
         resume=False,
         sleep_ms=0,
@@ -233,12 +259,57 @@ def test_detail_worker_crash_is_recorded(tmp_path, monkeypatch):
     monkeypatch.setattr(lib, "append_failure", lambda dr, entry, lock=None: failures.append(entry))
 
     lib.ingest_brand(
-        {"endpoint_url": ENDPOINT},
+        _brand(),
         date_root=tmp_path, resume=False, sleep_ms=0, timeout=1, max_retries=0,
         max_pages=None, max_products=None, fetch_unknown_detail=False,
         bank_dir_name="holder", detail_workers=4, log=lambda *_a, **_k: None,
     )
     assert any(f.get("status") == "worker_crash" for f in failures)
+
+
+def test_mismatched_detail_id_is_terminal_and_not_written(tmp_path, monkeypatch):
+    failures = []
+
+    def fake_fetch(url, **_kwargs):
+        if url == ENDPOINT:
+            return FetchResult(ok=True, status=200, url=url, text='{"data": {}}', version=4)
+        return FetchResult(
+            ok=True,
+            status=200,
+            url=url,
+            text='{"data":{"productId":"WRONG"}}',
+            version=7,
+        )
+
+    monkeypatch.setattr(lib, "fetch_cdr_json", fake_fetch)
+    monkeypatch.setattr(lib, "extract_products", lambda _parsed: [{"productId": "P1", "name": "One"}])
+    monkeypatch.setattr(lib, "next_link", lambda _parsed, _url: None)
+    monkeypatch.setattr(
+        lib,
+        "classify_product_for_ingest",
+        lambda *_args, **_kwargs: (next(iter(lib.DATASET_TO_FOLDER)), None),
+    )
+    monkeypatch.setattr(lib, "append_failure", lambda _root, entry, lock=None: failures.append(entry))
+
+    summary = lib.ingest_brand(
+        _brand(),
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert summary["state"] == "partial"
+    assert summary["terminal_detail_failures"] == ["P1"]
+    assert [item["status"] for item in failures] == ["detail_fetch_failed"]
+    assert not list(tmp_path.rglob("product-detail.json"))
 
 
 def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
@@ -271,7 +342,7 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
     )
 
     lib.ingest_brand(
-        {"endpoint_url": ENDPOINT},
+        _brand(),
         date_root=tmp_path,
         resume=False,
         sleep_ms=0,
@@ -287,7 +358,7 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
     assert [item["status"] for item in failures] == ["max_products_reached"]
     failures.clear()
     lib.ingest_brand(
-        {"endpoint_url": ENDPOINT},
+        _brand(),
         date_root=tmp_path / "page-cap",
         resume=False,
         sleep_ms=0,

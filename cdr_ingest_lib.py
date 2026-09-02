@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import threading
@@ -16,6 +15,7 @@ from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Set
 
 from cdr_atomic import atomic_write_json
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
+from cdr_ingest_population import ProductPopulation
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
     FetchResult,
@@ -143,8 +143,8 @@ def _fetch_bank_detail(
 ) -> bool:
     """Write product-detail.json for one bank product (called from thread pool).
 
-    Returns True when the detail was fetched and written, False on failure, so the
-    caller's per-holder circuit breaker can track the failure rate.
+    Returns True only for a matching, valid detail. Raw request attempts are kept
+    by ``attempt_journal``; the caller records only terminal failures.
     """
     pid, leaf, prefetched = work
     detail_path = leaf / "product-detail.json"
@@ -167,20 +167,18 @@ def _fetch_bank_detail(
         )
 
     parsed = res.data
-    if res.ok and parsed is not None and not has_cdr_errors(parsed):
+    inner = detail_inner_record(parsed)
+    detail_pid = pick_text(inner or {}, ["productId", "id"])
+    if (
+        res.ok
+        and parsed is not None
+        and not has_cdr_errors(parsed)
+        and inner is not None
+        and detail_pid == pid
+    ):
         detail_path.write_text(res.text, encoding="utf-8")
+        (leaf / "product-detail.error.txt").unlink(missing_ok=True)
         return True
-    append_failure(
-        date_root,
-        {
-            "phase": "product_detail",
-            "bank": bank_dir_name,
-            "product_id": pid,
-            "status": res.status,
-            "snippet": (res.text or "")[:500],
-        },
-        lock=failure_lock,
-    )
     (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
     return False
 
@@ -260,7 +258,7 @@ def ingest_brand(
     log: Callable[[str], None],
     failure_lock: Optional[threading.Lock] = None,
     attempt_journal: Optional[RawAttemptJournal] = None,
-) -> None:
+) -> Dict[str, Any]:
     """Ingest one banking holder.
 
     Phase 1 (serial): walk paginated product index, classify each product,
@@ -269,6 +267,13 @@ def ingest_brand(
     up to ``detail_workers`` threads.
     """
     endpoint_url = brand["endpoint_url"]
+    try:
+        population = ProductPopulation(
+            provider_uid=brand["provider_uid"],
+            identity_status=brand["provider_identity_status"],
+        )
+    except KeyError as error:
+        raise ValueError(f"register brand is missing identity evidence: {error.args[0]}") from error
     holders_root = date_root / "_holders" / bank_dir_name
     holders_root.mkdir(parents=True, exist_ok=True)
 
@@ -287,6 +292,7 @@ def ingest_brand(
     pages = 0
     products_seen = 0
     capped = False
+    terminal_page_reached = False
     page_limit = min(
         DEFAULT_HTTP_POLICY.max_pages,
         max(0, int(max_pages)) if max_pages is not None else DEFAULT_HTTP_POLICY.max_pages,
@@ -302,6 +308,7 @@ def ingest_brand(
 
     while url and not capped:
         if url in visited:
+            population.fail_population("pagination_cycle")
             append_failure(
                 date_root,
                 {
@@ -315,7 +322,9 @@ def ingest_brand(
             break
         visited.add(url)
         pages += 1
+        population.page_attempted()
         if pages > page_limit:
+            population.fail_population("max_pages_reached")
             log(f"max-pages reached for {bank_dir_name}")
             append_failure(
                 date_root,
@@ -347,6 +356,7 @@ def ingest_brand(
 
         parsed = res.data
         if not res.ok or parsed is None or has_cdr_errors(parsed):
+            population.fail_population("page_fetch_failed")
             append_failure(
                 date_root,
                 {
@@ -362,9 +372,11 @@ def ingest_brand(
 
         if res.version is not None:
             preferred_version = res.version
+        population.page_fetched(parsed)
 
         for product in extract_products(parsed):
             if max_products is not None and products_seen >= max_products:
+                population.fail_population("max_products_reached")
                 log(f"max-products reached for {bank_dir_name}")
                 append_failure(
                     date_root,
@@ -378,14 +390,10 @@ def ingest_brand(
                 )
                 capped = True
                 break
-            products_seen += 1
-
-            if not is_record(product):
-                continue
-
             pid = pick_text(product, ["productId", "id"])
-            if not pid:
+            if not population.product(product, pid):
                 continue
+            products_seen += 1
 
             ds, prefetched = classify_product_for_ingest(
                 product,
@@ -401,6 +409,7 @@ def ingest_brand(
             )
             if ds not in DATASET_TO_FOLDER:
                 continue
+            population.mark_relevant(pid)
 
             folder = DATASET_TO_FOLDER[ds]
             pname = sanitize_path_component(
@@ -416,13 +425,17 @@ def ingest_brand(
 
             detail_path = leaf / "product-detail.json"
             if resume and detail_path.exists() and detail_path.stat().st_size > 0:
+                population.mark_resumed(pid)
                 continue
 
             pending.append(_BankWork(pid=pid, leaf=leaf, prefetched=prefetched))
 
         try:
             url = next_link(parsed, url)
+            if url is None:
+                terminal_page_reached = True
         except HttpPolicyError as error:
+            population.fail_population(error.code)
             append_failure(
                 date_root,
                 {
@@ -435,10 +448,36 @@ def ingest_brand(
             )
             break
 
+    population.finish_pages(terminal_page_reached=terminal_page_reached)
+    population_snapshot = population.summary()
+    for code in population_snapshot["population_errors"]:
+        if code in {
+            "duplicate_product_conflict",
+            "duplicate_product_id",
+            "invalid_declared_total",
+            "inconsistent_declared_total",
+            "declared_total_mismatch",
+            "malformed_product",
+        }:
+            append_failure(
+                date_root,
+                {
+                    "phase": "products_index",
+                    "bank": bank_dir_name,
+                    "status": code,
+                },
+                lock=failure_lock,
+            )
+
+    def _publish_population() -> Dict[str, Any]:
+        summary = population.summary()
+        atomic_write_json(index_dir / "index-summary.json", summary)
+        return summary
+
     # ─── Phase 2: parallel detail fetches ────────────────────────────────────
 
     if not pending:
-        return
+        return _publish_population()
 
     def _fetch_one(work: _BankWork) -> bool:
         return _fetch_bank_detail(
@@ -454,14 +493,18 @@ def ingest_brand(
             attempt_journal=attempt_journal,
         )
 
-    def _detail_pass(items: List[_BankWork]) -> List[_BankWork]:
-        """Fetch ``items``; return the work an open circuit deferred, unfetched.
+    def _detail_pass(
+        items: List[_BankWork],
+    ) -> Tuple[List[_BankWork], List[_BankWork], List[_BankWork]]:
+        """Return ``(deferred, failed, crashed)`` without terminal writes.
 
-        Deferred work is returned rather than recorded, so the caller can decide
-        whether the holder deserves another attempt. Nothing is written off here.
+        Raw attempts remain in the attempt journal. Only the bounded recovery
+        decision below promotes failures into terminal ingest evidence.
         """
         deferred: List[_BankWork] = []
-        deferred_lock = threading.Lock()
+        failed: List[_BankWork] = []
+        crashed: List[_BankWork] = []
+        outcome_lock = threading.Lock()
         n_workers = min(detail_workers, len(items))
         log(
             f"[banks] {bank_dir_name}: fetching {len(items)} product details "
@@ -475,10 +518,14 @@ def ingest_brand(
             # network fetch. File I/O stays OUTSIDE the breaker lock (Gemini).
             needs_fetch = work.prefetched is None
             if needs_fetch and breaker.is_open():
-                with deferred_lock:
+                with outcome_lock:
                     deferred.append(work)
                 return
             ok = _fetch_one(work)
+            with outcome_lock:
+                population.mark_detail(work.pid, ok)
+                if not ok:
+                    failed.append(work)
             # Only true network fetches feed the breaker; a Phase-1 prefetched result
             # was already counted in classify_product_for_ingest.
             if needs_fetch and breaker.record(ok):  # log() runs outside the breaker lock
@@ -500,27 +547,19 @@ def ingest_brand(
                     try:
                         fut.result()
                     except Exception as exc:
-                        # An unexpected detail-worker crash (not a normal fetch failure,
-                        # which _fetch_bank_detail already records) is otherwise only
-                        # logged; record it so the status rollup counts it (Codex).
                         log(f"[banks] {bank_dir_name}: detail error for {futures[fut]}: {exc}")
-                        append_failure(
-                            date_root,
-                            {
-                                "phase": "product_detail",
-                                "bank": bank_dir_name,
-                                "product_id": futures[fut],
-                                "status": "worker_crash",
-                                "error": str(exc)[:500],
-                            },
-                            lock=failure_lock,
-                        )
+                        work = next(item for item in items if item.pid == futures[fut])
+                        with outcome_lock:
+                            population.mark_detail(work.pid, False)
+                            crashed.append(work)
                     if done % 50 == 0:
                         log(f"[banks] {bank_dir_name}: {done}/{len(items)} details done")
-        return deferred
+        return deferred, failed, crashed
 
     def _write_off(items: List[_BankWork], status: str) -> None:
-        for work in items:
+        unique = {work.pid: work for work in items}
+        for work in sorted(unique.values(), key=lambda item: item.pid):
+            population.mark_detail(work.pid, False)
             append_failure(
                 date_root,
                 {
@@ -532,27 +571,41 @@ def ingest_brand(
                 lock=failure_lock,
             )
 
-    deferred = _detail_pass(pending)
-    if deferred:
+    deferred, failed, crashed = _detail_pass(pending)
+    recovery = sorted(
+        {work.pid: work for work in [*failed, *deferred]}.values(),
+        key=lambda work: work.pid,
+    )
+    if breaker.is_open() and recovery:
         # One bounded recovery attempt. A single probe decides it: a holder that
         # is still down costs one request, while a holder whose outage has passed
-        # gets its whole deferred catalogue back instead of losing the day.
+        # gets both failed and deferred work back instead of losing the day.
         log(
-            f"[banks] {bank_dir_name}: {len(deferred)} details deferred by an open "
+            f"[banks] {bank_dir_name}: {len(recovery)} details need bounded recovery; open "
             f"circuit; probing once in {BREAKER_RECOVERY_DELAY_SECONDS:g}s"
         )
         time.sleep(BREAKER_RECOVERY_DELAY_SECONDS)
-        probe, rest = deferred[0], deferred[1:]
-        # The probe records its own failure evidence via _fetch_bank_detail, so a
-        # failed probe is never also written off as circuit_open.
-        if not _fetch_one(probe):
+        probe, rest = recovery[0], recovery[1:]
+        probe_ok = _fetch_one(probe)
+        population.mark_detail(probe.pid, probe_ok)
+        if not probe_ok:
             log(f"[banks] {bank_dir_name}: recovery probe failed — holder still unhealthy")
-            _write_off(rest, "circuit_open")
+            _write_off(recovery, "holder_unavailable")
         else:
             breaker.reset()
-            log(f"[banks] {bank_dir_name}: recovery probe succeeded — retrying deferred details")
+            log(f"[banks] {bank_dir_name}: recovery probe succeeded — retrying failed and deferred details")
             if rest:
-                _write_off(_detail_pass(rest), "circuit_open_after_recovery")
+                retry_deferred, retry_failed, retry_crashed = _detail_pass(rest)
+                _write_off(
+                    [*retry_failed, *retry_deferred],
+                    "circuit_open_after_recovery",
+                )
+                _write_off(retry_crashed, "worker_crash")
+    else:
+        _write_off([*failed, *deferred], "detail_fetch_failed")
+    _write_off(crashed, "worker_crash")
+
+    return _publish_population()
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -579,29 +632,57 @@ def _persist_ingest_status(
     )
     by_provider = status.get("by_provider") or {}
     provider_states = []
+    coverage_complete = True
     for brand, bdir in bank_work:
-        identity_material = "\x1f".join(
-            (
-                str(brand.get("endpoint_url") or "").strip().lower(),
-                str(brand.get("legal_entity_name") or "").strip().lower(),
-                str(brand.get("brand_name") or "").strip().lower(),
-            )
-        ).encode("utf-8")
         failures = int(by_provider.get(bdir) or 0)
+        summary_path = banks_root / "_holders" / bdir / "_products-index" / "index-summary.json"
+        try:
+            population = json.loads(summary_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(population, dict)
+                or population.get("schema_version") != 1
+                or population.get("provider_uid") != brand["provider_uid"]
+            ):
+                raise ValueError("invalid holder population summary")
+            state = str(population.get("state") or "failed")
+            if state not in {"complete", "empty", "partial", "failed"}:
+                raise ValueError("invalid holder state")
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            population = {}
+            state = "failed"
+            coverage_complete = False
+        if failures and state in {"complete", "empty"}:
+            state = "partial"
         provider_states.append(
             {
-                "provider_uid": f"legacy-prd:{hashlib.sha256(identity_material).hexdigest()}",
-                "identity_status": "derived_legacy",
+                "provider_uid": brand["provider_uid"],
+                "identity_status": brand["provider_identity_status"],
+                "data_holder_id": brand.get("data_holder_id") or None,
+                "data_holder_brand_id": brand.get("data_holder_brand_id") or None,
                 "brand_name": brand.get("brand_name") or None,
                 "legal_entity_name": brand.get("legal_entity_name") or None,
                 "endpoint_url": brand.get("endpoint_url") or None,
-                "state": "partial" if failures else "complete",
+                "state": state,
                 "failure_records": failures,
+                "population_known": bool(population.get("population_known")),
+                "products_discovered": population.get("unique_product_ids"),
+                "relevant_products": population.get("relevant_products"),
+                "details_present": population.get("details_present"),
             }
         )
     status["providers_registered"] = snapshot.banking_count_before_filter
     status["providers_attempted"] = len(bank_work)
     status["provider_states"] = provider_states
+    status["coverage_evidence_complete"] = coverage_complete
+    status["provider_state_counts"] = {
+        state: sum(1 for provider in provider_states if provider["state"] == state)
+        for state in ("complete", "empty", "partial", "failed")
+    }
+    status["incomplete"] = bool(
+        status["incomplete"]
+        or not coverage_complete
+        or any(provider["state"] not in {"complete", "empty"} for provider in provider_states)
+    )
     attempt_summary = attempt_journal.summary()
     attempt_summary["path"] = attempt_journal.root.relative_to(run_root).as_posix()
     attempt_summary["path_resolution"] = "relative_to_ingest_run_root"
