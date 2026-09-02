@@ -9,6 +9,7 @@ from cdr_observation import (
     build_observation,
     validate_observation,
 )
+from cdr_observation_db import ObservationDatabaseError
 from tests.test_cdr_observation_db import observation as valid_observation_inputs
 
 
@@ -90,6 +91,7 @@ def test_rate_fact_projection_rejects_percentage_scaled_value() -> None:
                 }
             ],
             {"a" * 64},
+            observation_date="2026-09-03",
         )
 
 
@@ -122,7 +124,51 @@ def test_fact_projection_requires_value_type_shape(value_type, values) -> None:
         **values,
     }
     with pytest.raises(ObservationError, match="value_type"):
-        _fact_projections([row], {"a" * 64})
+        _fact_projections(
+            [row], {"a" * 64}, observation_date="2026-09-03"
+        )
+
+
+def test_fact_projection_rejects_reversed_range() -> None:
+    with pytest.raises(ObservationError, match="range bounds are reversed"):
+        _fact_projections(
+            [
+                {
+                    "product_uid": "a" * 64,
+                    "fact_id": "range-fact",
+                    "kind": "tier",
+                    "canonical_key": "tier.balance",
+                    "value_type": "range",
+                    "value_boolean": None,
+                    "value_number": None,
+                    "value_text": None,
+                    "min_value": 2,
+                    "max_value": 1,
+                }
+            ],
+            {"a" * 64},
+            observation_date="2026-09-03",
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("last_updated", "not-a-date"),
+        ("effective_from", "2026-05-27"),
+        ("effective_to", "2026-05-26T00:00:01+10:00"),
+    ],
+)
+def test_public_source_dates_are_parseable_and_bounded(field, value) -> None:
+    accounting, projections = valid_observation_inputs()
+    projections["products"][0]["document"][field] = value
+    with pytest.raises(ObservationDatabaseError, match="public"):
+        build_observation(
+            accounting=accounting,
+            projections=projections,
+            observed_at="2026-05-24T15:00:00Z",
+            normalization_version="test-v1",
+        )
 
 
 def test_global_accounting_failure_blocks_publication() -> None:

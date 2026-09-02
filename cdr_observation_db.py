@@ -384,10 +384,17 @@ def _normalize_accounting(value: Mapping[str, Any]) -> dict[str, Any]:
     return json.loads(_json_bytes(root))
 
 
-def _document(group: str, value: Any, expected: Mapping[str, Any]) -> dict[str, Any]:
+def _document(
+    group: str,
+    value: Any,
+    expected: Mapping[str, Any],
+    observation_date: str,
+) -> dict[str, Any]:
     document = json.loads(_json_bytes(_mapping(value, "projection document")))
     try:
-        return validate_public_document(group, document, expected)
+        return validate_public_document(
+            group, document, expected, observation_date=observation_date
+        )
     except PublicProjectionError as error:
         raise ObservationDatabaseError(str(error)) from error
 
@@ -419,6 +426,7 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             _exact(row, PROJECTION_KEYS[group], f"{group}[{index}]")
             output[group].append(row)
     accounting_products = {row["product_uid"]: row for row in accounting["products"]}
+    observation_date = accounting["observation_date"]
     publishable = {uid for uid, row in accounting_products.items() if row["disposition"] in PUBLISHABLE}
     products: dict[str, dict[str, Any]] = {}
     for row in output["products"]:
@@ -432,7 +440,16 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         uid = expected["product_uid"]
         if uid in products or uid not in publishable or any(accounting_products[uid][key] != val for key, val in expected.items()):
             _fail("consumer product identity or membership is invalid")
-        products[uid] = {**expected, "document": _document("products", row["document"], expected)}
+        document_envelope = {
+            **expected,
+            "details_complete": accounting_products[uid]["details_complete"],
+        }
+        products[uid] = {
+            **expected,
+            "document": _document(
+                "products", row["document"], document_envelope, observation_date
+            ),
+        }
     if set(products) != publishable:
         _fail("consumer products differ from publishable dispositions")
     output["products"] = sorted(products.values(), key=lambda row: row["product_uid"])
@@ -461,7 +478,14 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         rate_ids.add(expected["rate_uid"])
         rate_slots.add(key)
         rated.add(expected["product_uid"])
-        rates.append({**expected, "document": _document("rates", row["document"], expected)})
+        rates.append(
+            {
+                **expected,
+                "document": _document(
+                    "rates", row["document"], expected, observation_date
+                ),
+            }
+        )
     if rated != publishable:
         _fail("every publishable product requires at least one rate")
     output["rates"] = sorted(rates, key=lambda row: (row["product_uid"], row["rate_index"], row["rate_uid"]))
@@ -476,7 +500,14 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         if expected["product_uid"] not in products or key in item_keys:
             _fail("item identity or membership is invalid")
         item_keys.add(key)
-        items.append({**expected, "document": _document("items", row["document"], expected)})
+        items.append(
+            {
+                **expected,
+                "document": _document(
+                    "items", row["document"], expected, observation_date
+                ),
+            }
+        )
     output["items"] = sorted(items, key=lambda row: (row["product_uid"], row["item_group"], row["item_index"]))
     facts, fact_keys = [], set()
     for row in output["product_facts"]:
@@ -503,6 +534,8 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         number = None if number is None else float(number)
         minimum = None if minimum is None else float(minimum)
         maximum = None if maximum is None else float(maximum)
+        if minimum is not None and maximum is not None and minimum > maximum:
+            _fail("fact range bounds are reversed")
         typed = (boolean, number, text, minimum, maximum)
         value_type = row["value_type"]
         valid_shape = {
@@ -536,7 +569,14 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "max_value": maximum,
         }
         fact_keys.add(key)
-        facts.append({**expected, "document": _document("product_facts", row["document"], expected)})
+        facts.append(
+            {
+                **expected,
+                "document": _document(
+                    "product_facts", row["document"], expected, observation_date
+                ),
+            }
+        )
     output["product_facts"] = sorted(facts, key=lambda row: (row["product_uid"], row["fact_id"]))
     changes, event_ids = [], set()
     for row in output["product_changes"]:
@@ -547,7 +587,9 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "event_type": _text(row["event_type"], "event_type"),
             "canonical_key": _nullable_text(row["canonical_key"], "canonical_key"),
         }
-        document = _document("product_changes", row["document"], expected)
+        document = _document(
+            "product_changes", row["document"], expected, observation_date
+        )
         dataset = _enum(document.get("dataset"), DATASETS, "change dataset")
         cdr_product_id = _text(document.get("product_id"), "change product_id")
         if (

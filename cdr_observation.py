@@ -73,6 +73,7 @@ def _document(
     row: Mapping[str, Any],
     envelope: Mapping[str, Any],
     *,
+    observation_date: str,
     omitted_detail_groups: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     try:
@@ -80,6 +81,7 @@ def _document(
             group,
             row,
             envelope,
+            observation_date=observation_date,
             omitted_detail_groups=omitted_detail_groups,
         )
     except PublicProjectionError as error:
@@ -90,6 +92,7 @@ def _product_projections(
     banks: Mapping[str, Any],
     accounting: Mapping[str, Any],
     rejected_details: Mapping[str, frozenset[str]],
+    observation_date: str,
 ) -> list[dict[str, Any]]:
     publishable = {
         row["product_uid"]: row
@@ -115,13 +118,18 @@ def _product_projections(
             "cdr_product_id": disposition["cdr_product_id"],
             "legacy_product_key": disposition["legacy_product_key"],
         }
+        document_envelope = {
+            **envelope,
+            "details_complete": disposition["details_complete"],
+        }
         output.append(
             {
                 **envelope,
                 "document": _document(
                     "products",
                     rows[uid],
-                    envelope,
+                    document_envelope,
+                    observation_date=observation_date,
                     omitted_detail_groups=rejected_details.get(uid, frozenset()),
                 ),
             }
@@ -130,7 +138,7 @@ def _product_projections(
 
 
 def _rate_projections(
-    rows: Iterable[Any], visible: set[str]
+    rows: Iterable[Any], visible: set[str], observation_date: str
 ) -> list[dict[str, Any]]:
     output = []
     for raw in rows:
@@ -152,7 +160,14 @@ def _rate_projections(
             "rate": rate,
             "comparison_rate": comparison,
         }
-        output.append({**envelope, "document": _document("rates", raw, envelope)})
+        output.append(
+            {
+                **envelope,
+                "document": _document(
+                    "rates", raw, envelope, observation_date=observation_date
+                ),
+            }
+        )
     return output
 
 
@@ -160,6 +175,7 @@ def _item_projections(
     banks: Mapping[str, Any],
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]],
+    observation_date: str,
 ) -> list[dict[str, Any]]:
     output = []
     for group in ("fees", "features", "eligibility", "constraints"):
@@ -173,7 +189,14 @@ def _item_projections(
             if isinstance(index, bool) or not isinstance(index, int) or index < 1:
                 raise ObservationError("item_index must be a positive integer")
             envelope = {"product_uid": uid, "item_group": group, "item_index": index}
-            output.append({**envelope, "document": _document("items", raw, envelope)})
+            output.append(
+                {
+                    **envelope,
+                    "document": _document(
+                        "items", raw, envelope, observation_date=observation_date
+                    ),
+                }
+            )
     return output
 
 
@@ -181,6 +204,8 @@ def _fact_projections(
     rows: Iterable[Any],
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]] | None = None,
+    *,
+    observation_date: str,
 ) -> list[dict[str, Any]]:
     output = []
     for raw in rows:
@@ -213,6 +238,8 @@ def _fact_projections(
                 raise ObservationError(f"fact {label} must be finite or null")
         minimum = None if minimum is None else float(minimum)
         maximum = None if maximum is None else float(maximum)
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ObservationError("fact range bounds are reversed")
         kind = str(raw.get("kind") or "")
         value_type = str(raw.get("value_type") or "")
         typed = (boolean, number, text, minimum, maximum)
@@ -246,7 +273,14 @@ def _fact_projections(
             "min_value": minimum,
             "max_value": maximum,
         }
-        output.append({**envelope, "document": _document("product_facts", raw, envelope)})
+        output.append(
+            {
+                **envelope,
+                "document": _document(
+                    "product_facts", raw, envelope, observation_date=observation_date
+                ),
+            }
+        )
     return output
 
 
@@ -320,6 +354,7 @@ def _change_projections(
     accounting: Mapping[str, Any],
     visible: set[str],
     rejected_details: Mapping[str, frozenset[str]],
+    observation_date: str,
 ) -> list[dict[str, Any]]:
     labels = _provider_labels(banks, accounting)
     output = []
@@ -345,7 +380,14 @@ def _change_projections(
             "event_type": str(raw.get("event_type") or ""),
             "canonical_key": str(raw.get("canonical_key") or "").strip() or None,
         }
-        output.append({**envelope, "document": _document("product_changes", raw, envelope)})
+        output.append(
+            {
+                **envelope,
+                "document": _document(
+                    "product_changes", raw, envelope, observation_date=observation_date
+                ),
+            }
+        )
     return output
 
 
@@ -357,17 +399,27 @@ def build_projections(
         if issue["code"] == "field_omitted_invalid" and issue["product_uid"] is not None:
             rejected.setdefault(issue["product_uid"], set()).update(issue["affected_sections"])
     rejected_details = {uid: frozenset(groups) for uid, groups in rejected.items()}
-    products = _product_projections(banks, accounting, rejected_details)
+    observation_date = str(accounting["observation_date"])
+    products = _product_projections(
+        banks, accounting, rejected_details, observation_date
+    )
     visible = {row["product_uid"] for row in products}
     projections = {
         "products": products,
-        "rates": _rate_projections(banks.get("rates") or [], visible),
-        "items": _item_projections(banks, visible, rejected_details),
+        "rates": _rate_projections(
+            banks.get("rates") or [], visible, observation_date
+        ),
+        "items": _item_projections(
+            banks, visible, rejected_details, observation_date
+        ),
         "product_facts": _fact_projections(
-            banks.get("product_facts") or [], visible, rejected_details
+            banks.get("product_facts") or [],
+            visible,
+            rejected_details,
+            observation_date=observation_date,
         ),
         "product_changes": _change_projections(
-            banks, accounting, visible, rejected_details
+            banks, accounting, visible, rejected_details, observation_date
         ),
     }
     _, normalized = validate_observation_inputs(accounting, projections)
