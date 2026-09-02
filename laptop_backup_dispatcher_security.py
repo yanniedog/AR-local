@@ -393,6 +393,8 @@ def _token_integrity_rid() -> int:
         ):
             raise ctypes.WinError()
         sid = ctypes.c_void_p.from_buffer(buffer).value
+        if not sid:
+            raise ValueError("token mandatory label SID is null")
         ctypes.windll.advapi32.GetSidSubAuthorityCount.argtypes = (ctypes.c_void_p,)
         ctypes.windll.advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
         ctypes.windll.advapi32.GetSidSubAuthority.argtypes = (ctypes.c_void_p, ctypes.c_ulong)

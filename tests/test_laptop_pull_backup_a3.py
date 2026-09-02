@@ -19,7 +19,15 @@ PROTECTED = "9" * 40
 def test_scheduled_receiver_selects_only_stale_diagnostics(tmp_path: Path) -> None:
     args = Namespace(
         target=tmp_path,
-        host="pi",
+        host="192.168.20.19",
+        ssh_user="pi",
+        ssh_port=22,
+        ssh_path=r"C:\Windows\System32\OpenSSH\ssh.exe",
+        ssh_sha256="a" * 64,
+        scp_path=r"C:\Windows\System32\OpenSSH\scp.exe",
+        scp_sha256="b" * 64,
+        ssh_identity=r"C:\Program Files\AR-local\ssh\id",
+        ssh_known_hosts=r"C:\Program Files\AR-local\ssh\known_hosts",
         recovery_image=tmp_path / "image",
         candidate_code_sha=CANDIDATE,
         protected_code_sha=PROTECTED,

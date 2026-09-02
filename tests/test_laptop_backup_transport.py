@@ -19,14 +19,18 @@ import laptop_pull_backup as receiver
 def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
     ssh = tmp_path / "ssh.exe"
     scp = tmp_path / "scp.exe"
+    identity = tmp_path / "id"
+    known_hosts = tmp_path / "known_hosts"
     ssh.write_bytes(b"mock ssh executable")
     scp.write_bytes(b"mock scp executable")
+    identity.write_bytes(b"mock private key")
+    known_hosts.write_bytes(b"fixed known host")
     defaults: dict[str, object] = {
-        "host": "192.0.2.10", "ssh_user": "pi", "ssh_port": 22,
+        "host": "192.168.20.19", "ssh_user": "pi", "ssh_port": 22,
         "ssh_path": str(ssh.resolve()), "ssh_sha256": hashlib.sha256(ssh.read_bytes()).hexdigest(),
         "scp_path": str(scp.resolve()), "scp_sha256": hashlib.sha256(scp.read_bytes()).hexdigest(),
-        "ssh_identity": str((tmp_path / "id").resolve()),
-        "ssh_known_hosts": str((tmp_path / "known_hosts").resolve()),
+        "ssh_identity": str(identity.resolve()),
+        "ssh_known_hosts": str(known_hosts.resolve()),
     }
     defaults.update(values)
     return Namespace(**defaults)
@@ -34,7 +38,7 @@ def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
 
 def _portable_transport_args(**values: object) -> Namespace:
     defaults: dict[str, object] = {
-        "host": "192.0.2.10", "ssh_user": "pi", "ssh_port": 22,
+        "host": "192.168.20.19", "ssh_user": "pi", "ssh_port": 22,
         "ssh_path": r"C:\Windows\System32\OpenSSH\ssh.exe", "ssh_sha256": "a" * 64,
         "scp_path": r"C:\Windows\System32\OpenSSH\scp.exe", "scp_sha256": "b" * 64,
         "ssh_identity": r"C:\Program Files\AR-local\ssh\id",
@@ -52,6 +56,35 @@ def trusted_transport_args(tmp_path: Path | None = None, **values: object) -> Na
     return _portable_transport_args(**values)
 
 
+def _native_contract(args: Namespace) -> dict[str, object]:
+    return {
+        "schema_version": 5,
+        "ssh_host": args.host,
+        "ssh_user": args.ssh_user,
+        "ssh_port": args.ssh_port,
+        "ssh_path": args.ssh_path,
+        "ssh_sha256": args.ssh_sha256,
+        "scp_path": args.scp_path,
+        "scp_sha256": args.scp_sha256,
+        "ssh_identity_path": args.ssh_identity,
+        "ssh_identity_sha256": transport.sha256_file(Path(args.ssh_identity)),
+        "ssh_known_hosts_path": args.ssh_known_hosts,
+        "ssh_known_hosts_sha256": transport.FIXED_SSH_HOST_KEY_SHA256,
+    }
+
+
+def _authenticate_native_fixture(
+    monkeypatch: pytest.MonkeyPatch, args: Namespace
+) -> None:
+    if os.name != "nt":
+        return
+    contract = _native_contract(args)
+    host_key_hash = transport.sha256_file(Path(args.ssh_known_hosts))
+    contract["ssh_known_hosts_sha256"] = host_key_hash
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_SHA256", host_key_hash)
+    monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
+
+
 def test_windows_ssh_post_eof_signature_is_exact() -> None:
     expected = b"close - IO is still pending on closed socket. read:1, write:0, io:000001AB\r\n"
     assert transport.windows_ssh_post_eof_only(expected, platform="nt")
@@ -59,8 +92,8 @@ def test_windows_ssh_post_eof_signature_is_exact() -> None:
 
 
 def test_ssh_command_has_no_path_agent_user_config_or_interactive_fallback(tmp_path: Path) -> None:
-    args = trusted_transport_args(tmp_path)
-    command = transport.ssh_command(args, "printf", "PASS")
+    args = _portable_transport_args()
+    command = transport.ssh_command(args, "printf", "PASS", platform="posix")
     assert command[0] == args.ssh_path
     assert command[-3:] == [args.host, "printf", "PASS"]
     required = {
@@ -85,15 +118,39 @@ def test_windows_transport_paths_validate_on_portable_ci() -> None:
         transport.ssh_options(_portable_transport_args(ssh_path="ssh.exe"), platform="posix")
 
 
-def test_native_transport_requires_existing_hash_bound_executable(tmp_path: Path) -> None:
+def test_native_transport_refuses_uninstalled_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = tmp_path / "receiver" / "laptop_backup_transport.py"
+    module.parent.mkdir()
+    module.write_text("# fixture\n", encoding="utf-8")
+    monkeypatch.setattr(transport, "__file__", str(module))
+    with pytest.raises(ValueError, match="contract is unavailable"):
+        transport._trusted_contract("nt")
+
+
+def test_native_transport_requires_protected_hash_bound_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     args = _native_transport_args(tmp_path)
+    contract = _native_contract(args)
+    Path(args.ssh_known_hosts).write_bytes(b"fixed known host")
+    contract["ssh_known_hosts_sha256"] = transport.sha256_file(Path(args.ssh_known_hosts))
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_SHA256", contract["ssh_known_hosts_sha256"])
+    monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
     assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
     args.ssh_sha256 = "0" * 64
-    with pytest.raises(ValueError, match="hash mismatch"):
+    with pytest.raises(ValueError, match="differs from the protected contract"):
         transport.ssh_options(args, platform="nt")
-    args.ssh_path = str(tmp_path / "absent" / "ssh.exe")
-    with pytest.raises(ValueError, match="absent or its hash is invalid"):
+    args.ssh_sha256 = contract["ssh_sha256"]
+    Path(args.ssh_identity).write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="key file hash mismatch"):
         transport.ssh_options(args, platform="nt")
+
+
+def test_transport_rejects_non_backup_endpoint() -> None:
+    with pytest.raises(ValueError, match="fixed backup endpoint"):
+        transport.ssh_options(_portable_transport_args(host="192.0.2.10"), platform="posix")
 
 
 def test_hung_windows_ssh_is_killed_only_after_proven_post_eof() -> None:
@@ -216,7 +273,9 @@ def test_helper_copy_accepts_spurious_windows_status_only_after_remote_hash(
     ))
     monkeypatch.setattr(transport.subprocess, "run", lambda *_args, **_kwargs: next(results))
     monkeypatch.setattr(transport, "windows_ssh_post_eof_only", lambda value: value.startswith(b"close - IO"))
-    assert transport.install_remote_helper(trusted_transport_args(tmp_path, source_helper=helper)) == (remote, digest)
+    args = trusted_transport_args(tmp_path, source_helper=helper)
+    _authenticate_native_fixture(monkeypatch, args)
+    assert transport.install_remote_helper(args) == (remote, digest)
 
 
 def test_helper_transport_detaches_scheduled_task_stdin(
@@ -240,7 +299,9 @@ def test_helper_transport_detaches_scheduled_task_stdin(
         return next(results)
 
     monkeypatch.setattr(transport.subprocess, "run", run)
-    assert transport.install_remote_helper(trusted_transport_args(tmp_path, source_helper=helper)) == (remote, digest)
+    args = trusted_transport_args(tmp_path, source_helper=helper)
+    _authenticate_native_fixture(monkeypatch, args)
+    assert transport.install_remote_helper(args) == (remote, digest)
     assert len(calls) == 4
     assert all(kwargs.get("stdin") is subprocess.DEVNULL for _args, kwargs in calls)
     assert calls[1][1].get("timeout") == 30
@@ -265,8 +326,10 @@ def test_helper_timeout_removes_only_verified_remote_temporary_directory(
         return subprocess.CompletedProcess(command, 0, b"", b"")
 
     monkeypatch.setattr(transport.subprocess, "run", run)
+    args = trusted_transport_args(tmp_path, source_helper=helper)
+    _authenticate_native_fixture(monkeypatch, args)
     with pytest.raises(subprocess.TimeoutExpired):
-        transport.install_remote_helper(trusted_transport_args(tmp_path, source_helper=helper))
+        transport.install_remote_helper(args)
     assert any("rm" in command for command in calls)
     assert any("rmdir" in command for command in calls)
 
@@ -293,8 +356,10 @@ def test_helper_cleanup_failure_preserves_transfer_failure(
         return subprocess.CompletedProcess(command, 0, b"", b"")
 
     monkeypatch.setattr(transport.subprocess, "run", run)
+    args = trusted_transport_args(tmp_path, source_helper=helper)
+    _authenticate_native_fixture(monkeypatch, args)
     with pytest.raises(subprocess.TimeoutExpired) as caught:
-        transport.install_remote_helper(trusted_transport_args(tmp_path, source_helper=helper))
+        transport.install_remote_helper(args)
     assert caught.value.cmd == transfer_command
     assert isinstance(caught.value.__cause__, subprocess.TimeoutExpired)
 
@@ -313,8 +378,10 @@ def test_remote_helper_cleanup_reports_real_failures(
         return next(results)
 
     monkeypatch.setattr(transport.subprocess, "run", run)
+    args = trusted_transport_args(tmp_path)
+    _authenticate_native_fixture(monkeypatch, args)
     with pytest.raises(RuntimeError, match="cleanup failed"):
         transport.remove_remote_helper(
-            trusted_transport_args(tmp_path), "/tmp/ar-local-laptop-backup.Ab12Cd34/source.py"
+            args, "/tmp/ar-local-laptop-backup.Ab12Cd34/source.py"
         )
     assert len(calls) == 2

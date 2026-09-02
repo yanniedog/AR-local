@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import json
 import os
 import re
 import subprocess
@@ -22,6 +23,8 @@ REMOTE_HELPER_DIR_RE = re.compile(r"^/tmp/ar-local-laptop-backup\.[A-Za-z0-9]{8}
 SSH_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+FIXED_SSH_ENDPOINT = ("192.168.20.19", "pi", 22)
+FIXED_SSH_HOST_KEY_SHA256 = "4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836"
 
 
 def _transport_value(args: object, name: str) -> str:
@@ -47,12 +50,48 @@ def _windows_contract_path(value: str, platform: str) -> Path | PureWindowsPath:
     return Path(value) if platform == "nt" else PureWindowsPath(value)
 
 
-def _validated_executable(args: object, name: str, platform: str) -> Path | PureWindowsPath:
+def _trusted_contract(platform: str) -> dict[str, object] | None:
+    """Load the protected install contract; direct Windows source runs fail closed."""
+    if platform != "nt":
+        return None
+    root = Path(__file__).resolve().parent.parent
+    path = root / "trusted-child.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("trusted SSH contract is unavailable") from exc
+    if not isinstance(value, dict) or value.get("schema_version") != 5:
+        raise ValueError("trusted SSH contract schema is invalid")
+    return value
+
+
+def _contract_value(contract: dict[str, object], name: str) -> str:
+    value = str(contract.get(name, "") or "")
+    if not value:
+        raise ValueError(f"trusted SSH contract lacks {name}")
+    return value
+
+
+def _same_windows_path(left: object, right: object) -> bool:
+    return os.path.normcase(os.path.abspath(str(left))) == os.path.normcase(
+        os.path.abspath(str(right))
+    )
+
+
+def _validated_executable(
+    args: object, name: str, platform: str, contract: dict[str, object] | None
+) -> Path | PureWindowsPath:
     executable = _windows_contract_path(_transport_value(args, f"{name}_path"), platform)
     if not executable.is_absolute() or executable.name.lower() != f"{name}.exe":
         raise ValueError("trusted SSH executable must be an absolute OpenSSH path")
     if platform == "nt":
         expected = _transport_value(args, f"{name}_sha256").lower()
+        assert contract is not None
+        if (
+            not _same_windows_path(executable, _contract_value(contract, f"{name}_path"))
+            or not hmac.compare_digest(expected, _contract_value(contract, f"{name}_sha256").lower())
+        ):
+            raise ValueError("trusted SSH executable differs from the protected contract")
         if not SHA256_RE.fullmatch(expected) or not executable.is_file():
             raise ValueError("trusted SSH executable is absent or its hash is invalid")
         if not hmac.compare_digest(sha256_file(Path(executable)), expected):
@@ -60,21 +99,51 @@ def _validated_executable(args: object, name: str, platform: str) -> Path | Pure
     return executable
 
 
+def _validated_contract_file(
+    args: object, name: str, platform: str, contract: dict[str, object] | None
+) -> Path | PureWindowsPath:
+    path = _windows_contract_path(_transport_value(args, name), platform)
+    if not path.is_absolute():
+        raise ValueError("trusted SSH identity and known_hosts paths must be absolute")
+    if platform == "nt":
+        assert contract is not None
+        contract_name = "ssh_identity" if name == "ssh_identity" else "ssh_known_hosts"
+        expected = _contract_value(contract, f"{contract_name}_sha256").lower()
+        if (
+            not SHA256_RE.fullmatch(expected)
+            or not _same_windows_path(path, _contract_value(contract, f"{contract_name}_path"))
+            or not Path(path).is_file()
+        ):
+            raise ValueError("trusted SSH key file differs from the protected contract")
+        if not hmac.compare_digest(sha256_file(Path(path)), expected):
+            raise ValueError("trusted SSH key file hash mismatch")
+        if name == "ssh_known_hosts" and not hmac.compare_digest(expected, FIXED_SSH_HOST_KEY_SHA256):
+            raise ValueError("trusted SSH host key is not the fixed backup host key")
+    return path
+
+
 def ssh_options(args: object, *, scp: bool = False, platform: str | None = None) -> list[str]:
     """Return the fixed, non-interactive OpenSSH trust contract."""
     platform = platform or os.name
-    executable = _validated_executable(args, "scp" if scp else "ssh", platform)
-    identity = _windows_contract_path(_transport_value(args, "ssh_identity"), platform)
-    known_hosts = _windows_contract_path(_transport_value(args, "ssh_known_hosts"), platform)
+    contract = _trusted_contract(platform)
+    executable = _validated_executable(args, "scp" if scp else "ssh", platform, contract)
+    identity = _validated_contract_file(args, "ssh_identity", platform, contract)
+    known_hosts = _validated_contract_file(args, "ssh_known_hosts", platform, contract)
     host = _transport_value(args, "host")
     user = _transport_value(args, "ssh_user")
     port = str(getattr(args, "ssh_port", "") or "")
-    if not identity.is_absolute() or not known_hosts.is_absolute():
-        raise ValueError("trusted SSH identity and known_hosts paths must be absolute")
     if not SSH_HOST_RE.fullmatch(host) or ".." in host or not SSH_USER_RE.fullmatch(user):
         raise ValueError("trusted SSH host or user is invalid")
     if not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError("trusted SSH port is invalid")
+    if (host, user, int(port)) != FIXED_SSH_ENDPOINT:
+        raise ValueError("trusted SSH endpoint is not the fixed backup endpoint")
+    if contract is not None and (
+        host != _contract_value(contract, "ssh_host")
+        or user != _contract_value(contract, "ssh_user")
+        or int(port) != int(contract.get("ssh_port", 0))
+    ):
+        raise ValueError("trusted SSH endpoint differs from the protected contract")
     options = [
         str(executable), "-F", "NUL",
         "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
@@ -92,13 +161,15 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
     return options
 
 
-def ssh_command(args: object, *remote: str) -> list[str]:
-    return [*ssh_options(args), _transport_value(args, "host"), *remote]
+def ssh_command(args: object, *remote: str, platform: str | None = None) -> list[str]:
+    return [*ssh_options(args, platform=platform), _transport_value(args, "host"), *remote]
 
 
-def scp_command(args: object, source: Path, remote: str) -> list[str]:
+def scp_command(
+    args: object, source: Path, remote: str, *, platform: str | None = None
+) -> list[str]:
     destination = f"{_transport_value(args, 'ssh_user')}@{_transport_value(args, 'host')}:{remote}"
-    return [*ssh_options(args, scp=True), "-q", str(source), destination]
+    return [*ssh_options(args, scp=True, platform=platform), "-q", str(source), destination]
 
 
 def sha256_file(path: Path) -> str:
