@@ -22,7 +22,16 @@ def _write_promoted_test_evidence(
     source = exports.parent / f".{exports.name}-{session}-source"
     journal = RawAttemptJournal(source / "_raw-attempt-journals-v1", session)
     body = canonical_json_bytes(
-        {"data": {"products": [{"productId": product_id}]}}
+        {
+            "data": {
+                "products": [
+                    {
+                        "productId": product_id,
+                        "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+                    }
+                ]
+            }
+        }
     )
     event = journal.record(
         "products:index:1",

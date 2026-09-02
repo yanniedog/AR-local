@@ -293,11 +293,7 @@ def _fact_projections(
         }.get(value_type, False)
         if not valid_shape:
             raise ObservationError("fact values do not match value_type")
-        if (
-            (kind == "rate" or value_type == "rate")
-            and number is not None
-            and not 0 <= number <= 1
-        ):
+        if value_type == "rate" and number is not None and not 0 <= number <= 1:
             raise ObservationError("rate fact value_number must be a fraction from 0 to 1")
         envelope = {
             "product_uid": uid,
@@ -370,6 +366,16 @@ def _change_provider_uid(
     label_uid = labels.get(str(raw.get("provider") or "").strip().casefold())
     if label_uid:
         candidates.add(label_uid)
+    supplied_provider = str(raw.get("provider_uid") or "")
+    supplied_product = str(raw.get("product_uid") or "")
+    if supplied_provider or supplied_product:
+        if not supplied_provider or supplied_product != product_uid(
+            supplied_provider, dataset, cdr_product_id
+        ):
+            raise ObservationError(
+                "product change carries invalid canonical identity evidence"
+            )
+        candidates.add(supplied_provider)
     for side in ("before", "after"):
         fact = raw.get(side)
         if not isinstance(fact, Mapping):
@@ -402,6 +408,7 @@ def _change_projections(
     observation_date: str,
 ) -> list[dict[str, Any]]:
     labels = _provider_labels(banks, accounting)
+    accounted = {row["product_uid"] for row in accounting["products"]}
     output = []
     for raw in banks.get("product_changes") or []:
         if not isinstance(raw, Mapping):
@@ -412,20 +419,44 @@ def _change_projections(
             raise ObservationError("product change cannot be bound to a canonical identity")
         provider = _change_provider_uid(raw, labels, dataset, product_id_value)
         uid = product_uid(provider, dataset, product_id_value)
+        event_type = str(raw.get("event_type") or "")
+        historical = False
         if uid not in visible:
-            continue
+            if uid in accounted:
+                continue
+            if event_type not in {"product_removed", "fact_removed"}:
+                raise ObservationError("product change references an unknown product")
+            historical = True
+        elif event_type == "product_removed":
+            raise ObservationError("product_removed still references a current product")
         rejected = rejected_details.get(uid, frozenset())
         changed_group = str(raw.get("kind") or raw.get("canonical_key") or "").split(".", 1)[0]
         if "details" in rejected or changed_group in rejected:
             continue
+        evidence = evidence_by_uid.get(uid)
+        historical_evidence = raw.get("historical_evidence_id")
+        if historical_evidence is not None and (
+            not isinstance(historical_evidence, str)
+            or len(historical_evidence) != 64
+            or any(char not in "0123456789abcdef" for char in historical_evidence)
+        ):
+            raise ObservationError("product change historical evidence is invalid")
+        if historical:
+            if historical_evidence is None:
+                raise ObservationError("removed product lacks verified historical evidence")
+            evidence = historical_evidence
+        if evidence is None:
+            raise ObservationError("product change lacks evidence")
         envelope = {
             "event_id": str(raw.get("event_id") or ""),
             "provider_uid": provider,
             "product_uid": uid,
-            "event_type": str(raw.get("event_type") or ""),
+            "event_type": event_type,
             "canonical_key": str(raw.get("canonical_key") or "").strip() or None,
         }
-        document_envelope = {**envelope, "evidence_id": evidence_by_uid[uid]}
+        document_envelope = {**envelope, "evidence_id": evidence}
+        if historical_evidence is not None:
+            document_envelope["historical_evidence_id"] = historical_evidence
         output.append(
             {
                 **envelope,

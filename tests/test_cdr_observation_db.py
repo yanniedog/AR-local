@@ -505,6 +505,57 @@ def test_overlapping_tier_ranges_fail_before_disk(tmp_path: Path) -> None:
         )
 
 
+def test_overlapping_tiers_under_different_rate_parents_are_valid(
+    tmp_path: Path,
+) -> None:
+    accounting, projections = observation()
+    first = projections["product_facts"][0]
+    first.update(
+        fact_id="tier-one", kind="tier", canonical_key="range.amount",
+        value_type="range", value_number=None, min_value=0.0, max_value=100.0,
+    )
+    first["document"].update(
+        fact_id="tier-one", kind="tier", canonical_key="range.amount",
+        value_type="range", value_number=None, min_value=0.0, max_value=100.0,
+        source_path="depositRates[0].tiers[0]",
+        source_pattern="depositRates[].tiers[]",
+        qualifiers_json='{"groupId": "parent"}', unit="AUD",
+    )
+    second = json.loads(json.dumps(first))
+    second.update(fact_id="tier-two")
+    second["document"].update(
+        fact_id="tier-two", source_path="depositRates[1].tiers[0]"
+    )
+    projections["product_facts"] = [first, second]
+
+    result = build_observation_database(
+        tmp_path / "separate-rate-parents.sqlite",
+        accounting=accounting,
+        projections=projections,
+        generated_at="2026-05-25T00:01:00+10:00",
+        normalization_version="cdr-domain-v1",
+    )
+
+    assert result.verification.counts["bank_product_facts"] == 2
+
+
+def test_rate_kind_numeric_fact_is_not_fraction_bounded(tmp_path: Path) -> None:
+    accounting, projections = observation()
+    fact = projections["product_facts"][0]
+    fact.update(value_type="number", value_number=12.0)
+    fact["document"].update(value_type="number", value_number=12.0)
+
+    result = build_observation_database(
+        tmp_path / "rate-object-number.sqlite",
+        accounting=accounting,
+        projections=projections,
+        generated_at="2026-05-25T00:01:00+10:00",
+        normalization_version="cdr-domain-v1",
+    )
+
+    assert result.verification.counts["bank_product_facts"] == 1
+
+
 def test_product_document_details_completeness_is_bound_to_accounting(tmp_path: Path):
     accounting, projections = observation()
     projections["products"][0]["document"]["details_complete"] = False

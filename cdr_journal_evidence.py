@@ -8,7 +8,14 @@ from collections import defaultdict
 from typing import Any, Mapping
 
 from cdr_contracts import canonical_json_bytes
-from cdr_ingest_support import allocate_bank_dir, extract_products, pick_text
+from cdr_ingest_support import (
+    DATASET_TO_FOLDER,
+    allocate_bank_dir,
+    detail_inner_record,
+    extract_products,
+    infer_cdr_dataset,
+    pick_text,
+)
 from cdr_product_accounting import validate_product_accounting
 from cdr_raw_attempt_journal import RawAttemptJournal
 
@@ -43,10 +50,15 @@ def journal_product_evidence(
         digest = str(record["body_sha256"])
         product_id = str(context.get("product_id") or "")
         if product_id and phase in {"product_detail", "classification_detail"}:
+            detail = detail_inner_record(parsed)
+            dataset = DATASET_TO_FOLDER.get(
+                infer_cdr_dataset(detail, allow_name_fallback=True) or ""
+            ) if detail is not None else None
             evidence[(provider, product_id)].append(
                 {
                     "body_sha256": digest,
                     "canonical_digest": canonical_digest,
+                    "dataset": dataset or "",
                     "phase": phase,
                 }
             )
@@ -59,10 +71,14 @@ def journal_product_evidence(
         for item in products:
             product_id = pick_text(item, ["productId", "id"])
             if product_id:
+                dataset = DATASET_TO_FOLDER.get(
+                    infer_cdr_dataset(item, allow_name_fallback=True) or ""
+                )
                 evidence[(provider, product_id)].append(
                     {
                         "body_sha256": digest,
                         "canonical_digest": canonical_digest,
+                        "dataset": dataset or "",
                         "phase": phase,
                     }
                 )
@@ -152,10 +168,14 @@ def validate_journal_evidence(
     product_evidence = journal_product_evidence(journal)
     for product in accounting["products"]:
         key = (directories[product["provider_uid"]], product["cdr_product_id"])
-        available = {
-            item["body_sha256"] for item in product_evidence.get(key, ())
-        }
+        records = product_evidence.get(key, ())
+        available = {item["body_sha256"] for item in records}
         if not set(product["evidence_ids"]) <= available:
             raise ValueError(
                 "product evidence does not resolve to its verified journal attempts"
+            )
+        classifications = {item["dataset"] for item in records if item["dataset"]}
+        if classifications != {product["dataset"]}:
+            raise ValueError(
+                "product dataset does not match its verified journal evidence"
             )

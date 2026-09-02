@@ -48,7 +48,7 @@ PUBLIC_DOCUMENT_FIELDS = {
         "canonical_key", "kind", "materiality", "equivalence", "review_required",
         "cosmetic", "material", "slots_changed", "reasons_json",
         "before_value_json", "after_value_json", "before_signature_json",
-        "after_signature_json", "evidence_id",
+        "after_signature_json", "evidence_id", "historical_evidence_id",
     },
 }
 _JSON_TEXT_FIELDS = {
@@ -167,7 +167,7 @@ def _validate_source_dates(document: Mapping[str, Any], observation_date: str) -
         for field in _DATE_FIELDS
         if field in document
     }
-    if any(value is not None and value > latest for value in parsed.values()):
+    if parsed.get("last_updated") is not None and parsed["last_updated"] > latest:
         raise PublicProjectionError(
             "public source date is more than 24 hours beyond observation_date"
         )
