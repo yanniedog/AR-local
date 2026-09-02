@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cdr_atomic import canonical_json_bytes
+from cdr_contracts import canonical_json_bytes
 from cdr_observation_db import (
     APPLICATION_ID,
     FAILURE_STAGES,
@@ -21,8 +21,8 @@ from cdr_observation_db import (
 
 FIXTURE = Path(__file__).parent / "fixtures/canonical_domain_real_observations.json"
 PROVIDER_UID = "provider:v1:" + "1" * 64
-PRODUCT_UID = "product:v1:" + "2" * 64
-RATE_UID = "rate:v1:" + "3" * 64
+PRODUCT_UID = "2" * 64
+RATE_UID = "3" * 64
 ACCOUNTING_ID = "ingest-2026-05-25-bank-of-melbourne"
 
 
@@ -287,7 +287,7 @@ def test_database_constraints_reject_orphans_type_drift_and_visibility_drift(tmp
         connection.execute("PRAGMA foreign_keys=ON")
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
-                "INSERT INTO bank_rates VALUES(?,?,?,?,?,?,?)", (ACCOUNTING_ID, "rate:v1:" + "4" * 64, "product:v1:" + "9" * 64, 2, "0.1", None, "{}")
+                "INSERT INTO bank_rates VALUES(?,?,?,?,?,?,?)", (ACCOUNTING_ID, "4" * 64, "9" * 64, 2, "0.1", None, "{}")
             )
         connection.rollback()
         with pytest.raises(sqlite3.IntegrityError):

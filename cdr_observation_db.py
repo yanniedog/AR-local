@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote
 
-from cdr_atomic import canonical_json_bytes
+from cdr_contracts import canonical_json_bytes
 
 SCHEMA_VERSION = 9
 APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
@@ -130,8 +130,8 @@ ISSUE_KEYS = {
     "public_safe",
 }
 PROVIDER_UID = re.compile(r"^provider(?:-fallback)?:v1:[0-9a-f]{64}$")
-PRODUCT_UID = re.compile(r"^product:v1:[0-9a-f]{64}$")
-RATE_UID = re.compile(r"^rate:v1:[0-9a-f]{64}$")
+PRODUCT_UID = re.compile(r"^[0-9a-f]{64}$")
+RATE_UID = re.compile(r"^[0-9a-f]{64}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 SCHEMA_SQL = r"""
