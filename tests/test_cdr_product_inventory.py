@@ -230,6 +230,26 @@ def test_optional_detail_rejection_publishes_only_valid_core(tmp_path: Path) -> 
     assert result.verification.sidecar_bytes == canonical_json_bytes(accounting)
 
 
+def test_trust_critical_field_rejection_quarantines_product(tmp_path: Path) -> None:
+    root, banks, status = _inputs(tmp_path)
+    banks["quarantines"] = [
+        {
+            "bank": "Bank One",
+            "product_id": "save-1",
+            "status": "field_omitted_invalid",
+            "affected_sections": ["rates"],
+            "evidence_digest": "b" * 64,
+        }
+    ]
+    accounting, _, _ = build_product_inventory(
+        root, banks, status=status, observed_at=OBSERVED_AT
+    )
+    saver = next(
+        row for row in accounting["products"] if row["cdr_product_id"] == "save-1"
+    )
+    assert saver["disposition"] == "quarantined_invalid"
+
+
 def test_corrupt_or_unattributed_failure_is_recorded_and_blocks_publication(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
     with (root / "banks" / "failures.jsonl").open("ab") as stream:

@@ -16,7 +16,11 @@ from cdr_contracts import (
     product_uid,
 )
 from cdr_ingest_support import extract_products, iter_banking_brands_from_payload, pick_text
-from cdr_product_accounting import build_product_accounting, validate_product_evidence
+from cdr_product_accounting import (
+    OPTIONAL_DETAIL_SECTIONS,
+    build_product_accounting,
+    validate_product_evidence,
+)
 from cdr_raw_attempt_journal import RawAttemptJournal
 from cdr_provider_identity_registry import (
     REGISTRY_FILENAME,
@@ -715,9 +719,13 @@ def build_product_inventory(
         blockers.append("coverage_evidence_incomplete")
 
     reasons_by_product: dict[str, set[str]] = defaultdict(set)
+    omitted_sections_by_product: dict[str, set[str]] = defaultdict(set)
     for seed in issue_seeds:
         if seed["product_uid"] is not None:
-            reasons_by_product[str(seed["product_uid"])].add(str(seed["code"]))
+            uid = str(seed["product_uid"])
+            reasons_by_product[uid].add(str(seed["code"]))
+            if seed["code"] == "field_omitted_invalid":
+                omitted_sections_by_product[uid].update(seed["affected_sections"])
     products: list[dict[str, Any]] = []
     for uid, candidate in candidates.items():
         row = normalized_by_uid.get(uid, [None])[0]
@@ -726,7 +734,13 @@ def build_product_inventory(
             disposition, core_valid, details_complete = "published_full", True, True
         elif set(reasons) <= _OMISSION_CODES:
             disposition, core_valid, details_complete = "omitted_valid", False, bool(row)
-        elif set(reasons) == {"field_omitted_invalid"} and row and rates_by_uid.get(uid):
+        elif (
+            set(reasons) == {"field_omitted_invalid"}
+            and omitted_sections_by_product[uid]
+            and omitted_sections_by_product[uid] <= OPTIONAL_DETAIL_SECTIONS
+            and row
+            and rates_by_uid.get(uid)
+        ):
             disposition, core_valid, details_complete = "published_core_only", True, False
         else:
             disposition, core_valid, details_complete = "quarantined_invalid", False, bool(row)

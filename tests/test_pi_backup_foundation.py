@@ -36,6 +36,11 @@ COMMIT = "a" * 40
 DIGEST = "b" * 64
 
 
+def test_snapshot_preserves_status_and_legacy_nginx_configs() -> None:
+    assert Path("/etc/nginx/sites-available/ar-local-status") in backup.SYSTEM_CONFIGURATION_PATHS
+    assert Path("/etc/nginx/sites-available/ar-local-dashboard") in backup.SYSTEM_CONFIGURATION_PATHS
+
+
 def valid_snapshot_manifest(files: list[dict[str, object]]) -> dict[str, object]:
     timestamp = "2026-08-24T00:00:00+00:00"
     return {

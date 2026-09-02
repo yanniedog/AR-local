@@ -6,10 +6,13 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Mapping
 
 from cdr_observation import load_verified_observation
 from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
+from cdr_product_accounting import validate_product_evidence
+from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
@@ -55,6 +58,64 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_promoted_product_evidence(
+    export_root: Path, accounting: Mapping[str, object]
+) -> None:
+    status_path = export_root / "ingest-status.json"
+    if status_path.is_symlink() or not status_path.is_file():
+        raise ValueError("canonical observation lacks promoted ingest evidence")
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("promoted ingest status is unreadable") from error
+    pointer = status.get("raw_attempt_journal") if isinstance(status, Mapping) else None
+    if not isinstance(pointer, Mapping):
+        raise ValueError("promoted ingest evidence pointer is absent")
+    raw_path = str(pointer.get("path") or "")
+    relative = PurePosixPath(raw_path)
+    session = str(pointer.get("session_id") or "")
+    if (
+        pointer.get("verified") is not True
+        or pointer.get("path_resolution") != "relative_to_finalized_export_root"
+        or pointer.get("retention") != "hash_bound_finalized_artifact"
+        or pointer.get("head_digest") != accounting["raw_attempt_journal_digest"]
+        or session != accounting["accounting_id"]
+        or relative.parts
+        != ("attempt-evidence", "raw-attempt-journals-v1", session)
+        or relative.is_absolute()
+        or "\\" in raw_path
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise ValueError("promoted ingest evidence pointer is invalid")
+    journal_root = export_root.joinpath(*relative.parts)
+    parents = (export_root / relative.parts[0], journal_root.parent, journal_root)
+    if any(path.is_symlink() or not path.is_dir() for path in parents):
+        raise ValueError("promoted ingest evidence tree is invalid")
+    lock = journal_root / ".lock"
+    if lock.is_symlink() or not lock.is_file() or lock.stat().st_size != 1:
+        raise ValueError("promoted ingest evidence lock is invalid")
+    try:
+        journal = RawAttemptJournal(journal_root.parent, session)
+        summary = journal.summary(recover=False)
+        records = journal.evidence_records(recover=False)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ValueError("promoted ingest journal verification failed") from error
+    for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
+        if pointer.get(field) != summary.get(field):
+            raise ValueError("promoted ingest journal does not match its pointer")
+    manifest_relative = PurePosixPath(str(pointer.get("promotion_manifest_path") or ""))
+    if manifest_relative != relative / "promotion-manifest.json":
+        raise ValueError("promoted ingest manifest path is invalid")
+    manifest = export_root.joinpath(*manifest_relative.parts)
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("promoted ingest manifest is absent")
+    if _sha256_file(manifest) != pointer.get("promotion_manifest_sha256"):
+        raise ValueError("promoted ingest manifest digest does not match")
+    validate_product_evidence(
+        accounting, {str(record["body_sha256"]) for record in records}
+    )
+
+
 def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
     with closing(sqlite3.connect(
         f"file:{database.as_posix()}?mode=ro&immutable=1", uri=True
@@ -62,6 +123,7 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
     if user_version == OBSERVATION_SCHEMA_VERSION:
         observation, accounting = load_verified_observation(database.parent)
+        _validate_promoted_product_evidence(database.parent, accounting)
         return {
             "run_date": observation["observation_date"],
             "counts": observation["row_counts"],

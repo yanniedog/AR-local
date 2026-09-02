@@ -73,6 +73,9 @@ RUN_ISSUE_CODES = (
 ISSUE_CODES = PRODUCT_ISSUE_CODES + PROVIDER_ISSUE_CODES + REGISTER_ISSUE_CODES + RUN_ISSUE_CODES
 VALID_ABSENCE_CODES = frozenset({"no_current_rate", "product_closed", "unsupported_category"})
 OPTIONAL_DETAIL_CODES = frozenset({"field_omitted_invalid"})
+OPTIONAL_DETAIL_SECTIONS = frozenset(
+    {"details", "fees", "features", "eligibility", "constraints"}
+)
 TRUST_CRITICAL_CODES = frozenset(PRODUCT_ISSUE_CODES) - VALID_ABSENCE_CODES - OPTIONAL_DETAIL_CODES
 
 _ASCII_SPACE = re.compile(r"[\t\n\v\f\r ]+")
@@ -352,7 +355,11 @@ def _validate_product_flags(product: Mapping[str, Any]) -> None:
     elif disposition == "omitted_valid":
         if product["core_valid"] or not reasons or not reasons <= VALID_ABSENCE_CODES:
             raise ValueError("omitted_valid requires an allowlisted valid-absence reason")
-    elif product["core_valid"] or not reasons or not reasons <= TRUST_CRITICAL_CODES:
+    elif (
+        product["core_valid"]
+        or not reasons
+        or not reasons <= TRUST_CRITICAL_CODES | OPTIONAL_DETAIL_CODES
+    ):
         raise ValueError(
             "quarantined_invalid requires invalid core and trust-critical reasons"
         )
@@ -655,6 +662,7 @@ def _validate_references(
             legacy_keys[key] = product["product_uid"]
         _validate_product_flags(product)
     product_codes: dict[str, set[str]] = defaultdict(set)
+    product_issues: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     provider_codes: dict[str, set[str]] = defaultdict(set)
     issue_ids: set[str] = set()
     for issue in issues:
@@ -673,9 +681,32 @@ def _validate_references(
             if product["disposition"] != issue["disposition"]:
                 raise ValueError("issue disposition disagrees with its product")
             product_codes[issue["product_uid"]].add(issue["code"])
+            product_issues[issue["product_uid"]].append(issue)
     for product in products:
-        if set(product["reason_codes"]) != product_codes[product["product_uid"]]:
+        uid = product["product_uid"]
+        reasons = set(product["reason_codes"])
+        if reasons != product_codes[uid]:
             raise ValueError("product reason_codes do not reconcile with terminal issues")
+        omitted_sections = {
+            section
+            for issue in product_issues[uid]
+            if issue["code"] == "field_omitted_invalid"
+            for section in issue["affected_sections"]
+        }
+        if product["disposition"] == "published_core_only" and (
+            not omitted_sections or not omitted_sections <= OPTIONAL_DETAIL_SECTIONS
+        ):
+            raise ValueError(
+                "published_core_only issues must affect only optional detail sections"
+            )
+        if (
+            product["disposition"] == "quarantined_invalid"
+            and reasons == OPTIONAL_DETAIL_CODES
+            and omitted_sections <= OPTIONAL_DETAIL_SECTIONS
+        ):
+            raise ValueError(
+                "optional detail sections alone cannot quarantine a product"
+            )
     population_unknown_codes = {
         "pagination_incomplete",
         "products_index_failed",
