@@ -24,10 +24,10 @@ def _block(name: str) -> str:
 def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
     payload = script.encode()
-    assert len(payload) == 70927
-    assert len(script.split("\n")) == 462
+    assert len(payload) == 71260
+    assert len(script.split("\n")) == 464
     assert hashlib.sha256(payload).hexdigest() == (
-        "cf57d42fe58ed30999a264bb57eb40c056d55dc07c6e9bcf9afe2a50d40a7409"
+        "be2bf7562f4b1f79f1a5ae3d17388791817a391e4d0b595878ab97c2231f7107"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -41,15 +41,16 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert "public/local asset drift: $key/$name" in script
     assert "dated/rolling asset drift: $role" in script
     assert "$earlyObservation.local_v1" in script
+    assert "local payload counts do not match finalized marker" in script
 
 
 def test_sequence7_materializer_journals_initialization_failures() -> None:
     script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")
     payload = script.encode()
-    assert len(payload) == 37301
-    assert len(script.split("\n")) == 355
+    assert len(payload) == 37634
+    assert len(script.split("\n")) == 357
     assert hashlib.sha256(payload).hexdigest() == (
-        "c4936cd6cc53249150c19fd5b28edc0ba935e62a2a31f206c4a72e5603723af0"
+        "9e86ae50e44c749a877c14ad785eefc4852242ca5751bfd85e98b653bee775bd"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
