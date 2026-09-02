@@ -7797,7 +7797,7 @@ $requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
 $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae'
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE7-EXECUTION'
 if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
-$candidateSha='eced39a6e8c5f4c24aad63dc45002af0c13a8699'
+$candidateSha='19856beb06dac53651e440a5ab2561b4bdc8eb74'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -8051,13 +8051,15 @@ $sources=[ordered]@{
 'laptop_backup_transport.py'='59cd046e7fae1eab543bb70dd0aca91bf346d6f1b554407a5eab76b3097ddfc1'
 'laptop_pull_backup.py'='952fae2d5e7e6a1952c81c387d9c426bf038f394bf739b43a05c5f2cacaf6a00'
 'laptop_backup_ssh_endpoint.py'='4b425d82301c749f3a1f6f2e36a070c169ea8a6e961d8d1ffd52fddbb4347f93'
-'laptop_backup_daily_verify.py'='d81a766625bc1de2ef40f18932c6732750c089c4a2595ea1f0dd29252109bb79'
+'laptop_backup_daily_verify.py'='fe0a189467adee07f7ee577b53edd220fb598564a86afb0e26fed06dd111803e'
 'pi_backup_foundation.py'='847fcc1b132dc231581cb53f8855d1abdc6abc366fbf7c6b7aa616627cd4c73b'
 'pi_laptop_backup_source.py'='95007d184d6dbe0bde68593e2e4c43f5f82066ad3d10dab158d0c523e127835a'
 'cdr_contracts.py'='5bd067926439c7a2b5edb9b464dd0fe3b777e41ac4b93f9ba41a638a0ddd4dc3'
-'cdr_observation.py'='559deadc65c493c4fe5c45a2b5987c48f7d86418276ed7344b0fe0a6e2ab5f9a'
+'cdr_observation.py'='651ca036e4c264af4d9572e18b44ad97b5bda4a24a832ee1f4c30a9a78f6d75a'
 'cdr_observation_db.py'='4a06bdce1169548bc7f37997ebb2740f497af4c48bdc087f25bb168795a5717a'
-'cdr_product_accounting.py'='052ae343b6187c12f9ce55153d4d4c8034241feed6f0742e00910b9338595182'
+'cdr_product_accounting.py'='82fe41afeb24198bb4d1e6da8734bc65d9b5e785ea11edec8fa8d08f7a427bc0'
+'cdr_attempt_evidence_promotion.py'='87475dedee395681919d0d33d0c14d58c00ba50a0a65b64780aa703f43761e2e'
+'cdr_journal_evidence.py'='2fedefb504b28abfce3068b440a7d512c74f8d221ffb761d3c1e1d730dc02a16'
 'contracts\observation-v1.schema.json'='a99e95d541c9fefc931b110ef4d694d3a1a5263d7926f7822ea92ed20128cc3e'
 'contracts\product-accounting-v1.schema.json'='f41c219c242f6f8e0cc94546178b97640952c03979994559e9afa1e5073973a4'
 }
@@ -8246,8 +8248,8 @@ $generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS' $null ([ordered
 ```
 <!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
 
-The generator above is exactly 71260 UTF-8/LF bytes, 464 lines, SHA-256
-`3a2e18d26cb68cb76bf349e389cac6af46ef0948b796a62888b77f719fe8e4bd`.
+The generator above is exactly 71456 UTF-8/LF bytes, 466 lines, SHA-256
+`73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f`.
 Its PowerShell parser has zero errors. Its only native `python -c` site is the
 base64 bootstrap helper.
 
@@ -8273,7 +8275,7 @@ $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUA
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE7-EXECUTION'
 $runtimeSource='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
 $repo='https://github.com/yanniedog/AR-local.git'
-$candidateSha='eced39a6e8c5f4c24aad63dc45002af0c13a8699'
+$candidateSha='19856beb06dac53651e440a5ab2561b4bdc8eb74'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -8471,7 +8473,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-7 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne71260-or$script.Split([char]10).Count-ne464-or$scriptSha-cne'3a2e18d26cb68cb76bf349e389cac6af46ef0948b796a62888b77f719fe8e4bd'){throw 'sequence-7 generator binding mismatch'}
+if($scriptBytes.Length-ne71456-or$script.Split([char]10).Count-ne466-or$scriptSha-cne'73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f'){throw 'sequence-7 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
@@ -8621,7 +8623,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
 <!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
 
 The materializer above is exactly 37634 UTF-8/LF bytes, 357 lines, SHA-256
-`ba19cdc3a13c4373b47b27cd589ae966178e84328a774d156828cf37f001b5a6`.
+`3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf`.
 It is the exact next safe command after merge; any different bytes are
 unauthorized.
 
@@ -8667,7 +8669,7 @@ blocked.
   "authority": "HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY",
   "correction": "C-20260902T160000+1000",
   "base_main_sha": "c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe",
-  "candidate_sha": "eced39a6e8c5f4c24aad63dc45002af0c13a8699",
+  "candidate_sha": "19856beb06dac53651e440a5ab2561b4bdc8eb74",
   "quarantines": [
     "sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383",
     "sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2",
@@ -8707,15 +8709,15 @@ blocked.
   "complete_handoff_raw_sha256": "D012_SEQUENCE7_MATERIALIZATION_RECORD",
   "generator": {
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
-    "bytes": 71260,
-    "lines": 464,
-    "sha256": "3a2e18d26cb68cb76bf349e389cac6af46ef0948b796a62888b77f719fe8e4bd"
+    "bytes": 71456,
+    "lines": 466,
+    "sha256": "73d743b6c69038a3a7aa7ba89a12b8bd6d05b527c9777c730a17f4b38511eb5f"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
     "bytes": 37634,
     "lines": 357,
-    "sha256": "ba19cdc3a13c4373b47b27cd589ae966178e84328a774d156828cf37f001b5a6"
+    "sha256": "3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -8727,7 +8729,7 @@ blocked.
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000",
-  "next_command_utf8_lf_sha256": "ba19cdc3a13c4373b47b27cd589ae966178e84328a774d156828cf37f001b5a6",
+  "next_command_utf8_lf_sha256": "3d9ac63d02e62c94ea24d68a855393e806e12311dfc20c8a5ad046d218841cdf",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [
