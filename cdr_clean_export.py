@@ -331,7 +331,12 @@ def _validate_core_rates(record: Mapping[str, Any], dataset: str) -> None:
         (),
     )
     for key in wanted:
-        for item in as_items(record.get(key)):
+        raw = record.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, list) or any(not isinstance(item, Mapping) for item in raw):
+            raise ValueError(f"{key} must be an array of objects")
+        for item in raw:
             parse_rate_string(item.get("rate"))
             comparison = item.get("comparisonRate")
             if comparison not in (None, ""):

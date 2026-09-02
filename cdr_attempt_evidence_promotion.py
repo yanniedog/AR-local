@@ -227,7 +227,14 @@ def _verified_source(
         summary = journal.summary(recover=False)
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("attempt journal source verification failed") from error
-    for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
+    for field in (
+        "schema_version",
+        "session_id",
+        "attempts",
+        "head_digest",
+        "observed_at",
+        "verified",
+    ):
         if pointer.get(field) != summary.get(field):
             raise AttemptEvidencePromotionError(
                 f"attempt journal source summary mismatch: {field}"

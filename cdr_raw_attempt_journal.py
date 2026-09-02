@@ -46,6 +46,18 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+def _timestamp(value: Any, label: str) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise AttemptJournalError(f"{label} is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise AttemptJournalError(f"{label} is invalid") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise AttemptJournalError(f"{label} lacks a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
 def new_session_id(prefix: str = "ingest") -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     return f"{prefix}-{stamp}-{os.urandom(6).hex()}"
@@ -314,8 +326,10 @@ class RawAttemptJournal:
             raise AttemptJournalError("attempt predecessor digest is invalid")
         return digest
 
-    def _verify_committed(self, current: Mapping[str, Any]) -> None:
+    def _verify_committed(self, current: Mapping[str, Any]) -> Optional[str]:
         previous_digest: Optional[str] = None
+        head_completed_at: Optional[str] = None
+        observed_at: Optional[datetime] = None
         sequence_count = int(current["sequence"])
         for sequence in range(1, sequence_count + 1):
             candidates = sorted(self.events.glob(f"{sequence:08d}-*.json"))
@@ -333,10 +347,30 @@ class RawAttemptJournal:
                 raise AttemptJournalError(f"attempt key for sequence {sequence} is unreadable") from error
             if pointer != self._pointer_for(event, candidates[0].name):
                 raise AttemptJournalError(f"attempt key for sequence {sequence} does not match its event")
+            request = event.get("request")
             response = event.get("response")
             body_path_text = event.get("body_path")
-            if not isinstance(response, dict) or not isinstance(body_path_text, str):
+            if (
+                not isinstance(request, dict)
+                or not isinstance(response, dict)
+                or not isinstance(body_path_text, str)
+            ):
                 raise AttemptJournalError(f"attempt body metadata for sequence {sequence} is invalid")
+            started = _timestamp(
+                request.get("started_at"),
+                f"attempt request timestamp for sequence {sequence}",
+            )
+            completed_text = response.get("completed_at")
+            completed = _timestamp(
+                completed_text,
+                f"attempt response timestamp for sequence {sequence}",
+            )
+            if completed < started:
+                raise AttemptJournalError(
+                    f"attempt timestamps for sequence {sequence} are reversed"
+                )
+            head_completed_at = str(completed_text)
+            observed_at = max(observed_at, completed) if observed_at is not None else completed
             body_name = str(response.get("body_sha256") or "")
             if body_path_text != f"bodies/{body_name}.body" or not re.fullmatch(r"[0-9a-f]{64}", body_name):
                 raise AttemptJournalError(f"attempt body path for sequence {sequence} is invalid")
@@ -350,10 +384,15 @@ class RawAttemptJournal:
             previous_digest = str(event["event_digest"])
         if current.get("head_digest") != previous_digest:
             raise AttemptJournalError("attempt journal head does not match the committed event chain")
+        if current.get("updated_at") != head_completed_at:
+            raise AttemptJournalError("attempt journal timestamp does not match its head event")
         if len(list(self.events.glob("*.json"))) != sequence_count:
             raise AttemptJournalError("attempt journal contains uncommitted event files")
         if len(list(self.keys.glob("*.json"))) != sequence_count:
             raise AttemptJournalError("attempt journal contains unbound key pointers")
+        if observed_at is None:
+            return None
+        return observed_at.isoformat().replace("+00:00", "Z")
 
     def _identity(
         self,
@@ -378,6 +417,10 @@ class RawAttemptJournal:
     ) -> dict[str, Any]:
         if not isinstance(body, bytes) or len(body) > MAX_EVIDENCE_BODY_BYTES:
             raise AttemptJournalError("attempt response body exceeds the evidence limit")
+        started = _timestamp(started_at, "attempt request timestamp")
+        completed = _timestamp(completed_at, "attempt response timestamp")
+        if completed < started:
+            raise AttemptJournalError("attempt timestamps are reversed")
         if isinstance(status, bool) or not isinstance(status, int) or not 0 <= status <= 999:
             raise AttemptJournalError("attempt status must be an integer")
         if (
@@ -523,11 +566,12 @@ class RawAttemptJournal:
             current = self._read_current()
             if recover:
                 current = self._recover(current)
-            self._verify_committed(current)
+            observed_at = self._verify_committed(current)
             return {
                 "schema_version": SCHEMA_VERSION,
                 "session_id": self.session_id,
                 "attempts": current["sequence"],
                 "head_digest": current.get("head_digest"),
+                "observed_at": observed_at,
                 "verified": True,
             }

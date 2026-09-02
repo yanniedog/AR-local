@@ -392,9 +392,25 @@ def ingest_brand(
 
         if res.version is not None:
             preferred_version = res.version
+        try:
+            page_products = extract_products(parsed)
+        except ValueError as error:
+            population.fail_population("products_page_invalid")
+            append_failure(
+                date_root,
+                {
+                    "phase": "products_index",
+                    "bank": bank_dir_name,
+                    "url": url,
+                    "status": "products_page_invalid",
+                    "error": str(error),
+                },
+                lock=failure_lock,
+            )
+            break
         population.page_fetched(parsed)
 
-        for product in extract_products(parsed):
+        for product in page_products:
             if max_products is not None and products_seen >= max_products:
                 population.fail_population("max_products_reached")
                 log(f"max-products reached for {bank_dir_name}")

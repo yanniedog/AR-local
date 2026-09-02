@@ -26,6 +26,7 @@ The report is JSON-formatted and small enough to tail in journalctl.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from contextlib import closing
@@ -41,6 +42,50 @@ from cdr_product_change_runs import previous_finalized_run
 # 200 bp moves are essentially never legitimate same-day.
 LOW_BP = 100.0
 HIGH_BP = 200.0
+APPROVAL_SCHEMA_VERSION = 1
+
+
+def persist_sanity_approval(
+    report_path: Path,
+    approval_path: Path,
+    exports_dir: Path,
+) -> Path:
+    """Validate an explicit human approval bound to one exact sanity report."""
+    try:
+        report_bytes = report_path.read_bytes()
+        report = json.loads(report_bytes)
+        approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("sanity approval or report is unreadable") from error
+    if not isinstance(report, dict) or not isinstance(approval, dict):
+        raise ValueError("sanity approval and report must be objects")
+    expected_fields = {
+        "schema_version",
+        "decision",
+        "run_date",
+        "compared_against",
+        "sanity_report_sha256",
+        "reviewer",
+        "reason",
+    }
+    if set(approval) != expected_fields:
+        raise ValueError("sanity approval fields are invalid")
+    expected = {
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "decision": "approve",
+        "run_date": report.get("run_date"),
+        "compared_against": report.get("compared_against"),
+        "sanity_report_sha256": hashlib.sha256(report_bytes).hexdigest(),
+    }
+    if any(approval.get(field) != value for field, value in expected.items()):
+        raise ValueError("sanity approval does not bind the current report")
+    for field, limit in (("reviewer", 200), ("reason", 2000)):
+        value = approval.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(f"sanity approval {field} is invalid")
+    output = exports_dir / "sanity-approval.json"
+    atomic_write_json(output, approval, create_once=True)
+    return output
 
 
 def _ladder_query(

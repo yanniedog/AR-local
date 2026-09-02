@@ -39,7 +39,7 @@ from cdr_finalization import (
 )
 from cdr_outputs import build_outputs
 from cdr_product_changes import previous_finalized_run
-from cdr_ingest_sanity import write_sanity_report
+from cdr_ingest_sanity import persist_sanity_approval, write_sanity_report
 
 
 def local_date() -> str:
@@ -605,11 +605,26 @@ def run_once(args: argparse.Namespace) -> int:
                         file=sys.stderr,
                     )
             if high or structural:
-                print(
-                    "ERROR: suspicious rate changes remain unfinalized for review.",
-                    file=sys.stderr,
-                )
-                return 2
+                approval_path = getattr(args, "sanity_approval", None)
+                if approval_path is None:
+                    print(
+                        "ERROR: suspicious rate changes remain unfinalized for review.",
+                        file=sys.stderr,
+                    )
+                    return 2
+                try:
+                    persisted_approval = persist_sanity_approval(
+                        report_path,
+                        approval_path.expanduser().resolve(),
+                        sanity_root,
+                    )
+                except Exception as exc:
+                    print(
+                        f"ERROR: sanity approval failed closed: {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                print(f"sanity-check explicitly approved: {persisted_approval}")
 
     if staged_exports_to_install is not None:
         copytree_atomic(staged_exports_to_install, target_export_root)
@@ -656,6 +671,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=None, help="SQLite path; default <exports>/local-cdr.sqlite")
     parser.add_argument("--state", type=Path, default=None, help="Daily completion marker folder")
     parser.add_argument("--date", default=None, help="Override run date YYYY-MM-DD")
+    parser.add_argument(
+        "--sanity-approval",
+        type=Path,
+        default=None,
+        help="Approval JSON bound to the exact sanity report for reviewed HIGH/STRUCTURAL changes.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",

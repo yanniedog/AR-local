@@ -156,6 +156,99 @@ def test_successful_run_status_points_to_verified_attempt_journal(tmp_path, monk
     assert status["incomplete"] is False
 
 
+def test_holder_filter_cannot_finalize_a_subset_as_full_coverage(tmp_path, monkeypatch):
+    brand = _brand("https://holder.example/products")
+    snapshot = _snapshot(brands=[brand])
+    snapshot.banking_count_before_filter = 2
+    monkeypatch.setattr(lib, "collect_register_snapshot", lambda **_kwargs: snapshot)
+
+    def fake_ingest(_brand_row, *, date_root, bank_dir_name, **_kwargs):
+        summary = date_root / "_holders" / bank_dir_name / "_products-index/index-summary.json"
+        summary.parent.mkdir(parents=True)
+        summary.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "provider_uid": brand["provider_uid"],
+                    "state": "empty",
+                    "population_known": True,
+                    "unique_product_ids": 0,
+                    "relevant_products": 0,
+                    "details_present": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(lib, "ingest_brand", fake_ingest)
+    exit_code = lib.main(
+        [
+            "--out",
+            str(tmp_path),
+            "--date",
+            "2026-08-15",
+            "--holders",
+            "Holder",
+            "--workers",
+            "1",
+            "--detail-workers",
+            "1",
+        ]
+    )
+
+    status = json.loads(
+        (tmp_path / "2026-08-15/banks/ingest-status.json").read_text(encoding="utf-8")
+    )
+    assert exit_code == 2
+    assert status["providers_registered"] == 2
+    assert status["providers_attempted"] == 1
+    assert status["provider_scope_complete"] is False
+    assert status["coverage_evidence_complete"] is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": {}},
+        {"data": {"products": [{"productId": "P1"}, "malformed"]}},
+    ],
+)
+def test_malformed_product_page_makes_population_unknown(tmp_path, monkeypatch, payload):
+    failures = []
+    monkeypatch.setattr(
+        lib,
+        "fetch_cdr_json",
+        lambda url, **_kwargs: FetchResult(
+            ok=True, status=200, url=url, text=json.dumps(payload), version=4
+        ),
+    )
+    monkeypatch.setattr(
+        lib,
+        "append_failure",
+        lambda _root, entry, lock=None: failures.append(entry),
+    )
+
+    summary = lib.ingest_brand(
+        _brand(),
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert summary["state"] == "failed"
+    assert summary["population_known"] is False
+    assert "products_page_invalid" in summary["population_errors"]
+    assert [item["status"] for item in failures] == ["products_page_invalid"]
+
+
 def test_unresolved_classification_withholds_the_observation(tmp_path, monkeypatch):
     brand = _brand("https://holder.example/products")
     monkeypatch.setattr(

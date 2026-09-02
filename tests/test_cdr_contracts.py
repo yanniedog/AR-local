@@ -144,6 +144,26 @@ def test_unknown_deposit_category_uses_only_unambiguous_dataset_evidence() -> No
     assert infer_cdr_dataset({**base, "name": "Everyday Account"}) is None
 
 
+def test_unknown_lending_category_requires_mortgage_specific_evidence() -> None:
+    generic = {
+        "productCategory": "NEW_VEHICLE_LOAN",
+        "name": "Vehicle Finance",
+        "lendingRates": [
+            {
+                "lendingRateType": "VARIABLE",
+                "repaymentType": "PRINCIPAL_AND_INTEREST",
+                "rate": "0.07",
+            }
+        ],
+    }
+    assert infer_cdr_dataset(generic) is None
+    mortgage = {
+        **generic,
+        "lendingRates": [{**generic["lendingRates"][0], "loanPurpose": "OWNER_OCCUPIED"}],
+    }
+    assert infer_cdr_dataset(mortgage) == "home_loans"
+
+
 def test_known_out_of_scope_category_wins_over_product_name() -> None:
     assert (
         infer_cdr_dataset(

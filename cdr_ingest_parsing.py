@@ -109,9 +109,10 @@ def dataset_from_cdr_category(category: Optional[str]) -> Optional[str]:
 
 def has_mortgage_structured_signals(product: Mapping[str, Any]) -> bool:
     for rate in as_array(product.get("lendingRates")):
-        if is_record(rate) and pick_text(
-            rate, ("loanPurpose", "repaymentType", "lendingRateType")
-        ):
+        purpose = normalize_category_token(
+            pick_text(rate, ("loanPurpose",)) if is_record(rate) else ""
+        )
+        if purpose in {"OWNER_OCCUPIED", "INVESTMENT"}:
             return True
     return False
 

@@ -216,7 +216,6 @@ class _StatusResolver:
 def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
     root = runs_root.expanduser().resolve()
     resolver = _StatusResolver(root)
-    resolver.resolve()
 
     class StatusHandler(BaseHTTPRequestHandler):
         server_version = "ARLocalStatus/1"

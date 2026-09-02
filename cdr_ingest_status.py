@@ -135,13 +135,15 @@ def persist_ingest_status(
         provider_states.append(provider)
         coverage_complete = coverage_complete and complete
         unresolved_total += unresolved
+    scope_complete = len(bank_work) == snapshot.banking_count_before_filter
     status.update(
         {
-            "providers_registered": len(bank_work),
+            "providers_registered": snapshot.banking_count_before_filter,
             "providers_available": snapshot.banking_count_before_filter,
             "providers_attempted": len(bank_work),
             "provider_states": provider_states,
-            "coverage_evidence_complete": coverage_complete,
+            "provider_scope_complete": scope_complete,
+            "coverage_evidence_complete": coverage_complete and scope_complete,
             "classification_unresolved_products": unresolved_total,
             "provider_state_counts": {
                 state: sum(1 for provider in provider_states if provider["state"] == state)
@@ -152,6 +154,7 @@ def persist_ingest_status(
     status["incomplete"] = bool(
         status["incomplete"]
         or not coverage_complete
+        or not scope_complete
         or any(provider["state"] not in {"complete", "empty"} for provider in provider_states)
     )
     attempt_summary = attempt_journal.summary()

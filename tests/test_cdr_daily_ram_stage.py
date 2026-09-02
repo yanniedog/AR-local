@@ -216,6 +216,51 @@ def test_suspicious_rate_change_never_reaches_finalized_history(tmp_path, monkey
     assert not (state / f"{DATE}.done.json").exists()
 
 
+def test_exact_reviewed_sanity_report_can_be_explicitly_approved(tmp_path, monkeypatch):
+    args, runs, state, _ram = _configure(tmp_path, monkeypatch)
+    report_payload = {
+        "run_date": DATE,
+        "compared_against": "2026-08-14",
+        "counts": {"HIGH": 1, "STRUCTURAL": 0, "LOW": 0},
+        "findings": [
+            {
+                "severity": "HIGH",
+                "provider": "Example Bank",
+                "product_name": "Example Saver",
+                "worst_delta_bp": 300.0,
+            }
+        ],
+    }
+    reference = tmp_path / "reviewed-report.json"
+    atomic_write_json(reference, report_payload)
+    approval = tmp_path / "approval.json"
+    atomic_write_json(
+        approval,
+        {
+            "schema_version": 1,
+            "decision": "approve",
+            "run_date": DATE,
+            "compared_against": "2026-08-14",
+            "sanity_report_sha256": hashlib.sha256(reference.read_bytes()).hexdigest(),
+            "reviewer": "operations",
+            "reason": "Confirmed against the source disclosure.",
+        },
+    )
+
+    def suspicious(export_root, *_args):
+        report = export_root / "sanity-report.json"
+        atomic_write_json(report, report_payload)
+        return report
+
+    monkeypatch.setattr(cdr_daily, "write_sanity_report", suspicious)
+    args.sanity_approval = approval
+
+    assert cdr_daily.run_once(args) == 1
+    persisted = runs / DATE / "_exports" / "sanity-approval.json"
+    assert json.loads(persisted.read_text(encoding="utf-8"))["reviewer"] == "operations"
+    assert (state / f"{DATE}.done.json").is_file()
+
+
 def test_automatic_pi_stage_keeps_large_exports_off_tmpfs(tmp_path, monkeypatch):
     args, runs, state, ram = _configure(tmp_path, monkeypatch)
     args.ram_stage = False

@@ -223,14 +223,14 @@ def iter_banking_brands_from_payload(payload: Any) -> Iterable[Dict[str, str]]:
 
 def extract_products(payload: Any) -> List[Dict[str, Any]]:
     if not is_record(payload):
-        return []
+        raise ValueError("products response must be an object")
     data = payload.get("data")
-    if is_record(data):
-        inner = data.get("products")
-        seq = as_array(inner)
-    else:
-        seq = as_array(data)
-    return [x for x in seq if is_record(x)]
+    if not is_record(data) or "products" not in data:
+        raise ValueError("products response must contain data.products")
+    products = data.get("products")
+    if not isinstance(products, list) or any(not is_record(item) for item in products):
+        raise ValueError("data.products must be an array of objects")
+    return list(products)
 
 
 def next_link(payload: Any, current_url: str) -> Optional[str]:

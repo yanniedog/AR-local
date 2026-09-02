@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from cdr_contracts import DATASETS, canonical_json_bytes, product_uid
 from cdr_product_accounting import build_product_accounting
+from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 class ProductInventoryError(ValueError):
@@ -63,21 +64,31 @@ def observed_at_from_journal(run_root: Path, status: Mapping[str, Any]) -> str:
         or any(part in {"", ".", ".."} for part in relative.parts)
     ):
         raise ProductInventoryError("raw attempt journal path is unsafe")
-    current = _json(run_root.joinpath(*relative.parts) / "current.json", "journal head")
-    if (
-        current.get("session_id") != pointer.get("session_id")
-        or current.get("sequence") != pointer.get("attempts")
-        or current.get("head_digest") != pointer.get("head_digest")
-    ):
-        raise ProductInventoryError("raw attempt journal head disagrees with ingest status")
-    value = current.get("updated_at")
+    session_id = str(pointer.get("session_id") or "")
+    if relative.parts != ("_raw-attempt-journals-v1", session_id):
+        raise ProductInventoryError("raw attempt journal path disagrees with its session")
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ProductInventoryError("journal head lacks a stable timestamp") from error
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ProductInventoryError("journal timestamp lacks a timezone")
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        summary = RawAttemptJournal(
+            run_root.joinpath(*relative.parts[:-1]), session_id
+        ).summary(recover=False)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ProductInventoryError("raw attempt journal verification failed") from error
+    for field in (
+        "schema_version",
+        "session_id",
+        "attempts",
+        "head_digest",
+        "observed_at",
+        "verified",
+    ):
+        if pointer.get(field) != summary.get(field):
+            raise ProductInventoryError(
+                f"raw attempt journal disagrees with ingest status: {field}"
+            )
+    value = summary.get("observed_at")
+    if not isinstance(value, str):
+        raise ProductInventoryError("journal lacks a stable observation timestamp")
+    return value
 
 
 def _provider_maps(

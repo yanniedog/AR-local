@@ -102,7 +102,7 @@ def _captured_run(
         status=200,
         outcome="success",
         body=register_body,
-        started_at="2026-09-02T01:02:02Z",
+        started_at=f"{run_date}T01:02:02Z",
         completed_at=observed_at,
         context={"phase": "register_discovery"},
     )
@@ -178,6 +178,29 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert not list(exports.glob("*-wal"))
     assert not list(exports.glob("*-shm"))
     assert not (exports / "dashboard-cache").exists()
+
+
+def test_malformed_rate_array_member_is_quarantined_not_silently_dropped(
+    tmp_path: Path,
+) -> None:
+    run = _captured_run(tmp_path)
+    detail_path = next(run.rglob("product-detail.json"))
+    detail = json.loads(detail_path.read_text(encoding="utf-8"))
+    detail["data"]["depositRates"].append("malformed")
+    _write_json(detail_path, detail)
+
+    result = build_outputs(run)
+    observation = json.loads(
+        (run / "_exports/observation-v1.json").read_text(encoding="utf-8")
+    )
+    accounting = json.loads(
+        (run / "_exports/product-accounting-v1.json").read_text(encoding="utf-8")
+    )
+
+    assert result["banks"]["rates"] == 0
+    assert observation["row_counts"]["rates"] == 0
+    assert accounting["products"][0]["disposition"] == "quarantined_invalid"
+    assert "rate_invalid" in accounting["products"][0]["reason_codes"]
 
 
 def test_build_outputs_rejects_noncanonical_database_before_writing(tmp_path: Path) -> None:

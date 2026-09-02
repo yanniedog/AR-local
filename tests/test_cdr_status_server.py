@@ -69,6 +69,15 @@ def test_status_rejects_canonical_files_without_finalization(tmp_path: Path) -> 
     assert value["reason"] == "no_verified_observation"
 
 
+def test_handler_binds_without_warming_the_verified_cache(tmp_path: Path, monkeypatch) -> None:
+    def fail_if_called(_self):
+        raise AssertionError("status verification must be request-driven")
+
+    monkeypatch.setattr(cdr_status_server._StatusResolver, "resolve", fail_if_called)
+    handler = cdr_status_server.handler_for(tmp_path / "runs")
+    assert handler.__name__ == "StatusHandler"
+
+
 def test_status_resolver_caches_only_unchanged_verified_generation(
     tmp_path: Path, monkeypatch
 ) -> None:
