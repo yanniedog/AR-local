@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -21,8 +23,9 @@ SID = re.compile(r"S-1-5-21-(?:[0-9]+-){3}[0-9]+")
 SSH_HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
 SSH_USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 SSH_ED25519_KEY = re.compile(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [^\r\n]+)?")
-FIXED_SSH_ENDPOINT = ("192.168.20.19", "pi", 22)
-FIXED_SSH_HOST_KEY_SHA256 = "4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836"
+FIXED_SSH_USER = "pi"
+FIXED_SSH_PORT = 22
+FIXED_SSH_HOST_KEY_BLOB_SHA256 = "84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e"
 
 
 def sha256(path: Path) -> str:
@@ -97,9 +100,15 @@ def pinned_known_host(path: Path, host: str, port: int) -> bytes:
             key = " ".join(fields[1:])
             if not SSH_ED25519_KEY.fullmatch(key):
                 raise ValueError("pinned SSH host key must be one ssh-ed25519 key")
+            try:
+                key_blob = base64.b64decode(fields[2], validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError("pinned SSH host key encoding is invalid") from exc
+            if hashlib.sha256(key_blob).hexdigest() != FIXED_SSH_HOST_KEY_BLOB_SHA256:
+                raise ValueError("pinned SSH host key fingerprint is invalid")
             matches.append(f"{expected} {key}")
     if len(matches) != 1:
-        raise ValueError("known_hosts must contain exactly one pinned key for the fixed SSH host")
+        raise ValueError("known_hosts must contain exactly one pinned key for the authenticated SSH host")
     return (matches[0] + "\n").encode("ascii")
 
 
@@ -126,9 +135,9 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("operator SID is invalid")
     if (not SSH_HOST.fullmatch(args.ssh_host) or ".." in args.ssh_host or
             not SSH_USER.fullmatch(args.ssh_user) or not 1 <= args.ssh_port <= 65535):
-        raise ValueError("fixed SSH host, user, or port is invalid")
-    if (args.ssh_host, args.ssh_user, args.ssh_port) != FIXED_SSH_ENDPOINT:
-        raise ValueError("trusted package SSH endpoint is not the fixed backup endpoint")
+        raise ValueError("trusted SSH host, user, or port is invalid")
+    if args.ssh_user != FIXED_SSH_USER or args.ssh_port != FIXED_SSH_PORT:
+        raise ValueError("trusted package SSH user or port is not the backup contract")
     candidate = Path(args.candidate_repo).resolve()
     authority = Path(args.authority_repo).resolve()
     python_root = Path(args.python_root).resolve()
@@ -162,8 +171,6 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         known_host_bytes = pinned_known_host(
             Path(args.ssh_known_hosts).resolve(strict=True), args.ssh_host, args.ssh_port
         )
-        if hashlib.sha256(known_host_bytes).hexdigest() != FIXED_SSH_HOST_KEY_SHA256:
-            raise ValueError("fixed SSH host key fingerprint is invalid")
         (root / "ssh" / "known_hosts").write_bytes(known_host_bytes)
         (root / "operator.sid").write_text(args.operator_sid, encoding="ascii", newline="")
         (root / "protected.sentinel").write_bytes(b"AR-local trusted launcher sentinel\n")

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -23,8 +25,9 @@ REMOTE_HELPER_DIR_RE = re.compile(r"^/tmp/ar-local-laptop-backup\.[A-Za-z0-9]{8}
 SSH_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-FIXED_SSH_ENDPOINT = ("192.168.20.19", "pi", 22)
-FIXED_SSH_HOST_KEY_SHA256 = "4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836"
+FIXED_SSH_USER = "pi"
+FIXED_SSH_PORT = 22
+FIXED_SSH_HOST_KEY_BLOB_SHA256 = "84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e"
 
 
 def _transport_value(args: object, name: str) -> str:
@@ -117,13 +120,32 @@ def _validated_contract_file(
             raise ValueError("trusted SSH key file differs from the protected contract")
         if not hmac.compare_digest(sha256_file(Path(path)), expected):
             raise ValueError("trusted SSH key file hash mismatch")
-        if name == "ssh_known_hosts" and not hmac.compare_digest(expected, FIXED_SSH_HOST_KEY_SHA256):
-            raise ValueError("trusted SSH host key is not the fixed backup host key")
     return path
 
 
+def _validate_pinned_known_host(path: Path, host: str, port: int) -> None:
+    expected = host if port == 22 else f"[{host}]:{port}"
+    try:
+        text = path.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError("trusted SSH pinned host-key file is invalid") from exc
+    if "\r" in text or text.count("\n") != 1 or not text.endswith("\n"):
+        raise ValueError("trusted SSH pinned host-key file is invalid")
+    fields = text[:-1].split()
+    if len(fields) < 3 or fields[0] != expected or fields[1] != "ssh-ed25519":
+        raise ValueError("trusted SSH pinned host-key file is invalid")
+    try:
+        key_blob = base64.b64decode(fields[2], validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("trusted SSH pinned host-key file is invalid") from exc
+    if not hmac.compare_digest(
+        hashlib.sha256(key_blob).hexdigest(), FIXED_SSH_HOST_KEY_BLOB_SHA256
+    ):
+        raise ValueError("trusted SSH host key fingerprint is invalid")
+
+
 def ssh_options(args: object, *, scp: bool = False, platform: str | None = None) -> list[str]:
-    """Return the fixed, non-interactive OpenSSH trust contract."""
+    """Return the authenticated, non-interactive OpenSSH trust contract."""
     platform = platform or os.name
     contract = _trusted_contract(platform)
     executable = _validated_executable(args, "scp" if scp else "ssh", platform, contract)
@@ -136,14 +158,16 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
         raise ValueError("trusted SSH host or user is invalid")
     if not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError("trusted SSH port is invalid")
-    if (host, user, int(port)) != FIXED_SSH_ENDPOINT:
-        raise ValueError("trusted SSH endpoint is not the fixed backup endpoint")
+    if user != FIXED_SSH_USER or int(port) != FIXED_SSH_PORT:
+        raise ValueError("trusted SSH user or port is not the backup contract")
     if contract is not None and (
         host != _contract_value(contract, "ssh_host")
         or user != _contract_value(contract, "ssh_user")
         or int(port) != int(contract.get("ssh_port", 0))
     ):
         raise ValueError("trusted SSH endpoint differs from the protected contract")
+    if platform == "nt":
+        _validate_pinned_known_host(Path(known_hosts), host, int(port))
     options = [
         str(executable), "-F", "NUL",
         "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",

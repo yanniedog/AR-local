@@ -114,7 +114,8 @@ def test_trusted_child_requires_protected_code_and_controlled_tools() -> None:
     assert "ArTrustedJobObject" in child and "0x00002000" in child
     assert "AssignProcessToJobObject" in child and "TerminateJobObject" in child
     assert "[ArTrustedJobObject]::Terminate($Job)" in child
-    assert "$sshHost -cne '192.168.20.19'" in child
+    assert "192.168.20.19" not in child
+    assert "84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e" in child
     assert "$sshUser -cne 'pi'" in child
     assert "$sshPort -ne 22" in child
     assert "$env:PATH =" in child

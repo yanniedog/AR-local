@@ -24,7 +24,6 @@ def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
     ssh.write_bytes(b"mock ssh executable")
     scp.write_bytes(b"mock scp executable")
     identity.write_bytes(b"mock private key")
-    known_hosts.write_bytes(b"fixed known host")
     defaults: dict[str, object] = {
         "host": "192.168.20.19", "ssh_user": "pi", "ssh_port": 22,
         "ssh_path": str(ssh.resolve()), "ssh_sha256": hashlib.sha256(ssh.read_bytes()).hexdigest(),
@@ -33,6 +32,9 @@ def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
         "ssh_known_hosts": str(known_hosts.resolve()),
     }
     defaults.update(values)
+    known_hosts.write_text(
+        f"{defaults['host']} ssh-ed25519 QUJDRA==\n", encoding="ascii"
+    )
     return Namespace(**defaults)
 
 
@@ -69,7 +71,7 @@ def _native_contract(args: Namespace) -> dict[str, object]:
         "ssh_identity_path": args.ssh_identity,
         "ssh_identity_sha256": transport.sha256_file(Path(args.ssh_identity)),
         "ssh_known_hosts_path": args.ssh_known_hosts,
-        "ssh_known_hosts_sha256": transport.FIXED_SSH_HOST_KEY_SHA256,
+        "ssh_known_hosts_sha256": transport.sha256_file(Path(args.ssh_known_hosts)),
     }
 
 
@@ -79,9 +81,9 @@ def _authenticate_native_fixture(
     if os.name != "nt":
         return
     contract = _native_contract(args)
-    host_key_hash = transport.sha256_file(Path(args.ssh_known_hosts))
-    contract["ssh_known_hosts_sha256"] = host_key_hash
-    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_SHA256", host_key_hash)
+    monkeypatch.setattr(
+        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
+    )
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
 
 
@@ -134,9 +136,10 @@ def test_native_transport_requires_protected_hash_bound_contract(
 ) -> None:
     args = _native_transport_args(tmp_path)
     contract = _native_contract(args)
-    Path(args.ssh_known_hosts).write_bytes(b"fixed known host")
     contract["ssh_known_hosts_sha256"] = transport.sha256_file(Path(args.ssh_known_hosts))
-    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_SHA256", contract["ssh_known_hosts_sha256"])
+    monkeypatch.setattr(
+        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
+    )
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
     assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
     args.ssh_sha256 = "0" * 64
@@ -148,9 +151,35 @@ def test_native_transport_requires_protected_hash_bound_contract(
         transport.ssh_options(args, platform="nt")
 
 
-def test_transport_rejects_non_backup_endpoint() -> None:
-    with pytest.raises(ValueError, match="fixed backup endpoint"):
-        transport.ssh_options(_portable_transport_args(host="192.0.2.10"), platform="posix")
+def test_transport_accepts_authenticated_dynamic_endpoint() -> None:
+    options = transport.ssh_options(
+        _portable_transport_args(host="192.0.2.10"), platform="posix"
+    )
+    assert options[0].endswith("ssh.exe")
+
+
+def test_transport_keeps_backup_user_and_port_fixed() -> None:
+    with pytest.raises(ValueError, match="user or port"):
+        transport.ssh_options(_portable_transport_args(ssh_user="root"), platform="posix")
+
+
+def test_native_transport_rejects_wrong_pi_host_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    args = _native_transport_args(tmp_path)
+    contract = _native_contract(args)
+    monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", "0" * 64)
+    with pytest.raises(ValueError, match="host key fingerprint"):
+        transport.ssh_options(args, platform="nt")
+
+
+def test_native_transport_accepts_endpoint_bound_by_protected_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    args = _native_transport_args(tmp_path, host="192.0.2.10")
+    _authenticate_native_fixture(monkeypatch, args)
+    assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
 
 
 def test_hung_windows_ssh_is_killed_only_after_proven_post_eof() -> None:

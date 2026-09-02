@@ -250,7 +250,8 @@ def test_package_builder_exposes_only_authenticated_archive_inputs() -> None:
     assert "case-insensitive duplicate package path" in source
     assert "is_symlink()" in source
     assert "CANONICAL_ORIGIN" in source
-    assert "FIXED_SSH_HOST_KEY_SHA256" in source
+    assert "FIXED_SSH_HOST_KEY_BLOB_SHA256" in source
+    assert "192.168.20.19" not in source
 
 
 def test_package_builder_makes_standalone_exact_checkouts(
@@ -296,8 +297,8 @@ def test_package_builder_makes_standalone_exact_checkouts(
     known_hosts = tmp_path / "known_hosts"
     known_hosts.write_text("192.168.20.19 ssh-ed25519 QUJDRA==\n", encoding="ascii")
     monkeypatch.setattr(
-        trusted_package, "FIXED_SSH_HOST_KEY_SHA256",
-        trusted_package.hashlib.sha256(b"192.168.20.19 ssh-ed25519 QUJDRA==\n").hexdigest(),
+        trusted_package, "FIXED_SSH_HOST_KEY_BLOB_SHA256",
+        trusted_package.hashlib.sha256(b"ABCD").hexdigest(),
     )
     output = tmp_path / "trusted.zip"
     result = build(argparse.Namespace(
@@ -321,14 +322,25 @@ def test_package_builder_makes_standalone_exact_checkouts(
         ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(second),
     ))
     assert second_result["sha256"] == result["sha256"]
-    with pytest.raises(ValueError, match="fixed backup endpoint"):
+    known_hosts.write_text("example.invalid ssh-ed25519 QUJDRA==\n", encoding="ascii")
+    dynamic = build(argparse.Namespace(
+        candidate_repo=str(candidate), candidate_sha=candidate_sha,
+        authority_repo=str(authority), authority_sha=authority_sha,
+        python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
+        install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
+        operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
+        whoami=str(tools[3]), ssh_host="example.invalid", ssh_user="pi", ssh_port=22,
+        ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(tmp_path / "dynamic.zip"),
+    ))
+    assert dynamic["sha256"]
+    with pytest.raises(ValueError, match="host, user, or port is invalid"):
         build(argparse.Namespace(
             candidate_repo=str(candidate), candidate_sha=candidate_sha,
             authority_repo=str(authority), authority_sha=authority_sha,
             python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
             install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
             operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
-            whoami=str(tools[3]), ssh_host="example.invalid", ssh_user="pi", ssh_port=22,
+            whoami=str(tools[3]), ssh_host="bad..host", ssh_user="pi", ssh_port=22,
             ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(tmp_path / "drift.zip"),
         ))
     with zipfile.ZipFile(output) as archive:
