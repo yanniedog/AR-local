@@ -376,7 +376,7 @@ with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as con:
  banks=m.get('banks') or {};assert counts['bank_products']==int(banks.get('products') or 0)==discovered;assert counts['bank_rates']==int(banks.get('rates') or 0);assert counts['bank_product_facts']==int(banks.get('product_facts') or 0);assert counts['bank_product_changes']==int(banks.get('product_changes') or 0);assert counts['bank_items']==sum(int(banks.get(k) or 0) for k in ('fees','features','eligibility','constraints'))
 assert sum(int(x.get('failure_records') or 0) for x in states)==failures
 local_v1={}
-for key,folder,tag,required,allowed in (('dated','v1-dated',f'app-payload-{D}',{'core','details'},{'core','details'}),('rolling','v1-latest','app-payload-latest',{'core','details'},{'bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'})):
+for key,folder,tag,required,allowed in (('dated','v1-dated',f'app-payload-{D}',{'core','details'},{'core','details'}),('rolling','v1-latest','app-payload-latest',{'core','details'},{'bank_history','core','details','history_banks','rba_calendar','search_index'})):
  root=(state/'app-payload/v1'/folder).resolve();root.relative_to(state);manifest_path=(root/'manifest.json').resolve();manifest_path.relative_to(root);payload=json.loads(manifest_path.read_text())
  assert payload.get('schema_version')==1 and payload.get('run_date')==D and payload.get('tag')==tag;roles=set((payload.get('files') or {}).keys());assert required<=roles<=allowed;assets={}
  for role,item in payload['files'].items():

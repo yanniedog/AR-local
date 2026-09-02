@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
-import app_payload_bank_spread
-import payload_crypto
 import rba_decisions
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
@@ -100,26 +98,20 @@ def _asset(
     run_date: str,
     gz: bytes,
     release_base: str,
-    enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     # Content-addressed name (kind-<run_date>-<sha12>.json.gz[.enc]): a new/corrected
     # payload gets a NEW filename, so uploading it never overwrites an asset the
     # previously published manifest still references. Old manifests stay internally
-    # consistent until the new manifest.json is published last. Encryption uses a
-    # plaintext-derived nonce, so encrypted bytes are equally rebuild-stable.
-    data = payload_crypto.encrypt_asset(gz, enc_key) if enc_key else gz
-    sha = hashlib.sha256(data).hexdigest()
-    suffix = ".json.gz.enc" if enc_key else ".json.gz"
-    name = f"{kind}-{run_date}-{sha[:12]}{suffix}"
-    (out_dir / name).write_bytes(data)
+    # consistent until the new manifest.json is published last.
+    sha = hashlib.sha256(gz).hexdigest()
+    name = f"{kind}-{run_date}-{sha[:12]}.json.gz"
+    (out_dir / name).write_bytes(gz)
     entry: Dict[str, Any] = {
         "name": name,
-        "bytes": len(data),
+        "bytes": len(gz),
         "sha256": sha,
         "url": f"{release_base}/{name}",
     }
-    if enc_key:
-        entry["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     return entry
 
 
@@ -392,7 +384,6 @@ def _compute_payload(
     search_index = None
     history_banks = None
     bank_history = None
-    bank_spread_history = None
     if include_history:
         all_core_rows: List[Dict[str, Any]] = []
         for section in VALID_SECTIONS:
@@ -409,14 +400,6 @@ def _compute_payload(
             schema_version=SCHEMA_VERSION,
             rba_calendar=rba_decision_models,
         )
-        bank_spread_history = app_payload_bank_spread.build_bank_spread_history(
-            exports_dir,
-            run_date=run_date,
-            history_dates=app_payload_mobile._history_dates,
-            banks_path=app_payload_mobile._banks,
-            load_json=_load_json,
-            schema_version=SCHEMA_VERSION,
-        )
     counts = latest.get("banks_counts") or banks.get("counts") or {}
     return {
         "core": core,
@@ -426,7 +409,6 @@ def _compute_payload(
         "search_index": search_index,
         "history_banks": history_banks,
         "bank_history": bank_history,
-        "bank_spread_history": bank_spread_history,
         "rba_calendar": rba_calendar,
     }
 
@@ -457,11 +439,7 @@ def _package_payload(
         search_index=data["search_index"],
         history_banks=data["history_banks"],
         bank_history=data["bank_history"],
-        bank_spread_history=data.get("bank_spread_history"),
         rba_calendar=data.get("rba_calendar"),
-        # Phase A (docs/SECURITY_CDR_PIPELINE.md): ciphertext-only release when
-        # AR_LOCAL_PAYLOAD_ENC=1. Stays off until the app ships decrypt support.
-        enc_key=payload_crypto.resolve_key_from_env(),
     )
 
 
@@ -477,37 +455,30 @@ def _package(
     search_index: Optional[Dict[str, Any]] = None,
     history_banks: Optional[Dict[str, Any]] = None,
     bank_history: Optional[Dict[str, Any]] = None,
-    bank_spread_history: Optional[Dict[str, Any]] = None,
     rba_calendar: Optional[Dict[str, Any]] = None,
-    enc_key: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     """Gzip core/details (+ optional search/history), write manifest into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     release_base = f"https://github.com/{repo}/releases/download/{tag}"
     files: Dict[str, Any] = {
-        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base, enc_key),
-        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base, enc_key),
+        "core": _asset(out_dir, "core", run_date, _gzip_bytes(core), release_base),
+        "details": _asset(out_dir, "details", run_date, _gzip_bytes(details), release_base),
     }
     if is_rolling_tag(tag) and search_index and search_index.get("products"):
         files["search_index"] = _asset(
-            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base, enc_key
+            out_dir, "search-index", run_date, _gzip_bytes(search_index), release_base
         )
     if is_rolling_tag(tag) and history_banks and history_banks.get("sections"):
         files["history_banks"] = _asset(
-            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base, enc_key
+            out_dir, "history-banks", run_date, _gzip_bytes(history_banks), release_base
         )
     if is_rolling_tag(tag) and bank_history and bank_history.get("banks"):
         files["bank_history"] = _asset(
-            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base, enc_key
-        )
-    if is_rolling_tag(tag) and bank_spread_history and bank_spread_history.get("banks"):
-        files["bank_spread_history"] = _asset(
-            out_dir, "bank-spread-history", run_date,
-            _gzip_bytes(bank_spread_history), release_base, enc_key,
+            out_dir, "bank-history", run_date, _gzip_bytes(bank_history), release_base
         )
     if is_rolling_tag(tag) and rba_calendar is not None:
         files["rba_calendar"] = _asset(
-            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base, enc_key
+            out_dir, "rba-calendar", run_date, _gzip_bytes(rba_calendar), release_base
         )
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -520,8 +491,6 @@ def _package(
         "schedule": _ingest_schedule(),
         "files": files,
     }
-    if enc_key:
-        manifest["enc"] = {"alg": payload_crypto.ALG, "key_id": payload_crypto.key_id(enc_key)}
     manifest_text = json.dumps(manifest, indent=2, ensure_ascii=False)
     from app_payload_network_budget import validate_payload_network_budget
 
