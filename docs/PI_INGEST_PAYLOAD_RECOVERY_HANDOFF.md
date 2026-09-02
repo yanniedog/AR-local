@@ -6656,7 +6656,7 @@ can never authorize elevation.
 Earliest start is after the operator completes the Tailscale SSH additional
 check for exactly `pi@ar-local-pi5:22`. The following command is read-only; its
 UTF-8 SHA-256 with LF separators and no trailing LF is
-`9e0dfc1e481cb0a443b004b4719022eda97d8cd54f81c508733e9a6cf2448fc6`. It disables SSH configuration,
+`557c9942e40e5b559ed945ea2dba98df3e3b1710b50ff41ff1f3847f6eab9163`. It disables SSH configuration,
 independently verifies both host-key representations, and prints the missing
 Pi and `2026-09-02` identities without changing them:
 
@@ -6671,8 +6671,9 @@ $keyLine = @(& $keyscan -T 10 -t ed25519 $hostName 2>$null |
   Where-Object { $_ -match '^ar-local-pi5\s+ssh-ed25519\s+' })
 if ($keyLine.Count -ne 1) { throw 'expected exactly one Ed25519 host key' }
 $blob = [Convert]::FromBase64String(($keyLine[0] -split '\s+')[2])
-$digest = [Security.Cryptography.SHA256]::HashData($blob)
-$hex = [Convert]::ToHexString($digest).ToLowerInvariant()
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try { $digest = $sha256.ComputeHash($blob) } finally { $sha256.Dispose() }
+$hex = ($digest | ForEach-Object { $_.ToString('x2') }) -join ''
 $fingerprint = 'SHA256:' + [Convert]::ToBase64String($digest).TrimEnd('=')
 if ($blob.Length -ne 51 -or $hex -cne $expectedHex -or
     $fingerprint -cne $expectedFingerprint) { throw 'host-key mismatch' }
