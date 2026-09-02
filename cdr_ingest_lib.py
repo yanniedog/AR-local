@@ -665,12 +665,17 @@ def _persist_ingest_status(
                 "state": state,
                 "failure_records": failures,
                 "population_known": bool(population.get("population_known")),
-                "products_discovered": population.get("unique_product_ids"),
-                "relevant_products": population.get("relevant_products"),
+                # Product accounting covers the three datasets this ingest owns,
+                # not unrelated products merely present in a holder catalogue.
+                "products_discovered": population.get("relevant_products"),
+                "products_indexed": population.get("unique_product_ids"),
                 "details_present": population.get("details_present"),
             }
         )
-    status["providers_registered"] = snapshot.banking_count_before_filter
+    # Registered means selected into this observation. Keep the wider register
+    # population as context so filtered diagnostic runs still reconcile exactly.
+    status["providers_registered"] = len(bank_work)
+    status["providers_available"] = snapshot.banking_count_before_filter
     status["providers_attempted"] = len(bank_work)
     status["provider_states"] = provider_states
     status["coverage_evidence_complete"] = coverage_complete

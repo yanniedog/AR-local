@@ -486,12 +486,20 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             _validate_core_rates(rec, str(base["dataset"]))
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
             product_id = text(rec.get("productId") or rec.get("id"))
+            if not product_id:
+                try:
+                    product_id = (path.parent / "product-id.txt").read_text(
+                        encoding="utf-8"
+                    ).strip()
+                except (OSError, UnicodeError):
+                    product_id = ""
             issue = {
                 "phase": "normalization",
                 "bank": provider_dir or "unknown",
                 "product_id": product_id,
                 "status": code,
                 "evidence_digest": evidence_digest,
+                "source_file": relative.as_posix(),
             }
             dataset["failures"].append(issue)
             dataset["quarantines"].append(issue)

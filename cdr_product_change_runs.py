@@ -1,26 +1,24 @@
-"""Run loading and safe baseline selection for normalized product changes."""
+"""Stream normalized facts from canonical observations or retained legacy runs."""
+
 from __future__ import annotations
 
+import json
+import sqlite3
 from contextlib import closing
 from pathlib import Path
-import sqlite3
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
-from cdr_clean_export import bank_base_row, inner_record, load_json
-from cdr_product_facts import NORMALIZATION_VERSION, clean_fact_rows
+from cdr_clean_export import load_json, parse_banks_run
+from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
+from cdr_product_facts import NORMALIZATION_VERSION
 
 
-_PRODUCT_ALIASES = {
-    "provider": ("provider",), "product_id": ("product_id", "productId"), "dataset": ("dataset",),
+_ALIASES = {
+    "provider": ("provider",),
+    "product_id": ("product_id", "productId"),
+    "dataset": ("dataset",),
 }
 _PRODUCT_NAMES = ("product_name", "productName")
-_SQLITE_SCHEMA_VERSION = "8"
-_FACT_COLUMNS = (
-    "run_date", "dataset", "provider", "product_id", "product_key", "product_name",
-    "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number",
-    "value_text", "value_json", "min_value", "max_value", "unit", "mapping", "source_path",
-    "source_pattern", "source_value_json", "qualifiers_json",
-)
 
 
 def _first(row: Mapping[str, Any], fields: Sequence[str]) -> Any:
@@ -33,10 +31,10 @@ def _first(row: Mapping[str, Any], fields: Sequence[str]) -> Any:
 
 def _product_key(fact: Mapping[str, Any]) -> Tuple[str, str, str]:
     values = []
-    for name, aliases in _PRODUCT_ALIASES.items():
+    for name, aliases in _ALIASES.items():
         value = _first(fact, aliases)
         if value is None:
-            raise ValueError(f"normalized fact is missing required product field {name!r}: {fact!r}")
+            raise ValueError(f"normalized fact is missing required product field {name!r}")
         values.append(str(value).strip())
     return tuple(values)  # type: ignore[return-value]
 
@@ -49,7 +47,89 @@ def _export_root(run_root: Path) -> Path:
     return run_root if run_root.name == "_exports" else run_root / "_exports"
 
 
-def _export_file(run_root: Path) -> Optional[Path]:
+def _sqlite_uri(path: Path) -> str:
+    return f"{path.expanduser().resolve().as_uri()}?mode=ro&immutable=1"
+
+
+def _v9_database(path: Path, expected_date: str) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with sqlite3.connect(_sqlite_uri(path), uri=True) as connection:
+            application = connection.execute("PRAGMA application_id").fetchone()[0]
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            normalization = connection.execute(
+                "SELECT value FROM schema_meta WHERE key='normalization_version'"
+            ).fetchone()
+            observed = connection.execute("SELECT observation_date FROM runs").fetchall()
+    except sqlite3.Error:
+        return False
+    return (
+        application == APPLICATION_ID
+        and version == SCHEMA_VERSION
+        and normalization == (NORMALIZATION_VERSION,)
+        and observed == [(expected_date,)]
+    )
+
+
+def _iter_sqlite_fact_groups(
+    export_root: Path,
+) -> Iterator[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
+    database = export_root / "local-cdr.sqlite"
+    with closing(sqlite3.connect(_sqlite_uri(database), uri=True)) as connection:
+        rows = connection.execute(
+            "SELECT product_uid,fact_id,document_json FROM bank_product_facts "
+            "ORDER BY product_uid,fact_id"
+        )
+        current_uid: str | None = None
+        current_key: Tuple[str, str, str] | None = None
+        current: List[Dict[str, Any]] = []
+        for uid, _fact_id, document_json in rows:
+            try:
+                fact = json.loads(document_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                raise ValueError("SQLite fact document is invalid JSON") from error
+            if not isinstance(fact, dict):
+                raise ValueError("SQLite fact document must be an object")
+            key = _product_key(fact)
+            if current_uid is not None and uid != current_uid:
+                assert current_key is not None
+                yield current_key, current
+                current = []
+            if current_uid == uid and key != current_key:
+                raise ValueError("one product UID maps to conflicting fact identities")
+            current_uid, current_key = str(uid), key
+            current.append(fact)
+        if current_uid is not None:
+            assert current_key is not None
+            yield current_key, current
+
+
+def _observation_facts(export_root: Path) -> Optional[List[Dict[str, Any]]]:
+    path = export_root / "observation-v1.json"
+    if not path.is_file():
+        return None
+    payload = load_json(path)
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("schema_version") != 1
+        or payload.get("normalization_version") != NORMALIZATION_VERSION
+        or payload.get("observation_date") != export_root.parent.name
+    ):
+        raise ValueError(f"canonical observation is incompatible: {path}")
+    supplied = payload.get("product_facts")
+    if not isinstance(supplied, list):
+        raise ValueError(f"canonical observation lacks product facts: {path}")
+    facts = []
+    for row in supplied:
+        document = row.get("document") if isinstance(row, Mapping) else None
+        if not isinstance(document, dict):
+            raise ValueError(f"canonical observation fact is invalid: {path}")
+        facts.append(document)
+    return facts
+
+
+def _legacy_export(run_root: Path) -> Optional[Path]:
     export_root = _export_root(run_root)
     exact = export_root / f"banks-{run_date(run_root)}.json"
     if exact.is_file():
@@ -58,187 +138,87 @@ def _export_file(run_root: Path) -> Optional[Path]:
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _payload_version(payload: Mapping[str, Any]) -> Optional[str]:
-    summary = payload.get("product_change_summary")
-    if not isinstance(summary, Mapping):
-        return None
-    value = summary.get("normalization_version")
-    return str(value) if value not in (None, "") else None
-
-
-def _compatible_export_payload(path: Path) -> Optional[Mapping[str, Any]]:
+def _legacy_payload(path: Path) -> Optional[Mapping[str, Any]]:
     payload = load_json(path)
     if not isinstance(payload, Mapping) or not isinstance(payload.get("product_facts"), list):
         return None
-    if _payload_version(payload) != NORMALIZATION_VERSION:
-        return None
+    summary = payload.get("product_change_summary")
+    version = summary.get("normalization_version") if isinstance(summary, Mapping) else None
+    if version != NORMALIZATION_VERSION:
+        raise ValueError(
+            f"normalization version mismatch in {path}: expected {NORMALIZATION_VERSION!r}, got {version!r}"
+        )
     return payload
 
 
-def _sqlite_uri(path: Path) -> str:
-    return f"{path.expanduser().resolve().as_uri()}?mode=ro&immutable=1"
-
-
-def _sqlite_facts_compatible(path: Path, expected_run_date: str) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        with sqlite3.connect(_sqlite_uri(path), uri=True) as connection:
-            schema = connection.execute(
-                "SELECT value FROM schema_meta WHERE key = 'version'"
-            ).fetchone()
-            normalization = connection.execute(
-                "SELECT value FROM schema_meta WHERE key = 'normalization_version'"
-            ).fetchone()
-            columns = {
-                str(row[1])
-                for row in connection.execute("PRAGMA table_info(bank_product_facts)")
-            }
-            count, first_date, last_date = connection.execute(
-                "SELECT COUNT(*), MIN(run_date), MAX(run_date) FROM bank_product_facts"
-            ).fetchone()
-    except sqlite3.Error:
-        return False
-    version_matches = normalization == (NORMALIZATION_VERSION,) or (
-        normalization is None and schema == (_SQLITE_SCHEMA_VERSION,)
-    )
-    return (
-        version_matches
-        and columns >= set(_FACT_COLUMNS)
-        and count > 0
-        and first_date == expected_run_date
-        and last_date == expected_run_date
-    )
-
-
-def _iter_sqlite_fact_groups(
-    export_root: Path,
-) -> Iterator[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
-    database = export_root / "local-cdr.sqlite"
-    selected = ", ".join(f'"{column}"' for column in _FACT_COLUMNS)
-    with closing(sqlite3.connect(_sqlite_uri(database), uri=True)) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            f"SELECT {selected} FROM bank_product_facts "  # noqa: S608 - trusted constant columns
-            "ORDER BY TRIM(provider) COLLATE NOCASE, TRIM(provider), "
-            "TRIM(product_id), TRIM(dataset), fact_id"
-        )
-        current_key: Optional[Tuple[str, str, str]] = None
-        current_facts: List[Dict[str, Any]] = []
-        for supplied in rows:
-            fact = dict(supplied)
-            fact.pop("run_date", None)
-            if fact.get("value_type") == "boolean" and fact.get("value_boolean") in (0, 1):
-                fact["value_boolean"] = bool(fact["value_boolean"])
-            key = _product_key(fact)
-            if current_key is not None and key != current_key:
-                yield current_key, current_facts
-                current_facts = []
-            current_key = key
-            current_facts.append(fact)
-        if current_key is not None:
-            yield current_key, current_facts
-
-
-def _completed_export_file(run_root: Path) -> Optional[Path]:
-    export_root = _export_root(run_root)
-    manifest_path = export_root / "dashboard-cache" / "latest.json"
-    if not manifest_path.is_file():
-        return None
-    manifest = load_json(manifest_path)
-    if not isinstance(manifest, Mapping) or str(manifest.get("run_date") or "") != run_date(run_root):
-        return None
-    files = manifest.get("files")
-    if not isinstance(files, Mapping):
-        return None
-    required = ("banks_json", "banks_xlsx", "db")
-    names = [str(files.get(key) or "") for key in required]
-    if any(not name or Path(name).name != name for name in names):
-        return None
-    artifacts = [export_root / name for name in names]
-    if not all(path.is_file() for path in artifacts):
-        return None
-    if _sqlite_facts_compatible(artifacts[2], run_date(run_root)):
-        return artifacts[0]
-    return artifacts[0] if _compatible_export_payload(artifacts[0]) is not None else None
-
-
-def _load_run(run_root: Path) -> Dict[str, Dict[str, Any]]:
-    exported = _export_file(run_root)
-    if exported:
-        payload = load_json(exported)
-        facts = payload.get("product_facts") if isinstance(payload, Mapping) else None
-        if isinstance(facts, list):
-            version = _payload_version(payload)
-            if version != NORMALIZATION_VERSION:
-                raise ValueError(
-                    f"normalization version mismatch in {exported}: "
-                    f"expected {NORMALIZATION_VERSION!r}, got {version!r}"
-                )
-            products: Dict[str, Dict[str, Any]] = {}
-            for supplied in facts:
-                if not isinstance(supplied, Mapping):
-                    raise ValueError(f"finalized product fact is not an object: {exported}")
-                key = _product_key(supplied)
-                identity = "|".join((key[2].casefold(), key[0].casefold(), key[1]))
-                products.setdefault(identity, {"base": {
-                    "provider": key[0], "product_id": key[1], "dataset": key[2],
-                    "product_name": str(_first(supplied, _PRODUCT_NAMES) or ""),
-                }, "facts": []})["facts"].append(supplied)
-            return products
-    raw_root = run_root.parent if run_root.name == "_exports" else run_root
-    banks_root = raw_root / "banks"
-    products = {}
-    for path in sorted(banks_root.rglob("product-detail.json")):
-        record = inner_record(load_json(path))
-        base = bank_base_row(path, banks_root, record)
-        identity = "|".join((base["dataset"].casefold(), base["provider"].casefold(), base["product_id"]))
-        products[identity] = {"base": base, "record": record, "facts": clean_fact_rows(record, base)}
-    return products
+def _group_facts(facts: Iterable[Mapping[str, Any]]) -> Dict[Tuple[str, str, str], List[Dict[str, Any]]]:
+    grouped: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+    for supplied in facts:
+        fact = dict(supplied)
+        grouped.setdefault(_product_key(fact), []).append(fact)
+    return grouped
 
 
 def iter_run_fact_groups(
     run_root: Path,
 ) -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
-    """Stream SQLite facts by product; legacy JSON/raw fallback materializes products."""
     export_root = _export_root(run_root)
     database = export_root / "local-cdr.sqlite"
-    if _sqlite_facts_compatible(database, run_date(run_root)):
+    if _v9_database(database, run_date(run_root)):
         yield from _iter_sqlite_fact_groups(export_root)
         return
-    products = _load_run(run_root)
-    for identity in sorted(products):
-        product = products[identity]
-        base = product["base"]
-        facts: List[Dict[str, Any]] = []
-        for fact in product["facts"]:
-            if _first(fact, _PRODUCT_ALIASES["provider"]):
-                facts.append(fact)
-            else:
-                facts.append({
-                    "provider": base["provider"], "product_id": base["product_id"],
-                    "dataset": base["dataset"], "product_name": base["product_name"], **fact,
-                })
-        if facts:
-            yield _product_key(facts[0]), facts
+    facts = _observation_facts(export_root)
+    if facts is not None:
+        grouped = _group_facts(facts)
+    else:
+        legacy = _legacy_export(run_root)
+        payload = _legacy_payload(legacy) if legacy else None
+        if payload is not None:
+            grouped = _group_facts(payload["product_facts"])
+        else:
+            raw_root = run_root.parent if run_root.name == "_exports" else run_root
+            grouped = _group_facts(parse_banks_run(raw_root)["product_facts"])
+    for key in sorted(grouped, key=lambda item: (item[0].casefold(), item[1], item[2])):
+        yield key, grouped[key]
 
 
 def load_run_facts(run_root: Path) -> List[Dict[str, Any]]:
-    """Load current-version exported facts, or normalize retained raw details."""
-    output: List[Dict[str, Any]] = []
-    for _product_key_value, facts in iter_run_fact_groups(run_root):
-        output.extend(facts)
-    return output
+    return [fact for _key, facts in iter_run_fact_groups(run_root) for fact in facts]
+
+
+def _complete(run_root: Path) -> bool:
+    export_root = _export_root(run_root)
+    observation = export_root / "observation-v1.json"
+    accounting = export_root / "product-accounting-v1.json"
+    database = export_root / "local-cdr.sqlite"
+    if observation.is_file() or accounting.is_file() or _v9_database(database, run_date(run_root)):
+        return observation.is_file() and accounting.is_file() and _v9_database(database, run_date(run_root))
+    legacy = _legacy_export(run_root)
+    manifest = export_root / "dashboard-cache" / "latest.json"
+    if legacy is None or not manifest.is_file():
+        return False
+    try:
+        if _legacy_payload(legacy) is None:
+            return False
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return False
+    try:
+        value = load_json(manifest)
+    except (OSError, json.JSONDecodeError):
+        return False
+    files = value.get("files") if isinstance(value, Mapping) else None
+    if not isinstance(files, Mapping) or value.get("run_date") != run_date(run_root):
+        return False
+    names = [str(files.get(key) or "") for key in ("banks_json", "banks_xlsx", "db")]
+    return all(name and Path(name).name == name and (export_root / name).is_file() for name in names)
 
 
 def previous_finalized_run(current_root: Path) -> Optional[Path]:
-    """Choose only a complete, current-normalization sibling export."""
     current = current_root.parent if current_root.name == "_exports" else current_root
-    runs = current.parent
-    if not runs.is_dir():
+    if not current.parent.is_dir():
         return None
     candidates = [
-        path for path in runs.iterdir()
-        if path.is_dir() and path.name < current.name and _completed_export_file(path) is not None
+        path for path in current.parent.iterdir()
+        if path.is_dir() and path.name < current.name and _complete(path)
     ]
     return max(candidates, key=lambda path: path.name) if candidates else None

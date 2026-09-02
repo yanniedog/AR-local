@@ -32,7 +32,9 @@ FAILURE_STAGES = (
     "after_install",
 )
 DATASETS = frozenset({"Mortgage", "Savings", "TD"})
-SECTIONS = frozenset({"mortgage", "savings", "term_deposit"})
+SECTIONS = frozenset(
+    {"details", "mortgage", "products", "rates", "register", "savings", "term_deposit"}
+)
 STATES = frozenset({"complete", "partial", "empty", "failed", "not_attempted"})
 PUBLISHABLE = frozenset({"published_full", "published_core_only"})
 DISPOSITIONS = PUBLISHABLE | {"omitted_valid", "quarantined_invalid"}
@@ -322,7 +324,9 @@ def _timestamp(value: Any, label: str) -> str:
 def _summary(providers: Sequence[Mapping[str, Any]], products: Sequence[Mapping[str, Any]], issues: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     states = Counter(row["state"] for row in providers)
     dispositions = Counter(row["disposition"] for row in products)
-    codes = Counter(row["code"] for row in issues)
+    codes: Counter[str] = Counter()
+    for row in issues:
+        codes[row["code"]] += row["occurrence_count"]
     return {
         "providers": {
             "registered": len(providers),
@@ -343,7 +347,7 @@ def _summary(providers: Sequence[Mapping[str, Any]], products: Sequence[Mapping[
             "consumer_visible": dispositions["published_full"] + dispositions["published_core_only"],
         },
         "issues": {
-            "total": len(issues),
+            "total": sum(codes.values()),
             "corrupt": codes["failure_record_corrupt"],
             "unattributed": codes["failure_unattributed"],
             "affected_providers": len({row["provider_uid"] for row in issues if row["provider_uid"]}),
@@ -504,7 +508,7 @@ def _normalize_accounting(value: Mapping[str, Any]) -> dict[str, Any]:
             "published_core_only_count": counts["published_core_only"],
             "omitted_valid_count": counts["omitted_valid"],
             "quarantined_invalid_count": counts["quarantined_invalid"],
-            "issue_count": len(member_issues),
+            "issue_count": sum(item["occurrence_count"] for item in member_issues),
         }
         if any(row[key] != count for key, count in expected.items()):
             _fail(f"provider {uid} counts do not reconcile")
@@ -650,6 +654,15 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
         changes.append({**expected, "document": _document(row["document"], expected)})
     output["product_changes"] = sorted(changes, key=lambda row: row["event_id"])
     return output
+
+
+def validate_observation_inputs(
+    accounting: Mapping[str, Any], projections: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+    """Validate and canonicalize the sidecar and every consumer projection."""
+
+    normalized_accounting = _normalize_accounting(accounting)
+    return normalized_accounting, _normalize_projections(projections, normalized_accounting)
 
 
 def _schema_rows(connection: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -918,8 +931,9 @@ def build_observation_database(target: Path | str, *, accounting: Mapping[str, A
     if supplied.is_symlink():
         _fail("database path must not be a symlink")
     destination = supplied.resolve()
-    normalized_accounting = _normalize_accounting(accounting)
-    normalized_projections = _normalize_projections(projections, normalized_accounting)
+    normalized_accounting, normalized_projections = validate_observation_inputs(
+        accounting, projections
+    )
     sidecar_bytes = _json_bytes(normalized_accounting)
     generated_at = _timestamp(generated_at, "generated_at")
     normalization_version = _text(normalization_version, "normalization_version")
