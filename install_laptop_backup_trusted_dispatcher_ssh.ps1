@@ -235,14 +235,12 @@ function Assert-ArTrustedSshConfiguration {
     [Parameter(Mandatory = $true)][string]$UserName,
     [Parameter(Mandatory = $true)][int]$Port,
     [Parameter(Mandatory = $true)][string]$SshSha256,
-    [Parameter(Mandatory = $true)][string]$IdentitySha256,
-    [Parameter(Mandatory = $true)][string]$KnownHostsSha256
+    [Parameter(Mandatory = $true)][string]$IdentitySha256
   )
   $expectedSsh = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::System)) 'OpenSSH\ssh.exe'
   if ([string]$Config.ssh_host -cne $HostName -or [string]$Config.ssh_user -cne $UserName -or [int]$Config.ssh_port -ne $Port -or
       [string]$Config.ssh_sha256 -cne $SshSha256 -or [string]$Config.ssh_identity_sha256 -cne $IdentitySha256 -or
-      [IO.Path]::GetFullPath([string]$Config.ssh_path) -cne [IO.Path]::GetFullPath($expectedSsh) -or
-      [string]$Config.ssh_known_hosts_sha256 -cne $KnownHostsSha256) {
+      [IO.Path]::GetFullPath([string]$Config.ssh_path) -cne [IO.Path]::GetFullPath($expectedSsh)) {
     throw 'Protected SSH configuration differs from the authenticated installer contract.'
   }
   $script:trustedSshConfig = $Config

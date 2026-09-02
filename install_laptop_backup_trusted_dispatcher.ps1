@@ -41,7 +41,7 @@ param(
   [Parameter(Mandatory = $true)][string]$SshIdentityPath,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshIdentitySha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshExecutableSha256,
-  [ValidateSet('192.168.20.19')][string]$PiHost = '192.168.20.19',
+  [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')][string]$PiHost,
   [ValidateSet('pi')][string]$PiUser = 'pi',
   [ValidateRange(22,22)][int]$PiPort = 22
 )
@@ -51,8 +51,7 @@ $script:deviationAuthorization = $null
 $script:bootstrapGate = $null
 $script:bootstrapGateName = 'Global\ARLocalTrustedBootstrapGate'
 $script:trustedSshConfig = $null
-$script:fixedSshKnownHostsSha256 = '4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836'
-$sshContractArguments = @{ HostName=$PiHost; UserName=$PiUser; Port=$PiPort; SshSha256=$SshExecutableSha256; IdentitySha256=$SshIdentitySha256; KnownHostsSha256=$script:fixedSshKnownHostsSha256 }
+$sshContractArguments = @{ HostName=$PiHost; UserName=$PiUser; Port=$PiPort; SshSha256=$SshExecutableSha256; IdentitySha256=$SshIdentitySha256 }
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
   throw 'Trusted installer implementation hash mismatch.'

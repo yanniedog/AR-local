@@ -22,6 +22,12 @@ function Get-ArTrustedSha256 {
   try { ([BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
   finally { $algorithm.Dispose(); $stream.Dispose() }
 }
+function Get-ArTrustedBytesSha256 {
+  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try { ([BitConverter]::ToString($algorithm.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant() }
+  finally { $algorithm.Dispose() }
+}
 function Get-ArTrustedTextSha256 {
   param([Parameter(Mandatory = $true)][string]$Text)
   $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -281,10 +287,16 @@ function Assert-ArTrustedChildConfiguration {
     }
   }
   $sshHost = [string]$config.ssh_host; $sshUser = [string]$config.ssh_user; $sshPort = [int]$config.ssh_port
-  if ($sshHost -cne '192.168.20.19' -or $sshUser -cne 'pi' -or $sshPort -ne 22 -or $sshHost.Length -gt 253 -or $sshHost -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or
-      $sshHost.Contains('..') -or $sshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $sshPort -lt 1 -or $sshPort -gt 65535 -or
-      [string]$config.ssh_known_hosts_sha256 -cne '4e2433bbc5868e1304f4d4dfd3b833d09cba9e2f9ae3d2586188e4c105b7a836') {
+  if ($sshUser -cne 'pi' -or $sshPort -ne 22 -or $sshHost.Length -gt 253 -or $sshHost -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or
+      $sshHost.Contains('..') -or $sshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $sshPort -lt 1 -or $sshPort -gt 65535) {
     throw 'Trusted child SSH endpoint identity is invalid.'
+  }
+  $knownHostToken = if ($sshPort -eq 22) { $sshHost } else { "[$sshHost]:$sshPort" }
+  $knownHostText = [IO.File]::ReadAllText((Join-Path $Root 'ssh\known_hosts'),[Text.Encoding]::ASCII)
+  $knownHostMatch = [regex]::Match($knownHostText,('^' + [regex]::Escape($knownHostToken) + ' ssh-ed25519 (?<key>[A-Za-z0-9+/]+={0,2})(?: [^\r\n]+)?\n$'))
+  if (-not $knownHostMatch.Success -or
+      (Get-ArTrustedBytesSha256 ([Convert]::FromBase64String($knownHostMatch.Groups['key'].Value))) -cne '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e') {
+    throw 'Trusted child SSH host-key fingerprint is invalid.'
   }
   $system = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
   $programRoots = @([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles),[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) | Where-Object { $_ }
