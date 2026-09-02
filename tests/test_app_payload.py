@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 import app_payload  # noqa: E402
 import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
+import rba_decisions  # noqa: E402
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
 HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
@@ -90,12 +91,16 @@ def test_rba_holds_parsed_from_dashboard_js():
     assert not (set(holds) & change_dates), "hold dates must not also be change dates"
 
 
-def test_rba_holds_empty_when_no_holds_block(tmp_path):
-    # A source file with no HOLDS array yields no holds (and never raises).
+def test_rba_holds_ignore_dashboard_source_files(tmp_path):
+    # Payload facts come from rba_decisions, never executable dashboard text.
     (tmp_path / "rba-cash-rate.js").write_text(
         "const ENTRIES = [{ date: '2026-05-06', rate: 4.35 }];", encoding="utf-8"
     )
-    assert app_payload.load_rba_holds(tmp_path) == []
+    assert app_payload.load_rba_holds(tmp_path) == [
+        decision.date.isoformat()
+        for decision in rba_decisions.decisions()
+        if decision.delta_bps == 0
+    ]
 
 
 def test_future_effective_rba_change_is_not_yet_prevailing():
@@ -234,7 +239,7 @@ def test_load_brand_logos_embeds_available_png_and_skips_oversized(tmp_path):
 
     loaded = app_payload.load_brand_logos(dashboard, logos)
 
-    assert set(loaded) == {"anz", "anz bank"}
+    assert set(loaded) == {"anz"}
     assert loaded["anz"].startswith("data:image/png;base64,")
     brands = app_payload.build_brands(
         ["ANZ Bank Australia Limited", "No Logo Bank"],

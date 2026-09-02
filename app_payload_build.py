@@ -6,8 +6,6 @@ import hashlib
 import io
 import json
 import math
-import os
-import shutil
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -16,10 +14,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
 import app_payload_bank_spread
-import cdr_brand_logos
 import payload_crypto
 import rba_decisions
-import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
 
@@ -228,7 +224,7 @@ def build_payload(
     *,
     repo: str = DEFAULT_REPO,
     tag: str = DEFAULT_TAG,
-    dashboard_dir: Path = BASE_DIR / "dashboard",
+    asset_dir: Path = BASE_DIR / "payload_assets",
     contract_coverage: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build manifest + core + details into ``out_dir``; return the manifest dict."""
@@ -236,7 +232,7 @@ def build_payload(
     # is_rolling_tag gate), so a dated build needn't compute them at all.
     data = _compute_payload(
         exports_dir,
-        dashboard_dir=dashboard_dir,
+        asset_dir=asset_dir,
         include_history=is_rolling_tag(tag),
         contract_coverage=contract_coverage,
     )
@@ -313,7 +309,7 @@ def _stable_payload_coverage(
 def _compute_payload(
     exports_dir: Path,
     *,
-    dashboard_dir: Path = BASE_DIR / "dashboard",
+    asset_dir: Path = BASE_DIR / "payload_assets",
     include_history: bool = True,
     state_dir: Optional[Path] = None,
     contract_coverage: Optional[Mapping[str, Any]] = None,
@@ -349,28 +345,13 @@ def _compute_payload(
             "ribbon": aggregate_ribbon(section_rows, section),
         }
 
-    shortcodes = load_brand_shortcodes(dashboard_dir)
-    logos = load_brand_logos(dashboard_dir)
+    shortcodes = load_brand_shortcodes(asset_dir)
+    logos = load_brand_logos(asset_dir)
     # NB: no wall-clock field inside core/details. They are content-hashed (sha256
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
-    # v2: cache name bumped when SVG logoUris started being kept, so a fresh
-    # raster-only cache can't suppress SVG entries for up to 7 days.
-    legacy_logo_cache = exports_dir / "cdr-brand-logos-v2.json"
-    logo_cache = legacy_logo_cache
-    if state_dir is not None:
-        logo_cache = state_dir / "register-logos" / run_date / "cdr-brand-logos-v2.json"
-        if not logo_cache.exists() and legacy_logo_cache.is_file():
-            logo_cache.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(legacy_logo_cache, logo_cache)
-    register_logos = cdr_brand_logos.fetch_register_logos(cache_path=logo_cache)
+    del state_dir
     rba_calendar = rba_decisions.calendar_payload()
-    fetch_official = os.environ.get(
-        "AR_LOCAL_RBA_OFFICIAL_FETCH",
-        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
-    ).strip().lower() in ("1", "true", "yes", "on")
-    if fetch_official:
-        rba_calendar = rba_official.load_calendar(rba_calendar)
     rba_decision_models = [
         rba_decisions.Decision(
             date.fromisoformat(decision["date"]),
@@ -381,9 +362,9 @@ def _compute_payload(
         for decision in rba_calendar["decisions"]
     ]
 
-    rba_series = load_rba_series(dashboard_dir)
+    rba_series = load_rba_series(asset_dir)
     series_by_date = {str(item.get("date") or ""): item for item in rba_series}
-    rba_holds = set(load_rba_holds(dashboard_dir))
+    rba_holds = set(load_rba_holds(asset_dir))
     for decision in rba_calendar["decisions"]:
         if decision["outcome"] == "hold":
             rba_holds.add(decision["date"])
@@ -397,7 +378,7 @@ def _compute_payload(
         "schema_version": SCHEMA_VERSION,
         "run_date": run_date,
         "sections": sections,
-        "brands": build_brands(providers_seen, shortcodes, logos, register_logos),
+        "brands": build_brands(providers_seen, shortcodes, logos),
         "rba": sorted(series_by_date.values(), key=lambda item: item["date"]),
         "rba_holds": sorted(rba_holds),
         "coverage": coverage,

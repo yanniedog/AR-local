@@ -72,3 +72,4 @@ _run_pi_*
 
 # Vendored canonical bank-logo pack (served via raw.githubusercontent)
 !dashboard/assets/banks/*.png
+!payload_assets/banks/*.png
