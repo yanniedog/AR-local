@@ -7823,6 +7823,7 @@ $knownHostsAlias=Join-Path $root 'known-hosts-alias'
 $manifest=Join-Path $root 'dispatcher-manifest.json'
 
 function Sha([string]$Path){(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()}
+function BytesSha([byte[]]$Bytes){$h=[Security.Cryptography.SHA256]::Create();try{(($h.ComputeHash($Bytes))|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()}}
 function WriteUtf8([string]$Path,[string]$Text){[IO.File]::WriteAllText($Path,($Text-replace "`r",''),[Text.UTF8Encoding]::new($false))}
 function WriteJson([string]$Path,[object]$Value){WriteUtf8 $Path (($Value|ConvertTo-Json -Depth 12 -Compress)+"`n")}
 function RequireHash([string]$Path,[string]$Expected){if((Sha $Path)-cne$Expected){throw "hash drift: $Path"}}
@@ -7831,10 +7832,48 @@ $pythonBootstrap="import base64,sys;code=base64.b64decode(sys.argv.pop(1));exec(
 function Invoke-PythonCode([string]$Code,[string[]]$Arguments=@()){$payload=[Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($Code));$output=@(& $python -I -B -c $pythonBootstrap $payload @Arguments 2>&1);[pscustomobject]@{ExitCode=[int]$LASTEXITCODE;Output=($output|Out-String)}}
 function WriteNewJson([string]$Path,[object]$Value){$bytes=[Text.UTF8Encoding]::new($false).GetBytes((($Value|ConvertTo-Json -Depth 16 -Compress)+[char]10));$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()};[ordered]@{path=$Path;bytes=[long]$bytes.Length;sha256=(Sha $Path)}}
 function WriteGeneratorRecord([string]$Name,[string]$Result,[object]$ErrorText,[object]$Evidence){$value=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit=$planCommit;plan_sha256=$planSha;plan_raw_sha256=$planRawSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;operator=$principal;started_at=$generatorStarted.ToString('o');recorded_at=[DateTimeOffset]::UtcNow.ToString('o');exact_command=$PSCommandPath;result=$Result;error=$ErrorText;evidence=$Evidence;deviations=@()};$record=WriteNewJson (Join-Path $root $Name) $value;$record.result=$Result;$record}
+function Get-TrustedTree([string]$Path){
+  $base=[IO.Path]::GetFullPath($Path).TrimEnd('\');$rootItem=Get-Item -LiteralPath $base -Force -ErrorAction Stop
+  if(-not$rootItem.PSIsContainer-or($rootItem.Attributes-band[IO.FileAttributes]::ReparsePoint)){throw "invalid trusted tree root: $base"}
+  $items=@(Get-ChildItem -LiteralPath $base -Recurse -Force -ErrorAction Stop)
+  $records=@();[long]$files=0;[long]$directories=0;[long]$bytes=0
+  foreach($item in $items){
+    if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)){throw "trusted tree contains reparse point: $($item.FullName)"}
+    $full=[IO.Path]::GetFullPath($item.FullName);if(-not$full.StartsWith($base+'\',[StringComparison]::OrdinalIgnoreCase)){throw "trusted tree path escapes root: $full"}
+    $relative=$full.Substring($base.Length+1).Replace('\','/')
+    if($item.PSIsContainer){$directories++;$records+=('D'+[char]9+$relative+[char]10)}else{$files++;$bytes+=[long]$item.Length;$records+=('F'+[char]9+$relative+[char]9+$item.Length+[char]9+(Sha $full)+[char]10)}
+  }
+  [Array]::Sort($records,[StringComparer]::Ordinal)
+  [pscustomobject][ordered]@{path=$base;files=$files;directories=$directories;bytes=$bytes;inventory_sha256=(BytesSha ([Text.UTF8Encoding]::new($false).GetBytes([string]::Concat($records))))}
+}
+function Get-WebJson([Net.Http.HttpClient]$Client,[string]$Url){$bytes=$Client.GetByteArrayAsync($Url).GetAwaiter().GetResult();$text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes);[pscustomobject]@{url=$Url;bytes=[long]$bytes.Length;sha256=(BytesSha $bytes);value=($text|ConvertFrom-Json)}}
+function Assert-PayloadManifest([Net.Http.HttpClient]$Client,[object]$Record,[string]$Date,[string]$Tag,[string[]]$ExpectedFiles){
+  $manifest=$Record.value
+  if($manifest.schema_version-ne1-or$manifest.run_date-cne$Date-or$manifest.repo-cne'yanniedog/AR-local'-or$manifest.tag-cne$Tag-or[long]$manifest.counts.products-le0-or[long]$manifest.counts.rates-le0-or[long]$manifest.counts.holder_attempts-le0){throw "payload manifest identity drift: $Tag"}
+  $names=@($manifest.files.PSObject.Properties.Name|Sort-Object);if(Compare-Object ($ExpectedFiles|Sort-Object) $names){throw "payload manifest file set drift: $Tag"}
+  $files=[ordered]@{}
+  foreach($property in $manifest.files.PSObject.Properties){$asset=$property.Value;$name=[string]$asset.name;$url="https://github.com/yanniedog/AR-local/releases/download/$Tag/$name";if($name-notmatch'^[A-Za-z0-9][A-Za-z0-9._-]*$'-or$asset.url-cne$url-or[long]$asset.bytes-le0-or([string]$asset.sha256)-notmatch'^[0-9a-f]{64}$'){throw "payload asset contract drift: $Tag/$($property.Name)"};$bytes=$Client.GetByteArrayAsync($url).GetAwaiter().GetResult();$sha=BytesSha $bytes;if([long]$bytes.Length-ne[long]$asset.bytes-or$sha-cne[string]$asset.sha256){throw "payload asset bytes drift: $url"};$files[$property.Name]=[ordered]@{url=$url;bytes=[long]$bytes.Length;sha256=$sha}}
+  [ordered]@{manifest=[ordered]@{url=$Record.url;bytes=$Record.bytes;sha256=$Record.sha256};files=$files}
+}
+function Assert-CurrentPublication([string]$Date){
+  $client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(30)
+  try{
+    $datedTag="app-payload-$Date";$rollingTag='app-payload-latest'
+    $dated=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$datedTag/manifest.json"
+    $rolling=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$rollingTag/manifest.json"
+    $index=Get-WebJson $client 'https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json'
+    $dates=@($index.value.dates);$sorted=@($dates|Sort-Object -Unique)
+    if($index.value.schema_version-ne1-or[long]$index.value.count-ne$dates.Count-or$index.value.latest_date-cne$Date-or$dates.Count-lt1-or$dates[-1]-cne$Date-or(Compare-Object $dates $sorted)){throw 'dates index is not current, ordered, and unique'}
+    [ordered]@{observation_date=$Date;dated=(Assert-PayloadManifest $client $dated $Date $datedTag @('core','details'));rolling=(Assert-PayloadManifest $client $rolling $Date $rollingTag @('bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'));dates_index=[ordered]@{url=$index.url;bytes=$index.bytes;sha256=$index.sha256;count=$dates.Count;latest_date=$Date};legacy_v2='NOT_AN_ACCEPTANCE_INPUT'}
+  }finally{$client.Dispose()}
+}
 
 $hobartZone=[TimeZoneInfo]::FindSystemTimeZoneById('Tasmania Standard Time')
 $now=[TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow,$hobartZone)
-if($now.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$now.TimeOfDay-ge[TimeSpan]::FromHours(22)){throw 'outside D-006 daylight window'}
+$safeStop=[DateTimeOffset]::new($now.Year,$now.Month,$now.Day,22,0,0,$now.Offset)
+$installerRunwayMinutes=60
+if($now.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$now.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'outside bounded D-006 preparation window'}
+$observationDate=$now.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
 $windowsIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
 try{
   $windowsPrincipal=[Security.Principal.WindowsPrincipal]$windowsIdentity
@@ -7859,6 +7898,9 @@ $journalRunning=Get-Content -LiteralPath $journalRunningPath -Raw|ConvertFrom-Js
 $journalPass=Get-Content -LiteralPath (Join-Path $journalRoot 'pass.json') -Raw|ConvertFrom-Json
 $journalRunningBytes=[long](Get-Item -LiteralPath $journalRunningPath).Length;$journalRunningSha=Sha $journalRunningPath
 if($journalRunning.schema_version-ne1-or$journalRunning.result-cne'RUNNING'-or$journalRunning.plan_git_commit-cne$planCommit-or$journalRunning.candidate_code_sha-cne$candidateSha-or$materialization.execution_journal.root-cne$journalRoot-or$materialization.execution_journal.running.path-cne$journalRunningPath-or[long]$materialization.execution_journal.running.bytes-ne$journalRunningBytes-or$materialization.execution_journal.running.sha256-cne$journalRunningSha-or$materialization.execution_journal.running.result-cne'RUNNING'-or$journalPass.evidence.running.path-cne$journalRunningPath-or[long]$journalPass.evidence.running.bytes-ne$journalRunningBytes-or$journalPass.evidence.running.sha256-cne$journalRunningSha-or$journalPass.evidence.running.result-cne'RUNNING'-or$journalPass.result-cne'PASS'-or$journalPass.plan_git_commit-cne$planCommit-or$journalPass.candidate_code_sha-cne$candidateSha-or$journalPass.authority_commit-cne$materialization.authority_commit-or$journalPass.evidence.materialization.sha256-cne(Sha $materializationPath)){throw 'sequence-7 terminal execution evidence drift'}
+$trustedRuntime=Get-TrustedTree $runtime
+if($trustedRuntime.files-ne3067-or$trustedRuntime.directories-ne205-or$trustedRuntime.bytes-ne64118158L-or$trustedRuntime.inventory_sha256-cne'4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'){throw 'trusted PowerShell runtime inventory drift'}
+RequireHash $python '53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f'
 $inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"),key=lambda p:p.relative_to(r).as_posix());bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing runtime root"));files=[p for p in nodes if p.is_file()];dirs=[p for p in nodes if p.is_dir()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();t=("".join(("D\t"+p.relative_to(r).as_posix()+"\n") if p.is_dir() else ("F\t"+p.relative_to(r).as_posix()+"\t"+str(p.stat().st_size)+"\t"+d[p.relative_to(r).as_posix()]+"\n") for p in nodes)).encode();print(len(files),len(dirs),sum(p.stat().st_size for p in files),hashlib.sha256(b).hexdigest(),hashlib.sha256(t).hexdigest())'
 $quarantineRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($quarantine)
 $quarantineFields=@($quarantineRun.Output.Trim()-split' ')
@@ -7873,6 +7915,44 @@ $earlyBlob=[Convert]::FromBase64String(($earlyKeyLines[0]-split'\s+')[2]);$early
 if($earlyKeySha-cne'84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e'){throw 'initial Pi key drift'}
 RequireHash $ssh '6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42'
 RequireHash $identity 'faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e'
+$currentObservationProbe=(@'
+today=$(TZ=Australia/Hobart date +%F)
+test "$today" = '__OBSERVATION_DATE__'
+python3 -B - "$today" <<'PY'
+from pathlib import Path
+import hashlib,json,sqlite3,sys,urllib.request
+sys.path.insert(0,'.')
+from ar_local_pi_runtime import manifest_banks_rate_count
+from cdr_finalization import verify_completion_marker
+base=Path('/srv/ar-local/data').resolve(); state=base/'state'; today=sys.argv[1]
+def load(path): return json.loads(path.read_text(encoding='utf-8'))
+def record(path):
+    data=path.read_bytes()
+    return {'path':path.resolve().relative_to(base).as_posix(),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+pointer_path=state/'observation-pointers-v2/latest-observation.json'; pointer=load(pointer_path)
+if pointer.get('schema_version') != 2 or pointer.get('observation_date') != today or pointer.get('marker_path') != f'{today}.done.json' or pointer.get('observation_state') not in ('complete','partial'): raise SystemExit('current observation pointer invalid')
+marker_path=state/pointer['marker_path']; marker=load(marker_path)
+if not verify_completion_marker(marker,state,today) or marker.get('generation_id') != pointer.get('generation_id') or marker.get('ledger_event_digest') != pointer.get('ledger_event_digest') or marker.get('observation_state') != pointer.get('observation_state'): raise SystemExit('current completion marker invalid')
+generation=marker['generation_id']; contract_path=state/marker['export_contract_path']; contract=load(contract_path)
+event_path=state/'ledger-v2/events'/today/f'{generation}.json'; event=load(event_path)
+head_path=state/'ledger-v2/head.json'; head=load(head_path)
+if head.get('schema_version') != 2 or head.get('observation_date') != today or head.get('generation_id') != generation or head.get('event_digest') != event.get('event_digest') or head.get('event_path') != f'events/{today}/{generation}.json' or event.get('event_digest') != marker.get('ledger_event_digest') or event.get('contract_digest') != contract.get('contract_digest'): raise SystemExit('current ledger head invalid')
+export_root=(base/contract['source_path']).resolve()
+if not export_root.is_relative_to(base) or pointer.get('export_path') != contract.get('source_path'): raise SystemExit('current export path invalid')
+artifacts={item['path']:item for item in contract['artifacts']}; db=export_root/'local-cdr.sqlite'; status_path=export_root/'ingest-status.json'
+if 'local-cdr.sqlite' not in artifacts or 'ingest-status.json' not in artifacts: raise SystemExit('current export contract incomplete')
+db_record=record(db); status_record=record(status_path)
+if db_record['bytes'] != artifacts['local-cdr.sqlite']['bytes'] or db_record['sha256'] != artifacts['local-cdr.sqlite']['sha256'] or status_record['bytes'] != artifacts['ingest-status.json']['bytes'] or status_record['sha256'] != artifacts['ingest-status.json']['sha256']: raise SystemExit('current export artifact identity drift')
+connection=sqlite3.connect(f'file:{db}?mode=ro',uri=True); connection.execute('pragma query_only=on')
+try: quick=connection.execute('pragma quick_check').fetchall()
+finally: connection.close()
+if quick != [('ok',)]: raise SystemExit('current database quick_check failed')
+status=load(status_path)
+with urllib.request.urlopen('http://127.0.0.1:8808/api/latest',timeout=10) as response: dashboard=json.load(response)
+if status.get('failure_provenance_complete') is not True or status.get('register_provenance_complete') is not True or int(status.get('providers_attempted') or 0) <= 0 or bool(status.get('incomplete')) != (pointer.get('observation_state') == 'partial') or dashboard.get('run_date') != today or manifest_banks_rate_count(dashboard) <= 0: raise SystemExit('current status/dashboard invalid')
+print(json.dumps({'observation_date':today,'generation_id':generation,'event_digest':event['event_digest'],'contract_digest':contract['contract_digest'],'marker':record(marker_path),'pointer':record(pointer_path),'head':record(head_path),'contract':record(contract_path),'event':record(event_path),'database':db_record,'status':status_record,'quick_check':'ok','dashboard_run_date':today},sort_keys=True,separators=(',',':')))
+PY
+'@).Replace('__OBSERVATION_DATE__',$observationDate)
 $earlyScript=@'
 set -eu
 cd /srv/ar-local/AR-local
@@ -7885,17 +7965,17 @@ test "$(systemctl is-enabled ar-local-daily.timer)" = enabled
 test "$(systemctl is-active ar-local-daily.timer)" = active
 test ! -e /srv/ar-local/data/state/daily-ingest.lock
 ! pgrep -f '[c]dr_daily.py' >/dev/null
-curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null
-'@
+'@+"`n"+$currentObservationProbe+"`necho AR_PI_INITIAL_CURRENT_OBSERVATION_PASS`n"
 $earlyArgs=@('-T','-F','NUL','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=10','-o','UserKnownHostsFile=C:\Users\jkoka\.ssh\known_hosts','-i',$identity,"pi@$earlyEndpoint",'bash','-s','--')
 $earlyOutput=($earlyScript|& $ssh @earlyArgs 2>&1|Out-String)
-if($LASTEXITCODE-ne0){throw "Pi ingest is active or initial idle proof failed: $earlyOutput"}
+if($LASTEXITCODE-ne0-or@($earlyOutput.TrimEnd()-split"`n")[-1]-cne'AR_PI_INITIAL_CURRENT_OBSERVATION_PASS'){throw "Pi ingest is active or initial current-day proof failed: $earlyOutput"}
 
 $authoritySha=(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
 if($materialization.authority_commit-cne$authoritySha-or$materialization.document_commit-cne$planCommit){throw 'materialized authority is stale'}
 if($authoritySha-notmatch'^[0-9a-f]{40}$'-or$authoritySha-ceq$candidateSha){throw 'post-merge authority is absent'}
+$publicationInitial=Assert-CurrentPublication $observationDate
 $generatorStarted=[DateTimeOffset]::UtcNow
-$generatorRunning=WriteGeneratorRecord 'generator-running.json' 'RUNNING' $null ([ordered]@{authority_commit=$authoritySha;complete_handoff_raw_sha256=$materialization.complete_handoff_raw_sha256;materialization=[ordered]@{path=$materializationPath;bytes=[long](Get-Item -LiteralPath $materializationPath).Length;sha256=(Sha $materializationPath)};materializer_running=[ordered]@{path=$journalRunningPath;bytes=$journalRunningBytes;sha256=$journalRunningSha}})
+$generatorRunning=WriteGeneratorRecord 'generator-running.json' 'RUNNING' $null ([ordered]@{authority_commit=$authoritySha;complete_handoff_raw_sha256=$materialization.complete_handoff_raw_sha256;observation_date=$observationDate;publication=$publicationInitial;materialization=[ordered]@{path=$materializationPath;bytes=[long](Get-Item -LiteralPath $materializationPath).Length;sha256=(Sha $materializationPath)};materializer_running=[ordered]@{path=$journalRunningPath;bytes=$journalRunningBytes;sha256=$journalRunningSha}})
 try{
 & $git -c core.autocrlf=false clone --quiet --no-checkout $repo $candidate
 if($LASTEXITCODE){throw 'candidate clone failed'}
@@ -8037,45 +8117,25 @@ set -eu
 cd /srv/ar-local/AR-local
 test "$(git rev-parse HEAD)" = '9302890fcc752cbf90da97d597e972c157d913e3'
 test -z "$(git status --porcelain=v1)"
+test "$(systemctl is-active ar-local-daily.service 2>/dev/null || true)" = inactive
 test "$(systemctl show ar-local-daily.service -p Result --value)" = success
 test "$(systemctl show ar-local-daily.service -p ExecMainStatus --value)" = 0
 test "$(systemctl is-enabled ar-local-daily.timer)" = enabled
 test "$(systemctl is-active ar-local-daily.timer)" = active
 test ! -e /srv/ar-local/data/state/daily-ingest.lock
-printf '%s  %s\n' bcde983cdab8790fe436d0f977e64cee4ae53ea74701820df2cab9e9d21704f1 /srv/ar-local/data/state/2026-09-02.done.json | sha256sum -c -
-printf '%s  %s\n' f2945b67890138827dcd1b74be69ae4e6727b740cd1a5414a2da01e0cea35745 /srv/ar-local/data/state/observation-pointers-v2/latest-observation.json | sha256sum -c -
-printf '%s  %s\n' cf98d96b46a18bdb5f128b439555429f7a648516ee9650aafa304ddca55fa425 /srv/ar-local/data/state/ledger-v2/head.json | sha256sum -c -
-printf '%s  %s\n' 4f45841840f1b2a256120bd269dd5557f277653d8a7c6667c4cf717564897d25 /srv/ar-local/data/runs/2026-09-02/_exports/ingest-status.json | sha256sum -c -
-printf '%s  %s\n' a1f6cd2369e872704530616b3b435fac8a115e13001645eef6b86fffc2454d44 /srv/ar-local/data/state/export-contracts-v2/2026-09-02/obs-2026-09-02-724fc227e6776842.json | sha256sum -c -
-printf '%s  %s\n' 9be89c33d89bef07e49c452340f2c2265880d7dd1b035dd6108ce57126d5e7af /srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite | sha256sum -c -
-test "$(curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest | sha256sum | cut -d' ' -f1)" = bbca1b65b96b06aed4702b551a507b7475739dc31c7ec9bbbcbadb7c312180b4
-python3 - <<'PY'
-import sqlite3
-p='/srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite'
-c=sqlite3.connect(f'file:{p}?mode=ro',uri=True);c.execute('pragma query_only=on')
-assert c.execute('pragma quick_check').fetchall()==[('ok',)]
-PY
-echo AR_PI_PREFLIGHT_PASS
-'@
+! pgrep -f '[c]dr_daily.py' >/dev/null
+'@+"`n"+$currentObservationProbe+"`necho AR_PI_PREFLIGHT_PASS`n"
 $pi=Invoke-ArTrustedSshScript -SshPath $ssh -HostName $endpoint -LogicalHost 'ar-local-pi5' -UserName 'pi' -Port 22 -IdentityPath $identity -KnownHostsPath $knownHostsAlias -Script (($remote-replace"`r",'')+"`n") -TimeoutMilliseconds 120000
 if($pi.ExitCode-ne0-or$pi.Stderr-or@($pi.Stdout.TrimEnd()-split"`n")[-1]-cne'AR_PI_PREFLIGHT_PASS'){throw "Pi preflight failed: $($pi.Stderr)"}
 WriteUtf8 (Join-Path $root 'pi-preflight.txt') $pi.Stdout
 
-$publication=@(
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/manifest.json',1211L,'367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json',2881L,'a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json',2116L,'9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json',1217L,'02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
-@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/search-index-2026-09-02-6db1e8a078cc.json.gz',597950L,'6db1e8a078ccc133839a8fa79488bc8ae7e6d6e84db515729cefe0d5cf4dd12a'))
-$web=[Net.Http.HttpClient]::new();$web.Timeout=[TimeSpan]::FromSeconds(20)
-try{foreach($pair in $publication){$bytes=$web.GetByteArrayAsync($pair[0]).GetAwaiter().GetResult();$h=[Security.Cryptography.SHA256]::Create();try{$actual=($h.ComputeHash($bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()};if($bytes.Length-ne[long]$pair[1]-or$actual-cne$pair[2]){throw "publication drift: $($pair[0])"}}}finally{$web.Dispose()}
+$publicationFinal=Assert-CurrentPublication $observationDate
+WriteNewJson (Join-Path $root 'publication-evidence.json') ([ordered]@{schema_version=1;initial=$publicationInitial;final=$publicationFinal;result='PASS'})|Out-Null
 if(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]-cne$authoritySha-or(Sha $handoff)-cne$handoffSha){throw 'authority advanced during preparation'}
 
 $created=[DateTimeOffset]::UtcNow
+$createdHobart=[TimeZoneInfo]::ConvertTime($created,$hobartZone)
+if($createdHobart.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)-cne$observationDate-or$createdHobart.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'dispatcher activation plus installer runway crosses safe stop'}
 $dispatcher=[ordered]@{schema_version=1;sequence=2;activation_id=$activationId;created_at=$created.ToString('o').Replace('+00:00','Z');activation_expires_at=$created.AddMinutes(45).ToString('o').Replace('+00:00','Z');previous_manifest_sha256=$prior.manifest_sha256;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;authority_repo=(Join-Path $installRoot 'authority');authority_handoff_path='docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md';candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;operator=$operator;operator_sid=$operatorSid;receiver=(Join-Path $installRoot 'receiver');allowed_receiver_root=$installRoot;entrypoint='run_laptop_backup_task.ps1';entrypoint_sha256=$sources['run_laptop_backup_task.ps1'];python_path=(Join-Path $installRoot 'python\python.exe');python_sha256=(Sha $python);scheduled_plan_git_commit=$planCommit;target=$target;allowed_target_root=$target;recovery_image=$recovery;allowed_recovery_root=[IO.Path]::GetDirectoryName($recovery);gate_evidence_path=$gatePath;gate_evidence_sha256=(Sha $gatePath)}
 WriteJson $manifest $dispatcher
 $package1=Join-Path $root 'trusted-package-1.zip';$package2=Join-Path $root 'trusted-package-2.zip'
@@ -8089,7 +8149,7 @@ if($created.AddMinutes(45)-lt[DateTimeOffset]::UtcNow.AddMinutes(30)){throw 'dis
 
 function Record([string]$Path){[ordered]@{path=[IO.Path]::GetFullPath($Path);bytes=[long](Get-Item -LiteralPath $Path).Length;sha256=(Sha $Path)}}
 $sourceRecords=[ordered]@{};foreach($item in $sources.GetEnumerator()){$path=Join-Path $candidate $item.Key;$sourceRecords[$item.Key]=Record $path}
-$build=[ordered]@{schema_version=1;authority_commit=$authoritySha;candidate_commit=$candidateSha;protected_commit=$protectedSha;complete_handoff=(Record $handoff);plan=[ordered]@{commit=$planCommit;sha256=$planSha;raw=(Record $planPath)};runtime=[ordered]@{path=$runtime;files=3067;directories=205;bytes=64118158L;inventory_sha256='d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7';tree_inventory_sha256='4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c';python=(Record $python);python_boundary=$pythonBoundary;http_client=[ordered]@{assembly=$httpClientAssembly;path=$httpClientAssemblyPath;sha256=$httpClientAssemblySha}};materialization=(Record $materializationPath);tools=[ordered]@{git=(Record $git);ssh=(Record $ssh);scp=(Record $scp);whoami=(Record $whoami);identity=(Record $identity)};toolchain=[ordered]@{compiler=(Record $compiler);linker=(Record $linker);powershell=(Record $powershell);inventories=$toolchainObserved;environment=$toolchainEnvironment};sources=$sourceRecords;route=[ordered]@{discovery='ar.local';selected=$endpoint;logical='ar-local-pi5';user='pi';port=22;key_blob_sha256=$blobHex;fingerprint=$fingerprint};known_hosts_source=(Record $knownHostsSource);known_hosts_alias=(Record $knownHostsAlias);trusted_child=(Record (Join-Path $root 'trusted-child.json'));check_only=(Record (Join-Path $root 'check-only.json'));active_pointer=(Record $pointerPath);activation_gate=(Record $gatePath);dispatcher_manifest=(Record $manifest);launcher_1=(Record $launcher1);launcher_2=(Record $launcher2);launcher_object_1=(Record $launcherObj1);launcher_object_2=(Record $launcherObj2);package_1=(Record $package1);package_2=(Record $package2)}
+$build=[ordered]@{schema_version=1;observation_date=$observationDate;authority_commit=$authoritySha;candidate_commit=$candidateSha;protected_commit=$protectedSha;complete_handoff=(Record $handoff);plan=[ordered]@{commit=$planCommit;sha256=$planSha;raw=(Record $planPath)};runtime=[ordered]@{path=$runtime;files=3067;directories=205;bytes=64118158L;inventory_sha256='d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7';tree_inventory_sha256='4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c';trusted_tree=$trustedRuntime;python=(Record $python);python_boundary=$pythonBoundary;http_client=[ordered]@{assembly=$httpClientAssembly;path=$httpClientAssemblyPath;sha256=$httpClientAssemblySha}};publication=(Record (Join-Path $root 'publication-evidence.json'));materialization=(Record $materializationPath);tools=[ordered]@{git=(Record $git);ssh=(Record $ssh);scp=(Record $scp);whoami=(Record $whoami);identity=(Record $identity)};toolchain=[ordered]@{compiler=(Record $compiler);linker=(Record $linker);powershell=(Record $powershell);inventories=$toolchainObserved;environment=$toolchainEnvironment};sources=$sourceRecords;route=[ordered]@{discovery='ar.local';selected=$endpoint;logical='ar-local-pi5';user='pi';port=22;key_blob_sha256=$blobHex;fingerprint=$fingerprint};known_hosts_source=(Record $knownHostsSource);known_hosts_alias=(Record $knownHostsAlias);trusted_child=(Record (Join-Path $root 'trusted-child.json'));check_only=(Record (Join-Path $root 'check-only.json'));active_pointer=(Record $pointerPath);activation_gate=(Record $gatePath);dispatcher_manifest=(Record $manifest);launcher_1=(Record $launcher1);launcher_2=(Record $launcher2);launcher_object_1=(Record $launcherObj1);launcher_object_2=(Record $launcherObj2);package_1=(Record $package1);package_2=(Record $package2)}
 WriteJson (Join-Path $root 'build-result.json') $build
 
 $installer=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher.ps1';$core=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_core.ps1';$sshBoundary=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_ssh.ps1';$evidenceBoundary=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_evidence.ps1';$hostPath='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';$preexec=Join-Path $root 'pre-execution-manifest.json'
@@ -8097,26 +8157,26 @@ $invoke=[ordered]@{task_name=$taskName;package_path=$package1;package_sha256=(Sh
 $contract=Get-ArTrustedInvocationContractSha256 $invoke
 $fresh=[DateTimeOffset]::UtcNow
 $freshHobart=[TimeZoneInfo]::ConvertTime($fresh,$hobartZone)
-if($freshHobart.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$freshHobart.AddMinutes(45).Date-ne$freshHobart.Date-or$freshHobart.AddMinutes(45).TimeOfDay-gt[TimeSpan]::FromHours(22)){throw 'preflight would cross safe stop'}
+if($freshHobart.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)-cne$observationDate-or$freshHobart.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$freshHobart.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'preflight plus installer runway would cross safe stop'}
 function Quote([string]$Value){"'"+$Value.Replace("'","''")+"'"}
 $args=[ordered]@{TaskName=$taskName;PackagePath=$package1;PackageSha256=(Sha $package1);InstallRoot=$installRoot;Target=$target;ControlRoot=$control;RecoveryImage=$recovery;EvidenceRoot=$evidenceRoot;Principal=$principal;Operator=$operator;OperatorSid=$operatorSid;CandidateCodeSha=$candidateSha;AuthorityCommit=$authoritySha;ProtectedCodeSha=$protectedSha;PlanGitCommit=$planCommit;PlanSha256=$planSha;PlanRawSha256=$planRawSha;HandoffSha256=$handoffSha;ExpectedOldTaskXmlSha256=$invoke.expected_old_task_xml_sha256;ExpectedOldTaskSddlSha256=$invoke.expected_old_task_sddl_sha256;ExpectedOldTaskSddlSemanticSha256=$invoke.expected_old_task_sddl_semantic_sha256;ExpectedOldTaskLastResult='1';ExpectedCatalogSha256=$invoke.expected_catalog_sha256;ExpectedCatalogSize='236234';ExpectedCatalogFinalSequence='336';ExpectedCatalogFinalEntrySha256=$invoke.expected_catalog_final_entry_sha256;ExpectedLatestVerifiedSha256=$invoke.expected_latest_verified_sha256;ExpectedLatestVerifiedSize='316';ExpectedAcceptedCatalogEntrySha256=$invoke.expected_accepted_catalog_entry_sha256;ExpectedAcceptedReceiptRelativePath=$invoke.expected_accepted_receipt_relative_path;ExpectedAcceptedReceiptSha256=$invoke.expected_accepted_receipt_sha256;ExpectedAcceptedReceiptSize='3392';ExpectedAcceptedObservationId=$invoke.expected_accepted_observation_id;ExpectedAcceptedArchiveSha256=$invoke.expected_accepted_archive_sha256;ExpectedAcceptedArchiveSize='237101208';InstallerSha256=(Sha $installer);CoreSha256=(Sha $core);SshBoundarySha256=(Sha $sshBoundary);EvidenceBoundarySha256=(Sha $evidenceBoundary);PreExecutionManifestPath=$preexec;PreExecutionManifestSha256='<SELF_SHA256>';SshIdentityPath=$identity;SshIdentitySha256=(Sha $identity);SshExecutableSha256=(Sha $ssh);PiHost='ar.local';PiUser='pi';PiPort='22'}
 $innerTemplate='$ErrorActionPreference=''Stop'';& '+(Quote $installer);foreach($item in $args.GetEnumerator()){$innerTemplate+=' -'+$item.Key+' '+(Quote ([string]$item.Value))}
 $evidenceFiles=@();$seenEvidence=@{}
-foreach($path in @($PSCommandPath,$materializationPath,$handoff,$planPath,$installer,$core,$sshBoundary,$evidenceBoundary,$python,$git,$ssh,$identity,$pointerPath,$gatePath,$manifest,$launcher1,$launcher2,$launcherObj1,$launcherObj2,$package1,$package2,(Join-Path $root 'build-result.json'),$taskXml,(Join-Path $root 'pi-preflight.txt'),(Join-Path $root 'check-only.json'),(Join-Path $root 'generator-running.json'),(Join-Path $journalRoot 'running.json'),(Join-Path $journalRoot 'pass.json'))){$full=[IO.Path]::GetFullPath($path);if(-not$seenEvidence.ContainsKey($full)){$seenEvidence[$full]=$true;$evidenceFiles+=Record $full}}
+foreach($path in @($PSCommandPath,$materializationPath,$handoff,$planPath,$installer,$core,$sshBoundary,$evidenceBoundary,$python,$git,$ssh,$identity,$pointerPath,$gatePath,$manifest,$launcher1,$launcher2,$launcherObj1,$launcherObj2,$package1,$package2,(Join-Path $root 'build-result.json'),(Join-Path $root 'publication-evidence.json'),$taskXml,(Join-Path $root 'pi-preflight.txt'),(Join-Path $root 'check-only.json'),(Join-Path $root 'generator-running.json'),(Join-Path $journalRoot 'running.json'),(Join-Path $journalRoot 'pass.json'))){$full=[IO.Path]::GetFullPath($path);if(-not$seenEvidence.ContainsKey($full)){$seenEvidence[$full]=$true;$evidenceFiles+=Record $full}}
 $pre=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';document_commit=$planCommit;task_name=$taskName;package_path=$package1;package_sha256=(Sha $package1);install_root=$installRoot;target=$target;control_root=$control;recovery_image=$recovery;evidence_root=$evidenceRoot;principal=$principal;operator=$operator;operator_sid=$operatorSid;candidate_code_sha=$candidateSha;authority_commit=$authoritySha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;plan_raw_sha256=$planRawSha;handoff_sha256=$handoffSha;expected_old_task_xml_sha256=$invoke.expected_old_task_xml_sha256;expected_old_task_sddl_sha256=$invoke.expected_old_task_sddl_sha256;expected_old_task_sddl_semantic_sha256=$invoke.expected_old_task_sddl_semantic_sha256;expected_old_task_last_result=1;installer_sha256=(Sha $installer);core_sha256=(Sha $core);ssh_boundary_sha256=(Sha $sshBoundary);evidence_boundary_sha256=(Sha $evidenceBoundary);expected_catalog_sha256=$invoke.expected_catalog_sha256;expected_catalog_size=236234L;expected_catalog_final_sequence=336;expected_catalog_final_entry_sha256=$invoke.expected_catalog_final_entry_sha256;expected_latest_verified_sha256=$invoke.expected_latest_verified_sha256;expected_latest_verified_size=316L;expected_accepted_catalog_entry_sha256=$invoke.expected_accepted_catalog_entry_sha256;expected_accepted_receipt_relative_path=$invoke.expected_accepted_receipt_relative_path;expected_accepted_receipt_sha256=$invoke.expected_accepted_receipt_sha256;expected_accepted_receipt_size=3392L;expected_accepted_observation_id=$invoke.expected_accepted_observation_id;expected_accepted_archive_sha256=$invoke.expected_accepted_archive_sha256;expected_accepted_archive_size=237101208L;invocation_contract_schema=1;invocation_host_path=$hostPath;invocation_script_path=$installer;invocation_contract_sha256=$contract;rollback_procedure='RESTORE_TASK_CONTROL_AND_QUARANTINE_V1';preflight_min_free_bytes=53687091200L;preflight_expected_active_process_count=0;preflight_expected_residue_count=0;preflight_expected_pi_status='AR_PI_PREFLIGHT_PASS';pi_host='ar.local';pi_user='pi';pi_port=22;ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_executable_sha256=(Sha $ssh);created_at=$fresh.ToString('o');expires_at=$fresh.AddMinutes(45).ToString('o');exact_commands=@('MARKED_ARL_D012_PREPARE_AND_PREFLIGHT_PS1_C20260902T160000',$innerTemplate);command_self_hash_placeholder='<SELF_SHA256>';evidence_files=$evidenceFiles;result='PASS';deviations=@()}
 WriteJson $preexec $pre
 $inner=$innerTemplate.Replace('<SELF_SHA256>',(Sha $preexec))
 $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
 [IO.File]::WriteAllText((Join-Path $root 'uac-encoded.txt'),$encoded,[Text.Encoding]::ASCII)
-$expected=@('prepare-and-preflight.ps1','materialization.json','runtime','generator-running.json','candidate','authority','known-hosts-source','known-hosts-alias','dispatcher-manifest.json','trusted-child.json','check-only.json','activation-gate.json','launcher-1.exe','launcher-2.exe','launcher-1.obj','launcher-2.obj','trusted-package-1.zip','trusted-package-2.zip','build-result.json','observed-task.xml','pi-preflight.txt','pre-execution-manifest.json','uac-encoded.txt')
+$expected=@('prepare-and-preflight.ps1','materialization.json','runtime','generator-running.json','candidate','authority','known-hosts-source','known-hosts-alias','dispatcher-manifest.json','trusted-child.json','check-only.json','activation-gate.json','launcher-1.exe','launcher-2.exe','launcher-1.obj','launcher-2.obj','trusted-package-1.zip','trusted-package-2.zip','build-result.json','publication-evidence.json','observed-task.xml','pi-preflight.txt','pre-execution-manifest.json','uac-encoded.txt')
 $present=@(Get-ChildItem -LiteralPath $root -Force|ForEach-Object{$_.Name})
 if(@($expected|Where-Object{$present-notcontains$_}).Count-or@($present|Where-Object{$expected-notcontains$_}).Count){throw 'generated output set is incomplete or unbound'}
 $outputs=[ordered]@{};foreach($name in $expected){$path=Join-Path $root $name;if(Test-Path -LiteralPath $path -PathType Leaf){$outputs[$name]=Record $path}}
 $outputs['active-runner.json']=Record $pointerPath
 if(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]-cne$authoritySha-or(Sha $handoff)-cne$handoffSha-or(Sha $planPath)-cne$planRawSha){throw 'authority advanced before PASS'}
 $passHobart=[TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow,$hobartZone)
-if($passHobart.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$passHobart.TimeOfDay-ge[TimeSpan]::FromHours(22)-or$passHobart.AddMinutes(45).Date-ne$passHobart.Date-or$passHobart.AddMinutes(45).TimeOfDay-gt[TimeSpan]::FromHours(22)){throw 'safe window closed before PASS'}
-$summary=[ordered]@{schema_version=1;result='PASS';authority_commit=$authoritySha;complete_handoff_sha256=$handoffSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_commit=$planCommit;plan_sha256=$planSha;plan_raw_sha256=$planRawSha;endpoint=$endpoint;logical_host='ar-local-pi5';host_key_blob_sha256=$blobHex;host_key_fingerprint=$fingerprint;outputs=$outputs;invocation_contract_sha256=$contract;check_only_execution_record=$check.execution_record;catalog_sha256=$invoke.expected_catalog_sha256;expires_at=$pre.expires_at}
+if($passHobart.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)-cne$observationDate-or$passHobart.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$passHobart-ge$fresh.AddMinutes(45)-or$passHobart.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'safe window or activation runway closed before PASS'}
+$summary=[ordered]@{schema_version=1;result='PASS';observation_date=$observationDate;authority_commit=$authoritySha;complete_handoff_sha256=$handoffSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_commit=$planCommit;plan_sha256=$planSha;plan_raw_sha256=$planRawSha;endpoint=$endpoint;logical_host='ar-local-pi5';host_key_blob_sha256=$blobHex;host_key_fingerprint=$fingerprint;outputs=$outputs;invocation_contract_sha256=$contract;check_only_execution_record=$check.execution_record;catalog_sha256=$invoke.expected_catalog_sha256;expires_at=$pre.expires_at;installer_runway_minutes=$installerRunwayMinutes;latest_installer_start=$fresh.AddMinutes(45).ToString('o');safe_stop=$safeStop.ToString('o')}
 WriteJson (Join-Path $root 'preflight-summary.json') $summary
 $generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS' $null ([ordered]@{running=$generatorRunning;preflight_summary=[ordered]@{path=(Join-Path $root 'preflight-summary.json');bytes=[long](Get-Item -LiteralPath (Join-Path $root 'preflight-summary.json')).Length;sha256=(Sha (Join-Path $root 'preflight-summary.json'))};pre_execution_manifest=[ordered]@{path=$preexec;bytes=[long](Get-Item -LiteralPath $preexec).Length;sha256=(Sha $preexec)};uac_encoded_sha256=(TextSha $encoded)})
 }catch{
@@ -8128,8 +8188,8 @@ $generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS' $null ([ordered
 ```
 <!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
 
-The generator above is exactly 53785 UTF-8/LF bytes, 346 lines, SHA-256
-`566074eb66ec5e9fd22966b2fce4d7527b43c9422c71dd9a18eebb17fa037735`.
+The generator above is exactly 61119 UTF-8/LF bytes, 406 lines, SHA-256
+`09460452a970da6b557611daf98a12d12338fc3f1a161908688bfdaaa2dd5954`.
 Its PowerShell parser has zero errors. Its only native `python -c` site is the
 base64 bootstrap helper.
 
@@ -8176,7 +8236,12 @@ if(-not[Environment]::Is64BitProcess-or[IO.Path]::GetFullPath([Diagnostics.Proce
 if((ShaFile $git)-cne'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9'){throw 'git executable drift'}
 $hobartZone=[TimeZoneInfo]::FindSystemTimeZoneById('Tasmania Standard Time')
 $hobartNow=[TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow,$hobartZone)
-if($hobartNow.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$hobartNow.TimeOfDay-ge[TimeSpan]::FromHours(22)){throw 'outside D-006 daylight window'}
+$safeStop=[DateTimeOffset]::new($hobartNow.Year,$hobartNow.Month,$hobartNow.Day,22,0,0,$hobartNow.Offset)
+$installerRunwayMinutes=60
+$observationDate=$hobartNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)
+if($hobartNow.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$hobartNow.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'outside bounded D-006 materialization window'}
+$freeFloor=53687091200L
+$projectedMaterializationBytes=134217728L
 $env:GIT_TERMINAL_PROMPT='0'
 function ResolveMain {
   $out=(& $git -c credential.interactive=never -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 ls-remote $repo refs/heads/main 2>&1|Out-String).Trim()
@@ -8185,12 +8250,34 @@ function ResolveMain {
   if($sha-notmatch'^[0-9a-f]{40}$'){throw 'canonical main is invalid'}
   $sha
 }
-function WriteNew([string]$Path,[byte[]]$Bytes){$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}}
+function AssertFreeSpace([long]$ReserveBytes=0){$drive=Get-PSDrive -Name C -PSProvider FileSystem -ErrorAction Stop;$free=[long]$drive.Free;if($free-$ReserveBytes-lt$freeFloor){throw "free-space floor would be breached: free=$free reserve=$ReserveBytes floor=$freeFloor"};$free}
+function WriteNew([string]$Path,[byte[]]$Bytes){[void](AssertFreeSpace ([long]$Bytes.Length));$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()};[void](AssertFreeSpace 0)}
 function WriteExecution([string]$Name,[string]$Result,[object]$ErrorText,[object]$Evidence){
   $value=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';document_commit=$planCommit;plan_git_commit=$planCommit;plan_sha256=$planSha;plan_raw_sha256=$planRawSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;authority_commit=$authoritySha;complete_handoff_raw_sha256=$handoffSha;operator=$operator;started_at=$startedAt.ToString('o');recorded_at=[DateTimeOffset]::UtcNow.ToString('o');exact_commands=@('MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000');evidence_paths=@($root,$quarantine,$runtimeSource);result=$Result;error=$ErrorText;evidence=$Evidence;deviations=@()}
   $path=Join-Path $journalRoot $Name
   WriteNew $path ([Text.UTF8Encoding]::new($false).GetBytes((($value|ConvertTo-Json -Depth 20 -Compress)+[char]10)))
   [ordered]@{path=$path;bytes=[long](Get-Item -LiteralPath $path).Length;sha256=(ShaFile $path);result=$Result}
+}
+function Get-WebJson([Net.Http.HttpClient]$Client,[string]$Url){$bytes=$Client.GetByteArrayAsync($Url).GetAwaiter().GetResult();$text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes);[pscustomobject]@{url=$Url;bytes=[long]$bytes.Length;sha256=(ShaBytes $bytes);value=($text|ConvertFrom-Json)}}
+function Assert-PayloadManifest([Net.Http.HttpClient]$Client,[object]$Record,[string]$Date,[string]$Tag,[string[]]$ExpectedFiles){
+  $manifest=$Record.value
+  if($manifest.schema_version-ne1-or$manifest.run_date-cne$Date-or$manifest.repo-cne'yanniedog/AR-local'-or$manifest.tag-cne$Tag-or[long]$manifest.counts.products-le0-or[long]$manifest.counts.rates-le0-or[long]$manifest.counts.holder_attempts-le0){throw "payload manifest identity drift: $Tag"}
+  $names=@($manifest.files.PSObject.Properties.Name|Sort-Object);if(Compare-Object ($ExpectedFiles|Sort-Object) $names){throw "payload manifest file set drift: $Tag"}
+  $files=[ordered]@{}
+  foreach($property in $manifest.files.PSObject.Properties){$asset=$property.Value;$name=[string]$asset.name;$url="https://github.com/yanniedog/AR-local/releases/download/$Tag/$name";if($name-notmatch'^[A-Za-z0-9][A-Za-z0-9._-]*$'-or$asset.url-cne$url-or[long]$asset.bytes-le0-or([string]$asset.sha256)-notmatch'^[0-9a-f]{64}$'){throw "payload asset contract drift: $Tag/$($property.Name)"};$bytes=$Client.GetByteArrayAsync($url).GetAwaiter().GetResult();$sha=ShaBytes $bytes;if([long]$bytes.Length-ne[long]$asset.bytes-or$sha-cne[string]$asset.sha256){throw "payload asset bytes drift: $url"};$files[$property.Name]=[ordered]@{url=$url;bytes=[long]$bytes.Length;sha256=$sha}}
+  [ordered]@{manifest=[ordered]@{url=$Record.url;bytes=$Record.bytes;sha256=$Record.sha256};files=$files}
+}
+function Assert-CurrentPublication([string]$Date){
+  $client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(30)
+  try{
+    $datedTag="app-payload-$Date";$rollingTag='app-payload-latest'
+    $dated=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$datedTag/manifest.json"
+    $rolling=Get-WebJson $client "https://github.com/yanniedog/AR-local/releases/download/$rollingTag/manifest.json"
+    $index=Get-WebJson $client 'https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json'
+    $dates=@($index.value.dates);$sorted=@($dates|Sort-Object -Unique)
+    if($index.value.schema_version-ne1-or[long]$index.value.count-ne$dates.Count-or$index.value.latest_date-cne$Date-or$dates.Count-lt1-or$dates[-1]-cne$Date-or(Compare-Object $dates $sorted)){throw 'dates index is not current, ordered, and unique'}
+    [ordered]@{observation_date=$Date;dated=(Assert-PayloadManifest $client $dated $Date $datedTag @('core','details'));rolling=(Assert-PayloadManifest $client $rolling $Date $rollingTag @('bank_history','bank_spread_history','core','details','history_banks','rba_calendar','search_index'));dates_index=[ordered]@{url=$index.url;bytes=$index.bytes;sha256=$index.sha256;count=$dates.Count;latest_date=$Date};legacy_v2='NOT_AN_ACCEPTANCE_INPUT'}
+  }finally{$client.Dispose()}
 }
 function AssertPiIdle {
   if((ShaFile $ssh)-cne'6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42'-or(ShaFile $identity)-cne'faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e'){throw 'Pi idle-proof tool drift'}
@@ -8215,9 +8302,44 @@ test "$(systemctl is-enabled ar-local-daily.timer)" = enabled
 test "$(systemctl is-active ar-local-daily.timer)" = active
 test ! -e /srv/ar-local/data/state/daily-ingest.lock
 ! pgrep -f '[c]dr_daily.py' >/dev/null
-curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null
+today=$(TZ=Australia/Hobart date +%F)
+test "$today" = '__OBSERVATION_DATE__'
+python3 -B - "$today" <<'PY'
+from pathlib import Path
+import hashlib,json,sqlite3,sys,urllib.request
+sys.path.insert(0,'.')
+from ar_local_pi_runtime import manifest_banks_rate_count
+from cdr_finalization import verify_completion_marker
+base=Path('/srv/ar-local/data').resolve(); state=base/'state'; today=sys.argv[1]
+def load(path): return json.loads(path.read_text(encoding='utf-8'))
+def record(path):
+    data=path.read_bytes()
+    return {'path':path.resolve().relative_to(base).as_posix(),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+pointer_path=state/'observation-pointers-v2/latest-observation.json'; pointer=load(pointer_path)
+if pointer.get('schema_version') != 2 or pointer.get('observation_date') != today or pointer.get('marker_path') != f'{today}.done.json' or pointer.get('observation_state') not in ('complete','partial'): raise SystemExit('current observation pointer invalid')
+marker_path=state/pointer['marker_path']; marker=load(marker_path)
+if not verify_completion_marker(marker,state,today) or marker.get('generation_id') != pointer.get('generation_id') or marker.get('ledger_event_digest') != pointer.get('ledger_event_digest') or marker.get('observation_state') != pointer.get('observation_state'): raise SystemExit('current completion marker invalid')
+generation=marker['generation_id']; contract_path=state/marker['export_contract_path']; contract=load(contract_path)
+event_path=state/'ledger-v2/events'/today/f'{generation}.json'; event=load(event_path)
+head_path=state/'ledger-v2/head.json'; head=load(head_path)
+if head.get('schema_version') != 2 or head.get('observation_date') != today or head.get('generation_id') != generation or head.get('event_digest') != event.get('event_digest') or head.get('event_path') != f'events/{today}/{generation}.json' or event.get('event_digest') != marker.get('ledger_event_digest') or event.get('contract_digest') != contract.get('contract_digest'): raise SystemExit('current ledger head invalid')
+export_root=(base/contract['source_path']).resolve()
+if not export_root.is_relative_to(base) or pointer.get('export_path') != contract.get('source_path'): raise SystemExit('current export path invalid')
+artifacts={item['path']:item for item in contract['artifacts']}; db=export_root/'local-cdr.sqlite'; status_path=export_root/'ingest-status.json'
+if 'local-cdr.sqlite' not in artifacts or 'ingest-status.json' not in artifacts: raise SystemExit('current export contract incomplete')
+db_record=record(db); status_record=record(status_path)
+if db_record['bytes'] != artifacts['local-cdr.sqlite']['bytes'] or db_record['sha256'] != artifacts['local-cdr.sqlite']['sha256'] or status_record['bytes'] != artifacts['ingest-status.json']['bytes'] or status_record['sha256'] != artifacts['ingest-status.json']['sha256']: raise SystemExit('current export artifact identity drift')
+connection=sqlite3.connect(f'file:{db}?mode=ro',uri=True); connection.execute('pragma query_only=on')
+try: quick=connection.execute('pragma quick_check').fetchall()
+finally: connection.close()
+if quick != [('ok',)]: raise SystemExit('current database quick_check failed')
+status=load(status_path)
+with urllib.request.urlopen('http://127.0.0.1:8808/api/latest',timeout=10) as response: dashboard=json.load(response)
+if status.get('failure_provenance_complete') is not True or status.get('register_provenance_complete') is not True or int(status.get('providers_attempted') or 0) <= 0 or bool(status.get('incomplete')) != (pointer.get('observation_state') == 'partial') or dashboard.get('run_date') != today or manifest_banks_rate_count(dashboard) <= 0: raise SystemExit('current status/dashboard invalid')
+print(json.dumps({'observation_date':today,'generation_id':generation,'event_digest':event['event_digest'],'contract_digest':contract['contract_digest'],'marker':record(marker_path),'pointer':record(pointer_path),'head':record(head_path),'contract':record(contract_path),'event':record(event_path),'database':db_record,'status':status_record,'quick_check':'ok','dashboard_run_date':today},sort_keys=True,separators=(',',':')))
+PY
 echo AR_PI_MATERIALIZER_IDLE_PASS
-'@).Replace('__PROTECTED__',$protectedSha)
+'@).Replace('__PROTECTED__',$protectedSha).Replace('__OBSERVATION_DATE__',$observationDate)
   $args=@('-T','-F','NUL','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','IdentityAgent=none','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no','-o','PreferredAuthentications=publickey','-o','PubkeyAuthentication=yes','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=NUL','-o','UpdateHostKeys=no','-o','VerifyHostKeyDNS=no','-o','ForwardAgent=no','-o','ClearAllForwardings=yes','-o','RequestTTY=no','-o','HostKeyAlgorithms=ssh-ed25519','-o','ConnectTimeout=10','-o',"UserKnownHostsFile=$knownHosts",'-i',$identity,"pi@$endpoint",'bash','-s','--')
   $output=($probe|& $ssh @args 2>&1|Out-String)
   if($LASTEXITCODE-ne0-or@($output.TrimEnd()-split"`n")[-1]-cne'AR_PI_MATERIALIZER_IDLE_PASS'){throw "Pi is not idle and production-validated: $output"}
@@ -8274,10 +8396,11 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-7 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne53785-or$script.Split([char]10).Count-ne346-or$scriptSha-cne'566074eb66ec5e9fd22966b2fce4d7527b43c9422c71dd9a18eebb17fa037735'){throw 'sequence-7 generator binding mismatch'}
+if($scriptBytes.Length-ne61119-or$script.Split([char]10).Count-ne406-or$scriptSha-cne'09460452a970da6b557611daf98a12d12338fc3f1a161908688bfdaaa2dd5954'){throw 'sequence-7 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
+$publicationInitial=Assert-CurrentPublication $observationDate
 $partial=Get-TreeInventory $root
 AssertInventory $partial 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'failed sequence-6 root'
 if(Test-Path -LiteralPath $quarantine){throw 'fixed quarantine destination already exists'}
@@ -8312,17 +8435,24 @@ if((ResolveMain)-cne$authoritySha){throw 'main advanced before quarantine'}
 $partialFinal=Get-TreeInventory $root;AssertInventory $partialFinal 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'failed sequence-6 root'
 $runtimeSourceFinal=Get-TreeInventory $runtimeSource;AssertInventory $runtimeSourceFinal 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime'
 $piIdle=AssertPiIdle
+$publicationFinal=Assert-CurrentPublication $observationDate
 $mutationNow=[TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow,[TimeZoneInfo]::FindSystemTimeZoneById('Tasmania Standard Time'))
-if($mutationNow.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$mutationNow.TimeOfDay-ge[TimeSpan]::FromHours(22)){throw 'safe stop reached before materialization mutation'}
+if($mutationNow.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)-cne$observationDate-or$mutationNow.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$mutationNow.AddMinutes(45+$installerRunwayMinutes)-gt$safeStop){throw 'materialization plus installer runway would cross safe stop'}
+$freeBeforeJournal=AssertFreeSpace $projectedMaterializationBytes
 [void](New-Item -ItemType Directory -Path $journalRoot)
-$running=WriteExecution 'running.json' 'RUNNING' $null ([ordered]@{failed_root_inventory_sha256=$partialFinal.inventory_sha256;source_runtime_inventory_sha256=$runtimeSourceFinal.inventory_sha256;pi_idle_initial=$piIdleInitial;pi_idle=$piIdle})
+$freeAfterJournal=AssertFreeSpace 0
+$running=WriteExecution 'running.json' 'RUNNING' $null ([ordered]@{observation_date=$observationDate;safe_stop=$safeStop.ToString('o');installer_runway_minutes=$installerRunwayMinutes;free_space=[ordered]@{floor_bytes=$freeFloor;projected_materialization_bytes=$projectedMaterializationBytes;before_journal_bytes=$freeBeforeJournal;after_journal_bytes=$freeAfterJournal};failed_root_inventory_sha256=$partialFinal.inventory_sha256;source_runtime_inventory_sha256=$runtimeSourceFinal.inventory_sha256;publication=[ordered]@{initial=$publicationInitial;final=$publicationFinal};pi_idle_initial=$piIdleInitial;pi_idle=$piIdle})
 try{
+[void](AssertFreeSpace $projectedMaterializationBytes)
 Move-Item -LiteralPath $root -Destination $quarantine
 if(Test-Path -LiteralPath $root){throw 'failed root remained after quarantine move'}
+$freeAfterQuarantine=AssertFreeSpace 0
 $quarantineInventory=Get-TreeInventory $quarantine
 AssertInventory $quarantineInventory 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'quarantined sequence-6 root'
 [void](New-Item -ItemType Directory -Path $root)
+$freeAfterRoot=AssertFreeSpace 0
 $runtime=Join-Path $root 'runtime';[void](New-Item -ItemType Directory -Path $runtime)
+$freeAfterRuntimeRoot=AssertFreeSpace 0
 foreach($record in $runtimeSourceInventory.records){
   if($record.type-cne'file'-or$excludedByPath.ContainsKey([string]$record.path)){continue}
   $sourcePath=Join-Path $runtimeSource ([string]$record.path).Replace('/','\')
@@ -8338,7 +8468,10 @@ foreach($record in $runtimeSourceInventory.records){
     if($null-ne$output){$output.Dispose()}
     if($null-ne$input){$input.Dispose()}
   }
+  [void](AssertFreeSpace 0)
 }
+$cleanRuntime=Get-TreeInventory $runtime
+AssertInventory $cleanRuntime 3067 205 64118158 '4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c' 'clean copied runtime'
 $python=Join-Path $runtime 'python.exe'
 if((ShaFile $python)-cne'53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f'){throw 'copied Python drift'}
 $pythonBootstrap="import base64,sys;code=base64.b64decode(sys.argv.pop(1));exec(compile(code,'<ARL-D012>','exec'))"
@@ -8358,8 +8491,6 @@ $inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv
 $inventoryRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($runtime)
 $inventoryActual=$inventoryRun.Output.Trim()
 if($inventoryRun.ExitCode-ne0-or$inventoryActual-cne'3067 205 64118158 d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7 4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'){throw "copied runtime Python inventory drift: $($inventoryRun.Output)"}
-$cleanRuntime=Get-TreeInventory $runtime
-AssertInventory $cleanRuntime 3067 205 64118158 '4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c' 'clean copied runtime'
 $runtimeSourceAfter=Get-TreeInventory $runtimeSource
 AssertInventory $runtimeSourceAfter 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime after copy'
 $generatorPath=Join-Path $root 'prepare-and-preflight.ps1';WriteNew $generatorPath $scriptBytes
@@ -8381,6 +8512,8 @@ $record=[ordered]@{
   evidence_paths=@($quarantine,$runtime,$generatorPath)
   execution_journal=[ordered]@{root=$journalRoot;running=$running}
   pi_idle=$piIdle
+  publication=[ordered]@{initial=$publicationInitial;final=$publicationFinal}
+  free_space=[ordered]@{floor_bytes=$freeFloor;projected_materialization_bytes=$projectedMaterializationBytes;before_journal_bytes=$freeBeforeJournal;after_journal_bytes=$freeAfterJournal;after_quarantine_bytes=$freeAfterQuarantine;after_root_bytes=$freeAfterRoot;after_runtime_root_bytes=$freeAfterRuntimeRoot;completed_bytes=(AssertFreeSpace 0)}
   result='PASS'
   deviations=@()
   authority_commit=$authoritySha
@@ -8408,8 +8541,8 @@ $record|ConvertTo-Json -Depth 4 -Compress
 ```
 <!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
 
-The materializer above is exactly 25147 UTF-8/LF bytes, 263 lines, SHA-256
-`dfd783a13246598ea639dfedbfe4d945e9495d71c12f50405bb8de6d3e0c8d20`.
+The materializer above is exactly 34408 UTF-8/LF bytes, 336 lines, SHA-256
+`00c15fc0de4ca291f22a6b3d6260ab56cb8025a608bd511da1066549ab2e23f5`.
 It is the exact next safe command after merge; any different bytes are
 unauthorized.
 
@@ -8447,5 +8580,5 @@ Natural backup acceptance remains mandatory; A3 remains running and A4 remains
 blocked.
 
 ```json
-{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"9b3b4844e0dcc5ff58cd465bdbf89b691840dad7","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":53785,"lines":346,"sha256":"566074eb66ec5e9fd22966b2fce4d7527b43c9422c71dd9a18eebb17fa037735"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":25147,"lines":263,"sha256":"dfd783a13246598ea639dfedbfe4d945e9495d71c12f50405bb8de6d3e0c8d20"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"dfd783a13246598ea639dfedbfe4d945e9495d71c12f50405bb8de6d3e0c8d20","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"9b3b4844e0dcc5ff58cd465bdbf89b691840dad7","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":61119,"lines":406,"sha256":"09460452a970da6b557611daf98a12d12338fc3f1a161908688bfdaaa2dd5954"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":34408,"lines":336,"sha256":"00c15fc0de4ca291f22a6b3d6260ab56cb8025a608bd511da1066549ab2e23f5"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"00c15fc0de4ca291f22a6b3d6260ab56cb8025a608bd511da1066549ab2e23f5","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
 ```
