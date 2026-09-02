@@ -920,9 +920,13 @@ def build_observation_database(target: Path | str, *, accounting: Mapping[str, A
         hook("after_install")
         _cleanup_candidate(candidate)
         _fsync_directory(destination.parent)
-        verification = verify_observation_database(destination, expected_sidecar_bytes=sidecar_bytes, expected_projections=normalized_projections, expected_normalization_version=normalization_version, expected_generated_at=generated_at)
-        if verification.database_sha256 != verified.database_sha256:
-            _fail("installed database differs from verified candidate")
+        try:
+            verification = verify_observation_database(destination, expected_sidecar_bytes=sidecar_bytes, expected_projections=normalized_projections, expected_normalization_version=normalization_version, expected_generated_at=generated_at)
+            if verification.database_sha256 != verified.database_sha256:
+                _fail("installed database differs from verified candidate")
+        except BaseException:
+            _cleanup_candidate(destination)
+            raise
         return DatabaseBuildResult(verification, True)
     finally:
         _cleanup_candidate(candidate)

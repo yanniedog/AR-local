@@ -515,14 +515,7 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             rec = inner_record(load_json(path))
             code = "identity_mismatch"
             if provider_dir not in providers:
-                digest = hashlib.sha256(
-                    f"legacy-provider-v1\0{provider_dir}".encode("utf-8")
-                ).hexdigest()
-                providers[provider_dir] = {
-                    "provider_uid": f"legacy-prd:{digest}",
-                    "provider_identity_status": "legacy_unverified",
-                    "brand_name": provider_dir,
-                }
+                raise ValueError("product identity evidence is incomplete")
             base = bank_base_row(path, banks_root, rec, providers[provider_dir])
             invalid_details = _invalid_detail_arrays(rec)
             filtered = {
@@ -532,7 +525,6 @@ def parse_banks_run(run_root: Path) -> Dict[str, Any]:
             base = bank_base_row(path, banks_root, safe_record, providers[provider_dir])
             code = "rate_invalid"
             _validate_core_rates(safe_record, str(base["dataset"]))
-            code = "rate_invalid"
             facts = clean_fact_rows(safe_record, base)
             _validate_rate_facts(facts)
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError):

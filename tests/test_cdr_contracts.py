@@ -133,7 +133,7 @@ def test_rate_string_is_decimal_and_never_rescaled(raw: str, expected: str) -> N
 
 @pytest.mark.parametrize(
     "raw",
-    [None, "", 0.05, "5", "-0.01", "NaN", "Infinity", "not-a-number"],
+    [None, "", 0.05, "5", "-0", "-0.00", "-0.01", "NaN", "Infinity", "not-a-number"],
 )
 def test_rate_string_rejects_wrong_types_units_and_non_finite_values(raw: object) -> None:
     with pytest.raises(ValueError):
@@ -246,6 +246,20 @@ def test_clean_export_quarantines_out_of_unit_rate(tmp_path: Path) -> None:
     assert banks["products"] == []
     assert banks["rates"] == []
     assert banks["quarantines"][0]["status"] == "rate_invalid"
+
+
+def test_clean_export_quarantines_product_without_provider_identity(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "2026-09-02"
+    _write_rate_product(run, "0.045")
+    (run / "banks/_holders/Holder/_register-brand.json").unlink()
+
+    banks = cdr_clean_export.parse_banks_run(run)
+
+    assert banks["products"] == []
+    assert banks["provider_observations"] == []
+    assert banks["quarantines"][0]["status"] == "identity_mismatch"
 
 
 def test_clean_export_keeps_numeric_metadata_nested_in_a_rate(tmp_path: Path) -> None:

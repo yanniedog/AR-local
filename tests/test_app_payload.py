@@ -31,7 +31,7 @@ from tests.support_observation import (  # noqa: E402
 )
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
-HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
+HAS_SAMPLE = (SAMPLE_EXPORTS / "observation-v1.json").exists()
 
 
 # --------------------------------------------------------------------------- #

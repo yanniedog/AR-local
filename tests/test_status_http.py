@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import threading
 import urllib.error
@@ -76,6 +77,27 @@ def test_nginx_proxies_only_the_three_status_routes() -> None:
     assert "^/(?:healthz|status|api/status)$" in config
     assert "api/latest" not in config
     assert "api/status)?$" not in config
+
+
+def test_verifier_accepts_nginx_html_for_removed_route(monkeypatch) -> None:
+    error = urllib.error.HTTPError(
+        "http://pi/api/latest",
+        404,
+        "Not Found",
+        {"Content-Type": "text/html"},
+        io.BytesIO(b"<html>not found</html>"),
+    )
+    monkeypatch.setattr(
+        verify_local.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+
+    assert verify_local.request_json("http://pi/api/latest", timeout=1) == (
+        404,
+        {},
+        {"content-type": "text/html"},
+    )
 
 
 def test_minimal_verifier_rechecks_database_bytes(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import app_payload
 from cdr_attempt_evidence_promotion import promote_attempt_evidence
 from cdr_contracts import provider_uid
 from cdr_export_contract import load_contract
@@ -354,4 +355,3 @@ def test_mobile_payload_is_deterministic_and_bound_to_observation(tmp_path: Path
     assert len(rate["product_uid"]) == 64
     assert core["coverage"]["observed_at"] == OBSERVED_AT
     assert core["coverage"]["counts"]["products_discovered"] == 1
-import app_payload

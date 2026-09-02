@@ -248,6 +248,29 @@ def test_failure_after_install_leaves_only_verified_artifact(tmp_path: Path):
     assert not list(tmp_path.glob(".banks.sqlite.tmp-*"))
 
 
+def test_corruption_after_install_removes_unverified_artifact(tmp_path: Path):
+    path = tmp_path / "banks.sqlite"
+    accounting, projections = observation()
+
+    def corrupt_after_install(stage: str) -> None:
+        if stage == "after_install":
+            with path.open("ab") as stream:
+                stream.write(b"tamper")
+
+    with pytest.raises(ObservationDatabaseError):
+        build_observation_database(
+            path,
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+            failure_hook=corrupt_after_install,
+        )
+
+    assert not path.exists()
+    assert not list(tmp_path.glob(".banks.sqlite.tmp-*"))
+
+
 @pytest.mark.parametrize("stage,installed", [("before_install", False), ("after_install", True)])
 def test_abrupt_process_death_cannot_publish_partial_database(tmp_path: Path, stage: str, installed: bool):
     path, input_path = tmp_path / "banks.sqlite", tmp_path / "input.json"

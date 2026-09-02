@@ -9,8 +9,9 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from datetime import date, datetime
 from typing import Any
+
+from pi_runtime_health import status_contract_error
 
 
 DEFAULT_LOCAL_URL = "http://127.0.0.1:8808/"
@@ -27,6 +28,8 @@ def request_json(url: str, *, timeout: float) -> tuple[int, dict[str, Any], dict
         status = int(exc.code)
         headers = {key.lower(): value for key, value in exc.headers.items()}
         raw = exc.read()
+    if status == 404:
+        return status, {}, headers
     value = json.loads(raw.decode("utf-8")) if raw else {}
     if not isinstance(value, dict):
         raise ValueError(f"{url} did not return a JSON object")
@@ -43,31 +46,13 @@ def validate_headers(url: str, headers: dict[str, str]) -> None:
 
 
 def validate_status(value: dict[str, Any], *, expected_date: str) -> None:
-    if value.get("schema_version") != 1 or value.get("service") != "ar-local":
-        raise ValueError("invalid status contract identity")
-    if value.get("status") not in {"ok", "degraded"}:
-        raise ValueError(f"status is {value.get('status')!r}")
-    observation = value.get("observation")
-    if not isinstance(observation, dict):
-        raise ValueError("status lacks observation")
-    observed_date = str(observation.get("date") or "")
-    date.fromisoformat(observed_date)
-    observed_at = datetime.fromisoformat(str(observation.get("observed_at") or "").replace("Z", "+00:00"))
-    if observed_at.tzinfo is None:
-        raise ValueError("observed_at lacks a timezone")
+    error = status_contract_error(value)
+    if error is not None:
+        raise ValueError(error)
+    observation = value["observation"]
+    observed_date = str(observation["date"])
     if expected_date and observed_date != expected_date:
         raise ValueError(f"observation date {observed_date!r}, expected {expected_date!r}")
-    if observation.get("state") not in {"complete", "degraded"}:
-        raise ValueError("invalid observation state")
-    if not str(observation.get("accounting_id") or "").strip():
-        raise ValueError("missing accounting_id")
-    for name in ("providers", "products", "issues"):
-        summary = observation.get(name)
-        if not isinstance(summary, dict) or any(
-            not isinstance(count, int) or isinstance(count, bool) or count < 0
-            for count in summary.values()
-        ):
-            raise ValueError(f"invalid {name} summary")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,8 +83,8 @@ def main(argv: list[str] | None = None) -> int:
             "status": "ok",
         }:
             raise ValueError("invalid health contract")
-        removed_code, removed, _ = request_json(base + "api/latest", timeout=args.timeout)
-        if removed_code != 404 or removed.get("status") != "not_found":
+        removed_code, _, _ = request_json(base + "api/latest", timeout=args.timeout)
+        if removed_code != 404:
             raise ValueError("removed dashboard API is still exposed")
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"verify_local: FAIL {base}: {exc}", file=sys.stderr)

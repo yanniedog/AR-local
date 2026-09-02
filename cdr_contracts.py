@@ -38,7 +38,7 @@ def parse_rate_string(value: Any) -> str:
         number = Decimal(value.strip())
     except InvalidOperation as error:
         raise ValueError("CDR rate must be a finite decimal") from error
-    if not number.is_finite() or number < 0 or number > 1:
+    if not number.is_finite() or number.is_signed() or number > 1:
         raise ValueError("CDR rate must be between 0 and 1 in decimal form")
     rendered = format(number, "f")
     if "." in rendered:
