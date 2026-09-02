@@ -6434,7 +6434,7 @@ authorize A4.
 | Controlling plan | `ARL-OPS-001` v1.5; plan commit `9094a8e115958fcaf2cb36525736bd5e297e6b04`; controlled SHA-256 `a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada`; normalized Git-blob SHA-256 `f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684` |
 | Documentation source | clean current `origin/main` at candidate `32c74557c07a40c202a257d6d4e7eee331928dd0`; pre-append handoff Git-blob SHA-256 `ae1bd18b6ed969dfb466dc28bf9540326db94a2b7ee5e83a20cfa137a0ff4a9b` |
 | Merged implementation | PR #598 head `f7eed308240b2d0712b0aa9a734e23e7dc4502a4`, merge `325ae0d5fd35f25b1a55f162b09373aeacdb733f`; PR #599 head `d3e0ebd42bc3324a56137b6d5e6ab9bb99acef05`, merge `6a3b5665731db41cbe73ec7df1c74d0238a4a278`; test-only PR #600 head `0125acb40d9695d93a72c37dd88d7cff7b034ca3`, merge and sole candidate `32c74557c07a40c202a257d6d4e7eee331928dd0` |
-| SSH identity | `pi@ar-local-pi5-lan:22`; stable hostname required; pinned Ed25519 fingerprint `SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4`; a DHCP address or different key is not equivalent |
+| SSH identity | `pi@ar-local-pi5:22`; stable Tailscale hostname required; pinned Ed25519 fingerprint `SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4`; a DHCP address, SSH-config alias or different key is not equivalent |
 | Protected Pi | no Pi deployment, ingest, publication, restart or backup-task trigger occurred; its exact clean production identity must be freshly re-proven before elevation |
 | Result | merged lean runtime and exact source binding `PASS`; package/preflight `NOT_STARTED`; UAC/task/backup/Pi mutation `NOT_STARTED`; A3 `RUNNING`; A4 `BLOCKED` |
 | Deviations | D-006, D-011, D-012, D-013 and D-014 remain; no new deviation |
@@ -6477,7 +6477,7 @@ authority checkouts, compile the launcher twice, build the deterministic package
 twice, and create a fresh short-lived activation gate, dispatcher manifest and
 pre-execution manifest. Those records must bind the exact candidate, authority,
 complete handoff, plan, installer/core/SSH-boundary hashes, package, protected
-Pi, task, catalog, operator, target/recovery roots, `ar-local-pi5-lan`, `pi`,
+Pi, task, catalog, operator, target/recovery roots, `ar-local-pi5`, `pi`,
 port 22, SSH executable and identity hashes, and the pinned Ed25519 key.
 
 Exactly one UAC approval is authorized only for the resulting authenticated
