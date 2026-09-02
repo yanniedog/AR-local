@@ -7739,3 +7739,549 @@ acceptance remains mandatory; A3 remains running and A4 remains blocked.
 The sequence-6 materializer block is exactly 4615 UTF-8/LF bytes, 46 lines,
 SHA-256 `7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383`.
 Its local parser and extraction-equivalence checks passed without executing it.
+
+
+### Terminal runtime correction `C-20260902T160000+1000` (sequence 7)
+
+Sequence 6 is unusable and is superseded by this append-only correction. The
+first Windows PowerShell 5.1 materializer attempt stopped because
+`System.Net.Http` was not loaded. A rerun with that assembly preloaded created
+the root, then the generator stopped before preflight: the direct native
+`python -c` boundary changed its program to forms including `r.rglob(*)`,
+`separators=(,:)` and `+\n`; Python exited 1 and the following `.Trim()`
+received null. No UAC, task trigger, backup, ingest, deployment, publication or
+Pi mutation is authorized from sequence 6.
+
+The stopped root is create-once evidence, not reusable workspace:
+
+| Evidence | Authenticated identity |
+|---|---|
+| Failed root | `C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012`; 1048 files, 128 directories, 22404909 bytes, 1176 nodes; `ARL-D012-TREE-TSV-V1` SHA-256 `79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf` |
+| Materialization record | 1210 bytes; SHA-256 `557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41`; authority `c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe`; handoff `f1706ed815819388dbf0edd0be39e2e774dca8d77c5fc9efac95d66790aa068d` |
+| Failed generator | 37487 bytes; SHA-256 `917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2` |
+| Source runtime after failure | 3081 files, 207 directories, 64290614 bytes; tree SHA-256 `7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86`; file-map SHA-256 `8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517` |
+| Failure-created runtime residue | exactly 14 `.pyc` files, 172456 bytes, fully path/size/hash-bound in the materializer |
+| Reconstructed clean runtime | 3067 files, 205 directories, 64118158 bytes; tree SHA-256 `4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c`; file-map SHA-256 `d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7` |
+
+The only allowed recovery is an exact, same-volume move of that authenticated
+failed root to
+`C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae`,
+followed by creation of a new root. The materializer records the complete
+1176-node pre-move inventory, verifies the moved tree unchanged, excludes only
+the 14 exact failure-created files, copies every retained file with
+`CreateNew`, and re-verifies source and destination. Any mismatch stops.
+
+The replacement generator loads and hash-binds `System.Net.Http`. Every
+dynamic Python program is UTF-8 encoded as base64 and passed as an opaque argv
+value to one fixed single-quoted bootstrap under `-I -B`; arguments remain
+separate argv elements, output is always string-normalized, stdin is closed for
+child tools, and every native exit code is explicit.
+
+<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
+```powershell
+param()
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version 2
+Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+$httpProbe=[Net.Http.HttpClient]::new()
+$httpAssembly=$httpProbe.GetType().Assembly
+$httpClientAssembly=$httpAssembly.FullName
+$httpClientAssemblyPath=$httpAssembly.Location
+$httpProbe.Dispose()
+$httpClientAssemblySha=(Get-FileHash -LiteralPath $httpClientAssemblyPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if($httpClientAssembly-cne'System.Net.Http, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'-or$httpClientAssemblySha-cne'd7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db'){throw 'PS5.1 System.Net.Http binding drift'}
+
+$entry='HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'
+$root=[IO.Path]::GetFullPath((Split-Path -Parent $PSCommandPath))
+$requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
+$candidateSha='8b158d74ddd51a3523ecb6367b6ef99ca994df61'
+$protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
+$planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
+$planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
+$target='C:\code\backups\AR-local-pi5'
+$control=Join-Path $target 'dispatcher-control'
+$recovery='C:\code\AR-local-pi-image-2026-05-21\AR-local-pi-image-2026-05-21'
+$runtime=Join-Path $root 'runtime'
+$python=Join-Path $runtime 'python.exe'
+$identity='C:\Users\jkoka\.ssh\pi5'
+$git='C:\Program Files\Git\cmd\git.exe'
+$ssh='C:\Windows\System32\OpenSSH\ssh.exe'
+$scp='C:\Windows\System32\OpenSSH\scp.exe'
+$whoami='C:\Windows\System32\whoami.exe'
+$operator='jkoka'
+$operatorSid='S-1-5-21-689213601-40760280-3596424081-1001'
+$principal='yanniedog\jkoka'
+$repo='https://github.com/yanniedog/AR-local.git'
+$candidate=Join-Path $root 'candidate'
+$authority=Join-Path $root 'authority'
+$knownHostsSource=Join-Path $root 'known-hosts-source'
+$knownHostsAlias=Join-Path $root 'known-hosts-alias'
+$manifest=Join-Path $root 'dispatcher-manifest.json'
+
+function Sha([string]$Path){(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()}
+function WriteUtf8([string]$Path,[string]$Text){[IO.File]::WriteAllText($Path,($Text-replace "`r",''),[Text.UTF8Encoding]::new($false))}
+function WriteJson([string]$Path,[object]$Value){WriteUtf8 $Path (($Value|ConvertTo-Json -Depth 12 -Compress)+"`n")}
+function RequireHash([string]$Path,[string]$Expected){if((Sha $Path)-cne$Expected){throw "hash drift: $Path"}}
+function TextSha([string]$Text){$h=[Security.Cryptography.SHA256]::Create();try{(($h.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($Text)))|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()}}
+$pythonBootstrap="import base64,sys;code=base64.b64decode(sys.argv.pop(1));exec(compile(code,'<ARL-D012>','exec'))"
+function Invoke-PythonCode([string]$Code,[string[]]$Arguments=@()){$payload=[Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($Code));$output=@(& $python -I -B -c $pythonBootstrap $payload @Arguments 2>&1);[pscustomobject]@{ExitCode=[int]$LASTEXITCODE;Output=($output|Out-String)}}
+
+$now=[DateTimeOffset]::Now
+if($now.TimeOfDay-lt[TimeSpan]::FromHours(3.5)-or$now.TimeOfDay-ge[TimeSpan]::FromHours(22)){throw 'outside D-006 daylight window'}
+$root=[IO.Path]::GetFullPath((Split-Path -Parent $PSCommandPath))
+$requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
+$allowedInitial=@('prepare-and-preflight.ps1','materialization.json','runtime')
+$initial=@(Get-ChildItem -LiteralPath $root -Force)
+if($initial.Count-ne3-or@($initial|Where-Object{$allowedInitial-notcontains$_.Name}).Count-or-not(Test-Path -LiteralPath (Join-Path $root 'prepare-and-preflight.ps1') -PathType Leaf)-or-not(Test-Path -LiteralPath (Join-Path $root 'materialization.json') -PathType Leaf)-or-not(Test-Path -LiteralPath $runtime -PathType Container)){throw 'evidence root contains prior or unbound output'}
+$materializationPath=Join-Path $root 'materialization.json'
+$materialization=Get-Content -LiteralPath $materializationPath -Raw|ConvertFrom-Json
+if($materialization.schema_version-ne2-or$materialization.correction-cne'C-20260902T160000+1000'-or$materialization.prior_partial_root.inventory_sha256-cne'79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf'-or$materialization.clean_runtime.tree_inventory_sha256-cne'4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'-or$materialization.clean_runtime.file_map_sha256-cne'd664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7'-or$materialization.http_client.sha256-cne'd7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db'-or(Sha $PSCommandPath)-cne$materialization.generator.sha256){throw 'materialization/quarantine binding drift'}
+
+$authoritySha=(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]).ToLowerInvariant()
+if($materialization.authority_commit-cne$authoritySha){throw 'materialized authority is stale'}
+if($authoritySha-notmatch'^[0-9a-f]{40}$'-or$authoritySha-ceq$candidateSha){throw 'post-merge authority is absent'}
+& $git -c core.autocrlf=false clone --quiet --no-checkout $repo $candidate
+if($LASTEXITCODE){throw 'candidate clone failed'}
+& $git -C $candidate -c core.autocrlf=false checkout --quiet --detach $candidateSha
+if($LASTEXITCODE){throw 'candidate checkout failed'}
+& $git -c core.autocrlf=false clone --quiet --no-checkout $repo $authority
+if($LASTEXITCODE){throw 'authority clone failed'}
+& $git -C $authority -c core.autocrlf=false checkout --quiet --detach $authoritySha
+if($LASTEXITCODE){throw 'authority checkout failed'}
+foreach($pair in @(@($candidate,$candidateSha),@($authority,$authoritySha))){if((& $git -C $pair[0] rev-parse HEAD).Trim()-cne$pair[1]-or(& $git -C $pair[0] status --porcelain=v1)){throw 'checkout identity/cleanliness failed'}}
+$handoff=Join-Path $authority 'docs\PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md'
+if(-not(Select-String -LiteralPath $handoff -SimpleMatch $entry -Quiet)){throw 'authority lacks this entry'}
+$handoffSha=Sha $handoff
+if($materialization.complete_handoff_raw_sha256-cne$handoffSha){throw 'materialized handoff identity is stale'}
+
+$sources=[ordered]@{
+'install_laptop_backup_trusted_dispatcher.ps1'='20f2581e46b2d525c180ff962ddfadd42e852b8d6fff1511b3f0b3c73969b96d'
+'install_laptop_backup_trusted_dispatcher_core.ps1'='de958229fe2a8220cae93083e9f1ad0bec031e6b4164d130782f163fc9f49a18'
+'install_laptop_backup_trusted_dispatcher_ssh.ps1'='7e387696d22a789f9ede481c48b820f52623e610e96a9f170cb6641b84757625'
+'laptop_backup_trusted_package.py'='6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43'
+'native\laptop_backup_trusted_launcher.cpp'='f31431ddb6ae9e6d7f7db5992dc74872303113761a01462264f50e173e7b7774'
+'run_laptop_backup_task.ps1'='50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860'
+'run_laptop_backup_trusted_child.ps1'='295271485c79907b7ee87463b53f6cc2258d146e07d771860ae4534b743c772a'
+'laptop_backup_dispatcher.py'='36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc'
+'laptop_backup_dispatcher_security.py'='c52229848b75931cb576855db3093830073be48695e97610f5e82ab8e403b36b'
+'laptop_backup_atomic.py'='d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c'
+'laptop_backup_scheduled.py'='25e400780554e82f690822bfbaaf41f8d8e93c85106d4501e561e7558d8c44cb'
+'laptop_backup_transport.py'='59cd046e7fae1eab543bb70dd0aca91bf346d6f1b554407a5eab76b3097ddfc1'
+'laptop_pull_backup.py'='ce3c80b492d04ef923aca2701169be76c35ee6d7cc45a517e2c535c7d2232d47'
+'laptop_backup_ssh_endpoint.py'='4b425d82301c749f3a1f6f2e36a070c169ea8a6e961d8d1ffd52fddbb4347f93'
+}
+foreach($item in $sources.GetEnumerator()){RequireHash (Join-Path $candidate $item.Key) $item.Value}
+RequireHash $python '53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f'
+RequireHash $identity 'faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e'
+RequireHash $git 'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9'
+RequireHash $ssh '6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42'
+RequireHash $scp '63b7118d8e1a8a84398cf4ce1584dc6b146606092fe9c68bbaf110bbdcfb480a'
+RequireHash $whoami '23240ef9f8b0a9a324110b1c2331de31dc1b0e08f5359cb707e51a939af56cd3'
+$argvProbeCode='import json,sys;print(json.dumps(sys.argv[1:],separators=(",",":")))'
+$argvProbeArgs=@('space value','C:\path with space\leaf','star*','comma,:')
+$argvProbeExpected='["space value","C:\\path with space\\leaf","star*","comma,:"]'
+$argvProbeRun=Invoke-PythonCode -Code $argvProbeCode -Arguments $argvProbeArgs
+$argvProbeActual=$argvProbeRun.Output.Trim()
+if($argvProbeRun.ExitCode-ne0-or$argvProbeActual-cne$argvProbeExpected){throw "PS5.1 Python argv boundary failed: $($argvProbeRun.Output)"}
+$pythonBoundary=[ordered]@{bootstrap_sha256=(TextSha $pythonBootstrap);probe_code_sha256=(TextSha $argvProbeCode);probe_result_sha256=(TextSha $argvProbeActual)}
+$inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"),key=lambda p:p.relative_to(r).as_posix());bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing runtime root"));files=[p for p in nodes if p.is_file()];dirs=[p for p in nodes if p.is_dir()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();t=("".join(("D\t"+p.relative_to(r).as_posix()+"\n") if p.is_dir() else ("F\t"+p.relative_to(r).as_posix()+"\t"+str(p.stat().st_size)+"\t"+d[p.relative_to(r).as_posix()]+"\n") for p in nodes)).encode();print(len(files),len(dirs),sum(p.stat().st_size for p in files),hashlib.sha256(b).hexdigest(),hashlib.sha256(t).hexdigest())'
+$inventoryRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($runtime)
+$inventory=$inventoryRun.Output.Trim()
+if($inventoryRun.ExitCode-ne0-or$inventory-cne'3067 205 64118158 d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7 4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'){throw "runtime inventory drift: $($inventoryRun.Output)"}
+
+. (Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_core.ps1')
+. (Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_ssh.ps1')
+$endpoint=Resolve-ArTrustedSshEndpoint -PythonPath $python -ModulePath (Join-Path $candidate 'laptop_backup_ssh_endpoint.py') -DiscoveryName 'ar.local' -TimeoutSeconds 10
+$keyLines=@(Get-Content -LiteralPath 'C:\Users\jkoka\.ssh\known_hosts'|Where-Object{($_-split'\s+')[0].Split(',')-contains$endpoint-and($_-split'\s+')[1]-ceq'ssh-ed25519'})
+if($keyLines.Count-ne1){throw 'pinned key source is not unique'}
+$keyFields=$keyLines[0]-split'\s+'
+$blob=[Convert]::FromBase64String($keyFields[2]);$hash=[Security.Cryptography.SHA256]::Create();try{$digest=$hash.ComputeHash($blob)}finally{$hash.Dispose()}
+$blobHex=($digest|ForEach-Object{$_.ToString('x2')})-join'';$fingerprint='SHA256:'+([Convert]::ToBase64String($digest).TrimEnd('='))
+if($blobHex-cne'84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e'-or$fingerprint-cne'SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4'){throw 'pinned key drift'}
+WriteUtf8 $knownHostsSource ("ar.local ssh-ed25519 $($keyFields[2])`n")
+WriteUtf8 $knownHostsAlias ("ar-local-pi5 ssh-ed25519 $($keyFields[2])`n")
+
+$catalog=Assert-ArTrustedCatalogBaseline -Target $target -ExpectedCatalogSha256 '7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511' -ExpectedCatalogSize 236234 -ExpectedCatalogFinalSequence 336 -ExpectedCatalogFinalEntrySha256 '368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420' -ExpectedLatestVerifiedSha256 '737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389' -ExpectedLatestVerifiedSize 316 -ExpectedAcceptedCatalogEntrySha256 '6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68' -ExpectedAcceptedReceiptRelativePath 'observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json' -ExpectedAcceptedReceiptSha256 '7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea' -ExpectedAcceptedReceiptSize 3392 -ExpectedAcceptedObservationId 'obs-2026-08-30-69a34aa4c745bb2e' -ExpectedAcceptedArchiveSha256 'abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b' -ExpectedAcceptedArchiveSize 237101208
+$trusted=[ordered]@{schema_version=6;authority_path=$authority;atomic_path=(Join-Path $candidate 'laptop_backup_atomic.py');atomic_sha256=$sources['laptop_backup_atomic.py'];control_root=$control;dispatcher_path=(Join-Path $candidate 'laptop_backup_dispatcher.py');dispatcher_sha256=$sources['laptop_backup_dispatcher.py'];dispatcher_security_path=(Join-Path $candidate 'laptop_backup_dispatcher_security.py');dispatcher_security_sha256=$sources['laptop_backup_dispatcher_security.py'];git_path=$git;git_sha256=(Sha $git);python_path=$python;python_sha256=(Sha $python);receiver_path=$candidate;scp_path=$scp;scp_sha256=(Sha $scp);ssh_discovery_timeout_seconds=10;ssh_endpoint_path=(Join-Path $candidate 'laptop_backup_ssh_endpoint.py');ssh_endpoint_sha256=$sources['laptop_backup_ssh_endpoint.py'];ssh_host='ar.local';ssh_logical_host='ar-local-pi5';ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_known_hosts_path=$knownHostsAlias;ssh_known_hosts_sha256=(Sha $knownHostsAlias);ssh_path=$ssh;ssh_sha256=(Sha $ssh);ssh_port=22;ssh_user='pi';whoami_path=$whoami;whoami_sha256=(Sha $whoami)}
+WriteJson (Join-Path $root 'trusted-child.json') $trusted
+$checkArgs=@('-B','-s','-E',(Join-Path $candidate 'laptop_backup_scheduled.py'),'--target',$target,'--host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-path',$ssh,'--ssh-sha256',(Sha $ssh),'--scp-path',$scp,'--scp-sha256',(Sha $scp),'--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsAlias,'--recovery-image',$recovery,'--candidate-code-sha',$candidateSha,'--protected-code-sha',$protectedSha,'--plan-git-commit',$planCommit,'--operator',$operator,'--check-only')
+$wrapper='import subprocess,sys;r=subprocess.run(sys.argv[1:],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=120);print(r.stdout,end="");print(r.stderr,end="",file=sys.stderr);raise SystemExit(r.returncode)'
+$checkRun=Invoke-PythonCode -Code $wrapper -Arguments (@($python)+$checkArgs)
+$checkText=$checkRun.Output
+if($checkRun.ExitCode-ne0){throw "fresh check-only failed: $checkText"}
+$check=$checkText|ConvertFrom-Json
+if($check.ok-ne$true-or$check.result-cne'PASS'-or$check.action-cne'NO_BACKUP_DATA_WRITE'){throw 'fresh check-only was not PASS/NO_BACKUP_DATA_WRITE'}
+WriteUtf8 (Join-Path $root 'check-only.json') (($check|ConvertTo-Json -Depth 12 -Compress)+"`n")
+
+$pointerPath=Join-Path $control 'active-runner.json'
+RequireHash $pointerPath 'fd66311c66aad9a8f16643171fdb3de54f6582361d41ce3255c7da09a086e923'
+$prior=Get-Content -LiteralPath $pointerPath -Raw|ConvertFrom-Json
+if($prior.sequence-ne1-or$prior.manifest_sha256-cne'af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092'){throw 'dispatcher predecessor drift'}
+$activationId=[guid]::NewGuid().ToString('N')
+$gate=[ordered]@{schema_version=1;result='PASS';activation_id=$activationId;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;operator_sid=$operatorSid;foreground_result='PASS';check_only_result='PASS'}
+$gatePath=Join-Path $root 'activation-gate.json';WriteJson $gatePath $gate
+$installRoot="C:\Program Files\AR-local-backup-trusted-$candidateSha-$authoritySha"
+$evidenceRoot="C:\Program Files\AR-local-backup-evidence-$candidateSha-$authoritySha"
+$created=[DateTimeOffset]::UtcNow
+$dispatcher=[ordered]@{schema_version=1;sequence=2;activation_id=$activationId;created_at=$created.ToString('o').Replace('+00:00','Z');activation_expires_at=$created.AddMinutes(45).ToString('o').Replace('+00:00','Z');previous_manifest_sha256=$prior.manifest_sha256;plan_document_id='ARL-OPS-001';plan_version='1.5';plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;authority_repo=(Join-Path $installRoot 'authority');authority_handoff_path='docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md';candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;operator=$operator;operator_sid=$operatorSid;receiver=(Join-Path $installRoot 'receiver');allowed_receiver_root=$installRoot;entrypoint='run_laptop_backup_task.ps1';entrypoint_sha256=$sources['run_laptop_backup_task.ps1'];python_path=(Join-Path $installRoot 'python\python.exe');python_sha256=(Sha $python);scheduled_plan_git_commit=$planCommit;target=$target;allowed_target_root=$target;recovery_image=$recovery;allowed_recovery_root=[IO.Path]::GetDirectoryName($recovery);gate_evidence_path=$gatePath;gate_evidence_sha256=(Sha $gatePath)}
+WriteJson $manifest $dispatcher
+
+$launcher1=Join-Path $root 'launcher-1.exe';$launcher2=Join-Path $root 'launcher-2.exe';$launcherObj1=Join-Path $root 'launcher-1.obj';$launcherObj2=Join-Path $root 'launcher-2.obj';$source=Join-Path $candidate 'native\laptop_backup_trusted_launcher.cpp'
+$vcRoot='C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207'
+$toolBin=Join-Path $vcRoot 'bin\Hostx64\x64';$vcInclude=Join-Path $vcRoot 'include';$vcLib=Join-Path $vcRoot 'lib\x64'
+$sdkRoot='C:\Program Files (x86)\Windows Kits\10';$sdkVersion='10.0.26100.0';$sdkInclude=Join-Path $sdkRoot "Include\$sdkVersion";$sdkLib=Join-Path $sdkRoot "Lib\$sdkVersion";$sdkBin=Join-Path $sdkRoot "bin\$sdkVersion\x64"
+$compiler=Join-Path $toolBin 'cl.exe';$linker=Join-Path $toolBin 'link.exe';$powershell='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+RequireHash $compiler '88c8344236a27a6e727e0a8edc49aaa2690bdc7a9464b9d18cc7abe70a9f1c0d'
+RequireHash $linker 'ca11e6c45debd34bf652dfe984c5360a531a005ed78bf72852330c9c2590cf0d'
+RequireHash $powershell '7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5'
+$toolchainExpected=@(
+[ordered]@{name='vc_bin';path=$toolBin;files=91;bytes=98923198L;inventory_sha256='08a7daf3ce8c103d678ce97b205b01ba11a02b8ff28762488de3ae5039cd8d3b'},
+[ordered]@{name='vc_include';path=$vcInclude;files=361;bytes=16200441L;inventory_sha256='abd6e13dfca5e979931dd28369c7634cb7c2c51d1f759f9154a4cc00096bc99e'},
+[ordered]@{name='vc_lib';path=$vcLib;files=149;bytes=525209873L;inventory_sha256='2c5faa81c6d3971c70385a6dcc1c66c3c84d36ec6539f2816b5c1170fbab08dc'},
+[ordered]@{name='sdk_include';path=$sdkInclude;files=4771;bytes=361474762L;inventory_sha256='0d9498d38f6fb55cfe34aa43632ee061ac70c9c5edc9b0e9d805d3a7dfa6bb7d'},
+[ordered]@{name='sdk_lib';path=$sdkLib;files=1454;bytes=804592816L;inventory_sha256='24f68321d165143550e01a803fd6e669a8d70f4b5e668a1d43a0702a8dfa4f7f'},
+[ordered]@{name='sdk_bin';path=$sdkBin;files=220;bytes=73884717L;inventory_sha256='aed80b9dc3b039f42178e9456f33c5e2cc60ba87b6c66ed0ab239e1c2a3ee3a3'})
+$toolInventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"));bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing toolchain root"));files=[p for p in nodes if p.is_file()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();print(json.dumps({"path":str(r),"files":len(files),"bytes":sum(p.stat().st_size for p in files),"inventory_sha256":hashlib.sha256(b).hexdigest()},separators=(",",":")))'
+$toolchainObserved=[ordered]@{}
+foreach($expected in $toolchainExpected){$toolInventoryRun=Invoke-PythonCode -Code $toolInventoryCode -Arguments @($expected.path);$raw=$toolInventoryRun.Output.Trim();if($toolInventoryRun.ExitCode-ne0){throw "toolchain inventory failed: $($expected.name): $($toolInventoryRun.Output)"};$actual=$raw|ConvertFrom-Json;if($actual.path-cne$expected.path-or[long]$actual.files-ne[long]$expected.files-or[long]$actual.bytes-ne[long]$expected.bytes-or$actual.inventory_sha256-cne$expected.inventory_sha256){throw "toolchain inventory drift: $($expected.name)"};$toolchainObserved[$expected.name]=[ordered]@{path=$actual.path;files=[long]$actual.files;bytes=[long]$actual.bytes;inventory_sha256=$actual.inventory_sha256}}
+if(-not[Environment]::Is64BitProcess){throw 'x64 PowerShell is required'}
+$toolchainEnvironment=[ordered]@{Path=([string]::Join(';',@($toolBin,$sdkBin,'C:\Windows\System32','C:\Windows')));INCLUDE=([string]::Join(';',@($vcInclude,(Join-Path $sdkInclude 'ucrt'),(Join-Path $sdkInclude 'shared'),(Join-Path $sdkInclude 'um'),(Join-Path $sdkInclude 'winrt'),(Join-Path $sdkInclude 'cppwinrt'))));LIB=([string]::Join(';',@($vcLib,(Join-Path $sdkLib 'ucrt\x64'),(Join-Path $sdkLib 'um\x64'))));LIBPATH=([string]::Join(';',@($vcLib,(Join-Path $sdkLib 'ucrt\x64'),(Join-Path $sdkLib 'um\x64'))));VCToolsInstallDir=($vcRoot+'\');WindowsSdkDir=($sdkRoot+'\');WindowsSDKVersion=($sdkVersion+'\');UCRTVersion=$sdkVersion;Platform='x64';VSCMD_ARG_HOST_ARCH='x64';VSCMD_ARG_TGT_ARCH='x64';TEMP=$root;TMP=$root}
+foreach($name in @('CL','_CL_','LINK','_LINK_')){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
+foreach($item in $toolchainEnvironment.GetEnumerator()){[Environment]::SetEnvironmentVariable($item.Key,[string]$item.Value,'Process')}
+if(@($toolchainEnvironment.GetEnumerator()|Where-Object{[Environment]::GetEnvironmentVariable($_.Key,'Process')-cne[string]$_.Value}).Count){throw 'toolchain environment failed to bind'}
+$toolWrapper='import subprocess,sys;r=subprocess.run(sys.argv[1:],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=300);print(r.stdout,end="");print(r.stderr,end="",file=sys.stderr);raise SystemExit(r.returncode)'
+Push-Location $root
+try{
+$compileArgs=@('/nologo','/std:c++17','/O2','/MT','/W4','/WX','/EHsc','/GS','/guard:cf','/Brepro','/DUNICODE','/D_UNICODE','/c',$source,"/Fo$launcherObj1")
+$toolRun=Invoke-PythonCode -Code $toolWrapper -Arguments (@($compiler)+$compileArgs);$toolText=$toolRun.Output;if($toolRun.ExitCode-ne0){throw "launcher compile 1 failed: $toolText"}
+$linkArgs=@('/nologo',"/OUT:$launcher1",'/MACHINE:X64','/SUBSYSTEM:CONSOLE','/DYNAMICBASE','/NXCOMPAT','/guard:cf','/Brepro',$launcherObj1,'advapi32.lib')
+$toolRun=Invoke-PythonCode -Code $toolWrapper -Arguments (@($linker)+$linkArgs);$toolText=$toolRun.Output;if($toolRun.ExitCode-ne0){throw "launcher link 1 failed: $toolText"}
+if(-not(Test-Path -LiteralPath $launcherObj1 -PathType Leaf)-or-not(Test-Path -LiteralPath $launcher1 -PathType Leaf)){throw 'launcher build 1 output missing'}
+$compileArgs=@('/nologo','/std:c++17','/O2','/MT','/W4','/WX','/EHsc','/GS','/guard:cf','/Brepro','/DUNICODE','/D_UNICODE','/c',$source,"/Fo$launcherObj2")
+$toolRun=Invoke-PythonCode -Code $toolWrapper -Arguments (@($compiler)+$compileArgs);$toolText=$toolRun.Output;if($toolRun.ExitCode-ne0){throw "launcher compile 2 failed: $toolText"}
+$linkArgs=@('/nologo',"/OUT:$launcher2",'/MACHINE:X64','/SUBSYSTEM:CONSOLE','/DYNAMICBASE','/NXCOMPAT','/guard:cf','/Brepro',$launcherObj2,'advapi32.lib')
+$toolRun=Invoke-PythonCode -Code $toolWrapper -Arguments (@($linker)+$linkArgs);$toolText=$toolRun.Output;if($toolRun.ExitCode-ne0){throw "launcher link 2 failed: $toolText"}
+if(-not(Test-Path -LiteralPath $launcherObj2 -PathType Leaf)-or-not(Test-Path -LiteralPath $launcher2 -PathType Leaf)){throw 'launcher build 2 output missing'}
+}finally{Pop-Location}
+if((Sha $launcherObj1)-cne(Sha $launcherObj2)-or(Sha $launcher1)-cne(Sha $launcher2)){throw 'launcher object or executable builds differ'}
+$package1=Join-Path $root 'trusted-package-1.zip';$package2=Join-Path $root 'trusted-package-2.zip'
+$packageArgs=@('--candidate-repo',$candidate,'--candidate-sha',$candidateSha,'--authority-repo',$authority,'--authority-sha',$authoritySha,'--python-root',$runtime,'--launcher',$launcher1,'--dispatcher-manifest',$manifest,'--install-root',$installRoot,'--control-root',$control,'--operator-sid',$operatorSid,'--git',$git,'--ssh',$ssh,'--scp',$scp,'--ssh-host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsSource,'--whoami',$whoami)
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package1|Out-Null
+if($LASTEXITCODE){throw 'package build 1 failed'}
+& $python -I -B (Join-Path $candidate 'laptop_backup_trusted_package.py') @packageArgs --output $package2|Out-Null
+if($LASTEXITCODE){throw 'package build 2 failed'}
+if((Sha $package1)-cne(Sha $package2)){throw 'package builds differ'}
+
+function Record([string]$Path){[ordered]@{path=[IO.Path]::GetFullPath($Path);bytes=[long](Get-Item -LiteralPath $Path).Length;sha256=(Sha $Path)}}
+$sourceRecords=[ordered]@{};foreach($item in $sources.GetEnumerator()){$path=Join-Path $candidate $item.Key;$sourceRecords[$item.Key]=Record $path}
+$build=[ordered]@{schema_version=1;authority_commit=$authoritySha;candidate_commit=$candidateSha;protected_commit=$protectedSha;complete_handoff=(Record $handoff);plan=[ordered]@{commit=$planCommit;sha256=$planSha};runtime=[ordered]@{path=$runtime;files=3067;directories=205;bytes=64118158L;inventory_sha256='d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7';tree_inventory_sha256='4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c';python=(Record $python);python_boundary=$pythonBoundary;http_client=[ordered]@{assembly=$httpClientAssembly;path=$httpClientAssemblyPath;sha256=$httpClientAssemblySha}};materialization=(Record $materializationPath);tools=[ordered]@{git=(Record $git);ssh=(Record $ssh);scp=(Record $scp);whoami=(Record $whoami);identity=(Record $identity)};toolchain=[ordered]@{compiler=(Record $compiler);linker=(Record $linker);powershell=(Record $powershell);inventories=$toolchainObserved;environment=$toolchainEnvironment};sources=$sourceRecords;route=[ordered]@{discovery='ar.local';selected=$endpoint;logical='ar-local-pi5';user='pi';port=22;key_blob_sha256=$blobHex;fingerprint=$fingerprint};known_hosts_source=(Record $knownHostsSource);known_hosts_alias=(Record $knownHostsAlias);trusted_child=(Record (Join-Path $root 'trusted-child.json'));check_only=(Record (Join-Path $root 'check-only.json'));active_pointer=(Record $pointerPath);activation_gate=(Record $gatePath);dispatcher_manifest=(Record $manifest);launcher_1=(Record $launcher1);launcher_2=(Record $launcher2);launcher_object_1=(Record $launcherObj1);launcher_object_2=(Record $launcherObj2);package_1=(Record $package1);package_2=(Record $package2)}
+WriteJson (Join-Path $root 'build-result.json') $build
+
+$taskName='AR-local laptop backup';$task=Get-ScheduledTask -TaskName $taskName;$taskInfo=Get-ScheduledTaskInfo -TaskName $taskName
+if($task.State.ToString()-cne'Ready'-or-not$task.Settings.Enabled-or$taskInfo.LastTaskResult-ne1){throw 'task state drift'}
+$taskXml=Join-Path $root 'observed-task.xml';[IO.File]::WriteAllBytes($taskXml,(Get-ArTrustedTaskXmlBytes $taskName));RequireHash $taskXml 'aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2'
+$sddl=Get-ArTrustedTaskSddl $taskName
+if((Get-ArTrustedTextSha256 $sddl)-cne'6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b'-or(Get-ArTrustedSddlSemanticSha256 $sddl)-cne'd0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965'){throw 'task SDDL drift'}
+$active=@(Get-CimInstance Win32_Process|Where-Object{$_.ProcessId-ne$PID-and$_.CommandLine-and$_.CommandLine-match'laptop_backup_(scheduled|dispatcher|trusted_child)|laptop_pull_backup|run_laptop_backup|AR-local-backup-trusted-.*launcher\.exe'})
+$residue=@((Join-Path $target 'catalog\.receiver.lock'),(Join-Path $control 'transition.lease'))|Where-Object{Test-Path -LiteralPath $_}
+$residue+=@(Get-ChildItem -LiteralPath $target -Recurse -Force|Where-Object{$_.Name-like'*.partial'-or$_.Name-like'.partial-*'-or$_.Name-like'*.partial-*'})
+if($active.Count-or$residue.Count-or[long](Get-PSDrive C).Free-lt50GB){throw 'process/residue/free-space gate failed'}
+$journal='C:\Program Files\AR-local-backup-evidence-0a444caab7624499bca7ffdbbc56189e152e53e9-dc78b85368c020dcbcbb357b932e56110999f105\20260831T090802Z-5b12a8455b9b4c14b36071bc498eb8eb\mutation-journal.jsonl'
+RequireHash $journal '2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3'
+$journalLines=@([IO.File]::ReadAllLines($journal,[Text.UTF8Encoding]::new($false)));if($journalLines.Count-ne2){throw 'D-014 line count drift'}
+
+$remote=@'
+set -eu
+cd /srv/ar-local/AR-local
+test "$(git rev-parse HEAD)" = '9302890fcc752cbf90da97d597e972c157d913e3'
+test -z "$(git status --porcelain=v1)"
+test "$(systemctl show ar-local-daily.service -p Result --value)" = success
+test "$(systemctl show ar-local-daily.service -p ExecMainStatus --value)" = 0
+test "$(systemctl is-enabled ar-local-daily.timer)" = enabled
+test "$(systemctl is-active ar-local-daily.timer)" = active
+test ! -e /srv/ar-local/data/state/daily-ingest.lock
+printf '%s  %s\n' bcde983cdab8790fe436d0f977e64cee4ae53ea74701820df2cab9e9d21704f1 /srv/ar-local/data/state/2026-09-02.done.json | sha256sum -c -
+printf '%s  %s\n' f2945b67890138827dcd1b74be69ae4e6727b740cd1a5414a2da01e0cea35745 /srv/ar-local/data/state/observation-pointers-v2/latest-observation.json | sha256sum -c -
+printf '%s  %s\n' cf98d96b46a18bdb5f128b439555429f7a648516ee9650aafa304ddca55fa425 /srv/ar-local/data/state/ledger-v2/head.json | sha256sum -c -
+printf '%s  %s\n' 4f45841840f1b2a256120bd269dd5557f277653d8a7c6667c4cf717564897d25 /srv/ar-local/data/runs/2026-09-02/_exports/ingest-status.json | sha256sum -c -
+printf '%s  %s\n' a1f6cd2369e872704530616b3b435fac8a115e13001645eef6b86fffc2454d44 /srv/ar-local/data/state/export-contracts-v2/2026-09-02/obs-2026-09-02-724fc227e6776842.json | sha256sum -c -
+printf '%s  %s\n' 9be89c33d89bef07e49c452340f2c2265880d7dd1b035dd6108ce57126d5e7af /srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite | sha256sum -c -
+test "$(curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest | sha256sum | cut -d' ' -f1)" = bbca1b65b96b06aed4702b551a507b7475739dc31c7ec9bbbcbadb7c312180b4
+python3 - <<'PY'
+import sqlite3
+p='/srv/ar-local/data/runs/2026-09-02/_exports/local-cdr.sqlite'
+c=sqlite3.connect(f'file:{p}?mode=ro',uri=True);c.execute('pragma query_only=on')
+assert c.execute('pragma quick_check').fetchall()==[('ok',)]
+PY
+echo AR_PI_PREFLIGHT_PASS
+'@
+$pi=Invoke-ArTrustedSshScript -SshPath $ssh -HostName $endpoint -LogicalHost 'ar-local-pi5' -UserName 'pi' -Port 22 -IdentityPath $identity -KnownHostsPath $knownHostsAlias -Script (($remote-replace"`r",'')+"`n") -TimeoutMilliseconds 120000
+if($pi.ExitCode-ne0-or$pi.Stderr-or@($pi.Stdout.TrimEnd()-split"`n")[-1]-cne'AR_PI_PREFLIGHT_PASS'){throw "Pi preflight failed: $($pi.Stderr)"}
+WriteUtf8 (Join-Path $root 'pi-preflight.txt') $pi.Stdout
+
+$publication=@(
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/manifest.json',1211L,'367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest.json',2881L,'a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/dates-index.json',2116L,'9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/manifest-v2.json',1217L,'02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-2026-09-02/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/core-2026-09-02-d1683a44c258.json.gz',362452L,'d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/details-2026-09-02-0bd1ae7c5ecd.json.gz',757500L,'0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46'),
+@('https://github.com/yanniedog/AR-local/releases/download/app-payload-latest/search-index-2026-09-02-6db1e8a078cc.json.gz',597950L,'6db1e8a078ccc133839a8fa79488bc8ae7e6d6e84db515729cefe0d5cf4dd12a'))
+$web=[Net.Http.HttpClient]::new();$web.Timeout=[TimeSpan]::FromSeconds(20)
+try{foreach($pair in $publication){$bytes=$web.GetByteArrayAsync($pair[0]).GetAwaiter().GetResult();$h=[Security.Cryptography.SHA256]::Create();try{$actual=($h.ComputeHash($bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()};if($bytes.Length-ne[long]$pair[1]-or$actual-cne$pair[2]){throw "publication drift: $($pair[0])"}}}finally{$web.Dispose()}
+if(((& $git ls-remote $repo refs/heads/main)-split"`t")[0]-cne$authoritySha-or(Sha $handoff)-cne$handoffSha){throw 'authority advanced during preparation'}
+
+$installer=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher.ps1';$core=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_core.ps1';$sshBoundary=Join-Path $candidate 'install_laptop_backup_trusted_dispatcher_ssh.ps1';$hostPath='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';$preexec=Join-Path $root 'pre-execution-manifest.json'
+$invoke=[ordered]@{task_name=$taskName;package_path=$package1;package_sha256=(Sha $package1);install_root=$installRoot;target=$target;control_root=$control;recovery_image=$recovery;evidence_root=$evidenceRoot;principal=$principal;operator=$operator;operator_sid=$operatorSid;candidate_code_sha=$candidateSha;authority_commit=$authoritySha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;handoff_sha256=$handoffSha;expected_old_task_xml_sha256='aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2';expected_old_task_sddl_sha256='6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b';expected_old_task_sddl_semantic_sha256='d0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965';expected_old_task_last_result=1;expected_catalog_sha256='7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511';expected_catalog_size=236234L;expected_catalog_final_sequence=336;expected_catalog_final_entry_sha256='368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420';expected_latest_verified_sha256='737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389';expected_latest_verified_size=316L;expected_accepted_catalog_entry_sha256='6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68';expected_accepted_receipt_relative_path='observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json';expected_accepted_receipt_sha256='7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea';expected_accepted_receipt_size=3392L;expected_accepted_observation_id='obs-2026-08-30-69a34aa4c745bb2e';expected_accepted_archive_sha256='abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b';expected_accepted_archive_size=237101208L;installer_sha256=(Sha $installer);core_sha256=(Sha $core);ssh_boundary_sha256=(Sha $sshBoundary);pre_execution_manifest_path=$preexec;pre_execution_manifest_sha256='<SELF_SHA256>';pi_host='ar.local';pi_user='pi';pi_port=22;ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_executable_sha256=(Sha $ssh)}
+$contract=Get-ArTrustedInvocationContractSha256 $invoke
+$fresh=[DateTimeOffset]::UtcNow
+if([DateTimeOffset]::Now.AddMinutes(45).DateTime.Date-ne[DateTimeOffset]::Now.Date-or[DateTimeOffset]::Now.AddMinutes(45).TimeOfDay-gt[TimeSpan]::FromHours(22)){throw 'preflight would cross safe stop'}
+$pre=[ordered]@{schema_version=1;plan_document_id='ARL-OPS-001';plan_version='1.5';task_name=$taskName;package_path=$package1;package_sha256=(Sha $package1);install_root=$installRoot;target=$target;control_root=$control;recovery_image=$recovery;evidence_root=$evidenceRoot;principal=$principal;operator=$operator;operator_sid=$operatorSid;candidate_code_sha=$candidateSha;authority_commit=$authoritySha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;handoff_sha256=$handoffSha;expected_old_task_xml_sha256=$invoke.expected_old_task_xml_sha256;expected_old_task_sddl_sha256=$invoke.expected_old_task_sddl_sha256;expected_old_task_sddl_semantic_sha256=$invoke.expected_old_task_sddl_semantic_sha256;expected_old_task_last_result=1;installer_sha256=(Sha $installer);core_sha256=(Sha $core);ssh_boundary_sha256=(Sha $sshBoundary);expected_catalog_sha256=$invoke.expected_catalog_sha256;expected_catalog_size=236234L;expected_catalog_final_sequence=336;expected_catalog_final_entry_sha256=$invoke.expected_catalog_final_entry_sha256;expected_latest_verified_sha256=$invoke.expected_latest_verified_sha256;expected_latest_verified_size=316L;expected_accepted_catalog_entry_sha256=$invoke.expected_accepted_catalog_entry_sha256;expected_accepted_receipt_relative_path=$invoke.expected_accepted_receipt_relative_path;expected_accepted_receipt_sha256=$invoke.expected_accepted_receipt_sha256;expected_accepted_receipt_size=3392L;expected_accepted_observation_id=$invoke.expected_accepted_observation_id;expected_accepted_archive_sha256=$invoke.expected_accepted_archive_sha256;expected_accepted_archive_size=237101208L;invocation_contract_schema=1;invocation_host_path=$hostPath;invocation_script_path=$installer;invocation_contract_sha256=$contract;rollback_procedure='RESTORE_TASK_CONTROL_AND_QUARANTINE_V1';preflight_min_free_bytes=53687091200L;preflight_expected_active_process_count=0;preflight_expected_residue_count=0;preflight_expected_pi_status='AR_PI_PREFLIGHT_PASS';pi_host='ar.local';pi_user='pi';pi_port=22;ssh_identity_path=$identity;ssh_identity_sha256=(Sha $identity);ssh_executable_sha256=(Sha $ssh);created_at=$fresh.ToString('o');expires_at=$fresh.AddMinutes(45).ToString('o')}
+WriteJson $preexec $pre
+
+function Quote([string]$Value){"'"+$Value.Replace("'","''")+"'"}
+$args=[ordered]@{TaskName=$taskName;PackagePath=$package1;PackageSha256=(Sha $package1);InstallRoot=$installRoot;Target=$target;ControlRoot=$control;RecoveryImage=$recovery;EvidenceRoot=$evidenceRoot;Principal=$principal;Operator=$operator;OperatorSid=$operatorSid;CandidateCodeSha=$candidateSha;AuthorityCommit=$authoritySha;ProtectedCodeSha=$protectedSha;PlanGitCommit=$planCommit;PlanSha256=$planSha;HandoffSha256=$handoffSha;ExpectedOldTaskXmlSha256=$invoke.expected_old_task_xml_sha256;ExpectedOldTaskSddlSha256=$invoke.expected_old_task_sddl_sha256;ExpectedOldTaskSddlSemanticSha256=$invoke.expected_old_task_sddl_semantic_sha256;ExpectedOldTaskLastResult='1';ExpectedCatalogSha256=$invoke.expected_catalog_sha256;ExpectedCatalogSize='236234';ExpectedCatalogFinalSequence='336';ExpectedCatalogFinalEntrySha256=$invoke.expected_catalog_final_entry_sha256;ExpectedLatestVerifiedSha256=$invoke.expected_latest_verified_sha256;ExpectedLatestVerifiedSize='316';ExpectedAcceptedCatalogEntrySha256=$invoke.expected_accepted_catalog_entry_sha256;ExpectedAcceptedReceiptRelativePath=$invoke.expected_accepted_receipt_relative_path;ExpectedAcceptedReceiptSha256=$invoke.expected_accepted_receipt_sha256;ExpectedAcceptedReceiptSize='3392';ExpectedAcceptedObservationId=$invoke.expected_accepted_observation_id;ExpectedAcceptedArchiveSha256=$invoke.expected_accepted_archive_sha256;ExpectedAcceptedArchiveSize='237101208';InstallerSha256=(Sha $installer);CoreSha256=(Sha $core);SshBoundarySha256=(Sha $sshBoundary);PreExecutionManifestPath=$preexec;PreExecutionManifestSha256=(Sha $preexec);SshIdentityPath=$identity;SshIdentitySha256=(Sha $identity);SshExecutableSha256=(Sha $ssh);PiHost='ar.local';PiUser='pi';PiPort='22'}
+$inner='$ErrorActionPreference=''Stop'';& '+(Quote $installer);foreach($item in $args.GetEnumerator()){$inner+=' -'+$item.Key+' '+(Quote ([string]$item.Value))}
+$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
+[IO.File]::WriteAllText((Join-Path $root 'uac-encoded.txt'),$encoded,[Text.Encoding]::ASCII)
+$expected=@('prepare-and-preflight.ps1','materialization.json','runtime','candidate','authority','known-hosts-source','known-hosts-alias','dispatcher-manifest.json','trusted-child.json','check-only.json','activation-gate.json','launcher-1.exe','launcher-2.exe','launcher-1.obj','launcher-2.obj','trusted-package-1.zip','trusted-package-2.zip','build-result.json','observed-task.xml','pi-preflight.txt','pre-execution-manifest.json','uac-encoded.txt')
+$present=@(Get-ChildItem -LiteralPath $root -Force|ForEach-Object{$_.Name})
+if(@($expected|Where-Object{$present-notcontains$_}).Count-or@($present|Where-Object{$expected-notcontains$_}).Count){throw 'generated output set is incomplete or unbound'}
+$outputs=[ordered]@{};foreach($name in $expected){$path=Join-Path $root $name;if(Test-Path -LiteralPath $path -PathType Leaf){$outputs[$name]=Record $path}}
+$outputs['active-runner.json']=Record $pointerPath
+$summary=[ordered]@{schema_version=1;result='PASS';authority_commit=$authoritySha;complete_handoff_sha256=$handoffSha;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_commit=$planCommit;plan_sha256=$planSha;endpoint=$endpoint;logical_host='ar-local-pi5';host_key_blob_sha256=$blobHex;host_key_fingerprint=$fingerprint;outputs=$outputs;invocation_contract_sha256=$contract;check_only_execution_record=$check.execution_record;catalog_sha256=$invoke.expected_catalog_sha256;expires_at=$pre.expires_at}
+WriteJson (Join-Path $root 'preflight-summary.json') $summary
+[Console]::Out.Write($encoded)
+```
+<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->
+
+The generator above is exactly 42069 UTF-8/LF bytes, 277 lines, SHA-256
+`e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537`.
+Its PowerShell parser has zero errors. Its only native `python -c` site is the
+base64 bootstrap helper.
+
+After this correction is merged, paste only the complete block below into a
+normal, non-administrator, x64 System32 Windows PowerShell 5.1 session. Do not
+run it from this PR. It binds current main and the complete raw handoff, validates
+all failed artifacts before mutation, preserves them by exact move, and creates
+the new generator/runtime/materialization record. It does not preflight, build,
+elevate, trigger, back up, ingest, deploy, publish or touch the Pi.
+
+<!-- BEGIN ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
+```powershell
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version 2
+function ShaBytes([byte[]]$Bytes){$h=[Security.Cryptography.SHA256]::Create();try{($h.ComputeHash($Bytes)|ForEach-Object{$_.ToString('x2')})-join''}finally{$h.Dispose()}}
+function ShaFile([string]$Path){ShaBytes ([IO.File]::ReadAllBytes($Path))}
+Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+$httpProbe=[Net.Http.HttpClient]::new()
+try{$httpAssembly=$httpProbe.GetType().Assembly;$httpClientAssembly=$httpAssembly.FullName;$httpAssemblyPath=$httpAssembly.Location;$httpAssemblySha=ShaFile $httpAssemblyPath}finally{$httpProbe.Dispose()}
+if($httpClientAssembly-cne'System.Net.Http, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'-or$httpAssemblySha-cne'd7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db'){throw 'PS5.1 System.Net.Http binding drift'}
+$root='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
+$quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae'
+$runtimeSource='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
+$repo='https://github.com/yanniedog/AR-local.git'
+$git='C:\Program Files\Git\cmd\git.exe'
+$hostPath='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+if(-not[Environment]::Is64BitProcess-or[IO.Path]::GetFullPath([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)-cne$hostPath-or(ShaFile $hostPath)-cne'7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5'){throw 'normal x64 System32 Windows PowerShell is required'}
+if((ShaFile $git)-cne'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9'){throw 'git executable drift'}
+$env:GIT_TERMINAL_PROMPT='0'
+function ResolveMain {
+  $out=(& $git -c credential.interactive=never -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 ls-remote $repo refs/heads/main 2>&1|Out-String).Trim()
+  if($LASTEXITCODE){throw "canonical main lookup failed: $out"}
+  $sha=($out-split'\s+')[0].ToLowerInvariant()
+  if($sha-notmatch'^[0-9a-f]{40}$'){throw 'canonical main is invalid'}
+  $sha
+}
+function Get-TreeInventory([string]$Path){
+  $base=[IO.Path]::GetFullPath($Path).TrimEnd('\')
+  if(-not(Test-Path -LiteralPath $base -PathType Container)){throw "inventory root absent: $base"}
+  $rootItem=Get-Item -LiteralPath $base -Force
+  if(($rootItem.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw "inventory root is reparse: $base"}
+  $recordsByPath=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+  $pending=[Collections.Generic.Stack[string]]::new();$pending.Push($base)
+  while($pending.Count){
+    $dir=$pending.Pop()
+    foreach($item in @(Get-ChildItem -LiteralPath $dir -Force)){
+      if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw "inventory node is reparse: $($item.FullName)"}
+      $full=[IO.Path]::GetFullPath($item.FullName)
+      if(-not$full.StartsWith($base+'\',[StringComparison]::OrdinalIgnoreCase)){throw "inventory node escapes root: $full"}
+      $relative=$full.Substring($base.Length+1).Replace('\','/')
+      if($item.PSIsContainer){$recordsByPath.Add($relative,[ordered]@{type='directory';path=$relative});$pending.Push($full)}
+      else{$recordsByPath.Add($relative,[ordered]@{type='file';path=$relative;bytes=[long]$item.Length;sha256=(ShaFile $full)})}
+    }
+  }
+  $paths=[string[]]$recordsByPath.Keys;[Array]::Sort($paths,[StringComparer]::Ordinal)
+  $builder=[Text.StringBuilder]::new();$records=[Collections.Generic.List[object]]::new()
+  [long]$files=0;[long]$directories=0;[long]$bytes=0
+  foreach($relative in $paths){
+    $record=$recordsByPath[$relative];[void]$records.Add($record)
+    if($record.type-ceq'directory'){$directories++;[void]$builder.Append('D'+[char]9+$relative+[char]10)}
+    else{$files++;$bytes+=[long]$record.bytes;[void]$builder.Append('F'+[char]9+$relative+[char]9+$record.bytes+[char]9+$record.sha256+[char]10)}
+  }
+  $manifestBytes=[Text.UTF8Encoding]::new($false).GetBytes($builder.ToString())
+  [pscustomobject][ordered]@{path=$base;format='ARL-D012-TREE-TSV-V1';files=$files;directories=$directories;bytes=$bytes;nodes=($files+$directories);inventory_sha256=(ShaBytes $manifestBytes);records=$records}
+}
+function AssertInventory([object]$Actual,[long]$Files,[long]$Directories,[long]$Bytes,[string]$Sha,[string]$Name){
+  if($Actual.format-cne'ARL-D012-TREE-TSV-V1'-or[long]$Actual.files-ne$Files-or[long]$Actual.directories-ne$Directories-or[long]$Actual.bytes-ne$Bytes-or$Actual.inventory_sha256-cne$Sha){throw "$Name inventory drift"}
+}
+$authoritySha=ResolveMain
+if($authoritySha-ceq'c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe'){throw 'sequence-7 correction is not merged'}
+$client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds(20)
+try{$handoffBytes=$client.GetByteArrayAsync("https://raw.githubusercontent.com/yanniedog/AR-local/$authoritySha/docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md").GetAwaiter().GetResult()}finally{$client.Dispose()}
+$handoffSha=ShaBytes $handoffBytes
+$text=[Text.UTF8Encoding]::new($false,$true).GetString($handoffBytes)
+if(-not$text.Contains('C-20260902T160000+1000')){throw 'current main lacks sequence-7 correction'}
+$pattern='(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->\r?\n\x60\x60\x60powershell\r?\n(.*?)\r?\n\x60\x60\x60\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000 -->'
+$match=[regex]::Match($text,$pattern)
+if(-not$match.Success){throw 'sequence-7 generator block is absent'}
+$script=$match.Groups[1].Value.Replace([string][char]13,'')
+$scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
+if($scriptBytes.Length-ne42069-or$script.Split([char]10).Count-ne277-or$scriptSha-cne'e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537'){throw 'sequence-7 generator binding mismatch'}
+$tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
+$nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
+if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-7 parser or runtime-boundary gate failed'}
+$partial=Get-TreeInventory $root
+AssertInventory $partial 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'failed sequence-6 root'
+if(Test-Path -LiteralPath $quarantine){throw 'fixed quarantine destination already exists'}
+if([IO.Path]::GetPathRoot($root)-cne[IO.Path]::GetPathRoot($quarantine)){throw 'quarantine is not on the evidence volume'}
+$runtimeSourceInventory=Get-TreeInventory $runtimeSource
+AssertInventory $runtimeSourceInventory 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime'
+$excluded=@(
+[ordered]@{path='Lib/__pycache__/_collections_abc.cpython-310.pyc';bytes=33006L;sha256='425fbd5ac12907adef92c584a2190e075cf415ca688980a5ca41964f84283ea3'},
+[ordered]@{path='Lib/__pycache__/_sitebuiltins.cpython-310.pyc';bytes=3628L;sha256='04fdae26c503f1b6889024c18070ee6d6a7de4b82322db0c42d003f6f5aa62f8'},
+[ordered]@{path='Lib/__pycache__/abc.cpython-310.pyc';bytes=6832L;sha256='ff33f4bc62aaa37b094d8adc47226448cfce32d76792325e5ac6683b0d591d82'},
+[ordered]@{path='Lib/__pycache__/codecs.cpython-310.pyc';bytes=33300L;sha256='23870e73fb0601c6788135e40f11d8b45ac8cbe09ff977533f46bb68c8d805af'},
+[ordered]@{path='Lib/__pycache__/genericpath.cpython-310.pyc';bytes=3988L;sha256='fb23d82c091a4b96fa969c246135fa82fb97464263a0e85fdcbb3b3202bcfded'},
+[ordered]@{path='Lib/__pycache__/io.cpython-310.pyc';bytes=3744L;sha256='4c6f92991fea91fdca1f80d30cad265eccd8ad39a773790ed22b6e4a73df16cb'},
+[ordered]@{path='Lib/__pycache__/ntpath.cpython-310.pyc';bytes=15369L;sha256='d05dddeda13116d7cfae8e4fba2176ddf1d8efd39fd34c3def8f4552ae46d917'},
+[ordered]@{path='Lib/__pycache__/os.cpython-310.pyc';bytes=31680L;sha256='5bb45fad1ba945c890eafad69e51f08dd58be168c17c40c3594fe1d1eb05ff16'},
+[ordered]@{path='Lib/__pycache__/site.cpython-310.pyc';bytes=17461L;sha256='b873702652354c18a983f05b2297036411db888970145cccbf6e9eb7eca08db1'},
+[ordered]@{path='Lib/__pycache__/stat.cpython-310.pyc';bytes=4354L;sha256='83b5087c77a45cbfe09526a711abef7bf9424647d4eb83b8988a028f13bead4e'},
+[ordered]@{path='Lib/encodings/__pycache__/__init__.cpython-310.pyc';bytes=3956L;sha256='784f6e2d0691dc55aef592941ba1aa724bd37053d1a315128faa49a4e98bcdba'},
+[ordered]@{path='Lib/encodings/__pycache__/aliases.cpython-310.pyc';bytes=11002L;sha256='a5241cfb46f3e1bdd31e6f2f1208afd821351c672ba11519f14b6eb88ca3d459'},
+[ordered]@{path='Lib/encodings/__pycache__/cp1252.cpython-310.pyc';bytes=2458L;sha256='498aff31a1d2f086b44c68f38665e040ace7af18937c161fd3008af92f5a7b6e'},
+[ordered]@{path='Lib/encodings/__pycache__/utf_8.cpython-310.pyc';bytes=1678L;sha256='7891dbd77cb81f7626d14daeaf2a099f31f949608c54aaa93027eec94288d345'}
+)
+$excludedByPath=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+foreach($expected in $excluded){
+  $actual=@($runtimeSourceInventory.records|Where-Object{$_.type-ceq'file'-and$_.path-ceq$expected.path})
+  if($actual.Count-ne1-or[long]$actual[0].bytes-ne[long]$expected.bytes-or$actual[0].sha256-cne$expected.sha256){throw "excluded runtime file drift: $($expected.path)"}
+  $excludedByPath.Add($expected.path,$expected)
+}
+if((ResolveMain)-cne$authoritySha){throw 'main advanced before quarantine'}
+$partialFinal=Get-TreeInventory $root;AssertInventory $partialFinal 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'failed sequence-6 root'
+$runtimeSourceFinal=Get-TreeInventory $runtimeSource;AssertInventory $runtimeSourceFinal 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime'
+Move-Item -LiteralPath $root -Destination $quarantine
+if(Test-Path -LiteralPath $root){throw 'failed root remained after quarantine move'}
+$quarantineInventory=Get-TreeInventory $quarantine
+AssertInventory $quarantineInventory 1048 128 22404909 '79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf' 'quarantined sequence-6 root'
+[void](New-Item -ItemType Directory -Path $root)
+$runtime=Join-Path $root 'runtime';[void](New-Item -ItemType Directory -Path $runtime)
+foreach($record in $runtimeSourceInventory.records){
+  if($record.type-cne'file'-or$excludedByPath.ContainsKey([string]$record.path)){continue}
+  $sourcePath=Join-Path $runtimeSource ([string]$record.path).Replace('/','\')
+  $destinationPath=Join-Path $runtime ([string]$record.path).Replace('/','\')
+  $parent=Split-Path -Parent $destinationPath
+  if(-not(Test-Path -LiteralPath $parent -PathType Container)){[void](New-Item -ItemType Directory -Path $parent -Force)}
+  $input=$null;$output=$null
+  try{
+    $input=[IO.File]::Open($sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $output=[IO.File]::Open($destinationPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    $input.CopyTo($output);$output.Flush($true)
+  }finally{
+    if($null-ne$output){$output.Dispose()}
+    if($null-ne$input){$input.Dispose()}
+  }
+}
+$python=Join-Path $runtime 'python.exe'
+if((ShaFile $python)-cne'53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f'){throw 'copied Python drift'}
+$pythonBootstrap="import base64,sys;code=base64.b64decode(sys.argv.pop(1));exec(compile(code,'<ARL-D012>','exec'))"
+function TextSha([string]$Text){ShaBytes ([Text.UTF8Encoding]::new($false).GetBytes($Text))}
+function Invoke-PythonCode([string]$Code,[string[]]$Arguments=@()){
+  $payload=[Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($Code))
+  $output=@(& $python -I -B -c $pythonBootstrap $payload @Arguments 2>&1)
+  [pscustomobject]@{ExitCode=[int]$LASTEXITCODE;Output=($output|Out-String)}
+}
+$argvProbeCode='import json,sys;print(json.dumps(sys.argv[1:],separators=(",",":")))'
+$argvProbeArgs=@('space value','C:\path with space\leaf','star*','comma,:')
+$argvProbeExpected='["space value","C:\\path with space\\leaf","star*","comma,:"]'
+$argvProbeRun=Invoke-PythonCode -Code $argvProbeCode -Arguments $argvProbeArgs
+$argvProbeActual=$argvProbeRun.Output.Trim()
+if($argvProbeRun.ExitCode-ne0-or$argvProbeActual-cne$argvProbeExpected){throw "PS5.1 Python argv boundary failed: $($argvProbeRun.Output)"}
+$inventoryCode='from pathlib import Path;import hashlib,json,sys;r=Path(sys.argv[1]);nodes=sorted(r.rglob("*"),key=lambda p:p.relative_to(r).as_posix());bad=(not r.is_dir()) or bool(getattr(r.lstat(),"st_file_attributes",0)&0x400) or any(bool(getattr(p.lstat(),"st_file_attributes",0)&0x400) for p in nodes);bad and (_ for _ in ()).throw(RuntimeError("reparse or missing runtime root"));files=[p for p in nodes if p.is_file()];dirs=[p for p in nodes if p.is_dir()];d={p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files};b=(json.dumps(d,sort_keys=True,separators=(",",":"))+"\n").encode();t=("".join(("D\t"+p.relative_to(r).as_posix()+"\n") if p.is_dir() else ("F\t"+p.relative_to(r).as_posix()+"\t"+str(p.stat().st_size)+"\t"+d[p.relative_to(r).as_posix()]+"\n") for p in nodes)).encode();print(len(files),len(dirs),sum(p.stat().st_size for p in files),hashlib.sha256(b).hexdigest(),hashlib.sha256(t).hexdigest())'
+$inventoryRun=Invoke-PythonCode -Code $inventoryCode -Arguments @($runtime)
+$inventoryActual=$inventoryRun.Output.Trim()
+if($inventoryRun.ExitCode-ne0-or$inventoryActual-cne'3067 205 64118158 d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7 4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c'){throw "copied runtime Python inventory drift: $($inventoryRun.Output)"}
+$cleanRuntime=Get-TreeInventory $runtime
+AssertInventory $cleanRuntime 3067 205 64118158 '4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c' 'clean copied runtime'
+$runtimeSourceAfter=Get-TreeInventory $runtimeSource
+AssertInventory $runtimeSourceAfter 3081 207 64290614 '7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86' 'source runtime after copy'
+function WriteNew([string]$Path,[byte[]]$Bytes){$stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}}
+$generatorPath=Join-Path $root 'prepare-and-preflight.ps1';WriteNew $generatorPath $scriptBytes
+$record=[ordered]@{
+  schema_version=2
+  correction='C-20260902T160000+1000'
+  authority_commit=$authoritySha
+  complete_handoff_raw_sha256=$handoffSha
+  prior_partial_root=[ordered]@{path=$partial.path;quarantine_path=$quarantine;format=$partial.format;files=[long]$partial.files;directories=[long]$partial.directories;bytes=[long]$partial.bytes;nodes=[long]$partial.nodes;inventory_sha256=$partial.inventory_sha256;records=$partial.records}
+  source_runtime=[ordered]@{path=$runtimeSource;format=$runtimeSourceInventory.format;files=[long]$runtimeSourceInventory.files;directories=[long]$runtimeSourceInventory.directories;bytes=[long]$runtimeSourceInventory.bytes;nodes=[long]$runtimeSourceInventory.nodes;inventory_sha256=$runtimeSourceInventory.inventory_sha256;excluded=$excluded}
+  clean_runtime=[ordered]@{path=$runtime;format=$cleanRuntime.format;files=[long]$cleanRuntime.files;directories=[long]$cleanRuntime.directories;bytes=[long]$cleanRuntime.bytes;nodes=[long]$cleanRuntime.nodes;tree_inventory_sha256=$cleanRuntime.inventory_sha256;file_map_sha256='d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7'}
+  generator=[ordered]@{path=$generatorPath;bytes=$scriptBytes.Length;lines=$script.Split([char]10).Count;sha256=$scriptSha}
+  powershell=[ordered]@{path=$hostPath;sha256=(ShaFile $hostPath)}
+  http_client=[ordered]@{assembly=$httpClientAssembly;path=$httpAssemblyPath;sha256=$httpAssemblySha}
+  python_boundary=[ordered]@{bootstrap_sha256=(TextSha $pythonBootstrap);probe_code_sha256=(TextSha $argvProbeCode);probe_result_sha256=(TextSha $argvProbeActual);inventory_code_sha256=(TextSha $inventoryCode);inventory_result_sha256=(TextSha $inventoryActual)}
+  materialized_at=[DateTimeOffset]::UtcNow.ToString('o')
+}
+$recordBytes=[Text.UTF8Encoding]::new($false).GetBytes((($record|ConvertTo-Json -Depth 20 -Compress)+[char]10))
+WriteNew (Join-Path $root 'materialization.json') $recordBytes
+if((ResolveMain)-cne$authoritySha){throw 'main advanced during materialization; preserve both roots and stop'}
+$record|ConvertTo-Json -Depth 4 -Compress
+```
+<!-- END ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000 -->
+
+The materializer above is exactly 16658 UTF-8/LF bytes, 168 lines, SHA-256
+`0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b`.
+It is the exact next safe command after merge; any different bytes are
+unauthorized.
+
+Current non-mutating Windows PowerShell 5.1 runtime tests:
+
+- Without `Add-Type -AssemblyName System.Net.Http`,
+  `[Net.Http.HttpClient]::new()` fails with “Unable to find type”.
+- With the explicit load, construction/disposal passes as
+  `System.Net.Http, Version=4.0.0.0`; assembly SHA-256 is
+  `d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db`.
+- The exact sequence-6 native call reproduces Python exit 1 and the corrupted
+  source. The replacement bootstrap preserves
+  `["space value","C:\\path with space\\leaf","star*","comma,:"]`
+  exactly and exits 0.
+- The same replacement boundary inventories the current source runtime as
+  `3081 207 64290614 8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517 7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86`.
+- The materializer's exact pre-mutation path, with current branch bytes used
+  for the not-yet-merged raw URL and the tail cut before `Move-Item`, executes
+  under Windows PowerShell 5.1 and returns the two inventory hashes above plus
+  `excluded=14`.
+- Both marked scripts parse under stock Windows PowerShell 5.1; extraction,
+  UTF-8/LF byte count and SHA-256 equivalence pass. Neither marked script was
+  executed.
+
+After a successful materializer terminal record, the ordinary non-admin
+generator command remains:
+
+```powershell
+$encoded = & 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012\prepare-and-preflight.ps1'
+```
+
+Only its non-empty one-line base64 result and a current, unexpired terminal
+`preflight-summary.json` `PASS` permit the sole sequence-3 UAC command.
+Natural backup acceptance remains mandatory; A3 remains running and A4 remains
+blocked.
+
+```json
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":7,"predecessor":"C-20260902T144000+1000","authority":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","correction":"C-20260902T160000+1000","base_main_sha":"c4a32fb77d4ffa8e545ac16d8a4a22308388d5fe","candidate_sha":"8b158d74ddd51a3523ecb6367b6ef99ca994df61","quarantines":["sequence-6-materializer-7dd1fd5fba125205616e15912cce0c5da836e08ba2ce9316cf81a32295ff4383","sequence-6-generator-917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2","partial-sequence-6-root-79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf"],"failed_root":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012","files":1048,"directories":128,"bytes":22404909,"nodes":1176,"tree_inventory_sha256":"79903ee221ae225490bf0a9280b2adfb6ec6cd07badaf83ef9568573836f4abf","materialization_sha256":"557bff5f40394df7f2e6c319f926bea8d508fac1910ff0003f42e3dc9e3a6c41","generator_sha256":"917f41dd538b3cc56ef031de6f0fb6f68d79dd06027a4939bbb2083e5e7a31b2"},"quarantine_path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S6-20260902T054429Z-79903ee221ae","source_runtime":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-20260901\\20260901T083436+1000\\runtime","files":3081,"directories":207,"bytes":64290614,"tree_inventory_sha256":"7f3e77e272acf9601fc10228cea49cf08e051f43ea64f3f444f2fd631f9d0f86","file_map_sha256":"8ec5cd13af4c229550c453625d564e6b9e151f5f1ee1634e89481c9fb8b37517","excluded_pyc":{"files":14,"bytes":172456}},"clean_runtime":{"files":3067,"directories":205,"bytes":64118158,"tree_inventory_sha256":"4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c","file_map_sha256":"d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7"},"authority_merge_sha":"D012_SEQUENCE7_MATERIALIZATION_RECORD","complete_handoff_raw_sha256":"D012_SEQUENCE7_MATERIALIZATION_RECORD","generator":{"path":"C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1","bytes":42069,"lines":277,"sha256":"e569157790b1e8f8575e5eb0fdf6b94b026bf3442176934f84e58f8aca9c7537"},"materializer":{"encoding":"UTF8_LF_NO_TRAILING_LF","bytes":16658,"lines":168,"sha256":"0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b"},"boundaries":{"powershell_sha256":"7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5","system_net_http_sha256":"d7ce24424f16bd410179bd202b3e375b2b731a6bd57d5d03a8d38cf9062a14db","python_sha256":"53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f","python_mode":"-I -B BASE64_ARGV_BOOTSTRAP"},"a3":"RUNNING","a4":"BLOCKED_UNTIL_NATURAL_ACCEPTANCE","next_action":"after this correction is merged, paste exactly the marked sequence-7 materializer in a normal x64 System32 Windows PowerShell 5.1 session; require its terminal record; then run the ordinary non-admin generator entrypoint","next_command":"MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260902T160000","next_command_utf8_lf_sha256":"0b2f5cdc40138eb226aef4fd76a6e9fe732665c4699d4a51e72ed9c8424f293b","preflight_command":"$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","preflight_command_utf8_sha256":"f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349","stop":["main/handoff/generator/materializer/root/runtime/toolchain drift","quarantine already exists","resolver/key/auth drift","source/task/catalog/Pi/evidence/publication drift","timeout/web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","launcher object/executable or package mismatch"],"authorization":"non-admin sequence-7 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication","terminal_status":"BLOCKED_UNTIL_SEQUENCE7_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"}
+```
