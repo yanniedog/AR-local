@@ -54,6 +54,10 @@ STATUS_PRODUCT_COUNTS = frozenset({
 STATUS_ISSUE_COUNTS = frozenset({
     "total", "corrupt", "unattributed", "affected_providers", "affected_products",
 })
+RUNTIME_SERVICES = (
+    "ar-local-status.service",
+    "ar-local-dashboard.service",
+)
 
 
 def validate_next_daily_timer(value: str, now: datetime) -> None:
@@ -139,6 +143,70 @@ def _valid_counts(value: object, required: frozenset[str]) -> bool:
     )
 
 
+def _summaries_reconcile(
+    state: object,
+    providers: object,
+    products: object,
+    issues: object,
+) -> bool:
+    if not (
+        state in {"complete", "degraded"}
+        and _valid_counts(providers, STATUS_PROVIDER_COUNTS)
+        and _valid_counts(products, STATUS_PRODUCT_COUNTS)
+        and _valid_counts(issues, STATUS_ISSUE_COUNTS)
+    ):
+        return False
+    assert isinstance(providers, Mapping)
+    assert isinstance(products, Mapping)
+    assert isinstance(issues, Mapping)
+    provider_terminal = sum(
+        providers[key]
+        for key in ("complete", "partial", "empty", "failed", "not_attempted")
+    )
+    provider_attempted = sum(
+        providers[key] for key in ("complete", "partial", "empty", "failed")
+    )
+    product_terminal = sum(
+        products[key]
+        for key in (
+            "published_full", "published_core_only", "quarantined_invalid",
+            "omitted_valid",
+        )
+    )
+    degraded_provider_count = sum(
+        providers[key] for key in ("partial", "failed", "not_attempted")
+    )
+    if not (
+        providers["registered"] > 0
+        and providers["registered"] == provider_terminal
+        and providers["attempted"] == provider_attempted
+        and providers["population_unknown"] <= degraded_provider_count
+        and products["discovered"] == product_terminal
+        and products["consumer_visible"]
+        == products["published_full"] + products["published_core_only"]
+        and products["consumer_visible"] > 0
+        and issues["corrupt"] + issues["unattributed"] <= issues["total"]
+        and issues["affected_providers"] <= min(
+            providers["registered"], issues["total"]
+        )
+        and issues["affected_products"] <= min(
+            products["discovered"], issues["total"]
+        )
+    ):
+        return False
+    if state == "complete":
+        return bool(
+            degraded_provider_count == 0
+            and providers["population_unknown"] == 0
+            and products["published_full"] == products["discovered"]
+            and products["published_core_only"] == 0
+            and products["quarantined_invalid"] == 0
+            and products["omitted_valid"] == 0
+            and all(issues[key] == 0 for key in STATUS_ISSUE_COUNTS)
+        )
+    return bool(issues["total"] > 0 or degraded_provider_count > 0)
+
+
 def http_healthy(url: str) -> bool:
     payload = _json_endpoint(url)
     if payload is None:
@@ -153,7 +221,7 @@ def http_healthy(url: str) -> bool:
     except ValueError:
         return False
     expected_state = {"ok": "complete", "degraded": "degraded"}.get(payload.get("status"))
-    return bool(
+    contract_valid = bool(
         payload.get("schema_version") == 1
         and payload.get("service") == "ar-local"
         and expected_state is not None
@@ -164,9 +232,12 @@ def http_healthy(url: str) -> bool:
         and observed_at.astimezone(WINDOW_TZ).date() == parsed_date
         and isinstance(observation.get("accounting_id"), str)
         and bool(observation["accounting_id"])
-        and _valid_counts(observation.get("providers"), STATUS_PROVIDER_COUNTS)
-        and _valid_counts(observation.get("products"), STATUS_PRODUCT_COUNTS)
-        and _valid_counts(observation.get("issues"), STATUS_ISSUE_COUNTS)
+    )
+    return contract_valid and _summaries_reconcile(
+        expected_state,
+        observation.get("providers"),
+        observation.get("products"),
+        observation.get("issues"),
     )
 
 
@@ -482,6 +553,29 @@ def write_command(path: Path, args: Sequence[str]) -> None:
     path.write_text(result.stdout, encoding="utf-8", newline="\n")
 
 
+def capture_runtime_services(root: Path, selected: str) -> list[str]:
+    if selected not in RUNTIME_SERVICES:
+        raise ValueError(f"unsupported runtime service: {selected}")
+    captured: list[str] = []
+    for unit in RUNTIME_SERVICES:
+        definition = command("systemctl", "cat", unit, check=False)
+        if definition.returncode != 0:
+            if unit == selected:
+                raise RuntimeError(f"selected runtime service is not installed: {unit}")
+            continue
+        definition_path = root / f"system/systemd/{unit}.txt"
+        definition_path.parent.mkdir(parents=True, exist_ok=True)
+        definition_path.write_text(
+            definition.stdout, encoding="utf-8", newline="\n"
+        )
+        write_command(
+            root / f"system/systemd/{unit}.show.txt",
+            ("systemctl", "show", unit),
+        )
+        captured.append(unit)
+    return captured
+
+
 def secret_metadata(paths: Iterable[Path]) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for path in sorted(set(paths)):
@@ -521,16 +615,17 @@ def prepare_control(args: argparse.Namespace) -> tuple[Path, dict[str, object]]:
             current["bundle_path"] = f"git/{label}.bundle"
             current["bundle_sha256"] = sha256_file(bundle)
             repositories.append(current)
-        runtime_service = str(args.runtime_service)
-        for unit in ("ar-local-daily.service", "ar-local-daily.timer", runtime_service):
+        for unit in ("ar-local-daily.service", "ar-local-daily.timer"):
             write_command(root / f"system/systemd/{unit}.txt", ("systemctl", "cat", unit))
             write_command(root / f"system/systemd/{unit}.show.txt", ("systemctl", "show", unit))
+        runtime_services = capture_runtime_services(root, str(args.runtime_service))
         write_command(root / "system/packages.tsv", ("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"))
         secret_paths = list(Path("/etc/ar-local").glob("*.env"))
         secret_paths.extend((Path.home() / ".ssh", Path(args.state_root).parent / "netdata/lib/bearer_tokens"))
         metadata = {
             "schema_version": 1,
             "repositories": repositories,
+            "runtime_services": runtime_services,
             "secret_locations": secret_metadata(secret_paths),
             "hostname": command("hostname").stdout.strip(),
             "uname": command("uname", "-a").stdout.strip(),

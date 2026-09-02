@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from cdr_contracts import provider_uid
+from cdr_contracts import parse_rate_string, provider_uid
 from cdr_observation import (
     ObservationError,
     _fact_projections,
     build_observation,
     validate_observation,
 )
+from tests.test_cdr_observation_db import observation as valid_observation_inputs
 
 
 def _empty_accounting() -> dict:
@@ -38,21 +39,37 @@ def _empty_accounting() -> dict:
 
 
 def test_observed_at_must_resolve_to_observation_date_in_hobart() -> None:
-    projections = {group: [] for group in ("products", "rates", "items", "product_facts", "product_changes")}
+    accounting, projections = valid_observation_inputs()
     with pytest.raises(ObservationError, match="observation date"):
         build_observation(
-            accounting=_empty_accounting(),
+            accounting=accounting,
             projections=projections,
-            observed_at="2027-09-03T00:00:00Z",
+            observed_at="2027-05-25T00:00:00Z",
             normalization_version="test-v1",
         )
     built = build_observation(
-        accounting=_empty_accounting(),
+        accounting=accounting,
         projections=projections,
-        observed_at="2026-09-02T15:00:00Z",
+        observed_at="2026-05-24T15:00:00Z",
         normalization_version="test-v1",
     )
-    assert built["observed_at"] == "2026-09-02T15:00:00Z"
+    assert built["observed_at"] == "2026-05-24T15:00:00Z"
+
+
+def test_observation_requires_a_provider_and_publishable_product() -> None:
+    projections = {
+        group: []
+        for group in (
+            "products", "rates", "items", "product_facts", "product_changes"
+        )
+    }
+    with pytest.raises(ObservationError, match="no_registered_providers"):
+        build_observation(
+            accounting=_empty_accounting(),
+            projections=projections,
+            observed_at="2026-09-02T15:00:00Z",
+            normalization_version="test-v1",
+        )
 
 
 def test_rate_fact_projection_rejects_percentage_scaled_value() -> None:
@@ -74,6 +91,12 @@ def test_rate_fact_projection_rejects_percentage_scaled_value() -> None:
             ],
             {"a" * 64},
         )
+
+
+@pytest.mark.parametrize("value", ["-0", "-0.00"])
+def test_rate_parser_rejects_signed_zero(value: str) -> None:
+    with pytest.raises(ValueError):
+        parse_rate_string(value)
 
 
 @pytest.mark.parametrize(
@@ -147,17 +170,11 @@ def test_global_accounting_failure_blocks_publication() -> None:
 
 
 def test_observation_state_is_recomputed_during_validation() -> None:
-    accounting = _empty_accounting()
-    projections = {
-        group: []
-        for group in (
-            "products", "rates", "items", "product_facts", "product_changes"
-        )
-    }
+    accounting, projections = valid_observation_inputs()
     observation = build_observation(
         accounting=accounting,
         projections=projections,
-        observed_at="2026-09-02T15:00:00Z",
+        observed_at="2026-05-24T15:00:00Z",
         normalization_version="test-v1",
     )
     observation["state"] = "degraded"

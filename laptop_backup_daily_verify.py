@@ -71,7 +71,10 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
             "observation_sha256": _sha256_file(database.parent / "observation-v1.json"),
             "accounting_sha256": _sha256_file(database.parent / "product-accounting-v1.json"),
             "database_sha256": _sha256_file(database),
-            "validation_mode": "canonical_observation_and_immutable_sqlite_v9",
+            "validation_mode": (
+                "canonical_observation_and_immutable_sqlite_"
+                f"v{OBSERVATION_SCHEMA_VERSION}"
+            ),
         }
 
     banks_files = sorted(database.parent.glob("banks-*.json"))
