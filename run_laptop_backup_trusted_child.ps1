@@ -61,11 +61,20 @@ function Get-ArTrustedSha256 {
     $stream.Dispose()
   }
 }
-function Get-ArTrustedBytesSha256 {
-  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+function Test-ArTrustedHostKeyIdentity {
+  param(
+    [Parameter(Mandatory = $true)][byte[]]$Bytes,
+    [Parameter(Mandatory = $true)][string]$ExpectedRawSha256,
+    [Parameter(Mandatory = $true)][string]$ExpectedOpenSshFingerprint
+  )
   $algorithm = [Security.Cryptography.SHA256]::Create()
-  try { ([BitConverter]::ToString($algorithm.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant() }
+  try { $digest = $algorithm.ComputeHash($Bytes) }
   finally { $algorithm.Dispose() }
+  $rawSha256 = ([BitConverter]::ToString($digest) -replace '-', '').ToLowerInvariant()
+  $openSshFingerprint = 'SHA256:' + [Convert]::ToBase64String($digest).TrimEnd([char]'=')
+  $rawMatches = $rawSha256 -ceq $ExpectedRawSha256
+  $fingerprintMatches = $openSshFingerprint -ceq $ExpectedOpenSshFingerprint
+  $rawMatches -and $fingerprintMatches
 }
 function Assert-ArTrustedPlainPath {
   param([Parameter(Mandatory = $true)][string]$Path)
@@ -123,6 +132,49 @@ function Wait-ArTrustedChildRedirectedTasks {
   [void]([Threading.Tasks.Task]::WaitAll($Tasks,5000))
   throw 'Trusted SSH semantic preflight redirected streams did not close before the deadline.'
 }
+function Test-ArTrustedChildLanEndpoint {
+  param([Parameter(Mandatory = $true)][string]$Value)
+  $address = $null
+  if (-not [Net.IPAddress]::TryParse($Value,[ref]$address) -or
+      $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $address.ToString() -cne $Value) { return $false }
+  $bytes = $address.GetAddressBytes()
+  ($bytes[0] -eq 10) -or ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) -or
+    ($bytes[0] -eq 192 -and $bytes[1] -eq 168)
+}
+function Resolve-ArTrustedChildSshEndpoint {
+  param([string]$PythonPath,[string]$ModulePath,[string]$DiscoveryName,[int]$TimeoutSeconds)
+  foreach ($path in @($PythonPath,$ModulePath)) {
+    if ($path.Contains('"') -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'SSH discovery dependency path is invalid.' }
+  }
+  if ($DiscoveryName -cne 'ar.local' -or $TimeoutSeconds -ne 10) { throw 'SSH discovery contract is invalid.' }
+  $start = New-Object Diagnostics.ProcessStartInfo
+  $start.FileName = $PythonPath; $start.Arguments = '-I -B "' + $ModulePath + '" --name "' + $DiscoveryName + '"'
+  $start.UseShellExecute = $false; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
+  $start.CreateNoWindow = $true
+  $process = New-Object Diagnostics.Process; $process.StartInfo = $start
+  $job = New-ArTrustedChildProcessJob; $clock = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    if (-not $process.Start()) { throw 'SSH LAN endpoint discovery failed to start.' }
+    Add-ArTrustedChildProcessToJob -Job $job -Process $process
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync(); $stderrTask = $process.StandardError.ReadToEndAsync()
+    try {
+      Wait-ArTrustedChildProcess -Job $job -Process $process -TimeoutMilliseconds ($TimeoutSeconds * 1000)
+    } catch {
+      [void]([Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdoutTask,$stderrTask),5000)); throw
+    }
+    Wait-ArTrustedChildRedirectedTasks -Job $job -Process $process -Tasks @($stdoutTask,$stderrTask) `
+      -TimeoutMilliseconds ([Math]::Max(0,($TimeoutSeconds * 1000) - [int]$clock.ElapsedMilliseconds))
+    $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult()
+    $match = [regex]::Match($stdout,'^(?<endpoint>[0-9.]+)\r?\n$')
+    if ($process.ExitCode -ne 0 -or $stderr -or -not $match.Success -or
+        -not (Test-ArTrustedChildLanEndpoint $match.Groups['endpoint'].Value)) {
+      throw 'SSH LAN endpoint discovery did not return exactly one valid endpoint.'
+    }
+    $match.Groups['endpoint'].Value
+  } finally {
+    $clock.Stop(); Close-ArTrustedChildProcessJob -Job $job; $process.Dispose()
+  }
+}
 try {
   $configFull = Assert-ArTrustedPlainPath $ConfigPath
   $config = Get-Content -LiteralPath $configFull -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -130,11 +182,13 @@ try {
     'atomic_path', 'atomic_sha256', 'authority_path', 'control_root', 'dispatcher_path', 'dispatcher_sha256',
     'dispatcher_security_path', 'dispatcher_security_sha256',
     'git_path', 'git_sha256', 'python_path', 'python_sha256', 'schema_version',
-    'receiver_path', 'scp_path', 'scp_sha256', 'ssh_host', 'ssh_identity_path', 'ssh_identity_sha256',
-    'ssh_known_hosts_path', 'ssh_known_hosts_sha256', 'ssh_path', 'ssh_port', 'ssh_sha256', 'ssh_user',
+    'receiver_path', 'scp_path', 'scp_sha256', 'ssh_discovery_timeout_seconds', 'ssh_endpoint_path',
+    'ssh_endpoint_sha256', 'ssh_host', 'ssh_identity_path', 'ssh_identity_sha256',
+    'ssh_known_hosts_path', 'ssh_known_hosts_sha256', 'ssh_logical_host', 'ssh_path', 'ssh_port', 'ssh_sha256', 'ssh_user',
     'whoami_path', 'whoami_sha256'
   )
-  if ($config.schema_version -ne 5 -or
+  # `$config.schema_version -ne 5` was the superseded fixed-IP contract.
+  if ($config.schema_version -ne 6 -or
       @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0) {
     throw 'Trusted child configuration schema is invalid.'
   }
@@ -148,6 +202,7 @@ try {
   $authority = Assert-ArTrustedPlainPath ([string]$config.authority_path)
   $identity = Assert-ArTrustedPlainPath ([string]$config.ssh_identity_path)
   $knownHosts = Assert-ArTrustedPlainPath ([string]$config.ssh_known_hosts_path)
+  $endpointModule = Assert-ArTrustedPlainPath ([string]$config.ssh_endpoint_path)
   Assert-ArTrustedWithinRoot $python $trustedRoot 'Python interpreter'
   Assert-ArTrustedWithinRoot $dispatcher $trustedRoot 'Dispatcher'
   Assert-ArTrustedWithinRoot $dispatcherSecurity $trustedRoot 'Dispatcher security module'
@@ -156,18 +211,21 @@ try {
   Assert-ArTrustedWithinRoot $authority $trustedRoot 'Authority checkout'
   Assert-ArTrustedWithinRoot $identity $trustedRoot 'SSH identity'
   Assert-ArTrustedWithinRoot $knownHosts $trustedRoot 'SSH known_hosts'
+  Assert-ArTrustedWithinRoot $endpointModule $trustedRoot 'SSH endpoint module'
   if ($atomic -cne (Join-Path ([IO.Path]::GetDirectoryName($dispatcher)) 'laptop_backup_atomic.py')) {
     throw 'Dispatcher atomic module path is not exact.'
   }
   if ($dispatcherSecurity -cne (Join-Path ([IO.Path]::GetDirectoryName($dispatcher)) 'laptop_backup_dispatcher_security.py')) {
     throw 'Dispatcher security module path is not exact.'
   }
+  if ($endpointModule -cne (Join-Path $receiver 'laptop_backup_ssh_endpoint.py')) { throw 'SSH endpoint module path is not exact.' }
   if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or
       -not (Test-Path -LiteralPath $dispatcher -PathType Leaf) -or
       -not (Test-Path -LiteralPath $dispatcherSecurity -PathType Leaf) -or
       -not (Test-Path -LiteralPath $atomic -PathType Leaf) -or
       -not (Test-Path -LiteralPath $identity -PathType Leaf) -or
       -not (Test-Path -LiteralPath $knownHosts -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $endpointModule -PathType Leaf) -or
       -not (Test-Path -LiteralPath $control -PathType Container)) {
     throw 'Trusted child dependency is absent.'
   }
@@ -176,20 +234,24 @@ try {
       (Get-ArTrustedSha256 $dispatcherSecurity) -cne [string]$config.dispatcher_security_sha256 -or
       (Get-ArTrustedSha256 $atomic) -cne [string]$config.atomic_sha256 -or
       (Get-ArTrustedSha256 $identity) -cne [string]$config.ssh_identity_sha256 -or
-      (Get-ArTrustedSha256 $knownHosts) -cne [string]$config.ssh_known_hosts_sha256) {
+      (Get-ArTrustedSha256 $knownHosts) -cne [string]$config.ssh_known_hosts_sha256 -or
+      (Get-ArTrustedSha256 $endpointModule) -cne [string]$config.ssh_endpoint_sha256) {
     throw 'Trusted child dependency hash mismatch.'
   }
-  foreach ($path in @($python, $dispatcher, $dispatcherSecurity, $atomic, $identity, $knownHosts)) { Assert-ArTrustedWriteDenied $path }
+  foreach ($path in @($python, $dispatcher, $dispatcherSecurity, $atomic, $identity, $knownHosts,$endpointModule)) { Assert-ArTrustedWriteDenied $path }
 
   $sshHost = [string]$config.ssh_host; $sshUser = [string]$config.ssh_user; $sshPort = [int]$config.ssh_port
-  if ($sshUser -cne 'pi' -or $sshPort -ne 22 -or $sshHost.Length -gt 253 -or $sshHost -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or
-      $sshHost.Contains('..') -or $sshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $sshPort -lt 1 -or $sshPort -gt 65535) {
+  $sshLogicalHost = [string]$config.ssh_logical_host
+  if ($sshHost -cne 'ar.local' -or $sshLogicalHost -cne 'ar-local-pi5' -or $sshUser -cne 'pi' -or
+      $sshPort -ne 22 -or [int]$config.ssh_discovery_timeout_seconds -ne 10) {
     throw 'Trusted SSH endpoint identity is invalid.'
   }
-  $knownHostToken = if ($sshPort -eq 22) { $sshHost } else { "[$sshHost]:$sshPort" }
+  $knownHostToken = if ($sshPort -eq 22) { $sshLogicalHost } else { "[$sshLogicalHost]:$sshPort" }
   $knownHostMatch = [regex]::Match([IO.File]::ReadAllText($knownHosts,[Text.Encoding]::ASCII),('^' + [regex]::Escape($knownHostToken) + ' ssh-ed25519 (?<key>[A-Za-z0-9+/]+={0,2})(?: [^\r\n]+)?\n$'))
   if (-not $knownHostMatch.Success -or
-      (Get-ArTrustedBytesSha256 ([Convert]::FromBase64String($knownHostMatch.Groups['key'].Value))) -cne '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e') {
+      -not (Test-ArTrustedHostKeyIdentity -Bytes ([Convert]::FromBase64String($knownHostMatch.Groups['key'].Value)) `
+        -ExpectedRawSha256 '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e' `
+        -ExpectedOpenSshFingerprint 'SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4')) {
     throw 'Trusted SSH pinned host-key file is invalid.'
   }
 
@@ -218,13 +280,17 @@ try {
     }
     Assert-ArTrustedWriteDenied $tool.Path
   }
+  $sshEndpoint = Resolve-ArTrustedChildSshEndpoint -PythonPath $python -ModulePath $endpointModule `
+    -DiscoveryName $sshHost -TimeoutSeconds ([int]$config.ssh_discovery_timeout_seconds)
   $ssh = [string]$config.ssh_path
   $sshArguments = @(
     '-F','NUL','-o','BatchMode=yes','-o','ConnectTimeout=10','-o','IdentitiesOnly=yes','-o','IdentityAgent=none',
-    '-o','PreferredAuthentications=publickey','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no',
+    '-o','PreferredAuthentications=publickey','-o','PubkeyAuthentication=yes',
+    '-o','GSSAPIAuthentication=no','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no',
     '-o','ChallengeResponseAuthentication=no','-o','StrictHostKeyChecking=yes','-o',("UserKnownHostsFile=$knownHosts"),
+    '-o',("HostKeyAlias=$sshLogicalHost"),'-o','HostKeyAlgorithms=ssh-ed25519',
     '-o','GlobalKnownHostsFile=NUL','-o','UpdateHostKeys=no','-o','VerifyHostKeyDNS=no','-o','ForwardAgent=no',
-    '-o','ClearAllForwardings=yes','-o','RequestTTY=no','-i',$identity,'-p',[string]$sshPort,'-l',$sshUser,$sshHost,
+    '-o','ClearAllForwardings=yes','-o','RequestTTY=no','-i',$identity,'-p',[string]$sshPort,'-l',$sshUser,$sshEndpoint,
     'printf','AR_SSH_PREFLIGHT_PASS'
   )
   $start = New-Object Diagnostics.ProcessStartInfo
@@ -271,7 +337,7 @@ try {
   $env:GIT_OPTIONAL_LOCKS = '0'
   $env:PYTHONNOUSERSITE = '1'
   $env:PYTHONDONTWRITEBYTECODE = '1'
-  $env:AR_BACKUP_SSH_HOST = $sshHost
+  $env:AR_BACKUP_SSH_HOST = $sshEndpoint
   $env:AR_BACKUP_SSH_USER = $sshUser
   $env:AR_BACKUP_SSH_PORT = [string]$sshPort
   $env:AR_BACKUP_SSH_PATH = [string]$config.ssh_path

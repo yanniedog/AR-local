@@ -51,17 +51,20 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "AR-local-backup-trusted-" in source
     assert "AR-local-backup-evidence-" in source
     assert "Set-ArTrustedRootAcl -Root $script:executionRoot" in source
-    assert "SSH host must be one strict hostname" in ssh_boundary
+    assert "SSH host must be one authenticated LAN endpoint" in ssh_boundary
     for option in (
         "-F NUL", "IdentitiesOnly=yes", "IdentityAgent=none", "PasswordAuthentication=no",
         "KbdInteractiveAuthentication=no", "StrictHostKeyChecking=yes", "UserKnownHostsFile=",
         "GlobalKnownHostsFile=NUL", "UpdateHostKeys=no", "VerifyHostKeyDNS=no",
         "ForwardAgent=no", "ClearAllForwardings=yes", "RequestTTY=no",
+        "HostKeyAlias=", "HostKeyAlgorithms=ssh-ed25519",
     ):
         assert option in combined
+    assert "AuthenticationMethods=publickey" not in combined
     assert "SshIdentityPath" in source and "SshIdentitySha256" in source
     assert "SshKnownHostsPath" not in source
     assert "$script:trustedSshConfig" in source
+    assert "-LogicalHost ([string]$config.ssh_logical_host)" in source
     assert "-IdentityPath ([string]$config.ssh_identity_path)" in source
     assert "-KnownHostsPath ([string]$config.ssh_known_hosts_path)" in source
     assert "Trusted SSH executable ACL owner or inheritance is invalid" in ssh_boundary
@@ -77,6 +80,10 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Wait-ArTrustedRedirectedTasks" in ssh_boundary
     assert "ArTrustedJobObject" in ssh_boundary and "0x00002000" in ssh_boundary
     assert "AssignProcessToJobObject" in ssh_boundary and "TerminateJobObject" in ssh_boundary
+    assert "Resolve-ArTrustedSshEndpoint" in ssh_boundary
+    assert "Resolve-ArTrustedChildSshEndpoint" in (ROOT / "run_laptop_backup_trusted_child.ps1").read_text(encoding="utf-8")
+    assert "ssh_endpoint_path" in core and "ssh_endpoint_sha256" in core
+    assert "ssh-keyscan" not in combined
     assert "SshBoundarySha256" in source
     assert "New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited" in source
     assert "ConvertFrom-Json -AsHashtable" not in combined
@@ -251,7 +258,27 @@ def test_package_builder_exposes_only_authenticated_archive_inputs() -> None:
     assert "is_symlink()" in source
     assert "CANONICAL_ORIGIN" in source
     assert "FIXED_SSH_HOST_KEY_BLOB_SHA256" in source
+    assert "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT" in source
+    assert "SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4" in source
     assert "192.168.20.19" not in source
+
+
+def test_package_rejects_wrong_raw_or_openssh_expected_host_key_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("ar.local ssh-ed25519 QUJDRA==\n", encoding="ascii")
+    digest = trusted_package.hashlib.sha256(b"ABCD").digest()
+    raw_sha256 = digest.hex()
+    fingerprint = "SHA256:" + trusted_package.base64.b64encode(digest).decode("ascii").rstrip("=")
+    monkeypatch.setattr(trusted_package, "FIXED_SSH_HOST_KEY_BLOB_SHA256", "0" * 64)
+    monkeypatch.setattr(trusted_package, "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT", fingerprint)
+    with pytest.raises(ValueError, match="raw-blob"):
+        trusted_package.pinned_known_host(known_hosts, "ar.local", 22)
+    monkeypatch.setattr(trusted_package, "FIXED_SSH_HOST_KEY_BLOB_SHA256", raw_sha256)
+    monkeypatch.setattr(trusted_package, "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT", "SHA256:wrong")
+    with pytest.raises(ValueError, match="OpenSSH fingerprint"):
+        trusted_package.pinned_known_host(known_hosts, "ar.local", 22)
 
 
 def test_package_builder_makes_standalone_exact_checkouts(
@@ -266,6 +293,7 @@ def test_package_builder_makes_standalone_exact_checkouts(
         for filename in (
             "run_laptop_backup_trusted_child.ps1", "laptop_backup_dispatcher.py",
             "laptop_backup_dispatcher_security.py", "laptop_backup_atomic.py",
+            "laptop_backup_ssh_endpoint.py",
         ):
             (path / filename).write_text(f"# {filename}\n", encoding="utf-8")
         subprocess.run(("git", "-C", str(path), "add", "."), check=True)
@@ -295,10 +323,16 @@ def test_package_builder_makes_standalone_exact_checkouts(
         b"-----BEGIN OPENSSH PRIVATE KEY-----\nTEST\n-----END OPENSSH PRIVATE KEY-----\n"
     )
     known_hosts = tmp_path / "known_hosts"
-    known_hosts.write_text("192.168.20.19 ssh-ed25519 QUJDRA==\n", encoding="ascii")
+    known_hosts.write_text("ar.local ssh-ed25519 QUJDRA==\n", encoding="ascii")
     monkeypatch.setattr(
         trusted_package, "FIXED_SSH_HOST_KEY_BLOB_SHA256",
         trusted_package.hashlib.sha256(b"ABCD").hexdigest(),
+    )
+    digest = trusted_package.hashlib.sha256(b"ABCD").digest()
+    monkeypatch.setattr(
+        trusted_package,
+        "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT",
+        "SHA256:" + trusted_package.base64.b64encode(digest).decode("ascii").rstrip("="),
     )
     output = tmp_path / "trusted.zip"
     result = build(argparse.Namespace(
@@ -307,7 +341,7 @@ def test_package_builder_makes_standalone_exact_checkouts(
         python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
         install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
         operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
-        whoami=str(tools[3]), ssh_host="192.168.20.19", ssh_user="pi", ssh_port=22,
+        whoami=str(tools[3]), ssh_host="ar.local", ssh_user="pi", ssh_port=22,
         ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(output),
     ))
     assert result["sha256"]
@@ -318,29 +352,18 @@ def test_package_builder_makes_standalone_exact_checkouts(
         python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
         install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
         operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
-        whoami=str(tools[3]), ssh_host="192.168.20.19", ssh_user="pi", ssh_port=22,
+        whoami=str(tools[3]), ssh_host="ar.local", ssh_user="pi", ssh_port=22,
         ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(second),
     ))
     assert second_result["sha256"] == result["sha256"]
-    known_hosts.write_text("example.invalid ssh-ed25519 QUJDRA==\n", encoding="ascii")
-    dynamic = build(argparse.Namespace(
-        candidate_repo=str(candidate), candidate_sha=candidate_sha,
-        authority_repo=str(authority), authority_sha=authority_sha,
-        python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
-        install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
-        operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
-        whoami=str(tools[3]), ssh_host="example.invalid", ssh_user="pi", ssh_port=22,
-        ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(tmp_path / "dynamic.zip"),
-    ))
-    assert dynamic["sha256"]
-    with pytest.raises(ValueError, match="host, user, or port is invalid"):
+    with pytest.raises(ValueError, match="identity is not the backup contract"):
         build(argparse.Namespace(
             candidate_repo=str(candidate), candidate_sha=candidate_sha,
             authority_repo=str(authority), authority_sha=authority_sha,
             python_root=str(runtime), launcher=str(launcher), dispatcher_manifest=str(dispatcher_manifest),
             install_root=str(tmp_path / "installed"), control_root=str(tmp_path / "control"),
             operator_sid="S-1-5-21-1-2-3-1001", git=str(tools[0]), ssh=str(tools[1]), scp=str(tools[2]),
-            whoami=str(tools[3]), ssh_host="bad..host", ssh_user="pi", ssh_port=22,
+            whoami=str(tools[3]), ssh_host="example.invalid", ssh_user="pi", ssh_port=22,
             ssh_identity=str(identity), ssh_known_hosts=str(known_hosts), output=str(tmp_path / "drift.zip"),
         ))
     with zipfile.ZipFile(output) as archive:
@@ -353,8 +376,11 @@ def test_package_builder_makes_standalone_exact_checkouts(
         assert package["candidate_code_sha"] == candidate_sha
         assert package["authority_commit"] == authority_sha
         trusted = json.loads(archive.read("trusted-child.json"))
-        assert trusted["schema_version"] == 5
-        assert trusted["ssh_host"] == "192.168.20.19"
+        assert trusted["schema_version"] == 6
+        assert trusted["ssh_host"] == "ar.local"
+        assert trusted["ssh_logical_host"] == "ar-local-pi5"
+        assert trusted["ssh_discovery_timeout_seconds"] == 10
+        assert trusted["ssh_endpoint_sha256"] == package["files"]["receiver/laptop_backup_ssh_endpoint.py"]
         assert "laptop_backup_dispatcher_security.py" in names
         assert trusted["dispatcher_security_path"] == str(
             Path(tmp_path / "installed") / "laptop_backup_dispatcher_security.py"
@@ -362,5 +388,5 @@ def test_package_builder_makes_standalone_exact_checkouts(
         assert trusted["dispatcher_security_sha256"] == package["files"]["laptop_backup_dispatcher_security.py"]
         assert "ssh/id" not in names
         assert all(b"OPENSSH PRIVATE KEY" not in archive.read(name) for name in names)
-        assert archive.read("ssh/known_hosts") == b"192.168.20.19 ssh-ed25519 QUJDRA==\n"
+        assert archive.read("ssh/known_hosts") == b"ar-local-pi5 ssh-ed25519 QUJDRA==\n"
         assert set(package["files"]) == names - {"package-manifest.json"}

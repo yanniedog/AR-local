@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -14,6 +15,16 @@ import pytest
 
 import laptop_backup_transport as transport
 import laptop_pull_backup as receiver
+
+
+def _bind_test_host_key(monkeypatch: pytest.MonkeyPatch, blob: bytes = b"ABCD") -> None:
+    digest = hashlib.sha256(blob).digest()
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", digest.hex())
+    monkeypatch.setattr(
+        transport,
+        "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT",
+        "SHA256:" + transport.base64.b64encode(digest).decode("ascii").rstrip("="),
+    )
 
 
 def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
@@ -33,7 +44,7 @@ def _native_transport_args(tmp_path: Path, **values: object) -> Namespace:
     }
     defaults.update(values)
     known_hosts.write_text(
-        f"{defaults['host']} ssh-ed25519 QUJDRA==\n", encoding="ascii"
+        "ar-local-pi5 ssh-ed25519 QUJDRA==\n", encoding="ascii"
     )
     return Namespace(**defaults)
 
@@ -60,8 +71,9 @@ def trusted_transport_args(tmp_path: Path | None = None, **values: object) -> Na
 
 def _native_contract(args: Namespace) -> dict[str, object]:
     return {
-        "schema_version": 5,
-        "ssh_host": args.host,
+        "schema_version": 6,
+        "ssh_host": "ar.local",
+        "ssh_logical_host": "ar-local-pi5",
         "ssh_user": args.ssh_user,
         "ssh_port": args.ssh_port,
         "ssh_path": args.ssh_path,
@@ -81,9 +93,7 @@ def _authenticate_native_fixture(
     if os.name != "nt":
         return
     contract = _native_contract(args)
-    monkeypatch.setattr(
-        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
-    )
+    _bind_test_host_key(monkeypatch)
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
 
 
@@ -101,14 +111,17 @@ def test_ssh_command_has_no_path_agent_user_config_or_interactive_fallback(tmp_p
     required = {
         "NUL", "BatchMode=yes", "IdentitiesOnly=yes", "IdentityAgent=none",
         "PreferredAuthentications=publickey", "PasswordAuthentication=no",
+        "PubkeyAuthentication=yes", "GSSAPIAuthentication=no",
         "KbdInteractiveAuthentication=no", "ChallengeResponseAuthentication=no",
         "StrictHostKeyChecking=yes", f"UserKnownHostsFile={args.ssh_known_hosts}",
         "GlobalKnownHostsFile=NUL", "UpdateHostKeys=no", "VerifyHostKeyDNS=no",
         "ForwardAgent=no", "ClearAllForwardings=yes", "RequestTTY=no",
+        "HostKeyAlias=ar-local-pi5", "HostKeyAlgorithms=ssh-ed25519",
         args.ssh_identity, args.ssh_user, args.host,
     }
     assert required.issubset(set(command))
     assert command[:3] == [args.ssh_path, "-F", "NUL"]
+    assert "AuthenticationMethods=publickey" not in command
     assert "ssh" not in command and "scp" not in command
 
 
@@ -118,6 +131,28 @@ def test_windows_transport_paths_validate_on_portable_ci() -> None:
     assert command[0] == args.ssh_path
     with pytest.raises(ValueError, match="absolute OpenSSH path"):
         transport.ssh_options(_portable_transport_args(ssh_path="ssh.exe"), platform="posix")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows OpenSSH compatibility check")
+def test_system_windows_ssh_accepts_all_hardened_client_options(tmp_path: Path) -> None:
+    ssh = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/OpenSSH/ssh.exe"
+    if not ssh.is_file():
+        pytest.skip("system OpenSSH client is unavailable")
+    identity = tmp_path / "id"
+    known_hosts = tmp_path / "known_hosts"
+    identity.write_text("fixture\n", encoding="ascii")
+    known_hosts.write_text("ar-local-pi5 ssh-ed25519 QUJDRA==\n", encoding="ascii")
+    command = transport.ssh_command(
+        _portable_transport_args(
+            ssh_path=str(ssh), ssh_identity=str(identity), ssh_known_hosts=str(known_hosts)
+        ),
+        platform="posix",
+    )
+    result = subprocess.run(
+        (command[0], "-G", *command[1:]), capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Bad configuration option" not in result.stderr
 
 
 def test_native_transport_refuses_uninstalled_source(
@@ -131,15 +166,27 @@ def test_native_transport_refuses_uninstalled_source(
         transport._trusted_contract("nt")
 
 
+def test_native_transport_rejects_contract_schema_tampering(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = tmp_path / "receiver" / "laptop_backup_transport.py"
+    module.parent.mkdir()
+    module.write_text("# fixture\n", encoding="utf-8")
+    (tmp_path / "trusted-child.json").write_text(
+        json.dumps({"schema_version": 5}), encoding="utf-8"
+    )
+    monkeypatch.setattr(transport, "__file__", str(module))
+    with pytest.raises(ValueError, match="schema"):
+        transport._trusted_contract("nt")
+
+
 def test_native_transport_requires_protected_hash_bound_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     args = _native_transport_args(tmp_path)
     contract = _native_contract(args)
     contract["ssh_known_hosts_sha256"] = transport.sha256_file(Path(args.ssh_known_hosts))
-    monkeypatch.setattr(
-        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
-    )
+    _bind_test_host_key(monkeypatch)
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
     assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
     args.ssh_sha256 = "0" * 64
@@ -151,11 +198,33 @@ def test_native_transport_requires_protected_hash_bound_contract(
         transport.ssh_options(args, platform="nt")
 
 
+def test_native_transport_rejects_logical_or_discovery_contract_tampering(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    args = _native_transport_args(tmp_path)
+    contract = _native_contract(args)
+    _bind_test_host_key(monkeypatch)
+    monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
+    contract["ssh_logical_host"] = "attacker"
+    with pytest.raises(ValueError, match="logical host"):
+        transport.ssh_options(args, platform="nt")
+    contract["ssh_logical_host"] = "ar-local-pi5"
+    contract["ssh_host"] = "attacker.local"
+    with pytest.raises(ValueError, match="protected contract"):
+        transport.ssh_options(args, platform="nt")
+
+
 def test_transport_accepts_authenticated_dynamic_endpoint() -> None:
     options = transport.ssh_options(
-        _portable_transport_args(host="192.0.2.10"), platform="posix"
+        _portable_transport_args(host="192.168.20.19"), platform="posix"
     )
     assert options[0].endswith("ssh.exe")
+
+
+@pytest.mark.parametrize("host", ("100.78.28.10", "192.0.2.10", "fe80::1", "bad"))
+def test_transport_rejects_tailscale_public_ipv6_and_malformed_routes(host: str) -> None:
+    with pytest.raises(ValueError, match="endpoint|host"):
+        transport.ssh_options(_portable_transport_args(host=host), platform="posix")
 
 
 def test_transport_keeps_backup_user_and_port_fixed() -> None:
@@ -163,25 +232,31 @@ def test_transport_keeps_backup_user_and_port_fixed() -> None:
         transport.ssh_options(_portable_transport_args(ssh_user="root"), platform="posix")
 
 
-def test_native_transport_rejects_wrong_pi_host_key(
+def test_native_transport_rejects_wrong_raw_or_openssh_host_key_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     args = _native_transport_args(tmp_path)
     contract = _native_contract(args)
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
+    _bind_test_host_key(monkeypatch)
+    correct_raw = transport.FIXED_SSH_HOST_KEY_BLOB_SHA256
+    correct_fingerprint = transport.FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT
     monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", "0" * 64)
-    with pytest.raises(ValueError, match="host key fingerprint"):
+    with pytest.raises(ValueError, match="raw-blob"):
         transport.ssh_options(args, platform="nt")
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", correct_raw)
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT", "SHA256:wrong")
+    with pytest.raises(ValueError, match="OpenSSH fingerprint"):
+        transport.ssh_options(args, platform="nt")
+    monkeypatch.setattr(transport, "FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT", correct_fingerprint)
 
 
 def test_native_transport_accepts_endpoint_bound_by_protected_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    args = _native_transport_args(tmp_path, host="192.0.2.10")
+    args = _native_transport_args(tmp_path, host="192.168.20.20")
     contract = _native_contract(args)
-    monkeypatch.setattr(
-        transport, "FIXED_SSH_HOST_KEY_BLOB_SHA256", hashlib.sha256(b"ABCD").hexdigest()
-    )
+    _bind_test_host_key(monkeypatch)
     monkeypatch.setattr(transport, "_trusted_contract", lambda _platform: contract)
     assert transport.ssh_options(args, platform="nt")[0] == args.ssh_path
 

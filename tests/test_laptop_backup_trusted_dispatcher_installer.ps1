@@ -26,8 +26,38 @@ if (-not $failed) { throw 'PowerShell production action was accepted.' }
 $remote = "set -eu`nexit 0`n"
 if ($remote.Contains("`r")) { throw 'Test remote script unexpectedly contains CR.' }
 $sshBoundary = Get-Content -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_ssh.ps1') -Raw
-if ($sshBoundary -notmatch "HostName\.Length -gt 253" -or $sshBoundary -notmatch "HostName\.Contains\('\.\.'\)") {
-  throw 'Strict SSH hostname validation is absent.'
+if (-not (Test-ArTrustedLanEndpoint '192.168.20.19') -or (Test-ArTrustedLanEndpoint '100.78.28.10') -or
+    (Test-ArTrustedLanEndpoint '192.0.2.10') -or (Test-ArTrustedLanEndpoint 'fe80::1') -or
+    $sshBoundary -notmatch 'HostKeyAlias=' -or $sshBoundary -match 'ssh-keyscan') {
+  throw 'Strict LAN endpoint and logical host-key separation is absent.'
+}
+$testHostKey = [Text.Encoding]::ASCII.GetBytes('ABCD')
+$testRawSha256 = 'e12e115acf4552b2568b55e93cbd39394c4ef81c82447fafc997882a02d23677'
+$testOpenSshFingerprint = 'SHA256:4S4RWs9FUrJWi1XpPL05OUxO+ByCRH+vyZeIKgLSNnc'
+if (-not (Test-ArTrustedHostKeyIdentity -Bytes $testHostKey -ExpectedRawSha256 $testRawSha256 `
+      -ExpectedOpenSshFingerprint $testOpenSshFingerprint) -or
+    (Test-ArTrustedHostKeyIdentity -Bytes $testHostKey -ExpectedRawSha256 ('0' * 64) `
+      -ExpectedOpenSshFingerprint $testOpenSshFingerprint) -or
+    (Test-ArTrustedHostKeyIdentity -Bytes $testHostKey -ExpectedRawSha256 $testRawSha256 `
+      -ExpectedOpenSshFingerprint 'SHA256:wrong')) {
+  throw 'Raw and OpenSSH host-key identities are not independently enforced.'
+}
+$endpointModule = Join-Path (Join-Path $PSScriptRoot '..') 'laptop_backup_ssh_endpoint.py'
+$pythonPath = (Get-Command python -ErrorAction Stop).Source
+$tamperedConfig = [pscustomobject]@{
+  ssh_host='ar.local'; ssh_logical_host='ar-local-pi5'; ssh_discovery_timeout_seconds=10
+  ssh_user='pi'; ssh_port=22; ssh_sha256=('a' * 64); ssh_identity_sha256=('b' * 64)
+  ssh_path=(Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::System)) 'OpenSSH\ssh.exe')
+  python_path=$pythonPath; python_sha256=(Get-ArTrustedSha256 $pythonPath)
+  ssh_endpoint_path=$endpointModule; ssh_endpoint_sha256=('0' * 64)
+}
+$failed = $false
+try {
+  Assert-ArTrustedSshConfiguration -Config $tamperedConfig -HostName 'ar.local' -UserName 'pi' -Port 22 `
+    -SshSha256 ('a' * 64) -IdentitySha256 ('b' * 64)
+} catch { if ($_.Exception.Message -notmatch 'hash mismatch') { throw }; $failed = $true }
+if (-not $failed -or $null -ne $script:trustedSshConfig -or $null -ne $script:trustedSshEndpoint) {
+  throw 'Tampered discovery hash did not fail closed.'
 }
 $childPidPath = Join-Path $env:TEMP ('ar-process-tree-' + [guid]::NewGuid().ToString('N') + '.txt')
 $treeScript = @"
@@ -66,6 +96,31 @@ try {
 }
 if (-not $timedOut -or $clock.Elapsed.TotalSeconds -gt 7 -or (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
   throw 'Bounded process timeout did not terminate the full descendant tree promptly.'
+}
+
+$discoveryModule = Join-Path $env:TEMP ('ar-discovery-hang-' + [guid]::NewGuid().ToString('N') + '.py')
+$discoveryPid = Join-Path $env:TEMP ('ar-discovery-pid-' + [guid]::NewGuid().ToString('N') + '.txt')
+try {
+  $env:AR_TEST_DISCOVERY_PID = $discoveryPid
+  $source = @'
+import os, subprocess, sys, time
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+with open(os.environ["AR_TEST_DISCOVERY_PID"], "w", encoding="ascii") as stream:
+    stream.write(str(child.pid))
+time.sleep(30)
+'@
+  [IO.File]::WriteAllText($discoveryModule,$source,[Text.UTF8Encoding]::new($false))
+  $discoveryTimedOut = $false
+  try {
+    Resolve-ArTrustedSshEndpoint -PythonPath (Get-Command python -ErrorAction Stop).Source `
+      -ModulePath $discoveryModule -DiscoveryName 'ar.local' -TimeoutSeconds 1 | Out-Null
+  } catch { if ($_.Exception.Message -notmatch 'timed out') { throw }; $discoveryTimedOut = $true }
+  if (-not $discoveryTimedOut -or -not (Test-Path -LiteralPath $discoveryPid)) { throw 'Discovery timeout fixture did not run.' }
+  $discoveryChildPid = [int][IO.File]::ReadAllText($discoveryPid,[Text.Encoding]::ASCII)
+  if (Get-Process -Id $discoveryChildPid -ErrorAction SilentlyContinue) { throw 'Discovery timeout left a descendant process.' }
+} finally {
+  Remove-Item Env:\AR_TEST_DISCOVERY_PID -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $discoveryModule,$discoveryPid -Force -ErrorAction SilentlyContinue
 }
 
 $exitFirstGate = Join-Path $env:TEMP ('ar-exit-first-gate-' + [guid]::NewGuid().ToString('N'))
