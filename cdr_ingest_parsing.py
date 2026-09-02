@@ -102,14 +102,24 @@ def has_mortgage_structured_signals(product: Mapping[str, Any]) -> bool:
 
 
 def has_deposit_structured_signals(product: Mapping[str, Any]) -> bool:
+    """Whether deposit fields exist; this deliberately does not choose a dataset."""
     if any(is_record(item) for item in as_array(product.get("depositRates"))):
         return True
-    for rate in as_array(product.get("rates")):
-        if is_record(rate) and pick_text(
-            rate, ("depositRateType", "rateType", "applicationType", "rateApplicabilityType")
-        ):
-            return True
-    return False
+    return any(
+        is_record(rate)
+        and bool(
+            pick_text(
+                rate,
+                (
+                    "depositRateType",
+                    "rateType",
+                    "applicationType",
+                    "rateApplicabilityType",
+                ),
+            )
+        )
+        for rate in as_array(product.get("rates"))
+    )
 
 
 def infer_dataset_from_structured_signals(
@@ -117,8 +127,9 @@ def infer_dataset_from_structured_signals(
 ) -> Optional[str]:
     if has_mortgage_structured_signals(product):
         return "home_loans"
-    if has_deposit_structured_signals(product):
-        return dataset_from_cdr_category(extract_cdr_product_category(product)) or "savings"
+    # Deposit-rate fields are shared by savings and term deposits. They prove
+    # neither dataset, so an unknown category must fall through to explicit
+    # product-name evidence or remain unresolved.
     return None
 
 

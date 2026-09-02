@@ -25,6 +25,10 @@ import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
 import rba_decisions  # noqa: E402
 import rba_official  # noqa: E402
+from tests.support_observation import (  # noqa: E402
+    write_finalized_observation,
+    write_verified_observation,
+)
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
 HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
@@ -355,6 +359,17 @@ def _history_assets_from(exports, run_date):
         section_filter=app_payload.section_filter,
         normalized_rate_value=app_payload._normalized_rate_value,
     )
+
+
+def test_history_excludes_valid_but_unfinalized_observations(tmp_path):
+    write_finalized_observation(tmp_path, observation_date="2026-09-02")
+    unfinalized = tmp_path / "runs" / "2026-09-03" / "_exports"
+    write_verified_observation(unfinalized, observation_date="2026-09-03")
+
+    history, bank_history = _history_assets_from(unfinalized, "2026-09-03")
+
+    assert history["run_dates"] == ["2026-09-02"]
+    assert bank_history["run_dates"] == ["2026-09-02"]
 
 
 def test_build_history_assets_includes_behaviour(tmp_path):

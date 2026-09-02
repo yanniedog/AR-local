@@ -7,6 +7,7 @@ import pytest
 
 import cdr_clean_export
 from cdr_contracts import canonical_authority, parse_rate_string, product_uid, provider_uid
+from cdr_ingest_parsing import infer_cdr_dataset
 from cdr_ingest_support import iter_banking_brands_from_payload
 
 
@@ -132,6 +133,15 @@ def test_rate_string_is_decimal_and_never_rescaled(raw: str, expected: str) -> N
 def test_rate_string_rejects_wrong_types_units_and_non_finite_values(raw: object) -> None:
     with pytest.raises(ValueError):
         parse_rate_string(raw)
+
+
+def test_unknown_deposit_category_uses_only_unambiguous_dataset_evidence() -> None:
+    base = {
+        "productCategory": "NEW_UNMAPPED_CATEGORY",
+        "depositRates": [{"depositRateType": "VARIABLE", "rate": "0.04"}],
+    }
+    assert infer_cdr_dataset({**base, "name": "12 Month Term Deposit"}) == "term_deposits"
+    assert infer_cdr_dataset({**base, "name": "Everyday Account"}) is None
 
 
 def _write_rate_product(root: Path, rate: str) -> None:

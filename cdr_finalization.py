@@ -17,6 +17,7 @@ from cdr_ledger_v2 import (
     ledger_root,
     verify_event,
     verify_event_artifacts,
+    verify_reachable_generation,
 )
 from cdr_file_lock import FileLock
 from cdr_observation import load_verified_observation
@@ -771,14 +772,40 @@ def verify_completion_marker(marker: Mapping[str, Any], state_dir: Path, date: s
             return False
         if contract["contract_digest"] != marker.get("export_contract_digest"):
             return False
-        event_path = (
-            ledger_root(state_dir)
-            / "events"
-            / date
-            / f"{contract['generation_id']}.json"
+        event = verify_reachable_generation(
+            state_dir, date, str(contract["generation_id"])
         )
-        event = json.loads(event_path.read_text(encoding="utf-8"))
-        verify_event_artifacts(state_dir, event)
         return event["event_digest"] == marker.get("ledger_event_digest")
     except (KeyError, OSError, ValueError, json.JSONDecodeError):
         return False
+
+
+def is_finalized_export_root(export_root: Path, state_dir: Path, date: str) -> bool:
+    """Whether one exact export generation has a verified, reachable marker."""
+
+    state_dir = state_dir.expanduser().resolve()
+    export_root = export_root.expanduser().resolve()
+    markers = [state_dir / f"{date}.done.json"]
+    markers.extend(sorted(state_dir.glob(f"{date}.revision.*.json"), reverse=True))
+    for marker_path in markers:
+        try:
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            if not isinstance(marker, Mapping) or not verify_completion_marker(
+                marker, state_dir, date
+            ):
+                continue
+            contract_path = _safe_state_path(
+                state_dir, marker.get("export_contract_path")
+            )
+            if contract_path is None:
+                continue
+            contract = load_contract(contract_path)
+            marker_relative = marker_path.relative_to(state_dir).as_posix()
+            if (
+                contract.get("completion_marker_path") == marker_relative
+                and _source_root_for_contract(state_dir, contract) == export_root
+            ):
+                return True
+        except (KeyError, OSError, ValueError, json.JSONDecodeError):
+            continue
+    return False
