@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from cdr_attempt_evidence_promotion import promote_attempt_evidence
 from cdr_contracts import provider_uid
 from cdr_export_contract import load_contract
@@ -12,6 +14,7 @@ from cdr_finalization import finalize_observation, verify_completion_marker
 from cdr_ingest_sanity import compare_ladders
 from cdr_observation_db import SCHEMA_VERSION, verify_observation_database
 from cdr_outputs import build_outputs
+from cdr_product_change_runs import previous_finalized_run
 from cdr_raw_attempt_journal import RawAttemptJournal
 
 
@@ -172,6 +175,18 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert not (exports / "dashboard-cache").exists()
 
 
+def test_build_outputs_rejects_noncanonical_database_before_writing(tmp_path: Path) -> None:
+    run = tmp_path / "2026-09-02"
+    output = tmp_path / "exports"
+    database = tmp_path / "elsewhere.sqlite"
+
+    with pytest.raises(ValueError, match="canonical database must be"):
+        build_outputs(run, output, database)
+
+    assert not output.exists()
+    assert not database.exists()
+
+
 def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
     tmp_path: Path,
 ) -> None:
@@ -197,6 +212,9 @@ def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
     assert contract["coverage"]["products_discovered"] == 1
     assert contract["coverage"]["products_published"] == 1
     assert contract["coverage"]["reconciliation_status"] == "reconciled"
+    tomorrow = tmp_path / "2026-09-03"
+    tomorrow.mkdir()
+    assert previous_finalized_run(tomorrow, state_dir=state) == run
 
 
 def test_sanity_check_reads_v9_and_flags_large_rate_change(tmp_path: Path) -> None:

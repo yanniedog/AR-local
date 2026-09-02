@@ -6,14 +6,16 @@ import hashlib
 import io
 import json
 import math
+import os
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import app_payload_mobile
 import rba_decisions
+import rba_official
 from cdr_ribbon_normalize import aggregate_ribbon, normalized_rate_value as _normalized_rate_value
 from cdr_clean_export import app_coverage_aliases, coverage_summary
 from cdr_observation import load_verified_observation
@@ -74,6 +76,19 @@ def _gzip_bytes(obj: Any) -> bytes:
     if encoded[9] != 255:
         raise RuntimeError("gzip OS header is not reproducible")
     return encoded
+
+
+def _official_rba_calendar(*, now: Optional[datetime] = None) -> dict[str, Any]:
+    calendar = rba_decisions.calendar_payload()
+    refresh = os.environ.get(
+        "AR_LOCAL_RBA_OFFICIAL_FETCH",
+        os.environ.get("AR_LOCAL_APP_PAYLOAD", ""),
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if refresh:
+        return rba_official.load_calendar(calendar, now=now)
+    # Offline builds remain deterministic, but never package an elapsed meeting
+    # whose result is absent from every checked-in decision source.
+    return rba_official.merge_calendar(calendar, (), now=now)
 
 
 def _asset(
@@ -406,7 +421,7 @@ def _compute_payload(
     # in the manifest) and the app skips re-download when the hash is unchanged, so
     # a same-day rebuild (e.g. the watchdog rerun) must yield identical bytes.
     del state_dir
-    rba_calendar = rba_decisions.calendar_payload()
+    rba_calendar = _official_rba_calendar()
     rba_decision_models = [
         rba_decisions.Decision(
             date.fromisoformat(decision["date"]),

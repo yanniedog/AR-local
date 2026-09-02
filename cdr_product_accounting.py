@@ -542,8 +542,11 @@ def _validate_ingest_status(
         if item.get("brand_name") is not None:
             if _text(item["brand_name"], "status brand_name", 256) != provider["brand_name"]:
                 raise ValueError("provider brand name disagrees with ingest status")
-        discovered = item.get("products_discovered")
-        if discovered is not None and _integer(discovered, "products_discovered") != provider["discovered_count"]:
+        count_field = (
+            "products_in_scope" if "products_in_scope" in item else "products_discovered"
+        )
+        discovered = item.get(count_field)
+        if discovered is not None and _integer(discovered, count_field) != provider["discovered_count"]:
             raise ValueError("provider product count disagrees with ingest status")
     required_status_uids = {
         provider["provider_uid"] for provider in providers if provider["state"] != "not_attempted"

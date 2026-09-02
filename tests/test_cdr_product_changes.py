@@ -10,6 +10,7 @@ import pytest
 
 import cdr_outputs
 import cdr_product_changes as changes
+import cdr_product_change_runs as change_runs
 
 
 def fact(
@@ -576,6 +577,31 @@ def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_p
     current.mkdir()
 
     assert changes.previous_finalized_run(current) == finalized
+
+
+def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rejected = tmp_path / "runs" / "2026-08-12"
+    export = rejected / "_exports"
+    export.mkdir(parents=True)
+    for name in ("observation-v1.json", "product-accounting-v1.json", "local-cdr.sqlite"):
+        (export / name).write_bytes(b"unfinalized")
+    current = tmp_path / "runs" / "2026-08-13"
+    current.mkdir()
+    monkeypatch.setattr(change_runs, "_v9_database", lambda *_args: True)
+
+    assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
+
+
+def test_previous_finalized_run_rejects_a_stray_canonical_database(tmp_path: Path) -> None:
+    rejected = tmp_path / "runs" / "2026-08-12" / "_exports"
+    rejected.mkdir(parents=True)
+    (rejected / "local-cdr.sqlite").write_bytes(b"not finalized")
+    current = tmp_path / "runs" / "2026-08-13"
+    current.mkdir()
+
+    assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
 
 
 def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_path: Path) -> None:

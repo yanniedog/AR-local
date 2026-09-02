@@ -7,7 +7,11 @@ import pytest
 
 from cdr_contracts import canonical_json_bytes
 from cdr_contracts import product_uid, provider_uid
-from cdr_observation import build_observation, build_projections, write_observation
+from cdr_observation import (
+    build_observation,
+    build_projections,
+    write_observation,
+)
 from cdr_observation_db import build_observation_database
 from cdr_product_inventory import ProductInventoryError, build_product_inventory
 
@@ -158,6 +162,45 @@ def test_unknown_provider_identity_fails_closed(tmp_path: Path) -> None:
     banks["provider_observations"].pop()
     with pytest.raises(ProductInventoryError, match="registered provider population"):
         build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
+
+
+def test_removed_provider_change_round_trips_prior_canonical_identity(
+    tmp_path: Path,
+) -> None:
+    root, banks, status = _inputs(tmp_path)
+    accounting, observed_at, _ = build_product_inventory(
+        root, banks, status=status, observed_at=OBSERVED_AT
+    )
+    removed_provider = _provider(3)
+    old_product = product_uid(removed_provider, "Savings", "old-1")
+    banks["product_changes"] = [
+        {
+            "event_id": "a" * 20,
+            "provider": "Removed Bank",
+            "dataset": "Savings",
+            "product_id": "old-1",
+            "event_type": "product_removed",
+            "before": {
+                "provider_uid": removed_provider,
+                "product_uid": old_product,
+            },
+            "after": None,
+        }
+    ]
+
+    projections = build_projections(banks, accounting)
+    rows = projections["product_changes"]
+    result = build_observation_database(
+        tmp_path / "removed.sqlite",
+        accounting=accounting,
+        projections=projections,
+        generated_at=observed_at,
+        normalization_version="cdr-product-facts-v1",
+    )
+
+    assert rows[0]["provider_uid"] == removed_provider
+    assert rows[0]["product_uid"] == old_product
+    assert result.verification.counts["bank_product_changes"] == 1
 
 
 def test_observation_and_sqlite_contain_only_publishable_products(tmp_path: Path) -> None:

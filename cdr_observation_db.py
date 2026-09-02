@@ -18,18 +18,13 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote
 
-from cdr_contracts import PROVIDER_UID_RE, canonical_json_bytes
+from cdr_contracts import PROVIDER_UID_RE, canonical_json_bytes, product_uid
 
 SCHEMA_VERSION = 9
 APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
 FAILURE_STAGES = (
-    "after_schema",
-    "after_accounting",
-    "after_projections",
-    "after_commit",
-    "after_verify",
-    "before_install",
-    "after_install",
+    "after_schema", "after_accounting", "after_projections", "after_commit",
+    "after_verify", "before_install", "after_install",
 )
 DATASETS = frozenset({"Mortgage", "Savings", "TD"})
 SECTIONS = frozenset(
@@ -203,8 +198,7 @@ CREATE TABLE bank_product_facts(
 ) STRICT,WITHOUT ROWID;
 CREATE TABLE bank_product_changes(
  accounting_id TEXT NOT NULL,event_id TEXT NOT NULL CHECK(length(trim(event_id))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),event_type TEXT NOT NULL CHECK(length(trim(event_type))>0),canonical_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
- FOREIGN KEY(accounting_id,provider_uid) REFERENCES bank_provider_observations(accounting_id,provider_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
+ PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) STRICT,WITHOUT ROWID;
 CREATE INDEX idx_bank_provider_observations_state ON bank_provider_observations(accounting_id,state,population_known,provider_uid);
 CREATE INDEX idx_bank_product_dispositions_identity ON bank_product_dispositions(accounting_id,provider_uid,dataset,cdr_product_id,product_uid);
@@ -566,7 +560,6 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             _exact(row, PROJECTION_KEYS[group], f"{group}[{index}]")
             output[group].append(row)
     accounting_products = {row["product_uid"]: row for row in accounting["products"]}
-    providers = {row["provider_uid"] for row in accounting["providers"]}
     publishable = {uid for uid, row in accounting_products.items() if row["disposition"] in PUBLISHABLE}
     products: dict[str, dict[str, Any]] = {}
     for row in output["products"]:
@@ -648,10 +641,18 @@ def _normalize_projections(value: Mapping[str, Any], accounting: Mapping[str, An
             "event_type": _text(row["event_type"], "event_type"),
             "canonical_key": _nullable_text(row["canonical_key"], "canonical_key"),
         }
-        if expected["event_id"] in event_ids or expected["provider_uid"] not in providers or not PRODUCT_UID.fullmatch(expected["product_uid"]):
+        document = _document(row["document"], expected)
+        dataset = _enum(document.get("dataset"), DATASETS, "change dataset")
+        cdr_product_id = _text(document.get("product_id"), "change product_id")
+        if (
+            expected["event_id"] in event_ids
+            or not PROVIDER_UID.fullmatch(expected["provider_uid"])
+            or expected["product_uid"]
+            != product_uid(expected["provider_uid"], dataset, cdr_product_id)
+        ):
             _fail("change identity or provider is invalid")
         event_ids.add(expected["event_id"])
-        changes.append({**expected, "document": _document(row["document"], expected)})
+        changes.append({**expected, "document": document})
     output["product_changes"] = sorted(changes, key=lambda row: row["event_id"])
     return output
 

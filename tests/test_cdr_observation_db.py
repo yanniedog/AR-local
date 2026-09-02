@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cdr_contracts import canonical_json_bytes
+from cdr_contracts import canonical_json_bytes, product_uid
 from cdr_observation_db import (
     APPLICATION_ID,
     FAILURE_STAGES,
@@ -21,7 +21,7 @@ from cdr_observation_db import (
 
 FIXTURE = Path(__file__).parent / "fixtures/canonical_domain_real_observations.json"
 PROVIDER_UID = "provider:v1:" + "1" * 64
-PRODUCT_UID = "2" * 64
+PRODUCT_UID = product_uid(PROVIDER_UID, "Savings", "BOMInvestmentCashAccounts")
 RATE_UID = "3" * 64
 ACCOUNTING_ID = "ingest-2026-05-25-bank-of-melbourne"
 
@@ -99,7 +99,16 @@ def observation() -> tuple[dict, dict]:
         "items": [{**item_keys, "document": {**item_keys, "source_item": record["eligibility"][0]}}],
         "product_facts": [{**fact_keys, "document": fact_keys}],
         "product_changes": [
-            {**change_keys, "document": {**change_keys, "before": record["name"], "after": captured["bank_of_melbourne_after_rename"]["record"]["name"]}}
+            {
+                **change_keys,
+                "document": {
+                    **change_keys,
+                    "dataset": source["dataset"],
+                    "product_id": record["productId"],
+                    "before": record["name"],
+                    "after": captured["bank_of_melbourne_after_rename"]["record"]["name"],
+                },
+            }
         ],
     }
     return accounting, projections

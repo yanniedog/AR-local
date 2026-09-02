@@ -29,6 +29,8 @@ class ProductPopulation:
     product_records_observed: int = 0
     terminal_page_reached: bool = False
     relevant_product_ids: set[str] = field(default_factory=set)
+    out_of_scope_product_ids: set[str] = field(default_factory=set)
+    unresolved_product_ids: set[str] = field(default_factory=set)
     resumed_detail_ids: set[str] = field(default_factory=set)
     successful_detail_ids: set[str] = field(default_factory=set)
     terminal_detail_failures: set[str] = field(default_factory=set)
@@ -89,7 +91,23 @@ class ProductPopulation:
         return self.terminal_page_reached and not self._population_errors
 
     def mark_relevant(self, product_id: str) -> None:
+        self._prepare_classification(product_id)
         self.relevant_product_ids.add(product_id)
+
+    def mark_out_of_scope(self, product_id: str) -> None:
+        self._prepare_classification(product_id)
+        self.out_of_scope_product_ids.add(product_id)
+
+    def mark_unresolved(self, product_id: str) -> None:
+        self._prepare_classification(product_id)
+        self.unresolved_product_ids.add(product_id)
+
+    def _prepare_classification(self, product_id: str) -> None:
+        if product_id not in self._products:
+            raise ValueError("cannot classify an unobserved product")
+        self.relevant_product_ids.discard(product_id)
+        self.out_of_scope_product_ids.discard(product_id)
+        self.unresolved_product_ids.discard(product_id)
 
     def mark_resumed(self, product_id: str) -> None:
         self.resumed_detail_ids.add(product_id)
@@ -105,12 +123,23 @@ class ProductPopulation:
     def summary(self) -> dict[str, Any]:
         unique = len(self._products)
         relevant = len(self.relevant_product_ids)
+        unresolved = self.unresolved_product_ids | (
+            set(self._products)
+            - self.relevant_product_ids
+            - self.out_of_scope_product_ids
+            - self.unresolved_product_ids
+        )
         present = len(self.successful_detail_ids & self.relevant_product_ids)
         if self.pages_fetched == 0 and not self.population_known:
             state = "failed"
-        elif not self.population_known or present != relevant or self.terminal_detail_failures:
+        elif (
+            not self.population_known
+            or present != relevant
+            or self.terminal_detail_failures
+            or unresolved
+        ):
             state = "partial"
-        elif unique == 0:
+        elif relevant == 0:
             state = "empty"
         else:
             state = "complete"
@@ -132,6 +161,8 @@ class ProductPopulation:
             "malformed_products": self._malformed_products,
             "population_errors": sorted(self._population_errors),
             "relevant_products": relevant,
+            "out_of_scope_products": len(self.out_of_scope_product_ids),
+            "classification_unresolved": sorted(unresolved),
             "details_present": present,
             "resumed_details": len(self.resumed_detail_ids),
             "terminal_detail_failures": sorted(self.terminal_detail_failures),

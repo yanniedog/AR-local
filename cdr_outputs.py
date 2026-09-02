@@ -160,6 +160,9 @@ def build_outputs(
 ) -> Dict[str, Any]:
     run_root = run_root.expanduser().resolve()
     out_dir = (out_dir or (run_root / "_exports")).expanduser().resolve()
+    database = out_dir / "local-cdr.sqlite"
+    if db_path is not None and db_path.expanduser().resolve() != database:
+        raise ValueError(f"canonical database must be {database}")
     out_dir.mkdir(parents=True, exist_ok=True)
     banks = parse_banks_run(run_root)
     changes, change_summary = _product_changes(run_root, banks, previous_run_root)
@@ -176,7 +179,6 @@ def build_outputs(
         blockers=blockers,
     )
     write_observation(out_dir, observation, accounting)
-    database = db_path.expanduser().resolve() if db_path else out_dir / "local-cdr.sqlite"
     db_result = build_observation_database(
         database,
         accounting=accounting,

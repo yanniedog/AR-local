@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,7 @@ import app_payload  # noqa: E402
 import app_payload_build  # noqa: E402
 import app_payload_mobile  # noqa: E402
 import rba_decisions  # noqa: E402
+import rba_official  # noqa: E402
 
 SAMPLE_EXPORTS = ROOT / "runs" / "2026-05-19" / "_exports"
 HAS_SAMPLE = (SAMPLE_EXPORTS / "dashboard-cache" / "latest.json").exists()
@@ -36,6 +38,42 @@ def test_sample_seed_publisher_is_not_available():
     with pytest.raises(SystemExit) as exc:
         app_payload.main(["seed"])
     assert exc.value.code == 2
+
+
+def test_payload_calendar_refreshes_from_official_sources(monkeypatch):
+    base = {"timezone": "Australia/Sydney", "decisions": [], "schedule": []}
+    refreshed = {
+        "timezone": "Australia/Sydney",
+        "decisions": [{"date": "2026-09-29"}],
+        "schedule": [],
+    }
+    monkeypatch.setenv("AR_LOCAL_APP_PAYLOAD", "1")
+    monkeypatch.setattr(rba_decisions, "calendar_payload", lambda: base)
+    monkeypatch.setattr(
+        rba_official,
+        "load_calendar",
+        lambda calendar, *, now=None: refreshed if calendar is base else None,
+    )
+
+    assert app_payload_build._official_rba_calendar() is refreshed
+
+
+def test_offline_payload_rejects_an_overdue_unresolved_meeting(monkeypatch):
+    stale = {
+        "timezone": "Australia/Sydney",
+        "decisions": [],
+        "schedule": [
+            {"date": "2026-09-29", "announce_utc": "2026-09-29T04:30:00+00:00"}
+        ],
+    }
+    monkeypatch.delenv("AR_LOCAL_APP_PAYLOAD", raising=False)
+    monkeypatch.delenv("AR_LOCAL_RBA_OFFICIAL_FETCH", raising=False)
+    monkeypatch.setattr(rba_decisions, "calendar_payload", lambda: stale)
+
+    with pytest.raises(rba_official.RbaOfficialError, match="2026-09-29"):
+        app_payload_build._official_rba_calendar(
+            now=datetime(2026, 9, 29, 4, 30, tzinfo=timezone.utc)
+        )
 
 
 def test_section_filter_mortgage_excludes_discount():

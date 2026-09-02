@@ -174,6 +174,36 @@ def _provider_labels(
     return {label: next(iter(uids)) for label, uids in labels.items() if len(uids) == 1}
 
 
+def _change_provider_uid(
+    raw: Mapping[str, Any], labels: Mapping[str, str], dataset: str, cdr_product_id: str
+) -> str:
+    candidates: set[str] = set()
+    label_uid = labels.get(str(raw.get("provider") or "").strip().casefold())
+    if label_uid:
+        candidates.add(label_uid)
+    for side in ("before", "after"):
+        fact = raw.get(side)
+        if not isinstance(fact, Mapping):
+            continue
+        provider = str(fact.get("provider_uid") or "")
+        supplied_product = str(fact.get("product_uid") or "")
+        if not provider and not supplied_product:
+            continue
+        if (
+            not provider
+            or supplied_product != product_uid(provider, dataset, cdr_product_id)
+        ):
+            raise ObservationError(
+                "product change carries invalid canonical identity evidence"
+            )
+        candidates.add(provider)
+    if len(candidates) != 1:
+        raise ObservationError(
+            "product change cannot be bound to one canonical provider"
+        )
+    return next(iter(candidates))
+
+
 def _change_projections(
     banks: Mapping[str, Any], accounting: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
@@ -182,11 +212,11 @@ def _change_projections(
     for raw in banks.get("product_changes") or []:
         if not isinstance(raw, Mapping):
             raise ObservationError("product change source is invalid")
-        provider = labels.get(str(raw.get("provider") or "").strip().casefold())
         dataset = str(raw.get("dataset") or "")
         product_id_value = str(raw.get("product_id") or "").strip()
-        if provider is None or dataset not in {"Mortgage", "Savings", "TD"} or not product_id_value:
+        if dataset not in {"Mortgage", "Savings", "TD"} or not product_id_value:
             raise ObservationError("product change cannot be bound to a canonical identity")
+        provider = _change_provider_uid(raw, labels, dataset, product_id_value)
         envelope = {
             "event_id": str(raw.get("event_id") or ""),
             "provider_uid": provider,

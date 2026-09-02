@@ -156,6 +156,65 @@ def test_successful_run_status_points_to_verified_attempt_journal(tmp_path, monk
     assert status["incomplete"] is False
 
 
+def test_unresolved_classification_withholds_the_observation(tmp_path, monkeypatch):
+    brand = _brand("https://holder.example/products")
+    monkeypatch.setattr(
+        lib,
+        "collect_register_snapshot",
+        lambda **_kwargs: _snapshot(brands=[brand]),
+    )
+
+    def fake_ingest(_brand_row, *, date_root, bank_dir_name, **_kwargs):
+        summary = (
+            date_root
+            / "_holders"
+            / bank_dir_name
+            / "_products-index"
+            / "index-summary.json"
+        )
+        summary.parent.mkdir(parents=True)
+        summary.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "provider_uid": brand["provider_uid"],
+                    "state": "partial",
+                    "population_known": True,
+                    "unique_product_ids": 1,
+                    "relevant_products": 0,
+                    "out_of_scope_products": 0,
+                    "classification_unresolved": ["P1"],
+                    "details_present": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(lib, "ingest_brand", fake_ingest)
+
+    assert lib.main(
+        [
+            "--out",
+            str(tmp_path),
+            "--date",
+            "2026-08-15",
+            "--workers",
+            "1",
+            "--detail-workers",
+            "1",
+        ]
+    ) == 2
+    status = json.loads(
+        (tmp_path / "2026-08-15" / "banks" / "ingest-status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert status["classification_unresolved_products"] == 1
+    assert status["coverage_evidence_complete"] is False
+    assert status["provider_states"][0]["products_discovered"] == 1
+    assert status["provider_states"][0]["products_in_scope"] == 0
+
+
 def test_cross_origin_pagination_is_recorded_and_not_followed(tmp_path, monkeypatch):
     failures = []
     monkeypatch.setattr(
@@ -333,8 +392,8 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
         lib,
         "extract_products",
         lambda parsed: [
-            {"productId": "P1", "name": "One"},
-            {"productId": "P2", "name": "Two"},
+            {"productId": "P1", "name": "One", "productCategory": "BUSINESS_LOANS"},
+            {"productId": "P2", "name": "Two", "productCategory": "BUSINESS_LOANS"},
         ],
     )
     monkeypatch.setattr(lib, "next_link", lambda parsed, url: None)
@@ -380,6 +439,65 @@ def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
         log=lambda *_a, **_k: None,
     )
     assert [item["status"] for item in failures] == ["max_pages_reached"]
+
+
+@pytest.mark.parametrize(
+    "category, expected_state, expected_unresolved, expected_failures",
+    [
+        ("BUSINESS_LOANS", "empty", [], []),
+        ("NEW_UNMAPPED_CATEGORY", "partial", ["P1"], ["classification_unresolved"]),
+    ],
+)
+def test_catalogue_classification_is_never_silently_dropped(
+    tmp_path,
+    monkeypatch,
+    category,
+    expected_state,
+    expected_unresolved,
+    expected_failures,
+):
+    failures = []
+    monkeypatch.setattr(
+        lib,
+        "fetch_cdr_json",
+        lambda url, **_kwargs: FetchResult(
+            ok=True, status=200, url=url, text='{"data": {}}', version=4
+        ),
+    )
+    monkeypatch.setattr(
+        lib,
+        "extract_products",
+        lambda _parsed: [
+            {"productId": "P1", "name": "One", "productCategory": category}
+        ],
+    )
+    monkeypatch.setattr(lib, "next_link", lambda _parsed, _url: None)
+    monkeypatch.setattr(
+        lib,
+        "append_failure",
+        lambda _root, entry, lock=None: failures.append(entry),
+    )
+
+    summary = lib.ingest_brand(
+        _brand(),
+        date_root=tmp_path,
+        resume=False,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert summary["state"] == expected_state
+    assert summary["unique_product_ids"] == 1
+    assert summary["relevant_products"] == 0
+    assert summary["classification_unresolved"] == expected_unresolved
+    assert [item["status"] for item in failures] == expected_failures
 
 
 def test_canonical_register_discovery_is_complete(monkeypatch):

@@ -152,11 +152,16 @@ def compare_ladders(curr_db: Path, prev_db: Path) -> List[Dict[str, Any]]:
     return findings
 
 
-def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Optional[Path]:
+def write_sanity_report(
+    exports_dir: Path,
+    run_date: str,
+    runs_root: Path,
+    state_dir: Optional[Path] = None,
+) -> Optional[Path]:
     """Write sanity-report.json into exports_dir. Returns the path written, or
     None if there is no previous day to compare against (first ingest)."""
     curr_db = exports_dir / "local-cdr.sqlite"
-    prev_db = _find_previous_export_db(runs_root, run_date)
+    prev_db = _find_previous_export_db(runs_root, run_date, state_dir)
     if prev_db is None:
         return None
     findings = compare_ladders(curr_db, prev_db)
@@ -176,9 +181,11 @@ def write_sanity_report(exports_dir: Path, run_date: str, runs_root: Path) -> Op
     return out
 
 
-def _find_previous_export_db(runs_root: Path, run_date: str) -> Optional[Path]:
+def _find_previous_export_db(
+    runs_root: Path, run_date: str, state_dir: Optional[Path] = None
+) -> Optional[Path]:
     """Find the most recent prior date's local-cdr.sqlite under runs_root."""
-    previous = previous_finalized_run(runs_root / run_date)
+    previous = previous_finalized_run(runs_root / run_date, state_dir=state_dir)
     if previous is None:
         return None
     database = previous / "_exports" / "local-cdr.sqlite"

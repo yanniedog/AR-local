@@ -49,3 +49,17 @@ def test_missing_terminal_page_or_bad_meta_is_partial() -> None:
     tracker.finish_pages(terminal_page_reached=False)
     assert tracker.summary()["state"] == "partial"
     assert tracker.summary()["population_known"] is False
+
+
+def test_unclassified_product_is_automatically_explicit_and_partial() -> None:
+    tracker = _tracker()
+    tracker.page_fetched({"meta": {"totalRecords": 1}})
+    assert tracker.product({"productId": "P1"}, "P1")
+    tracker.finish_pages(terminal_page_reached=True)
+
+    summary = tracker.summary()
+    assert summary["population_known"] is True
+    assert summary["state"] == "partial"
+    assert summary["classification_unresolved"] == ["P1"]
+    assert summary["relevant_products"] == 0
+    assert summary["out_of_scope_products"] == 0

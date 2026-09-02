@@ -395,7 +395,9 @@ def run_once(args: argparse.Namespace) -> int:
             if persistent_output_stage:
                 cleanup_persistent_export_stage(persistent_runs_root, date)
             return 0
-    previous_run_root = previous_finalized_run(persistent_runs_root / date)
+    previous_run_root = previous_finalized_run(
+        persistent_runs_root / date, state_dir=state_dir
+    )
     marker_exists = marker.exists()
     marker_trusted = marker_exists and marker_is_trustworthy(marker, export_root, date)
     if marker_exists and not args.force:
@@ -574,7 +576,9 @@ def run_once(args: argparse.Namespace) -> int:
     # broken comparison or suspicious high-impact change stays unfinalized.
     sanity_root = staged_exports_to_install or target_export_root
     try:
-        report_path = write_sanity_report(sanity_root, date, persistent_runs_root)
+        report_path = write_sanity_report(
+            sanity_root, date, persistent_runs_root, state_dir
+        )
     except Exception as exc:
         print(
             f"ERROR: sanity-check failed closed: {type(exc).__name__}: {exc}",

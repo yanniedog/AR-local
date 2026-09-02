@@ -20,11 +20,11 @@ from cdr_ingest_population import ProductPopulation
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
     FetchResult,
-    RegisterSnapshot,
     allocate_bank_dir,
     append_failure,
     collect_register_snapshot,
     detail_inner_record,
+    extract_cdr_product_category,
     extract_products,
     fetch_cdr_json,
     filesystem_product_id_directory,
@@ -35,14 +35,29 @@ from cdr_ingest_support import (
     pick_text,
     safe_url,
     sanitize_path_component,
-    summarize_failures,
 )
+from cdr_ingest_status import persist_ingest_status as _persist_ingest_status
 from cdr_raw_attempt_journal import RawAttemptJournal, new_session_id
 
 # ─── Per-holder version cache ─────────────────────────────────────────────────
 
 PRODUCT_INDEX_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
 PRODUCT_DETAIL_VERSION_ORDER = [7, 6, 5, 4, 3, 2, 1]
+
+_KNOWN_OUT_OF_SCOPE_CATEGORIES = frozenset(
+    {
+        "BUSINESS_LOANS",
+        "BUY_NOW_PAY_LATER",
+        "CRED_AND_CHRG_CARDS",
+        "LEASES",
+        "MARGIN_LOANS",
+        "OVERDRAFTS",
+        "PERS_LOANS",
+        "REGULATED_TRUST_ACCOUNTS",
+        "TRADE_FINANCE",
+        "TRAVEL_CARDS",
+    }
+)
 
 
 def _index_version_list(preferred: Optional[int]) -> List[int]:
@@ -243,6 +258,22 @@ def classify_product_for_ingest(
     return None, detail_res
 
 
+def _known_out_of_scope(
+    product: Mapping[str, Any], prefetched: Optional[FetchResult]
+) -> bool:
+    records = [product]
+    if prefetched is not None:
+        detail = detail_inner_record(prefetched.data)
+        if detail is not None:
+            records.append(detail)
+    categories = {
+        category
+        for record in records
+        if (category := extract_cdr_product_category(record)) is not None
+    }
+    return bool(categories) and categories <= _KNOWN_OUT_OF_SCOPE_CATEGORIES
+
+
 def ingest_brand(
     brand: Dict[str, str],
     *,
@@ -409,6 +440,21 @@ def ingest_brand(
                 attempt_journal=attempt_journal,
             )
             if ds not in DATASET_TO_FOLDER:
+                if _known_out_of_scope(product, prefetched):
+                    population.mark_out_of_scope(pid)
+                    continue
+                population.mark_unresolved(pid)
+                append_failure(
+                    date_root,
+                    {
+                        "phase": "classification_detail",
+                        "bank": bank_dir_name,
+                        "product_id": pid,
+                        "status": "classification_unresolved",
+                        "product_category": extract_cdr_product_category(product),
+                    },
+                    lock=failure_lock,
+                )
                 continue
             population.mark_relevant(pid)
 
@@ -610,93 +656,6 @@ def ingest_brand(
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
-
-def _persist_ingest_status(
-    *,
-    banks_root: Path,
-    run_root: Path,
-    snapshot: RegisterSnapshot,
-    bank_work: List[Tuple[Dict[str, str], str]],
-    attempt_journal: RawAttemptJournal,
-) -> Dict[str, Any]:
-    """Publish a discoverable evidence pointer on success and every early exit."""
-    banks_root.mkdir(parents=True, exist_ok=True)
-    status = summarize_failures(banks_root)
-    status["register_attempts"] = snapshot.register_attempts
-    status["register_provenance_complete"] = snapshot.register_provenance_complete
-    status["failure_provenance_complete"] = bool(
-        status.get("failure_provenance_complete")
-        and snapshot.register_provenance_complete
-    )
-    status["incomplete"] = bool(
-        status.get("incomplete") or not snapshot.register_provenance_complete
-    )
-    by_provider = status.get("by_provider") or {}
-    provider_states = []
-    coverage_complete = True
-    for brand, bdir in bank_work:
-        failures = int(by_provider.get(bdir) or 0)
-        summary_path = banks_root / "_holders" / bdir / "_products-index" / "index-summary.json"
-        try:
-            population = json.loads(summary_path.read_text(encoding="utf-8"))
-            if (
-                not isinstance(population, dict)
-                or population.get("schema_version") != 1
-                or population.get("provider_uid") != brand["provider_uid"]
-            ):
-                raise ValueError("invalid holder population summary")
-            state = str(population.get("state") or "failed")
-            if state not in {"complete", "empty", "partial", "failed"}:
-                raise ValueError("invalid holder state")
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-            population = {}
-            state = "failed"
-            coverage_complete = False
-        if failures and state in {"complete", "empty"}:
-            state = "partial"
-        provider_states.append(
-            {
-                "provider_uid": brand["provider_uid"],
-                "identity_status": brand["provider_identity_status"],
-                "data_holder_id": brand.get("data_holder_id") or None,
-                "data_holder_brand_id": brand.get("data_holder_brand_id") or None,
-                "interim_id": brand.get("interim_id") or None,
-                "brand_name": brand.get("brand_name") or None,
-                "legal_entity_name": brand.get("legal_entity_name") or None,
-                "endpoint_url": brand.get("endpoint_url") or None,
-                "state": state,
-                "failure_records": failures,
-                "population_known": bool(population.get("population_known")),
-                # Product accounting covers the three datasets this ingest owns,
-                # not unrelated products merely present in a holder catalogue.
-                "products_discovered": population.get("relevant_products"),
-                "products_indexed": population.get("unique_product_ids"),
-                "details_present": population.get("details_present"),
-            }
-        )
-    # Registered means selected into this observation. Keep the wider register
-    # population as context so filtered diagnostic runs still reconcile exactly.
-    status["providers_registered"] = len(bank_work)
-    status["providers_available"] = snapshot.banking_count_before_filter
-    status["providers_attempted"] = len(bank_work)
-    status["provider_states"] = provider_states
-    status["coverage_evidence_complete"] = coverage_complete
-    status["provider_state_counts"] = {
-        state: sum(1 for provider in provider_states if provider["state"] == state)
-        for state in ("complete", "empty", "partial", "failed")
-    }
-    status["incomplete"] = bool(
-        status["incomplete"]
-        or not coverage_complete
-        or any(provider["state"] not in {"complete", "empty"} for provider in provider_states)
-    )
-    attempt_summary = attempt_journal.summary()
-    attempt_summary["path"] = attempt_journal.root.relative_to(run_root).as_posix()
-    attempt_summary["path_resolution"] = "relative_to_ingest_run_root"
-    attempt_summary["retention"] = "follows_ingest_run_root"
-    status["raw_attempt_journal"] = attempt_summary
-    atomic_write_json(banks_root / "ingest-status.json", status)
-    return status
 
 def _run_date(value: str) -> str:
     try:
@@ -958,6 +917,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         log("Ingest complete: no recorded failures.")
 
     log("Done.")
+    if status.get("classification_unresolved_products"):
+        log(
+            "ERROR: unresolved product classifications prevent an accurate observation."
+        )
+        return 2
     return 0
 
 
