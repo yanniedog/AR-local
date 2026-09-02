@@ -15,6 +15,7 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ProtectedCodeSha,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$PlanGitCommit,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PlanSha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PlanRawSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$HandoffSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskXmlSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedOldTaskSddlSha256,
@@ -36,6 +37,7 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$CoreSha256,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$SshBoundarySha256,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$EvidenceBoundarySha256,
   [Parameter(Mandatory = $true)][string]$PreExecutionManifestPath,
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PreExecutionManifestSha256,
   [Parameter(Mandatory = $true)][string]$SshIdentityPath,
@@ -71,50 +73,9 @@ try {
   $coreStream.Dispose()
 }
 $sshBoundaryPath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_ssh.ps1'
-$sshBoundaryStream = [IO.File]::Open($sshBoundaryPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-$sshBoundaryAlgorithm = [Security.Cryptography.SHA256]::Create()
-try {
-  $sshBoundaryActual = ([BitConverter]::ToString($sshBoundaryAlgorithm.ComputeHash($sshBoundaryStream)) -replace '-','').ToLowerInvariant()
-  if ($sshBoundaryActual -cne $SshBoundarySha256) { throw 'Trusted SSH boundary implementation hash mismatch.' }
-  $sshBoundaryStream.Position = 0
-  $sshBoundaryReader = New-Object IO.StreamReader($sshBoundaryStream,[Text.UTF8Encoding]::new($false),$true,4096,$true)
-  try { $sshBoundaryText = $sshBoundaryReader.ReadToEnd() } finally { $sshBoundaryReader.Dispose() }
-  . ([ScriptBlock]::Create($sshBoundaryText))
-} finally {
-  $sshBoundaryAlgorithm.Dispose(); $sshBoundaryStream.Dispose()
-}
-
-function Write-ArTrustedResult {
-  param([string]$Result, [string]$ErrorText, [hashtable]$Detail)
-  $path = Join-Path $script:executionRoot 'bootstrap-result.json'
-  $files = @()
-  foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Where-Object {
-    [IO.Path]::GetFullPath($_.FullName) -cne [IO.Path]::GetFullPath($path)
-  } | Sort-Object FullName)) {
-    $files += [ordered]@{ path = $file.FullName; sha256 = Get-ArTrustedSha256 $file.FullName; size = $file.Length }
-  }
-  $record = [ordered]@{
-    schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; plan_git_commit = $PlanGitCommit
-    plan_sha256 = $PlanSha256; authority_commit = $AuthorityCommit; handoff_sha256 = $HandoffSha256
-    candidate_code_sha = $CandidateCodeSha; protected_code_sha = $ProtectedCodeSha
-    operator = $Operator; operator_sid = $OperatorSid; package_sha256 = $PackageSha256; task_name = $TaskName
-    pre_execution_manifest_sha256 = $PreExecutionManifestSha256
-    started_at = $script:startedAt; completed_at = [DateTimeOffset]::UtcNow.ToString('o')
-    exact_commands = @($script:exactCommand); result = $Result; error = $ErrorText; evidence = $Detail
-    evidence_files = $files
-    deviations = @($script:authorizedDeviations)
-    deviation_authorization = $script:deviationAuthorization
-  }
-  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Depth 10 -Compress) + "`n")
-  $stream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  try {
-    $stream.Write($bytes,0,$bytes.Length)
-    $stream.Flush($true)
-  } finally {
-    $stream.Dispose()
-  }
-  $path
-}
+. (Read-ArTrustedScriptBlock -Path $sshBoundaryPath -ExpectedSha256 $SshBoundarySha256)
+$evidenceBoundaryPath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_evidence.ps1'
+. (Read-ArTrustedScriptBlock -Path $evidenceBoundaryPath -ExpectedSha256 $EvidenceBoundarySha256)
 
 function Enter-ArTrustedBootstrapGate {
   if ($null -ne $script:bootstrapGate) { throw 'Trusted bootstrap gate is already held by this process.' }
@@ -488,7 +449,8 @@ function Read-ArTrustedInterruptedBootstrap {
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $isAdmin = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin -or $identity.User.Value -cne $OperatorSid) { throw 'Trusted bootstrap requires the authorised elevated operator.' }
-$local = [DateTimeOffset]::Now
+$hobart = [TimeZoneInfo]::FindSystemTimeZoneById('Tasmania Standard Time')
+$local = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow,$hobart)
 if ($local.TimeOfDay -lt [TimeSpan]::FromHours(3.5) -or $local.TimeOfDay -ge [TimeSpan]::FromHours(22)) { throw 'Trusted bootstrap is outside the D-006 daylight window.' }
 if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) { throw 'Trusted package is absent.' }
 if (-not (Test-Path -LiteralPath $PreExecutionManifestPath -PathType Leaf)) { throw 'Pre-execution manifest is absent.' }
@@ -522,7 +484,7 @@ $invocationParameters = [ordered]@{
   install_root=$installFull; target=[IO.Path]::GetFullPath($Target); control_root=[IO.Path]::GetFullPath($ControlRoot)
   recovery_image=[IO.Path]::GetFullPath($RecoveryImage); evidence_root=$evidenceFull; principal=$Principal
   operator=$Operator; operator_sid=$OperatorSid; candidate_code_sha=$CandidateCodeSha; authority_commit=$AuthorityCommit
-  protected_code_sha=$ProtectedCodeSha; plan_git_commit=$PlanGitCommit; plan_sha256=$PlanSha256; handoff_sha256=$HandoffSha256
+  protected_code_sha=$ProtectedCodeSha; plan_git_commit=$PlanGitCommit; plan_sha256=$PlanSha256; plan_raw_sha256=$PlanRawSha256; handoff_sha256=$HandoffSha256
   expected_old_task_xml_sha256=$ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256=$ExpectedOldTaskSddlSha256
   expected_old_task_sddl_semantic_sha256=$ExpectedOldTaskSddlSemanticSha256; expected_old_task_last_result=$ExpectedOldTaskLastResult
   expected_catalog_sha256=$ExpectedCatalogSha256; expected_catalog_size=$ExpectedCatalogSize
@@ -533,7 +495,7 @@ $invocationParameters = [ordered]@{
   expected_accepted_receipt_sha256=$ExpectedAcceptedReceiptSha256; expected_accepted_receipt_size=$ExpectedAcceptedReceiptSize
   expected_accepted_observation_id=$ExpectedAcceptedObservationId; expected_accepted_archive_sha256=$ExpectedAcceptedArchiveSha256
   expected_accepted_archive_size=$ExpectedAcceptedArchiveSize
-  installer_sha256=$InstallerSha256; core_sha256=$CoreSha256; ssh_boundary_sha256=$SshBoundarySha256
+  installer_sha256=$InstallerSha256; core_sha256=$CoreSha256; ssh_boundary_sha256=$SshBoundarySha256; evidence_boundary_sha256=$EvidenceBoundarySha256
   # A manifest cannot contain its own SHA-256. D-012 therefore binds every
   # non-self invocation value here, while the separately authorized outer UAC
   # command supplies the exact manifest SHA-256 that Read-ArTrusted... verifies
@@ -545,17 +507,17 @@ $invocationParameters = [ordered]@{
 $invocationContractSha256 = Get-ArTrustedInvocationContractSha256 $invocationParameters
 $preExecution = Read-ArTrustedPreExecutionManifest -Path $PreExecutionManifestPath -ExpectedSha256 $PreExecutionManifestSha256
 $expectedPreExecution = [ordered]@{
-  schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; task_name = $TaskName
+  schema_version = 1; plan_document_id = 'ARL-OPS-001'; plan_version = '1.5'; document_commit = $PlanGitCommit; task_name = $TaskName
   package_path = [IO.Path]::GetFullPath($PackagePath); package_sha256 = $PackageSha256
   install_root = $installFull; target = [IO.Path]::GetFullPath($Target); control_root = [IO.Path]::GetFullPath($ControlRoot)
   recovery_image = [IO.Path]::GetFullPath($RecoveryImage)
   evidence_root = $evidenceFull; principal = $Principal; operator = $Operator; operator_sid = $OperatorSid
   candidate_code_sha = $CandidateCodeSha; authority_commit = $AuthorityCommit; protected_code_sha = $ProtectedCodeSha
-  plan_git_commit = $PlanGitCommit; plan_sha256 = $PlanSha256; handoff_sha256 = $HandoffSha256
+  plan_git_commit = $PlanGitCommit; plan_sha256 = $PlanSha256; plan_raw_sha256 = $PlanRawSha256; handoff_sha256 = $HandoffSha256
   expected_old_task_xml_sha256 = $ExpectedOldTaskXmlSha256; expected_old_task_sddl_sha256 = $ExpectedOldTaskSddlSha256
   expected_old_task_sddl_semantic_sha256 = $ExpectedOldTaskSddlSemanticSha256
   expected_old_task_last_result = $ExpectedOldTaskLastResult; installer_sha256 = $InstallerSha256; core_sha256 = $CoreSha256
-  ssh_boundary_sha256 = $SshBoundarySha256
+  ssh_boundary_sha256 = $SshBoundarySha256; evidence_boundary_sha256 = $EvidenceBoundarySha256
   expected_catalog_sha256 = $ExpectedCatalogSha256; expected_catalog_size = $ExpectedCatalogSize
   expected_catalog_final_sequence = $ExpectedCatalogFinalSequence; expected_catalog_final_entry_sha256 = $ExpectedCatalogFinalEntrySha256
   expected_latest_verified_sha256 = $ExpectedLatestVerifiedSha256; expected_latest_verified_size = $ExpectedLatestVerifiedSize
@@ -571,7 +533,12 @@ $expectedPreExecution = [ordered]@{
   pi_host = $PiHost; pi_user = $PiUser; pi_port = $PiPort
   ssh_identity_path = [IO.Path]::GetFullPath($SshIdentityPath); ssh_identity_sha256 = $SshIdentitySha256; ssh_executable_sha256 = $SshExecutableSha256
 }
-Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution
+$requiredPreExecutionEvidence = @($PackagePath,$PSCommandPath,$corePath,$sshBoundaryPath,$evidenceBoundaryPath,$SshIdentityPath)
+Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution `
+  -RequiredEvidencePaths $requiredPreExecutionEvidence
+$actualBootstrapCommand = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine
+Assert-ArTrustedInstallerCommandEvidence -Manifest $preExecution -ManifestSha256 $PreExecutionManifestSha256 `
+  -ActualProcessCommand $actualBootstrapCommand
 $catalogArguments = @{
   Target=$Target; ExpectedCatalogSha256=$ExpectedCatalogSha256; ExpectedCatalogSize=$ExpectedCatalogSize
   ExpectedCatalogFinalSequence=$ExpectedCatalogFinalSequence; ExpectedCatalogFinalEntrySha256=$ExpectedCatalogFinalEntrySha256
@@ -733,7 +700,10 @@ if (Test-Path -LiteralPath $InstallRoot) {
 # Exact installed-state recovery is intentionally available after the short
 # bootstrap authorization expires.  A new installation, however, requires the
 # same manifest to be fresh immediately before any staging or task mutation.
-Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution -RequireFresh
+Assert-ArTrustedPreExecutionManifest -Manifest $preExecution -Expected $expectedPreExecution `
+  -RequiredEvidencePaths $requiredPreExecutionEvidence -RequireFresh
+Assert-ArTrustedInstallerCommandEvidence -Manifest $preExecution -ManifestSha256 $PreExecutionManifestSha256 `
+  -ActualProcessCommand $actualBootstrapCommand
 
 try {
   $oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
@@ -779,6 +749,13 @@ try {
   Install-ArTrustedSshIdentity -SourcePath $SshIdentityPath -ExpectedSha256 $SshIdentitySha256 `
     -DestinationPath (Join-Path $staging 'ssh\id') -OperatorSid $OperatorSid
   Set-ArTrustedDeviationAuthorization -Root $staging
+  $stagingConfig = Assert-ArTrustedChildConfiguration -Root $staging -ControlRoot $ControlRoot
+  $authorityPrepublication = Assert-ArTrustedAuthorityMain -GitPath ([string]$stagingConfig.git_path) -Phase 'protected-package prepublication'
+  [IO.File]::WriteAllText(
+    (Join-Path $script:executionRoot 'authority-prepublication.json'),
+    (($authorityPrepublication | ConvertTo-Json -Compress) + "`n"),
+    [Text.UTF8Encoding]::new($false)
+  )
   $installingMarker = Join-Path $staging 'bootstrap.installing.json'
   $installingRecord = [ordered]@{
     schema_version=1; plan_git_commit=$PlanGitCommit; plan_sha256=$PlanSha256; authority_commit=$AuthorityCommit
@@ -843,6 +820,12 @@ try {
   [IO.File]::WriteAllText(
     (Join-Path $script:executionRoot 'pi-immediate-pre-mutation.json'),
     (($piPremutation | ConvertTo-Json -Depth 5 -Compress) + "`n"),
+    [Text.UTF8Encoding]::new($false)
+  )
+  $authorityPremutation = Assert-ArTrustedAuthorityMain -GitPath ([string]$trustedConfig.git_path) -Phase 'immediate pre-mutation'
+  [IO.File]::WriteAllText(
+    (Join-Path $script:executionRoot 'authority-immediate-pre-mutation.json'),
+    (($authorityPremutation | ConvertTo-Json -Compress) + "`n"),
     [Text.UTF8Encoding]::new($false)
   )
 
