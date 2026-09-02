@@ -144,6 +144,15 @@ def test_unknown_deposit_category_uses_only_unambiguous_dataset_evidence() -> No
     assert infer_cdr_dataset({**base, "name": "Everyday Account"}) is None
 
 
+def test_known_out_of_scope_category_wins_over_product_name() -> None:
+    assert (
+        infer_cdr_dataset(
+            {"productCategory": "BUSINESS_LOANS", "name": "Business Home Loan"}
+        )
+        is None
+    )
+
+
 def _write_rate_product(root: Path, rate: str) -> None:
     provider = "Holder"
     holder = root / "banks" / "_holders" / provider

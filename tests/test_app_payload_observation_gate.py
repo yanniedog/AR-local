@@ -16,6 +16,11 @@ sys.path.insert(0, str(ROOT))
 import app_payload_build  # noqa: E402
 import app_payload_observation_gate as gate  # noqa: E402
 import pi_daily_sync  # noqa: E402
+from cdr_attempt_evidence_promotion import promote_attempt_evidence  # noqa: E402
+from cdr_finalization import finalize_observation  # noqa: E402
+from cdr_outputs import build_outputs  # noqa: E402
+from tests.support_observation import write_finalized_observation  # noqa: E402
+from tests.test_cdr_outputs import _captured_run  # noqa: E402
 
 
 def _load_backfill():
@@ -254,3 +259,60 @@ def test_backfill_admits_a_contract_the_daily_path_would_publish(tmp_path: Path)
 def test_backfill_state_root_sits_beside_runs(tmp_path: Path) -> None:
     backfill = _load_backfill()
     assert backfill.resolve_state_root(tmp_path / "runs") == tmp_path / "state"
+
+
+def test_backfill_builds_the_exact_finalized_revision(tmp_path: Path, monkeypatch) -> None:
+    run_date = "2026-09-02"
+    write_finalized_observation(tmp_path, observation_date=run_date)
+    primary_marker = json.loads(
+        (tmp_path / f"state/{run_date}.done.json").read_text(encoding="utf-8")
+    )
+    revision_run = _captured_run(
+        tmp_path / "revision-source", run_date=run_date, rate="0.06"
+    )
+    revision_result = build_outputs(revision_run)
+    revision_exports = revision_run / "_exports"
+    promote_attempt_evidence(revision_run, revision_exports)
+    revision_marker = finalize_observation(
+        revision_exports,
+        tmp_path / "state",
+        tmp_path / f"state/{run_date}.revision.later.json",
+        observation_date=run_date,
+        result=revision_result,
+        parent_generation_id=primary_marker["generation_id"],
+    )
+    contract_path = tmp_path / "state" / revision_marker["export_contract_path"]
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    assert gate.finalized_export_root(tmp_path / "state", run_date, contract) == (
+        revision_exports.resolve()
+    )
+
+    backfill = _load_backfill()
+    primary_exports = tmp_path / f"runs/{run_date}/_exports"
+    monkeypatch.setattr(
+        backfill,
+        "iter_valid_export_dates",
+        lambda *_args, **_kwargs: [(run_date, primary_exports)],
+    )
+    monkeypatch.setattr(
+        backfill,
+        "observation_gate",
+        lambda *_args, **_kwargs: (True, "complete", contract),
+    )
+    built_from = []
+
+    def build(exact_exports, _out_dir, **_kwargs):
+        built_from.append(exact_exports)
+        return {"files": {"core": {"name": "core"}, "details": {"name": "details"}}}
+
+    monkeypatch.setattr(backfill.app_payload, "build_payload", build)
+    monkeypatch.setattr(
+        backfill.app_payload, "publish_payload", lambda *_args, **_kwargs: True
+    )
+    results, rolling = backfill.backfill(
+        tmp_path / "runs", force=True, skip_latest=True
+    )
+    assert built_from == [revision_exports.resolve()]
+    assert results[0]["exports"] == str(revision_exports.resolve())
+    assert results[0]["published"] is True
+    assert rolling is None

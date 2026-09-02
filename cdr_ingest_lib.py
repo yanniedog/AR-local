@@ -17,6 +17,7 @@ from cdr_atomic import atomic_write_json
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
 from cdr_http_policy import DEFAULT_HTTP_POLICY, HttpPolicyError, sanitize_url
 from cdr_ingest_population import ProductPopulation
+from cdr_ingest_parsing import KNOWN_OUT_OF_SCOPE_CATEGORIES
 from cdr_ingest_support import (
     DATASET_TO_FOLDER,
     FetchResult,
@@ -43,22 +44,6 @@ from cdr_raw_attempt_journal import RawAttemptJournal, new_session_id
 
 PRODUCT_INDEX_VERSION_ORDER = [6, 5, 4, 3, 2, 1]
 PRODUCT_DETAIL_VERSION_ORDER = [7, 6, 5, 4, 3, 2, 1]
-
-_KNOWN_OUT_OF_SCOPE_CATEGORIES = frozenset(
-    {
-        "BUSINESS_LOANS",
-        "BUY_NOW_PAY_LATER",
-        "CRED_AND_CHRG_CARDS",
-        "LEASES",
-        "MARGIN_LOANS",
-        "OVERDRAFTS",
-        "PERS_LOANS",
-        "REGULATED_TRUST_ACCOUNTS",
-        "TRADE_FINANCE",
-        "TRAVEL_CARDS",
-    }
-)
-
 
 def _index_version_list(preferred: Optional[int]) -> List[int]:
     """Try a holder's known-good x-v first; fetch_cdr_json still falls back through
@@ -195,6 +180,7 @@ def _fetch_bank_detail(
         detail_path.write_text(res.text, encoding="utf-8")
         (leaf / "product-detail.error.txt").unlink(missing_ok=True)
         return True
+    detail_path.unlink(missing_ok=True)
     (leaf / "product-detail.error.txt").write_text(res.text or "", encoding="utf-8")
     return False
 
@@ -213,6 +199,8 @@ def classify_product_for_ingest(
     attempt_journal: Optional[RawAttemptJournal] = None,
 ) -> Tuple[Optional[str], Optional[FetchResult]]:
     """Returns (dataset_kind or None, optional detail_fetch_if_unknown_path)."""
+    if _known_out_of_scope(product, None):
+        return None, None
     ds = infer_cdr_dataset(product, allow_name_fallback=True)
     if ds in DATASET_TO_FOLDER:
         return ds, None
@@ -271,7 +259,7 @@ def _known_out_of_scope(
         for record in records
         if (category := extract_cdr_product_category(record)) is not None
     }
-    return bool(categories) and categories <= _KNOWN_OUT_OF_SCOPE_CATEGORIES
+    return bool(categories) and categories <= KNOWN_OUT_OF_SCOPE_CATEGORIES
 
 
 def ingest_brand(
@@ -470,11 +458,8 @@ def ingest_brand(
             if not id_file.exists():
                 id_file.write_text(pid + "\n", encoding="utf-8")
 
-            detail_path = leaf / "product-detail.json"
-            if resume and detail_path.exists() and detail_path.stat().st_size > 0:
-                population.mark_resumed(pid)
-                continue
-
+            # A resumed run must not mix a current index with detail bytes from
+            # an earlier attempt journal. Current details are always refetched.
             pending.append(_BankWork(pid=pid, leaf=leaf, prefetched=prefetched))
 
         try:

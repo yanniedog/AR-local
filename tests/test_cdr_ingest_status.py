@@ -415,10 +415,21 @@ def test_mismatched_detail_id_is_terminal_and_not_written(tmp_path, monkeypatch)
     )
     monkeypatch.setattr(lib, "append_failure", lambda _root, entry, lock=None: failures.append(entry))
 
+    stale = (
+        tmp_path
+        / next(iter(lib.DATASET_TO_FOLDER.values()))
+        / "holder"
+        / "One"
+        / lib.filesystem_product_id_directory("P1")
+        / "product-detail.json"
+    )
+    stale.parent.mkdir(parents=True)
+    stale.write_text('{"data":{"productId":"P1","name":"stale"}}', encoding="utf-8")
+
     summary = lib.ingest_brand(
         _brand(),
         date_root=tmp_path,
-        resume=False,
+        resume=True,
         sleep_ms=0,
         timeout=1,
         max_retries=0,
@@ -434,6 +445,64 @@ def test_mismatched_detail_id_is_terminal_and_not_written(tmp_path, monkeypatch)
     assert summary["terminal_detail_failures"] == ["P1"]
     assert [item["status"] for item in failures] == ["detail_fetch_failed"]
     assert not list(tmp_path.rglob("product-detail.json"))
+
+
+def test_resume_refetches_detail_into_the_current_attempt(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_fetch(url, **_kwargs):
+        calls.append(url)
+        if url == ENDPOINT:
+            return FetchResult(ok=True, status=200, url=url, text='{"data": {}}', version=4)
+        return FetchResult(
+            ok=True,
+            status=200,
+            url=url,
+            text='{"data":{"productId":"P1","name":"current"}}',
+            version=4,
+        )
+
+    dataset = next(iter(lib.DATASET_TO_FOLDER))
+    leaf = (
+        tmp_path
+        / lib.DATASET_TO_FOLDER[dataset]
+        / "holder"
+        / "One"
+        / lib.filesystem_product_id_directory("P1")
+    )
+    leaf.mkdir(parents=True)
+    (leaf / "product-detail.json").write_text(
+        '{"data":{"productId":"P1","name":"stale"}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(lib, "fetch_cdr_json", fake_fetch)
+    monkeypatch.setattr(
+        lib, "extract_products", lambda _parsed: [{"productId": "P1", "name": "One"}]
+    )
+    monkeypatch.setattr(lib, "next_link", lambda _parsed, _url: None)
+    monkeypatch.setattr(
+        lib, "classify_product_for_ingest", lambda *_args, **_kwargs: (dataset, None)
+    )
+    monkeypatch.setattr(lib, "append_failure", lambda *_args, **_kwargs: None)
+
+    summary = lib.ingest_brand(
+        _brand(),
+        date_root=tmp_path,
+        resume=True,
+        sleep_ms=0,
+        timeout=1,
+        max_retries=0,
+        max_pages=None,
+        max_products=None,
+        fetch_unknown_detail=False,
+        bank_dir_name="holder",
+        detail_workers=1,
+        log=lambda *_args: None,
+    )
+
+    assert calls == [ENDPOINT, f"{ENDPOINT}/P1"]
+    detail = json.loads((leaf / "product-detail.json").read_text(encoding="utf-8"))
+    assert detail["data"]["name"] == "current"
+    assert summary["resumed_details"] == 0
 
 
 def test_holder_caps_are_recorded_as_incomplete_evidence(tmp_path, monkeypatch):
@@ -555,6 +624,22 @@ def test_catalogue_classification_is_never_silently_dropped(
     assert summary["relevant_products"] == 0
     assert summary["classification_unresolved"] == expected_unresolved
     assert [item["status"] for item in failures] == expected_failures
+
+
+def test_known_out_of_scope_category_wins_over_name_fallback() -> None:
+    dataset, prefetched = lib.classify_product_for_ingest(
+        {
+            "productId": "business-1",
+            "name": "Business Home Loan",
+            "productCategory": "BUSINESS_LOANS",
+        },
+        fetch_unknown_detail=False,
+        endpoint_url=ENDPOINT,
+        timeout=1,
+        max_retries=0,
+        sleep_ms=0,
+    )
+    assert (dataset, prefetched) == (None, None)
 
 
 def test_canonical_register_discovery_is_complete(monkeypatch):

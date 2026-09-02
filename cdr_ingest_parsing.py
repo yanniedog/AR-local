@@ -34,6 +34,21 @@ DATASET_CATEGORY_ALIASES = {
     ),
 }
 
+KNOWN_OUT_OF_SCOPE_CATEGORIES = frozenset(
+    {
+        "BUSINESS_LOANS",
+        "BUY_NOW_PAY_LATER",
+        "CRED_AND_CHRG_CARDS",
+        "LEASES",
+        "MARGIN_LOANS",
+        "OVERDRAFTS",
+        "PERS_LOANS",
+        "REGULATED_TRUST_ACCOUNTS",
+        "TRADE_FINANCE",
+        "TRAVEL_CARDS",
+    }
+)
+
 DATASET_TO_FOLDER = {
     "home_loans": "Mortgage",
     "savings": "Savings",
@@ -147,9 +162,12 @@ def infer_dataset_from_name(product: Mapping[str, Any]) -> Optional[str]:
 def infer_cdr_dataset(
     product: Mapping[str, Any], *, allow_name_fallback: bool = True
 ) -> Optional[str]:
-    category = dataset_from_cdr_category(extract_cdr_product_category(product))
-    if category:
-        return category
+    raw_category = extract_cdr_product_category(product)
+    dataset = dataset_from_cdr_category(raw_category)
+    if dataset:
+        return dataset
+    if raw_category in KNOWN_OUT_OF_SCOPE_CATEGORIES:
+        return None
     structured = infer_dataset_from_structured_signals(product)
     if structured:
         return structured

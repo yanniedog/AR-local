@@ -65,6 +65,17 @@ def test_status_http_surface_is_json_read_only_and_uncacheable(tmp_path: Path) -
         assert headers["allow"] == "GET, HEAD"
         code, body, _ = request(base + "api/latest")
         assert code == 404 and json.loads(body)["status"] == "not_found"
+        code, body, _ = request(base)
+        assert code == 404 and json.loads(body)["status"] == "not_found"
+
+
+def test_nginx_proxies_only_the_three_status_routes() -> None:
+    config = (Path(__file__).parents[1] / "deploy/pi/ar-local-status-nginx.conf").read_text(
+        encoding="utf-8"
+    )
+    assert "^/(?:healthz|status|api/status)$" in config
+    assert "api/latest" not in config
+    assert "api/status)?$" not in config
 
 
 def test_minimal_verifier_rechecks_database_bytes(tmp_path: Path) -> None:

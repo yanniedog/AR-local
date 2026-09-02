@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import cdr_status_server
@@ -88,5 +89,30 @@ def test_status_resolver_caches_only_unchanged_verified_generation(
 
     database = tmp_path / "runs/2026-09-02/_exports/local-cdr.sqlite"
     database.write_bytes(database.read_bytes() + b"tamper")
+    assert resolver.resolve()[0] == 503
+    assert calls == 2
+
+
+def test_status_cache_watches_the_global_ledger_chain(tmp_path: Path, monkeypatch) -> None:
+    write_finalized_observation(tmp_path, observation_date="2026-09-01")
+    write_finalized_observation(tmp_path, observation_date="2026-09-02")
+    original = cdr_status_server.status_payload
+    calls = 0
+
+    def counted(runs_root: Path):
+        nonlocal calls
+        calls += 1
+        return original(runs_root)
+
+    monkeypatch.setattr(cdr_status_server, "status_payload", counted)
+    resolver = cdr_status_server._StatusResolver(tmp_path / "runs")
+    assert resolver.resolve()[0] == 200
+    assert resolver.resolve()[0] == 200
+    assert calls == 1
+
+    earlier = next((tmp_path / "state/ledger-v2/events/2026-09-01").glob("*.json"))
+    event = json.loads(earlier.read_text(encoding="utf-8"))
+    event["finalized_at"] = "2026-09-01T00:00:00Z"
+    earlier.write_text(json.dumps(event), encoding="utf-8")
     assert resolver.resolve()[0] == 503
     assert calls == 2

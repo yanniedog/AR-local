@@ -516,6 +516,37 @@ def verified_pointer_export_root(
         return None
 
 
+def verified_contract_export_root(
+    state_dir: Path, contract: Mapping[str, Any]
+) -> Optional[Path]:
+    """Resolve the exact finalized export generation named by a contract."""
+
+    state_dir = state_dir.expanduser().resolve()
+    try:
+        observation_date = str(contract.get("observation_date") or "")
+        marker_path = _safe_state_path(
+            state_dir, contract.get("completion_marker_path")
+        )
+        if marker_path is None:
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, Mapping) or not verify_completion_marker(
+            marker, state_dir, observation_date
+        ):
+            return None
+        contract_path = _safe_state_path(
+            state_dir, marker.get("export_contract_path")
+        )
+        if contract_path is None:
+            return None
+        verified = load_contract(contract_path)
+        if verified != dict(contract):
+            return None
+        return _source_root_for_contract(state_dir, verified)
+    except (KeyError, OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def recover_pending_finalization(
     state_dir: Path, observation_date: str
 ) -> Optional[Path]:

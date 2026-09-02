@@ -16,6 +16,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
+from cdr_finalization import verified_contract_export_root
+
 # Compatibility v1 is allowed to advance from a fully-audited partial
 # observation only inside these deliberately narrow bounds.
 # Sized against observed production days rather than a round number. On
@@ -116,3 +118,15 @@ def contract_for_run_date(state_dir: Path, run_date: str) -> Optional[dict]:
         if newest is None or key > newest_key:
             newest, newest_key = payload, key
     return newest
+
+
+def finalized_export_root(
+    state_dir: Path, run_date: str, contract: Optional[Mapping[str, Any]]
+) -> Optional[Path]:
+    """Return only the finalized generation named by the selected contract."""
+
+    if not isinstance(contract, Mapping):
+        return None
+    if contract.get("observation_date") != run_date:
+        return None
+    return verified_contract_export_root(state_dir, contract)

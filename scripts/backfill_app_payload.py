@@ -97,6 +97,16 @@ def refresh_rolling_latest(
             f"reason={gate_reason}"
         )
         return False
+    verified_exports = gate.finalized_export_root(
+        resolve_state_root(runs_root), run_date, contract
+    )
+    if verified_exports is None:
+        print(
+            f"[backfill_app_payload] rolling latest withheld run_date={run_date} "
+            "reason=unverified_contract_generation"
+        )
+        return False
+    exports = verified_exports
     if dry_run:
         return False
     out_dir = exports / "app-payload-latest"
@@ -155,7 +165,6 @@ def backfill(
     )
     for run_date, exports in dates:
         tag = app_payload.dated_tag(run_date)
-        out_dir = exports / "app-payload"
         row = {
             "run_date": run_date,
             "tag": tag,
@@ -182,6 +191,21 @@ def backfill(
                 print(f"[backfill_app_payload] run_date={run_date} tag={tag} skipped=already_published")
                 results.append(row)
                 continue
+            verified_exports = gate.finalized_export_root(
+                state_root, run_date, contract
+            )
+            if verified_exports is None:
+                row["skipped"] = True
+                row["gate"] = "unverified_contract_generation"
+                print(
+                    f"[backfill_app_payload] run_date={run_date} tag={tag} "
+                    "skipped=withheld reason=unverified_contract_generation"
+                )
+                results.append(row)
+                continue
+            exports = verified_exports
+            row["exports"] = str(exports)
+            out_dir = exports / "app-payload"
             if dry_run:
                 manifest_path = out_dir / "manifest.json"
                 if manifest_path.exists():

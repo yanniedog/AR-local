@@ -124,7 +124,22 @@ def _generation_paths(runs_root: Path) -> tuple[Path, ...]:
     pointer = _mapping_file(pointer_path)
     marker_path = _safe_child(state, pointer.get("marker_path"))
     marker = _mapping_file(marker_path)
-    paths = {pointer_path, marker_path, _safe_child(state, marker.get("export_contract_path"))}
+    ledger = ledger_root(state)
+    ledger_head = ledger / "head.json"
+    events_root = ledger / "events"
+    _mapping_file(ledger_head)
+    paths = {
+        pointer_path,
+        marker_path,
+        _safe_child(state, marker.get("export_contract_path")),
+        ledger_head,
+        events_root,
+    }
+    for date_dir in events_root.iterdir():
+        if not date_dir.is_dir():
+            continue
+        paths.add(date_dir)
+        paths.update(path for path in date_dir.iterdir() if path.is_file())
     date = str(pointer.get("observation_date") or "")
     generation = str(pointer.get("generation_id") or "")
     seen: set[str] = set()
@@ -230,7 +245,7 @@ def handler_for(runs_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def _route(self, *, head: bool = False) -> None:
             path = self.path.split("?", 1)[0]
-            if path in {"/", "/status", "/api/status"}:
+            if path in {"/status", "/api/status"}:
                 self._reply(*resolver.resolve(), head=head)
                 return
             if path == "/healthz":
