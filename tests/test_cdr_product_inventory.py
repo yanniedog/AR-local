@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from cdr_raw_attempt_journal import RawAttemptJournal
 
 
 OBSERVED_AT = "2026-09-02T01:02:03Z"
+DETAIL_EVIDENCE = hashlib.sha256(b"{}").hexdigest()
 
 
 def _provider(number: int) -> str:
@@ -80,7 +82,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
             "product_name": "Everyday Saver",
             "dataset": "Savings",
             "legacy_product_key": "Bank One|save-1|TRANS_AND_SAVINGS_ACCOUNTS|Everyday Saver",
-            "evidence_id": "a" * 64,
+            "evidence_id": DETAIL_EVIDENCE,
             "effective_to": "",
         }],
         "rates": [{
@@ -88,6 +90,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
             "rate_index": 1,
             "rate": "0.05",
             "comparison_rate": "",
+            "evidence_id": DETAIL_EVIDENCE,
         }],
         "fees": [],
         "features": [],

@@ -30,6 +30,7 @@ def observation() -> tuple[dict, dict]:
     captured = json.loads(FIXTURE.read_text(encoding="utf-8"))["observations"]
     source = captured["bank_of_melbourne_before_rename"]
     record, source_rate = source["record"], source["record"]["depositRates"][0]
+    evidence_id = source["source_record_sha256"]
     product = {
         "product_uid": PRODUCT_UID,
         "provider_uid": PROVIDER_UID,
@@ -39,7 +40,7 @@ def observation() -> tuple[dict, dict]:
         "legacy_product_key": f"{source['dataset']}|{source['provider']}|{record['productId']}",
         "disposition": "published_full",
         "reason_codes": [],
-        "evidence_ids": [source["source_record_sha256"]],
+        "evidence_ids": [evidence_id],
         "core_valid": True,
         "details_complete": True,
     }
@@ -75,7 +76,9 @@ def observation() -> tuple[dict, dict]:
         },
     }
     product_keys = {key: product[key] for key in ("product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key")}
-    product_document = {**product_keys, "details_complete": True}
+    product_document = {
+        **product_keys, "details_complete": True, "evidence_id": evidence_id
+    }
     rate_keys = {"rate_uid": RATE_UID, "product_uid": PRODUCT_UID, "rate_index": 1, "rate": source_rate["rate"], "comparison_rate": None}
     item_keys = {"product_uid": PRODUCT_UID, "item_group": "eligibility", "item_index": 1}
     fact_keys = {
@@ -99,9 +102,15 @@ def observation() -> tuple[dict, dict]:
     }
     projections = {
         "products": [{**product_keys, "document": product_document}],
-        "rates": [{**rate_keys, "document": dict(rate_keys)}],
-        "items": [{**item_keys, "document": dict(item_keys)}],
-        "product_facts": [{**fact_keys, "document": fact_keys}],
+        "rates": [
+            {**rate_keys, "document": {**rate_keys, "evidence_id": evidence_id}}
+        ],
+        "items": [
+            {**item_keys, "document": {**item_keys, "evidence_id": evidence_id}}
+        ],
+        "product_facts": [
+            {**fact_keys, "document": {**fact_keys, "evidence_id": evidence_id}}
+        ],
         "product_changes": [
             {
                 **change_keys,
@@ -109,6 +118,7 @@ def observation() -> tuple[dict, dict]:
                     **change_keys,
                     "dataset": source["dataset"],
                     "product_id": record["productId"],
+                    "evidence_id": evidence_id,
                 },
             }
         ],
@@ -351,6 +361,15 @@ def test_database_constraints_reject_orphans_type_drift_and_visibility_drift(tmp
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute("INSERT INTO bank_items VALUES(?,?,?,?,?)", (ACCOUNTING_ID, PRODUCT_UID, "fees", "not-an-integer", "{}"))
         connection.rollback()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO bank_product_changes VALUES(?,?,?,?,?,?,?)",
+                (
+                    ACCOUNTING_ID, "orphan-change", PROVIDER_UID, "9" * 64,
+                    "product_changed", None, "{}",
+                ),
+            )
+        connection.rollback()
         with pytest.raises(sqlite3.IntegrityError, match="cannot become non-publishable"):
             connection.execute("UPDATE bank_product_dispositions SET disposition='omitted_valid' WHERE product_uid=?", (PRODUCT_UID,))
         connection.rollback()
@@ -429,6 +448,54 @@ def test_reversed_fact_range_fails_before_disk(tmp_path: Path):
         max_value=1.0,
     )
     with pytest.raises(ObservationDatabaseError, match="range bounds are reversed"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+@pytest.mark.parametrize(
+    "group", ("products", "rates", "items", "product_facts", "product_changes")
+)
+def test_projection_documents_require_the_product_evidence(
+    tmp_path: Path, group: str
+) -> None:
+    accounting, projections = observation()
+    projections[group][0]["document"]["evidence_id"] = "f" * 64
+    with pytest.raises(ObservationDatabaseError, match="accounting-bound evidence"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+def test_overlapping_tier_ranges_fail_before_disk(tmp_path: Path) -> None:
+    accounting, projections = observation()
+    first = projections["product_facts"][0]
+    first.update(
+        fact_id="tier-one", kind="tier", canonical_key="range.amount",
+        value_type="range", value_number=None, min_value=0.0, max_value=100.0,
+    )
+    first["document"].update(
+        fact_id="tier-one", kind="tier", canonical_key="range.amount",
+        value_type="range", value_number=None, min_value=0.0, max_value=100.0,
+        source_pattern="depositRates[].tiers[]",
+        qualifiers_json='{"groupId": "parent"}', unit="AUD",
+    )
+    second = json.loads(json.dumps(first))
+    second.update(fact_id="tier-two", min_value=50.0, max_value=200.0)
+    second["document"].update(
+        fact_id="tier-two", min_value=50.0, max_value=200.0
+    )
+    projections["product_facts"] = [first, second]
+
+    with pytest.raises(ObservationDatabaseError, match="tier ranges overlap"):
         build_observation_database(
             tmp_path / "banks.sqlite",
             accounting=accounting,

@@ -358,7 +358,8 @@ def test_canonical_reconciliation_rejects_unresolved_product_evidence(
         daily_verify._validate_promoted_product_evidence(exports, accounting)
 
 
-def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("include_holder_attempts", (False, True))
+def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path, include_holder_attempts: bool) -> None:
     date = "2026-08-14"
     root = tmp_path / "source"
     create_daily_exports(root, date)
@@ -369,8 +370,10 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
         connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
         banks_path = exports / f"banks-{date}.json"
         banks = json.loads(banks_path.read_text(encoding="utf-8"))
-        for key in ("product_facts", "product_changes", "holder_attempts"):
+        for key in ("product_facts", "product_changes"):
             banks.pop(key)
+        if not include_holder_attempts:
+            banks.pop("holder_attempts")
         expected = {key: len(value) for key, value in banks.items()}
         banks_path.write_text(json.dumps(banks), encoding="utf-8")
         (exports / "dashboard-cache/latest.json").write_text(
@@ -387,7 +390,8 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
     assert report["schema_tables"] == [
         "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
     ]
-    assert report["unpersisted_populations"] == ["failures"]
+    unpersisted = ["failures", "holder_attempts"] if include_holder_attempts else ["failures"]
+    assert report["unpersisted_populations"] == unpersisted
 
 
 def test_reconciliation_rejects_population_unsupported_by_v7(

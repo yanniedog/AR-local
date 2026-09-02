@@ -40,13 +40,19 @@ HISTORICAL_DAILY_SCHEMA_SQL_SHA256 = {
         "schema_meta": "df329d1ca13122b7aafc5ebfade279b177a46ca05b5e266b6c571b29b29da92c",
     },
 }
+_LEGACY_CORE_POPULATIONS = frozenset(
+    {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"}
+)
 HISTORICAL_EXPORT_POPULATIONS = {
-    "6": {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"},
-    "7": {"products", "rates", "fees", "features", "eligibility", "constraints", "failures"},
-    "8": {
-        "products", "rates", "fees", "features", "eligibility", "constraints",
-        "product_facts", "product_changes", "failures", "holder_attempts",
-    },
+    "6": (_LEGACY_CORE_POPULATIONS,),
+    "7": (
+        _LEGACY_CORE_POPULATIONS,
+        _LEGACY_CORE_POPULATIONS | {"holder_attempts"},
+    ),
+    "8": (
+        _LEGACY_CORE_POPULATIONS
+        | {"product_facts", "product_changes", "holder_attempts"},
+    ),
 }
 
 
@@ -166,7 +172,7 @@ def daily_reconciliation_bounded(database: Path) -> dict[str, object]:
         schema_version = str(schema_row[0]) if schema_row else ""
         if schema_sql != HISTORICAL_DAILY_SCHEMA_SQL_SHA256.get(schema_version):
             raise ValueError("daily database definition does not match its schema version")
-        if set(exported) != HISTORICAL_EXPORT_POPULATIONS[schema_version]:
+        if frozenset(exported) not in HISTORICAL_EXPORT_POPULATIONS[schema_version]:
             raise ValueError("daily export populations do not match its schema version")
         run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
         actual = {

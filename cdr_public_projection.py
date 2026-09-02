@@ -48,7 +48,7 @@ PUBLIC_DOCUMENT_FIELDS = {
         "canonical_key", "kind", "materiality", "equivalence", "review_required",
         "cosmetic", "material", "slots_changed", "reasons_json",
         "before_value_json", "after_value_json", "before_signature_json",
-        "after_signature_json",
+        "after_signature_json", "evidence_id",
     },
 }
 _JSON_TEXT_FIELDS = {

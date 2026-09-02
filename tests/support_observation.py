@@ -74,6 +74,9 @@ def write_verified_observation(
     accounting["raw_attempt_journal_digest"] = raw_attempt_journal_digest
     if product_evidence_id is not None:
         accounting["products"][0]["evidence_ids"] = [product_evidence_id]
+        for rows in projections.values():
+            for row in rows:
+                row["document"]["evidence_id"] = product_evidence_id
     observation = build_observation(
         accounting=accounting,
         projections=projections,

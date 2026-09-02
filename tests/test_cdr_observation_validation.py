@@ -88,9 +88,11 @@ def test_rate_fact_projection_rejects_percentage_scaled_value() -> None:
                     "value_text": None,
                     "min_value": None,
                     "max_value": None,
+                    "evidence_id": "e" * 64,
                 }
             ],
             {"a" * 64},
+            evidence_by_uid={"a" * 64: "e" * 64},
             observation_date="2026-09-03",
         )
 
@@ -115,11 +117,14 @@ def test_fact_projection_requires_value_type_shape(value_type, values) -> None:
         "value_text": None,
         "min_value": None,
         "max_value": None,
+        "evidence_id": "e" * 64,
         **values,
     }
     with pytest.raises(ObservationError, match="value_type"):
         _fact_projections(
-            [row], {"a" * 64}, observation_date="2026-09-03"
+            [row], {"a" * 64},
+            evidence_by_uid={"a" * 64: "e" * 64},
+            observation_date="2026-09-03"
         )
 
 
@@ -138,9 +143,11 @@ def test_fact_projection_rejects_reversed_range() -> None:
                     "value_text": None,
                     "min_value": 2,
                     "max_value": 1,
+                    "evidence_id": "e" * 64,
                 }
             ],
             {"a" * 64},
+            evidence_by_uid={"a" * 64: "e" * 64},
             observation_date="2026-09-03",
         )
 

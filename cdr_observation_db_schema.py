@@ -196,7 +196,7 @@ CREATE TABLE bank_product_facts(
 ) STRICT,WITHOUT ROWID;
 CREATE TABLE bank_product_changes(
  accounting_id TEXT NOT NULL,event_id TEXT NOT NULL CHECK(length(trim(event_id))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),event_type TEXT NOT NULL CHECK(length(trim(event_type))>0),canonical_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+ PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id,product_uid) REFERENCES bank_products(accounting_id,product_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) STRICT,WITHOUT ROWID;
 CREATE INDEX idx_bank_provider_observations_state ON bank_provider_observations(accounting_id,state,population_known,provider_uid);
 CREATE INDEX idx_bank_product_dispositions_identity ON bank_product_dispositions(accounting_id,provider_uid,dataset,cdr_product_id,product_uid);
