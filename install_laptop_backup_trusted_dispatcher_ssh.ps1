@@ -84,10 +84,62 @@ function Wait-ArTrustedRedirectedTasks {
   throw "$Label redirected streams did not close before the deadline."
 }
 
+function Test-ArTrustedLanEndpoint {
+  param([Parameter(Mandatory = $true)][string]$Value)
+  $address = $null
+  if (-not [Net.IPAddress]::TryParse($Value,[ref]$address) -or
+      $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $address.ToString() -cne $Value) { return $false }
+  $bytes = $address.GetAddressBytes()
+  ($bytes[0] -eq 10) -or ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) -or
+    ($bytes[0] -eq 192 -and $bytes[1] -eq 168)
+}
+
+function Resolve-ArTrustedSshEndpoint {
+  param(
+    [Parameter(Mandatory = $true)][string]$PythonPath,
+    [Parameter(Mandatory = $true)][string]$ModulePath,
+    [Parameter(Mandatory = $true)][string]$DiscoveryName,
+    [ValidateRange(1,30)][int]$TimeoutSeconds
+  )
+  foreach ($path in @($PythonPath,$ModulePath)) {
+    if ($path.Contains('"') -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'SSH discovery dependency path is invalid.' }
+  }
+  if ($DiscoveryName -cne 'ar.local') { throw 'SSH discovery name differs from the protected contract.' }
+  $start = New-Object Diagnostics.ProcessStartInfo
+  $start.FileName = $PythonPath
+  $start.Arguments = '-I -B "' + $ModulePath + '" --name "' + $DiscoveryName + '"'
+  $start.UseShellExecute = $false; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
+  $start.CreateNoWindow = $true
+  $process = New-Object Diagnostics.Process; $process.StartInfo = $start
+  $job = New-ArTrustedProcessJob
+  $clock = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    if (-not $process.Start()) { throw 'SSH LAN endpoint discovery failed to start.' }
+    Add-ArTrustedProcessToJob -Job $job -Process $process
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync(); $stderrTask = $process.StandardError.ReadToEndAsync()
+    try {
+      Wait-ArTrustedProcess -Job $job -Process $process -TimeoutMilliseconds ($TimeoutSeconds * 1000) -Label 'SSH LAN endpoint discovery'
+    } catch {
+      [void]([Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdoutTask,$stderrTask),5000)); throw
+    }
+    Wait-ArTrustedRedirectedTasks -Job $job -Process $process -Tasks @($stdoutTask,$stderrTask) `
+      -TimeoutMilliseconds ([Math]::Max(0,($TimeoutSeconds * 1000) - [int]$clock.ElapsedMilliseconds)) -Label 'SSH LAN endpoint discovery'
+    $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult()
+    $match = [regex]::Match($stdout,'^(?<endpoint>[0-9.]+)\r?\n$')
+    if ($process.ExitCode -ne 0 -or $stderr -or -not $match.Success -or -not (Test-ArTrustedLanEndpoint $match.Groups['endpoint'].Value)) {
+      throw 'SSH LAN endpoint discovery did not return exactly one valid endpoint.'
+    }
+    $match.Groups['endpoint'].Value
+  } finally {
+    $clock.Stop(); Close-ArTrustedProcessJob -Job $job; $process.Dispose()
+  }
+}
+
 function Invoke-ArTrustedSshScript {
   param(
     [Parameter(Mandatory = $true)][string]$SshPath,
     [Parameter(Mandatory = $true)][string]$HostName,
+    [Parameter(Mandatory = $true)][string]$LogicalHost,
     [Parameter(Mandatory = $true)][string]$UserName,
     [Parameter(Mandatory = $true)][int]$Port,
     [Parameter(Mandatory = $true)][string]$IdentityPath,
@@ -96,9 +148,7 @@ function Invoke-ArTrustedSshScript {
     [ValidateRange(1,120000)][int]$TimeoutMilliseconds = 30000
   )
   if ($Script.Contains("`r")) { throw 'Remote script must contain LF only.' }
-  if ($HostName.Length -gt 253 -or $HostName -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or $HostName.Contains('..')) {
-    throw 'SSH host must be one strict hostname or IPv4 token.'
-  }
+  if (-not (Test-ArTrustedLanEndpoint $HostName) -or $LogicalHost -cne 'ar-local-pi5') { throw 'SSH host must be one authenticated LAN endpoint.' }
   if ($UserName -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $Port -lt 1 -or $Port -gt 65535) { throw 'SSH user or port is invalid.' }
   foreach ($path in @($SshPath,$IdentityPath,$KnownHostsPath)) {
     if ($path.Contains('"') -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'SSH dependency path is invalid.' }
@@ -106,9 +156,11 @@ function Invoke-ArTrustedSshScript {
   $start = New-Object Diagnostics.ProcessStartInfo
   $start.FileName = $SshPath
   $start.Arguments = '-F NUL -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o IdentityAgent=none ' +
-    '-o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no ' +
+    '-o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o GSSAPIAuthentication=no ' +
+    '-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no ' +
     '-o ChallengeResponseAuthentication=no -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=' + $KnownHostsPath + '" ' +
-    '-o GlobalKnownHostsFile=NUL -o UpdateHostKeys=no -o VerifyHostKeyDNS=no -o ForwardAgent=no ' +
+    '-o HostKeyAlias=' + $LogicalHost + ' -o HostKeyAlgorithms=ssh-ed25519 -o GlobalKnownHostsFile=NUL ' +
+    '-o UpdateHostKeys=no -o VerifyHostKeyDNS=no -o ForwardAgent=no ' +
     '-o ClearAllForwardings=yes -o RequestTTY=no -i "' + $IdentityPath + '" -p ' + $Port +
     ' -l ' + $UserName + ' ' + $HostName + ' bash -s'
   $start.UseShellExecute = $false
@@ -237,11 +289,22 @@ function Assert-ArTrustedSshConfiguration {
     [Parameter(Mandatory = $true)][string]$SshSha256,
     [Parameter(Mandatory = $true)][string]$IdentitySha256
   )
+  $script:trustedSshConfig = $null
+  $script:trustedSshEndpoint = $null
   $expectedSsh = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::System)) 'OpenSSH\ssh.exe'
-  if ([string]$Config.ssh_host -cne $HostName -or [string]$Config.ssh_user -cne $UserName -or [int]$Config.ssh_port -ne $Port -or
+  if ([string]$Config.ssh_host -cne $HostName -or $HostName -cne 'ar.local' -or
+      [string]$Config.ssh_logical_host -cne 'ar-local-pi5' -or [int]$Config.ssh_discovery_timeout_seconds -ne 10 -or
+      [string]$Config.ssh_user -cne $UserName -or [int]$Config.ssh_port -ne $Port -or
       [string]$Config.ssh_sha256 -cne $SshSha256 -or [string]$Config.ssh_identity_sha256 -cne $IdentitySha256 -or
       [IO.Path]::GetFullPath([string]$Config.ssh_path) -cne [IO.Path]::GetFullPath($expectedSsh)) {
     throw 'Protected SSH configuration differs from the authenticated installer contract.'
   }
+  if ((Get-ArTrustedSha256 ([string]$Config.python_path)) -cne [string]$Config.python_sha256 -or
+      (Get-ArTrustedSha256 ([string]$Config.ssh_endpoint_path)) -cne [string]$Config.ssh_endpoint_sha256) {
+    throw 'Protected SSH discovery dependency hash mismatch.'
+  }
+  $script:trustedSshEndpoint = Resolve-ArTrustedSshEndpoint -PythonPath ([string]$Config.python_path) `
+    -ModulePath ([string]$Config.ssh_endpoint_path) -DiscoveryName ([string]$Config.ssh_host) `
+    -TimeoutSeconds ([int]$Config.ssh_discovery_timeout_seconds)
   $script:trustedSshConfig = $Config
 }

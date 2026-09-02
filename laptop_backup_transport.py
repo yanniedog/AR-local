@@ -16,6 +16,8 @@ import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO
 
+from laptop_backup_ssh_endpoint import DISCOVERY_NAME, LOGICAL_HOST, lan_ipv4
+
 
 CHUNK = 4 * 1024**2
 SSH_POST_EOF_RE = re.compile(
@@ -28,6 +30,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FIXED_SSH_USER = "pi"
 FIXED_SSH_PORT = 22
 FIXED_SSH_HOST_KEY_BLOB_SHA256 = "84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e"
+FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT = "SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4"
 
 
 def _transport_value(args: object, name: str) -> str:
@@ -63,7 +66,7 @@ def _trusted_contract(platform: str) -> dict[str, object] | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("trusted SSH contract is unavailable") from exc
-    if not isinstance(value, dict) or value.get("schema_version") != 5:
+    if not isinstance(value, dict) or value.get("schema_version") != 6:
         raise ValueError("trusted SSH contract schema is invalid")
     return value
 
@@ -138,10 +141,13 @@ def _validate_pinned_known_host(path: Path, host: str, port: int) -> None:
         key_blob = base64.b64decode(fields[2], validate=True)
     except (ValueError, binascii.Error) as exc:
         raise ValueError("trusted SSH pinned host-key file is invalid") from exc
-    if not hmac.compare_digest(
-        hashlib.sha256(key_blob).hexdigest(), FIXED_SSH_HOST_KEY_BLOB_SHA256
-    ):
-        raise ValueError("trusted SSH host key fingerprint is invalid")
+    digest = hashlib.sha256(key_blob).digest()
+    raw_sha256 = digest.hex()
+    openssh_fingerprint = "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+    if not hmac.compare_digest(raw_sha256, FIXED_SSH_HOST_KEY_BLOB_SHA256):
+        raise ValueError("trusted SSH host key raw-blob SHA-256 is invalid")
+    if not hmac.compare_digest(openssh_fingerprint, FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT):
+        raise ValueError("trusted SSH host key OpenSSH fingerprint is invalid")
 
 
 def ssh_options(args: object, *, scp: bool = False, platform: str | None = None) -> list[str]:
@@ -156,25 +162,31 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
     port = str(getattr(args, "ssh_port", "") or "")
     if not SSH_HOST_RE.fullmatch(host) or ".." in host or not SSH_USER_RE.fullmatch(user):
         raise ValueError("trusted SSH host or user is invalid")
+    lan_ipv4(host)
     if not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError("trusted SSH port is invalid")
     if user != FIXED_SSH_USER or int(port) != FIXED_SSH_PORT:
         raise ValueError("trusted SSH user or port is not the backup contract")
+    logical_host = LOGICAL_HOST if contract is None else _contract_value(contract, "ssh_logical_host")
+    if logical_host != LOGICAL_HOST:
+        raise ValueError("trusted SSH logical host differs from the protected contract")
     if contract is not None and (
-        host != _contract_value(contract, "ssh_host")
+        _contract_value(contract, "ssh_host") != DISCOVERY_NAME
         or user != _contract_value(contract, "ssh_user")
         or int(port) != int(contract.get("ssh_port", 0))
     ):
         raise ValueError("trusted SSH endpoint differs from the protected contract")
     if platform == "nt":
-        _validate_pinned_known_host(Path(known_hosts), host, int(port))
+        _validate_pinned_known_host(Path(known_hosts), logical_host, int(port))
     options = [
         str(executable), "-F", "NUL",
         "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
         "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
-        "-o", "PreferredAuthentications=publickey",
+        "-o", "PreferredAuthentications=publickey", "-o", "PubkeyAuthentication=yes",
+        "-o", "GSSAPIAuthentication=no",
         "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
         "-o", "ChallengeResponseAuthentication=no", "-o", "StrictHostKeyChecking=yes",
+        "-o", f"HostKeyAlias={logical_host}", "-o", "HostKeyAlgorithms=ssh-ed25519",
         "-o", f"UserKnownHostsFile={known_hosts}", "-o", "GlobalKnownHostsFile=NUL",
         "-o", "UpdateHostKeys=no", "-o", "VerifyHostKeyDNS=no",
         "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
@@ -186,13 +198,15 @@ def ssh_options(args: object, *, scp: bool = False, platform: str | None = None)
 
 
 def ssh_command(args: object, *remote: str, platform: str | None = None) -> list[str]:
-    return [*ssh_options(args, platform=platform), _transport_value(args, "host"), *remote]
+    endpoint = lan_ipv4(_transport_value(args, "host"))
+    return [*ssh_options(args, platform=platform), endpoint, *remote]
 
 
 def scp_command(
     args: object, source: Path, remote: str, *, platform: str | None = None
 ) -> list[str]:
-    destination = f"{_transport_value(args, 'ssh_user')}@{_transport_value(args, 'host')}:{remote}"
+    endpoint = lan_ipv4(_transport_value(args, "host"))
+    destination = f"{_transport_value(args, 'ssh_user')}@{endpoint}:{remote}"
     return [*ssh_options(args, scp=True, platform=platform), "-q", str(source), destination]
 
 

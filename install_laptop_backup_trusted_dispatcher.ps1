@@ -51,6 +51,7 @@ $script:deviationAuthorization = $null
 $script:bootstrapGate = $null
 $script:bootstrapGateName = 'Global\ARLocalTrustedBootstrapGate'
 $script:trustedSshConfig = $null
+$script:trustedSshEndpoint = $null
 $sshContractArguments = @{ HostName=$PiHost; UserName=$PiUser; Port=$PiPort; SshSha256=$SshExecutableSha256; IdentitySha256=$SshIdentitySha256 }
 $corePath = Join-Path $PSScriptRoot 'install_laptop_backup_trusted_dispatcher_core.ps1'
 if ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $InstallerSha256) {
@@ -157,7 +158,7 @@ function Assert-ArTrustedBackupQuiescence {
 
 function Invoke-ArTrustedPiIdleCheck {
   param([Parameter(Mandatory = $true)][string]$Phase)
-  if ($null -eq $script:trustedSshConfig) { throw 'Protected SSH configuration is not authenticated.' }
+  if ($null -eq $script:trustedSshConfig -or $null -eq $script:trustedSshEndpoint) { throw 'Protected SSH configuration is not authenticated.' }
   $config = $script:trustedSshConfig
   $lines = @(
     'set -eu','cd /srv/ar-local/AR-local',
@@ -168,7 +169,7 @@ function Invoke-ArTrustedPiIdleCheck {
     'curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null',
     'echo AR_PI_PREFLIGHT_PASS'
   )
-  $result = Invoke-ArTrustedSshScript -SshPath ([string]$config.ssh_path) -HostName ([string]$config.ssh_host) `
+  $result = Invoke-ArTrustedSshScript -SshPath ([string]$config.ssh_path) -HostName $script:trustedSshEndpoint -LogicalHost ([string]$config.ssh_logical_host) `
     -UserName ([string]$config.ssh_user) -Port ([int]$config.ssh_port) -IdentityPath ([string]$config.ssh_identity_path) `
     -KnownHostsPath ([string]$config.ssh_known_hosts_path) -Script (($lines -join "`n") + "`n")
   $output = @($result.Stdout.TrimEnd() -split "`n")

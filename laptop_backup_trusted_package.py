@@ -6,6 +6,7 @@ import argparse
 import base64
 import binascii
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -25,7 +26,11 @@ SSH_USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 SSH_ED25519_KEY = re.compile(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [^\r\n]+)?")
 FIXED_SSH_USER = "pi"
 FIXED_SSH_PORT = 22
+FIXED_SSH_HOST = "ar.local"
+FIXED_SSH_LOGICAL_HOST = "ar-local-pi5"
+FIXED_SSH_DISCOVERY_TIMEOUT_SECONDS = 10
 FIXED_SSH_HOST_KEY_BLOB_SHA256 = "84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e"
+FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT = "SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4"
 
 
 def sha256(path: Path) -> str:
@@ -104,9 +109,15 @@ def pinned_known_host(path: Path, host: str, port: int) -> bytes:
                 key_blob = base64.b64decode(fields[2], validate=True)
             except (ValueError, binascii.Error) as exc:
                 raise ValueError("pinned SSH host key encoding is invalid") from exc
-            if hashlib.sha256(key_blob).hexdigest() != FIXED_SSH_HOST_KEY_BLOB_SHA256:
-                raise ValueError("pinned SSH host key fingerprint is invalid")
-            matches.append(f"{expected} {key}")
+            digest = hashlib.sha256(key_blob).digest()
+            raw_sha256 = digest.hex()
+            openssh_fingerprint = "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+            if not hmac.compare_digest(raw_sha256, FIXED_SSH_HOST_KEY_BLOB_SHA256):
+                raise ValueError("pinned SSH host key raw-blob SHA-256 is invalid")
+            if not hmac.compare_digest(openssh_fingerprint, FIXED_SSH_HOST_KEY_OPENSSH_FINGERPRINT):
+                raise ValueError("pinned SSH host key OpenSSH fingerprint is invalid")
+            alias = FIXED_SSH_LOGICAL_HOST if port == 22 else f"[{FIXED_SSH_LOGICAL_HOST}]:{port}"
+            matches.append(f"{alias} {key}")
     if len(matches) != 1:
         raise ValueError("known_hosts must contain exactly one pinned key for the authenticated SSH host")
     return (matches[0] + "\n").encode("ascii")
@@ -136,8 +147,9 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     if (not SSH_HOST.fullmatch(args.ssh_host) or ".." in args.ssh_host or
             not SSH_USER.fullmatch(args.ssh_user) or not 1 <= args.ssh_port <= 65535):
         raise ValueError("trusted SSH host, user, or port is invalid")
-    if args.ssh_user != FIXED_SSH_USER or args.ssh_port != FIXED_SSH_PORT:
-        raise ValueError("trusted package SSH user or port is not the backup contract")
+    if (args.ssh_host != FIXED_SSH_HOST or args.ssh_user != FIXED_SSH_USER or
+            args.ssh_port != FIXED_SSH_PORT):
+        raise ValueError("trusted package SSH identity is not the backup contract")
     candidate = Path(args.candidate_repo).resolve()
     authority = Path(args.authority_repo).resolve()
     python_root = Path(args.python_root).resolve()
@@ -180,7 +192,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
         tools = {name: Path(getattr(args, name)).resolve() for name in ("git", "ssh", "scp", "whoami")}
         trusted = {
-            "schema_version": 5,
+            "schema_version": 6,
             "authority_path": installed("authority"),
             "atomic_path": installed("laptop_backup_atomic.py"),
             "atomic_sha256": sha256(root / "laptop_backup_atomic.py"),
@@ -194,7 +206,11 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "python_sha256": sha256(root / "python" / "python.exe"),
             "receiver_path": installed("receiver"),
             "scp_path": str(tools["scp"]), "scp_sha256": sha256(tools["scp"]),
+            "ssh_discovery_timeout_seconds": FIXED_SSH_DISCOVERY_TIMEOUT_SECONDS,
+            "ssh_endpoint_path": installed(str(Path("receiver") / "laptop_backup_ssh_endpoint.py")),
+            "ssh_endpoint_sha256": sha256(root / "receiver" / "laptop_backup_ssh_endpoint.py"),
             "ssh_host": args.ssh_host,
+            "ssh_logical_host": FIXED_SSH_LOGICAL_HOST,
             "ssh_identity_path": installed(str(Path("ssh") / "id")),
             "ssh_identity_sha256": hashlib.sha256(identity_bytes).hexdigest(),
             "ssh_known_hosts_path": installed(str(Path("ssh") / "known_hosts")),

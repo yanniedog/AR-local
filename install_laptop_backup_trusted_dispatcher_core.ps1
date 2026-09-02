@@ -22,11 +22,20 @@ function Get-ArTrustedSha256 {
   try { ([BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
   finally { $algorithm.Dispose(); $stream.Dispose() }
 }
-function Get-ArTrustedBytesSha256 {
-  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+function Test-ArTrustedHostKeyIdentity {
+  param(
+    [Parameter(Mandatory = $true)][byte[]]$Bytes,
+    [Parameter(Mandatory = $true)][string]$ExpectedRawSha256,
+    [Parameter(Mandatory = $true)][string]$ExpectedOpenSshFingerprint
+  )
   $algorithm = [Security.Cryptography.SHA256]::Create()
-  try { ([BitConverter]::ToString($algorithm.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant() }
+  try { $digest = $algorithm.ComputeHash($Bytes) }
   finally { $algorithm.Dispose() }
+  $rawSha256 = ([BitConverter]::ToString($digest) -replace '-', '').ToLowerInvariant()
+  $openSshFingerprint = 'SHA256:' + [Convert]::ToBase64String($digest).TrimEnd([char]'=')
+  $rawMatches = $rawSha256 -ceq $ExpectedRawSha256
+  $fingerprintMatches = $openSshFingerprint -ceq $ExpectedOpenSshFingerprint
+  $rawMatches -and $fingerprintMatches
 }
 function Get-ArTrustedTextSha256 {
   param([Parameter(Mandatory = $true)][string]$Text)
@@ -257,11 +266,12 @@ function Assert-ArTrustedChildConfiguration {
     'atomic_path','atomic_sha256','authority_path','control_root','dispatcher_path','dispatcher_sha256',
     'dispatcher_security_path','dispatcher_security_sha256',
     'git_path','git_sha256','python_path','python_sha256','schema_version',
-    'receiver_path','scp_path','scp_sha256','ssh_host','ssh_identity_path','ssh_identity_sha256',
-    'ssh_known_hosts_path','ssh_known_hosts_sha256','ssh_path','ssh_port','ssh_sha256','ssh_user',
+    'receiver_path','scp_path','scp_sha256','ssh_discovery_timeout_seconds',
+    'ssh_endpoint_path','ssh_endpoint_sha256','ssh_host','ssh_identity_path','ssh_identity_sha256',
+    'ssh_known_hosts_path','ssh_known_hosts_sha256','ssh_logical_host','ssh_path','ssh_port','ssh_sha256','ssh_user',
     'whoami_path','whoami_sha256'
   )
-  if ($config.schema_version -ne 5 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
+  if ($config.schema_version -ne 6 -or @(Compare-Object $fields @($config.PSObject.Properties.Name | Sort-Object)).Count -ne 0 -or
       [IO.Path]::GetFullPath([string]$config.control_root) -cne [IO.Path]::GetFullPath($ControlRoot)) {
     throw 'Trusted child configuration identity is invalid.'
   }
@@ -270,6 +280,7 @@ function Assert-ArTrustedChildConfiguration {
     @('dispatcher_path','dispatcher_sha256','laptop_backup_dispatcher.py'),
     @('dispatcher_security_path','dispatcher_security_sha256','laptop_backup_dispatcher_security.py'),
     @('atomic_path','atomic_sha256','laptop_backup_atomic.py'),
+    @('ssh_endpoint_path','ssh_endpoint_sha256','receiver\laptop_backup_ssh_endpoint.py'),
     @('ssh_identity_path','ssh_identity_sha256','ssh\id'),
     @('ssh_known_hosts_path','ssh_known_hosts_sha256','ssh\known_hosts')
   )
@@ -287,16 +298,18 @@ function Assert-ArTrustedChildConfiguration {
     }
   }
   $sshHost = [string]$config.ssh_host; $sshUser = [string]$config.ssh_user; $sshPort = [int]$config.ssh_port
-  if ($sshUser -cne 'pi' -or $sshPort -ne 22 -or $sshHost.Length -gt 253 -or $sshHost -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$' -or
-      $sshHost.Contains('..') -or $sshUser -notmatch '^[a-z_][a-z0-9_-]{0,31}$' -or $sshPort -lt 1 -or $sshPort -gt 65535) {
+  if ($sshHost -cne 'ar.local' -or [string]$config.ssh_logical_host -cne 'ar-local-pi5' -or
+      $sshUser -cne 'pi' -or $sshPort -ne 22 -or [int]$config.ssh_discovery_timeout_seconds -ne 10) {
     throw 'Trusted child SSH endpoint identity is invalid.'
   }
-  $knownHostToken = if ($sshPort -eq 22) { $sshHost } else { "[$sshHost]:$sshPort" }
+  $knownHostToken = if ($sshPort -eq 22) { [string]$config.ssh_logical_host } else { "[$([string]$config.ssh_logical_host)]:$sshPort" }
   $knownHostText = [IO.File]::ReadAllText((Join-Path $Root 'ssh\known_hosts'),[Text.Encoding]::ASCII)
   $knownHostMatch = [regex]::Match($knownHostText,('^' + [regex]::Escape($knownHostToken) + ' ssh-ed25519 (?<key>[A-Za-z0-9+/]+={0,2})(?: [^\r\n]+)?\n$'))
   if (-not $knownHostMatch.Success -or
-      (Get-ArTrustedBytesSha256 ([Convert]::FromBase64String($knownHostMatch.Groups['key'].Value))) -cne '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e') {
-    throw 'Trusted child SSH host-key fingerprint is invalid.'
+      -not (Test-ArTrustedHostKeyIdentity -Bytes ([Convert]::FromBase64String($knownHostMatch.Groups['key'].Value)) `
+        -ExpectedRawSha256 '84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e' `
+        -ExpectedOpenSshFingerprint 'SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4')) {
+    throw 'Trusted child SSH host-key identity is invalid.'
   }
   $system = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
   $programRoots = @([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles),[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) | Where-Object { $_ }
