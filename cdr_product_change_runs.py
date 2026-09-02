@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-from contextlib import closing
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cdr_clean_export import load_json, parse_banks_run
 from cdr_finalization import is_finalized_export_root, verified_pointer_export_root
-from cdr_observation_db import APPLICATION_ID, SCHEMA_VERSION
+from cdr_observation import load_verified_observation
 from cdr_product_facts import NORMALIZATION_VERSION
 
 
@@ -53,86 +51,32 @@ def _export_root(run_root: Path) -> Path:
     return run_root if run_root.name == "_exports" else run_root / "_exports"
 
 
-def _sqlite_uri(path: Path) -> str:
-    return f"{path.expanduser().resolve().as_uri()}?mode=ro&immutable=1"
-
-
-def _canonical_database(path: Path, expected_date: str) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        with sqlite3.connect(_sqlite_uri(path), uri=True) as connection:
-            application = connection.execute("PRAGMA application_id").fetchone()[0]
-            version = connection.execute("PRAGMA user_version").fetchone()[0]
-            normalization = connection.execute(
-                "SELECT value FROM schema_meta WHERE key='normalization_version'"
-            ).fetchone()
-            observed = connection.execute("SELECT observation_date FROM runs").fetchall()
-    except sqlite3.Error:
-        return False
-    return (
-        application == APPLICATION_ID
-        and version == SCHEMA_VERSION
-        and normalization == (NORMALIZATION_VERSION,)
-        and observed == [(expected_date,)]
-    )
-
-
-def _iter_sqlite_fact_groups(
-    export_root: Path,
-) -> Iterator[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
-    database = export_root / "local-cdr.sqlite"
-    with closing(sqlite3.connect(_sqlite_uri(database), uri=True)) as connection:
-        rows = connection.execute(
-            "SELECT product_uid,fact_id,document_json FROM bank_product_facts "
-            "ORDER BY product_uid,fact_id"
+def _canonical_observation(
+    export_root: Path, expected_date: str
+) -> Optional[Mapping[str, Any]]:
+    paths = tuple(
+        export_root / name
+        for name in (
+            "observation-v1.json",
+            "product-accounting-v1.json",
+            "local-cdr.sqlite",
         )
-        current_uid: str | None = None
-        current_key: Tuple[str, str, str] | None = None
-        current: List[Dict[str, Any]] = []
-        for uid, _fact_id, document_json in rows:
-            try:
-                fact = json.loads(document_json)
-            except (TypeError, json.JSONDecodeError) as error:
-                raise ValueError("SQLite fact document is invalid JSON") from error
-            if not isinstance(fact, dict):
-                raise ValueError("SQLite fact document must be an object")
-            key = _product_key(fact)
-            if current_uid is not None and uid != current_uid:
-                assert current_key is not None
-                yield current_key, current
-                current = []
-            if current_uid == uid and key != current_key:
-                raise ValueError("one product UID maps to conflicting fact identities")
-            current_uid, current_key = str(uid), key
-            current.append(fact)
-        if current_uid is not None:
-            assert current_key is not None
-            yield current_key, current
-
-
-def _observation_facts(export_root: Path) -> Optional[List[Dict[str, Any]]]:
-    path = export_root / "observation-v1.json"
-    if not path.is_file():
+    )
+    observation_path, accounting_path, _database_path = paths
+    if not observation_path.exists() and not accounting_path.exists():
         return None
-    payload = load_json(path)
+    if not all(path.is_file() for path in paths):
+        raise ValueError(f"canonical observation is incomplete: {export_root}")
+    try:
+        observation, _accounting = load_verified_observation(export_root)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"canonical observation failed verification: {export_root}") from error
     if (
-        not isinstance(payload, Mapping)
-        or payload.get("schema_version") != 1
-        or payload.get("normalization_version") != NORMALIZATION_VERSION
-        or payload.get("observation_date") != run_date(export_root)
+        observation.get("observation_date") != expected_date
+        or observation.get("normalization_version") != NORMALIZATION_VERSION
     ):
-        raise ValueError(f"canonical observation is incompatible: {path}")
-    supplied = payload.get("product_facts")
-    if not isinstance(supplied, list):
-        raise ValueError(f"canonical observation lacks product facts: {path}")
-    facts = []
-    for row in supplied:
-        document = row.get("document") if isinstance(row, Mapping) else None
-        if not isinstance(document, dict):
-            raise ValueError(f"canonical observation fact is invalid: {path}")
-        facts.append(document)
-    return facts
+        raise ValueError(f"canonical observation is incompatible: {export_root}")
+    return observation
 
 
 def _legacy_export(run_root: Path) -> Optional[Path]:
@@ -169,13 +113,11 @@ def iter_run_fact_groups(
     run_root: Path,
 ) -> Iterable[Tuple[Tuple[str, str, str], List[Dict[str, Any]]]]:
     export_root = _export_root(run_root)
-    database = export_root / "local-cdr.sqlite"
-    if _canonical_database(database, run_date(run_root)):
-        yield from _iter_sqlite_fact_groups(export_root)
-        return
-    facts = _observation_facts(export_root)
-    if facts is not None:
-        grouped = _group_facts(facts)
+    observation = _canonical_observation(export_root, run_date(run_root))
+    if observation is not None:
+        grouped = _group_facts(
+            row["document"] for row in observation["product_facts"]
+        )
     else:
         legacy = _legacy_export(run_root)
         payload = _legacy_payload(legacy) if legacy else None
@@ -196,12 +138,16 @@ def _default_state_dir(run_root: Path) -> Path:
     return _day_root(run_root).parent.parent / "state"
 
 
-def _canonical_export_ready(export_root: Path, observation_date: str) -> bool:
-    return (
-        (export_root / "observation-v1.json").is_file()
-        and (export_root / "product-accounting-v1.json").is_file()
-        and _canonical_database(export_root / "local-cdr.sqlite", observation_date)
-    )
+def _canonical_export_ready(
+    export_root: Path, observation_date: str, state_dir: Optional[Path] = None
+) -> bool:
+    try:
+        state = state_dir or _default_state_dir(export_root)
+        return is_finalized_export_root(
+            export_root, state, observation_date
+        ) and _canonical_observation(export_root, observation_date) is not None
+    except (OSError, ValueError):
+        return False
 
 
 def _finalized_export_root(
@@ -212,7 +158,11 @@ def _finalized_export_root(
     state = (state_dir or _default_state_dir(run_root)).expanduser().resolve()
     selected = verified_pointer_export_root(state)
     if selected is not None and _day_root(selected).resolve() == day.resolve():
-        return selected if _canonical_export_ready(selected, observation_date) else None
+        return (
+            selected
+            if _canonical_export_ready(selected, observation_date, state)
+            else None
+        )
 
     revisions = day / "_revisions"
     if revisions.is_dir():
@@ -223,7 +173,7 @@ def _finalized_export_root(
             if is_finalized_export_root(candidate, state, observation_date):
                 return (
                     candidate
-                    if _canonical_export_ready(candidate, observation_date)
+                    if _canonical_export_ready(candidate, observation_date, state)
                     else None
                 )
 
@@ -231,10 +181,9 @@ def _finalized_export_root(
     observation = export_root / "observation-v1.json"
     accounting = export_root / "product-accounting-v1.json"
     database = export_root / "local-cdr.sqlite"
-    canonical_database = _canonical_database(database, observation_date)
-    canonical_present = observation.is_file() or accounting.is_file() or canonical_database
+    canonical_present = observation.exists() or accounting.exists()
     if canonical_present:
-        if not _canonical_export_ready(export_root, observation_date):
+        if not _canonical_export_ready(export_root, observation_date, state):
             return None
         return (
             export_root

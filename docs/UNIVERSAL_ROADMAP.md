@@ -31,7 +31,7 @@ Current artifacts under each `_exports` directory are exactly:
 
 - `observation-v1.json`
 - `product-accounting-v1.json`
-- `local-cdr.sqlite` (schema v10, immutable and sidecar-free)
+- `local-cdr.sqlite` (schema v11, immutable and sidecar-free)
 
 Historical exports and `dashboard-cache` trees are preservation evidence only.
 Current discovery, finalization, payload publication, and status must never

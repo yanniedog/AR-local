@@ -438,6 +438,26 @@ def json_object(path: Path) -> dict[str, object]:
     return value
 
 
+def _selected_state_file(state: Path, value: object, label: str) -> Path:
+    text = str(value or "")
+    relative = PurePosixPath(text)
+    if not text or "\\" in text or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"{label} path is unsafe")
+    candidate = state
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise ValueError(f"{label} path is unsafe")
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(state.resolve(strict=True))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"{label} is missing") from error
+    if not resolved.is_file():
+        raise ValueError(f"{label} is missing")
+    return resolved
+
+
 def observation_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]], dict[str, object]]:
     runs = Path(args.runs_root)
     state = Path(args.state_root)
@@ -473,6 +493,12 @@ def observation_sources(args: argparse.Namespace) -> tuple[list[tuple[Path, str]
         if candidate.get("observation_date") == date:
             latest = candidate
             selected["data/state/observation-pointers-v2/latest-observation.json"] = pointer
+            selected_marker = _selected_state_file(
+                state, candidate.get("marker_path"), "selected observation marker"
+            )
+            selected[
+                f"data/state/{selected_marker.relative_to(state.resolve()).as_posix()}"
+            ] = selected_marker
             head = state / "ledger-v2/head.json"
             if head.is_file() and not head.is_symlink():
                 selected["data/state/ledger-v2/head.json"] = head

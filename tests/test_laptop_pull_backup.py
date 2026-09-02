@@ -338,9 +338,9 @@ def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None
 
     report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
-    assert report["schema_version"] == "10"
+    assert report["schema_version"] == "11"
     assert report["validation_mode"] == (
-        "canonical_observation_and_immutable_sqlite_v10"
+        "canonical_observation_and_immutable_sqlite_v11"
     )
 
 

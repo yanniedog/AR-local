@@ -20,6 +20,13 @@ def validate_coverage(value: Any) -> None:
         raise ValueError("coverage.observed_on is required")
     if not isinstance(value.get("counts"), Mapping):
         raise ValueError("coverage.counts is required")
+    core_only = value["counts"].get("products_published_core_only")
+    if core_only is not None and (
+        isinstance(core_only, bool) or not isinstance(core_only, int) or core_only < 0
+    ):
+        raise ValueError(
+            "coverage.counts.products_published_core_only must be a non-negative integer"
+        )
     if not isinstance(value.get("sections"), Mapping):
         raise ValueError("coverage.sections is required")
     if not isinstance(value.get("provider_failures"), list):

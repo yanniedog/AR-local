@@ -152,7 +152,10 @@ def _generation_paths(runs_root: Path) -> tuple[Path, ...]:
         source = _safe_child(state.parent, contract.get("source_path"))
         paths.update({event_path, contract_path})
         for artifact in contract["artifacts"]:
-            paths.add(_safe_child(source, artifact["path"]))
+            artifact_path = _safe_child(source, artifact["path"])
+            paths.add(artifact_path)
+            if artifact_path.suffix == ".sqlite":
+                paths.update(Path(f"{artifact_path}{suffix}") for suffix in ("-journal", "-wal", "-shm"))
         if event.get("event_type") != "revision_finalized":
             break
         generation = str(event.get("parent_generation_id") or "")
@@ -171,7 +174,13 @@ def _path_stamps(paths: tuple[Path, ...]) -> tuple[tuple[int, ...], ...]:
             value.st_ctime_ns,
         )
 
-    return tuple(fields(path.lstat()) + fields(path.stat()) for path in paths)
+    stamps = []
+    for path in paths:
+        try:
+            stamps.append(fields(path.lstat()) + fields(path.stat()))
+        except FileNotFoundError:
+            stamps.append((-1,))
+    return tuple(stamps)
 
 
 class _StatusResolver:

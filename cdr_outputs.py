@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
@@ -24,14 +25,18 @@ def product_change_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     for event in report.get("events") or []:
         if not isinstance(event, Mapping):
             continue
-        rows.append(
-            {
+        before = event.get("before") if isinstance(event.get("before"), Mapping) else {}
+        after = event.get("after") if isinstance(event.get("after"), Mapping) else {}
+        identity = after or before
+        row = {
                 "run_date": report.get("run_date") or report.get("current_run_date"),
                 "previous_run_date": report.get("previous_run_date"),
                 "event_id": event.get("event_id"),
                 "dataset": event.get("dataset"),
                 "provider": event.get("provider"),
+                "provider_uid": identity.get("provider_uid"),
                 "product_id": event.get("product_id"),
+                "product_uid": identity.get("product_uid"),
                 "product_name": event.get("product_name"),
                 "event_type": event.get("event_type"),
                 "canonical_key": event.get("canonical_key"),
@@ -53,7 +58,20 @@ def product_change_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
                     )
                 },
             }
-        )
+        if event.get("event_type") in {"product_removed", "fact_removed"}:
+            evidence = before.get("evidence_id")
+            if (
+                not isinstance(evidence, str)
+                or len(evidence) != 64
+                or any(char not in "0123456789abcdef" for char in evidence)
+            ):
+                evidence = hashlib.sha256(
+                    json.dumps(
+                        before, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ).encode("utf-8")
+                ).hexdigest()
+            row["historical_evidence_id"] = evidence
+        rows.append(row)
     return rows
 
 

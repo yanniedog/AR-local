@@ -448,13 +448,30 @@ def sqlite_checks(root: Path, *, required: bool = True) -> list[dict[str, object
     return reports
 
 
+def _restored_child(root: Path, value: object, label: str, *, directory: bool) -> Path:
+    text = str(value or "")
+    relative = PurePosixPath(text)
+    if not text or "\\" in text or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"restored {label} path is unsafe")
+    unresolved = root / Path(*relative.parts)
+    component = root
+    for part in relative.parts:
+        component /= part
+        if component.is_symlink():
+            raise ValueError(f"restored {label} path is unsafe")
+    try:
+        resolved = unresolved.resolve(strict=True)
+    except OSError as error:
+        raise ValueError(f"restored {label} is missing") from error
+    expected_type = resolved.is_dir() if directory else resolved.is_file()
+    if not is_within(resolved, root) or not expected_type:
+        raise ValueError(f"restored {label} is missing")
+    return resolved
+
+
 def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, object]:
     date = str(manifest["observation_date"])
     exports = root / f"data/runs/{date}/_exports"
-    database = exports / "local-cdr.sqlite"
-    reconciliation = daily_reconciliation_bounded(database)
-    if reconciliation["run_date"] != date:
-        raise ValueError("restored daily database date mismatch")
     state = root / "data/state"
     marker_paths = sorted((state / "completion-markers-v2" / date).glob("*.json"))
     marker_results = []
@@ -471,28 +488,10 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
         pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
         if pointer.get("observation_date") != date:
             raise ValueError("restored latest observation pointer date mismatch")
-        pointer_value = str(pointer.get("marker_path") or "")
-        relative_posix = PurePosixPath(pointer_value)
-        if (
-            not pointer_value
-            or "\\" in pointer_value
-            or relative_posix.is_absolute()
-            or ".." in relative_posix.parts
-        ):
-            raise ValueError("restored latest pointer marker path is unsafe")
-        relative = Path(*relative_posix.parts)
-        unresolved = state / relative
-        component = state
-        for part in relative.parts:
-            component /= part
-            if component.is_symlink():
-                raise ValueError("restored latest pointer marker path is unsafe")
-        try:
-            marker_path = unresolved.resolve(strict=True)
-        except OSError as exc:
-            raise ValueError("restored latest pointer marker is missing") from exc
-        if not is_within(marker_path, state) or not marker_path.is_file():
-            raise ValueError("restored latest pointer marker is missing")
+        marker_path = _restored_child(
+            state, pointer.get("marker_path"), "latest pointer marker", directory=False
+        )
+        relative = marker_path.relative_to(state.resolve())
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
         if not isinstance(marker, Mapping) or not _completion_marker_valid(marker, state, date, relative):
             raise ValueError("restored latest pointer marker is invalid")
@@ -500,9 +499,22 @@ def observation_checks(root: Path, manifest: Mapping[str, object]) -> dict[str, 
             raise ValueError("restored latest pointer does not match its marker")
         if not any(item["path"] == relative.as_posix() for item in marker_results):
             marker_results.append({"path": relative.as_posix(), "valid": True})
+        export_path = pointer.get("export_path")
+        if export_path:
+            exports = _restored_child(
+                state.parent, export_path, "latest pointer export", directory=True
+            )
+            date_root = (state.parent / "runs" / date).resolve(strict=True)
+            if exports.name != "_exports" or not is_within(exports, date_root):
+                raise ValueError("restored latest pointer export is outside its date")
+        elif marker_path.name != f"{date}.done.json":
+            raise ValueError("restored revision pointer lacks its exact export path")
         pointer_result = {"valid": True, "generation_id": pointer["generation_id"]}
     if manifest.get("is_latest_observation") and pointer_result is None:
         raise ValueError("latest observation archive lacks its bound v2 pointer")
+    reconciliation = daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+    if reconciliation["run_date"] != date:
+        raise ValueError("restored daily database date mismatch")
     return {"reconciliation": reconciliation, "completion_markers": marker_results, "latest_pointer": pointer_result}
 
 

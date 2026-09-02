@@ -156,14 +156,41 @@ def test_fact_projection_rejects_reversed_range() -> None:
     "field,value",
     [
         ("last_updated", "not-a-date"),
-        ("effective_from", "2026-05-27"),
-        ("effective_to", "2026-05-26T00:00:01+10:00"),
     ],
 )
 def test_public_source_dates_are_parseable_and_bounded(field, value) -> None:
     accounting, projections = valid_observation_inputs()
     projections["products"][0]["document"][field] = value
     with pytest.raises(ObservationDatabaseError, match="public"):
+        build_observation(
+            accounting=accounting,
+            projections=projections,
+            observed_at="2026-05-24T15:00:00Z",
+            normalization_version="test-v1",
+        )
+
+
+def test_future_effective_dates_are_valid_when_ordered() -> None:
+    accounting, projections = valid_observation_inputs()
+    product = projections["products"][0]["document"]
+    product["effective_from"] = "2026-05-27"
+    product["effective_to"] = "2026-05-28T00:00:01+10:00"
+
+    build_observation(
+        accounting=accounting,
+        projections=projections,
+        observed_at="2026-05-24T15:00:00Z",
+        normalization_version="test-v1",
+    )
+
+
+def test_reversed_effective_dates_are_rejected() -> None:
+    accounting, projections = valid_observation_inputs()
+    product = projections["products"][0]["document"]
+    product["effective_from"] = "2026-05-28"
+    product["effective_to"] = "2026-05-27"
+
+    with pytest.raises(ObservationDatabaseError, match="effective"):
         build_observation(
             accounting=accounting,
             projections=projections,

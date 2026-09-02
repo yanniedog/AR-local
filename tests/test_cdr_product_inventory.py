@@ -121,11 +121,24 @@ def _inputs(tmp_path: Path) -> tuple[Path, dict, dict]:
         body=json.dumps(register).encode(),
         context={"phase": "register_discovery"},
     )
-    for index, (provider, product_id_value) in enumerate(
-        (("Bank One", "save-1"), ("Bank Two", "home-1")), 1
+    for index, (provider, product_id_value, product_category) in enumerate(
+        (
+            ("Bank One", "save-1", "TRANS_AND_SAVINGS_ACCOUNTS"),
+            ("Bank Two", "home-1", "RESIDENTIAL_MORTGAGES"),
+        ),
+        1,
     ):
         body = json.dumps(
-            {"data": {"products": [{"productId": product_id_value}]}}
+            {
+                "data": {
+                    "products": [
+                        {
+                            "productId": product_id_value,
+                            "productCategory": product_category,
+                        }
+                    ]
+                }
+            }
         ).encode()
         journal.record(
             f"index-{index}",
@@ -288,6 +301,24 @@ def test_changed_product_detail_fails_journal_binding(tmp_path: Path) -> None:
         build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
 
 
+def test_path_derived_dataset_must_match_journal_classification(tmp_path: Path) -> None:
+    root, banks, status = _inputs(tmp_path)
+    source = next((root / "banks/Savings/Bank One").rglob("product-id.txt")).parent
+    destination = root / "banks/TD/Bank One/Everyday Saver" / source.name
+    destination.parent.mkdir(parents=True)
+    source.rename(destination)
+    moved_uid = product_uid(P1, "TD", "save-1")
+    banks["products"][0].update(
+        dataset="TD",
+        product_uid=moved_uid,
+        legacy_product_key="Bank One|save-1|TERM_DEPOSITS|Everyday Saver",
+    )
+    banks["rates"][0]["product_uid"] = moved_uid
+
+    with pytest.raises(ValueError, match="dataset does not match"):
+        build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
+
+
 def test_staged_provider_identity_must_match_register_journal(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
     banks["provider_observations"][0]["data_holder_brand_id"] = "substituted-brand"
@@ -296,7 +327,7 @@ def test_staged_provider_identity_must_match_register_journal(tmp_path: Path) ->
         build_product_inventory(root, banks, status=status, observed_at=OBSERVED_AT)
 
 
-def test_removed_provider_change_is_not_published_without_a_visible_product(
+def test_removed_provider_change_preserves_historical_identity_and_evidence(
     tmp_path: Path,
 ) -> None:
     root, banks, status = _inputs(tmp_path)
@@ -312,6 +343,7 @@ def test_removed_provider_change_is_not_published_without_a_visible_product(
             "dataset": "Savings",
             "product_id": "old-1",
             "event_type": "product_removed",
+            "historical_evidence_id": "f" * 64,
             "before": {
                 "provider_uid": removed_provider,
                 "product_uid": old_product,
@@ -330,8 +362,11 @@ def test_removed_provider_change_is_not_published_without_a_visible_product(
         normalization_version="cdr-product-facts-v1",
     )
 
-    assert rows == []
-    assert result.verification.counts["bank_product_changes"] == 0
+    assert len(rows) == 1
+    assert rows[0]["provider_uid"] == removed_provider
+    assert rows[0]["product_uid"] == old_product
+    assert rows[0]["document"]["historical_evidence_id"] == "f" * 64
+    assert result.verification.counts["bank_product_changes"] == 1
 
 
 def test_observation_and_sqlite_contain_only_publishable_products(tmp_path: Path) -> None:

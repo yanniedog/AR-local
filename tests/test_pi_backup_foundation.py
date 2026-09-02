@@ -597,7 +597,7 @@ def test_daily_export_reconciliation_binds_canonical_observation(tmp_path: Path)
     assert not Path(f"{database}-shm").exists()
     record, findings = restore_verification._verify_daily_database(database, tmp_path)
     assert findings == []
-    assert record["schema_version"] == 10
+    assert record["schema_version"] == 11
     assert record["export_reconciliation"]["counts"] == observation["row_counts"]
     with database.open("ab") as stream:
         stream.write(b"tamper")

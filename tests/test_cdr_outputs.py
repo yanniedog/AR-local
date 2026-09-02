@@ -128,7 +128,16 @@ def _captured_run(
         context={"phase": "register_discovery"},
     )
     index_body = json.dumps(
-        {"data": {"products": [{"productId": "save-1"}]}}
+        {
+            "data": {
+                "products": [
+                    {
+                        "productId": "save-1",
+                        "productCategory": "TRANS_AND_SAVINGS_ACCOUNTS",
+                    }
+                ]
+            }
+        }
     ).encode()
     journal.record(
         "index:save-1",
@@ -223,7 +232,7 @@ def test_build_outputs_is_minimal_deterministic_and_verified(tmp_path: Path) -> 
     assert observation["row_counts"]["rates"] == 1
     verification = verify_observation_database(exports / "local-cdr.sqlite")
     assert verification.counts["bank_products"] == 1
-    assert SCHEMA_VERSION == 10
+    assert SCHEMA_VERSION == 11
     assert not list(exports.glob("*-wal"))
     assert not list(exports.glob("*-shm"))
     assert not (exports / "dashboard-cache").exists()
@@ -274,6 +283,7 @@ def test_canonical_outputs_finalize_only_with_promoted_verified_evidence(
     assert contract["normalization_version"] == "cdr-product-facts-2"
     assert contract["coverage"]["products_discovered"] == 1
     assert contract["coverage"]["products_published"] == 1
+    assert contract["coverage"]["products_published_core_only"] == 0
     assert contract["coverage"]["reconciliation_status"] == "reconciled"
     tomorrow = tmp_path / "2026-09-03"
     tomorrow.mkdir()
@@ -368,3 +378,23 @@ def test_mobile_payload_is_deterministic_and_bound_to_observation(tmp_path: Path
     assert len(rate["product_uid"]) == 64
     assert core["coverage"]["observed_at"] == OBSERVED_AT
     assert core["coverage"]["counts"]["products_discovered"] == 1
+
+
+def test_mobile_payload_discloses_core_only_product_details(tmp_path: Path) -> None:
+    run = _captured_run(tmp_path, malformed_optional=True)
+    build_outputs(run)
+    manifest = app_payload.build_payload(run / "_exports", tmp_path / "payload")
+    core = json.loads(
+        gzip.decompress(
+            (tmp_path / "payload" / manifest["files"]["core"]["name"]).read_bytes()
+        )
+    )
+    details = json.loads(
+        gzip.decompress(
+            (tmp_path / "payload" / manifest["files"]["details"]["name"]).read_bytes()
+        )
+    )
+
+    assert core["coverage"]["counts"]["products_published_core_only"] == 1
+    product = next(iter(details["products"].values()))
+    assert product["details_complete"] is False

@@ -29,7 +29,7 @@ CDR endpoints
   -> cdr_daily.py / ingest modules
   -> immutable attempt evidence and append-only ledger
   -> runs/<date>/_exports
-  -> canonical ObservationV1 + create-once SQLite v10
+  -> canonical ObservationV1 + create-once SQLite v11
   -> app_payload.py
   -> GitHub app-payload releases consumed by AR-app
 ```

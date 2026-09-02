@@ -4,6 +4,7 @@ from copy import deepcopy
 import gc
 import json
 from pathlib import Path
+import sqlite3
 import weakref
 
 import pytest
@@ -584,7 +585,7 @@ def test_previous_finalized_run_requires_completion_manifest_and_artifacts(tmp_p
 
 
 def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     rejected = tmp_path / "runs" / "2026-08-12"
     export = rejected / "_exports"
@@ -593,8 +594,6 @@ def test_previous_finalized_run_rejects_unfinalized_canonical_outputs(
         (export / name).write_bytes(b"unfinalized")
     current = tmp_path / "runs" / "2026-08-13"
     current.mkdir()
-    monkeypatch.setattr(change_runs, "_canonical_database", lambda *_args: True)
-
     assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
 
 
@@ -606,6 +605,33 @@ def test_previous_finalized_run_rejects_a_stray_canonical_database(tmp_path: Pat
     current.mkdir()
 
     assert change_runs.previous_finalized_run(current, state_dir=tmp_path / "state") is None
+
+
+def test_previous_finalized_run_fully_reverifies_canonical_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observation_date = "2026-09-02"
+    write_finalized_observation(tmp_path, observation_date=observation_date)
+    database = tmp_path / f"runs/{observation_date}/_exports/local-cdr.sqlite"
+    with sqlite3.connect(database) as connection:
+        document = json.loads(
+            connection.execute(
+                "SELECT document_json FROM bank_product_facts LIMIT 1"
+            ).fetchone()[0]
+        )
+        document["value_text"] = "tampered but schema-compatible"
+        connection.execute(
+            "UPDATE bank_product_facts SET document_json = ?",
+            (json.dumps(document, sort_keys=True, separators=(",", ":")),),
+        )
+        connection.commit()
+    current = tmp_path / "runs/2026-09-03"
+    current.mkdir()
+    monkeypatch.setattr(change_runs, "is_finalized_export_root", lambda *_args: True)
+
+    assert change_runs.previous_finalized_run(
+        current, state_dir=tmp_path / "state"
+    ) is None
 
 
 def test_normalization_version_mismatch_is_not_compared_as_product_churn(tmp_path: Path) -> None:

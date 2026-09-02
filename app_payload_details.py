@@ -152,6 +152,7 @@ def build_details(products: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             record = {}
         entry = compact(
             {
+                "details_complete": product.get("details_complete"),
                 "description": product.get("description") or record.get("description"),
                 "last_updated": product.get("last_updated"),
                 "fees": _fee_items(record),

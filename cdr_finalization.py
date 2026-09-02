@@ -199,6 +199,7 @@ def _observation_coverage(
     coverage = {
         "products_discovered": products["discovered"],
         "products_published": products["consumer_visible"],
+        "products_published_core_only": products["published_core_only"],
         "products_omitted": products["omitted_valid"],
         "products_quarantined": products["quarantined_invalid"],
         "eligible_rate_rows": rows["rates"],

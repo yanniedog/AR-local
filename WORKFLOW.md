@@ -29,7 +29,7 @@ proof, and exact candidate SHA.
 3. Confirm the Pi checkout is clean and equals that SHA.
 4. Run `npm run verify:pi`.
 5. Confirm `ar-local-status.service`, nginx, ingest timers, listener scope, and
-   current ObservationV1/accounting/SQLite v10 evidence.
+   current ObservationV1/accounting/SQLite v11 evidence.
 
 Never deploy over a dirty Pi checkout or use destructive rollback. A passing
 local suite is not runtime proof.

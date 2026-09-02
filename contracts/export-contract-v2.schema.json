@@ -102,6 +102,7 @@
       ],
       "properties": {
         "products_discovered": { "type": "integer", "minimum": 0 },
+        "products_published_core_only": { "type": "integer", "minimum": 0 },
         "eligible_rate_rows": { "type": "integer", "minimum": 0 },
         "providers_registered": { "type": "integer", "minimum": 0 },
         "providers_attempted": { "type": "integer", "minimum": 0 },

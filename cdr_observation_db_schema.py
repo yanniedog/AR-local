@@ -1,4 +1,4 @@
-"""SQLite v10 schema and validation constants for canonical observations."""
+"""SQLite v11 schema and validation constants for canonical observations."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 
 from cdr_contracts import PROVIDER_UID_RE
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 APPLICATION_ID = 1_095_912_515  # ASCII "ARLC"
 FAILURE_STAGES = (
     "after_schema", "after_accounting", "after_projections", "after_commit",
@@ -191,13 +191,15 @@ CREATE TABLE bank_product_facts(
  OR(value_type IN('money','rate','number') AND value_boolean IS NULL AND value_number IS NOT NULL AND value_text IS NULL AND min_value IS NULL AND max_value IS NULL)
  OR(value_type IN('duration','enum','text') AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NOT NULL AND min_value IS NULL AND max_value IS NULL)
  OR(value_type='range' AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NULL AND(min_value IS NOT NULL OR max_value IS NOT NULL))),
- CHECK(value_number IS NULL OR(kind<>'rate' AND value_type<>'rate')OR value_number BETWEEN 0 AND 1),
+ CHECK(value_number IS NULL OR value_type<>'rate' OR value_number BETWEEN 0 AND 1),
  CHECK(min_value IS NULL OR max_value IS NULL OR min_value<=max_value)
 ) STRICT,WITHOUT ROWID;
 CREATE TABLE bank_product_changes(
  accounting_id TEXT NOT NULL,event_id TEXT NOT NULL CHECK(length(trim(event_id))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),event_type TEXT NOT NULL CHECK(length(trim(event_type))>0),canonical_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),
- PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id,product_uid) REFERENCES bank_products(accounting_id,product_uid) ON UPDATE RESTRICT ON DELETE RESTRICT
+ PRIMARY KEY(accounting_id,event_id),FOREIGN KEY(accounting_id) REFERENCES runs(accounting_id) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) STRICT,WITHOUT ROWID;
+CREATE TRIGGER bank_product_changes_identity_insert BEFORE INSERT ON bank_product_changes WHEN(NEW.event_type='product_removed' AND EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid))OR(NEW.event_type NOT IN('product_removed','fact_removed') AND NOT EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid AND p.provider_uid=NEW.provider_uid))OR(EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid)AND NOT EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid AND p.provider_uid=NEW.provider_uid)) BEGIN SELECT RAISE(ABORT,'product change identity is invalid');END;
+CREATE TRIGGER bank_product_changes_identity_update BEFORE UPDATE OF accounting_id,product_uid,provider_uid,event_type ON bank_product_changes WHEN(NEW.event_type='product_removed' AND EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid))OR(NEW.event_type NOT IN('product_removed','fact_removed') AND NOT EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid AND p.provider_uid=NEW.provider_uid))OR(EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid)AND NOT EXISTS(SELECT 1 FROM bank_products p WHERE p.accounting_id=NEW.accounting_id AND p.product_uid=NEW.product_uid AND p.provider_uid=NEW.provider_uid)) BEGIN SELECT RAISE(ABORT,'product change identity is invalid');END;
 CREATE INDEX idx_bank_provider_observations_state ON bank_provider_observations(accounting_id,state,population_known,provider_uid);
 CREATE INDEX idx_bank_product_dispositions_identity ON bank_product_dispositions(accounting_id,provider_uid,dataset,cdr_product_id,product_uid);
 CREATE INDEX idx_bank_product_dispositions_disposition ON bank_product_dispositions(accounting_id,disposition,provider_uid,product_uid);

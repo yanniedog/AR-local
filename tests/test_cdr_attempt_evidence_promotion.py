@@ -67,7 +67,10 @@ def _source(
         peer_ip="8.8.8.8",
         context={"phase": "register_discovery", "request_id": "register:1"},
     )
-    product_body = b'{"data":{"products":[{"productId":"BOMInvestmentCashAccounts"}]}}'
+    product_body = (
+        b'{"data":{"products":[{"productId":"BOMInvestmentCashAccounts",'
+        b'"productCategory":"TRANS_AND_SAVINGS_ACCOUNTS"}]}}'
+    )
     journal.record(
         "holder:bank-of-melbourne:page:1",
         request_url="https://bank.example/cds-au/v1/banking/products",
