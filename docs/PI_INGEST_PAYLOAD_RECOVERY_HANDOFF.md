@@ -6719,3 +6719,230 @@ Preservation action is to leave the old task, catalog, accepted observation,
 Pi, payloads and all evidence unchanged. There is no rollback because this entry
 authorizes no mutation. No package, preflight or UAC command exists while this
 pointer is `BLOCKED`.
+
+## Entry `HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY`
+
+### Control and route correction
+
+This append-only entry supersedes only the continuation authority of
+`HANDOFF-20260902T113247+1000-A3-LEAN-AUTHORITY-QUARANTINE`. All older bytes,
+failures and completed evidence remain immutable. The old Tailscale endpoint,
+`ssh-keyscan` and web-auth wording is quarantined and must not be used. The sole
+code candidate remains `8b158d74ddd51a3523ecb6367b6ef99ca994df61`.
+
+The authenticated transport is `pi@ar.local:22`: the protected resolver in that
+candidate returned exactly one canonical RFC1918 IPv4 endpoint,
+`192.168.20.19`, at `2026-09-02T13:12:00+10:00`. OpenSSH connected directly to
+that address with `-F NUL`, `HostKeyAlias=ar-local-pi5`, no agent, config,
+password, interaction, TOFU or key scan, and the existing pinned Ed25519 key.
+The logical host is exactly `ar-local-pi5`; the discovery name and selected IP
+are routing inputs, not trust identities. Required key representations remain
+raw-blob SHA-256
+`84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e`
+and OpenSSH fingerprint
+`SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4`.
+
+The documentation source was exact clean `origin/main`
+`8b158d74ddd51a3523ecb6367b6ef99ca994df61`; the pre-append working file was
+473774 bytes, SHA-256
+`a0f03c9631b1ea2fd8ac5534b88a027b01d9e62d15d22372d0efa9d4799275db`,
+and its Git blob was 467053 bytes, SHA-256
+`4f5b3ee4821b3fcbb59d069ad1da30e6b1df651e75e7a46eeedd901a654040c5`.
+Under D-012, this entry becomes usable only after its documentation-only squash
+merge is current canonical `origin/main` and the complete merged handoff raw
+SHA-256 is independently calculated. Those two post-merge values are not
+invented here.
+
+### Authenticated current state
+
+The direct pinned LAN session proved protected production clean at
+`9302890fcc752cbf90da97d597e972c157d913e3`. Service invocation
+`f0a99bd3558344798741b0ca4db84752` ran 01:00:03–01:17:19 AEST with
+`Result=success`, `ExecMainStatus=0`, no restart; the timer is enabled and
+active, the ingest lock is absent, and the local dashboard is healthy. The
+dashboard response is 373 bytes, SHA-256
+`bbca1b65b96b06aed4702b551a507b7475739dc31c7ec9bbbcbadb7c312180b4`,
+generation time `2026-09-02T01:11:18+10:00`, with 3009 products and 17050 rates.
+
+`NATURAL-20260902` procedure remains `BLOCKED` because the mandatory D-006
+create-once evidence run did not occur; authenticated operational ingest is
+separately `PASS`. Raw capture has 3837 attempts, head
+`98cd40ca4177dc3fa82c61611bae5bb4cfc3d2aa15fccc9edb5e18d96fbd5240`,
+42643954 bytes in 10970 files, tree
+`f0081508f4364b0082d103dc215ce6f91a4db3edc37c23cf883d4c3401f0a1ae`,
+and promotion manifest 1782131 bytes, SHA-256
+`0fd30f32657bca1e42794acdf30353010405c0ec9ac54ebee4224aed2de0ff2d`.
+Finalization is observation `obs-2026-09-02-724fc227e6776842`, state `partial`,
+119 providers attempted, 112 complete, seven partial, 17 attributable failures,
+zero corrupt/unattributed, 3009 products, 17050 rates. Its marker is 1510 bytes,
+SHA-256 `bcde983cdab8790fe436d0f977e64cee4ae53ea74701820df2cab9e9d21704f1`;
+pointer 300 bytes, SHA-256
+`f2945b67890138827dcd1b74be69ae4e6727b740cd1a5414a2da01e0cea35745`;
+contract 2742722 bytes, SHA-256
+`a1f6cd2369e872704530616b3b435fac8a115e13001645eef6b86fffc2454d44`,
+contract digest
+`4891d0e01206316e277db1541ee89707ef4cb9c4bdf5f08475cbbb1c260bd2c8`;
+and ingest status 38175 bytes, SHA-256
+`4f45841840f1b2a256120bd269dd5557f277653d8a7c6667c4cf717564897d25`.
+
+Ledger verification is `PASS`, 22/22 with no finding or warning, at head/event
+`c6d2f0b3569e2f54371e62dd31740fa2f8860482a2edd5482dab54f127259fae`;
+the head file is 321 bytes, SHA-256
+`cf98d96b46a18bdb5f128b439555429f7a648516ee9650aafa304ddca55fa425`.
+SQLite is 1099124736 bytes, SHA-256
+`9be89c33d89bef07e49c452340f2c2265880d7dd1b035dd6108ce57126d5e7af`;
+read-only `quick_check` and full `integrity_check` both returned `ok`; WAL is
+zero bytes. Counts are banks 61877, product changes 2178, facts 661383,
+products 3009, rates 17050, runs 1 and schema metadata 2.
+
+Publication is independently authenticated: dated v1 manifest 1211 bytes,
+SHA-256 `367d2fa065511929943fcb3f154a354939474388c116e28b7d4b04f252075f47`;
+rolling v1 manifest 2881 bytes, SHA-256
+`a97087c046f864d5df6c8aa6205ad7b703a4feaa46e05f47e072ef2853b54236`;
+core 362452 bytes, SHA-256
+`d1683a44c258450b2bba233d4b70e95446dad437a023f1bbb0b7dbe6f0a55f11`;
+details 757500 bytes, SHA-256
+`0bd1ae7c5ecd556983ccecfb7747ca50cb81651e3bd05571c314a23bc2b41e46`;
+search 597950 bytes, SHA-256
+`6db1e8a078ccc4b05a5b68cd1271508e5452b93e65b459a87554e3dc97637f09`;
+dates index 2116 bytes, SHA-256
+`9426f208084a501be82504187a82954fbb2b160ec730adab3fa18f0d6a68c56e`,
+latest `2026-09-02`. V2 independently remains `FAIL`/stale at `2026-08-21`:
+manifest 1217 bytes, SHA-256
+`02e14f71b604dbfd652fef7c1a3c46932ad9b32beef7cc90e99ddc14a1ca4acb`.
+
+The prior `NATURAL-20260901` identities and split result in the predecessor are
+retained exactly: procedure `BLOCKED`; operational capture/finalization/v1/index
+`PASS`; v2 and laptop backup `FAIL`; controlling evidence 49120 bytes,
+SHA-256 `83cee70609b0dc0193be1386d9eee5361fd9144f5c59fa175853ad6f4f123484`.
+The 2026-09-02 laptop task also `FAIL`ed naturally at 05:00:01 with result 1;
+execution 698 bytes, SHA-256
+`271bf6621708f13aa55a70dbfa4e315937e53b2ba5717ff5cf9c021db5e00102`.
+
+Laptop state is unchanged: catalog 236234 bytes, SHA-256
+`7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511`,
+sequence 336, final entry
+`368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420`;
+latest-verified 316 bytes, SHA-256
+`737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389`;
+accepted catalog entry
+`6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68`;
+receipt 3392 bytes, SHA-256
+`7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea`;
+observation `obs-2026-08-30-69a34aa4c745bb2e`; archive 237101208 bytes,
+SHA-256 `abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b`.
+The task remains enabled/Ready, S4U/`Limited`, result 1; XML is 4774 bytes,
+SHA-256 `aa539fb4bb2f1768b2ea57539e7d5201a930e88eecf9192f4f94518b08e9d9e2`,
+raw SDDL SHA-256
+`6d56e1b8b4e14f3354aee7644012e0084fd64dd6a58468fe87c181560e19eb7b`
+and semantic SDDL SHA-256
+`d0e0ac6dbbbe519444e70161be2a447fa7b6b718a710160e578bd9f4e4bf7965`.
+Active dispatcher pointer is 170 bytes, SHA-256
+`fd66311c66aad9a8f16643171fdb3de54f6582361d41ce3255c7da09a086e923`,
+sequence 1, manifest
+`af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092`.
+No helper, receiver lock, transition lease or partial exists; free space was
+155318718464 bytes. D-014 journal remains exactly two matching records,
+SHA-256 `2d3345aee82b2b453d1aaf627b9c9d29146b12d1030f805b53463f782d8e2fb3`.
+
+### Candidate and local build inputs
+
+| Path | Bytes | Git-blob SHA-256 |
+|---|---:|---|
+| `install_laptop_backup_trusted_dispatcher.ps1` | 69130 | `20f2581e46b2d525c180ff962ddfadd42e852b8d6fff1511b3f0b3c73969b96d` |
+| `install_laptop_backup_trusted_dispatcher_core.ps1` | 58171 | `de958229fe2a8220cae93083e9f1ad0bec031e6b4164d130782f163fc9f49a18` |
+| `install_laptop_backup_trusted_dispatcher_ssh.ps1` | 18243 | `7e387696d22a789f9ede481c48b820f52623e610e96a9f170cb6641b84757625` |
+| `laptop_backup_trusted_package.py` | 13684 | `6c2e722c16bb875ce3c07a4a56ee868001fdfff6973371ec84014594a7b55d43` |
+| `native/laptop_backup_trusted_launcher.cpp` | 24190 | `f31431ddb6ae9e6d7f7db5992dc74872303113761a01462264f50e173e7b7774` |
+| `run_laptop_backup_task.ps1` | 919 | `50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860` |
+| `run_laptop_backup_trusted_child.ps1` | 20797 | `295271485c79907b7ee87463b53f6cc2258d146e07d771860ae4534b743c772a` |
+| `laptop_backup_dispatcher.py` | 38525 | `36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc` |
+| `laptop_backup_dispatcher_security.py` | 20490 | `c52229848b75931cb576855db3093830073be48695e97610f5e82ab8e403b36b` |
+| `laptop_backup_atomic.py` | 3324 | `d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c` |
+| `laptop_backup_scheduled.py` | 39800 | `25e400780554e82f690822bfbaaf41f8d8e93c85106d4501e561e7558d8c44cb` |
+| `laptop_backup_transport.py` | 15588 | `59cd046e7fae1eab543bb70dd0aca91bf346d6f1b554407a5eab76b3097ddfc1` |
+| `laptop_pull_backup.py` | 46804 | `ce3c80b492d04ef923aca2701169be76c35ee6d7cc45a517e2c535c7d2232d47` |
+| `laptop_backup_ssh_endpoint.py` | 2127 | `4b425d82301c749f3a1f6f2e36a070c169ea8a6e961d8d1ffd52fddbb4347f93` |
+
+Runtime source is
+`C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime`:
+3067 files, 64118158 bytes, canonical sorted path-to-SHA JSON SHA-256
+`d664070cb4ef57b349809a499086fa977516d5b1d66d9c70dfdd5a7420f5c7b7`;
+`python.exe` SHA-256
+`53e910971cbb20c3223cc44c696254ccfba9595dc4be8e16f56f6c954fff831f`.
+Fixed local inputs are SSH identity
+`C:\Users\jkoka\.ssh\pi5`, 387 bytes, SHA-256
+`faf1d747eece5be5315b2172bf6ebff4bdb817eb04b49a35a8e9f2748b16ef1e`;
+OpenSSH `ssh.exe` SHA-256
+`6250fd52163fe99a0dc49403ed1b4bbef9b764bdb7bada017a93d057d9376a42`,
+`scp.exe` SHA-256
+`63b7118d8e1a8a84398cf4ce1584dc6b146606092fe9c68bbaf110bbdcfb480a`,
+Git SHA-256 `c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9`
+and `whoami.exe` SHA-256
+`23240ef9f8b0a9a324110b1c2331de31dc1b0e08f5359cb707e51a939af56cd3`.
+
+### Canonical resume pointer
+
+```json
+{"schema":"ARL-A3-RESUME-POINTER-V1","version":1,"sequence":3,"predecessor":"HANDOFF-20260902T113247+1000-A3-LEAN-AUTHORITY-QUARANTINE","entry_id":"HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY","created_local":"2026-09-02T13:38:26+10:00","created_utc":"2026-09-02T03:38:26Z","result":"PASS_D012_POST_MERGE_BINDING_REQUIRED","authority_merge_sha":"D012_CURRENT_MAIN_MERGE_CONTAINING_THIS_ENTRY","complete_handoff_raw_sha256":"D012_SHA256_OF_THAT_MERGE_GIT_BLOB","candidate_sha":"8b158d74ddd51a3523ecb6367b6ef99ca994df61","operator":{"name":"jkoka","sid":"S-1-5-21-689213601-40760280-3596424081-1001"},"plan":{"id":"ARL-OPS-001","version":"1.5","commit":"9094a8e115958fcaf2cb36525736bd5e297e6b04","controlled_sha256":"a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada","raw_sha256":"d7be2c8a437baba8babc4f777cd3022c004a5e1a08b8c41edba6d3e8e0a226a4","lf_sha256":"f83e32f11f409bdae401dd8d736d11d93e1f190d72f8f7631bec18ff263a7684"},"legacy_plan":{"version":"1.4","commit":"14dd066099bba393cccf61a280243e43162eedc9","controlled_sha256":"78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713","raw_sha256":"a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d","installed_candidate":"f214e3249c7968d574e3449edb14792904e1cc1f"},"protected":{"sha":"9302890fcc752cbf90da97d597e972c157d913e3","clean":true},"phase":{"A3":"RUNNING_ACTIVATION_AUTHORIZED_NOT_STARTED","A4":"BLOCKED"},"natural":{"2026-09-01":{"procedure":"BLOCKED","capture":"PASS","finalization":"PASS","dated_v1":"PASS","rolling_v1":"PASS","index":"PASS","v2":"FAIL_STALE","dashboard":"PASS","backup":"FAIL","evidence_sha256":"83cee70609b0dc0193be1386d9eee5361fd9144f5c59fa175853ad6f4f123484"},"2026-09-02":{"procedure":"BLOCKED","capture":"PASS_AUTHENTICATED_LAN","finalization":"PASS_AUTHENTICATED_LAN","dated_v1":"PASS","rolling_v1":"PASS","index":"PASS","v2":"FAIL_STALE","dashboard":"PASS","backup":"FAIL","observation":"obs-2026-09-02-724fc227e6776842","marker_sha256":"bcde983cdab8790fe436d0f977e64cee4ae53ea74701820df2cab9e9d21704f1","ledger_head":"c6d2f0b3569e2f54371e62dd31740fa2f8860482a2edd5482dab54f127259fae","sqlite_sha256":"9be89c33d89bef07e49c452340f2c2265880d7dd1b035dd6108ce57126d5e7af"}},"catalog":{"sha256":"7c498eb639a5f90595f4252767507599f2fd65e8655d82b4b55df347d981f511","bytes":236234,"sequence":336,"final_entry_sha256":"368ed91d6957d60eda5d76f06175e3ff00e20fb5cf5d6d2d94a478d164112420","latest_sha256":"737890501caf8c2054b1f0b30fd17bba077327a4469bd14f1d176bee75e9a389","latest_bytes":316,"accepted_entry_sha256":"6f9cd2729a8e2c5278b5dd46801ab7deac699de7ddc6dd070e4b0b4228a34d68","receipt_path":"observations/2026-08-30/f37721927e2f3f1272986fe0b8f1c454e29c42d854a301cb7460e6516aef118d/receipt.json","receipt_sha256":"7c50fc6f1dbf8b333cdb9b725d0a5190e9418454fcb1260a79754eab0dbad1ea","receipt_bytes":3392,"observation":"obs-2026-08-30-69a34aa4c745bb2e","archive_sha256":"abd6bd284ae9dc35b367b463c9e6c885866aba27fb1c385e914d4ba7aa68991b","archive_bytes":237101208},"route":{"discovery":"ar.local","selected":"192.168.20.19","logical":"ar-local-pi5","user":"pi","port":22,"key_blob_sha256":"84569741c26189ddf0076b4c327e84b8c9df3d9c60cc6688f432190078a9ea7e","key_fingerprint":"SHA256:hFaXQcJhid3wB2tMMn6EuMnfPZxgzGaI9DIZAHip6n4"},"next_command":"& 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'","next_command_utf8_lf_sha256":"0744a9448ae7cc87feaaae63d5c0589a36576bf30a100309c2bba37eb3d1c4d5","earliest":"POST_MERGE_AND_AFTER_03:30_AUSTRALIA_HOBART","latest":"2026-09-02T22:00:00+10:00","freshness":"45_MINUTES_FROM_GENERATED_PREFLIGHT","package_sha256":"D012_DETERMINISTIC_DUAL_BUILD_OUTPUT","dispatcher_manifest_sha256":"D012_GENERATED_AFTER_FRESH_CHECK_ONLY","preexecution_manifest_sha256":"D012_GENERATED_LAST_AND_BOUND_BY_OUTER_COMMAND","acceptance":"installer terminal PASS; then natural trusted 05:00 backup plus full validation; later append-only terminal PASS","stop":["origin/main or handoff drift","resolver not exactly one RFC1918 IPv4","host key or auth drift","source/tool/task/catalog/Pi/evidence drift","timeout or web-auth","process/lock/lease/partial","under 50GiB","D-006 window or expired preflight","any build mismatch"],"preservation":"stop before mutation; installer authenticated rollback only after mutation begins; preserve task/catalog/Pi/payload/evidence","risks":["D-006 procedure misses remain BLOCKED","v2 stale","natural trusted backup not yet accepted"],"findings":["old Tailscale route wording quarantined","Sep2 operational ingest authenticated"],"deviations":["D-006","D-011","D-012","D-013","D-014"],"authorization":"one exact UAC installer invocation only; no manual backup/ingest/deploy/publication or other elevation","terminal_status":"USABLE_ONLY_AFTER_D012_BIND_AND_FRESH_PREFLIGHT"}
+```
+
+### Deterministic build, fresh preflight and sole elevation
+
+Save the following UTF-8/LF block at the exact `next_command` path. It is a
+generator, not precomputed authority: it must resolve the current post-merge
+authority, require this entry, calculate the complete handoff hash, use separate
+clean detached checkouts, validate every fixed source/tool/runtime hash, resolve
+`ar.local` through `laptop_backup_ssh_endpoint.py`, authenticate the existing
+pinned key without `ssh-keyscan`, run the candidate `--check-only` through a
+disposable schema-6 trusted-child contract, and record its exact resulting
+catalog pointer. It must then create a fresh activation gate and dispatcher
+manifest, compile the launcher twice with `/Brepro`, build the package twice,
+require byte equality, and create the schema-exact pre-execution manifest only
+after rechecking task XML/SDDL, the full catalog chain and archive, D-014, free
+space, residue, current Pi SHA/cleanliness/service/timer/lock/dashboard,
+Sep-2 marker/pointer/contract/ledger/SQLite hashes and `quick_check=ok`.
+
+The two launcher commands are exactly:
+
+```powershell
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE "$candidate\native\laptop_backup_trusted_launcher.cpp" "/Fe:$root\launcher-1.exe" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf
+& cl.exe /nologo /std:c++17 /O2 /MT /W4 /WX /EHsc /GS /guard:cf /Brepro /DUNICODE /D_UNICODE "$candidate\native\laptop_backup_trusted_launcher.cpp" "/Fe:$root\launcher-2.exe" /link advapi32.lib /DYNAMICBASE /NXCOMPAT /guard:cf
+if ((Get-FileHash "$root\launcher-1.exe" -Algorithm SHA256).Hash -cne (Get-FileHash "$root\launcher-2.exe" -Algorithm SHA256).Hash) { throw 'launcher builds differ' }
+```
+
+The two package commands, after the generator has produced the exact bound
+`$manifest`, are exactly:
+
+```powershell
+$packageArgs=@('--candidate-repo',$candidate,'--candidate-sha',$candidateSha,'--authority-repo',$authority,'--authority-sha',$authoritySha,'--python-root',$runtime,'--launcher',"$root\launcher-1.exe",'--dispatcher-manifest',$manifest,'--install-root',$installRoot,'--control-root',$control,'--operator-sid',$operatorSid,'--git',$git,'--ssh',$ssh,'--scp',$scp,'--ssh-host','ar.local','--ssh-user','pi','--ssh-port','22','--ssh-identity',$identity,'--ssh-known-hosts',$knownHostsSource,'--whoami',$whoami)
+& $python -I -B "$candidate\laptop_backup_trusted_package.py" @packageArgs --output "$root\trusted-package-1.zip"
+if ($LASTEXITCODE) { throw 'package build 1 failed' }
+& $python -I -B "$candidate\laptop_backup_trusted_package.py" @packageArgs --output "$root\trusted-package-2.zip"
+if ($LASTEXITCODE) { throw 'package build 2 failed' }
+if ((Get-FileHash "$root\trusted-package-1.zip" -Algorithm SHA256).Hash -cne (Get-FileHash "$root\trusted-package-2.zip" -Algorithm SHA256).Hash) { throw 'package builds differ' }
+```
+
+The complete non-administrator generator must fail closed unless its emitted
+`build-result.json`, `check-only.json`, `activation-gate.json`,
+`dispatcher-manifest.json`, `pi-preflight.txt`, `pre-execution-manifest.json`
+and `preflight-summary.json` contain exact absolute paths, sizes and SHA-256 for
+all fixed and generated inputs above. Its final output is one encoded command
+whose typed parameters are exactly those accepted by
+`install_laptop_backup_trusted_dispatcher.ps1`, including candidate, actual
+authority/handoff, protected/plan, package, installer/core/SSH-boundary,
+identity/SSH executable, task, catalog/receipt/archive and pre-execution hashes,
+`PiHost=ar.local`, `PiUser=pi`, `PiPort=22`. The manifest expires after 45
+minutes and never after 22:00 Hobart.
+
+After that generator returns terminal `PASS`, this is the only authorized UAC
+installer command; `$encoded` is its freshly emitted exact bound command:
+
+```powershell
+$process = Start-Process -Verb RunAs -WindowStyle Hidden -Wait -PassThru -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded); if ($process.ExitCode -ne 0) { throw "trusted bootstrap failed: $($process.ExitCode)" }
+```
+
+Do not execute either block from this documentation turn. No other elevation,
+manual task trigger, backup, ingest, deployment or publication is authorized.
+Installer `PASS` leaves A3 `RUNNING`; only natural backup acceptance and a later
+append-only terminal entry can close it or release A4.
