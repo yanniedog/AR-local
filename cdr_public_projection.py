@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import math
 import re
+from datetime import date, datetime, time, timedelta
 from typing import Any, Mapping
 from urllib.parse import urlsplit
+
+from ar_local_ingest_schedule import DAILY_INGEST_TZ
 
 
 class PublicProjectionError(ValueError):
@@ -66,6 +69,11 @@ _OFFICIAL_LINK_FIELDS = {
     "overviewUri", "eligibilityUri", "feesAndPricingUri", "termsUri", "bundleUri"
 }
 _MAX_DOCUMENT_BYTES = 512 * 1024
+_DATE_FIELDS = ("last_updated", "effective_from", "effective_to")
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_RFC3339 = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
 
 
 def _safe_https(value: str) -> bool:
@@ -128,11 +136,52 @@ def _validated_json_text(field: str, value: Any, omitted: frozenset[str]) -> str
     return json.dumps(parsed, ensure_ascii=False, sort_keys=True)
 
 
+def _source_instant(field: str, value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise PublicProjectionError(f"public {field} is not an ISO date or RFC 3339 timestamp")
+    try:
+        if _DATE_ONLY.fullmatch(value):
+            return datetime.combine(date.fromisoformat(value), time.min, DAILY_INGEST_TZ)
+        if not _RFC3339.fullmatch(value):
+            raise ValueError
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise PublicProjectionError(
+            f"public {field} is not an ISO date or RFC 3339 timestamp"
+        ) from error
+    if instant.tzinfo is None or instant.utcoffset() is None:
+        raise PublicProjectionError(f"public {field} timestamp lacks a timezone")
+    return instant.astimezone(DAILY_INGEST_TZ)
+
+
+def _validate_source_dates(document: Mapping[str, Any], observation_date: str) -> None:
+    try:
+        observed = date.fromisoformat(observation_date)
+    except (TypeError, ValueError) as error:
+        raise PublicProjectionError("observation_date must be YYYY-MM-DD") from error
+    latest = datetime.combine(observed + timedelta(days=1), time.min, DAILY_INGEST_TZ)
+    parsed = {
+        field: _source_instant(field, document.get(field))
+        for field in _DATE_FIELDS
+        if field in document
+    }
+    if any(value is not None and value > latest for value in parsed.values()):
+        raise PublicProjectionError(
+            "public source date is more than 24 hours beyond observation_date"
+        )
+    start, end = parsed.get("effective_from"), parsed.get("effective_to")
+    if start is not None and end is not None and start > end:
+        raise PublicProjectionError("public effective date range is reversed")
+
+
 def public_document(
     group: str,
     source: Mapping[str, Any],
     envelope: Mapping[str, Any],
     *,
+    observation_date: str,
     omitted_detail_groups: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Select only documented fields, validate content, and bind indexed keys."""
@@ -142,6 +191,7 @@ def public_document(
         raise PublicProjectionError("unknown public projection group")
     document = {key: source[key] for key in allowed if key in source}
     document.update(envelope)
+    _validate_source_dates(document, observation_date)
     for field in _JSON_TEXT_FIELDS & document.keys():
         value = document[field]
         if value is not None:
@@ -163,11 +213,17 @@ def public_document(
 
 
 def validate_public_document(
-    group: str, document: Mapping[str, Any], envelope: Mapping[str, Any]
+    group: str,
+    document: Mapping[str, Any],
+    envelope: Mapping[str, Any],
+    *,
+    observation_date: str,
 ) -> dict[str, Any]:
     """Require stored public bytes to be exactly the safe projection."""
 
-    normalized = public_document(group, document, envelope)
+    normalized = public_document(
+        group, document, envelope, observation_date=observation_date
+    )
     if normalized != document:
         raise PublicProjectionError("public projection has fields outside its contract")
     return normalized

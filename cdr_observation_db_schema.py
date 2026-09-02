@@ -191,7 +191,8 @@ CREATE TABLE bank_product_facts(
  OR(value_type IN('money','rate','number') AND value_boolean IS NULL AND value_number IS NOT NULL AND value_text IS NULL AND min_value IS NULL AND max_value IS NULL)
  OR(value_type IN('duration','enum','text') AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NOT NULL AND min_value IS NULL AND max_value IS NULL)
  OR(value_type='range' AND value_boolean IS NULL AND value_number IS NULL AND value_text IS NULL AND(min_value IS NOT NULL OR max_value IS NOT NULL))),
- CHECK(value_number IS NULL OR(kind<>'rate' AND value_type<>'rate')OR value_number BETWEEN 0 AND 1)
+ CHECK(value_number IS NULL OR(kind<>'rate' AND value_type<>'rate')OR value_number BETWEEN 0 AND 1),
+ CHECK(min_value IS NULL OR max_value IS NULL OR min_value<=max_value)
 ) STRICT,WITHOUT ROWID;
 CREATE TABLE bank_product_changes(
  accounting_id TEXT NOT NULL,event_id TEXT NOT NULL CHECK(length(trim(event_id))>0),provider_uid TEXT NOT NULL CHECK(length(trim(provider_uid))>0),product_uid TEXT NOT NULL CHECK(length(trim(product_uid))>0),event_type TEXT NOT NULL CHECK(length(trim(event_type))>0),canonical_key TEXT,document_json TEXT NOT NULL CHECK(length(document_json)>1),

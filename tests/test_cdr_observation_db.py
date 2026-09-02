@@ -75,6 +75,7 @@ def observation() -> tuple[dict, dict]:
         },
     }
     product_keys = {key: product[key] for key in ("product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key")}
+    product_document = {**product_keys, "details_complete": True}
     rate_keys = {"rate_uid": RATE_UID, "product_uid": PRODUCT_UID, "rate_index": 1, "rate": source_rate["rate"], "comparison_rate": None}
     item_keys = {"product_uid": PRODUCT_UID, "item_group": "eligibility", "item_index": 1}
     fact_keys = {
@@ -97,7 +98,7 @@ def observation() -> tuple[dict, dict]:
         "canonical_key": "product.name",
     }
     projections = {
-        "products": [{**product_keys, "document": dict(product_keys)}],
+        "products": [{**product_keys, "document": product_document}],
         "rates": [{**rate_keys, "document": dict(rate_keys)}],
         "items": [{**item_keys, "document": dict(item_keys)}],
         "product_facts": [{**fact_keys, "document": fact_keys}],
@@ -358,6 +359,13 @@ def test_database_constraints_reject_orphans_type_drift_and_visibility_drift(tmp
                 "UPDATE bank_product_facts SET value_number=100 WHERE product_uid=?",
                 (PRODUCT_UID,),
             )
+        connection.rollback()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE bank_product_facts SET kind='tier',value_type='range',"
+                "value_number=NULL,min_value=2,max_value=1 WHERE product_uid=?",
+                (PRODUCT_UID,),
+            )
 
 
 @pytest.mark.parametrize("bad_rate", ["5", "NaN", "0.00450", "5.0e-2"])
@@ -394,6 +402,46 @@ def test_rate_fact_outside_decimal_fraction_fails_before_disk(tmp_path: Path):
     projections["product_facts"][0]["value_number"] = 100.0
     projections["product_facts"][0]["document"]["value_number"] = 100.0
     with pytest.raises(ObservationDatabaseError, match="rate fact"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+def test_reversed_fact_range_fails_before_disk(tmp_path: Path):
+    accounting, projections = observation()
+    row = projections["product_facts"][0]
+    row.update(
+        kind="tier",
+        value_type="range",
+        value_number=None,
+        min_value=2.0,
+        max_value=1.0,
+    )
+    row["document"].update(
+        kind="tier",
+        value_type="range",
+        value_number=None,
+        min_value=2.0,
+        max_value=1.0,
+    )
+    with pytest.raises(ObservationDatabaseError, match="range bounds are reversed"):
+        build_observation_database(
+            tmp_path / "banks.sqlite",
+            accounting=accounting,
+            projections=projections,
+            generated_at="2026-05-25T00:01:00+10:00",
+            normalization_version="cdr-domain-v1",
+        )
+
+
+def test_product_document_details_completeness_is_bound_to_accounting(tmp_path: Path):
+    accounting, projections = observation()
+    projections["products"][0]["document"]["details_complete"] = False
+    with pytest.raises(ObservationDatabaseError, match="outside its contract"):
         build_observation_database(
             tmp_path / "banks.sqlite",
             accounting=accounting,

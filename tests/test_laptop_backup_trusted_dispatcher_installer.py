@@ -118,6 +118,9 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
     result_writer = evidence[evidence.index("function Write-ArTrustedResult"):evidence.index("function Read-ArTrustedPreExecutionManifest")]
     assert "Get-ChildItem -LiteralPath $script:executionRoot" in result_writer
+    assert "bootstrap-result-{0:d4}.json" in result_writer
+    assert "[IO.FileMode]::CreateNew" in result_writer
+    assert "[IO.FileMode]::Create," not in result_writer
     assert "ssh_identity_path" not in result_writer
     assert "Stop-ScheduledTask -TaskName $probeName" in source
     assert source.index("Stop-ArTrustedProbeAndAwait") < source.index("Unregister-ScheduledTask -TaskName $probeName", source.index("rollbackMayMutate"))

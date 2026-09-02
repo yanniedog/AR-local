@@ -3,6 +3,26 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_ssh.ps1')
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_evidence.ps1')
 
+$resultRoot = Join-Path $env:TEMP ('ar-terminal-results-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $resultRoot | Out-Null
+try {
+  $script:executionRoot = $resultRoot
+  $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+  $script:exactCommand = @('test')
+  $script:authorizedDeviations = @()
+  $script:deviationAuthorization = $null
+  $firstResult = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{}
+  $firstHash = Get-ArTrustedSha256 $firstResult
+  $secondResult = Write-ArTrustedResult -Result 'ROLLED_BACK' -ErrorText 'later failure' -Detail @{}
+  if ([IO.Path]::GetFileName($firstResult) -cne 'bootstrap-result.json' -or
+      [IO.Path]::GetFileName($secondResult) -cne 'bootstrap-result-0002.json' -or
+      (Get-ArTrustedSha256 $firstResult) -cne $firstHash) {
+    throw 'Terminal bootstrap result history was overwritten or misnamed.'
+  }
+} finally {
+  Remove-Item -LiteralPath $resultRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $script:task = [pscustomobject]@{
   Actions = @([pscustomobject]@{ Execute='C:\Program Files\AR-local\trusted\launcher.exe'; Arguments=$null; WorkingDirectory='C:\Program Files\AR-local\trusted' })
   Principal = [pscustomobject]@{ UserId='operator'; LogonType='S4U'; RunLevel='Limited' }

@@ -1,6 +1,11 @@
 function Write-ArTrustedResult {
   param([string]$Result, [string]$ErrorText, [hashtable]$Detail)
   $path = Join-Path $script:executionRoot 'bootstrap-result.json'
+  $sequence = 1
+  while (Test-Path -LiteralPath $path) {
+    $sequence += 1
+    $path = Join-Path $script:executionRoot ('bootstrap-result-{0:d4}.json' -f $sequence)
+  }
   $files = @()
   foreach ($file in @(Get-ChildItem -LiteralPath $script:executionRoot -File -Recurse | Where-Object {
     [IO.Path]::GetFullPath($_.FullName) -cne [IO.Path]::GetFullPath($path)
@@ -20,7 +25,7 @@ function Write-ArTrustedResult {
     deviation_authorization = $script:deviationAuthorization
   }
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Depth 10 -Compress) + "`n")
-  $stream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  $stream = [IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
   try {
     $stream.Write($bytes,0,$bytes.Length)
     $stream.Flush($true)

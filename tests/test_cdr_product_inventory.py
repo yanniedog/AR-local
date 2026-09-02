@@ -200,6 +200,7 @@ def test_valid_product_without_a_current_rate_is_explicitly_omitted(tmp_path: Pa
 
 def test_optional_detail_rejection_publishes_only_valid_core(tmp_path: Path) -> None:
     root, banks, status = _inputs(tmp_path)
+    banks["products"][0]["details_complete"] = True
     banks["quarantines"] = [
         {
             "bank": "Bank One",
@@ -217,10 +218,12 @@ def test_optional_detail_rejection_publishes_only_valid_core(tmp_path: Path) -> 
     )
     assert saver["disposition"] == "published_core_only"
     assert saver["reason_codes"] == ["field_omitted_invalid"]
+    projections = build_projections(banks, accounting)
+    assert projections["products"][0]["document"]["details_complete"] is False
     result = build_observation_database(
         tmp_path / "detail-array.sqlite",
         accounting=accounting,
-        projections=build_projections(banks, accounting),
+        projections=projections,
         generated_at=observed_at,
         normalization_version="cdr-product-facts-v1",
     )
