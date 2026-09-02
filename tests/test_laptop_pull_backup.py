@@ -14,12 +14,11 @@ import pytest
 import zstandard
 
 import laptop_backup_scheduled as scheduled
+import laptop_backup_daily_verify as daily_verify
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
-from cdr_observation import build_observation, write_observation
-from cdr_observation_db import build_observation_database
 from tests.support_legacy_export import write_legacy_export
-from tests.test_cdr_observation_db import observation as observation_inputs
+from tests.support_observation import write_verified_observation
 
 
 CANDIDATE = "a" * 40
@@ -336,23 +335,7 @@ def test_reconciliation_rejects_corrupt_non_database_population(
 
 def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None:
     exports = tmp_path / "exports"
-    accounting, projections = observation_inputs()
-    observed_at = "2026-05-25T00:01:00+10:00"
-    observation = build_observation(
-        accounting=accounting,
-        projections=projections,
-        observed_at=observed_at,
-        normalization_version="test-v1",
-    )
-    exports.mkdir()
-    build_observation_database(
-        exports / "local-cdr.sqlite",
-        accounting=accounting,
-        projections=projections,
-        generated_at=observed_at,
-        normalization_version="test-v1",
-    )
-    write_observation(exports, observation, accounting)
+    write_verified_observation(exports, observation_date="2026-09-03")
 
     report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
@@ -360,6 +343,19 @@ def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None
     assert report["validation_mode"] == (
         "canonical_observation_and_immutable_sqlite_v10"
     )
+
+
+def test_canonical_reconciliation_rejects_unresolved_product_evidence(
+    tmp_path: Path,
+) -> None:
+    exports = tmp_path / "exports"
+    write_verified_observation(exports, observation_date="2026-09-03")
+    accounting = json.loads(
+        (exports / "product-accounting-v1.json").read_text(encoding="utf-8")
+    )
+    accounting["products"][0]["evidence_ids"] = ["f" * 64]
+    with pytest.raises(ValueError, match="does not resolve"):
+        daily_verify._validate_promoted_product_evidence(exports, accounting)
 
 
 def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:

@@ -387,7 +387,6 @@ def test_rejects_duplicate_products_legacy_collisions_and_unsafe_evidence() -> N
     [
         ("published_core_only", ["rate_invalid"], True, False),
         ("quarantined_invalid", ["no_current_rate"], False, True),
-        ("quarantined_invalid", ["field_omitted_invalid"], False, False),
     ],
 )
 def test_rejects_disposition_reason_class_mismatches(
@@ -413,6 +412,30 @@ def test_rejects_disposition_reason_class_mismatches(
         *issues,
     ]
     with pytest.raises(ValueError, match="optional-detail|trust-critical"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+def test_core_only_rejects_trust_critical_sections() -> None:
+    status, providers, products, issues = _inputs()
+    issues[0]["affected_sections"] = ["rates"]
+    with pytest.raises(ValueError, match="only optional detail sections"):
+        build_product_accounting("2026-09-02", status, providers, products, issues)
+
+
+def test_field_omission_quarantines_only_trust_critical_sections() -> None:
+    status, providers, products, issues = _inputs()
+    products[1].update(disposition="quarantined_invalid", core_valid=False)
+    issues[0].update(disposition="quarantined_invalid", affected_sections=["rates"])
+    document = build_product_accounting(
+        "2026-09-02", status, providers, products, issues
+    )
+    core = next(row for row in document["products"] if row["cdr_product_id"] == "core-1")
+    assert core["disposition"] == "quarantined_invalid"
+
+    status, providers, products, issues = _inputs()
+    products[1].update(disposition="quarantined_invalid", core_valid=False)
+    issues[0].update(disposition="quarantined_invalid", affected_sections=["fees"])
+    with pytest.raises(ValueError, match="alone cannot quarantine"):
         build_product_accounting("2026-09-02", status, providers, products, issues)
 
 

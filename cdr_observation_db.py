@@ -824,6 +824,10 @@ def _verify_connection(connection: sqlite3.Connection, path: Path, expected_side
     if expected_generated_at is not None and stored_generated_at != expected_generated_at:
         _fail("generated_at differs from expected")
     sidecar, stored_sidecar = _sidecar_from_database(connection)
+    try:
+        validate_product_accounting(sidecar)
+    except ValueError as error:
+        raise ObservationDatabaseError(str(error)) from error
     _timestamp_on_observation_date(
         stored_generated_at, sidecar["observation_date"], "stored generated_at"
     )
