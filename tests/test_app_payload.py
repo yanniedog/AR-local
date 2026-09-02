@@ -742,6 +742,14 @@ def test_build_is_deterministic(tmp_path):
     assert a["files"]["details"]["sha256"] == b["files"]["details"]["sha256"]
 
 
+def test_gzip_bytes_are_canonical_and_platform_neutral():
+    left = app_payload_build._gzip_bytes({"z": 1, "a": 2})
+    right = app_payload_build._gzip_bytes({"a": 2, "z": 1})
+    assert left == right
+    assert left[:10] == bytes.fromhex("1f8b08000000000002ff")
+    assert gzip.decompress(left) == b'{"a":2,"z":1}'
+
+
 @pytest.mark.skipif(not HAS_SAMPLE, reason="2026-05-19 sample export not present")
 def test_build_and_publish_dual_computes_payload_once(tmp_path, monkeypatch):
     import shutil

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -78,9 +79,23 @@ def _ingest_schedule() -> Dict[str, Any]:
 
 
 def _gzip_bytes(obj: Any) -> bytes:
-    raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    # mtime=0 keeps output stable across runs for the same input.
-    return gzip.compress(raw, compresslevel=9, mtime=0)
+    raw = json.dumps(
+        obj,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        sort_keys=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    stream = io.BytesIO()
+    # GzipFile fixes filename, mtime, compression, and the cross-platform OS byte.
+    with gzip.GzipFile(
+        filename="", mode="wb", fileobj=stream, compresslevel=9, mtime=0
+    ) as archive:
+        archive.write(raw)
+    encoded = stream.getvalue()
+    if encoded[9] != 255:
+        raise RuntimeError("gzip OS header is not reproducible")
+    return encoded
 
 
 def _asset(
