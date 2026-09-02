@@ -130,7 +130,8 @@ def write_legacy_export(root: Path, date: str) -> Path:
         json.dumps({"run_date": date, "banks_counts": counts}), encoding="utf-8"
     )
     database = exports / "local-cdr.sqlite"
-    with sqlite3.connect(database) as connection:
+    connection = sqlite3.connect(database)
+    try:
         # sqlite_master preserves the indentation from the historical schema
         # literal. Keep it exact so the immutable v8 definition hashes verify.
         connection.executescript(textwrap.indent(SCHEMA, "        "))
@@ -144,4 +145,6 @@ def write_legacy_export(root: Path, date: str) -> Path:
         )
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
     return exports
