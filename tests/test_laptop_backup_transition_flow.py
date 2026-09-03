@@ -33,6 +33,7 @@ class FakeOps:
         self.process_override: list[Mapping[str, object]] = []
         self.malformed_check_output = False
         self.now_override: datetime | None = None
+        self.foreground_action = "BACKUP-LATEST"
 
     def _record(self, action: str) -> str:
         self.serial += 1
@@ -124,7 +125,7 @@ class FakeOps:
         self.calls.append("scheduled:check" if check_only else "scheduled:foreground")
         if self.fail_action == ("Check" if check_only else "Foreground"):
             raise RuntimeError("injected scheduled failure")
-        action = "NO_BACKUP_DATA_WRITE" if check_only else "BACKUP-LATEST"
+        action = "NO_BACKUP_DATA_WRITE" if check_only else self.foreground_action
         output = self._record(action)
         if check_only and self.malformed_check_output:
             output += "\nnot-json"
@@ -276,7 +277,15 @@ def patch_flow(monkeypatch: pytest.MonkeyPatch, value: transition.TransitionConf
     monkeypatch.setattr(
         transition,
         "runtime_preflight",
-        lambda _config, _ops: (snapshot, listing(), {"status": "UP_TO_DATE"}),
+        lambda _config, _ops: (
+            snapshot,
+            listing(),
+            {
+                "status": "STALE",
+                "required_action": _ops.foreground_action,
+                "expected_jobs": [],
+            },
+        ),
     )
     monkeypatch.setattr(transition, "recovery_gate", lambda *_args: listing())
     monkeypatch.setattr(
@@ -290,7 +299,7 @@ def patch_flow(monkeypatch: pytest.MonkeyPatch, value: transition.TransitionConf
         "macro": str((value.target / "macro/receipt.json").resolve()),
     }
     monkeypatch.setattr(contract, "validate_receipts", lambda *_args, **_kwargs: receipts)
-    monkeypatch.setattr(contract, "validate_catalog_delta", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(contract, "validate_catalog_job_delta", lambda *_args, **_kwargs: [])
 
 
 def test_success_calls_foreground_once_and_never_restores(
@@ -311,6 +320,24 @@ def test_success_calls_foreground_once_and_never_restores(
     assert ops.calls.count("task:Install") == 1
     assert "task:RestoreDisabled" not in ops.calls
     assert payload["result"] == "PASS"
+
+
+def test_stale_history_runs_authenticated_backfill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value = config(tmp_path)
+    ops = FakeOps(value)
+    ops.foreground_action = "BACKFILL"
+    patch_flow(monkeypatch, value)
+
+    result, terminal = transition.run_transition(
+        value, ops, transition_id="backfill"
+    )
+
+    payload = json.loads(terminal.read_text(encoding="utf-8"))
+    assert result == "PASS"
+    assert payload["evidence"]["foreground_record"]["record"]["action"] == "BACKFILL"
+    assert ops.calls.count("scheduled:foreground") == 1
 
 
 def test_run_transition_rejects_supplied_empty_id_before_writes(
@@ -463,9 +490,7 @@ def test_post_rollback_preflight_accepts_newest_candidate_scheduled_record_separ
     state = transition.validate_backup_state(
         value,
         listing(),
-        candidate_sha=value.old_candidate_code_sha,
-        require_scheduled=True,
-        scheduled_candidates=(value.old_candidate_code_sha, value.candidate_code_sha),
+        candidate_sha=value.candidate_code_sha,
     )
     assert state["scheduled_record"]["path"] == str(record)
 

@@ -6,6 +6,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 
@@ -635,8 +636,8 @@ def test_active_transition_requires_resume_and_authenticates_closure(tmp_path: P
     assert second.transition_id == "second"
 
 
-def test_catalog_delta_rejects_diagnostic_or_reordered_append(tmp_path: Path) -> None:
-    catalog = tmp_path / "generations.jsonl"
+def test_catalog_delta_rejects_unexpected_append_count(tmp_path: Path) -> None:
+    catalog = tmp_path / "target/catalog/generations.jsonl"
     catalog.parent.mkdir(parents=True, exist_ok=True)
     baseline = b""
     prior = None
@@ -659,9 +660,95 @@ def test_catalog_delta_rejects_diagnostic_or_reordered_append(tmp_path: Path) ->
         prior = digest
         with catalog.open("ab") as stream:
             stream.write(receiver.canonical_json_bytes({**material, "entry_sha256": digest}))
-    with pytest.raises(ValueError, match="unexpected generation kinds"):
-        contract.validate_catalog_delta(
+    with pytest.raises(ValueError, match="append count"):
+        contract.validate_catalog_job_delta(
             baseline,
             catalog,
-            receipt_paths={kind: str((tmp_path / kind / "receipt.json").resolve()) for kind in contract.EXPECTED_KINDS},
+            expected_jobs=(("observation", "2026-08-29"), ("control", None), ("macro", None)),
+            candidate_sha=CANDIDATE,
+            protected_sha=PROTECTED,
+            plan_commit=PLAN,
+        )
+
+
+def test_catalog_delta_verifies_exact_backfill_order_and_receipts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "target"
+    catalog = target / "catalog/generations.jsonl"
+    catalog.parent.mkdir(parents=True)
+    jobs = (
+        ("observation", "2026-08-29"),
+        ("control", None),
+        ("macro", None),
+        ("observation", "2026-08-28"),
+    )
+    prior = None
+    for sequence, (kind, run_date) in enumerate(jobs, start=1):
+        material = {
+            "schema_version": 1,
+            "sequence": sequence,
+            "created_at": "2026-08-29T09:00:00Z",
+            "previous_entry_sha256": prior,
+            "kind": kind,
+            "observation_date": run_date if kind == "observation" else None,
+            "run_date": run_date if kind == "diagnostic" else None,
+            "source_manifest_sha256": str(sequence) * 64,
+            "archive_sha256": str(sequence) * 64,
+            "receipt_path": f"{sequence}/receipt.json",
+            "receipt_sha256": str(sequence) * 64,
+            "result": "PASS",
+        }
+        prior = contract.sha256_bytes(receiver.canonical_json_bytes(material))
+        with catalog.open("ab") as stream:
+            stream.write(receiver.canonical_json_bytes({**material, "entry_sha256": prior}))
+
+    verified: list[tuple[str, str | None]] = []
+
+    def verify(
+        _target: Path,
+        _relative: str,
+        entry: Mapping[str, object],
+        kind: str,
+        **_kwargs: object,
+    ) -> tuple[dict[str, object], dict[str, object], Path]:
+        run_date = entry.get("observation_date") if kind == "observation" else entry.get("run_date")
+        verified.append((kind, run_date if isinstance(run_date, str) else None))
+        return {
+            "observation_date": entry.get("observation_date"),
+            "run_date": entry.get("run_date"),
+            "checks": {},
+        }, {}, target / str(entry["receipt_path"])
+
+    monkeypatch.setattr(contract.scheduled, "verified_receipt", verify)
+    monkeypatch.setattr(
+        contract.scheduled, "has_component_restore_evidence", lambda *_args: True
+    )
+
+    appended = contract.validate_catalog_job_delta(
+        b"",
+        catalog,
+        expected_jobs=jobs,
+        candidate_sha=CANDIDATE,
+        protected_sha=PROTECTED,
+        plan_commit=PLAN,
+    )
+
+    assert len(appended) == 4
+    assert verified == list(jobs)
+
+
+def test_catalog_delta_rejects_corrupt_baseline_prefix(tmp_path: Path) -> None:
+    catalog = tmp_path / "target/catalog/generations.jsonl"
+    catalog.parent.mkdir(parents=True)
+    catalog.write_bytes(b"")
+
+    with pytest.raises(ValueError, match="exact prefix"):
+        contract.validate_catalog_job_delta(
+            b"tampered\n",
+            catalog,
+            expected_jobs=(),
+            candidate_sha=CANDIDATE,
+            protected_sha=PROTECTED,
+            plan_commit=PLAN,
         )

@@ -86,6 +86,16 @@ LEGACY_PLAN_IDENTITIES = {
         "6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444",
     }),
 }
+PLAN_NORMALIZED_SHA256_BY_IDENTITY = {
+    (PLAN_DOCUMENT_ID, PLAN_VERSION, PLAN_GIT_COMMIT, PLAN_SHA256):
+        PLAN_NORMALIZED_RAW_SHA256,
+    (PLAN_DOCUMENT_ID, "1.4", "14dd066099bba393cccf61a280243e43162eedc9",
+     "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713"):
+        "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4",
+    (PLAN_DOCUMENT_ID, "1.3", "8efefe10890a295ef87f97b46d3cb981193cfddc",
+     "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"):
+        "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c",
+}
 PLAN_PATH = Path(__file__).resolve().parent / "docs/PI_INGEST_PAYLOAD_RECOVERY_RUNBOOK.md"
 FREE_FLOOR_BYTES = 50 * 1024**3
 RESERVE_BYTES = 1024**3
@@ -163,6 +173,17 @@ def supported_receipt_plan_identity(
     if allow_legacy and raw_sha256 in LEGACY_PLAN_IDENTITIES.get(identity, frozenset()):
         return identity
     return None
+
+
+def supported_normalized_plan_identity(
+    value: object, *, allow_legacy: bool = False
+) -> tuple[str, str, str, str] | None:
+    """Return an exact known plan identity, including its canonical text hash."""
+    identity = supported_receipt_plan_identity(value, allow_legacy=allow_legacy)
+    if identity is None:
+        return None
+    expected = PLAN_NORMALIZED_SHA256_BY_IDENTITY.get(identity)
+    return identity if value.get("plan_normalized_raw_sha256") == expected else None
 
 
 def git_state(repo: Path) -> dict[str, object]:

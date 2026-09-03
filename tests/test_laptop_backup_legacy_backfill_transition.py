@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,13 @@ def prepare_backfill(
     payload = execution_record("BACKFILL")
     payload["candidate_code_sha"] = candidates[candidate]
     payload["result"] = result
+    payload.update({
+        "plan_version": "1.4",
+        "plan_git_commit": "14dd066099bba393cccf61a280243e43162eedc9",
+        "plan_sha256": "78e8124160fc730aeabc2f5237723983d9d9c49f96ca2953b99c95f9161ba713",
+        "plan_raw_sha256": "a5a679297167c37845fbacf0cdf895cad4fb2900c09c1e94e310319d3ae9118d",
+        "plan_normalized_raw_sha256": "c8dcc4f1546f9e1f276f5b73f46b07e75ee51c98d5163245137002bbe589afe4",
+    })
     if mutation is not None:
         field, replacement = mutation
         if replacement is None:
@@ -45,33 +53,47 @@ def prepare_backfill(
         }),
     )
     monkeypatch.setattr(
-        transition.scheduled, "latest_status", lambda *_a, **_k: {"status": "UP_TO_DATE"}
+        transition.scheduled,
+        "latest_status",
+        lambda *_a, **_k: {
+            "status": "UP_TO_DATE",
+            "observation_date": "2026-08-29",
+        },
     )
     monkeypatch.setattr(
         transition.scheduled, "component_status", lambda *_a, **_k: {"status": "UP_TO_DATE"}
     )
     monkeypatch.setattr(
-        transition.scheduled, "inventory_status", lambda *_a, **_k: {"status": "UP_TO_DATE"}
+        transition.scheduled,
+        "inventory_status",
+        lambda *_a, **_k: {
+            "status": "UP_TO_DATE",
+            "missing_completed_dates": [],
+            "stale_diagnostics": [],
+        },
     )
     receipts = {
         kind: str((value.target / kind / "receipt.json").resolve())
         for kind in contract.EXPECTED_KINDS
     }
-    monkeypatch.setattr(contract, "validate_receipts", lambda *_a, **_k: receipts)
+    monkeypatch.setattr(
+        transition.scheduled,
+        "pointer_generation",
+        lambda _target, _pointer, kind, **_kwargs: (
+            {"checks": {}},
+            {},
+            {},
+            Path(receipts[kind]),
+        ),
+    )
+    monkeypatch.setattr(
+        transition.scheduled, "has_component_restore_evidence", lambda *_a: True
+    )
     return value, record
 
 
-def validate_pretransition(
-    value: transition.TransitionConfig, *, allow: bool = True
-) -> dict[str, object]:
-    return transition.validate_backup_state(
-        value,
-        listing(),
-        candidate_sha=value.old_candidate_code_sha,
-        require_scheduled=True,
-        scheduled_candidates=(value.old_candidate_code_sha, value.candidate_code_sha),
-        allow_legacy_backfill=allow,
-    )
+def validate_pretransition(value: transition.TransitionConfig) -> dict[str, object]:
+    return transition.validate_pretransition_backup_state(value, listing())
 
 
 def test_pretransition_accepts_authenticated_old_candidate_backfill(
@@ -82,6 +104,43 @@ def test_pretransition_accepts_authenticated_old_candidate_backfill(
     state = validate_pretransition(value)
 
     assert state["scheduled_record"]["path"] == str(record)
+
+
+def test_pretransition_selects_exact_historical_backfill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value, _record = prepare_backfill(monkeypatch, tmp_path, candidate="old")
+    source = listing()
+    source["retained_runs"] = [
+        {"date": "2026-08-28", "status": "completed"},
+        {"date": "2026-08-29", "status": "completed"},
+    ]
+    source["completed_dates"] = ["2026-08-28", "2026-08-29"]
+    monkeypatch.setattr(
+        transition.scheduled,
+        "latest_status",
+        lambda *_a, **_k: {"status": "STALE", "observation_date": "2026-08-29"},
+    )
+    monkeypatch.setattr(
+        transition.scheduled,
+        "inventory_status",
+        lambda *_a, **_k: {
+            "status": "STALE",
+            "missing_completed_dates": ["2026-08-28", "2026-08-29"],
+            "stale_diagnostics": [],
+        },
+    )
+
+    state = transition.validate_pretransition_backup_state(value, source)
+
+    assert state["required_action"] == "BACKFILL"
+    assert state["backfill_dates"] == ["2026-08-28"]
+    assert state["expected_jobs"] == [
+        ("observation", "2026-08-29"),
+        ("control", None),
+        ("macro", None),
+        ("observation", "2026-08-28"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -113,19 +172,17 @@ def test_legacy_backfill_rejects_incomplete_immutable_envelope(
 
 
 @pytest.mark.parametrize(
-    ("candidate", "allow", "result"),
+    ("candidate", "result"),
     [
-        ("old", False, "PASS"),
-        ("old", True, "FAIL"),
-        ("new", True, "PASS"),
-        ("third", True, "PASS"),
+        ("old", "FAIL"),
+        ("new", "PASS"),
+        ("third", "PASS"),
     ],
 )
 def test_legacy_backfill_rejects_unauthorised_candidate_flag_or_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     candidate: str,
-    allow: bool,
     result: str,
 ) -> None:
     value, _record = prepare_backfill(
@@ -133,4 +190,23 @@ def test_legacy_backfill_rejects_unauthorised_candidate_flag_or_result(
     )
 
     with pytest.raises(ValueError):
-        validate_pretransition(value, allow=allow)
+        validate_pretransition(value)
+
+
+def test_legacy_plan_is_rejected_outside_pretransition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    value, record_path = prepare_backfill(monkeypatch, tmp_path, candidate="old")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+
+    with pytest.raises(ValueError, match="plan identity"):
+        contract.validate_execution_record(
+            record,
+            action="BACKFILL",
+            candidate_sha=value.old_candidate_code_sha,
+            protected_sha=value.protected_code_sha,
+            plan_commit=str(record["plan_git_commit"]),
+            plan_sha256=str(record["plan_sha256"]),
+            operator=value.operator,
+            expected_date=value.expected_observation_date,
+        )

@@ -26,6 +26,7 @@ LEGACY_PLAN_VERSION = "1.3"
 LEGACY_PLAN_COMMIT = "8efefe10890a295ef87f97b46d3cb981193cfddc"
 LEGACY_PLAN_SHA256 = "8834990f8c3cfbe86d4006b0d4fca3c564c760362a0928bf2a688f6dacd83a3d"
 LEGACY_PLAN_RAW_SHA256 = "6c90c3dadce6906ff98e01af4ab038b9a5d91a7325662d526d5bcce018f7a444"
+LEGACY_PLAN_NORMALIZED_RAW_SHA256 = "ae710a8106f9f503c3794200c7e910e7b60eb558b7546b0d58d6a6d1f183825c"
 
 
 def source_args(tmp_path: Path, date: str = "2026-08-25") -> Namespace:
@@ -104,6 +105,7 @@ def test_only_exact_current_or_legacy_receipt_plan_identity_is_supported() -> No
         "plan_git_commit": receiver.PLAN_GIT_COMMIT,
         "plan_sha256": receiver.PLAN_SHA256,
         "plan_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
+        "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
     }
     legacy = {
         "plan_document_id": receiver.PLAN_DOCUMENT_ID,
@@ -111,10 +113,15 @@ def test_only_exact_current_or_legacy_receipt_plan_identity_is_supported() -> No
         "plan_git_commit": LEGACY_PLAN_COMMIT,
         "plan_sha256": LEGACY_PLAN_SHA256,
         "plan_raw_sha256": LEGACY_PLAN_RAW_SHA256,
+        "plan_normalized_raw_sha256": LEGACY_PLAN_NORMALIZED_RAW_SHA256,
     }
     assert receiver.supported_receipt_plan_identity(current) is not None
     assert receiver.supported_receipt_plan_identity(legacy) is None
     assert receiver.supported_receipt_plan_identity(legacy, allow_legacy=True) is not None
+    assert receiver.supported_normalized_plan_identity(current) is not None
+    assert receiver.supported_normalized_plan_identity(legacy, allow_legacy=True) is not None
+    legacy["plan_normalized_raw_sha256"] = "f" * 64
+    assert receiver.supported_normalized_plan_identity(legacy, allow_legacy=True) is None
     legacy["plan_raw_sha256"] = "f" * 64
     assert receiver.supported_receipt_plan_identity(legacy, allow_legacy=True) is None
     assert receiver.supported_receipt_plan_identity([], allow_legacy=True) is None

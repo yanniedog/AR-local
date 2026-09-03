@@ -104,11 +104,6 @@ def _validate_owned_record(
 ) -> None:
     fixed = {
         "schema_version": 1,
-        "plan_document_id": receiver.PLAN_DOCUMENT_ID,
-        "plan_version": receiver.PLAN_VERSION,
-        "plan_git_commit": expected["plan_git_commit"],
-        "plan_sha256": receiver.PLAN_SHA256,
-        "plan_normalized_raw_sha256": receiver.PLAN_NORMALIZED_RAW_SHA256,
         "protected_code_sha": expected["protected_code_sha"],
         "operator": expected["operator"],
         "deviations": [],
@@ -116,11 +111,16 @@ def _validate_owned_record(
     }
     if any(value.get(key) != item for key, item in fixed.items()):
         raise ValueError("orphaned scheduled record identity is invalid")
-    allowed_candidates = {expected["candidate_code_sha"]}
-    if predecessor:
-        allowed_candidates.update(expected.get("allowed_predecessor_candidates", ()))
-    if value.get("candidate_code_sha") not in allowed_candidates:
+    candidate = value.get("candidate_code_sha")
+    predecessors = set(expected.get("allowed_predecessor_candidates", ()))
+    allowed_candidates = {expected["candidate_code_sha"], *(predecessors if predecessor else ())}
+    if candidate not in allowed_candidates:
         raise ValueError("orphaned scheduled record candidate is invalid")
+    allow_legacy = predecessor and candidate in predecessors
+    if receiver.supported_normalized_plan_identity(
+        value, allow_legacy=allow_legacy
+    ) is None:
+        raise ValueError("orphaned scheduled record plan identity is invalid")
     timestamp = value.get("timestamps")
     completed = timestamp.get("completed_at") if isinstance(timestamp, Mapping) else None
     commands = value.get("exact_commands")
@@ -130,8 +130,7 @@ def _validate_owned_record(
     except ValueError as exc:
         raise ValueError("orphaned scheduled record timestamp is invalid") from exc
     if (
-        value.get("plan_raw_sha256") not in receiver.PLAN_VALID_RAW_SHA256S
-        or parsed.tzinfo is None
+        parsed.tzinfo is None
         or not isinstance(commands, list)
         or not commands
         or any(not isinstance(command, str) or not command.strip() for command in commands)

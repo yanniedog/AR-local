@@ -17,6 +17,10 @@ from zoneinfo import ZoneInfo
 
 import laptop_backup_scheduled as scheduled
 import laptop_backup_transition_contract as contract
+from laptop_backup_transition_state import (
+    validate_backup_state,
+    validate_pretransition_backup_state,
+)
 from laptop_backup_transition_authority import (
     static_preflight as authority_static_preflight,
     validate_evidence_target,
@@ -180,95 +184,6 @@ def write_prestate(
     return manifest
 
 
-def validate_backup_state(
-    config: TransitionConfig,
-    listing: Mapping[str, object],
-    *,
-    candidate_sha: str,
-    require_scheduled: bool,
-    scheduled_candidates: Sequence[str] | None = None,
-    allow_legacy_backfill: bool = False,
-) -> dict[str, object]:
-    latest = scheduled.latest_status(
-        config.target,
-        listing.get("latest_observation") if isinstance(listing.get("latest_observation"), Mapping) else None,
-        candidate_sha=candidate_sha,
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-    )
-    identities = listing.get("component_identities")
-    retained = listing.get("retained_runs")
-    if not isinstance(identities, Mapping) or not isinstance(retained, list):
-        raise ValueError("Pi source identities are incomplete")
-    control = scheduled.component_status(
-        config.target, identities, "control",
-        candidate_sha=candidate_sha,
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-    )
-    macro = scheduled.component_status(
-        config.target, identities, "macro",
-        candidate_sha=candidate_sha,
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-    )
-    inventory = scheduled.inventory_status(
-        config.target, retained, identities,
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-    )
-    for label, value in (("observation", latest), ("control", control), ("macro", macro), ("inventory", inventory)):
-        if value.get("status") != "UP_TO_DATE":
-            raise ValueError(f"{label} backup state is not verified current: {value.get('reason', 'unknown')}")
-    receipt_paths = contract.validate_receipts(
-        config.target,
-        candidate_sha=candidate_sha,
-        protected_sha=config.protected_code_sha,
-        plan_commit=config.plan_git_commit,
-        expected_date=config.expected_observation_date,
-    )
-    receiver.catalog_entries(config.target / "catalog/generations.jsonl")
-    scheduled_record: dict[str, object] | None = None
-    if require_scheduled:
-        path = contract.scheduled_record_path(config.target)
-        value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, Mapping):
-            raise ValueError("current scheduled record action is invalid")
-        action = value.get("action")
-        record_candidate = value.get("candidate_code_sha")
-        allowed_candidates = set(scheduled_candidates or (candidate_sha,))
-        if not isinstance(record_candidate, str) or record_candidate not in allowed_candidates:
-            raise ValueError("current scheduled record candidate is not an authorised preserved candidate")
-        allowed_actions = {"BACKUP-LATEST", "NO_BACKUP_DATA_WRITE"}
-        if (
-            allow_legacy_backfill
-            and candidate_sha == config.old_candidate_code_sha
-            and record_candidate == config.old_candidate_code_sha
-        ):
-            allowed_actions.add("BACKFILL")
-        if not isinstance(action, str) or action not in allowed_actions:
-            raise ValueError("current scheduled record action is invalid")
-        contract.validate_execution_record(
-            value,
-            action=action,
-            candidate_sha=record_candidate,
-            protected_sha=config.protected_code_sha,
-            plan_commit=config.plan_git_commit,
-            plan_sha256=config.plan_sha256,
-            operator=config.operator,
-            expected_date=config.expected_observation_date,
-        )
-        scheduled_record = {"path": str(path), "sha256": contract.sha256_file(path)}
-    return {
-        "observation": latest,
-        "control": control,
-        "macro": macro,
-        "inventory": inventory,
-        "receipts": contract.receipt_evidence(receipt_paths),
-        "scheduled_record": scheduled_record,
-    }
-
-
 def static_preflight(
     config: TransitionConfig,
     *,
@@ -313,14 +228,7 @@ def runtime_preflight(
         now=ops.now(),
     )
     contract.validate_deadline(ops.now(), config.deadline, timedelta(hours=2))
-    old_state = validate_backup_state(
-        config,
-        listing,
-        candidate_sha=config.old_candidate_code_sha,
-        require_scheduled=True,
-        scheduled_candidates=(config.old_candidate_code_sha, config.candidate_code_sha),
-        allow_legacy_backfill=True,
-    )
+    old_state = validate_pretransition_backup_state(config, listing)
     return snapshot, listing, old_state
 
 
@@ -703,7 +611,7 @@ def run_transition(
                 )
                 foreground_path, foreground_record, foreground_output = validate_scheduled_result(
                     config,
-                    "BACKUP-LATEST",
+                    str(old_state["required_action"]),
                     output=foreground.stdout,
                     previous_path=old_scheduled,
                 )
@@ -716,10 +624,13 @@ def run_transition(
                     expected_date=config.expected_observation_date,
                 )
                 baseline = (evidence.path / "pre-transition-generations.jsonl").read_bytes()
-                appended = contract.validate_catalog_delta(
+                appended = contract.validate_catalog_job_delta(
                     baseline,
                     config.target / "catalog/generations.jsonl",
-                    receipt_paths=receipts,
+                    expected_jobs=[tuple(job) for job in old_state["expected_jobs"]],
+                    candidate_sha=config.candidate_code_sha,
+                    protected_sha=config.protected_code_sha,
+                    plan_commit=config.plan_git_commit,
                 )
                 collected["foreground_record"] = {
                     "path": str(foreground_path),
@@ -741,7 +652,6 @@ def run_transition(
                     config,
                     listing_after,
                     candidate_sha=config.candidate_code_sha,
-                    require_scheduled=True,
                 )
                 contract.validate_deadline(ops.now(), config.deadline, timedelta(minutes=20))
                 evidence.checkpoint("INSTALL_ATTEMPTED")
@@ -804,10 +714,13 @@ def run_transition(
                     plan_commit=config.plan_git_commit,
                     expected_date=config.expected_observation_date,
                 )
-                contract.validate_catalog_delta(
+                contract.validate_catalog_job_delta(
                     baseline,
                     config.target / "catalog/generations.jsonl",
-                    receipt_paths=receipts,
+                    expected_jobs=[tuple(job) for job in old_state["expected_jobs"]],
+                    candidate_sha=config.candidate_code_sha,
+                    protected_sha=config.protected_code_sha,
+                    plan_commit=config.plan_git_commit,
                 )
                 listing_final = ops.source_listing(config)
                 contract.validate_source_listing(
@@ -820,7 +733,6 @@ def run_transition(
                     config,
                     listing_final,
                     candidate_sha=config.candidate_code_sha,
-                    require_scheduled=True,
                 )
                 collected["hygiene"] = contract.validate_hygiene(
                     config.target,

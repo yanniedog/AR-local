@@ -618,7 +618,9 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--protected-code-sha", required=True)
     value.add_argument("--plan-git-commit", required=True)
     value.add_argument("--operator")
-    value.add_argument("--check-only", action="store_true")
+    mode = value.add_mutually_exclusive_group()
+    mode.add_argument("--check-only", action="store_true")
+    mode.add_argument("--status-only", action="store_true")
     value.add_argument("--transition-id")
     value.add_argument("--allowed-predecessor-candidate-sha", action="append", default=[])
     return value
@@ -817,6 +819,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "error": "plan commit does not match the controlled runbook",
         }, indent=2), file=sys.stderr)
         return 1
+    if args.status_only and (
+        args.transition_id or args.allowed_predecessor_candidate_sha
+    ):
+        print(json.dumps({
+            "ok": False,
+            "result": "BLOCKED",
+            "error": "status-only mode does not accept transition authority",
+        }, indent=2), file=sys.stderr)
+        return 1
     allowed, gate_error = open_transition_allows_invocation(args)
     if not allowed:
         print(json.dumps({"ok": False, "result": "BLOCKED", "error": gate_error}, indent=2), file=sys.stderr)
@@ -824,14 +835,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     preflight_code, preflight_stdout, preflight_stderr = invoke_receiver(args, "preflight")
     if preflight_code:
         error = preflight_stderr or preflight_stdout
-        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        if not args.status_only:
+            safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
         sys.stderr.write(error)
         return preflight_code
     try:
         listing = json.loads(preflight_stdout)
     except json.JSONDecodeError as exc:
         error = f"Pi backup preflight returned invalid JSON: {exc}"
-        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        if not args.status_only:
+            safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
         print(error, file=sys.stderr)
         return 1
     try:
@@ -839,9 +852,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         status = scheduled_status(target, listing, args)
     except (KeyError, OSError, ValueError) as exc:
         error = f"Pi backup preflight metadata is invalid: {exc}"
-        safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
+        if not args.status_only:
+            safe_record(args, "BLOCKED", "PREFLIGHT_FAILED", {"error": error})
         print(error, file=sys.stderr)
         return 1
+    if args.status_only:
+        ok = status["status"] != "BLOCKED"
+        print(json.dumps({
+            "ok": ok,
+            "result": "PASS" if ok else "BLOCKED",
+            "action": "STATUS_ONLY",
+            **status,
+        }, indent=2, sort_keys=True), file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
     if status["status"] == "BLOCKED":
         path = record_execution(target, args, "BLOCKED", "PREFLIGHT_FAILED", status)
         print(json.dumps({
