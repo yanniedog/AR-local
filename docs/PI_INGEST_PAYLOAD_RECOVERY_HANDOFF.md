@@ -18246,7 +18246,7 @@ if($resumeMatches.Count-lt1){throw 'current handoff lacks a resume pointer'}
 $latestResume=$resumeMatches[$resumeMatches.Count-1]
 $resumeTail=$text.Substring($latestResume.match.Index+$latestResume.match.Length)
 $resume=$latestResume.value
-if($resumeTail-notmatch'^\s*$'-or$resume.schema-cne'ARL-A3-RESUME-POINTER-V1'-or$resume.version-ne1-or$resume.sequence-ne17-or$resume.predecessor-cne'C-20260904T035500+1000'-or$resume.base_main_sha-cne'591a9a619c01ffb4804db908f5d8ec6ce2c63327'-or$resume.authority-cne'HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'-or$resume.correction-cne'C-20260904T090500+1000'-or$resume.candidate_sha-cne$candidateSha-or$resume.terminal_status-cne'BLOCKED_UNTIL_SEQUENCE17_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS'){throw 'sequence-17 correction is not the final exact resume pointer'}
+if($resumeTail-notmatch'^\s*$'-or$resume.schema-cne'ARL-A3-RESUME-POINTER-V1'-or$resume.version-ne1-or$resume.sequence-ne17-or$resume.predecessor-cne'C-20260904T035500+1000'-or$resume.base_main_sha-cne'591a9a619c01ffb4804db908f5d8ec6ce2c63327'-or$resume.authority-cne'HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY'-or$resume.correction-cne'C-20260904T090500+1000'-or$resume.candidate_sha-cne$candidateSha-or$resume.terminal_status-cne'BLOCKED_UNTIL_SEQUENCE17_MATERIALIZER_FRESH_PREFLIGHT_AND_USER_UAC_CONSENT'){throw 'sequence-17 correction is not the final exact resume pointer'}
 $pattern='(?s)<!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T090500 -->\r?\n\x60\x60\x60powershell\r?\n(.*?)\r?\n\x60\x60\x60\r?\n<!-- END ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T090500 -->'
 $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-17 generator block is absent'}
@@ -18456,9 +18456,9 @@ $record|ConvertTo-Json -Depth 4 -Compress
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
-    "bytes": 38918,
+    "bytes": 38930,
     "lines": 369,
-    "sha256": "fdc250f7272b548381a6a37ebd99adf1be636369bb8b9752a067eec1ef345496"
+    "sha256": "a9ce7429515640dbd3e176172b7df7133862352f670cb19794ab65499d1972c5"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -18472,7 +18472,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, execute exactly the marked sequence-17 materializer in normal x64 System32 Windows PowerShell 5.1; require its terminal record; run the ordinary non-admin generator; then present the sole UAC command for user consent",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260904T090500",
-  "next_command_utf8_lf_sha256": "fdc250f7272b548381a6a37ebd99adf1be636369bb8b9752a067eec1ef345496",
+  "next_command_utf8_lf_sha256": "a9ce7429515640dbd3e176172b7df7133862352f670cb19794ab65499d1972c5",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [

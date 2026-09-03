@@ -337,15 +337,16 @@ def test_sequence17_generator_preserves_the_absolute_git_boundary() -> None:
 def test_sequence17_materializer_binds_the_canceled_consent_root() -> None:
     script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T090500")
     payload = script.encode()
-    assert len(payload) == 38918
+    assert len(payload) == 38930
     assert len(script.split("\n")) == 369
     assert hashlib.sha256(payload).hexdigest() == (
-        "fdc250f7272b548381a6a37ebd99adf1be636369bb8b9752a067eec1ef345496"
+        "a9ce7429515640dbd3e176172b7df7133862352f670cb19794ab65499d1972c5"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_17}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_17}'" in script
     assert "$resume.sequence-ne17" in script
     assert "$resume.predecessor-cne'C-20260904T035500+1000'" in script
+    assert "BLOCKED_UNTIL_SEQUENCE17_MATERIALIZER_FRESH_PREFLIGHT_AND_USER_UAC_CONSENT" in script
     assert "AssertInventory $partial 4102 323 171809062" in script
     assert "d3816dab085487264b9c50059cf8949e6274b975aa02bc1c9fa19834513103ab" in script
     assert "$script.Split([char]10).Count-ne544" in script
