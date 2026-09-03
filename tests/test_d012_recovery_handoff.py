@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 HANDOFF = ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
-CANDIDATE = "19856beb06dac53651e440a5ab2561b4bdc8eb74"
+CANDIDATE = "f7f89a930d221691875d4093d67037a4ddabb041"
 
 
 def _block(name: str) -> str:
@@ -25,10 +25,10 @@ def _block(name: str) -> str:
 def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
     payload = script.encode()
-    assert len(payload) == 71895
-    assert len(script.split("\n")) == 468
+    assert len(payload) == 72287
+    assert len(script.split("\n")) == 472
     assert hashlib.sha256(payload).hexdigest() == (
-        "df0572e47f11f1ae345368f035dcd5cae6f42537e589f73eb2b5c53d4b7a2185"
+        "4592d19f36614b47eebee20015ecb0fa1103ed1cdae3f52c3a7a37dcbafb010d"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -56,7 +56,7 @@ def test_sequence7_source_map_matches_lf_checkout() -> None:
     sources = dict(
         re.findall(r"^'([^']+)'='([0-9a-f]{64})'$", source_block.group(1), re.MULTILINE)
     )
-    assert len(sources) == 26
+    assert len(sources) == 30
     for relative, expected in sources.items():
         payload = (ROOT / relative.replace("\\", "/")).read_bytes()
         assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == expected
@@ -80,7 +80,7 @@ def test_sequence7_materializer_journals_initialization_failures() -> None:
     assert len(payload) == 37850
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "d3863e69f3a91b96158de06239d4c3a4eb769c7a81f11c4d2477674c488ecda4"
+        "533d41d3c4cb2c503a9a62c95e63ef00f030ecd05e08007ef0b00ce869f2ee2c"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
