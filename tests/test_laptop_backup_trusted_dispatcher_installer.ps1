@@ -1,6 +1,27 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_core.ps1')
 . (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_ssh.ps1')
+. (Join-Path (Join-Path $PSScriptRoot '..') 'install_laptop_backup_trusted_dispatcher_evidence.ps1')
+
+$resultRoot = Join-Path $env:TEMP ('ar-terminal-results-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $resultRoot | Out-Null
+try {
+  $script:executionRoot = $resultRoot
+  $script:startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+  $script:exactCommand = @('test')
+  $script:authorizedDeviations = @()
+  $script:deviationAuthorization = $null
+  $firstResult = Write-ArTrustedResult -Result 'PASS' -ErrorText $null -Detail @{}
+  $firstHash = Get-ArTrustedSha256 $firstResult
+  $secondResult = Write-ArTrustedResult -Result 'ROLLED_BACK' -ErrorText 'later failure' -Detail @{}
+  if ([IO.Path]::GetFileName($firstResult) -cne 'bootstrap-result.json' -or
+      [IO.Path]::GetFileName($secondResult) -cne 'bootstrap-result-0002.json' -or
+      (Get-ArTrustedSha256 $firstResult) -cne $firstHash) {
+    throw 'Terminal bootstrap result history was overwritten or misnamed.'
+  }
+} finally {
+  Remove-Item -LiteralPath $resultRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $script:task = [pscustomobject]@{
   Actions = @([pscustomobject]@{ Execute='C:\Program Files\AR-local\trusted\launcher.exe'; Arguments=$null; WorkingDirectory='C:\Program Files\AR-local\trusted' })
@@ -180,29 +201,51 @@ if ((Get-ArTrustedSddlSemanticSha256 $explicitSddl) -ceq (Get-ArTrustedSddlSeman
 $manifestPath = Join-Path $env:TEMP ('ar-preexecution-' + [guid]::NewGuid().ToString('N') + '.json')
 try {
   $expected = [ordered]@{ schema_version=1; candidate_code_sha=('a' * 40) }
+  $evidenceItem = Get-Item -LiteralPath $PSCommandPath
+  $template = "test-installer -PreExecutionManifestSha256 '<SELF_SHA256>'"
   $manifest = [ordered]@{
     schema_version=1; candidate_code_sha=('a' * 40)
     created_at=[DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('o')
     expires_at=[DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o')
+    exact_commands=@('MARKED_ARL_D012_PREPARE_AND_PREFLIGHT_PS1_C20260902T160000',$template)
+    command_self_hash_placeholder='<SELF_SHA256>'
+    evidence_files=@([ordered]@{path=$evidenceItem.FullName;bytes=[long]$evidenceItem.Length;sha256=(Get-ArTrustedSha256 $evidenceItem.FullName)})
+    result='PASS';deviations=@()
   }
   [IO.File]::WriteAllText($manifestPath,(($manifest|ConvertTo-Json -Compress)+"`n"),[Text.UTF8Encoding]::new($false))
   $manifestHash = Get-ArTrustedSha256 $manifestPath
   $loaded = Read-ArTrustedPreExecutionManifest -Path $manifestPath -ExpectedSha256 $manifestHash
-  Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected
+  Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath)
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($template.Replace('<SELF_SHA256>',$manifestHash)))
+  $hostPath = [IO.Path]::GetFullPath((Join-Path $PSHOME 'powershell.exe'))
+  $validCommand = '"' + $hostPath + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + $encoded
+  Assert-ArTrustedInstallerCommandEvidence -Manifest $loaded -ManifestSha256 $manifestHash -ActualProcessCommand $validCommand
+  foreach ($invalidCommand in @(
+      "powershell -EncodedCommand $encoded",
+      ($validCommand + ' -NoExit'),
+      ('powershell -NoProfile -NonInteractive -Command "Write-Output ''' + $encoded + '''; Write-Output extra"')
+    )) {
+    $rejected = $false
+    try {
+      Assert-ArTrustedInstallerCommandEvidence -Manifest $loaded -ManifestSha256 $manifestHash `
+        -ActualProcessCommand $invalidCommand
+    } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Non-exact elevated installer command was accepted.' }
+  }
   $loaded.candidate_code_sha = 'b' * 40
   $rejected = $false
-  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath) } catch { $rejected = $true }
   if (-not $rejected) { throw 'Pre-execution identity drift was accepted.' }
   $loaded.candidate_code_sha = 'a' * 40
   $loaded.schema_version = $null
   $rejected = $false
-  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected } catch { $rejected = $true }
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath) } catch { $rejected = $true }
   if (-not $rejected) { throw 'Null pre-execution integer field was accepted.' }
   $loaded.schema_version = 1
   $loaded.created_at = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o')
   $loaded.expires_at = [DateTimeOffset]::UtcNow.AddMinutes(20).ToString('o')
   $rejected = $false
-  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequireFresh } catch { $rejected = $true }
+  try { Assert-ArTrustedPreExecutionManifest -Manifest $loaded -Expected $expected -RequiredEvidencePaths @($PSCommandPath) -RequireFresh } catch { $rejected = $true }
   if (-not $rejected) { throw 'Future pre-execution creation time was accepted.' }
   $contract = [ordered]@{ task_name='test'; expected_last_result=1; pre_execution_manifest_sha256='<SELF_SHA256>' }
   $contractHash = Get-ArTrustedInvocationContractSha256 $contract

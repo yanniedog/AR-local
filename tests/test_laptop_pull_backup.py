@@ -13,10 +13,11 @@ from pathlib import Path
 import pytest
 import zstandard
 
-import cdr_outputs
 import laptop_backup_scheduled as scheduled
 import laptop_pull_backup as receiver
 import pi_laptop_backup_source as source
+from tests.support_legacy_export import write_legacy_export
+from tests.support_observation import write_verified_observation
 
 
 CANDIDATE = "a" * 40
@@ -77,38 +78,7 @@ def base_manifest(kind: str, entries: list[dict[str, object]]) -> dict[str, obje
 
 
 def create_daily_exports(root: Path, date: str) -> None:
-    exports = root / f"data/runs/{date}/_exports"
-    (exports / "dashboard-cache").mkdir(parents=True)
-    groups = {
-        "products": [],
-        "rates": [],
-        "product_facts": [],
-        "product_changes": [],
-        "fees": [],
-        "features": [],
-        "eligibility": [],
-        "constraints": [],
-        "failures": [{}, {}, {}],
-        "holder_attempts": [{}, {}],
-    }
-    expected_counts = {key: len(value) for key, value in groups.items()}
-    (exports / f"banks-{date}.json").write_text(json.dumps(groups), encoding="utf-8")
-    (exports / "dashboard-cache/latest.json").write_text(
-        json.dumps({"run_date": date, "banks_counts": expected_counts}),
-        encoding="utf-8",
-    )
-    database = exports / "local-cdr.sqlite"
-    connection = sqlite3.connect(database)
-    try:
-        cdr_outputs.ensure_db(connection)
-        connection.execute(
-            "INSERT INTO runs VALUES (?, ?, ?)",
-            (date, "2026-08-25T00:00:00Z", json.dumps(expected_counts)),
-        )
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        connection.close()
+    write_legacy_export(root, date)
 
 
 def make_file_only_tar(root: Path, archive: Path, entries: list[dict[str, object]]) -> None:
@@ -362,7 +332,20 @@ def test_reconciliation_rejects_corrupt_non_database_population(
         receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
 
 
-def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> None:
+def test_canonical_reconciliation_reports_current_schema(tmp_path: Path) -> None:
+    exports = tmp_path / "exports"
+    write_verified_observation(exports, observation_date="2026-09-03")
+
+    report = receiver.daily_reconciliation_bounded(exports / "local-cdr.sqlite")
+
+    assert report["schema_version"] == "11"
+    assert report["validation_mode"] == (
+        "canonical_observation_and_immutable_sqlite_v11"
+    )
+
+
+@pytest.mark.parametrize("include_holder_attempts", (False, True))
+def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path, include_holder_attempts: bool) -> None:
     date = "2026-08-14"
     root = tmp_path / "source"
     create_daily_exports(root, date)
@@ -373,8 +356,10 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
         connection.execute("UPDATE schema_meta SET value = '7' WHERE key = 'version'")
         banks_path = exports / f"banks-{date}.json"
         banks = json.loads(banks_path.read_text(encoding="utf-8"))
-        for key in ("product_facts", "product_changes", "holder_attempts"):
+        for key in ("product_facts", "product_changes"):
             banks.pop(key)
+        if not include_holder_attempts:
+            banks.pop("holder_attempts")
         expected = {key: len(value) for key, value in banks.items()}
         banks_path.write_text(json.dumps(banks), encoding="utf-8")
         (exports / "dashboard-cache/latest.json").write_text(
@@ -391,7 +376,8 @@ def test_reconciliation_accepts_known_immutable_v7_schema(tmp_path: Path) -> Non
     assert report["schema_tables"] == [
         "bank_items", "bank_products", "bank_rates", "runs", "schema_meta"
     ]
-    assert report["unpersisted_populations"] == ["failures"]
+    unpersisted = ["failures", "holder_attempts"] if include_holder_attempts else ["failures"]
+    assert report["unpersisted_populations"] == unpersisted
 
 
 def test_reconciliation_rejects_population_unsupported_by_v7(
@@ -859,8 +845,8 @@ def test_source_listing_identifies_latest_completion_generation(tmp_path: Path) 
 def test_component_revision_is_shared_and_ignores_only_archive_and_runtime_metadata() -> None:
     manifest = base_manifest("control", [
         {"path": "state/a.json", "type": "file", "size": 2, "sha256": "a" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
-        {"path": "system/systemd/ar-local-dashboard.service.show.txt", "type": "file", "size": 3, "sha256": "c" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
-        {"path": "system/systemd/ar-local-dashboard.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-status.service.show.txt", "type": "file", "size": 3, "sha256": "c" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
+        {"path": "system/systemd/ar-local-status.service.txt", "type": "file", "size": 4, "sha256": "d" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "git/AR-local.bundle", "type": "file", "size": 5, "sha256": "e" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "system/control-metadata.json", "type": "file", "size": 6, "sha256": "f" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},
         {"path": "data/state/runtime_health.json", "type": "file", "size": 7, "sha256": "9" * 64, "mode": "0o600", "mtime_ns": 1, "uid": 1000, "gid": 1000},

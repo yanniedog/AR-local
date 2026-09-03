@@ -21,7 +21,8 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     source = (ROOT / "install_laptop_backup_trusted_dispatcher.ps1").read_text(encoding="utf-8")
     core = (ROOT / "install_laptop_backup_trusted_dispatcher_core.ps1").read_text(encoding="utf-8")
     ssh_boundary = (ROOT / "install_laptop_backup_trusted_dispatcher_ssh.ps1").read_text(encoding="utf-8")
-    combined = source + core + ssh_boundary
+    evidence = (ROOT / "install_laptop_backup_trusted_dispatcher_evidence.ps1").read_text(encoding="utf-8")
+    combined = source + core + ssh_boundary + evidence
     assert "Start-ScheduledTask -TaskName $TaskName" not in source
     assert "Start-ScheduledTask -TaskName $probeName" in source
     assert "Restore-ArTrustedPriorTask" in source
@@ -37,6 +38,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "RecoveryImage" in source
     assert "PlanGitCommit" in source
     assert "PlanSha256" in source
+    assert "PlanRawSha256" in source
     assert "HandoffSha256" in source
     assert "[IO.FileShare]::Read" in core
     assert "$stream.Position = 0" in core
@@ -85,6 +87,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "ssh_endpoint_path" in core and "ssh_endpoint_sha256" in core
     assert "ssh-keyscan" not in combined
     assert "SshBoundarySha256" in source
+    assert "EvidenceBoundarySha256" in source
     assert "New-ScheduledTaskPrincipal -UserId $Principal -LogonType S4U -RunLevel Limited" in source
     assert "ConvertFrom-Json -AsHashtable" not in combined
     assert "finalize.enabled" in source
@@ -106,10 +109,18 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "-AllowedRuntimeFiles @('ssh\\id','bootstrap.ready','bootstrap.ready.pending','bootstrap-result.json','bootstrap-result.json.pending','installed-task-sddl-semantic.sha256')" in source
     assert source.index("post-bootstrap-catalog.json") < source.index("terminal-quiescence.json")
     assert source.count("Invoke-ArTrustedPiIdleCheck") >= 3
+    assert source.count("Assert-ArTrustedAuthorityMain") == 2
+    assert combined.count("Assert-ArTrustedAuthorityMain") >= 3
+    assert "Tasmania Standard Time" in source
+    assert "Assert-ArTrustedInstallerCommandEvidence" in evidence
+    assert "Required pre-execution evidence is absent" in evidence
     assert source.index("PUBLISH_PROTECTED_ROOT") < source.index("Invoke-ArTrustedPiIdleCheck -Phase 'protected-package preflight'")
     assert source.index("Invoke-ArTrustedPiIdleCheck -Phase 'immediate pre-mutation'") < source.index("Disable-ScheduledTask -TaskName $TaskName")
-    result_writer = source[source.index("function Write-ArTrustedResult"):source.index("function Enter-ArTrustedBootstrapGate")]
+    result_writer = evidence[evidence.index("function Write-ArTrustedResult"):evidence.index("function Read-ArTrustedPreExecutionManifest")]
     assert "Get-ChildItem -LiteralPath $script:executionRoot" in result_writer
+    assert "bootstrap-result-{0:d4}.json" in result_writer
+    assert "[IO.FileMode]::CreateNew" in result_writer
+    assert "[IO.FileMode]::Create," not in result_writer
     assert "ssh_identity_path" not in result_writer
     assert "Stop-ScheduledTask -TaskName $probeName" in source
     assert source.index("Stop-ArTrustedProbeAndAwait") < source.index("Unregister-ScheduledTask -TaskName $probeName", source.index("rollbackMayMutate"))
@@ -130,7 +141,7 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "invocation_contract_sha256" in source
     assert "RESTORE_TASK_CONTROL_AND_QUARANTINE_V1" in source
     assert "Set-ArTrustedDeviationAuthorization" in source
-    assert "deviations = @($script:authorizedDeviations)" in source
+    assert "deviations = @($script:authorizedDeviations)" in evidence
     assert "ExpectedControlSddlSha256" in source
     assert "ROLLBACK_QUARANTINE_NEW_ROOT" in source
     assert "Join-Path $env:ProgramFiles ('ARLBS-'" in source
@@ -198,6 +209,9 @@ def test_trusted_installer_is_fail_closed_and_never_starts_production_task() -> 
     assert "Trusted package owner is not Administrators" in core
     assert "Catalog baseline entry digest is invalid" in core
     assert "GIT_CONFIG_VALUE_0" in source
+    assert len(source.splitlines()) < 1000
+    assert len(core.splitlines()) < 1000
+    assert len(evidence.splitlines()) < 800
     assert len((ROOT / "laptop_backup_dispatcher.py").read_text(encoding="utf-8").splitlines()) < 1000
     assert len((ROOT / "laptop_pull_backup.py").read_text(encoding="utf-8").splitlines()) < 1000
     assert len((ROOT / "laptop_backup_dispatcher_security.py").read_text(encoding="utf-8").splitlines()) < 800

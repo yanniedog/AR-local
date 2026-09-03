@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://australianrates.local/contracts/observation-v1.schema.json",
+  "title": "Canonical CDR Observation V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "observation_date", "observed_at", "normalization_version",
+    "state", "accounting", "summaries", "row_counts", "products", "rates",
+    "items", "product_facts", "product_changes"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "observation_date": { "type": "string", "format": "date" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "normalization_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "state": { "enum": ["complete", "degraded"] },
+    "accounting": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "accounting_id", "file", "sha256"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "accounting_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "file": { "const": "product-accounting-v1.json" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "summaries": {
+      "type": "object", "additionalProperties": false,
+      "required": ["providers", "products", "issues"],
+      "properties": {
+        "providers": { "type": "object" },
+        "products": { "type": "object" },
+        "issues": { "type": "object" }
+      }
+    },
+    "row_counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["products", "rates", "items", "product_facts", "product_changes"],
+      "properties": {
+        "products": { "$ref": "#/$defs/count" },
+        "rates": { "$ref": "#/$defs/count" },
+        "items": { "$ref": "#/$defs/count" },
+        "product_facts": { "$ref": "#/$defs/count" },
+        "product_changes": { "$ref": "#/$defs/count" }
+      }
+    },
+    "products": { "type": "array", "items": { "$ref": "#/$defs/product" } },
+    "rates": { "type": "array", "items": { "$ref": "#/$defs/rate" } },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "product_facts": { "type": "array", "items": { "$ref": "#/$defs/fact" } },
+    "product_changes": { "type": "array", "items": { "$ref": "#/$defs/change" } }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "providerUid": { "type": "string", "pattern": "^provider(?:-fallback)?:v1:[0-9a-f]{64}$" },
+    "productUid": { "$ref": "#/$defs/digest" },
+    "nullableText": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+    "document": { "type": "object" },
+    "product": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product_uid", "provider_uid", "dataset", "cdr_product_id", "legacy_product_key", "document"],
+      "properties": {
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "provider_uid": { "$ref": "#/$defs/providerUid" },
+        "dataset": { "enum": ["Mortgage", "Savings", "TD"] },
+        "cdr_product_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "legacy_product_key": { "$ref": "#/$defs/nullableText" },
+        "document": { "$ref": "#/$defs/document" }
+      }
+    },
+    "rate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rate_uid", "product_uid", "rate_index", "rate", "comparison_rate", "document"],
+      "properties": {
+        "rate_uid": { "$ref": "#/$defs/digest" },
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "rate_index": { "type": "integer", "minimum": 1 },
+        "rate": { "type": "string", "pattern": "^(?:0(?:\\.[0-9]+)?|1)$" },
+        "comparison_rate": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^(?:0(?:\\.[0-9]+)?|1)$" }] },
+        "document": { "$ref": "#/$defs/document" }
+      }
+    },
+    "item": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product_uid", "item_group", "item_index", "document"],
+      "properties": {
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "item_group": { "enum": ["fees", "features", "eligibility", "constraints"] },
+        "item_index": { "type": "integer", "minimum": 1 },
+        "document": { "$ref": "#/$defs/document" }
+      }
+    },
+    "fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product_uid", "fact_id", "kind", "canonical_key", "value_type", "value_boolean", "value_number", "value_text", "min_value", "max_value", "document"],
+      "properties": {
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "fact_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["fee", "rate", "tier", "bundle", "attribute", "feature", "eligibility", "constraint", "condition"] },
+        "canonical_key": { "type": "string", "minLength": 1 },
+        "value_type": { "enum": ["boolean", "money", "rate", "number", "duration", "range", "enum", "text"] },
+        "value_boolean": { "oneOf": [{ "type": "null" }, { "type": "boolean" }] },
+        "value_number": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
+        "value_text": { "$ref": "#/$defs/nullableText" },
+        "min_value": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
+        "max_value": { "oneOf": [{ "type": "null" }, { "type": "number" }] },
+        "document": { "$ref": "#/$defs/document" }
+      }
+    },
+    "change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["event_id", "provider_uid", "product_uid", "event_type", "canonical_key", "document"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "provider_uid": { "$ref": "#/$defs/providerUid" },
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "event_type": { "type": "string", "minLength": 1 },
+        "canonical_key": { "$ref": "#/$defs/nullableText" },
+        "document": { "$ref": "#/$defs/document" }
+      }
+    }
+  }
+}

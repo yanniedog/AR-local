@@ -204,7 +204,7 @@ def source_listing() -> dict[str, object]:
             "daily_timer_active": "active",
             "daily_timer_next": "Sun 2026-08-30 01:00:00 AEST",
             "ingest_lock_absent": True,
-            "dashboard_healthy": True,
+            "status_healthy": True,
             "state_root": "/srv/ar-local/data/state",
         },
         "retained_runs": [
@@ -305,8 +305,8 @@ INVALID_SOURCE_IDENTITIES: tuple[tuple[InvalidMutation, str], ...] = (
         "ingest lock identity is invalid",
     ),
     (
-        lambda value: value["preflight"].update(dashboard_healthy=False),
-        "dashboard identity is invalid",
+        lambda value: value["preflight"].update(status_healthy=False),
+        "runtime health identity is invalid",
     ),
     (
         lambda value: value["component_identities"].update(control={}),
@@ -474,6 +474,29 @@ def test_source_listing_requires_complete_consistent_identity() -> None:
     )
     assert identities is valid["component_identities"]
     assert retained is valid["retained_runs"]
+
+
+def test_source_listing_accepts_legacy_dashboard_health_identity() -> None:
+    valid = source_listing()
+    valid["preflight"]["dashboard_healthy"] = valid["preflight"].pop("status_healthy")
+
+    scheduled.validate_source_listing(
+        valid,
+        protected_sha=PROTECTED,
+        now=datetime(2026, 8, 29, 17, 1, tzinfo=HOBART),
+    )
+
+
+def test_source_listing_rejects_ambiguous_runtime_health_identity() -> None:
+    invalid = source_listing()
+    invalid["preflight"]["dashboard_healthy"] = True
+
+    with pytest.raises(ValueError, match="runtime health identity is invalid"):
+        scheduled.validate_source_listing(
+            invalid,
+            protected_sha=PROTECTED,
+            now=datetime(2026, 8, 29, 17, 1, tzinfo=HOBART),
+        )
 
 
 def test_source_listing_accepts_verified_terminal_failure_identity() -> None:

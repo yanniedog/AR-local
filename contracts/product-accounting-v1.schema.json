@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://australianrates.app/contracts/product-accounting-v1.schema.json",
+  "title": "ProductAccountingV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observation_date",
+    "accounting_id",
+    "raw_attempt_journal_digest",
+    "providers",
+    "products",
+    "issues",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "observation_date": { "type": "string", "format": "date" },
+    "accounting_id": { "$ref": "#/$defs/accountingId" },
+    "raw_attempt_journal_digest": { "$ref": "#/$defs/digest" },
+    "providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/provider" }
+    },
+    "products": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/product" }
+    },
+    "issues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "summary": { "$ref": "#/$defs/summary" }
+  },
+  "$defs": {
+    "accountingId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "providerUid": {
+      "type": "string",
+      "pattern": "^provider(?:-fallback)?:v1:[0-9a-f]{64}$"
+    },
+    "productUid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "issueId": {
+      "type": "string",
+      "pattern": "^issue:v1:[0-9a-f]{64}$"
+    },
+    "safeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "section": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "dataset": {
+      "enum": ["Mortgage", "Savings", "TD"]
+    },
+    "providerState": {
+      "enum": ["complete", "partial", "empty", "failed", "not_attempted"]
+    },
+    "disposition": {
+      "enum": [
+        "published_full",
+        "published_core_only",
+        "omitted_valid",
+        "quarantined_invalid"
+      ]
+    },
+    "scope": {
+      "enum": ["product", "provider", "register", "run"]
+    },
+    "phase": {
+      "enum": [
+        "register_discovery",
+        "products_index",
+        "product_detail",
+        "classification_detail",
+        "holder",
+        "normalization",
+        "validation",
+        "reconciliation",
+        "finalization"
+      ]
+    },
+    "issueCode": {
+      "enum": [
+        "detail_fetch_failed",
+        "detail_array_invalid",
+        "detail_invalid_json",
+        "cdr_error",
+        "identity_mismatch",
+        "duplicate_conflict",
+        "rate_invalid",
+        "classification_unresolved",
+        "no_current_rate",
+        "product_closed",
+        "unsupported_category",
+        "field_omitted_invalid",
+        "products_index_failed",
+        "pagination_incomplete",
+        "holder_worker_crash",
+        "provider_population_unknown",
+        "register_failed",
+        "failure_record_corrupt",
+        "failure_unattributed",
+        "accounting_unreconciled"
+      ]
+    },
+    "productReasonCode": {
+      "enum": [
+        "detail_fetch_failed",
+        "detail_array_invalid",
+        "detail_invalid_json",
+        "cdr_error",
+        "identity_mismatch",
+        "duplicate_conflict",
+        "rate_invalid",
+        "classification_unresolved",
+        "no_current_rate",
+        "product_closed",
+        "unsupported_category",
+        "field_omitted_invalid"
+      ]
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_uid",
+        "brand_name",
+        "datasets",
+        "affected_sections",
+        "state",
+        "attempted",
+        "population_known",
+        "discovered_count",
+        "published_full_count",
+        "published_core_only_count",
+        "omitted_valid_count",
+        "quarantined_invalid_count",
+        "issue_count",
+        "issue_ids"
+      ],
+      "properties": {
+        "provider_uid": { "$ref": "#/$defs/providerUid" },
+        "brand_name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "datasets": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/dataset" }
+        },
+        "affected_sections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/section" }
+        },
+        "state": { "$ref": "#/$defs/providerState" },
+        "attempted": { "type": "boolean" },
+        "population_known": { "type": "boolean" },
+        "discovered_count": { "type": "integer", "minimum": 0 },
+        "published_full_count": { "type": "integer", "minimum": 0 },
+        "published_core_only_count": { "type": "integer", "minimum": 0 },
+        "omitted_valid_count": { "type": "integer", "minimum": 0 },
+        "quarantined_invalid_count": { "type": "integer", "minimum": 0 },
+        "issue_count": { "type": "integer", "minimum": 0 },
+        "issue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/issueId" }
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_uid",
+        "provider_uid",
+        "cdr_product_id",
+        "dataset",
+        "display_name",
+        "legacy_product_key",
+        "disposition",
+        "reason_codes",
+        "evidence_ids",
+        "core_valid",
+        "details_complete"
+      ],
+      "properties": {
+        "product_uid": { "$ref": "#/$defs/productUid" },
+        "provider_uid": { "$ref": "#/$defs/providerUid" },
+        "cdr_product_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "dataset": { "$ref": "#/$defs/dataset" },
+        "display_name": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 256 }
+          ]
+        },
+        "legacy_product_key": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 512 }
+          ]
+        },
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/productReasonCode" }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/digest" }
+        },
+        "core_valid": { "type": "boolean" },
+        "details_complete": { "type": "boolean" }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issue_id",
+        "scope",
+        "provider_uid",
+        "product_uid",
+        "affected_sections",
+        "phase",
+        "code",
+        "http_status",
+        "occurrence_count",
+        "first_seen_at",
+        "last_seen_at",
+        "evidence_digest",
+        "disposition",
+        "public_safe"
+      ],
+      "properties": {
+        "issue_id": { "$ref": "#/$defs/issueId" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "provider_uid": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/providerUid" }]
+        },
+        "product_uid": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/productUid" }]
+        },
+        "affected_sections": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/section" }
+        },
+        "phase": { "$ref": "#/$defs/phase" },
+        "code": { "$ref": "#/$defs/issueCode" },
+        "http_status": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 100, "maximum": 599 }
+          ]
+        },
+        "occurrence_count": { "type": "integer", "minimum": 1 },
+        "first_seen_at": { "type": "string", "format": "date-time" },
+        "last_seen_at": { "type": "string", "format": "date-time" },
+        "evidence_digest": { "$ref": "#/$defs/digest" },
+        "disposition": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/disposition" }]
+        },
+        "public_safe": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "scope": { "const": "product" } } },
+          "then": {
+            "properties": {
+              "provider_uid": { "$ref": "#/$defs/providerUid" },
+              "product_uid": { "$ref": "#/$defs/productUid" },
+              "disposition": { "$ref": "#/$defs/disposition" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "scope": { "const": "provider" } } },
+          "then": {
+            "properties": {
+              "provider_uid": { "$ref": "#/$defs/providerUid" },
+              "product_uid": { "type": "null" },
+              "disposition": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "scope": { "const": "register" } } },
+          "then": {
+            "properties": {
+              "product_uid": { "type": "null" },
+              "disposition": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "scope": { "const": "run" } } },
+          "then": {
+            "properties": {
+              "provider_uid": { "type": "null" },
+              "product_uid": { "type": "null" },
+              "disposition": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "providerSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registered",
+        "attempted",
+        "complete",
+        "partial",
+        "empty",
+        "failed",
+        "not_attempted",
+        "population_unknown"
+      ],
+      "properties": {
+        "registered": { "type": "integer", "minimum": 0 },
+        "attempted": { "type": "integer", "minimum": 0 },
+        "complete": { "type": "integer", "minimum": 0 },
+        "partial": { "type": "integer", "minimum": 0 },
+        "empty": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "not_attempted": { "type": "integer", "minimum": 0 },
+        "population_unknown": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "productSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "discovered",
+        "published_full",
+        "published_core_only",
+        "omitted_valid",
+        "quarantined_invalid",
+        "consumer_visible"
+      ],
+      "properties": {
+        "discovered": { "type": "integer", "minimum": 0 },
+        "published_full": { "type": "integer", "minimum": 0 },
+        "published_core_only": { "type": "integer", "minimum": 0 },
+        "omitted_valid": { "type": "integer", "minimum": 0 },
+        "quarantined_invalid": { "type": "integer", "minimum": 0 },
+        "consumer_visible": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "issueSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "corrupt",
+        "unattributed",
+        "affected_providers",
+        "affected_products",
+        "by_code"
+      ],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "corrupt": { "type": "integer", "minimum": 0 },
+        "unattributed": { "type": "integer", "minimum": 0 },
+        "affected_providers": { "type": "integer", "minimum": 0 },
+        "affected_products": { "type": "integer", "minimum": 0 },
+        "by_code": { "$ref": "#/$defs/countsByCode" }
+      }
+    },
+    "countsByCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "detail_fetch_failed": { "type": "integer", "minimum": 1 },
+        "detail_array_invalid": { "type": "integer", "minimum": 1 },
+        "detail_invalid_json": { "type": "integer", "minimum": 1 },
+        "cdr_error": { "type": "integer", "minimum": 1 },
+        "identity_mismatch": { "type": "integer", "minimum": 1 },
+        "duplicate_conflict": { "type": "integer", "minimum": 1 },
+        "rate_invalid": { "type": "integer", "minimum": 1 },
+        "classification_unresolved": { "type": "integer", "minimum": 1 },
+        "no_current_rate": { "type": "integer", "minimum": 1 },
+        "product_closed": { "type": "integer", "minimum": 1 },
+        "unsupported_category": { "type": "integer", "minimum": 1 },
+        "field_omitted_invalid": { "type": "integer", "minimum": 1 },
+        "products_index_failed": { "type": "integer", "minimum": 1 },
+        "pagination_incomplete": { "type": "integer", "minimum": 1 },
+        "holder_worker_crash": { "type": "integer", "minimum": 1 },
+        "provider_population_unknown": { "type": "integer", "minimum": 1 },
+        "register_failed": { "type": "integer", "minimum": 1 },
+        "failure_record_corrupt": { "type": "integer", "minimum": 1 },
+        "failure_unattributed": { "type": "integer", "minimum": 1 },
+        "accounting_unreconciled": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers", "products", "issues"],
+      "properties": {
+        "providers": { "$ref": "#/$defs/providerSummary" },
+        "products": { "$ref": "#/$defs/productSummary" },
+        "issues": { "$ref": "#/$defs/issueSummary" }
+      }
+    }
+  }
+}

@@ -17,6 +17,7 @@ from cdr_atomic import (
 )
 from cdr_file_lock import FileLock
 from cdr_raw_attempt_journal import RawAttemptJournal
+from cdr_provider_identity_registry import REGISTRY_FILENAME
 
 
 PROMOTION_SCHEMA_VERSION = 1
@@ -227,7 +228,14 @@ def _verified_source(
         summary = journal.summary(recover=False)
     except (OSError, RuntimeError, ValueError) as error:
         raise AttemptEvidencePromotionError("attempt journal source verification failed") from error
-    for field in ("schema_version", "session_id", "attempts", "head_digest", "verified"):
+    for field in (
+        "schema_version",
+        "session_id",
+        "attempts",
+        "head_digest",
+        "observed_at",
+        "verified",
+    ):
         if pointer.get(field) != summary.get(field):
             raise AttemptEvidencePromotionError(
                 f"attempt journal source summary mismatch: {field}"
@@ -307,6 +315,117 @@ def _verify_promoted(
     if summary != expected_manifest["journal"]:
         raise AttemptEvidencePromotionError("promoted attempt journal summary mismatch")
     return summary, _hash_file(manifest_path)[1]
+
+
+def verify_promoted_attempt_evidence(
+    export_root: Path,
+    pointer: Mapping[str, Any],
+    *,
+    expected_head_digest: Optional[str] = None,
+    expected_session_id: Optional[str] = None,
+) -> RawAttemptJournal:
+    """Verify a finalized journal, its manifest, inventory, and status pointer."""
+
+    export_root = export_root.expanduser().absolute()
+    _validate_node(export_root, directory=True)
+    relative = _safe_relative(pointer.get("path"))
+    session_id = str(pointer.get("session_id") or "")
+    if (
+        not session_id
+        or relative != ARTIFACT_NAMESPACE / session_id
+        or pointer.get("path_resolution") != "relative_to_finalized_export_root"
+        or pointer.get("retention") != "hash_bound_finalized_artifact"
+        or pointer.get("verified") is not True
+        or (expected_session_id is not None and session_id != expected_session_id)
+        or (
+            expected_head_digest is not None
+            and pointer.get("head_digest") != expected_head_digest
+        )
+    ):
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence pointer is invalid"
+        )
+
+    destination = export_root
+    for part in relative.parts:
+        destination = destination / part
+        _validate_node(destination, directory=True)
+    lock = destination / ".lock"
+    if _validate_node(lock, directory=False).st_size != 1:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence lock is invalid"
+        )
+
+    manifest_relative = _safe_relative(pointer.get("promotion_manifest_path"))
+    if manifest_relative != relative / PROMOTION_MANIFEST:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest path is invalid"
+        )
+    manifest_path = export_root.joinpath(*manifest_relative.parts)
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest is unreadable"
+        ) from error
+    if not isinstance(manifest, Mapping):
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence manifest is invalid"
+        )
+    source_relative = _safe_relative(manifest.get("source_journal_path"))
+    if source_relative != PurePosixPath(SOURCE_NAMESPACE) / session_id:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt evidence source path is invalid"
+        )
+
+    records = _inventory(
+        destination,
+        exclude=frozenset({PROMOTION_MANIFEST}),
+    )
+    journal = RawAttemptJournal(destination.parent, session_id)
+    try:
+        summary = journal.summary(recover=False)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise AttemptEvidencePromotionError(
+            "promoted attempt journal verification failed"
+        ) from error
+    expected_manifest = _manifest(
+        artifact_path=relative,
+        source_path=source_relative,
+        summary=summary,
+        records=records,
+    )
+    verified, manifest_digest = _verify_promoted(
+        destination, session_id, expected_manifest
+    )
+    for field in (
+        "schema_version",
+        "session_id",
+        "attempts",
+        "head_digest",
+        "observed_at",
+        "verified",
+    ):
+        actual = pointer.get(field)
+        expected = verified.get(field)
+        if type(actual) is not type(expected) or actual != expected:
+            raise AttemptEvidencePromotionError(
+                f"promoted attempt evidence pointer mismatch: {field}"
+            )
+    pointer_fields = {
+        "promotion_manifest_sha256": manifest_digest,
+        "source_tree_sha256": expected_manifest["source_tree_sha256"],
+        "source_file_count": expected_manifest["source_file_count"],
+        "source_bytes": expected_manifest["source_bytes"],
+    }
+    for field, expected in pointer_fields.items():
+        actual = pointer.get(field)
+        if type(actual) is not type(expected) or actual != expected:
+            raise AttemptEvidencePromotionError(
+                f"promoted attempt evidence pointer mismatch: {field}"
+            )
+    return journal
 
 
 def _install_journal(
@@ -475,6 +594,36 @@ def promote_attempt_evidence(
     if not isinstance(pointer, Mapping):
         raise AttemptEvidencePromotionError("attempt journal status pointer is invalid")
     source, summary, source_relative = _verified_source(run_root, pointer)
+    registry = status.get("provider_identity_registry")
+    fallback_present = any(
+        str(item.get("provider_uid") or "").startswith("provider-fallback:")
+        for item in status.get("provider_states") or []
+        if isinstance(item, Mapping)
+    )
+    if registry is None and fallback_present:
+        raise AttemptEvidencePromotionError("provider identity registry pointer is absent")
+    if registry is not None:
+        if not isinstance(registry, Mapping):
+            raise AttemptEvidencePromotionError("provider identity registry pointer is invalid")
+        registry_relative = _safe_relative(registry.get("path"))
+        registry_source = source.root / REGISTRY_FILENAME
+        try:
+            registry_bytes = registry_source.read_bytes()
+        except OSError as error:
+            raise AttemptEvidencePromotionError(
+                "provider identity registry snapshot is unreadable"
+            ) from error
+        if (
+            registry_relative.parts != (*source_relative.parts, REGISTRY_FILENAME)
+            or registry.get("path_resolution") != "relative_to_ingest_run_root"
+            or registry.get("retention") != "follows_ingest_run_root"
+            or registry.get("verified") is not True
+            or registry.get("bytes") != len(registry_bytes)
+            or registry.get("sha256") != hashlib.sha256(registry_bytes).hexdigest()
+        ):
+            raise AttemptEvidencePromotionError(
+                "provider identity registry snapshot does not match its pointer"
+            )
     records = _inventory(source.root)
     source_tree_sha256 = _tree_digest(records)
     _fault(fault_injector, "after_source_verify")
@@ -517,6 +666,13 @@ def promote_attempt_evidence(
             }
         )
         status["raw_attempt_journal"] = promoted_pointer
+        if registry is not None:
+            status["provider_identity_registry"] = {
+                **dict(registry),
+                "path": (artifact_path / REGISTRY_FILENAME).as_posix(),
+                "path_resolution": "relative_to_finalized_export_root",
+                "retention": "hash_bound_finalized_artifact",
+            }
         _write_status(export_status, status)
         _fault(fault_injector, "after_status")
         return promoted_pointer

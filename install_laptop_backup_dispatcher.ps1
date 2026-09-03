@@ -157,7 +157,11 @@ test "`$(git rev-parse HEAD)" = '$ProtectedCodeSha'
 test -z "`$(git status --porcelain)"
 ! systemctl is-active --quiet ar-local-daily.service
 test ! -e /srv/ar-local/data/state/daily-ingest.lock
-curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null
+if grep -q -- '--backup-preflight' pi_runtime_health.py; then
+  python3 -B pi_runtime_health.py --backup-preflight --timeout 10 --retries 0
+else
+  curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest >/dev/null
+fi
 "@
 & ssh -o BatchMode=yes -o ConnectTimeout=10 $PiHost $piCheck
 if ($LASTEXITCODE -ne 0) { throw 'Pi bootstrap preflight failed.' }

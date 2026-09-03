@@ -62,6 +62,11 @@ SECRET_PATHS = (
     Path("/etc/ar-local/notify.env"),
     Path("/etc/ar-local/payload.key"),
 )
+SYSTEM_CONFIGURATION_PATHS = (
+    Path("/etc/fstab"),
+    Path("/etc/nginx/sites-available/ar-local-status"),
+    Path("/etc/nginx/sites-available/ar-local-dashboard"),
+)
 REQUIRED_MACRO_TABLES = {"series_observations", "ingest_runs"}
 MACRO_COUNT_QUERIES = {
     "series_observations": "SELECT COUNT(*) FROM series_observations",
@@ -258,11 +263,7 @@ def create_snapshot(
             macro_report = _sqlite_backup(macro, staging / "macro/local-macro.sqlite")
             system_root = staging / "system"
             system_configuration: list[dict[str, object]] = []
-            for source in (
-                Path("/etc/fstab"),
-                Path("/etc/nginx/sites-available/ar-local-dashboard"),
-                config_path,
-            ):
+            for source in (*SYSTEM_CONFIGURATION_PATHS, config_path):
                 if source.is_symlink():
                     raise ValueError(f"system configuration is a symlink: {source}")
                 if source.is_file():
@@ -665,7 +666,7 @@ def record_deployment_acceptance(
     if not repository["clean"] or repository["commit"] != candidate_sha:
         raise ValueError("deployed checkout is not the exact clean candidate")
     if not dashboard_verified or not services_verified:
-        raise ValueError("dashboard and service verification must precede acceptance")
+        raise ValueError("status and service verification must precede acceptance")
     binding = gate_report.get("evidence_binding")
     if not isinstance(binding, Mapping):
         raise ValueError("deployment gate did not return immutable evidence identities")
