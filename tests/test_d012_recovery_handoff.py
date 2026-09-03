@@ -280,19 +280,22 @@ def test_sequence15_materializer_requires_the_exact_authority_merge() -> None:
     assert "$parentText.Contains($authorityMarker)" in script
 
 
-def test_sequence16_generator_exposes_only_the_pinned_git_directory() -> None:
+def test_sequence16_generator_invokes_the_hash_pinned_git_path() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T035500")
     payload = script.encode()
-    assert len(payload) == 80712
-    assert len(script.split("\n")) == 535
+    assert len(payload) == 81294
+    assert len(script.split("\n")) == 541
     assert hashlib.sha256(payload).hexdigest() == (
-        "6a524b84e50aa07605bfc33671d7eca152752c8a336c852988e29be26f66d6ee"
+        "d916be8ac2334e05819a629a44ee882b84488b349397497879ef5e1575183907"
     )
-    saved = script.index("$priorProcessPath=[Environment]::GetEnvironmentVariable")
-    narrowed = script.index("[Environment]::SetEnvironmentVariable('PATH',[IO.Path]::GetDirectoryName($git)")
-    package = script.index("@packageArgs --output $package1")
-    restored = script.index("}finally{[Environment]::SetEnvironmentVariable('PATH',$priorProcessPath")
-    assert saved < narrowed < package < restored
+    derived = script.index("$packageBuilderSource=$packageBuilderSource.Replace")
+    absolute = script.index("os.environ[\"AR_TRUSTED_GIT\"]")
+    pinned = script.index("[Environment]::SetEnvironmentVariable('AR_TRUSTED_GIT',$git")
+    package = script.index("& $python -I -B $packageBuilder @packageArgs --output $package1")
+    restored = script.index("}finally{[Environment]::SetEnvironmentVariable('AR_TRUSTED_GIT',$priorTrustedGit")
+    assert derived < absolute < pinned < package < restored
+    assert "[Environment]::SetEnvironmentVariable('PATH'" not in script
+    assert "'trusted-package-builder.py'" in script
     assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE16-EXECUTION" in script
     assert "status-only evidence expired before terminal PASS" in script
 
@@ -303,7 +306,7 @@ def test_sequence16_materializer_binds_the_package_path_failure() -> None:
     assert len(payload) == 38915
     assert len(script.split("\n")) == 369
     assert hashlib.sha256(payload).hexdigest() == (
-        "2a67963cf61aae6cb6ce17fb270329c3036bc924a402ae1477f65a4e1b415013"
+        "a6032f43fbcaf44dc70f29a281598e8d2de5ff8292f4a9ac4df09bc233ae1012"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_16}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_16}'" in script
@@ -311,7 +314,7 @@ def test_sequence16_materializer_binds_the_package_path_failure() -> None:
     assert "$resume.predecessor-cne'C-20260904T033500+1000'" in script
     assert "AssertInventory $partial 4095 323 92387389" in script
     assert "141bb196f658190e425b6de8adb1ca93a4a89101a0193753965d5b7bf55b0d28" in script
-    assert "$script.Split([char]10).Count-ne535" in script
+    assert "$script.Split([char]10).Count-ne541" in script
 
 
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
