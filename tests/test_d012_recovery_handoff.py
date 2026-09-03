@@ -213,10 +213,10 @@ def test_sequence13_materializer_binds_repro_failure_root() -> None:
 def test_sequence14_generator_retries_only_after_the_time_gate_failure() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T202000")
     payload = script.encode()
-    assert len(payload) == 79477
-    assert len(script.split("\n")) == 526
+    assert len(payload) == 79942
+    assert len(script.split("\n")) == 528
     assert hashlib.sha256(payload).hexdigest() == (
-        "cf7fb7abdf08827d8cfe02fd3929c875eabded17abe049969c7d9a7f11aef0bb"
+        "45167b9b71bffa04b4535bc09e7da68920632a485c9985aeeca80f45e9d5bdaf"
     )
     assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE14-EXECUTION" in script
     assert "QUARANTINED-S13-20260903T101531Z-142631c8aff7" in script
@@ -225,22 +225,25 @@ def test_sequence14_generator_retries_only_after_the_time_gate_failure() -> None
     assert "142631c8aff7df2ec4535454cf05702228a1234c0c62c80d602e356523009cc5" in script
     assert "$statusIdentity=$status.preflight_identity" in script
     assert "$identity=$status.preflight_identity" not in script
+    assert "status-only evidence expired during deterministic build" in script
 
 
 def test_sequence14_materializer_binds_time_gate_failure_root() -> None:
     script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T202000")
     payload = script.encode()
-    assert len(payload) == 37933
-    assert len(script.split("\n")) == 358
+    assert len(payload) == 38915
+    assert len(script.split("\n")) == 369
     assert hashlib.sha256(payload).hexdigest() == (
-        "4ae7265284b6721ea2e49f9b95726e84942b082b9817a35edd6ba1ce913889c6"
+        "abbc311d7b8bc5259eecfae758399b3322adb7473117b5d54a6e86595c8ee04d"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_14}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_14}'" in script
     assert "$resume.sequence-ne14" in script
     assert "AssertInventory $partial 4094 323 91875352" in script
     assert "142631c8aff7df2ec4535454cf05702228a1234c0c62c80d602e356523009cc5" in script
-    assert "$script.Split([char]10).Count-ne526" in script
+    assert "$script.Split([char]10).Count-ne528" in script
+    assert "$authorityMarker='<!-- BEGIN ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T202000 -->'" in script
+    assert "$parentText.Contains($authorityMarker)" in script
 
 
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
