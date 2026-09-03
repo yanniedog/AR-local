@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 HANDOFF = ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
 CANDIDATE = "f7f89a930d221691875d4093d67037a4ddabb041"
+CANDIDATE_12 = "911b2e03ff065650d4021f96e9ca2ea50669eda1"
+BASE_MAIN_12 = "381e578fc11447617319bd039bae4f468ca09700"
 
 
 def _block(name: str) -> str:
@@ -91,6 +93,72 @@ def test_sequence11_source_map_matches_lf_checkout() -> None:
         assert hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest() == expected
 
 
+def test_sequence12_generator_status_is_read_only_and_source_maps_are_split() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T125200")
+    payload = script.encode()
+    assert len(payload) == 75928
+    assert len(script.split("\n")) == 503
+    assert hashlib.sha256(payload).hexdigest() == (
+        "5155d3ecd9e81cc2d1da485b02a1461ac4f90b8227bd5bce1edf4b72dcc2eeb4"
+    )
+    assert f"$candidateSha='{CANDIDATE_12}'" in script
+    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE12-EXECUTION" in script
+    assert "'--status-only'" in script
+    assert "'--check-only'" not in script
+    assert "status-only.json" in script
+    assert "check-only.json" not in script
+    assert '"returncode":r.returncode' in script
+    assert '"stdout":r.stdout' in script
+    assert '"stderr":r.stderr' in script
+    assert "action-cne'STATUS_ONLY'" in script
+    assert "status-notin@('UP_TO_DATE','STALE')" in script
+    assert "4084'-or$quarantineFields[1]-cne'323'" in script
+
+    def mapped(name: str) -> dict[str, str]:
+        match = re.search(rf"\${name}=\[ordered\]@\{{\n(.*?)\n\}}", script, re.DOTALL)
+        assert match is not None
+        return dict(
+            re.findall(r"^'([^']+)'='([0-9a-f]{64})'$", match.group(1), re.MULTILINE)
+        )
+
+    candidate = mapped("sources")
+    authority = mapped("authoritySources")
+    assert len(candidate) == 38
+    assert len(authority) == 37
+    assert candidate["laptop_backup_scheduled.py"] == (
+        "f0d0d19d33747f5947d909836da9b5d129ebc6b2d5ca83657a78b35706ef4a1a"
+    )
+    assert candidate["laptop_pull_backup.py"] == (
+        "daf41b9f8972b65386bd2cfd8938099dcd67db7b814353a13e350e068011c991"
+    )
+    assert candidate["laptop_backup_transition_state.py"] == (
+        "3d7ea17ccc1325bce877cda984a6bbb72b2c690d5f563a0ab221343e9135a13e"
+    )
+    assert "laptop_backup_transition_state.py" not in authority
+    for relative, expected in authority.items():
+        source = (ROOT / relative.replace("\\", "/")).read_bytes()
+        assert hashlib.sha256(source.replace(b"\r\n", b"\n")).hexdigest() == expected
+    assert "RequireHash (Join-Path $candidate $item.Key) $item.Value" in script
+    assert "RequireHash (Join-Path $authority $item.Key) $item.Value" in script
+
+
+def test_sequence12_materializer_binds_failed_root_and_merged_authority() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T125200")
+    payload = script.encode()
+    assert len(payload) == 37933
+    assert len(script.split("\n")) == 358
+    assert hashlib.sha256(payload).hexdigest() == (
+        "3ecf4be416b1222214bbd0abf2b7b2baee6370fb60f17cf44b6213e5dbdd7987"
+    )
+    assert f"$candidateSha='{CANDIDATE_12}'" in script
+    assert f"$authoritySha-ceq'{BASE_MAIN_12}'" in script
+    assert f"$resume.base_main_sha-cne'{BASE_MAIN_12}'" in script
+    assert "$resume.sequence-ne12" in script
+    assert "AssertInventory $partial 4084 323 89321932" in script
+    assert "3524afc748a7e311dfeadbd43cf797d56b2f5a117edf9c89ef296eaf0d6374bf" in script
+    assert "$script.Split([char]10).Count-ne503" in script
+
+
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
     for name in (
         "install_laptop_backup_dispatcher.ps1",
@@ -136,17 +204,19 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 11
-    assert pointer["predecessor"] == "C-20260903T111500+1000"
-    assert pointer["correction"] == "C-20260903T114000+1000"
+    assert pointer["sequence"] == 12
+    assert pointer["predecessor"] == "C-20260903T114000+1000"
+    assert pointer["correction"] == "C-20260903T125200+1000"
+    assert pointer["base_main_sha"] == BASE_MAIN_12
+    assert pointer["candidate_sha"] == CANDIDATE_12
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
-        "e42a0eb1262a8addcbcda5a661e353866ceacf240f0f9c5069f6c649bdb5050e"
+        "3524afc748a7e311dfeadbd43cf797d56b2f5a117edf9c89ef296eaf0d6374bf"
     )
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T114000")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T114000")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T125200")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T125200")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -159,6 +229,8 @@ def test_current_observation_probes_compile() -> None:
     for name in (
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T114000",
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T114000",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T125200",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T125200",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
