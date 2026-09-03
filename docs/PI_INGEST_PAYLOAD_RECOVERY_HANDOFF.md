@@ -13823,12 +13823,12 @@ if([int]$statusEnvelope.returncode-ne0-or-not[string]::IsNullOrEmpty([string]$st
 $statusText=([string]$statusEnvelope.stdout).Trim();$status=$statusText|ConvertFrom-Json
 $expectedStatusFields=@('action','backfill_dates','backfill_required','backup_command','control','inventory','macro','observation','ok','preflight_identity','result','status')
 $actualStatusFields=@($status.PSObject.Properties.Name|Sort-Object)
-$identity=$status.preflight_identity
+$statusIdentity=$status.preflight_identity
 if(Compare-Object $expectedStatusFields $actualStatusFields){throw 'fresh status-only fields drift'}
 if($status.ok-ne$true-or$status.result-cne'PASS'-or$status.action-cne'STATUS_ONLY'-or$status.status-notin@('UP_TO_DATE','STALE')-or$status.backup_command-notin@('backup-latest','backfill')){throw 'fresh status-only contract drift'}
-if($null-eq$identity-or$identity.candidate_code_sha-cne$candidateSha-or$identity.protected_code_sha-cne$protectedSha-or$identity.plan_git_commit-cne$planCommit-or$identity.target-cne$target){throw 'fresh status-only identity drift'}
+if($null-eq$statusIdentity-or$statusIdentity.candidate_code_sha-cne$candidateSha-or$statusIdentity.protected_code_sha-cne$protectedSha-or$statusIdentity.plan_git_commit-cne$planCommit-or$statusIdentity.target-cne$target){throw 'fresh status-only identity drift'}
 $checkedAt=[DateTimeOffset]::MinValue
-if(-not[DateTimeOffset]::TryParseExact([string]$identity.checked_at,'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal,[ref]$checkedAt)-or$checkedAt-lt[DateTimeOffset]::UtcNow.AddMinutes(-5)-or$checkedAt-gt[DateTimeOffset]::UtcNow.AddMinutes(1)){throw 'fresh status-only timestamp drift'}
+if(-not[DateTimeOffset]::TryParseExact([string]$statusIdentity.checked_at,'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal,[ref]$checkedAt)-or$checkedAt-lt[DateTimeOffset]::UtcNow.AddMinutes(-5)-or$checkedAt-gt[DateTimeOffset]::UtcNow.AddMinutes(1)){throw 'fresh status-only timestamp drift'}
 $componentStates=@()
 foreach($name in @('observation','control','macro')){$component=$status.PSObject.Properties[$name].Value;if($component.status-notin@('UP_TO_DATE','STALE')){throw "fresh status-only $name state drift"};if($component.status-ceq'STALE'-and$component.reason-cne"$name receipt identity is invalid"){throw "fresh status-only $name stale reason drift"};$componentStates+=[string]$component.status}
 $missingDates=@($status.inventory.missing_completed_dates);$orderedMissing=@($missingDates|Sort-Object -Unique);$missingValid=$true
@@ -14206,7 +14206,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-13 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne79435-or$script.Split([char]10).Count-ne526-or$scriptSha-cne'fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7'){throw 'sequence-13 generator binding mismatch'}
+if($scriptBytes.Length-ne79477-or$script.Split([char]10).Count-ne526-or$scriptSha-cne'1f824e3ae64d993ed477b7de773a9012909c65e7edddf590b46c380946d92cc1'){throw 'sequence-13 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-13 parser or runtime-boundary gate failed'}
@@ -14404,15 +14404,15 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "complete_handoff_raw_sha256": "D012_SEQUENCE13_MATERIALIZATION_RECORD",
   "generator": {
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
-    "bytes": 79435,
+    "bytes": 79477,
     "lines": 526,
-    "sha256": "fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7"
+    "sha256": "1f824e3ae64d993ed477b7de773a9012909c65e7edddf590b46c380946d92cc1"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
     "bytes": 37933,
     "lines": 358,
-    "sha256": "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122"
+    "sha256": "9721117312d895632e74a8fda6fbbfbe10afe90a8546ee608c7025d8ed6a6c68"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -14426,7 +14426,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, execute exactly the marked sequence-13 materializer in normal x64 System32 Windows PowerShell 5.1; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260903T132500",
-  "next_command_utf8_lf_sha256": "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122",
+  "next_command_utf8_lf_sha256": "9721117312d895632e74a8fda6fbbfbe10afe90a8546ee608c7025d8ed6a6c68",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [

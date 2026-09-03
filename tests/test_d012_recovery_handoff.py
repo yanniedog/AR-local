@@ -164,10 +164,10 @@ def test_sequence12_materializer_binds_failed_root_and_merged_authority() -> Non
 def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T132500")
     payload = script.encode()
-    assert len(payload) == 79435
+    assert len(payload) == 79477
     assert len(script.split("\n")) == 526
     assert hashlib.sha256(payload).hexdigest() == (
-        "fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7"
+        "1f824e3ae64d993ed477b7de773a9012909c65e7edddf590b46c380946d92cc1"
     )
     assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE13-EXECUTION" in script
     assert "'--status-only'" in script
@@ -186,6 +186,8 @@ def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None
     assert "check_only_result='PASS'" not in script
     assert "fresh status-only identity drift" in script
     assert 'fresh status-only $name stale reason drift' in script
+    assert "$statusIdentity=$status.preflight_identity" in script
+    assert "$identity=$status.preflight_identity" not in script
     assert "'laptop_backup_dispatcher_security.py'='709b9310e7715733da31a9eb7b880a109d4c4e0d7e32bc7ecba7278fb684b6c8'" in script
     assert "'laptop_backup_scheduled.py'='2e5e8796465d6d5f7b677994cee60d5c99538984155229e401cb0403c22b898f'" in script
 
@@ -196,7 +198,7 @@ def test_sequence13_materializer_binds_repro_failure_root() -> None:
     assert len(payload) == 37933
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122"
+        "9721117312d895632e74a8fda6fbbfbe10afe90a8546ee608c7025d8ed6a6c68"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_13}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_13}'" in script
