@@ -167,7 +167,7 @@ def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None
     assert len(payload) == 79435
     assert len(script.split("\n")) == 526
     assert hashlib.sha256(payload).hexdigest() == (
-        "0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838"
+        "fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7"
     )
     assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE13-EXECUTION" in script
     assert "'--status-only'" in script
@@ -186,8 +186,8 @@ def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None
     assert "check_only_result='PASS'" not in script
     assert "fresh status-only identity drift" in script
     assert 'fresh status-only $name stale reason drift' in script
-    assert "'laptop_backup_dispatcher_security.py'='b7898f971b32ab8dec63b46a8869c3ad14fd474e913cb5bd9b53c2cff1367535'" in script
-    assert "'laptop_backup_scheduled.py'='7e3840f424078de7a1352180d36f4d5d3709409b949c15c2cebaad385a3010ba'" in script
+    assert "'laptop_backup_dispatcher_security.py'='709b9310e7715733da31a9eb7b880a109d4c4e0d7e32bc7ecba7278fb684b6c8'" in script
+    assert "'laptop_backup_scheduled.py'='2e5e8796465d6d5f7b677994cee60d5c99538984155229e401cb0403c22b898f'" in script
 
 
 def test_sequence13_materializer_binds_repro_failure_root() -> None:
@@ -196,7 +196,7 @@ def test_sequence13_materializer_binds_repro_failure_root() -> None:
     assert len(payload) == 37933
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387"
+        "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_13}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_13}'" in script

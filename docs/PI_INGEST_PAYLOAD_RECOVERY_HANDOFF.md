@@ -13706,10 +13706,10 @@ $sources=[ordered]@{
 'run_laptop_backup_task.ps1'='50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860'
 'run_laptop_backup_trusted_child.ps1'='295271485c79907b7ee87463b53f6cc2258d146e07d771860ae4534b743c772a'
 'laptop_backup_dispatcher.py'='36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc'
-'laptop_backup_dispatcher_security.py'='b7898f971b32ab8dec63b46a8869c3ad14fd474e913cb5bd9b53c2cff1367535'
+'laptop_backup_dispatcher_security.py'='709b9310e7715733da31a9eb7b880a109d4c4e0d7e32bc7ecba7278fb684b6c8'
 'laptop_backup_atomic.py'='d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c'
 'laptop_backup_archive.py'='e18ac4ceaec83d979319d7e210e36b94e54082bbcce3446191bc92b3df6dc8f1'
-'laptop_backup_scheduled.py'='7e3840f424078de7a1352180d36f4d5d3709409b949c15c2cebaad385a3010ba'
+'laptop_backup_scheduled.py'='2e5e8796465d6d5f7b677994cee60d5c99538984155229e401cb0403c22b898f'
 'laptop_backup_scheduled_lineage.py'='bc75e6661016849e8f7257ee87b14fcf32e717ed5a2381c9141d3a4fff7bff66'
 'laptop_backup_transition.py'='b23cb27a917c1dd28e766566037b285c528e24cb0e5e1e9c7f02f79415828b77'
 'laptop_backup_transition_authority.py'='838c99e2cfd9327ae2d2d9c6a2dccf036260f78dfba5875fb98004d1ee752bba'
@@ -14206,7 +14206,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-13 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne79435-or$script.Split([char]10).Count-ne526-or$scriptSha-cne'0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838'){throw 'sequence-13 generator binding mismatch'}
+if($scriptBytes.Length-ne79435-or$script.Split([char]10).Count-ne526-or$scriptSha-cne'fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7'){throw 'sequence-13 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-13 parser or runtime-boundary gate failed'}
@@ -14406,13 +14406,13 @@ $record|ConvertTo-Json -Depth 4 -Compress
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
     "bytes": 79435,
     "lines": 526,
-    "sha256": "0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838"
+    "sha256": "fe9d488d4988cd0c8ae4c9812a2e572b0c3595ece38abb19412ee3e945611dd7"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
     "bytes": 37933,
     "lines": 358,
-    "sha256": "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387"
+    "sha256": "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -14426,7 +14426,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, execute exactly the marked sequence-13 materializer in normal x64 System32 Windows PowerShell 5.1; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260903T132500",
-  "next_command_utf8_lf_sha256": "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387",
+  "next_command_utf8_lf_sha256": "311b66352a99f7a0968ea428807f8b4f13ac37d34f33823ec540bef42e401122",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [
