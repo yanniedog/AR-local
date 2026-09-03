@@ -933,6 +933,13 @@ def test_status_only_reports_without_mutating_lineage(
     assert calls == ["preflight"]
     assert output["action"] == "STATUS_ONLY"
     assert output["status"] == state
+    assert output["preflight_identity"] == {
+        "candidate_code_sha": CANDIDATE,
+        "protected_code_sha": PROTECTED,
+        "plan_git_commit": receiver.PLAN_GIT_COMMIT,
+        "target": str(target.resolve()),
+        "checked_at": output["preflight_identity"]["checked_at"],
+    }
 
 
 def test_main_records_post_backup_metadata_failure(

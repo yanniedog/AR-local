@@ -862,6 +862,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "ok": ok,
             "result": "PASS" if ok else "BLOCKED",
             "action": "STATUS_ONLY",
+            "preflight_identity": {
+                "candidate_code_sha": args.candidate_code_sha,
+                "protected_code_sha": args.protected_code_sha,
+                "plan_git_commit": args.plan_git_commit,
+                "target": str(target),
+                "checked_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            },
             **status,
         }, indent=2, sort_keys=True), file=sys.stdout if ok else sys.stderr)
         return 0 if ok else 1

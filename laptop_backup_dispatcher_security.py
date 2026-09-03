@@ -9,7 +9,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping
 
@@ -21,6 +21,11 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ACTIVATION_ID = re.compile(r"^[0-9a-f]{32}$")
 PLAN_ID = "ARL-OPS-001"
 BOOTSTRAP_GATE_NAME = "Global\\ARLocalTrustedBootstrapGate"
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+STATUS_ONLY_KEYS = frozenset({
+    "ok", "result", "action", "preflight_identity", "status", "backup_command",
+    "backfill_required", "backfill_dates", "observation", "control", "macro", "inventory",
+})
 MANIFEST_KEYS = frozenset({
     "schema_version", "sequence", "activation_id", "created_at", "activation_expires_at",
     "previous_manifest_sha256", "plan_document_id", "plan_version",
@@ -168,6 +173,101 @@ def require_hash(value: object, pattern: re.Pattern[str], label: str) -> str:
     return value
 
 
+def ordered_dates(value: object, label: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) or not DATE.fullmatch(item) for item in value):
+        raise ValueError(f"{label} dates are invalid")
+    try:
+        for item in value:
+            datetime.strptime(item, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"{label} dates are invalid") from exc
+    if value != sorted(set(value)):
+        raise ValueError(f"{label} dates are not unique and ordered")
+    return value
+
+
+def validate_status_only_state(
+    status: Mapping[str, object], manifest: Mapping[str, object], target: Path, created: datetime
+) -> None:
+    if set(status) != STATUS_ONLY_KEYS or status.get("ok") is not True:
+        raise ValueError("status-only evidence fields are invalid")
+    if status.get("result") != "PASS" or status.get("action") != "STATUS_ONLY":
+        raise ValueError("status-only evidence did not pass")
+    identity = status.get("preflight_identity")
+    expected_identity = {
+        "candidate_code_sha": manifest["candidate_code_sha"],
+        "protected_code_sha": manifest["protected_code_sha"],
+        "plan_git_commit": manifest["plan_git_commit"],
+        "target": str(target),
+    }
+    if not isinstance(identity, Mapping) or set(identity) != {*expected_identity, "checked_at"}:
+        raise ValueError("status-only preflight identity fields are invalid")
+    if any(identity.get(key) != value for key, value in expected_identity.items()):
+        raise ValueError("status-only preflight identity is not bound to the manifest")
+    checked = parse_time(identity.get("checked_at"), "status-only checked_at")
+    if checked < created - timedelta(minutes=5) or checked > created + timedelta(minutes=1):
+        raise ValueError("status-only evidence is not fresh for the manifest")
+
+    component_states: list[str] = []
+    for name in ("observation", "control", "macro"):
+        component = status.get(name)
+        if not isinstance(component, Mapping) or component.get("status") not in {"UP_TO_DATE", "STALE"}:
+            raise ValueError(f"status-only {name} state is invalid")
+        if component["status"] == "STALE" and component.get("reason") != f"{name} receipt identity is invalid":
+            raise ValueError(f"status-only {name} has an unapproved stale reason")
+        component_states.append(str(component["status"]))
+
+    inventory = status.get("inventory")
+    if not isinstance(inventory, Mapping) or inventory.get("status") not in {"UP_TO_DATE", "STALE"}:
+        raise ValueError("status-only inventory state is invalid")
+    missing = ordered_dates(inventory.get("missing_completed_dates"), "status-only inventory")
+    if inventory.get("stale_diagnostics") != [] or (inventory["status"] == "UP_TO_DATE") != (not missing):
+        raise ValueError("status-only inventory has unapproved drift")
+    component_states.append(str(inventory["status"]))
+    expected_status = "UP_TO_DATE" if all(item == "UP_TO_DATE" for item in component_states) else "STALE"
+    if status.get("status") != expected_status:
+        raise ValueError("status-only aggregate state is inconsistent")
+    observation = status["observation"]
+    latest = observation.get("observation_date") if isinstance(observation, Mapping) else None
+    if not isinstance(latest, str) or ordered_dates([latest], "status-only observation") != [latest]:
+        raise ValueError("status-only observation date is invalid")
+    historical = [item for item in missing if item != latest]
+    command = "backfill" if historical else "backup-latest"
+    if (
+        status.get("backup_command") != command
+        or status.get("backfill_required") is not (command == "backfill")
+        or ordered_dates(status.get("backfill_dates"), "status-only backfill") != historical
+    ):
+        raise ValueError("status-only backup request is inconsistent")
+
+
+def validate_activation_gate(
+    gate: Mapping[str, object], manifest: Mapping[str, object], target: Path, created: datetime
+) -> None:
+    expected = {
+        "schema_version": 2,
+        "result": "PASS",
+        "activation_id": manifest["activation_id"],
+        "candidate_code_sha": manifest["candidate_code_sha"],
+        "protected_code_sha": manifest["protected_code_sha"],
+        "plan_git_commit": manifest["plan_git_commit"],
+        "plan_sha256": manifest["plan_sha256"],
+        "authority_commit": manifest["authority_commit"],
+        "handoff_sha256": manifest["handoff_sha256"],
+        "operator_sid": manifest["operator_sid"],
+    }
+    if set(gate) != {*expected, "status_only"} or any(gate.get(key) != value for key, value in expected.items()):
+        raise ValueError("activation gate evidence is not exactly bound")
+    reference = gate.get("status_only")
+    if not isinstance(reference, Mapping) or set(reference) != {"path", "sha256"}:
+        raise ValueError("activation gate status-only reference is invalid")
+    path = require_within(Path(str(reference["path"])), target, "status-only evidence")
+    digest = require_hash(reference.get("sha256"), SHA256, "status-only evidence digest")
+    if sha256_file(path) != digest:
+        raise ValueError("status-only evidence digest mismatch")
+    validate_status_only_state(parse_json(path.read_bytes(), "status-only evidence"), manifest, target, created)
+
+
 def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[str, object]:
     if set(value) != MANIFEST_KEYS:
         raise ValueError("manifest fields are not exact")
@@ -260,22 +360,7 @@ def validate_manifest(value: Mapping[str, object], *, activation: bool) -> dict[
     if sha256_file(gate) != value["gate_evidence_sha256"]:
         raise ValueError("activation gate evidence digest mismatch")
     gate_value = parse_json(gate.read_bytes(), "activation gate evidence")
-    expected_gate = {
-        "schema_version": 1,
-        "result": "PASS",
-        "activation_id": value["activation_id"],
-        "candidate_code_sha": value["candidate_code_sha"],
-        "protected_code_sha": value["protected_code_sha"],
-        "plan_git_commit": value["plan_git_commit"],
-        "plan_sha256": value["plan_sha256"],
-        "authority_commit": value["authority_commit"],
-        "handoff_sha256": value["handoff_sha256"],
-        "operator_sid": value["operator_sid"],
-        "foreground_result": "PASS",
-        "check_only_result": "PASS",
-    }
-    if gate_value != expected_gate:
-        raise ValueError("activation gate evidence is not an exact bound PASS")
+    validate_activation_gate(gate_value, value, target, created)
     result = dict(value)
     result.update({
         "receiver": str(receiver), "entrypoint_path": str(entrypoint),

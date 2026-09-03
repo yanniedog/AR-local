@@ -90,8 +90,30 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "gate_evidence_path": str(evidence),
         "gate_evidence_sha256": "0" * 64,
     }
+    status_path = target / "evidence" / "status-only.json"
+    status = {
+        "ok": True,
+        "result": "PASS",
+        "action": "STATUS_ONLY",
+        "preflight_identity": {
+            "candidate_code_sha": manifest["candidate_code_sha"],
+            "protected_code_sha": manifest["protected_code_sha"],
+            "plan_git_commit": manifest["plan_git_commit"],
+            "target": str(target),
+            "checked_at": now.isoformat().replace("+00:00", "Z"),
+        },
+        "status": "UP_TO_DATE",
+        "backup_command": "backup-latest",
+        "backfill_required": False,
+        "backfill_dates": [],
+        "observation": {"status": "UP_TO_DATE", "observation_date": "2026-09-03"},
+        "control": {"status": "UP_TO_DATE"},
+        "macro": {"status": "UP_TO_DATE"},
+        "inventory": {"status": "UP_TO_DATE", "missing_completed_dates": [], "stale_diagnostics": []},
+    }
+    status_path.write_bytes(dispatcher.canonical_json(status))
     gate = {
-        "schema_version": 1,
+        "schema_version": 2,
         "result": "PASS",
         "activation_id": manifest["activation_id"],
         "candidate_code_sha": manifest["candidate_code_sha"],
@@ -101,8 +123,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "authority_commit": manifest["authority_commit"],
         "handoff_sha256": manifest["handoff_sha256"],
         "operator_sid": manifest["operator_sid"],
-        "foreground_result": "PASS",
-        "check_only_result": "PASS",
+        "status_only": {"path": str(status_path), "sha256": dispatcher.sha256_file(status_path)},
     }
     evidence.write_bytes(dispatcher.canonical_json(gate))
     manifest["gate_evidence_sha256"] = dispatcher.sha256_file(evidence)
@@ -296,11 +317,58 @@ def test_gate_must_be_exactly_bound_and_passed(tmp_path: Path) -> None:
     _control, _target, manifest = fixture(tmp_path)
     gate_path = Path(str(manifest["gate_evidence_path"]))
     gate = json.loads(gate_path.read_text(encoding="utf-8"))
-    gate["check_only_result"] = "FAIL"
+    gate["status_only"]["sha256"] = "f" * 64
     gate_path.write_bytes(dispatcher.canonical_json(gate))
     manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
-    with pytest.raises(ValueError, match="not an exact bound PASS"):
+    with pytest.raises(ValueError, match="status-only evidence digest mismatch"):
         dispatcher.validate_manifest(manifest, activation=True)
+
+
+def test_gate_rejects_unapproved_status_only_staleness(tmp_path: Path) -> None:
+    _control, _target, manifest = fixture(tmp_path)
+    gate_path = Path(str(manifest["gate_evidence_path"]))
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    status_path = Path(gate["status_only"]["path"])
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    status.update({"status": "STALE", "backup_command": "backup-latest"})
+    status["control"] = {"status": "STALE", "reason": "control archive digest mismatch"}
+    status_path.write_bytes(dispatcher.canonical_json(status))
+    gate["status_only"]["sha256"] = dispatcher.sha256_file(status_path)
+    gate_path.write_bytes(dispatcher.canonical_json(gate))
+    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
+    with pytest.raises(ValueError, match="unapproved stale reason"):
+        dispatcher.validate_manifest(manifest, activation=True)
+
+
+def test_gate_accepts_only_bound_migration_staleness(tmp_path: Path) -> None:
+    _control, _target, manifest = fixture(tmp_path)
+    gate_path = Path(str(manifest["gate_evidence_path"]))
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    status_path = Path(gate["status_only"]["path"])
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    status.update({
+        "status": "STALE",
+        "backup_command": "backfill",
+        "backfill_required": True,
+        "backfill_dates": ["2026-09-01", "2026-09-02"],
+        "observation": {
+            "status": "STALE",
+            "observation_date": "2026-09-03",
+            "reason": "observation receipt identity is invalid",
+        },
+        "control": {"status": "STALE", "reason": "control receipt identity is invalid"},
+        "macro": {"status": "STALE", "reason": "macro receipt identity is invalid"},
+        "inventory": {
+            "status": "STALE",
+            "missing_completed_dates": ["2026-09-01", "2026-09-02", "2026-09-03"],
+            "stale_diagnostics": [],
+        },
+    })
+    status_path.write_bytes(dispatcher.canonical_json(status))
+    gate["status_only"]["sha256"] = dispatcher.sha256_file(status_path)
+    gate_path.write_bytes(dispatcher.canonical_json(gate))
+    manifest["gate_evidence_sha256"] = dispatcher.sha256_file(gate_path)
+    dispatcher.validate_manifest(manifest, activation=True)
 
 
 def test_target_and_recovery_must_remain_in_approved_roots(tmp_path: Path) -> None:
