@@ -22,13 +22,13 @@ def _block(name: str) -> str:
     return match.group(1)
 
 
-def test_sequence7_generator_is_exact_and_fail_closed() -> None:
-    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
+def test_sequence8_generator_is_exact_and_fail_closed() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T103000")
     payload = script.encode()
     assert len(payload) == 72287
     assert len(script.split("\n")) == 472
     assert hashlib.sha256(payload).hexdigest() == (
-        "4592d19f36614b47eebee20015ecb0fa1103ed1cdae3f52c3a7a37dcbafb010d"
+        "e128b06bf3100477a70aba81842d704bc84306e94ef1cd9ed22d3aaf96d60b96"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     assert script.index("$freeBeforeGenerator=AssertFreeSpace") < script.index(
@@ -45,10 +45,13 @@ def test_sequence7_generator_is_exact_and_fail_closed() -> None:
     assert "local payload counts do not match finalized marker" in script
     assert "TryParseExact($value,'yyyy-MM-dd'" in script
     assert "$dates[$i]-cne$sorted[$i]" in script
+    assert "$windowsIdentity.Name-ine$principal" in script
+    assert "$materialization.operator-ine'yanniedog\\jkoka'" in script
+    assert "$execution.operator-ine$principal" in script
 
 
-def test_sequence7_source_map_matches_lf_checkout() -> None:
-    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
+def test_sequence8_source_map_matches_lf_checkout() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T103000")
     source_block = re.search(
         r"\$sources=\[ordered\]@\{\n(.*?)\n\}", script, re.DOTALL
     )
@@ -74,13 +77,13 @@ def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
         assert "curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest" in source
 
 
-def test_sequence7_materializer_journals_initialization_failures() -> None:
-    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")
+def test_sequence8_materializer_journals_initialization_failures() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T103000")
     payload = script.encode()
     assert len(payload) == 37850
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "533d41d3c4cb2c503a9a62c95e63ef00f030ecd05e08007ef0b00ce869f2ee2c"
+        "06a6024bc453ab51a9d61279d5743b99cb103a064c464c20b8efc76d6c2e7c3c"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
@@ -91,6 +94,7 @@ def test_sequence7_materializer_journals_initialization_failures() -> None:
     assert "$jsonFences=[regex]::Matches" in script
     assert "ConvertFrom-Json -ErrorAction Stop" in script
     assert "$latestResume.match.Index+$latestResume.match.Length" in script
+    assert "$operator-ine'yanniedog\\jkoka'" in script
 
 
 def test_final_resume_pointer_matches_exact_scripts() -> None:
@@ -101,8 +105,11 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000")
+    assert pointer["sequence"] == 8
+    assert pointer["predecessor"] == "C-20260902T160000+1000"
+    assert pointer["correction"] == "C-20260903T103000+1000"
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T103000")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T103000")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -113,9 +120,31 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
 
 def test_current_observation_probes_compile() -> None:
     for name in (
-        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000",
-        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T103000",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T103000",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
         compile(probes[0], f"<{name}-observation-probe>", "exec")
+
+
+def test_superseded_sequence7_blocks_remain_immutable() -> None:
+    expected = (
+        (
+            "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000",
+            72287,
+            472,
+            "4592d19f36614b47eebee20015ecb0fa1103ed1cdae3f52c3a7a37dcbafb010d",
+        ),
+        (
+            "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260902T160000",
+            37850,
+            358,
+            "533d41d3c4cb2c503a9a62c95e63ef00f030ecd05e08007ef0b00ce869f2ee2c",
+        ),
+    )
+    for name, size, lines, digest in expected:
+        script = _block(name)
+        assert len(script.encode()) == size
+        assert len(script.split("\n")) == lines
+        assert hashlib.sha256(script.encode()).hexdigest() == digest
