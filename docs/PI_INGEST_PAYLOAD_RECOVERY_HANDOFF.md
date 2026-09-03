@@ -16943,6 +16943,9 @@ $packageBuilderSource=[IO.File]::ReadAllText((Join-Path $candidate 'laptop_backu
 $packageBuilderNeedle='("git", "-C", str(repo), *args)'
 if(([regex]::Matches($packageBuilderSource,[regex]::Escape($packageBuilderNeedle))).Count-ne1){throw 'trusted package Git call shape drift'}
 $packageBuilderSource=$packageBuilderSource.Replace($packageBuilderNeedle,'(os.environ["AR_TRUSTED_GIT"], "-C", str(repo), *args)')
+$packageBuilderCloneNeedle='("git", "-c", "core.autocrlf=false", "clone"'
+if(([regex]::Matches($packageBuilderSource,[regex]::Escape($packageBuilderCloneNeedle))).Count-ne1){throw 'trusted package Git clone call shape drift'}
+$packageBuilderSource=$packageBuilderSource.Replace($packageBuilderCloneNeedle,'(os.environ["AR_TRUSTED_GIT"], "-c", "core.autocrlf=false", "clone"')
 WriteUtf8 $packageBuilder $packageBuilderSource
 $priorTrustedGit=[Environment]::GetEnvironmentVariable('AR_TRUSTED_GIT','Process')
 try{
@@ -17230,7 +17233,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-16 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne81294-or$script.Split([char]10).Count-ne541-or$scriptSha-cne'd916be8ac2334e05819a629a44ee882b84488b349397497879ef5e1575183907'){throw 'sequence-16 generator binding mismatch'}
+if($scriptBytes.Length-ne81670-or$script.Split([char]10).Count-ne544-or$scriptSha-cne'b3d986bc4a463ff1da0e57ddeef46d1c29d1f486c0aa1c1744415ec519770c9c'){throw 'sequence-16 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-16 parser or runtime-boundary gate failed'}
@@ -17428,15 +17431,15 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "complete_handoff_raw_sha256": "D012_SEQUENCE16_MATERIALIZATION_RECORD",
   "generator": {
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
-    "bytes": 81294,
-    "lines": 541,
-    "sha256": "d916be8ac2334e05819a629a44ee882b84488b349397497879ef5e1575183907"
+    "bytes": 81670,
+    "lines": 544,
+    "sha256": "b3d986bc4a463ff1da0e57ddeef46d1c29d1f486c0aa1c1744415ec519770c9c"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
     "bytes": 38915,
     "lines": 369,
-    "sha256": "a6032f43fbcaf44dc70f29a281598e8d2de5ff8292f4a9ac4df09bc233ae1012"
+    "sha256": "9abe552c6a58cad2123d69b9e1604fb184c18b0876b0eaac81c4361851070420"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -17450,7 +17453,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, execute exactly the marked sequence-16 materializer in normal x64 System32 Windows PowerShell 5.1; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260904T035500",
-  "next_command_utf8_lf_sha256": "a6032f43fbcaf44dc70f29a281598e8d2de5ff8292f4a9ac4df09bc233ae1012",
+  "next_command_utf8_lf_sha256": "9abe552c6a58cad2123d69b9e1604fb184c18b0876b0eaac81c4361851070420",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [
