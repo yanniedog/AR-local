@@ -50,27 +50,29 @@ def test_sequence8_generator_is_exact_and_fail_closed() -> None:
     assert "$execution.operator-ine$principal" in script
 
 
-def test_sequence9_generator_binds_windows_powershell_inventory() -> None:
-    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T105000")
+def test_sequence10_generator_normalizes_early_ssh_stdin() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T111500")
     payload = script.encode()
-    assert len(payload) == 72287
+    assert len(payload) == 72319
     assert len(script.split("\n")) == 472
     assert hashlib.sha256(payload).hexdigest() == (
-        "921cf9c686a935406b72c1c34634dbc51c1eeddf9cf26b718eaea608cec582f2"
+        "68286ea95e0288d90ed5a128e639e7cc8441e5df1784f5e7b272a5bf900cdc9b"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
-    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE9-EXECUTION" in script
+    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE10-EXECUTION" in script
     assert (
         "$trustedRuntime.inventory_sha256-cne"
         "'1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0'"
     ) in script
     assert "3067 205 64118158 d664070c" in script
     assert " 4edd841372c7463bd53b711b0ba236152fa3ed1ef01f00bad8c7af991b99043c" in script
+    assert script.count("|& $ssh") == 1
+    assert "$earlyOutput=(($earlyScript-replace\"`r\",'')|& $ssh" in script
     assert "$windowsIdentity.Name-ine$principal" in script
 
 
-def test_sequence9_source_map_matches_lf_checkout() -> None:
-    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T105000")
+def test_sequence10_source_map_matches_lf_checkout() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T111500")
     source_block = re.search(
         r"\$sources=\[ordered\]@\{\n(.*?)\n\}", script, re.DOTALL
     )
@@ -96,13 +98,13 @@ def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
         assert "curl -fsS --max-time 10 http://127.0.0.1:8808/api/latest" in source
 
 
-def test_sequence9_materializer_journals_initialization_failures() -> None:
-    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T105000")
+def test_sequence10_materializer_journals_initialization_failures() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T111500")
     payload = script.encode()
-    assert len(payload) == 37850
+    assert len(payload) == 37859
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "eb5465c66a49232c14b54c055096ee862b426450d1cf1bff9a4846fc9e9d76c6"
+        "a999d0cccd1ac82c4968092ff777e50dd80c0f20def5ab0bd401a78eeafb79b5"
     )
     assert f"$candidateSha='{CANDIDATE}'" in script
     guarded = script.index("$running=$null;$journalOwned=$false\ntry{")
@@ -110,9 +112,9 @@ def test_sequence9_materializer_journals_initialization_failures() -> None:
     assert "materialization failed before execution journal ownership" in script
     assert "running_residue=$runningResidue" in script
     assert "$piIdle.observation.local_v1" in script
-    assert "$resume.sequence-ne9" in script
-    assert "AssertInventory $partial 3069 206 64382131" in script
-    assert "a173c5e26835c32ff773be5a61716e64553e0dce16270c49b514dd0d73cabd6b" in script
+    assert "$resume.sequence-ne10" in script
+    assert "AssertInventory $partial 3069 206 64708716" in script
+    assert "0d940d33131bad7821399d7fed24bd92769d7a853ba71e00d2c84b79b810dd83" in script
     assert "$jsonFences=[regex]::Matches" in script
     assert "ConvertFrom-Json -ErrorAction Stop" in script
     assert "$latestResume.match.Index+$latestResume.match.Length" in script
@@ -127,17 +129,17 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 9
-    assert pointer["predecessor"] == "C-20260903T103000+1000"
-    assert pointer["correction"] == "C-20260903T105000+1000"
+    assert pointer["sequence"] == 10
+    assert pointer["predecessor"] == "C-20260903T105000+1000"
+    assert pointer["correction"] == "C-20260903T111500+1000"
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
-        "a173c5e26835c32ff773be5a61716e64553e0dce16270c49b514dd0d73cabd6b"
+        "0d940d33131bad7821399d7fed24bd92769d7a853ba71e00d2c84b79b810dd83"
     )
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T105000")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T105000")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T111500")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T111500")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -148,15 +150,15 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
 
 def test_current_observation_probes_compile() -> None:
     for name in (
-        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T105000",
-        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T105000",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T111500",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T111500",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
         compile(probes[0], f"<{name}-observation-probe>", "exec")
 
 
-def test_superseded_sequence7_and_sequence8_blocks_remain_immutable() -> None:
+def test_superseded_sequence7_through_sequence9_blocks_remain_immutable() -> None:
     expected = (
         (
             "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260902T160000",
@@ -181,6 +183,18 @@ def test_superseded_sequence7_and_sequence8_blocks_remain_immutable() -> None:
             37850,
             358,
             "06a6024bc453ab51a9d61279d5743b99cb103a064c464c20b8efc76d6c2e7c3c",
+        ),
+        (
+            "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T105000",
+            72287,
+            472,
+            "921cf9c686a935406b72c1c34634dbc51c1eeddf9cf26b718eaea608cec582f2",
+        ),
+        (
+            "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T105000",
+            37850,
+            358,
+            "eb5465c66a49232c14b54c055096ee862b426450d1cf1bff9a4846fc9e9d76c6",
         ),
     )
     for name, size, lines, digest in expected:
