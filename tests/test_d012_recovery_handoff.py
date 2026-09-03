@@ -14,6 +14,7 @@ CANDIDATE_13 = "c506233c5121bd991be45e1d69a1191e1d8635cc"
 BASE_MAIN_12 = "381e578fc11447617319bd039bae4f468ca09700"
 BASE_MAIN_13 = "5ae7d597192d3a54e49dbb7ffb4810b967a8ba47"
 BASE_MAIN_14 = "95259acfc66305db32bd7a4cb4da95fbe2074480"
+BASE_MAIN_15 = "5fcb0df28d7ef3b35ec4d5530f68fb7c45ada012"
 
 
 def _block(name: str) -> str:
@@ -246,6 +247,38 @@ def test_sequence14_materializer_binds_time_gate_failure_root() -> None:
     assert "$parentText.Contains($authorityMarker)" in script
 
 
+def test_sequence15_generator_rechecks_freshness_at_terminal_pass() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T033500")
+    payload = script.encode()
+    assert len(payload) == 80445
+    assert len(script.split("\n")) == 531
+    assert hashlib.sha256(payload).hexdigest() == (
+        "e5943603cea0e23b7d2aa9f549abcf660f0b0a47187cb5fe524e50ddfb6eb2c1"
+    )
+    early = script.index("status-only evidence expired during deterministic build")
+    terminal = script.index("status-only evidence expired before terminal PASS")
+    passed = script.index("$generatorPass=WriteGeneratorRecord 'generator-pass.json' 'PASS'")
+    assert early < terminal < passed
+    assert "$statusTerminalNow=[DateTimeOffset]::UtcNow" in script
+    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE15-EXECUTION" in script
+
+
+def test_sequence15_materializer_requires_the_exact_authority_merge() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T033500")
+    payload = script.encode()
+    assert len(payload) == 38915
+    assert len(script.split("\n")) == 369
+    assert hashlib.sha256(payload).hexdigest() == (
+        "ff838b23b0290dc486f77439425dea3651a90c87e318b600002596654a840c87"
+    )
+    assert f"$authoritySha-ceq'{BASE_MAIN_15}'" in script
+    assert f"$resume.base_main_sha-cne'{BASE_MAIN_15}'" in script
+    assert "$resume.sequence-ne15" in script
+    assert "$resume.predecessor-cne'C-20260903T202000+1000'" in script
+    assert "$script.Split([char]10).Count-ne531" in script
+    assert "$parentText.Contains($authorityMarker)" in script
+
+
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
     for name in (
         "install_laptop_backup_dispatcher.ps1",
@@ -291,10 +324,10 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 14
-    assert pointer["predecessor"] == "C-20260903T132500+1000"
-    assert pointer["correction"] == "C-20260903T202000+1000"
-    assert pointer["base_main_sha"] == BASE_MAIN_14
+    assert pointer["sequence"] == 15
+    assert pointer["predecessor"] == "C-20260903T202000+1000"
+    assert pointer["correction"] == "C-20260904T033500+1000"
+    assert pointer["base_main_sha"] == BASE_MAIN_15
     assert pointer["candidate_sha"] == CANDIDATE_13
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
         "142631c8aff7df2ec4535454cf05702228a1234c0c62c80d602e356523009cc5"
@@ -302,8 +335,8 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T202000")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T202000")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T033500")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T033500")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -322,6 +355,8 @@ def test_current_observation_probes_compile() -> None:
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T132500",
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T202000",
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T202000",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T033500",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T033500",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
