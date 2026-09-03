@@ -15,6 +15,7 @@ BASE_MAIN_12 = "381e578fc11447617319bd039bae4f468ca09700"
 BASE_MAIN_13 = "5ae7d597192d3a54e49dbb7ffb4810b967a8ba47"
 BASE_MAIN_14 = "95259acfc66305db32bd7a4cb4da95fbe2074480"
 BASE_MAIN_15 = "5fcb0df28d7ef3b35ec4d5530f68fb7c45ada012"
+BASE_MAIN_16 = "c04b76e813e120de0668b19769463e9913e91d68"
 
 
 def _block(name: str) -> str:
@@ -279,6 +280,40 @@ def test_sequence15_materializer_requires_the_exact_authority_merge() -> None:
     assert "$parentText.Contains($authorityMarker)" in script
 
 
+def test_sequence16_generator_exposes_only_the_pinned_git_directory() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T035500")
+    payload = script.encode()
+    assert len(payload) == 80712
+    assert len(script.split("\n")) == 535
+    assert hashlib.sha256(payload).hexdigest() == (
+        "6a524b84e50aa07605bfc33671d7eca152752c8a336c852988e29be26f66d6ee"
+    )
+    saved = script.index("$priorProcessPath=[Environment]::GetEnvironmentVariable")
+    narrowed = script.index("[Environment]::SetEnvironmentVariable('PATH',[IO.Path]::GetDirectoryName($git)")
+    package = script.index("@packageArgs --output $package1")
+    restored = script.index("}finally{[Environment]::SetEnvironmentVariable('PATH',$priorProcessPath")
+    assert saved < narrowed < package < restored
+    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE16-EXECUTION" in script
+    assert "status-only evidence expired before terminal PASS" in script
+
+
+def test_sequence16_materializer_binds_the_package_path_failure() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T035500")
+    payload = script.encode()
+    assert len(payload) == 38915
+    assert len(script.split("\n")) == 369
+    assert hashlib.sha256(payload).hexdigest() == (
+        "2a67963cf61aae6cb6ce17fb270329c3036bc924a402ae1477f65a4e1b415013"
+    )
+    assert f"$authoritySha-ceq'{BASE_MAIN_16}'" in script
+    assert f"$resume.base_main_sha-cne'{BASE_MAIN_16}'" in script
+    assert "$resume.sequence-ne16" in script
+    assert "$resume.predecessor-cne'C-20260904T033500+1000'" in script
+    assert "AssertInventory $partial 4095 323 92387389" in script
+    assert "141bb196f658190e425b6de8adb1ca93a4a89101a0193753965d5b7bf55b0d28" in script
+    assert "$script.Split([char]10).Count-ne535" in script
+
+
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
     for name in (
         "install_laptop_backup_dispatcher.ps1",
@@ -324,19 +359,19 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 15
-    assert pointer["predecessor"] == "C-20260903T202000+1000"
-    assert pointer["correction"] == "C-20260904T033500+1000"
-    assert pointer["base_main_sha"] == BASE_MAIN_15
+    assert pointer["sequence"] == 16
+    assert pointer["predecessor"] == "C-20260904T033500+1000"
+    assert pointer["correction"] == "C-20260904T035500+1000"
+    assert pointer["base_main_sha"] == BASE_MAIN_16
     assert pointer["candidate_sha"] == CANDIDATE_13
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
-        "142631c8aff7df2ec4535454cf05702228a1234c0c62c80d602e356523009cc5"
+        "141bb196f658190e425b6de8adb1ca93a4a89101a0193753965d5b7bf55b0d28"
     )
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T033500")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T033500")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T035500")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T035500")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -357,6 +392,8 @@ def test_current_observation_probes_compile() -> None:
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260903T202000",
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T033500",
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T033500",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T035500",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T035500",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
