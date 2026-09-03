@@ -13457,9 +13457,9 @@ $record|ConvertTo-Json -Depth 4 -Compress
 }
 ```
 
-## Sequence 13: reproducible launcher intermediate
+## Sequence 13: reproducible launcher and bound status evidence
 
-Sequence 12 stopped safely because MSVC embeds the `/Fo` object path in each object even with `/Brepro`; the two final executables were identical. A controlled diagnostic reproduced this with only 13 differing object bytes and proved that compiling twice through one stable intermediate path makes both objects and executables identical. This correction keeps the strict double-build comparison and preserves the failed sequence 12 root whole with inventory `1f6a134de329da86805ddf756ad984edb3d100478163ed70a3c81835296dfb87`.
+Sequence 12 stopped safely because MSVC embeds the `/Fo` object path in each object even with `/Brepro`; the two final executables were identical. A controlled diagnostic proved that compiling twice through one stable intermediate makes both outputs identical. A late review also found that the activation gate asserted legacy foreground/check-only results instead of binding the real status-only preflight. This correction keeps strict double-build comparison, binds the exact self-identifying status evidence, rejects unrelated stale states, and preserves the failed sequence 12 root whole with inventory `1f6a134de329da86805ddf756ad984edb3d100478163ed70a3c81835296dfb87`.
 
 <!-- BEGIN ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T132500 -->
 ```powershell
@@ -13481,7 +13481,7 @@ $requiredRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012'
 $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUARANTINED-S12-20260903T032141Z-1f6a134de329'
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE13-EXECUTION'
 if($root-cne$requiredRoot){throw 'generator path is not the authorized evidence root'}
-$candidateSha='911b2e03ff065650d4021f96e9ca2ea50669eda1'
+$candidateSha='c506233c5121bd991be45e1d69a1191e1d8635cc'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -13706,10 +13706,10 @@ $sources=[ordered]@{
 'run_laptop_backup_task.ps1'='50180aa0684b51b9c86bc6cfee8e1a3b54b9ef9c7a6cefb2468767e2bbb0c860'
 'run_laptop_backup_trusted_child.ps1'='295271485c79907b7ee87463b53f6cc2258d146e07d771860ae4534b743c772a'
 'laptop_backup_dispatcher.py'='36595c9155c0b7514c428ecd1a259b1922d810c498f398da41ea72e5a759b2bc'
-'laptop_backup_dispatcher_security.py'='c52229848b75931cb576855db3093830073be48695e97610f5e82ab8e403b36b'
+'laptop_backup_dispatcher_security.py'='b7898f971b32ab8dec63b46a8869c3ad14fd474e913cb5bd9b53c2cff1367535'
 'laptop_backup_atomic.py'='d4874016249e28d74d23e30183356ff15a89eb91a2129f8cd968f7d5a903b93c'
 'laptop_backup_archive.py'='e18ac4ceaec83d979319d7e210e36b94e54082bbcce3446191bc92b3df6dc8f1'
-'laptop_backup_scheduled.py'='f0d0d19d33747f5947d909836da9b5d129ebc6b2d5ca83657a78b35706ef4a1a'
+'laptop_backup_scheduled.py'='7e3840f424078de7a1352180d36f4d5d3709409b949c15c2cebaad385a3010ba'
 'laptop_backup_scheduled_lineage.py'='bc75e6661016849e8f7257ee87b14fcf32e717ed5a2381c9141d3a4fff7bff66'
 'laptop_backup_transition.py'='b23cb27a917c1dd28e766566037b285c528e24cb0e5e1e9c7f02f79415828b77'
 'laptop_backup_transition_authority.py'='838c99e2cfd9327ae2d2d9c6a2dccf036260f78dfba5875fb98004d1ee752bba'
@@ -13821,19 +13821,38 @@ if($statusRun.ExitCode-ne0){throw "status-only wrapper failed: $($statusRun.Outp
 $statusEnvelope=$statusEnvelopeText|ConvertFrom-Json
 if([int]$statusEnvelope.returncode-ne0-or-not[string]::IsNullOrEmpty([string]$statusEnvelope.stderr)){throw "fresh status-only failed: $statusEnvelopeText"}
 $statusText=([string]$statusEnvelope.stdout).Trim();$status=$statusText|ConvertFrom-Json
+$expectedStatusFields=@('action','backfill_dates','backfill_required','backup_command','control','inventory','macro','observation','ok','preflight_identity','result','status')
+$actualStatusFields=@($status.PSObject.Properties.Name|Sort-Object)
+$identity=$status.preflight_identity
+if(Compare-Object $expectedStatusFields $actualStatusFields){throw 'fresh status-only fields drift'}
 if($status.ok-ne$true-or$status.result-cne'PASS'-or$status.action-cne'STATUS_ONLY'-or$status.status-notin@('UP_TO_DATE','STALE')-or$status.backup_command-notin@('backup-latest','backfill')){throw 'fresh status-only contract drift'}
-$backfillDates=@($status.backfill_dates);$orderedDates=@($backfillDates|Sort-Object -Unique);$datesValid=$true
-foreach($value in $backfillDates){$parsed=[datetime]::MinValue;if($value-isnot[string]-or-not[datetime]::TryParseExact($value,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsed)){$datesValid=$false;break}}
-$datesOrdered=$backfillDates.Count-eq$orderedDates.Count;for($i=0;$datesOrdered-and$i-lt$backfillDates.Count;$i++){if($backfillDates[$i]-cne$orderedDates[$i]){$datesOrdered=$false}}
-if(-not$datesValid-or-not$datesOrdered-or[bool]$status.backfill_required-ne($status.backup_command-ceq'backfill')-or($status.backup_command-ceq'backfill'-and$backfillDates.Count-lt1)-or($status.backup_command-ceq'backup-latest'-and$backfillDates.Count-ne0)){throw 'fresh status-only backup request drift'}
-WriteUtf8 (Join-Path $root 'status-only.json') (($status|ConvertTo-Json -Depth 12 -Compress)+"`n")
+if($null-eq$identity-or$identity.candidate_code_sha-cne$candidateSha-or$identity.protected_code_sha-cne$protectedSha-or$identity.plan_git_commit-cne$planCommit-or$identity.target-cne$target){throw 'fresh status-only identity drift'}
+$checkedAt=[DateTimeOffset]::MinValue
+if(-not[DateTimeOffset]::TryParseExact([string]$identity.checked_at,'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal,[ref]$checkedAt)-or$checkedAt-lt[DateTimeOffset]::UtcNow.AddMinutes(-5)-or$checkedAt-gt[DateTimeOffset]::UtcNow.AddMinutes(1)){throw 'fresh status-only timestamp drift'}
+$componentStates=@()
+foreach($name in @('observation','control','macro')){$component=$status.PSObject.Properties[$name].Value;if($component.status-notin@('UP_TO_DATE','STALE')){throw "fresh status-only $name state drift"};if($component.status-ceq'STALE'-and$component.reason-cne"$name receipt identity is invalid"){throw "fresh status-only $name stale reason drift"};$componentStates+=[string]$component.status}
+$missingDates=@($status.inventory.missing_completed_dates);$orderedMissing=@($missingDates|Sort-Object -Unique);$missingValid=$true
+foreach($value in $missingDates){$parsed=[datetime]::MinValue;if($value-isnot[string]-or-not[datetime]::TryParseExact($value,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsed)){$missingValid=$false;break}}
+$missingOrdered=$missingDates.Count-eq$orderedMissing.Count;for($i=0;$missingOrdered-and$i-lt$missingDates.Count;$i++){if($missingDates[$i]-cne$orderedMissing[$i]){$missingOrdered=$false}}
+if(-not$missingValid-or-not$missingOrdered-or$status.inventory.status-notin@('UP_TO_DATE','STALE')-or@($status.inventory.stale_diagnostics).Count-ne0-or($status.inventory.status-ceq'UP_TO_DATE')-ne($missingDates.Count-eq0)){throw 'fresh status-only inventory drift'}
+$componentStates+=[string]$status.inventory.status;$expectedStatus=if(@($componentStates|Where-Object{$_-cne'UP_TO_DATE'}).Count){'STALE'}else{'UP_TO_DATE'}
+if($status.status-cne$expectedStatus){throw 'fresh status-only aggregate drift'}
+$latestDate=[string]$status.observation.observation_date;$parsedLatest=[datetime]::MinValue
+if(-not[datetime]::TryParseExact($latestDate,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsedLatest)){throw 'fresh status-only observation date drift'}
+$expectedBackfillDates=@($missingDates|Where-Object{$_-cne$latestDate});$expectedCommand=if($expectedBackfillDates.Count){'backfill'}else{'backup-latest'}
+$backfillDates=@($status.backfill_dates);$orderedBackfill=@($backfillDates|Sort-Object -Unique);$backfillValid=$true
+foreach($value in $backfillDates){$parsed=[datetime]::MinValue;if($value-isnot[string]-or-not[datetime]::TryParseExact($value,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$parsed)){$backfillValid=$false;break}}
+$backfillOrdered=$backfillDates.Count-eq$orderedBackfill.Count;for($i=0;$backfillOrdered-and$i-lt$backfillDates.Count;$i++){if($backfillDates[$i]-cne$orderedBackfill[$i]){$backfillOrdered=$false}}
+if(-not$backfillValid-or-not$backfillOrdered-or$backfillDates.Count-ne$expectedBackfillDates.Count-or(Compare-Object $backfillDates $expectedBackfillDates)-or$status.backfill_required-isnot[bool]-or[bool]$status.backfill_required-ne($expectedCommand-ceq'backfill')-or$status.backup_command-cne$expectedCommand){throw 'fresh status-only backup request drift'}
+$statusPath=Join-Path $root 'status-only.json'
+WriteUtf8 $statusPath (($status|ConvertTo-Json -Depth 12 -Compress)+"`n")
 
 $pointerPath=Join-Path $control 'active-runner.json'
 RequireHash $pointerPath 'fd66311c66aad9a8f16643171fdb3de54f6582361d41ce3255c7da09a086e923'
 $prior=Get-Content -LiteralPath $pointerPath -Raw|ConvertFrom-Json
 if($prior.sequence-ne1-or$prior.manifest_sha256-cne'af5d7880a114aa8ab0d73d0b13ff68d91625545d3990d6352cf219567e661092'){throw 'dispatcher predecessor drift'}
 $activationId=[guid]::NewGuid().ToString('N')
-$gate=[ordered]@{schema_version=1;result='PASS';activation_id=$activationId;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;operator_sid=$operatorSid;foreground_result='PASS';check_only_result='PASS'}
+$gate=[ordered]@{schema_version=2;result='PASS';activation_id=$activationId;candidate_code_sha=$candidateSha;protected_code_sha=$protectedSha;plan_git_commit=$planCommit;plan_sha256=$planSha;authority_commit=$authoritySha;handoff_sha256=$handoffSha;operator_sid=$operatorSid;status_only=[ordered]@{path=$statusPath;sha256=(Sha $statusPath)}}
 $gatePath=Join-Path $root 'activation-gate.json';WriteJson $gatePath $gate
 $installRoot="C:\Program Files\AR-local-backup-trusted-$candidateSha-$authoritySha"
 $evidenceRoot="C:\Program Files\AR-local-backup-evidence-$candidateSha-$authoritySha"
@@ -13988,7 +14007,7 @@ $quarantine='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-QUA
 $journalRoot='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE13-EXECUTION'
 $runtimeSource='C:\code\backups\AR-local-pi5\evidence\A3-TRUSTED-BOOTSTRAP-20260901\20260901T083436+1000\runtime'
 $repo='https://github.com/yanniedog/AR-local.git'
-$candidateSha='911b2e03ff065650d4021f96e9ca2ea50669eda1'
+$candidateSha='c506233c5121bd991be45e1d69a1191e1d8635cc'
 $protectedSha='9302890fcc752cbf90da97d597e972c157d913e3'
 $planCommit='9094a8e115958fcaf2cb36525736bd5e297e6b04'
 $planSha='a512b7424de16dabf7d0b71db00539b4b0b653d1239749bceda6b27e05bd7ada'
@@ -14187,7 +14206,7 @@ $match=[regex]::Match($text,$pattern)
 if(-not$match.Success){throw 'sequence-13 generator block is absent'}
 $script=$match.Groups[1].Value.Replace([string][char]13,'')
 $scriptBytes=[Text.UTF8Encoding]::new($false).GetBytes($script);$scriptSha=ShaBytes $scriptBytes
-if($scriptBytes.Length-ne76350-or$script.Split([char]10).Count-ne507-or$scriptSha-cne'cdc8e02798c772bf421604efec9c152dc0e74171c0912e8a262e3cf7877533c2'){throw 'sequence-13 generator binding mismatch'}
+if($scriptBytes.Length-ne79435-or$script.Split([char]10).Count-ne526-or$scriptSha-cne'0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838'){throw 'sequence-13 generator binding mismatch'}
 $tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseInput($script,[ref]$tokens,[ref]$parseErrors)|Out-Null
 $nativePython=@($script.Split([char]10)|Where-Object{$_-match'& \$python .* -c '})
 if(@($parseErrors).Count-or$nativePython.Count-ne1-or-not$nativePython[0].Contains('& $python -I -B -c $pythonBootstrap $payload @Arguments')-or-not$script.Contains('Add-Type -AssemblyName System.Net.Http -ErrorAction Stop')){throw 'sequence-13 parser or runtime-boundary gate failed'}
@@ -14345,7 +14364,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "authority": "HANDOFF-20260902T133826+1000-A3-PINNED-LAN-FINAL-AUTHORITY",
   "correction": "C-20260903T132500+1000",
   "base_main_sha": "5ae7d597192d3a54e49dbb7ffb4810b967a8ba47",
-  "candidate_sha": "911b2e03ff065650d4021f96e9ca2ea50669eda1",
+  "candidate_sha": "c506233c5121bd991be45e1d69a1191e1d8635cc",
   "quarantines": [
     "sequence-12-materializer-3ecf4be416b1222214bbd0abf2b7b2baee6370fb60f17cf44b6213e5dbdd7987",
     "sequence-12-generator-5155d3ecd9e81cc2d1da485b02a1461ac4f90b8227bd5bce1edf4b72dcc2eeb4",
@@ -14385,15 +14404,15 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "complete_handoff_raw_sha256": "D012_SEQUENCE13_MATERIALIZATION_RECORD",
   "generator": {
     "path": "C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1",
-    "bytes": 76350,
-    "lines": 507,
-    "sha256": "cdc8e02798c772bf421604efec9c152dc0e74171c0912e8a262e3cf7877533c2"
+    "bytes": 79435,
+    "lines": 526,
+    "sha256": "0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838"
   },
   "materializer": {
     "encoding": "UTF8_LF_NO_TRAILING_LF",
     "bytes": 37933,
     "lines": 358,
-    "sha256": "737b98dac54651a96e6949c8edf4215dfab3ec0d5a2dd9ce15b0ba0b03f36261"
+    "sha256": "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387"
   },
   "boundaries": {
     "powershell_sha256": "7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5",
@@ -14407,7 +14426,7 @@ $record|ConvertTo-Json -Depth 4 -Compress
   "a4": "BLOCKED_UNTIL_NATURAL_ACCEPTANCE",
   "next_action": "after this correction is merged, execute exactly the marked sequence-13 materializer in normal x64 System32 Windows PowerShell 5.1; require its terminal record; then run the ordinary non-admin generator entrypoint",
   "next_command": "MARKED_ARL_D012_RECOVERY_MATERIALIZER_PS1_C20260903T132500",
-  "next_command_utf8_lf_sha256": "737b98dac54651a96e6949c8edf4215dfab3ec0d5a2dd9ce15b0ba0b03f36261",
+  "next_command_utf8_lf_sha256": "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387",
   "preflight_command": "$encoded = & 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\code\\backups\\AR-local-pi5\\evidence\\A3-TRUSTED-BOOTSTRAP-D012\\prepare-and-preflight.ps1'",
   "preflight_command_utf8_sha256": "f715cc5d2b5b50bed541174bc91c15c979d3ba3c990c27f18ff398f308065349",
   "stop": [
@@ -14419,7 +14438,8 @@ $record|ConvertTo-Json -Depth 4 -Compress
     "process/lock/lease/partial",
     "under 50GiB",
     "D-006 window or expired preflight",
-    "launcher object/executable or package mismatch"
+    "launcher object/executable or package mismatch",
+    "status-only identity/freshness or unapproved stale-state drift"
   ],
   "authorization": "non-admin sequence-13 quarantine/materialization and preflight only after merge; sole sequence-3 UAC command only after terminal PASS; no manual backup/ingest/deploy/publication",
   "terminal_status": "BLOCKED_UNTIL_SEQUENCE13_MATERIALIZER_AND_FRESH_PREFLIGHT_PASS"

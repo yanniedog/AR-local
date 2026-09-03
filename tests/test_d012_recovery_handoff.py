@@ -10,6 +10,7 @@ ROOT = Path(__file__).parents[1]
 HANDOFF = ROOT / "docs/PI_INGEST_PAYLOAD_RECOVERY_HANDOFF.md"
 CANDIDATE = "f7f89a930d221691875d4093d67037a4ddabb041"
 CANDIDATE_12 = "911b2e03ff065650d4021f96e9ca2ea50669eda1"
+CANDIDATE_13 = "c506233c5121bd991be45e1d69a1191e1d8635cc"
 BASE_MAIN_12 = "381e578fc11447617319bd039bae4f468ca09700"
 BASE_MAIN_13 = "5ae7d597192d3a54e49dbb7ffb4810b967a8ba47"
 
@@ -163,10 +164,10 @@ def test_sequence12_materializer_binds_failed_root_and_merged_authority() -> Non
 def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None:
     script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260903T132500")
     payload = script.encode()
-    assert len(payload) == 76350
-    assert len(script.split("\n")) == 507
+    assert len(payload) == 79435
+    assert len(script.split("\n")) == 526
     assert hashlib.sha256(payload).hexdigest() == (
-        "cdc8e02798c772bf421604efec9c152dc0e74171c0912e8a262e3cf7877533c2"
+        "0e64ad517d27a48690e7b2cc0ae5377115b4d9df8d0ba7e9eb0dda10cb8f6838"
     )
     assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE13-EXECUTION" in script
     assert "'--status-only'" in script
@@ -178,6 +179,15 @@ def test_sequence13_generator_reuses_a_stable_reproducible_object_path() -> None
     assert "Move-Item -LiteralPath $launcherObj -Destination $launcherObj2" in script
     assert "(Test-Path -LiteralPath $launcherObj)" in script
     assert "4091'-or$quarantineFields[1]-cne'323'" in script
+    assert f"$candidateSha='{CANDIDATE_13}'" in script
+    assert "schema_version=2;result='PASS'" in script
+    assert "status_only=[ordered]@{path=$statusPath;sha256=(Sha $statusPath)}" in script
+    assert "foreground_result='PASS'" not in script
+    assert "check_only_result='PASS'" not in script
+    assert "fresh status-only identity drift" in script
+    assert 'fresh status-only $name stale reason drift' in script
+    assert "'laptop_backup_dispatcher_security.py'='b7898f971b32ab8dec63b46a8869c3ad14fd474e913cb5bd9b53c2cff1367535'" in script
+    assert "'laptop_backup_scheduled.py'='7e3840f424078de7a1352180d36f4d5d3709409b949c15c2cebaad385a3010ba'" in script
 
 
 def test_sequence13_materializer_binds_repro_failure_root() -> None:
@@ -186,14 +196,15 @@ def test_sequence13_materializer_binds_repro_failure_root() -> None:
     assert len(payload) == 37933
     assert len(script.split("\n")) == 358
     assert hashlib.sha256(payload).hexdigest() == (
-        "737b98dac54651a96e6949c8edf4215dfab3ec0d5a2dd9ce15b0ba0b03f36261"
+        "16c0928eb3d4a748cf96b0dd6af62b4e5874c96b9ac50b18f0da99dcf60be387"
     )
     assert f"$authoritySha-ceq'{BASE_MAIN_13}'" in script
     assert f"$resume.base_main_sha-cne'{BASE_MAIN_13}'" in script
     assert "$resume.sequence-ne13" in script
+    assert f"$candidateSha='{CANDIDATE_13}'" in script
     assert "AssertInventory $partial 4091 323 91693933" in script
     assert "1f6a134de329da86805ddf756ad984edb3d100478163ed70a3c81835296dfb87" in script
-    assert "$script.Split([char]10).Count-ne507" in script
+    assert "$script.Split([char]10).Count-ne526" in script
 
 
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
@@ -245,7 +256,7 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
     assert pointer["predecessor"] == "C-20260903T125200+1000"
     assert pointer["correction"] == "C-20260903T132500+1000"
     assert pointer["base_main_sha"] == BASE_MAIN_13
-    assert pointer["candidate_sha"] == CANDIDATE_12
+    assert pointer["candidate_sha"] == CANDIDATE_13
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
         "1f6a134de329da86805ddf756ad984edb3d100478163ed70a3c81835296dfb87"
     )
