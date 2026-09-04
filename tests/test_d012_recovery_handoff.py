@@ -17,6 +17,7 @@ BASE_MAIN_14 = "95259acfc66305db32bd7a4cb4da95fbe2074480"
 BASE_MAIN_15 = "5fcb0df28d7ef3b35ec4d5530f68fb7c45ada012"
 BASE_MAIN_16 = "c04b76e813e120de0668b19769463e9913e91d68"
 BASE_MAIN_17 = "591a9a619c01ffb4804db908f5d8ec6ce2c63327"
+BASE_MAIN_18 = "699f8bd9e4ca5ddb1cda046eee90725afd5f6212"
 
 
 def _block(name: str) -> str:
@@ -352,6 +353,38 @@ def test_sequence17_materializer_binds_the_canceled_consent_root() -> None:
     assert "$script.Split([char]10).Count-ne544" in script
 
 
+def test_sequence18_generator_preserves_the_absolute_git_boundary() -> None:
+    script = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260905T090000")
+    payload = script.encode()
+    assert len(payload) == 81671
+    assert len(script.split("\n")) == 544
+    assert hashlib.sha256(payload).hexdigest() == (
+        "ea8b02c416f860ccc99b3f84f70ce3a3d96578069b9f42deeda99c83217149df"
+    )
+    assert script.count('os.environ["AR_TRUSTED_GIT"]') == 2
+    assert "trusted package Git clone call shape drift" in script
+    assert "status-only evidence expired before terminal PASS" in script
+    assert "A3-TRUSTED-BOOTSTRAP-D012-SEQUENCE18-EXECUTION" in script
+
+
+def test_sequence18_materializer_binds_the_second_canceled_consent_root() -> None:
+    script = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260905T090000")
+    payload = script.encode()
+    assert len(payload) == 38930
+    assert len(script.split("\n")) == 369
+    assert hashlib.sha256(payload).hexdigest() == (
+        "ae56412ee8ce23413d5117fae591d6e6ad1276863299fb9203504fbffac687eb"
+    )
+    assert f"$authoritySha-ceq'{BASE_MAIN_18}'" in script
+    assert f"$resume.base_main_sha-cne'{BASE_MAIN_18}'" in script
+    assert "$resume.sequence-ne18" in script
+    assert "$resume.predecessor-cne'C-20260904T090500+1000'" in script
+    assert "BLOCKED_UNTIL_SEQUENCE18_MATERIALIZER_FRESH_PREFLIGHT_AND_USER_UAC_CONSENT" in script
+    assert "AssertInventory $partial 4102 323 172182640" in script
+    assert "a5bddc425f284fd70bb591ae2e3029d9360b718df46802d13a6c1eb79757a18e" in script
+    assert "$script.Split([char]10).Count-ne544" in script
+
+
 def test_backup_installers_accept_status_and_legacy_during_cutover() -> None:
     for name in (
         "install_laptop_backup_dispatcher.ps1",
@@ -397,19 +430,19 @@ def test_final_resume_pointer_matches_exact_scripts() -> None:
         for block in reversed(blocks)
         if (value := json.loads(block)).get("schema") == "ARL-A3-RESUME-POINTER-V1"
     )
-    assert pointer["sequence"] == 17
-    assert pointer["predecessor"] == "C-20260904T035500+1000"
-    assert pointer["correction"] == "C-20260904T090500+1000"
-    assert pointer["base_main_sha"] == BASE_MAIN_17
+    assert pointer["sequence"] == 18
+    assert pointer["predecessor"] == "C-20260904T090500+1000"
+    assert pointer["correction"] == "C-20260905T090000+1000"
+    assert pointer["base_main_sha"] == BASE_MAIN_18
     assert pointer["candidate_sha"] == CANDIDATE_13
     assert pointer["prior_root"]["tree_inventory_sha256"] == (
-        "d3816dab085487264b9c50059cf8949e6274b975aa02bc1c9fa19834513103ab"
+        "a5bddc425f284fd70bb591ae2e3029d9360b718df46802d13a6c1eb79757a18e"
     )
     assert pointer["clean_runtime"]["windows_powershell_inventory_sha256"] == (
         "1cebe40e5dd96043d79372602c9b8b10d129f724fe37b9dc8a0b323332a45ad0"
     )
-    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T090500")
-    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T090500")
+    generator = _block("ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260905T090000")
+    materializer = _block("ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260905T090000")
     for key, script in (("generator", generator), ("materializer", materializer)):
         record = pointer[key]
         assert record["bytes"] == len(script.encode())
@@ -434,6 +467,8 @@ def test_current_observation_probes_compile() -> None:
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T035500",
         "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260904T090500",
         "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260904T090500",
+        "ARL-D012-PREPARE-AND-PREFLIGHT-PS1-C20260905T090000",
+        "ARL-D012-RECOVERY-MATERIALIZER-PS1-C20260905T090000",
     ):
         probes = re.findall(r'python3 -B - "\$today" <<\'PY\'\n(.*?)\nPY', _block(name), re.DOTALL)
         assert len(probes) == 1
