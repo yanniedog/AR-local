@@ -1,0 +1,50 @@
+{
+  "schema_version": 3,
+  "generation_id": "gen-2026-08-14-r0001-4debad48f7d3",
+  "generation_revision": 1,
+  "generation_digest": "4debad48f7d37bb5a4f97000315530f57e05829b6c31435411f05692fca3bd17",
+  "observation_date": "2026-08-14",
+  "observed_at": "2026-08-14T09:30:00+10:00",
+  "observation_state": "complete",
+  "ledger_state": "finalized",
+  "normalization_version": "canonical-v3-domain-v1",
+  "producer_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "coverage": {
+    "products_discovered": 0,
+    "products_priced": 0,
+    "products_consumer_eligible": 0,
+    "rate_tiers_eligible": 0,
+    "providers_registered": 5,
+    "providers_attempted": 5,
+    "providers_responded": 5,
+    "providers_complete": 4,
+    "providers_empty": 1,
+    "providers_partial": 0,
+    "providers_failed": 0,
+    "providers_not_attempted": 0,
+    "register_sources_attempted": 1,
+    "register_sources_complete": 1,
+    "register_provenance_complete": true,
+    "failure_records": 0,
+    "failure_records_by_provider": {},
+    "corrupt_failure_records": 0,
+    "exclusions_by_reason": {},
+    "failure_provenance_complete": true,
+    "reconciliation_status": "reconciled"
+  },
+  "prior_ledger_digest": null,
+  "ledger_event_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "capabilities": {
+    "core": {
+      "schema_id": "https://australianrates.app/contracts/v3/canonical-core-v3.schema.json",
+      "media_type": "application/json",
+      "encoding": "identity",
+      "compressed_bytes": 115,
+      "uncompressed_bytes": 115,
+      "sha256": "3a0be274494f71be1739aceb98e349bb74b3ddfac2eaa5bf0a782e1e629650c6",
+      "url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/3a0be274494f71be1739aceb98e349bb74b3ddfac2eaa5bf0a782e1e629650c6.json",
+      "cohort": "confirmed-consumer-products",
+      "capability": "core"
+    }
+  }
+}

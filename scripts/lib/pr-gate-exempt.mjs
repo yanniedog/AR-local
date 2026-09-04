@@ -1,5 +1,5 @@
 /**
- * PRs that skip bot-presence-gate, bot-feedback-gate, and wait-for-bots.
+ * PRs that may skip review-thread enforcement. Required CI still applies.
  *
  * Policy: Gemini / Codex / Sourcery are required only on human-initiated work PRs
  * (e.g. yanniedog). Skip for:

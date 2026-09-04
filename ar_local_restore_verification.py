@@ -12,6 +12,8 @@ from typing import Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 
 from ar_local_backup_policy import canonical_json_bytes, sha256_file
+from ar_local_daily_reconciliation import legacy_daily_reconciliation
+from ar_local_sqlite_health import check_sqlite_health, sqlite_health_ok
 from cdr_observation import load_verified_observation
 from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
 
@@ -19,36 +21,6 @@ from cdr_observation_db import SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION
 RESTORE_ACCEPTANCE_SCHEMA = (
     Path(__file__).resolve().parent / "contracts/pi-restore-acceptance-v1.schema.json"
 )
-REQUIRED_DAILY_TABLES = {
-    "schema_meta",
-    "runs",
-    "bank_products",
-    "bank_rates",
-    "bank_items",
-    "bank_product_facts",
-    "bank_product_changes",
-}
-LEGACY_DAILY_SCHEMA_VERSION = "8"
-REQUIRED_DAILY_COLUMNS = {
-    "runs": {"run_date", "generated_at", "banks_counts_json"},
-    "bank_products": {"run_date", "provider", "product_id", "product_key"},
-    "bank_rates": {"run_date", "product_key", "rate", "comparison_rate"},
-    "bank_items": {"run_date", "item_group", "product_key"},
-    "bank_product_facts": {
-        "run_date",
-        "product_key",
-        "fact_id",
-        "canonical_key",
-    },
-    "bank_product_changes": {
-        "run_date",
-        "event_id",
-        "product_id",
-        "event_type",
-    },
-}
-
-
 def _json(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -65,56 +37,23 @@ def _immutable_connection(path: Path) -> sqlite3.Connection:
     )
 
 
-def _daily_export_reconciliation(database: Path) -> dict[str, object]:
-    """Verify a retained pre-ObservationV1 export."""
-    banks_files = sorted(database.parent.glob("banks-*.json"))
-    if len(banks_files) != 1:
-        raise ValueError("daily export must contain exactly one banks JSON")
-    banks = _json(banks_files[0])
-    run_date = banks_files[0].stem.removeprefix("banks-")
-    expected = {key: len(value) for key, value in banks.items() if isinstance(value, list)}
-    with closing(_immutable_connection(database)) as connection:
-        run = connection.execute("SELECT run_date, banks_counts_json FROM runs").fetchall()
-        actual = {
-            "products": connection.execute("SELECT COUNT(*) FROM bank_products").fetchone()[0],
-            "rates": connection.execute("SELECT COUNT(*) FROM bank_rates").fetchone()[0],
-            "product_facts": connection.execute("SELECT COUNT(*) FROM bank_product_facts").fetchone()[0],
-            "product_changes": connection.execute("SELECT COUNT(*) FROM bank_product_changes").fetchone()[0],
-        }
-        for group in ("fees", "features", "eligibility", "constraints"):
-            actual[group] = connection.execute(
-                "SELECT COUNT(*) FROM bank_items WHERE item_group = ?", (group,)
-            ).fetchone()[0]
-    if len(run) != 1 or run[0][0] != run_date or json.loads(run[0][1]) != expected:
-        raise ValueError("runs metadata does not match banks export")
-    for key, count in actual.items():
-        if count != expected.get(key, 0):
-            raise ValueError(f"database count mismatch for {key}")
-    legacy_manifest_path = database.parent / "dashboard-cache/latest.json"
-    legacy_manifest = _json(legacy_manifest_path)
-    if (
-        legacy_manifest.get("run_date") != run_date
-        or legacy_manifest.get("banks_counts") != expected
-    ):
-        raise ValueError("historical manifest does not match banks export")
-    return {
-        "run_date": run_date,
-        "counts": actual,
-        "banks_json": banks_files[0].name,
-        "banks_json_sha256": sha256_file(banks_files[0]),
-        "dashboard_sha256": sha256_file(legacy_manifest_path),
-    }
-
-
 def _observation_reconciliation(database: Path) -> dict[str, object]:
     observation, accounting = load_verified_observation(database.parent)
     return {
         "run_date": observation["observation_date"],
         "counts": observation["row_counts"],
+        "database_counts": observation["row_counts"],
+        "schema_version": OBSERVATION_SCHEMA_VERSION,
         "observation_sha256": sha256_file(database.parent / "observation-v1.json"),
-        "accounting_sha256": sha256_file(database.parent / "product-accounting-v1.json"),
+        "accounting_sha256": sha256_file(
+            database.parent / "product-accounting-v1.json"
+        ),
         "database_sha256": sha256_file(database),
         "accounting_id": accounting["accounting_id"],
+        "validation_mode": (
+            "canonical_observation_and_immutable_sqlite_"
+            f"v{OBSERVATION_SCHEMA_VERSION}"
+        ),
     }
 
 
@@ -193,7 +132,7 @@ def _pointer_matches_marker(
 def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, object], list[str]]:
     findings: list[str] = []
     with closing(_immutable_connection(path)) as connection:
-        quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
+        health = check_sqlite_health(connection)
         user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         tables = {
             row[0]
@@ -201,40 +140,33 @@ def _verify_daily_database(path: Path, data_root: Path) -> tuple[dict[str, objec
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )
         }
+        schema_version: object = user_version
+        if user_version != OBSERVATION_SCHEMA_VERSION:
+            row = (
+                connection.execute(
+                    "SELECT value FROM schema_meta WHERE key = 'version'"
+                ).fetchone()
+                if "schema_meta" in tables
+                else None
+            )
+            schema_version = row[0] if row else None
     record: dict[str, object] = {
         "path": path.relative_to(data_root).as_posix(),
-        "quick_check": quick_check,
-        "schema_version": user_version,
+        **health,
+        "schema_version": schema_version,
     }
-    if quick_check != "ok":
-        findings.append(f"sqlite_quick_check:{path}")
-    if user_version == OBSERVATION_SCHEMA_VERSION:
-        try:
-            record["export_reconciliation"] = _observation_reconciliation(path)
-        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
-            findings.append(f"daily_observation_mismatch:{path}:{exc}")
-        return record, findings
-    missing = sorted(REQUIRED_DAILY_TABLES - tables)
-    if missing:
-        findings.append(f"daily_schema_missing:{path}:{','.join(missing)}")
-        return record, findings
-    with closing(_immutable_connection(path)) as connection:
-        schema_version = connection.execute(
-            "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone()
-        if not schema_version or schema_version[0] != LEGACY_DAILY_SCHEMA_VERSION:
-            findings.append(f"daily_schema_version_mismatch:{path}")
-        for table, columns in REQUIRED_DAILY_COLUMNS.items():
-            actual_columns = {
-                row[0]
-                for row in connection.execute("SELECT name FROM pragma_table_info(?)", (table,))
-            }
-            if not set(columns).issubset(actual_columns):
-                findings.append(f"daily_columns_missing:{path}:{table}")
+    if not sqlite_health_ok(health):
+        findings.append(f"sqlite_health_check:{path}")
     try:
-        record["export_reconciliation"] = _daily_export_reconciliation(path)
+        reconciliation = (
+            _observation_reconciliation(path)
+            if user_version == OBSERVATION_SCHEMA_VERSION
+            else legacy_daily_reconciliation(path)
+        )
+        record["schema_version"] = reconciliation["schema_version"]
+        record["export_reconciliation"] = reconciliation
     except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as exc:
-        findings.append(f"daily_export_mismatch:{path}:{exc}")
+        findings.append(f"daily_reconciliation_mismatch:{path}:{exc}")
     return record, findings
 
 
@@ -247,30 +179,19 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
     daily_databases: list[Path] = []
     for path in sorted(data_root.rglob("*.sqlite")):
         try:
+            if path.name == "local-cdr.sqlite":
+                daily_databases.append(path.resolve())
+                record, database_findings = _verify_daily_database(path, data_root)
+                sqlite_results.append(record)
+                findings.extend(database_findings)
+                continue
             with closing(_immutable_connection(path)) as connection:
-                result = connection.execute("PRAGMA quick_check").fetchone()[0]
-                schema_version: object = None
-                if path.name == "local-cdr.sqlite":
-                    daily_databases.append(path.resolve())
-                    user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-                    if user_version == OBSERVATION_SCHEMA_VERSION:
-                        schema_version = user_version
-                    else:
-                        row = connection.execute(
-                            "SELECT value FROM schema_meta WHERE key = 'version'"
-                        ).fetchone()
-                        schema_version = row[0] if row else None
+                health = check_sqlite_health(connection)
             sqlite_results.append(
-                {
-                    "path": path.relative_to(data_root).as_posix(),
-                    "quick_check": result,
-                    **({"schema_version": schema_version} if path.name == "local-cdr.sqlite" else {}),
-                }
+                {"path": path.relative_to(data_root).as_posix(), **health}
             )
-            if result != "ok":
-                findings.append(f"sqlite_quick_check:{path}")
-            if path.name == "local-cdr.sqlite" and schema_version is None:
-                findings.append(f"daily_schema_version_missing:{path}")
+            if not sqlite_health_ok(health):
+                findings.append(f"sqlite_health_check:{path}")
         except sqlite3.Error:
             findings.append(f"sqlite_unreadable:{path}")
     if not daily_databases:
@@ -313,21 +234,6 @@ def verify_restored_state(data_root: Path) -> dict[str, object]:
             selected = observation
     if latest_pointer.is_file() and selected is None:
         findings.append("latest_observation_not_verified")
-    if selected is not None:
-        selected_database = data_root / str(selected["database_path"])
-        try:
-            selected_record, selected_findings = _verify_daily_database(
-                selected_database, data_root
-            )
-            findings.extend(selected_findings)
-            sqlite_results = [
-                selected_record
-                if item["path"] == selected_record["path"]
-                else item
-                for item in sqlite_results
-            ]
-        except sqlite3.Error:
-            findings.append(f"sqlite_unreadable:{selected_database}")
     return {
         "ok": not findings,
         "findings": findings,

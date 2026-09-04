@@ -12,7 +12,7 @@ npm run pr:merge -- --pr <n>
 gh pr merge <n> --auto --squash --delete-branch
 ```
 
-`--auto` queues merge until required checks pass (and updates branch when protection requires up-to-date). Do not merge on CI green alone — complete bot wait and thread closure per `WORKFLOW.md`.
+`--auto` queues merge until required checks pass (and updates branch when protection requires up-to-date). Do not merge on CI green alone — complete required-CI settlement and thread closure per `WORKFLOW.md`.
 
 ## `gh pr create`
 

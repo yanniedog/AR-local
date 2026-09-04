@@ -370,7 +370,7 @@ unavailable=set(v.get('unavailable_populations') or []);assert {'consumer_eligib
 source=(data/c['source_path']).resolve();source.relative_to(data);dbs=[x for x in c['artifacts'] if x['path'].endswith('.sqlite')];assert len(dbs)==1
 meta=dbs[0];db=(source/meta['path']).resolve();db.relative_to(source);digest=h(db);assert db.stat().st_size==int(meta['bytes']) and digest==meta['sha256']
 with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as con:
- qc=con.execute('PRAGMA quick_check').fetchone()[0];assert qc=='ok';tables={r[0] for r in con.execute("select name from sqlite_master where type='table'")}
+ qc=[r[0] for r in con.execute('PRAGMA quick_check')];integrity=[r[0] for r in con.execute('PRAGMA integrity_check')];foreign_key=con.execute('PRAGMA foreign_key_check').fetchone();assert qc==['ok'] and integrity==['ok'] and foreign_key is None;tables={r[0] for r in con.execute("select name from sqlite_master where type='table'")}
  required={'runs','schema_meta','bank_products','bank_rates','bank_items','bank_product_facts','bank_product_changes'};assert required<=tables
  counts={t:con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in sorted(required)};assert all(counts[t]>0 for t in ('bank_products','bank_rates','bank_items','bank_product_facts'))
  banks=m.get('banks') or {};assert counts['bank_products']==int(banks.get('products') or 0)==discovered;assert counts['bank_rates']==int(banks.get('rates') or 0);assert counts['bank_product_facts']==int(banks.get('product_facts') or 0);assert counts['bank_product_changes']==int(banks.get('product_changes') or 0);assert counts['bank_items']==sum(int(banks.get(k) or 0) for k in ('fees','features','eligibility','constraints'))
@@ -382,7 +382,7 @@ for key,folder,tag,required,allowed in (('dated','v1-dated',f'app-payload-{D}',{
  for role,item in payload['files'].items():
   name=item['name'];assert Path(name).name==name;asset=(root/name).resolve();asset.relative_to(root);asset_sha=h(asset);asset_bytes=asset.stat().st_size;assert asset_sha==item['sha256'] and asset_bytes==int(item['bytes']);assets[role]={'name':name,'sha256':asset_sha,'bytes':asset_bytes}
  local_v1[key]={'tag':tag,'manifest_sha256':h(manifest_path),'assets':assets}
-print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':qc,'populations':counts},'local_v1':local_v1},sort_keys=True))
+print(json.dumps({'result':'PASS','date':D,'pointer':p,'marker_sha256':h(m_path),'contract_digest':c['contract_digest'],'banks':m.get('banks') or {},'attempt_evidence':a,'coverage':v,'provider_states':states,'quarantines':c.get('quarantines',[]),'sqlite':{'path':str(db),'bytes':db.stat().st_size,'sha256':digest,'quick_check':'ok','integrity_check':'ok','foreign_key_check':'ok','populations':counts},'local_v1':local_v1},sort_keys=True))
 '''
     return template.replace("__DATE__", repr(run_day.isoformat())).encode()
 

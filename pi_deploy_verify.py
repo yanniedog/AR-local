@@ -27,6 +27,7 @@ Examples:
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -34,8 +35,8 @@ import shlex
 import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Optional, Sequence
+from pathlib import Path, PurePosixPath
+from typing import Mapping, Optional, Sequence
 
 from ar_local_pi_runtime import (
     PI_DATA_ROOT,
@@ -50,6 +51,7 @@ import pi_deploy_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parent
 SUBPROCESS_TIMEOUT_SEC = 120
+DATA_VERIFY_TIMEOUT_SEC = 900
 
 EXIT_OK = 0
 EXIT_VERIFY_FAIL = 1
@@ -98,10 +100,12 @@ PI_PATH_PREFIXES: tuple[str, ...] = (
     "ar_local_backup_scope.py",
     "ar_local_boot_proof.py",
     "ar_local_checkout.py",
+    "ar_local_daily_reconciliation.py",
     "ar_local_deployment_chain.py",
     "ar_local_operation_lock.py",
     "ar_local_rollback_record.py",
     "ar_local_restore_verification.py",
+    "ar_local_sqlite_health.py",
     "ar_local_pi_service_heal.py",
     "ar_local_pi_runtime.py",
     "contracts/export-contract-v2.schema.json",
@@ -226,7 +230,12 @@ def _strip_success_sentinel(stdout: str) -> str:
     return "\n".join(lines).strip()
 
 
-def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
+def run_shell(
+    shell_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
     if on_pi_host():
         if dry_run:
             print(f"pi_deploy_verify: dry-run local {shell_cmd!r}")
@@ -238,7 +247,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
             text=True,
             cwd=str(REPO_ROOT),
             check=False,
-            timeout=SUBPROCESS_TIMEOUT_SEC,
+            timeout=timeout_seconds,
         )
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
@@ -264,7 +273,7 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
                 text=True,
                 shell=False,
                 check=False,
-                timeout=SUBPROCESS_TIMEOUT_SEC,
+                timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
             if last:
@@ -321,8 +330,15 @@ def run_shell(shell_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
     return proc.returncode, out, err
 
 
-def run_ssh(remote_cmd: str, *, dry_run: bool = False) -> tuple[int, str, str]:
-    return run_shell(remote_cmd, dry_run=dry_run)
+def run_ssh(
+    remote_cmd: str,
+    *,
+    dry_run: bool = False,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_SEC,
+) -> tuple[int, str, str]:
+    return run_shell(
+        remote_cmd, dry_run=dry_run, timeout_seconds=timeout_seconds
+    )
 
 
 def origin_main_sha_local() -> Optional[str]:
@@ -553,6 +569,115 @@ def wait_for_legacy_http_smoke(
         delay_seconds=delay_seconds,
         budget_seconds=budget_seconds,
     )
+
+
+def production_data_script() -> bytes:
+    """Return a repository-compatible, read-only production data verifier."""
+
+    return b'''import hashlib,json,re,sqlite3,sys
+from contextlib import closing
+from pathlib import Path
+from ar_local_restore_verification import verify_restored_state
+root=Path(sys.argv[1]).resolve(strict=True)
+def require(condition,message):
+ if not condition: raise RuntimeError(message)
+def sha256_file(path):
+ digest=hashlib.sha256()
+ with path.open("rb") as stream:
+  for block in iter(lambda:stream.read(1048576),b""):
+   digest.update(block)
+ return digest.hexdigest()
+report=verify_restored_state(root)
+require(report.get("ok") is True,f"restored state failed: {report.get('findings')}")
+selected=report.get("selected_observation")
+require(isinstance(selected,dict),"selected observation is missing")
+for key in ("observation_date","generation_id","ledger_event_digest","database_path","database_sha256","export_contract_digest"):
+ require(selected.get(key),f"selected observation lacks {key}")
+require(re.fullmatch(r"[0-9a-f]{64}",str(selected["database_sha256"])),"database digest is invalid")
+require(isinstance(report.get("ledger"),dict) and report["ledger"].get("ok") is True,"ledger is invalid")
+databases=[]
+for path in sorted(root.rglob("*.sqlite")):
+ require(path.is_file() and not path.is_symlink(),f"unsafe SQLite path: {path}")
+ with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro&immutable=1",uri=True)) as connection:
+  quick=[str(row[0]) for row in connection.execute("PRAGMA quick_check")]
+  integrity=[str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
+  foreign_key=connection.execute("PRAGMA foreign_key_check").fetchone()
+  require(quick==["ok"] and integrity==["ok"] and foreign_key is None,f"SQLite health failed: {path}")
+  user_version=int(connection.execute("PRAGMA user_version").fetchone()[0])
+  tables={str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+  schema_version=user_version
+  if path.name=="local-cdr.sqlite" and user_version==0 and "schema_meta" in tables:
+   row=connection.execute("SELECT value FROM schema_meta WHERE key='version'").fetchone()
+   schema_version=row[0] if row else None
+ digest=sha256_file(path)
+ databases.append({"path":path.relative_to(root).as_posix(),"sha256":digest,"schema_version":schema_version,"quick_check":"ok","integrity_check":"ok","foreign_key_check":"ok"})
+require(bool(databases),"no SQLite databases found")
+selected_matches=[item for item in databases if item["path"]==selected["database_path"]]
+require(len(selected_matches)==1,"selected database identity is ambiguous")
+selected_db=selected_matches[0]
+require(selected_db["sha256"]==selected["database_sha256"],"selected database digest mismatch")
+require(str(selected_db["schema_version"]) in {"8","11"},"selected database schema is unsupported")
+print(json.dumps({"result":"PASS","observation_date":selected["observation_date"],"generation_id":selected["generation_id"],"ledger_event_digest":selected["ledger_event_digest"],"database":selected_db,"sqlite_databases":len(databases)},sort_keys=True))
+'''
+
+
+def production_data_report_is_valid(value: object) -> bool:
+    if not isinstance(value, Mapping) or value.get("result") != "PASS":
+        return False
+    date = str(value.get("observation_date") or "")
+    generation = str(value.get("generation_id") or "")
+    ledger_digest = str(value.get("ledger_event_digest") or "")
+    database = value.get("database")
+    if not isinstance(database, Mapping):
+        return False
+    path = str(database.get("path") or "")
+    relative = PurePosixPath(path)
+    return bool(
+        re.fullmatch(r"\d{4}-\d{2}-\d{2}", date)
+        and re.fullmatch(r"obs-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", generation)
+        and re.fullmatch(r"[0-9a-f]{64}", ledger_digest)
+        and re.fullmatch(r"[0-9a-f]{64}", str(database.get("sha256") or ""))
+        and not relative.is_absolute()
+        and "\\" not in path
+        and ".." not in relative.parts
+        and path.endswith("/_exports/local-cdr.sqlite")
+        and str(database.get("schema_version")) in {"8", "11"}
+        and isinstance(value.get("sqlite_databases"), int)
+        and int(value["sqlite_databases"]) > 0
+    )
+
+
+def verify_production_data(*, dry_run: bool = False) -> int:
+    """Verify ledger, pointer, observation, digest, schema, and every SQLite DB."""
+
+    encoded = base64.b64encode(production_data_script()).decode("ascii")
+    python = f"import base64;exec(base64.b64decode({encoded!r}))"
+    command = (
+        f"cd {shell_quote(pi_ar_repo())} && "
+        f"python3 -c {shell_quote(python)} {shell_quote(pi_data_root())}"
+    )
+    code, output, error = run_ssh(
+        command, dry_run=dry_run, timeout_seconds=DATA_VERIFY_TIMEOUT_SEC
+    )
+    if dry_run:
+        print("pi_deploy_verify: dry-run would verify ledger, observation, and SQLite data")
+        return EXIT_OK
+    if code != 0:
+        print(error or output or "pi_deploy_verify: production data verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    try:
+        report = json.loads(output)
+    except (TypeError, ValueError):
+        report = None
+    if not production_data_report_is_valid(report):
+        print("pi_deploy_verify: production data verifier returned invalid evidence", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    print(
+        "pi_deploy_verify: data OK "
+        f"observation={report.get('observation_date')} "
+        f"database={report.get('database', {}).get('sha256')}"
+    )
+    return EXIT_OK
 
 
 def bootstrap_observation(
@@ -836,6 +961,9 @@ def rollback_to_protected_commit(
     )
     if smoke != EXIT_OK:
         print("pi_deploy_verify: rollback HTTP verification failed", file=sys.stderr)
+        return EXIT_VERIFY_FAIL
+    if verify_production_data(dry_run=False) != EXIT_OK:
+        print("pi_deploy_verify: rollback data verification failed", file=sys.stderr)
         return EXIT_VERIFY_FAIL
     record_script = (
         f"cd {shell_quote(ar)} && /usr/local/bin/ar-local-backup-gate record-rollback "

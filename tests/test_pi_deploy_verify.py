@@ -88,11 +88,22 @@ def test_deploy_dry_run_uses_exact_commit_without_ssh(monkeypatch):
     )
     monkeypatch.setattr(
         pi_deploy_verify,
+        "verify_production_data",
+        lambda dry_run=False: calls.append(("data", dry_run))
+        or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
         "pi_remote_snapshot",
         lambda **_kwargs: pytest.fail("dry-run must not contact the Pi"),
     )
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
-    assert calls == [("gate", expected, expected, True), ("pull", expected, True), ("services", True)]
+    assert calls == [
+        ("gate", expected, expected, True),
+        ("pull", expected, True),
+        ("services", True),
+        ("data", True),
+    ]
 
 
 def test_backup_gate_executes_installed_trusted_gate_without_switching_checkout(monkeypatch):
@@ -176,6 +187,11 @@ def test_rollback_restores_exact_protected_sha_and_runtime(monkeypatch):
         pi_deploy_verify,
         "wait_for_legacy_http_smoke",
         lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "verify_production_data",
+        lambda **_kwargs: pi_deploy_verify.EXIT_OK,
     )
     assert (
         pi_deploy_verify.rollback_to_protected_commit(protected, candidate, "deploy command")
@@ -445,10 +461,12 @@ def test_pi_capacity_monitor_changes_require_pi_deploy():
         "ar_local_backup_scope.py",
         "ar_local_boot_proof.py",
         "ar_local_checkout.py",
+        "ar_local_daily_reconciliation.py",
         "ar_local_deployment_chain.py",
         "ar_local_operation_lock.py",
         "ar_local_rollback_record.py",
         "ar_local_restore_verification.py",
+        "ar_local_sqlite_health.py",
         "pi_ingest_terminal.py",
         "contracts/export-contract-v2.schema.json",
         "contracts/pi-backup-boot-proof-v1.schema.json",
@@ -516,6 +534,11 @@ def test_acceptance_record_failure_invokes_verified_rollback(monkeypatch):
     monkeypatch.setattr(pi_deploy_verify, "deploy_services", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
     monkeypatch.setattr(pi_deploy_verify, "verify_sync", lambda **_kwargs: pi_deploy_verify.EXIT_OK)
     monkeypatch.setattr(pi_deploy_verify, "wait_for_http_smoke", lambda *_args, **_kwargs: pi_deploy_verify.EXIT_OK)
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "verify_production_data",
+        lambda **_kwargs: pi_deploy_verify.EXIT_OK,
+    )
     monkeypatch.setattr(
         pi_deploy_verify,
         "record_deployment_acceptance",
@@ -612,6 +635,11 @@ def test_bootstrap_flag_runs_ingest_before_status_acceptance(monkeypatch):
     )
     monkeypatch.setattr(
         pi_deploy_verify,
+        "verify_production_data",
+        lambda **_kwargs: calls.append("data") or pi_deploy_verify.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        pi_deploy_verify,
         "record_deployment_acceptance",
         lambda *_args, **_kwargs: calls.append("record") or pi_deploy_verify.EXIT_OK,
     )
@@ -627,7 +655,7 @@ def test_bootstrap_flag_runs_ingest_before_status_acceptance(monkeypatch):
     )
     args.effective_command = "deploy command"
     assert pi_deploy_verify.cmd_deploy(args) == pi_deploy_verify.EXIT_OK
-    assert calls == ["services", "sync", "ingest", "smoke", "record"]
+    assert calls == ["services", "sync", "ingest", "smoke", "data", "record"]
 
 
 def test_verify_sync_rejects_canary_commit_mismatch_before_pi_contact(
@@ -865,6 +893,49 @@ def test_deploy_smoke_caps_request_to_remaining_budget(monkeypatch):
     )
     assert timeouts == [20.0]
     assert sleeps == []
+
+
+def test_production_data_script_covers_every_persistence_layer() -> None:
+    script = pi_deploy_verify.production_data_script().decode("utf-8")
+    for requirement in (
+        "verify_restored_state",
+        "selected_observation",
+        "ledger_event_digest",
+        "database_sha256",
+        "PRAGMA quick_check",
+        "PRAGMA integrity_check",
+        "PRAGMA foreign_key_check",
+    ):
+        assert requirement in script
+
+
+def test_production_data_verifier_requires_structured_pass(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (
+            0,
+            '{"result":"PASS","observation_date":"2026-09-05",'
+            '"generation_id":"obs-2026-09-05-0123456789abcdef",'
+            '"ledger_event_digest":"' + "b" * 64 + '",'
+            '"sqlite_databases":2,"database":{"path":'
+            '"runs/2026-09-05/_exports/local-cdr.sqlite","schema_version":11,'
+            '"sha256":"' + "a" * 64 + '"}}',
+            "",
+        ),
+    )
+    assert pi_deploy_verify.verify_production_data() == pi_deploy_verify.EXIT_OK
+    assert "data OK" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        pi_deploy_verify,
+        "run_ssh",
+        lambda *_args, **_kwargs: (0, '{"result":"BLOCKED"}', ""),
+    )
+    assert (
+        pi_deploy_verify.verify_production_data()
+        == pi_deploy_verify.EXIT_VERIFY_FAIL
+    )
 
 
 def test_bootstrap_waits_for_a_new_successful_systemd_invocation(monkeypatch):

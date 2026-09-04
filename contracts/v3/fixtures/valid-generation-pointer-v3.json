@@ -1,0 +1,23 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-08-15T10:00:00+10:00",
+  "contract_sha256": "94ac90e09f1a86c894ac8168bd5d44f8eb50675a37435b3a05f1b8f14d690964",
+  "latest_observation": {
+    "generation_id": "gen-2026-08-14-r0001-4debad48f7d3",
+    "generation_revision": 1,
+    "generation_digest": "4debad48f7d37bb5a4f97000315530f57e05829b6c31435411f05692fca3bd17",
+    "manifest_sha256": "140532dcaf523e1dc99d141305ed8070520e708ec606fc22511e7d491e2d05f5",
+    "observation_date": "2026-08-14",
+    "observation_state": "complete",
+    "manifest_url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/140532dcaf523e1dc99d141305ed8070520e708ec606fc22511e7d491e2d05f5.json"
+  },
+  "latest_complete": {
+    "generation_id": "gen-2026-08-14-r0001-4debad48f7d3",
+    "generation_revision": 1,
+    "generation_digest": "4debad48f7d37bb5a4f97000315530f57e05829b6c31435411f05692fca3bd17",
+    "manifest_sha256": "140532dcaf523e1dc99d141305ed8070520e708ec606fc22511e7d491e2d05f5",
+    "observation_date": "2026-08-14",
+    "observation_state": "complete",
+    "manifest_url": "https://github.com/yanniedog/AR-local/releases/download/app-payload-gen/140532dcaf523e1dc99d141305ed8070520e708ec606fc22511e7d491e2d05f5.json"
+  }
+}

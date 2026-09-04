@@ -47,13 +47,15 @@ from ar_local_checkout import git_command, git_state, install_candidate, rollbac
 from ar_local_deployment_chain import reconcile_deployment_chain
 from ar_local_operation_lock import production_lock, recovery_lock_path
 from ar_local_restore_verification import (
-    _daily_export_reconciliation,
     _pointer_matches_marker,
     validate_restore_acceptance,
     verify_restored_manifest_files,
     verify_restored_state,
 )
 from ar_local_rollback_record import record_rollback_acceptance
+from ar_local_sqlite_health import require_sqlite_health
+
+
 DEFAULT_CONFIG = Path("/etc/ar-local/backup.env")
 DEFAULT_BOOT_PROOF = Path("/etc/ar-local/backup-boot-proof.json")
 SNAPSHOT_SCHEMA_PATH = Path(__file__).resolve().parent / "contracts/pi-preservation-snapshot-v1.schema.json"
@@ -131,28 +133,34 @@ def _sqlite_backup(source: Path, destination: Path) -> dict[str, object]:
     with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src, closing(
         sqlite3.connect(destination, timeout=30)
     ) as dst:
-        source_quick = src.execute("PRAGMA quick_check").fetchone()[0]
+        source_health = require_sqlite_health(src, label=str(source))
         source_tables = {row[0] for row in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         missing = sorted(REQUIRED_MACRO_TABLES - source_tables)
-        if source_quick != "ok" or missing:
-            raise ValueError(f"macro source validation failed: quick_check={source_quick}, missing={missing}")
+        if missing:
+            raise ValueError(f"macro source validation failed: missing={missing}")
         source_counts = {
             name: src.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
             for name in sorted(REQUIRED_MACRO_TABLES)
         }
         src.backup(dst)
-        quick_check = dst.execute("PRAGMA quick_check").fetchone()[0]
+        target_health = require_sqlite_health(dst, label=str(destination))
         user_version = dst.execute("PRAGMA user_version").fetchone()[0]
         page_count = dst.execute("PRAGMA page_count").fetchone()[0]
         target_counts = {
             name: dst.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
             for name in sorted(REQUIRED_MACRO_TABLES)
         }
-    if quick_check != "ok":
-        raise ValueError(f"SQLite backup failed quick_check: {source}")
     if source_counts != target_counts:
         raise ValueError("macro backup row counts changed")
-    return {"source": str(source), "path": str(destination), "source_quick_check": source_quick, "quick_check": quick_check, "user_version": user_version, "page_count": page_count, "table_counts": target_counts}
+    return {
+        "source": str(source),
+        "path": str(destination),
+        **{f"source_{name}": value for name, value in source_health.items()},
+        **target_health,
+        "user_version": user_version,
+        "page_count": page_count,
+        "table_counts": target_counts,
+    }
 
 
 def _manifest_entries(root: Path) -> list[dict[str, object]]:
@@ -509,18 +517,22 @@ def restore_drill(
         with closing(
             sqlite3.connect(f"file:{macro_target.as_posix()}?mode=ro", uri=True)
         ) as connection:
-            macro_quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+            macro_health = require_sqlite_health(connection, label=str(macro_target))
             macro_tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             macro_counts = {
                 name: connection.execute(MACRO_COUNT_QUERIES[name]).fetchone()[0]
                 for name in sorted(REQUIRED_MACRO_TABLES & macro_tables)
             }
-        result["macro"] = {"quick_check": macro_quick, "tables": sorted(macro_tables), "counts": macro_counts}
+        result["macro"] = {
+            **macro_health,
+            "tables": sorted(macro_tables),
+            "counts": macro_counts,
+        }
         missing_macro = sorted(REQUIRED_MACRO_TABLES - macro_tables)
         expected_macro_counts = verified["manifest"].get("macro_backup", {}).get(
             "table_counts"
         )
-        if macro_quick != "ok" or missing_macro or macro_counts != expected_macro_counts:
+        if missing_macro or macro_counts != expected_macro_counts:
             result["ok"] = False
             result["findings"].append(
                 f"macro_validation_failed:{','.join(missing_macro)}"

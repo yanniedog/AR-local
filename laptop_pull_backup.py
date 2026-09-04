@@ -30,6 +30,7 @@ from ar_local_restore_verification import (
     _completion_marker_valid,
     _pointer_matches_marker,
 )
+from ar_local_sqlite_health import require_sqlite_health
 from laptop_backup_daily_verify import daily_reconciliation_bounded
 from process_safety import process_alive, process_descends_from
 from laptop_backup_atomic import (
@@ -459,11 +460,13 @@ def sqlite_checks(root: Path, *, required: bool = True) -> list[dict[str, object
     reports = []
     for path in sorted(root.rglob("*.sqlite")):
         with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro&immutable=1", uri=True)) as connection:
-            quick = connection.execute("PRAGMA quick_check").fetchone()[0]
+            health = require_sqlite_health(
+                connection, label=path.relative_to(root).as_posix()
+            )
             tables = sorted(row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'"))
-        if quick != "ok":
-            raise ValueError(f"SQLite quick_check failed: {path.relative_to(root)}")
-        reports.append({"path": path.relative_to(root).as_posix(), "quick_check": quick, "tables": tables})
+        reports.append(
+            {"path": path.relative_to(root).as_posix(), **health, "tables": tables}
+        )
     if required and not reports:
         raise ValueError("archive contains no SQLite database")
     return reports

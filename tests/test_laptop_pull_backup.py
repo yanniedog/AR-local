@@ -283,6 +283,8 @@ def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> Non
     report = source.sqlite_backup(database, destination)
     writer.close()
     assert report["quick_check"] == "ok"
+    assert report["integrity_check"] == "ok"
+    assert report["foreign_key_check"] == "ok"
     with sqlite3.connect(destination) as restored:
         assert restored.execute("SELECT COUNT(*) FROM series_observations").fetchone()[0] == 1
         assert restored.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1

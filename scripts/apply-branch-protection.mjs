@@ -8,7 +8,8 @@
 import { spawnSync } from 'node:child_process';
 
 /** Bot merge gates — must match workflow YAML job keys exactly. */
-const BOT_GATE_CHECKS = ['bot-presence-gate', 'bot-feedback-gate'];
+const BOT_GATE_CHECKS = ['bot-feedback-gate'];
+const DEPRECATED_CHECKS = new Set(['bot-presence-gate']);
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -37,7 +38,8 @@ function ghJson(args, { allow404 = false } = {}) {
 }
 
 function mergeCheckContexts(existingContexts, botChecks) {
-  const merged = [...(existingContexts || []), ...botChecks];
+  const retained = (existingContexts || []).filter((name) => !DEPRECATED_CHECKS.has(name));
+  const merged = [...retained, ...botChecks];
   return [...new Set(merged.filter(Boolean))];
 }
 

@@ -276,6 +276,10 @@ def test_sqlite_online_backup_includes_committed_wal_rows(tmp_path: Path) -> Non
     report = backup._sqlite_backup(source, destination)
     connection.close()
     assert report["quick_check"] == "ok"
+    assert report["integrity_check"] == "ok"
+    assert report["foreign_key_check"] == "ok"
+    assert report["source_integrity_check"] == "ok"
+    assert report["source_foreign_key_check"] == "ok"
     with sqlite3.connect(destination) as restored:
         assert restored.execute("SELECT COUNT(*) FROM series_observations").fetchone()[0] == 1
         assert restored.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
@@ -602,7 +606,7 @@ def test_daily_export_reconciliation_binds_canonical_observation(tmp_path: Path)
     with database.open("ab") as stream:
         stream.write(b"tamper")
     _record, findings = restore_verification._verify_daily_database(database, tmp_path)
-    assert any("daily_observation_mismatch" in finding for finding in findings)
+    assert any("daily_reconciliation_mismatch" in finding for finding in findings)
 
 
 def _write_finalized_observation(data_root: Path, run_date: str = "2026-08-24") -> None:
@@ -725,7 +729,7 @@ def test_restored_state_accepts_fully_bound_latest_observation(tmp_path: Path) -
     )
 
 
-def test_restored_state_preserves_older_schema_without_current_reconciliation(
+def test_restored_state_rejects_nonselected_unsupported_daily_schema(
     tmp_path: Path,
 ) -> None:
     historical = tmp_path / "runs/2026-08-23/_exports"
@@ -740,7 +744,11 @@ def test_restored_state_preserves_older_schema_without_current_reconciliation(
     ledger_report = verify_ledger(tmp_path / "state")
     assert ledger_report["ok"], ledger_report
     report = backup._verify_restored_state(tmp_path)
-    assert report["ok"], report["findings"]
+    assert not report["ok"]
+    assert any(
+        finding.startswith("daily_reconciliation_mismatch:")
+        for finding in report["findings"]
+    )
     historical_record = next(
         item
         for item in report["sqlite"]

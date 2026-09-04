@@ -18,7 +18,10 @@ def cmd_verify(args: argparse.Namespace, runtime: ModuleType) -> int:
     smoke = runtime.wait_for_http_smoke(runtime.pi_base_url())
     if smoke != runtime.EXIT_OK:
         return smoke
-    print("pi_deploy_verify: verify OK (sync + status)")
+    data = runtime.verify_production_data(dry_run=False)
+    if data != runtime.EXIT_OK:
+        return data
+    print("pi_deploy_verify: verify OK (sync + status + data)")
     return runtime.EXIT_OK
 
 
@@ -60,6 +63,7 @@ def cmd_deploy(args: argparse.Namespace, runtime: ModuleType) -> int:
                     dry_run=True,
                 )
             )
+        operations.append(lambda: runtime.verify_production_data(dry_run=True))
         for operation in operations:
             code = operation()
             if code != runtime.EXIT_OK:
@@ -110,6 +114,7 @@ def cmd_deploy(args: argparse.Namespace, runtime: ModuleType) -> int:
             )
         )
     operations.append(lambda: runtime.wait_for_http_smoke(runtime.pi_base_url()))
+    operations.append(lambda: runtime.verify_production_data(dry_run=False))
     for operation in operations:
         code = operation()
         if code != runtime.EXIT_OK:

@@ -15,6 +15,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
 from ar_local_ingest_schedule import DAILY_INGEST_TZ
+from ar_local_sqlite_health import require_sqlite_health
 from cdr_contracts import (
     PROVIDER_UID_RE,
     canonical_json_bytes,
@@ -820,12 +821,10 @@ def _projections_from_database(connection: sqlite3.Connection) -> dict[str, Any]
 
 
 def _integrity(connection: sqlite3.Connection) -> None:
-    if [row[0] for row in connection.execute("PRAGMA quick_check")] != ["ok"]:
-        _fail("SQLite quick_check failed")
-    if [row[0] for row in connection.execute("PRAGMA integrity_check")] != ["ok"]:
-        _fail("SQLite integrity_check failed")
-    if connection.execute("PRAGMA foreign_key_check").fetchall():
-        _fail("SQLite foreign_key_check failed")
+    try:
+        require_sqlite_health(connection, label="ObservationV1 database")
+    except ValueError as exc:
+        _fail(str(exc))
 
 
 def _sidecar_paths(path: Path) -> tuple[Path, Path, Path]:
